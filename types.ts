@@ -1,0 +1,40 @@
+
+export interface User {
+  email: string;
+  role: string;
+  tenant_name: string;
+}
+
+export interface AuthState {
+  token: string | null;
+  user: User | null;
+}
+
+export interface Job {
+  job_code: string;
+  job_title: string;
+  job_client: string;
+  job_status: 'Active' | 'Closed' | 'Draft';
+  applications_total: number;
+  applications_qualified: number;
+  applications_partial: number;
+  applications_rejected: number;
+}
+
+export interface Application {
+  id: string;
+  candidate_name: string;
+  score: number;
+  status: 'qualified' | 'partial' | 'rejected';
+  applied_date: string;
+  summary: string;
+}
+
+export interface JobDetails extends Job {
+  description: string;
+  requirements: string[];
+  location: string;
+  salary_range: string;
+}
+
+export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'all';

@@ -1,0 +1,5 @@
+{
+  "name": "CV Analyzer SaaS Dashboard",
+  "description": "A professional B2B SaaS frontend for CV analysis management, featuring job tracking, application filtering, and configurable webhook integrations.",
+  "requestFramePermissions": []
+}
