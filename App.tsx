@@ -16,10 +16,14 @@ const App: React.FC = () => {
   const [appFilter, setAppFilter] = useState<ApplicationFilter>('all');
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
 
-  // Auth State
+  // Auth State - initialized from localStorage once
   const [auth, setAuth] = useState<AuthState>(() => {
-    const saved = localStorage.getItem('cv_analyzer_auth');
-    return saved ? JSON.parse(saved) : { token: null, user: null };
+    try {
+      const saved = localStorage.getItem('cv_analyzer_auth');
+      return saved ? JSON.parse(saved) : { token: null, user: null };
+    } catch (e) {
+      return { token: null, user: null };
+    }
   });
 
   // UI State: Toasts
@@ -32,8 +36,13 @@ const App: React.FC = () => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  // Keep localStorage in sync with auth state
   useEffect(() => {
-    localStorage.setItem('cv_analyzer_auth', JSON.stringify(auth));
+    if (auth.token) {
+      localStorage.setItem('cv_analyzer_auth', JSON.stringify(auth));
+    } else {
+      localStorage.removeItem('cv_analyzer_auth');
+    }
   }, [auth]);
 
   const handleLoginSuccess = (token: string, user: User) => {
@@ -42,13 +51,15 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    // Clear state triggers useEffect which clears localStorage
     setAuth({ token: null, user: null });
-    localStorage.removeItem('cv_analyzer_auth');
+    // Reset internal navigation state
     setCurrentPage('jobs');
+    setSelectedJobCode(null);
     addToast("Logged out successfully", "info");
   };
 
-  // Auth Guard
+  // Auth Guard: If no token, always show AuthPage
   if (!auth.token) {
     return (
       <div className="min-h-screen bg-slate-50">
@@ -79,6 +90,10 @@ const App: React.FC = () => {
           />
         );
       case 'job-details':
+        if (!selectedJobCode) {
+          setCurrentPage('jobs');
+          return null;
+        }
         return (
           <JobDetails 
             jobCode={selectedJobCode!} 
@@ -88,6 +103,10 @@ const App: React.FC = () => {
           />
         );
       case 'applications':
+        if (!selectedJobCode) {
+          setCurrentPage('jobs');
+          return null;
+        }
         return (
           <ApplicationsList 
             jobCode={selectedJobCode!} 
@@ -98,12 +117,22 @@ const App: React.FC = () => {
           />
         );
       default:
-        return <div>Page not found</div>;
+        return (
+          <div className="flex flex-col items-center justify-center h-full py-12">
+            <h3 className="text-lg font-medium text-textMain">Page not found</h3>
+            <button 
+              onClick={() => setCurrentPage('jobs')}
+              className="mt-4 text-primary hover:underline"
+            >
+              Return to dashboard
+            </button>
+          </div>
+        );
     }
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-background">
       <Layout 
         user={auth.user} 
         onLogout={handleLogout} 
