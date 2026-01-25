@@ -10,38 +10,42 @@ import { AddJobModal } from './components/AddJobModal';
 import { ToastContainer, ToastType } from './components/Toast';
 
 const App: React.FC = () => {
-  // Navigation State
   const [currentPage, setCurrentPage] = useState<string>('jobs');
   const [selectedJobCode, setSelectedJobCode] = useState<string | null>(null);
   const [appFilter, setAppFilter] = useState<ApplicationFilter>('all');
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
 
-  // Auth State - initialized from localStorage once
+  // Auth State - initialized from individual localStorage keys
   const [auth, setAuth] = useState<AuthState>(() => {
     try {
-      const saved = localStorage.getItem('cv_analyzer_auth');
-      return saved ? JSON.parse(saved) : { token: null, user: null };
+      const token = localStorage.getItem('token');
+      const userStr = localStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
+      return { token, user };
     } catch (e) {
       return { token: null, user: null };
     }
   });
 
-  // UI State: Toasts
   const [toasts, setToasts] = useState<{ id: number; message: string; type: ToastType }[]>([]);
+  
   const addToast = (message: string, type: ToastType) => {
     const id = Date.now();
     setToasts((prev) => [...prev, { id, message, type }]);
   };
+  
   const removeToast = (id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Keep localStorage in sync with auth state
+  // Sync state to storage
   useEffect(() => {
-    if (auth.token) {
-      localStorage.setItem('cv_analyzer_auth', JSON.stringify(auth));
+    if (auth.token && auth.user) {
+      localStorage.setItem('token', auth.token);
+      localStorage.setItem('user', JSON.stringify(auth.user));
     } else {
-      localStorage.removeItem('cv_analyzer_auth');
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
     }
   }, [auth]);
 
@@ -51,15 +55,12 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    // Clear state triggers useEffect which clears localStorage
     setAuth({ token: null, user: null });
-    // Reset internal navigation state
     setCurrentPage('jobs');
     setSelectedJobCode(null);
     addToast("Logged out successfully", "info");
   };
 
-  // Auth Guard: If no token, always show AuthPage
   if (!auth.token) {
     return (
       <div className="min-h-screen bg-slate-50">
@@ -69,7 +70,6 @@ const App: React.FC = () => {
     );
   }
 
-  // Render Page Content
   const renderContent = () => {
     switch (currentPage) {
       case 'jobs':
@@ -118,7 +118,7 @@ const App: React.FC = () => {
         );
       default:
         return (
-          <div className="flex flex-col items-center justify-center h-full py-12">
+          <div className="flex flex-col items-center justify-center h-full py-12 text-center">
             <h3 className="text-lg font-medium text-textMain">Page not found</h3>
             <button 
               onClick={() => setCurrentPage('jobs')}

@@ -7,6 +7,6 @@ export const WEBHOOK_CONFIG = {
   REGISTER_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/register',
   GET_JOBS_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/jobs',
   GET_JOB_DETAILS_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/job-details',
-  CREATE_JOB_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook-test/cv-saas/jobs/create',
+  CREATE_JOB_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/jobs/create',
   GET_APPLICATIONS_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/applications'
 };

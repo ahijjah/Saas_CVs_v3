@@ -1,16 +1,17 @@
 
 import { WEBHOOK_CONFIG } from '../config';
 
-const AUTH_STORAGE_KEY = 'cv_analyzer_auth';
+const TOKEN_KEY = 'token';
+const USER_KEY = 'user';
 
 async function handleResponse(response: Response) {
-  // Centralized handling for 401/403 status codes
   if (response.status === 401 || response.status === 403) {
-    console.warn('Session expired or unauthorized. Clearing session and redirecting.');
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-    // Reload the page to force the SPA state back to unauthenticated (AuthPage)
+    console.warn('Session expired or unauthorized. Clearing storage.');
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem('cv_analyzer_auth');
+    
     window.location.reload();
-    // Return a never-resolving promise to stop execution of the calling code
     return new Promise(() => {});
   }
 
@@ -27,9 +28,10 @@ export const apiService = {
       'Content-Type': 'application/json',
     };
     
-    // JWT as Bearer token in Authorization header
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    // Read real token from storage, never use {{ }}
+    const activeToken = token || localStorage.getItem(TOKEN_KEY);
+    if (activeToken) {
+      headers['Authorization'] = `Bearer ${activeToken}`;
     }
 
     const response = await fetch(url, {
@@ -45,9 +47,9 @@ export const apiService = {
       'Content-Type': 'application/json',
     };
 
-    // JWT as Bearer token in Authorization header
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    const activeToken = token || localStorage.getItem(TOKEN_KEY);
+    if (activeToken) {
+      headers['Authorization'] = `Bearer ${activeToken}`;
     }
 
     const queryString = new URLSearchParams(params).toString();

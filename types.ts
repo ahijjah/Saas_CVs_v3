@@ -3,7 +3,6 @@ export interface User {
   email: string;
   role: string;
   tenant_name: string;
-  tenant_id?: string; // Added tenant_id as it is now required for job creation
 }
 
 export interface AuthState {
