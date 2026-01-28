@@ -149,6 +149,7 @@ const App: React.FC = () => {
             setIsAddJobOpen(false);
             setCurrentPage('jobs');
           }}
+          user={auth.user}
           token={auth.token!}
           addToast={addToast}
         />

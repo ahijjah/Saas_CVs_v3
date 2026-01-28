@@ -17,13 +17,15 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
 
   // Form States
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  
+  // Registration Form State - strictly matching required API keys
   const [registerForm, setRegisterForm] = useState({
     company_name: '',
     admin_name: '',
     admin_email: '',
     password: '',
     confirm_password: '',
-    intake_mode: 'generated' as 'forwarding' | 'generated',
+    cv_ingestion_mode: 'platform_email' as 'platform_email' | 'forwarding',
     forward_email: ''
   });
 
@@ -34,17 +36,24 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
     try {
       const response = await apiService.post(WEBHOOK_CONFIG.LOGIN_WEBHOOK_URL, loginForm);
       
-      // Strict validation of the response
       if (response && response.success === true && response.token) {
-        onLoginSuccess(response.token, response.user);
+        // Extract ingestion mode from root or nested user object
+        const cv_ingestion_mode = response.cv_ingestion_mode || response.user?.cv_ingestion_mode;
+        
+        const userData: User = {
+          ...response.user,
+          email: response.user?.email || loginForm.email,
+          cv_ingestion_mode: cv_ingestion_mode
+        };
+
+        console.log("Auth State Updated - Mode:", cv_ingestion_mode);
+        onLoginSuccess(response.token, userData);
       } else {
-        // Handle case where body says success: false despite 2xx status
         const errorMsg = response?.message || "Invalid credentials. Please try again.";
         setError(errorMsg);
         addToast(errorMsg, "error");
       }
     } catch (err: any) {
-      // Handle 401/403 or network errors
       const errorMsg = err.message || "Unable to connect to login service.";
       setError(errorMsg);
       addToast(errorMsg, "error");
@@ -56,36 +65,63 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // Strict Frontend validation
+    if (!registerForm.company_name || !registerForm.admin_name || !registerForm.admin_email || !registerForm.password) {
+      setError("Please fill in all required fields (Company, Admin Name, Email, Password).");
+      return;
+    }
+
     if (registerForm.password !== registerForm.confirm_password) {
       setError("Passwords do not match");
       return;
     }
+
     setLoading(true);
     try {
-      const response = await apiService.post(WEBHOOK_CONFIG.REGISTER_WEBHOOK_URL, registerForm);
+      // EXPLICIT PAYLOAD CONSTRUCTION
+      // Keys: company_name, admin_name, admin_email, password, confirm_password, cv_ingestion_mode, forward_email (cond)
+      const payload: any = {
+        company_name: registerForm.company_name,
+        admin_name: registerForm.admin_name,
+        admin_email: registerForm.admin_email,
+        password: registerForm.password,
+        confirm_password: registerForm.confirm_password,
+        cv_ingestion_mode: registerForm.cv_ingestion_mode
+      };
+
+      // Only include forward_email if mode is forwarding
+      if (registerForm.cv_ingestion_mode === 'forwarding') {
+        payload.forward_email = registerForm.forward_email;
+      }
+
+      // REQUIRED LOGGING
+      console.log("FINAL PAYLOAD:", payload);
       
-      if (response && response.success !== false) {
+      const response = await apiService.post(WEBHOOK_CONFIG.REGISTER_WEBHOOK_URL, payload);
+      
+      if (response && (response.success === true || response.status === 'success' || !response.error)) {
         addToast("Registration successful! Please login.", "success");
         setActiveTab('login');
       } else {
-        setError(response?.message || "Registration failed.");
+        setError(response?.message || "Registration failed. Server returned an error.");
       }
     } catch (err: any) {
-      setError(err.message || "Registration failed. Please check your connection.");
+      console.error("Registration Request Error:", err);
+      setError(err.message || "Registration failed. Please check your network connection.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4">
-      <div className="mb-8 text-center">
+    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-slate-50">
+      <div className="mb-8 text-center animate-fade-in">
         <h1 className="text-3xl font-bold text-primary mb-2 tracking-tight">CV Analyzer</h1>
         <p className="text-textMuted max-w-xs mx-auto">Enterprise-grade resume analysis and job management.</p>
       </div>
 
       <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-border overflow-hidden transition-all duration-300">
-        {/* Tabs */}
         <div className="flex border-b border-border bg-slate-50">
           <button
             onClick={() => { setActiveTab('login'); setError(null); }}
@@ -107,7 +143,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
 
         <div className="p-8">
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border-l-4 border-error text-error text-sm rounded flex items-start">
+            <div className="mb-6 p-4 bg-red-50 border-l-4 border-error text-error text-sm rounded flex items-start animate-fade-in">
               <svg className="w-5 h-5 mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -118,7 +154,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
           {activeTab === 'login' ? (
             <form onSubmit={handleLogin} className="space-y-6">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-textMuted uppercase">Work Email</label>
+                <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Work Email</label>
                 <input
                   required
                   type="email"
@@ -130,7 +166,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-textMuted uppercase">Password</label>
+                <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Password</label>
                 <input
                   required
                   type="password"
@@ -164,57 +200,62 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
           ) : (
             <form onSubmit={handleRegister} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-textMuted uppercase">Company Name</label>
+                <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Company Name <span className="text-error">*</span></label>
                 <input
                   required
                   type="text"
                   disabled={loading}
                   className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
+                  placeholder="ACME Inc."
                   value={registerForm.company_name}
                   onChange={(e) => setRegisterForm({...registerForm, company_name: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-textMuted uppercase">Full Name</label>
+                <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Admin Name <span className="text-error">*</span></label>
                 <input
                   required
                   type="text"
                   disabled={loading}
                   className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
+                  placeholder="John Doe"
                   value={registerForm.admin_name}
                   onChange={(e) => setRegisterForm({...registerForm, admin_name: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-textMuted uppercase">Email</label>
+                <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Admin Email <span className="text-error">*</span></label>
                 <input
                   required
                   type="email"
                   disabled={loading}
                   className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
+                  placeholder="admin@company.com"
                   value={registerForm.admin_email}
                   onChange={(e) => setRegisterForm({...registerForm, admin_email: e.target.value})}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-textMuted uppercase">Password</label>
+                  <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Password <span className="text-error">*</span></label>
                   <input
                     required
                     type="password"
                     disabled={loading}
                     className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
+                    placeholder="••••••••"
                     value={registerForm.password}
                     onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-textMuted uppercase">Confirm</label>
+                  <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Confirm <span className="text-error">*</span></label>
                   <input
                     required
                     type="password"
                     disabled={loading}
                     className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
+                    placeholder="••••••••"
                     value={registerForm.confirm_password}
                     onChange={(e) => setRegisterForm({...registerForm, confirm_password: e.target.value})}
                   />
@@ -222,34 +263,36 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
               </div>
 
               <div className="space-y-2 py-2">
-                <label className="text-xs font-bold text-textMuted uppercase block mb-2">CV Intake Mode</label>
+                <label className="text-xs font-bold text-textMuted uppercase tracking-wider block mb-2">CV Intake Mode</label>
                 <div className="flex space-x-4">
-                  <label className="flex items-center space-x-2 cursor-pointer">
+                  <label className="flex items-center space-x-2 cursor-pointer group">
                     <input
                       type="radio"
                       disabled={loading}
-                      className="text-primary focus:ring-primary"
-                      checked={registerForm.intake_mode === 'generated'}
-                      onChange={() => setRegisterForm({...registerForm, intake_mode: 'generated'})}
+                      name="cv_ingestion_mode"
+                      className="w-4 h-4 text-primary focus:ring-primary border-border"
+                      checked={registerForm.cv_ingestion_mode === 'platform_email'}
+                      onChange={() => setRegisterForm({...registerForm, cv_ingestion_mode: 'platform_email'})}
                     />
-                    <span className="text-sm">Generated</span>
+                    <span className="text-sm text-textMain group-hover:text-primary transition-colors">Generated</span>
                   </label>
-                  <label className="flex items-center space-x-2 cursor-pointer">
+                  <label className="flex items-center space-x-2 cursor-pointer group">
                     <input
                       type="radio"
                       disabled={loading}
-                      className="text-primary focus:ring-primary"
-                      checked={registerForm.intake_mode === 'forwarding'}
-                      onChange={() => setRegisterForm({...registerForm, intake_mode: 'forwarding'})}
+                      name="cv_ingestion_mode"
+                      className="w-4 h-4 text-primary focus:ring-primary border-border"
+                      checked={registerForm.cv_ingestion_mode === 'forwarding'}
+                      onChange={() => setRegisterForm({...registerForm, cv_ingestion_mode: 'forwarding'})}
                     />
-                    <span className="text-sm">Forwarding</span>
+                    <span className="text-sm text-textMain group-hover:text-primary transition-colors">Forwarding</span>
                   </label>
                 </div>
               </div>
 
-              {registerForm.intake_mode === 'forwarding' && (
+              {registerForm.cv_ingestion_mode === 'forwarding' && (
                  <div className="space-y-2 animate-fade-in">
-                  <label className="text-xs font-bold text-textMuted uppercase">Forwarding Email</label>
+                  <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Forwarding Source Email</label>
                   <input
                     required
                     type="email"
@@ -259,13 +302,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
                     value={registerForm.forward_email}
                     onChange={(e) => setRegisterForm({...registerForm, forward_email: e.target.value})}
                   />
+                  <p className="text-[10px] text-textMuted italic">The email address you will use to forward CVs from.</p>
                 </div>
               )}
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-primary hover:bg-primaryDark text-white py-3 rounded-xl font-bold transition-all disabled:opacity-50 mt-4 flex items-center justify-center"
+                className="w-full bg-primary hover:bg-primaryDark text-white py-3 rounded-xl font-bold transition-all disabled:opacity-50 mt-4 flex items-center justify-center shadow-lg shadow-primary/20"
               >
                 {loading ? (
                    <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">

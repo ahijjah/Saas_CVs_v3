@@ -3,6 +3,7 @@ export interface User {
   email: string;
   role: string;
   tenant_name: string;
+  cv_ingestion_mode?: 'platform_email' | 'forwarding';
 }
 
 export interface AuthState {

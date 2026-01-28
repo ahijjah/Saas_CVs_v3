@@ -1,12 +1,14 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
-import { WEBHOOK_CONFIG } from '../config';
+import { WEBHOOK_CONFIG, GLOBAL_FORWARDING_EMAIL } from '../config';
+import { User } from '../types';
 
 interface AddJobModalProps {
   onClose: () => void;
   onSuccess: () => void;
   token: string;
+  user: User | null;
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
@@ -26,7 +28,7 @@ interface FormData {
   end_date: string;
 }
 
-export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, token, addToast }) => {
+export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, token, user, addToast }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     job_code: '',
@@ -40,6 +42,12 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     other_information: '',
     end_date: ''
   });
+
+  // Debug log to verify user context and ingestion mode
+  useEffect(() => {
+    console.log("AddJobModal mounted. User context:", user);
+    console.log("Current Ingestion Mode:", user?.cv_ingestion_mode);
+  }, [user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -60,9 +68,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
         return;
       }
 
-      console.log("token exists:", !!token);
-
-      // UI Validation for required fields
       if (!formData.job_code || !formData.job_type || !formData.job_title || !formData.job_description) {
         addToast("Please fill in all required fields.", "error");
         return;
@@ -70,7 +75,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
       setLoading(true);
 
-      // Submit Create Job using JWT only (tenant_id is NOT sent)
       const res = await fetch(WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL, {
         method: "POST",
         headers: {
@@ -93,7 +97,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
       const text = await res.text();
       console.log("RESPONSE STATUS:", res.status);
-      console.log("RESPONSE BODY:", text);
 
       if (!res.ok) {
         throw new Error(`Server responded with ${res.status}: ${text}`);
@@ -112,6 +115,9 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
   const isFormValid = formData.job_code && formData.job_type && formData.job_title && formData.job_description;
 
+  // Normalized mode for case-insensitive comparison
+  const normalizedMode = user?.cv_ingestion_mode?.toLowerCase();
+
   return (
     <div className="fixed inset-0 bg-textMain/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-8 overflow-hidden animate-scale-in">
@@ -129,6 +135,40 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
           </div>
 
           <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto bg-white">
+            
+            {/* Ingestion Mode Callouts - High Visibility Alert Styling */}
+            {normalizedMode === 'platform_email' && (
+              <div className="bg-blue-50 border-l-4 border-blue-500 rounded-r-xl p-4 flex items-start space-x-4 animate-fade-in">
+                <div className="text-blue-500 shrink-0 mt-0.5">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-blue-900 uppercase tracking-tight">Dedicated Job Inbox</h4>
+                  <p className="text-sm text-blue-800 leading-relaxed mt-1">
+                    A dedicated job inbox will be generated automatically. You can find the address in the job details after creation.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {normalizedMode === 'forwarding' && (
+              <div className="bg-amber-50 border-l-4 border-amber-500 rounded-r-xl p-4 flex items-start space-x-4 animate-fade-in">
+                <div className="text-amber-500 shrink-0 mt-0.5">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-amber-900 uppercase tracking-tight">Forwarding Required</h4>
+                  <p className="text-sm text-amber-800 leading-relaxed mt-1">
+                    Please forward all CVs for this job to <span className="font-bold underline">{GLOBAL_FORWARDING_EMAIL}</span>. Our AI will route them automatically.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-textMuted uppercase">Job Code <span className="text-error font-black">*</span></label>
