@@ -36,6 +36,15 @@ export interface JobDetails extends Job {
   requirements: string[];
   location: string;
   salary_range: string;
+  skills_required?: string[];
+  experience_min_years?: number;
+  education_requirement?: string;
+  scoring_weights?: {
+    technical?: number;
+    experience?: number;
+    education?: number;
+    culture?: number;
+  };
 }
 
 export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'all';
