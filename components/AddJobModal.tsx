@@ -6,7 +6,7 @@ import { User } from '../types';
 
 interface AddJobModalProps {
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (jobId: string) => void;
   token: string;
   user: User | null;
   addToast: (msg: string, type: 'success' | 'error') => void;
@@ -43,10 +43,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     end_date: ''
   });
 
-  // Debug log to verify user context and ingestion mode
   useEffect(() => {
     console.log("AddJobModal mounted. User context:", user);
-    console.log("Current Ingestion Mode:", user?.cv_ingestion_mode);
   }, [user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -57,17 +55,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    console.log("CREATE JOB SUBMIT CLICKED");
-
     try {
-      console.log("SUBMIT START");
-
-      const token = localStorage.getItem("token");
-      if (!token) {
-        alert("Not authenticated. Please login again.");
-        return;
-      }
-
       if (!formData.job_code || !formData.job_type || !formData.job_title || !formData.job_description) {
         addToast("Please fill in all required fields.", "error");
         return;
@@ -75,47 +63,44 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
       setLoading(true);
 
-      const res = await fetch(WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          job_code: formData.job_code,
-          status: formData.status,
-          client: formData.client || null,
-          job_type: formData.job_type,
-          job_duration: formData.job_duration || null,
-          job_location: formData.job_location || null,
-          job_title: formData.job_title,
-          job_description: formData.job_description,
-          other_information: formData.other_information || null,
-          end_date: formData.end_date || null
-        })
-      });
+      const payload = {
+        job_code: formData.job_code,
+        status: formData.status,
+        client: formData.client || null,
+        job_type: formData.job_type,
+        job_duration: formData.job_duration || null,
+        job_location: formData.job_location || null,
+        job_title: formData.job_title,
+        job_description: formData.job_description,
+        other_information: formData.other_information || null,
+        end_date: formData.end_date || null
+      };
 
-      const text = await res.text();
-      console.log("RESPONSE STATUS:", res.status);
+      // Use consistent apiService for all calls to ensure headers are correctly handled
+      const responseData = await apiService.post(
+        WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL,
+        payload,
+        token
+      );
 
-      if (!res.ok) {
-        throw new Error(`Server responded with ${res.status}: ${text}`);
-      }
+      console.log("CREATE JOB RESPONSE:", responseData);
 
+      const createdJobId = responseData.job_id || responseData.job_code || formData.job_code;
       addToast("Job campaign created successfully!", "success");
-      onSuccess();
+      onSuccess(createdJobId);
+      
     } catch (err: any) {
       console.error("SUBMIT ERROR", err);
-      alert(err.message || "Submit failed");
-      addToast(err.message || "Failed to create job.", "error");
+      const errorMsg = err.name === 'TypeError' && err.message === 'Failed to fetch' 
+        ? "Network error. The creation service is unreachable." 
+        : (err.message || "Failed to create job.");
+      addToast(errorMsg, "error");
     } finally {
       setLoading(false);
     }
   };
 
   const isFormValid = formData.job_code && formData.job_type && formData.job_title && formData.job_description;
-
-  // Normalized mode for case-insensitive comparison
   const normalizedMode = user?.cv_ingestion_mode?.toLowerCase();
 
   return (
@@ -136,7 +121,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
           <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto bg-white">
             
-            {/* Ingestion Mode Callouts - High Visibility Alert Styling */}
             {normalizedMode === 'platform_email' && (
               <div className="bg-blue-50 border-l-4 border-blue-500 rounded-r-xl p-4 flex items-start space-x-4 animate-fade-in">
                 <div className="text-blue-500 shrink-0 mt-0.5">
@@ -305,7 +289,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2 text-sm font-semibold text-textMuted hover:text-textMain transition-colors"
+              disabled={loading}
+              className="px-6 py-2 text-sm font-semibold text-textMuted hover:text-textMain transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -315,10 +300,13 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               className="bg-primary hover:bg-primaryDark disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-10 py-2.5 rounded-lg font-bold shadow-lg shadow-primary/20 transition-all flex items-center justify-center min-w-[140px]"
             >
               {loading ? (
-                <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <>
+                  <svg className="animate-spin h-5 w-5 text-white mr-2" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Creating...
+                </>
               ) : (
                 "Submit Job"
               )}

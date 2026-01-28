@@ -96,7 +96,7 @@ const App: React.FC = () => {
         }
         return (
           <JobDetails 
-            jobCode={selectedJobCode!} 
+            jobId={selectedJobCode!} // Updated prop name to jobId
             auth={auth} 
             onBack={() => setCurrentPage('jobs')}
             addToast={addToast}
@@ -145,9 +145,11 @@ const App: React.FC = () => {
       {isAddJobOpen && (
         <AddJobModal 
           onClose={() => setIsAddJobOpen(false)} 
-          onSuccess={() => {
+          onSuccess={(jobId) => {
             setIsAddJobOpen(false);
-            setCurrentPage('jobs');
+            setSelectedJobCode(jobId);
+            setCurrentPage('job-details');
+            console.log(`Job created successfully. Redirecting to job-details for: ${jobId}`);
           }}
           user={auth.user}
           token={auth.token!}

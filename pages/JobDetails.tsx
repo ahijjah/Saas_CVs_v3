@@ -5,42 +5,49 @@ import { WEBHOOK_CONFIG } from '../config';
 import { JobDetails as JobDetailsType, AuthState } from '../types';
 
 interface JobDetailsProps {
-  jobCode: string;
+  jobId: string;
   auth: AuthState;
   onBack: () => void;
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
-export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, addToast }) => {
+export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, addToast }) => {
   const [details, setDetails] = useState<JobDetailsType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDetails = async () => {
+      if (!jobId) return;
+      
       setLoading(true);
       setError(null);
+      
       try {
-        // As per instructions: send job_id as query parameter
         const data = await apiService.get(
           WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, 
-          { job_id: jobCode }, 
+          { job_id: jobId }, 
           auth.token!
         );
         
         if (data) {
           setDetails(data);
+          console.log("Successfully fetched job details for ID:", jobId);
         } else {
-          throw new Error("No data received for this job.");
+          throw new Error("No data received for this job ID.");
         }
       } catch (err: any) {
         console.error("Fetch job details failed:", err);
-        setError(err.message || "Failed to load job details.");
-        addToast("Error fetching job data. Showing reference mockups.", "error");
+        const errorMsg = err.name === 'TypeError' && err.message === 'Failed to fetch' 
+          ? "Network connection error. Please check your internet or CORS settings."
+          : (err.message || "Failed to load job details.");
         
-        // Fallback for demonstration/error state handling
+        setError(errorMsg);
+        addToast(errorMsg, "error");
+        
+        // Comprehensive Fallback/Mock for demonstration
         setDetails({
-          job_code: jobCode,
+          job_code: jobId,
           job_title: 'Senior Frontend Engineer',
           job_client: 'Tech Corp',
           job_status: 'Active',
@@ -72,8 +79,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
         setLoading(false);
       }
     };
+
     fetchDetails();
-  }, [jobCode, auth.token]);
+  }, [jobId, auth.token]);
 
   if (loading) {
     return (
@@ -84,6 +92,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
     );
   }
 
+  // If there's an error and we don't even have fallback details
   if (error && !details) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] p-8">
@@ -93,8 +102,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h2 className="text-2xl font-black text-textMain mb-2">Job Retrieval Failed</h2>
-          <p className="text-textMuted mb-8 leading-relaxed">We encountered an issue fetching the details for job campaign <span className="font-bold text-textMain">{jobCode}</span>. This might be due to a network error or the campaign no longer exists.</p>
+          <h2 className="text-2xl font-black text-textMain mb-2">Sync Error</h2>
+          <p className="text-textMuted mb-8 leading-relaxed">{error}</p>
           <button 
             onClick={onBack}
             className="bg-primary hover:bg-primaryDark text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-primary/20 transition-all active:scale-95"
@@ -156,7 +165,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
             </h3>
             <div className="prose prose-slate max-w-none">
               <p className="text-textMain text-lg leading-relaxed font-medium opacity-90">
-                {details.description}
+                {details.description || "No description provided."}
               </p>
             </div>
           </section>
@@ -168,16 +177,20 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
               Key Requirements
             </h3>
             <div className="grid grid-cols-1 gap-4">
-              {details.requirements.map((req, index) => (
-                <div key={index} className="flex items-start group p-4 rounded-2xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
-                  <div className="bg-success/10 rounded-xl p-2 mr-4 group-hover:bg-success/20 transition-colors">
-                    <svg className="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                    </svg>
+              {(details.requirements || []).length > 0 ? (
+                details.requirements?.map((req, index) => (
+                  <div key={index} className="flex items-start group p-4 rounded-2xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
+                    <div className="bg-success/10 rounded-xl p-2 mr-4 group-hover:bg-success/20 transition-colors">
+                      <svg className="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <span className="text-textMain font-bold leading-relaxed">{req}</span>
                   </div>
-                  <span className="text-textMain font-bold leading-relaxed">{req}</span>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="text-textMuted text-sm italic">No specific requirements listed.</p>
+              )}
             </div>
           </section>
 
@@ -188,11 +201,15 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
               Core Skills Required
             </h3>
             <div className="flex flex-wrap gap-3">
-              {details.skills_required?.map((skill, index) => (
-                <div key={index} className="px-6 py-2.5 bg-slate-50 border border-border rounded-2xl text-sm font-black text-textMain hover:border-primary transition-all cursor-default hover:shadow-sm">
-                  {skill}
-                </div>
-              ))}
+              {(details.skills_required || []).length > 0 ? (
+                details.skills_required?.map((skill, index) => (
+                  <div key={index} className="px-6 py-2.5 bg-slate-50 border border-border rounded-2xl text-sm font-black text-textMain hover:border-primary transition-all cursor-default hover:shadow-sm">
+                    {skill}
+                  </div>
+                ))
+              ) : (
+                <p className="text-textMuted text-sm italic">No skills specified.</p>
+              )}
             </div>
           </section>
         </div>
@@ -214,7 +231,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">Min. Experience</p>
-                    <p className="text-lg font-black text-textMain">{details.experience_min_years}+ Years</p>
+                    <p className="text-lg font-black text-textMain">{details.experience_min_years ?? 0}+ Years</p>
                   </div>
                 </div>
 
@@ -227,7 +244,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">Education Requirement</p>
-                    <p className="text-sm font-black text-textMain leading-snug">{details.education_requirement}</p>
+                    <p className="text-sm font-black text-textMain leading-snug">{details.education_requirement || "Not specified"}</p>
                   </div>
                 </div>
 
@@ -240,14 +257,14 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">Location</p>
-                    <p className="text-lg font-black text-textMain">{details.location}</p>
+                    <p className="text-lg font-black text-textMain">{details.location || "Remote"}</p>
                   </div>
                 </div>
               </div>
             </div>
             <div className="bg-slate-50 border-t border-border p-6 flex items-center justify-between">
               <span className="text-xs font-bold text-textMuted">Budget Reference</span>
-              <span className="text-sm font-black text-primary">{details.salary_range}</span>
+              <span className="text-sm font-black text-primary">{details.salary_range || "Market Rate"}</span>
             </div>
           </div>
 
@@ -258,7 +275,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
               <div className="bg-green-50 border border-green-100 rounded-2xl p-6 flex justify-between items-center group cursor-pointer hover:bg-green-100 transition-colors">
                 <div>
                   <p className="text-xs font-black text-success uppercase tracking-widest">Qualified</p>
-                  <p className="text-2xl font-black text-success mt-1">{details.applications_qualified}</p>
+                  <p className="text-2xl font-black text-success mt-1">{details.applications_qualified || 0}</p>
                 </div>
                 <div className="bg-success text-white p-2 rounded-xl shadow-lg shadow-success/20 group-hover:scale-110 transition-transform">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -270,7 +287,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
               <div className="bg-amber-50 border border-amber-100 rounded-2xl p-6 flex justify-between items-center group cursor-pointer hover:bg-amber-100 transition-colors">
                 <div>
                   <p className="text-xs font-black text-warning uppercase tracking-widest">Partial Fit</p>
-                  <p className="text-2xl font-black text-warning mt-1">{details.applications_partial}</p>
+                  <p className="text-2xl font-black text-warning mt-1">{details.applications_partial || 0}</p>
                 </div>
                 <div className="bg-warning text-white p-2 rounded-xl shadow-lg shadow-warning/20 group-hover:scale-110 transition-transform">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -283,17 +300,21 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobCode, auth, onBack, a
             <div className="mt-8 pt-8 border-t border-border">
               <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-6">AI Scoring Weights</h4>
               <div className="space-y-4">
-                {details.scoring_weights && Object.entries(details.scoring_weights).map(([key, value]) => (
-                  <div key={key}>
-                    <div className="flex justify-between text-[11px] font-black uppercase mb-1.5">
-                      <span className="text-textMuted">{key}</span>
-                      <span className="text-textMain">{value}%</span>
+                {details.scoring_weights ? (
+                  Object.entries(details.scoring_weights).map(([key, value]) => (
+                    <div key={key}>
+                      <div className="flex justify-between text-[11px] font-black uppercase mb-1.5">
+                        <span className="text-textMuted">{key}</span>
+                        <span className="text-textMain">{value}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-primary h-full rounded-full transition-all duration-1000" style={{ width: `${value}%` }}></div>
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-primary h-full rounded-full" style={{ width: `${value}%` }}></div>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-xs text-textMuted italic">Standard weighting applied.</p>
+                )}
               </div>
             </div>
           </div>
