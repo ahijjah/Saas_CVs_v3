@@ -43,7 +43,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, add
         setError(errorMsg);
         addToast(errorMsg, "error");
         
-        // Mock Fallback matching the new schema
+        // Updated Mock Fallback matching the new schema requirements
         setDetails({
           job_id: jobId,
           job_code: 'JB-772',
@@ -54,13 +54,13 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, add
           location: 'London (Hybrid)',
           posted_date: '2023-10-15',
           closing_date: '2023-11-30',
-          salary_range: '£85k - £110k',
+          ingestion_note: 'CVs must be forwarded to jobs@ai970.cloud and must include the Job Code in the email subject.',
+          ingestion_mode: 'forwarding',
+          ingestion_email: null,
           applications_total: 142,
           applications_qualified: 24,
           applications_partial: 45,
           applications_rejected: 73,
-          applications_evaluated: 120,
-          applications_pending: 22,
           applications_above_threshold: 18,
           applications_below_threshold: 102,
           applications_recommended: 12,
@@ -127,7 +127,6 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, add
 
   if (!details) return null;
 
-  // Fixed: Removed '|| {}' to ensure 'analysis' retains 'AnalysisJson' type and doesn't conflict with empty object type
   const analysis = details.analysis_json;
 
   return (
@@ -152,12 +151,22 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, add
             <button className="bg-primary text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-primary/20">Review Portal</button>
           </div>
         </div>
-        <div className="p-8 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+
+        {/* 1.1 Ingestion Note (Top Banner) */}
+        {details.ingestion_note && (
+          <div className="bg-blue-50/80 border-b border-blue-100 px-8 py-4">
+            <p className="text-sm font-medium text-blue-900 leading-relaxed">
+              {details.ingestion_note}
+            </p>
+          </div>
+        )}
+
+        {/* Updated Metadata Grid - Removed Salary */}
+        <div className="p-8 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
           {[
             { label: 'Client', value: details.job_client },
             { label: 'Type', value: details.job_type || 'Full-time' },
             { label: 'Location', value: details.location || 'Remote' },
-            { label: 'Salary', value: details.salary_range || 'N/A' },
             { label: 'Posted', value: details.posted_date || '-' },
             { label: 'Closing', value: details.closing_date || '-' },
           ].map((item, idx) => (
@@ -169,12 +178,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, add
         </div>
       </section>
 
-      {/* 4️⃣ Applications Overview (KPIs) */}
-      <section className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+      {/* 4️⃣ Applications Overview (KPIs) - Removed Evaluated and Pending */}
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Total', value: details.applications_total, color: 'text-textMain' },
-          { label: 'Evaluated', value: details.applications_evaluated || 0, color: 'text-primary' },
-          { label: 'Pending', value: details.applications_pending || 0, color: 'text-warning' },
           { label: 'Qualifying', value: details.applications_above_threshold || 0, color: 'text-success' },
           { label: 'Failing', value: details.applications_below_threshold || 0, color: 'text-error' },
           { label: 'Recommended', value: details.applications_recommended || 0, color: 'text-indigo-600' },

@@ -22,11 +22,14 @@ export interface Job {
   posted_date?: string;
   closing_date?: string;
   salary_range?: string;
+  ingestion_note?: string; 
+  ingestion_mode?: 'forwarding' | 'platform_email';
+  ingestion_email?: string | null;
   applications_total: number;
   applications_qualified: number;
   applications_partial: number;
   applications_rejected: number;
-  // New KPI fields
+  // KPI fields
   applications_evaluated?: number;
   applications_pending?: number;
   applications_above_threshold?: number;
