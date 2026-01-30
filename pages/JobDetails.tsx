@@ -31,7 +31,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, add
         );
         
         if (data) {
-          setDetails(data);
+          const payload = Array.isArray(data) ? data[0] : data;
+          setDetails({
+            ...payload.details,
+            analysis_json: payload.analysis,
+          });
         } else {
           throw new Error("No data received for this job ID.");
         }
