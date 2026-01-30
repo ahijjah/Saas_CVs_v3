@@ -43,7 +43,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, add
         setError(errorMsg);
         addToast(errorMsg, "error");
         
-        // Updated Mock Fallback matching the new schema requirements
+        // Updated Mock Fallback as per specific request
         setDetails({
           job_id: jobId,
           job_code: 'JB-772',
@@ -54,7 +54,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, add
           location: 'London (Hybrid)',
           posted_date: '2023-10-15',
           closing_date: '2023-11-30',
-          ingestion_note: 'CVs must be forwarded to jobs@ai970.cloud and must include the Job Code in the email subject.',
+          ingestion_note: 'CVs for this job must be forwarded to jobs@ai970.cloud. Please include the job reference (JOB-2026-0001) in the email subject or body.',
           ingestion_mode: 'forwarding',
           ingestion_email: null,
           applications_total: 142,
