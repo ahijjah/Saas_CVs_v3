@@ -13,15 +13,61 @@ export interface AuthState {
 
 export interface Job {
   job_code: string;
+  job_id: string;
   job_title: string;
   job_client: string;
   job_status: 'Active' | 'Closed' | 'Draft';
+  job_type?: string;
+  location?: string;
+  posted_date?: string;
+  closing_date?: string;
+  salary_range?: string;
   applications_total: number;
   applications_qualified: number;
   applications_partial: number;
   applications_rejected: number;
+  // New KPI fields
+  applications_evaluated?: number;
+  applications_pending?: number;
+  applications_above_threshold?: number;
+  applications_below_threshold?: number;
+  applications_recommended?: number;
 }
 
+export interface AnalysisJson {
+  skills: {
+    required: string[];
+    preferred: string[];
+  };
+  experience: {
+    minimum_years: number;
+    relevant_roles: string[];
+    key_responsibilities: string[];
+  };
+  education: {
+    minimum_level: string;
+    fields_of_study: string[];
+  };
+  certifications: string[];
+  domain_knowledge: string[];
+  other_requirements: string[];
+  scoring_weights: {
+    skills?: number;
+    experience?: number;
+    education?: number;
+    certifications?: number;
+    soft_skills?: number;
+    domain_knowledge?: number;
+    other_requirements?: number;
+  };
+}
+
+export interface JobDetails extends Job {
+  description: string;
+  analysis_json: AnalysisJson;
+}
+
+// Added Application interface to satisfy imports in ApplicationsList.tsx
 export interface Application {
   id: string;
   candidate_name: string;
@@ -29,22 +75,6 @@ export interface Application {
   status: 'qualified' | 'partial' | 'rejected';
   applied_date: string;
   summary: string;
-}
-
-export interface JobDetails extends Job {
-  description: string;
-  requirements: string[];
-  location: string;
-  salary_range: string;
-  skills_required?: string[];
-  experience_min_years?: number;
-  education_requirement?: string;
-  scoring_weights?: {
-    technical?: number;
-    experience?: number;
-    education?: number;
-    culture?: number;
-  };
 }
 
 export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'all';
