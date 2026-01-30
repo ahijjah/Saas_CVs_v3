@@ -11,4 +11,4 @@ export const WEBHOOK_CONFIG = {
   GET_APPLICATIONS_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/applications2'
 };
 
-export const GLOBAL_FORWARDING_EMAIL = 'CV@ai970.cloud';
+export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';
