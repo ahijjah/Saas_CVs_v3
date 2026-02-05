@@ -22,29 +22,33 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchJobs = async () => {
-    setLoading(true);
-    try {
-      const data = await apiService.get(WEBHOOK_CONFIG.GET_JOBS_WEBHOOK_URL, {}, auth.token!);
-      // Ensure data is array
-      setJobs(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      console.error(err);
-      addToast("Failed to fetch jobs. Using placeholder data for demonstration.", "error");
-      // Fallback for demo - added job_id to satisfy Job type
-      setJobs([
-        { job_id: 'JB001', job_code: 'JB001', job_title: 'Senior Frontend Engineer', job_client: 'Tech Corp', job_status: 'Active', applications_total: 45, applications_qualified: 12, applications_partial: 20, applications_rejected: 13 },
-        { job_id: 'JB002', job_code: 'JB002', job_title: 'Backend Developer', job_client: 'Data Systems', job_status: 'Active', applications_total: 30, applications_qualified: 5, applications_partial: 10, applications_rejected: 15 },
-        { job_id: 'JB003', job_code: 'JB003', job_title: 'UX Designer', job_client: 'Creative Lab', job_status: 'Closed', applications_total: 15, applications_qualified: 8, applications_partial: 4, applications_rejected: 3 },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const fetchJobs = async () => {
+      setLoading(true);
+      try {
+        const data = await apiService.get(
+          WEBHOOK_CONFIG.GET_JOBS_WEBHOOK_URL, 
+          {}, 
+          auth.token!
+        );
+        // Ensure data is array
+        setJobs(Array.isArray(data) ? data : []);
+      } catch (err: any) {
+        console.error(err);
+        addToast("Failed to fetch jobs. Using placeholder data for demonstration.", "error");
+        // Fallback for demo - added job_id to satisfy Job type
+        setJobs([
+          { job_id: 'JB001', job_code: 'JB001', job_title: 'Senior Frontend Engineer', job_client: 'Tech Corp', job_status: 'Active', applications_total: 45, applications_qualified: 12, applications_partial: 20, applications_rejected: 13 },
+          { job_id: 'JB002', job_code: 'JB002', job_title: 'Backend Developer', job_client: 'Data Systems', job_status: 'Active', applications_total: 30, applications_qualified: 5, applications_partial: 10, applications_rejected: 15 },
+          { job_id: 'JB003', job_code: 'JB003', job_title: 'UX Designer', job_client: 'Creative Lab', job_status: 'Closed', applications_total: 15, applications_qualified: 8, applications_partial: 4, applications_rejected: 3 },
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchJobs();
-  }, []);
+  }, [auth.token]);
 
   return (
     <div className="space-y-6">
