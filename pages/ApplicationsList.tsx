@@ -32,7 +32,15 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         { job_id: jobId }, 
         auth.token!
       );
-      setApplicationsAll(Array.isArray(data) ? data : []);
+
+      // --- DIAGNOSTIC LOGGING START ---
+      console.log('[ApplicationsList] raw data from API:', data);
+      const arr = Array.isArray(data) ? data : [];
+      console.log('[ApplicationsList] applicationsAll length:', arr.length);
+      console.log('[ApplicationsList] sample statuses:', arr.slice(0, 10).map(a => (a as any).status));
+      // --- DIAGNOSTIC LOGGING END ---
+
+      setApplicationsAll(arr);
     } catch (err) {
       console.error("[ApplicationsList] Fetch error:", err);
       addToast("Failed to fetch applications. Showing mock data.", "error");
@@ -89,19 +97,31 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     );
   }
 
+  // Define filteredApplications for type consistency, but bypass in UI below
   const filteredApplications = filter === 'all' 
     ? applicationsAll 
     : applicationsAll.filter(a => a.status === filter);
 
+  // --- DIAGNOSTIC LOGGING BEFORE RENDER ---
+  if (applicationsAll.length > 0) {
+    console.log('[ApplicationsList] first row keys:', Object.keys(applicationsAll[0] || {}));
+    console.log('[ApplicationsList] first row:', applicationsAll[0]);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="flex items-center text-primary hover:underline text-sm font-medium">
-          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          Back to Campaigns
-        </button>
+        <div className="flex flex-col">
+          <button onClick={onBack} className="flex items-center text-primary hover:underline text-sm font-medium">
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Campaigns
+          </button>
+          <span className="text-[10px] text-textMuted mt-1 font-mono uppercase tracking-tighter">
+            Debug: Filter Bypass Active (Rendering All {applicationsAll.length} Items)
+          </span>
+        </div>
 
         <div className="flex bg-slate-100 p-1 rounded-lg">
           {(['all', 'qualified', 'partial', 'rejected'] as ApplicationFilter[]).map((f) => (
@@ -124,12 +144,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
             Loading applications...
           </div>
-        ) : filteredApplications.length === 0 ? (
+        ) : applicationsAll.length === 0 ? (
           <div className="bg-white p-12 rounded-xl border border-border text-center text-textMuted">
             No applications found matching this criteria.
           </div>
         ) : (
-          filteredApplications.map((app) => (
+          /* TEMPORARY BYPASS: Rendering applicationsAll directly to see all data */
+          applicationsAll.map((app) => (
             <div key={app.id || app.application_id} className="bg-white p-6 rounded-xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between hover:border-primary/30 transition-all">
               <div className="flex items-center space-x-6">
                 <div className={`w-14 h-14 rounded-full flex flex-col items-center justify-center font-bold text-white shadow-sm ${
@@ -151,7 +172,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                   app.status === 'partial' ? 'bg-amber-100 text-amber-800' :
                   'bg-red-100 text-red-800'
                 }`}>
-                  {app.status}
+                  {app.status || 'NO_STATUS'}
                 </span>
                 <button 
                   disabled={detailsLoading}
