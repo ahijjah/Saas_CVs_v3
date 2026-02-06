@@ -24,7 +24,11 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   const fetchApplications = async () => {
-    console.log(`[ApplicationsList] fetchApplications triggered. job_id (UUID): ${jobId}`);
+    // --- DIAGNOSTIC LOGGING: PRE-FETCH ---
+    console.log('[ApplicationsList] fetchApplications triggered. job_id (UUID):', jobId);
+    console.log('[ApplicationsList] calling GET applications:', WEBHOOK_CONFIG.GET_APPLICATIONS_WEBHOOK_URL);
+    console.log('[ApplicationsList] params:', { job_id: jobId });
+    
     setLoading(true);
     try {
       const data = await apiService.get(
@@ -33,12 +37,14 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         auth.token!
       );
 
-      // --- DIAGNOSTIC LOGGING START ---
-      console.log('[ApplicationsList] raw data from API:', data);
+      // --- DIAGNOSTIC LOGGING: POST-FETCH ---
+      console.log('[ApplicationsList] raw API response:', data);
+      console.log('[ApplicationsList] response type:', typeof data, 'isArray:', Array.isArray(data));
+
       const arr = Array.isArray(data) ? data : [];
       console.log('[ApplicationsList] applicationsAll length:', arr.length);
-      console.log('[ApplicationsList] sample statuses:', arr.slice(0, 10).map(a => (a as any).status));
-      // --- DIAGNOSTIC LOGGING END ---
+      console.log('[ApplicationsList] first row:', arr[0]);
+      console.log('[ApplicationsList] sample statuses:', arr.slice(0, 15).map(a => (a as any)?.status));
 
       setApplicationsAll(arr);
     } catch (err) {
@@ -104,8 +110,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   // --- DIAGNOSTIC LOGGING BEFORE RENDER ---
   if (applicationsAll.length > 0) {
-    console.log('[ApplicationsList] first row keys:', Object.keys(applicationsAll[0] || {}));
-    console.log('[ApplicationsList] first row:', applicationsAll[0]);
+    console.log('[ApplicationsList] Render cycle - first row keys:', Object.keys(applicationsAll[0] || {}));
+    console.log('[ApplicationsList] Render cycle - first row data:', applicationsAll[0]);
   }
 
   return (
@@ -136,6 +142,11 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
             </button>
           ))}
         </div>
+      </div>
+
+      {/* NEW TEMPORARY UI DEBUG BLOCK */}
+      <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded p-2 font-mono">
+        Debug: items={applicationsAll.length} | filter={filter} | firstStatus={(applicationsAll[0] as any)?.status ?? 'none'} | jobId={jobId}
       </div>
 
       <div className="grid grid-cols-1 gap-4">
