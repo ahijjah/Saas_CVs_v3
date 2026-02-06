@@ -68,12 +68,44 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         { application_id: app.application_id || app.id },
         auth.token!
       );
-      setSelectedDetails(details);
+
+      console.log('[ApplicationsList] Raw backend details received:', details);
+
+      // Normalization Mapping: Convert backend fields into the structure expected by ApplicationDetails
+      const normalized = {
+        application_id: details.application_id,
+        candidate_name: details.candidate_name,
+        score: Number(details.overall_score || 0),
+        status: (details.decision || '').toLowerCase(),
+
+        summary: details.analysis?.summary,
+        skills_match: details.analysis?.cv_skills_matched,
+        experience_fit: details.analysis?.cv_experience_summary,
+        education_check: details.analysis?.cv_education_summary,
+        strengths: details.raw_ai_response?.evidence_skills,
+        risks: details.analysis?.gaps_identified,
+
+        scores: details.scores,
+        analysis: details.analysis,
+        raw_ai_response: details.raw_ai_response,
+
+        // Restore compatibility with ApplicationDetails.tsx root property expectations (overall_score and decision)
+        overall_score: Number(details.overall_score || 0),
+        decision: (details.decision || '').toLowerCase()
+      };
+
+      console.log('[ApplicationsList] Normalized application details:', normalized);
+      
+      setSelectedDetails(normalized);
       setView('details');
     } catch (err) {
+      console.error("[ApplicationsList] Details fetch error:", err);
       addToast("Failed to load application analysis.", "error");
+      // Fallback for demo
       setSelectedDetails({
         ...app,
+        overall_score: app.score,
+        decision: app.status,
         analysis: {
           summary: "This candidate shows exceptional promise in frontend architecture...",
           skills: ["React Expert", "Modern CSS", "Architecture Design"],
