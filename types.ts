@@ -12,8 +12,8 @@ export interface AuthState {
 }
 
 export interface Job {
-  job_code: string;
-  job_id: string;
+  job_id: string;   // The UUID (e.g., JOB-2026-00074) - MUST be used for all API calls
+  job_code: string; // The human-readable code (e.g., IT-2026-002) - Used for UI display only
   job_title: string;
   job_client: string;
   job_status: 'Active' | 'Closed' | 'Draft';
@@ -70,7 +70,6 @@ export interface JobDetails extends Job {
   analysis_json: AnalysisJson;
 }
 
-// Added Application interface to satisfy imports in ApplicationsList.tsx
 export interface Application {
   id: string;
   application_id: string; // Required for details lookup

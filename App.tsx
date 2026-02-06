@@ -77,10 +77,12 @@ const App: React.FC = () => {
           <JobsDashboard 
             auth={auth} 
             onViewDetails={(id) => {
+              console.log(`[App] Navigating to job-details. ID (UUID): ${id}`);
               setSelectedJobId(id);
               setCurrentPage('job-details');
             }}
             onViewApplications={(id, filter) => {
+              console.log(`[App] Navigating to applications. ID (UUID): ${id}, Filter: ${filter}`);
               setSelectedJobId(id);
               setAppFilter(filter as ApplicationFilter);
               setCurrentPage('applications');
@@ -146,10 +148,10 @@ const App: React.FC = () => {
         <AddJobModal 
           onClose={() => setIsAddJobOpen(false)} 
           onSuccess={(jobId) => {
+            console.log(`[App] Job created successfully. ID (UUID): ${jobId}`);
             setIsAddJobOpen(false);
             setSelectedJobId(jobId);
             setCurrentPage('job-details');
-            console.log(`Job created successfully. Redirecting to job-details for: ${jobId}`);
           }}
           user={auth.user}
           token={auth.token!}

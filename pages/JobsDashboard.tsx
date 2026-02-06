@@ -36,11 +36,11 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
       } catch (err: any) {
         console.error(err);
         addToast("Failed to fetch jobs. Using placeholder data for demonstration.", "error");
-        // Fallback for demo - added job_id to satisfy Job type
+        // Fallback for demo - added job_id as UUID to satisfy Job type and rules
         setJobs([
-          { job_id: 'JB001-UUID', job_code: 'JB001', job_title: 'Senior Frontend Engineer', job_client: 'Tech Corp', job_status: 'Active', applications_total: 45, applications_qualified: 12, applications_partial: 20, applications_rejected: 13 },
-          { job_id: 'JB002-UUID', job_code: 'JB002', job_title: 'Backend Developer', job_client: 'Data Systems', job_status: 'Active', applications_total: 30, applications_qualified: 5, applications_partial: 10, applications_rejected: 15 },
-          { job_id: 'JB003-UUID', job_code: 'JB003', job_title: 'UX Designer', job_client: 'Creative Lab', job_status: 'Closed', applications_total: 15, applications_qualified: 8, applications_partial: 4, applications_rejected: 3 },
+          { job_id: 'JOB-2026-00074', job_code: 'JB001', job_title: 'Senior Frontend Engineer', job_client: 'Tech Corp', job_status: 'Active', applications_total: 45, applications_qualified: 12, applications_partial: 20, applications_rejected: 13 },
+          { job_id: 'JOB-2026-00075', job_code: 'JB002', job_title: 'Backend Developer', job_client: 'Data Systems', job_status: 'Active', applications_total: 30, applications_qualified: 5, applications_partial: 10, applications_rejected: 15 },
+          { job_id: 'JOB-2026-00076', job_code: 'JB003', job_title: 'UX Designer', job_client: 'Creative Lab', job_status: 'Closed', applications_total: 15, applications_qualified: 8, applications_partial: 4, applications_rejected: 3 },
         ]);
       } finally {
         setLoading(false);
@@ -49,6 +49,17 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
 
     fetchJobs();
   }, [auth.token]);
+
+  // Logging wrappers to ensure job_id vs job_code is correctly tracked
+  const handleViewApplicationsClick = (job: Job, filter: string) => {
+    console.log(`[JobsDashboard] onViewApplications click. job_id (UUID): ${job.job_id}, job_code: ${job.job_code}, filter: ${filter}`);
+    onViewApplications(job.job_id, filter);
+  };
+
+  const handleViewDetailsClick = (job: Job) => {
+    console.log(`[JobsDashboard] onViewDetails click. job_id (UUID): ${job.job_id}, job_code: ${job.job_code}`);
+    onViewDetails(job.job_id);
+  };
 
   return (
     <div className="space-y-6">
@@ -115,7 +126,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button 
-                          onClick={() => onViewApplications(job.job_id, 'all')}
+                          onClick={() => handleViewApplicationsClick(job, 'all')}
                           className="text-sm font-semibold text-primary hover:underline"
                         >
                           {job.applications_total}
@@ -123,7 +134,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button 
-                          onClick={() => onViewApplications(job.job_id, 'qualified')}
+                          onClick={() => handleViewApplicationsClick(job, 'qualified')}
                           className="text-sm font-semibold text-success hover:underline"
                         >
                           {job.applications_qualified}
@@ -131,7 +142,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button 
-                          onClick={() => onViewApplications(job.job_id, 'partial')}
+                          onClick={() => handleViewApplicationsClick(job, 'partial')}
                           className="text-sm font-semibold text-warning hover:underline"
                         >
                           {job.applications_partial}
@@ -139,7 +150,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button 
-                          onClick={() => onViewApplications(job.job_id, 'rejected')}
+                          onClick={() => handleViewApplicationsClick(job, 'rejected')}
                           className="text-sm font-semibold text-error hover:underline"
                         >
                           {job.applications_rejected}
@@ -147,7 +158,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button 
-                          onClick={() => onViewDetails(job.job_id)}
+                          onClick={() => handleViewDetailsClick(job)}
                           className="text-primary hover:text-primaryDark text-sm font-medium"
                         >
                           View Details

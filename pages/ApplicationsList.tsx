@@ -6,7 +6,7 @@ import { Application, AuthState, ApplicationFilter } from '../types';
 import { ApplicationDetails } from './ApplicationDetails';
 
 interface ApplicationsListProps {
-  jobId: string;
+  jobId: string; // This MUST be the job_id (UUID), not job_code
   initialFilter: ApplicationFilter;
   auth: AuthState;
   onBack: () => void;
@@ -24,15 +24,17 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   const fetchApplications = async () => {
+    console.log(`[ApplicationsList] fetchApplications triggered. job_id (UUID): ${jobId}`);
     setLoading(true);
     try {
       const data = await apiService.get(
         WEBHOOK_CONFIG.GET_APPLICATIONS_WEBHOOK_URL, 
-        { job_id: jobId }, // Updated to send job_id only
+        { job_id: jobId }, 
         auth.token!
       );
       setApplicationsAll(Array.isArray(data) ? data : []);
     } catch (err) {
+      console.error("[ApplicationsList] Fetch error:", err);
       addToast("Failed to fetch applications. Showing mock data.", "error");
       const mockApplications: Application[] = [
         { id: 'APP1', application_id: 'uuid-1', candidate_name: 'John Smith', score: 92, status: 'qualified', applied_date: '2023-10-21', summary: 'Strong React experience, excellent culture fit.' },
