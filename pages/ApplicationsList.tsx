@@ -24,7 +24,6 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   const fetchApplications = async () => {
-    // --- DIAGNOSTIC LOGGING: PRE-FETCH ---
     console.log('[ApplicationsList] fetchApplications triggered. job_id (UUID):', jobId);
     console.log('[ApplicationsList] calling GET applications:', WEBHOOK_CONFIG.GET_APPLICATIONS_WEBHOOK_URL);
     console.log('[ApplicationsList] params:', { job_id: jobId });
@@ -37,7 +36,6 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         auth.token!
       );
 
-      // --- DIAGNOSTIC LOGGING: POST-FETCH ---
       console.log('[ApplicationsList] raw API response:', data);
       console.log('[ApplicationsList] response type:', typeof data, 'isArray:', Array.isArray(data));
 
@@ -74,7 +72,6 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
       setView('details');
     } catch (err) {
       addToast("Failed to load application analysis.", "error");
-      // Fallback for demo
       setSelectedDetails({
         ...app,
         analysis: {
@@ -94,6 +91,16 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     fetchApplications();
   }, [jobId]);
 
+  // Compute filtered applications with normalized status check
+  const filteredApplications = filter === 'all' 
+    ? applicationsAll 
+    : applicationsAll.filter(a => (a.status ?? '').toLowerCase().trim() === filter);
+
+  // REQUIRED RENDER LOGS
+  console.log('[ApplicationsList] current filter:', filter);
+  console.log('[ApplicationsList] counts:', { all: applicationsAll.length, filtered: filteredApplications.length });
+  console.log('[ApplicationsList] sample statuses:', applicationsAll.slice(0, 10).map(a => a.status));
+
   if (view === 'details' && selectedDetails) {
     return (
       <ApplicationDetails 
@@ -103,16 +110,10 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     );
   }
 
-  // Define filteredApplications for type consistency, but bypass in UI below
-  const filteredApplications = filter === 'all' 
-    ? applicationsAll 
-    : applicationsAll.filter(a => a.status === filter);
-
-  // --- DIAGNOSTIC LOGGING BEFORE RENDER ---
-  if (applicationsAll.length > 0) {
-    console.log('[ApplicationsList] Render cycle - first row keys:', Object.keys(applicationsAll[0] || {}));
-    console.log('[ApplicationsList] Render cycle - first row data:', applicationsAll[0]);
-  }
+  const handleFilterClick = (f: ApplicationFilter) => {
+    console.log('[ApplicationsList] filter click:', f);
+    setFilter(f);
+  };
 
   return (
     <div className="space-y-6">
@@ -124,16 +125,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
             </svg>
             Back to Campaigns
           </button>
-          <span className="text-[10px] text-textMuted mt-1 font-mono uppercase tracking-tighter">
-            Debug: Filter Bypass Active (Rendering All {applicationsAll.length} Items)
-          </span>
         </div>
 
         <div className="flex bg-slate-100 p-1 rounded-lg">
           {(['all', 'qualified', 'partial', 'rejected'] as ApplicationFilter[]).map((f) => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
+              onClick={() => handleFilterClick(f)}
               className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
                 filter === f ? 'bg-white text-primary shadow-sm' : 'text-textMuted hover:text-textMain'
               }`}
@@ -144,9 +142,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         </div>
       </div>
 
-      {/* NEW TEMPORARY UI DEBUG BLOCK */}
       <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded p-2 font-mono">
-        Debug: items={applicationsAll.length} | filter={filter} | firstStatus={(applicationsAll[0] as any)?.status ?? 'none'} | jobId={jobId}
+        Debug: items={applicationsAll.length} | filtered={filteredApplications.length} | filter={filter} | firstStatus={(applicationsAll[0] as any)?.status ?? 'none'} | jobId={jobId}
       </div>
 
       <div className="grid grid-cols-1 gap-4">
@@ -155,13 +152,12 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
             Loading applications...
           </div>
-        ) : applicationsAll.length === 0 ? (
+        ) : filteredApplications.length === 0 ? (
           <div className="bg-white p-12 rounded-xl border border-border text-center text-textMuted">
             No applications found matching this criteria.
           </div>
         ) : (
-          /* TEMPORARY BYPASS: Rendering applicationsAll directly to see all data */
-          applicationsAll.map((app) => (
+          filteredApplications.map((app) => (
             <div key={app.id || app.application_id} className="bg-white p-6 rounded-xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between hover:border-primary/30 transition-all">
               <div className="flex items-center space-x-6">
                 <div className={`w-14 h-14 rounded-full flex flex-col items-center justify-center font-bold text-white shadow-sm ${
@@ -179,8 +175,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
               <div className="mt-4 md:mt-0 flex flex-col items-end space-y-2">
                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase ${
-                  app.status === 'qualified' ? 'bg-green-100 text-green-800' :
-                  app.status === 'partial' ? 'bg-amber-100 text-amber-800' :
+                  (app.status ?? '').toLowerCase().trim() === 'qualified' ? 'bg-green-100 text-green-800' :
+                  (app.status ?? '').toLowerCase().trim() === 'partial' ? 'bg-amber-100 text-amber-800' :
                   'bg-red-100 text-red-800'
                 }`}>
                   {app.status || 'NO_STATUS'}
