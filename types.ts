@@ -80,4 +80,40 @@ export interface Application {
   summary: string;
 }
 
+export interface ScoreDimension {
+  achieved: number;
+  max: number;
+}
+
+export interface ApplicationDetailedAnalysis {
+  application_id: string;
+  candidate_name: string;
+  decision: 'qualified' | 'partial' | 'rejected';
+  overall_score: number;
+  scores: {
+    skills?: ScoreDimension;
+    experience?: ScoreDimension;
+    education?: ScoreDimension;
+    certifications?: ScoreDimension;
+    soft_skills?: ScoreDimension;
+    domain_knowledge?: ScoreDimension;
+    other_requirements?: ScoreDimension;
+  };
+  analysis: {
+    summary: string;
+    cv_skills_matched?: string;
+    cv_experience_summary?: string;
+    cv_education_summary?: string;
+    cv_certifications_found?: string;
+    gaps_identified?: string[];
+    interview_focus_points?: string[];
+    interview_suggested_questions?: string[];
+    evaluation_notes?: string;
+    // Existing fields for backward compatibility/rendering
+    strengths?: string[];
+    risks?: string[];
+  };
+  raw_ai_response?: any;
+}
+
 export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'all';
