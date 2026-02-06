@@ -11,7 +11,7 @@ import { ToastContainer, ToastType } from './components/Toast';
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<string>('jobs');
-  const [selectedJobCode, setSelectedJobCode] = useState<string | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [appFilter, setAppFilter] = useState<ApplicationFilter>('all');
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
 
@@ -57,7 +57,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     setAuth({ token: null, user: null });
     setCurrentPage('jobs');
-    setSelectedJobCode(null);
+    setSelectedJobId(null);
     addToast("Logged out successfully", "info");
   };
 
@@ -76,12 +76,12 @@ const App: React.FC = () => {
         return (
           <JobsDashboard 
             auth={auth} 
-            onViewDetails={(code) => {
-              setSelectedJobCode(code);
+            onViewDetails={(id) => {
+              setSelectedJobId(id);
               setCurrentPage('job-details');
             }}
-            onViewApplications={(code, filter) => {
-              setSelectedJobCode(code);
+            onViewApplications={(id, filter) => {
+              setSelectedJobId(id);
               setAppFilter(filter as ApplicationFilter);
               setCurrentPage('applications');
             }}
@@ -90,26 +90,26 @@ const App: React.FC = () => {
           />
         );
       case 'job-details':
-        if (!selectedJobCode) {
+        if (!selectedJobId) {
           setCurrentPage('jobs');
           return null;
         }
         return (
           <JobDetails 
-            jobId={selectedJobCode!} // Updated prop name to jobId
+            jobId={selectedJobId!} 
             auth={auth} 
             onBack={() => setCurrentPage('jobs')}
             addToast={addToast}
           />
         );
       case 'applications':
-        if (!selectedJobCode) {
+        if (!selectedJobId) {
           setCurrentPage('jobs');
           return null;
         }
         return (
           <ApplicationsList 
-            jobCode={selectedJobCode!} 
+            jobId={selectedJobId!} 
             initialFilter={appFilter}
             auth={auth} 
             onBack={() => setCurrentPage('jobs')}
@@ -147,7 +147,7 @@ const App: React.FC = () => {
           onClose={() => setIsAddJobOpen(false)} 
           onSuccess={(jobId) => {
             setIsAddJobOpen(false);
-            setSelectedJobCode(jobId);
+            setSelectedJobId(jobId);
             setCurrentPage('job-details');
             console.log(`Job created successfully. Redirecting to job-details for: ${jobId}`);
           }}

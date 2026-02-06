@@ -73,6 +73,7 @@ export interface JobDetails extends Job {
 // Added Application interface to satisfy imports in ApplicationsList.tsx
 export interface Application {
   id: string;
+  application_id: string; // Required for details lookup
   candidate_name: string;
   score: number;
   status: 'qualified' | 'partial' | 'rejected';

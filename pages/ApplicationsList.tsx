@@ -3,9 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { Application, AuthState, ApplicationFilter } from '../types';
+import { ApplicationDetails } from './ApplicationDetails';
 
 interface ApplicationsListProps {
-  jobCode: string;
+  jobId: string;
   initialFilter: ApplicationFilter;
   auth: AuthState;
   onBack: () => void;
@@ -13,39 +14,82 @@ interface ApplicationsListProps {
 }
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({ 
-  jobCode, initialFilter, auth, onBack, addToast 
+  jobId, initialFilter, auth, onBack, addToast 
 }) => {
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [view, setView] = useState<'list' | 'details'>('list');
+  const [applicationsAll, setApplicationsAll] = useState<Application[]>([]);
+  const [selectedDetails, setSelectedDetails] = useState<any | null>(null);
   const [filter, setFilter] = useState<ApplicationFilter>(initialFilter);
   const [loading, setLoading] = useState(true);
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
-  const fetchApplications = async (activeFilter: ApplicationFilter) => {
+  const fetchApplications = async () => {
     setLoading(true);
     try {
       const data = await apiService.get(
         WEBHOOK_CONFIG.GET_APPLICATIONS_WEBHOOK_URL, 
-        { job_code: jobCode, filter: activeFilter }, 
+        { job_id: jobId }, // Updated to send job_id only
         auth.token!
       );
-      setApplications(Array.isArray(data) ? data : []);
+      setApplicationsAll(Array.isArray(data) ? data : []);
     } catch (err) {
       addToast("Failed to fetch applications. Showing mock data.", "error");
-      // Fix: Explicitly type mock data array as Application[] to satisfy status literal type requirements
       const mockApplications: Application[] = [
-        { id: 'APP1', candidate_name: 'John Smith', score: 92, status: 'qualified', applied_date: '2023-10-21', summary: 'Strong React experience, excellent culture fit.' },
-        { id: 'APP2', candidate_name: 'Jane Doe', score: 85, status: 'qualified', applied_date: '2023-10-20', summary: 'Great portfolio, background in SaaS.' },
-        { id: 'APP3', candidate_name: 'Mike Johnson', score: 65, status: 'partial', applied_date: '2023-10-19', summary: 'Missing direct TypeScript experience.' },
-        { id: 'APP4', candidate_name: 'Sarah Wilson', score: 32, status: 'rejected', applied_date: '2023-10-18', summary: 'Incomplete application, low technical alignment.' },
+        { id: 'APP1', application_id: 'uuid-1', candidate_name: 'John Smith', score: 92, status: 'qualified', applied_date: '2023-10-21', summary: 'Strong React experience, excellent culture fit.' },
+        { id: 'APP2', application_id: 'uuid-2', candidate_name: 'Jane Doe', score: 85, status: 'qualified', applied_date: '2023-10-20', summary: 'Great portfolio, background in SaaS.' },
+        { id: 'APP3', application_id: 'uuid-3', candidate_name: 'Mike Johnson', score: 65, status: 'partial', applied_date: '2023-10-19', summary: 'Missing direct TypeScript experience.' },
+        { id: 'APP4', application_id: 'uuid-4', candidate_name: 'Sarah Wilson', score: 32, status: 'rejected', applied_date: '2023-10-18', summary: 'Incomplete application, low technical alignment.' },
       ];
-      setApplications(mockApplications.filter(a => activeFilter === 'all' || a.status === activeFilter));
+      setApplicationsAll(mockApplications);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleViewAnalysis = async (app: Application) => {
+    setDetailsLoading(true);
+    try {
+      const details = await apiService.get(
+        WEBHOOK_CONFIG.APPLICATION_DETAILS_WEBHOOK_URL,
+        { application_id: app.application_id || app.id },
+        auth.token!
+      );
+      setSelectedDetails(details);
+      setView('details');
+    } catch (err) {
+      addToast("Failed to load application analysis.", "error");
+      // Fallback for demo
+      setSelectedDetails({
+        ...app,
+        analysis: {
+          summary: "This candidate shows exceptional promise in frontend architecture...",
+          skills: ["React Expert", "Modern CSS", "Architecture Design"],
+          strengths: ["Clean code enthusiast", "Strong communicator"],
+          risks: ["Hasn't worked in banking sector before"]
+        }
+      });
+      setView('details');
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetchApplications(filter);
-  }, [jobCode, filter]);
+    fetchApplications();
+  }, [jobId]);
+
+  if (view === 'details' && selectedDetails) {
+    return (
+      <ApplicationDetails 
+        data={selectedDetails} 
+        onBack={() => setView('list')} 
+      />
+    );
+  }
+
+  const filteredApplications = filter === 'all' 
+    ? applicationsAll 
+    : applicationsAll.filter(a => a.status === filter);
 
   return (
     <div className="space-y-6">
@@ -74,14 +118,17 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
       <div className="grid grid-cols-1 gap-4">
         {loading ? (
-          <div className="p-12 text-center text-textMuted">Loading applications...</div>
-        ) : applications.length === 0 ? (
+          <div className="p-12 text-center text-textMuted flex flex-col items-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+            Loading applications...
+          </div>
+        ) : filteredApplications.length === 0 ? (
           <div className="bg-white p-12 rounded-xl border border-border text-center text-textMuted">
             No applications found matching this criteria.
           </div>
         ) : (
-          applications.map((app) => (
-            <div key={app.id} className="bg-white p-6 rounded-xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between hover:border-primary/30 transition-all">
+          filteredApplications.map((app) => (
+            <div key={app.id || app.application_id} className="bg-white p-6 rounded-xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between hover:border-primary/30 transition-all">
               <div className="flex items-center space-x-6">
                 <div className={`w-14 h-14 rounded-full flex flex-col items-center justify-center font-bold text-white shadow-sm ${
                   app.score >= 80 ? 'bg-success' : app.score >= 60 ? 'bg-warning' : 'bg-error'
@@ -91,7 +138,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                 </div>
                 <div>
                   <h4 className="text-lg font-bold text-textMain">{app.candidate_name}</h4>
-                  <p className="text-xs text-textMuted">Applied on {app.applied_date} • {app.id}</p>
+                  <p className="text-xs text-textMuted">Applied on {app.applied_date} • {app.id || app.application_id}</p>
                   <p className="text-sm text-textMain mt-2 max-w-xl italic">"{app.summary}"</p>
                 </div>
               </div>
@@ -104,8 +151,12 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                 }`}>
                   {app.status}
                 </span>
-                <button className="text-primary hover:text-primaryDark text-sm font-semibold">
-                  View full analysis →
+                <button 
+                  disabled={detailsLoading}
+                  onClick={() => handleViewAnalysis(app)}
+                  className="text-primary hover:text-primaryDark text-sm font-semibold flex items-center disabled:opacity-50"
+                >
+                  {detailsLoading ? 'Loading analysis...' : 'View full analysis →'}
                 </button>
               </div>
             </div>
