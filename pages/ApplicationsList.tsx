@@ -63,41 +63,44 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   const handleViewAnalysis = async (app: Application) => {
     setDetailsLoading(true);
     try {
-      const details = await apiService.get(
+      const detailsRaw = await apiService.get(
         WEBHOOK_CONFIG.APPLICATION_DETAILS_WEBHOOK_URL,
         { application_id: app.application_id || app.id },
         auth.token!
       );
 
-      console.log('[ApplicationsList] Raw backend details received:', details);
+      console.log("[ApplicationsList] Raw backend details received:", detailsRaw);
 
-      // Normalization Mapping: Convert backend fields into the structure expected by ApplicationDetails
+      const detailsObj = Array.isArray(detailsRaw) ? detailsRaw[0] : detailsRaw;
+
+      console.log("[ApplicationsList] detailsObj (unwrapped):", detailsObj);
+
       const normalized = {
-        application_id: details.application_id,
-        candidate_name: details.candidate_name,
-        score: Number(details.overall_score || 0),
-        status: (details.decision || '').toLowerCase(),
+        application_id: detailsObj?.application_id,
+        candidate_name: detailsObj?.candidate_name,
+        score: Number(detailsObj?.overall_score || detailsObj?.score || 0),
+        status: detailsObj?.decision || detailsObj?.status || "",
 
-        summary: details.analysis?.summary,
-        skills_match: details.analysis?.cv_skills_matched,
-        experience_fit: details.analysis?.cv_experience_summary,
-        education_check: details.analysis?.cv_education_summary,
-        strengths: details.raw_ai_response?.evidence_skills,
-        risks: details.analysis?.gaps_identified,
+        summary: detailsObj?.analysis?.summary,
+        skills_match: detailsObj?.analysis?.cv_skills_matched,
+        experience_fit: detailsObj?.analysis?.cv_experience_summary,
+        education_check: detailsObj?.analysis?.cv_education_summary,
+        strengths: detailsObj?.raw_ai_response?.evidence_skills,
+        risks: detailsObj?.analysis?.gaps_identified,
 
-        scores: details.scores,
-        analysis: details.analysis,
-        raw_ai_response: details.raw_ai_response,
+        scores: detailsObj?.scores,
+        analysis: detailsObj?.analysis,
+        raw_ai_response: detailsObj?.raw_ai_response,
 
-        // Restore compatibility with ApplicationDetails.tsx root property expectations (overall_score and decision)
-        overall_score: Number(details.overall_score || 0),
-        decision: (details.decision || '').toLowerCase()
+        // Root properties required by ApplicationDetails component
+        overall_score: Number(detailsObj?.overall_score || detailsObj?.score || 0),
+        decision: (detailsObj?.decision || detailsObj?.status || "").toLowerCase(),
       };
 
-      console.log('[ApplicationsList] Normalized application details:', normalized);
-      
+      console.log("[ApplicationsList] Normalized application details:", normalized);
+
       setSelectedDetails(normalized);
-      setView('details');
+      setView("details");
     } catch (err) {
       console.error("[ApplicationsList] Details fetch error:", err);
       addToast("Failed to load application analysis.", "error");
