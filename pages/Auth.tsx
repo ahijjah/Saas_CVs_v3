@@ -15,10 +15,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Form States
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   
-  // Registration Form State - strictly matching required API keys
   const [registerForm, setRegisterForm] = useState({
     company_name: '',
     admin_name: '',
@@ -36,25 +34,19 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
     try {
       const response = await apiService.post(WEBHOOK_CONFIG.LOGIN_WEBHOOK_URL, loginForm);
       
-      if (response && response.success === true && response.token) {
-        // Extract ingestion mode from root or nested user object
-        const cv_ingestion_mode = response.cv_ingestion_mode || response.user?.cv_ingestion_mode;
-        
+      if (response && response.token) {
         const userData: User = {
           ...response.user,
           email: response.user?.email || loginForm.email,
-          cv_ingestion_mode: cv_ingestion_mode
+          cv_ingestion_mode: response.cv_ingestion_mode || response.user?.cv_ingestion_mode
         };
-
-        console.log("Auth State Updated - Mode:", cv_ingestion_mode);
         onLoginSuccess(response.token, userData);
       } else {
-        const errorMsg = response?.message || "Invalid credentials. Please try again.";
-        setError(errorMsg);
-        addToast(errorMsg, "error");
+        throw new Error("Missing authentication token.");
       }
     } catch (err: any) {
-      const errorMsg = err.message || "Unable to connect to login service.";
+      // Catch specific backend error message from apiService
+      const errorMsg = err.message || "Unable to sign in.";
       setError(errorMsg);
       addToast(errorMsg, "error");
     } finally {
@@ -66,12 +58,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
     e.preventDefault();
     setError(null);
 
-    // Strict Frontend validation
-    if (!registerForm.company_name || !registerForm.admin_name || !registerForm.admin_email || !registerForm.password) {
-      setError("Please fill in all required fields (Company, Admin Name, Email, Password).");
-      return;
-    }
-
     if (registerForm.password !== registerForm.confirm_password) {
       setError("Passwords do not match");
       return;
@@ -79,36 +65,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
 
     setLoading(true);
     try {
-      // EXPLICIT PAYLOAD CONSTRUCTION
-      // Keys: company_name, admin_name, admin_email, password, confirm_password, cv_ingestion_mode, forward_email (cond)
-      const payload: any = {
-        company_name: registerForm.company_name,
-        admin_name: registerForm.admin_name,
-        admin_email: registerForm.admin_email,
-        password: registerForm.password,
-        confirm_password: registerForm.confirm_password,
-        cv_ingestion_mode: registerForm.cv_ingestion_mode
-      };
-
-      // Only include forward_email if mode is forwarding
-      if (registerForm.cv_ingestion_mode === 'forwarding') {
-        payload.forward_email = registerForm.forward_email;
-      }
-
-      // REQUIRED LOGGING
-      console.log("FINAL PAYLOAD:", payload);
-      
-      const response = await apiService.post(WEBHOOK_CONFIG.REGISTER_WEBHOOK_URL, payload);
-      
-      if (response && (response.success === true || response.status === 'success' || !response.error)) {
-        addToast("Registration successful! Please login.", "success");
-        setActiveTab('login');
-      } else {
-        setError(response?.message || "Registration failed. Server returned an error.");
-      }
+      await apiService.post(WEBHOOK_CONFIG.REGISTER_WEBHOOK_URL, registerForm);
+      addToast("Registration successful!", "success");
+      setActiveTab('login');
     } catch (err: any) {
-      console.error("Registration Request Error:", err);
-      setError(err.message || "Registration failed. Please check your network connection.");
+      setError(err.message || "Registration failed.");
+      addToast(err.message || "Registration failed.", "error");
     } finally {
       setLoading(false);
     }
@@ -116,25 +78,25 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-slate-50">
-      <div className="mb-8 text-center animate-fade-in">
+      <div className="mb-8 text-center">
         <h1 className="text-3xl font-bold text-primary mb-2 tracking-tight">CV Analyzer</h1>
-        <p className="text-textMuted max-w-xs mx-auto">Enterprise-grade resume analysis and job management.</p>
+        <p className="text-textMuted max-w-xs mx-auto">Enterprise resume analysis and hiring intelligence.</p>
       </div>
 
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-border overflow-hidden transition-all duration-300">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-border overflow-hidden">
         <div className="flex border-b border-border bg-slate-50">
           <button
             onClick={() => { setActiveTab('login'); setError(null); }}
-            className={`flex-1 py-4 text-sm font-bold uppercase transition-all ${
-              activeTab === 'login' ? 'bg-white text-primary border-b-2 border-primary' : 'text-textMuted hover:text-textMain'
+            className={`flex-1 py-4 text-xs font-bold uppercase tracking-widest transition-all ${
+              activeTab === 'login' ? 'bg-white text-primary border-b-2 border-primary' : 'text-textMuted'
             }`}
           >
             Sign In
           </button>
           <button
             onClick={() => { setActiveTab('register'); setError(null); }}
-            className={`flex-1 py-4 text-sm font-bold uppercase transition-all ${
-              activeTab === 'register' ? 'bg-white text-primary border-b-2 border-primary' : 'text-textMuted hover:text-textMain'
+            className={`flex-1 py-4 text-xs font-bold uppercase tracking-widest transition-all ${
+              activeTab === 'register' ? 'bg-white text-primary border-b-2 border-primary' : 'text-textMuted'
             }`}
           >
             Register
@@ -143,7 +105,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
 
         <div className="p-8">
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border-l-4 border-error text-error text-sm rounded flex items-start animate-fade-in">
+            <div className="mb-6 p-4 bg-red-50 border-l-4 border-error text-error text-sm rounded flex items-start">
               <svg className="w-5 h-5 mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -154,24 +116,24 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
           {activeTab === 'login' ? (
             <form onSubmit={handleLogin} className="space-y-6">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Work Email</label>
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Work Email</label>
                 <input
                   required
                   type="email"
                   disabled={loading}
-                  className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-3 border border-border rounded-xl outline-none focus:border-primary transition-all"
                   placeholder="name@company.com"
                   value={loginForm.email}
                   onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Password</label>
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Password</label>
                 <input
                   required
                   type="password"
                   disabled={loading}
-                  className="w-full px-4 py-3 border border-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-3 border border-border rounded-xl outline-none focus:border-primary transition-all"
                   placeholder="••••••••"
                   value={loginForm.password}
                   onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
@@ -180,143 +142,61 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-primary hover:bg-primaryDark text-white py-3 rounded-xl font-bold text-lg shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center group"
+                className="w-full bg-primary hover:bg-primaryDark text-white py-3 rounded-xl font-bold shadow-lg shadow-primary/20 transition-all flex items-center justify-center"
               >
-                {loading ? (
-                   <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <>
-                    <span>Sign In</span>
-                    <svg className="w-5 h-5 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                  </>
-                )}
+                {loading ? "Signing in..." : "Sign In"}
               </button>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Company Name <span className="text-error">*</span></label>
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Company Name</label>
                 <input
                   required
                   type="text"
-                  disabled={loading}
-                  className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
-                  placeholder="ACME Inc."
+                  className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary"
                   value={registerForm.company_name}
                   onChange={(e) => setRegisterForm({...registerForm, company_name: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Admin Name <span className="text-error">*</span></label>
-                <input
-                  required
-                  type="text"
-                  disabled={loading}
-                  className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
-                  placeholder="John Doe"
-                  value={registerForm.admin_name}
-                  onChange={(e) => setRegisterForm({...registerForm, admin_name: e.target.value})}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Admin Email <span className="text-error">*</span></label>
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Admin Email</label>
                 <input
                   required
                   type="email"
-                  disabled={loading}
-                  className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
-                  placeholder="admin@company.com"
+                  className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary"
                   value={registerForm.admin_email}
                   onChange={(e) => setRegisterForm({...registerForm, admin_email: e.target.value})}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Password <span className="text-error">*</span></label>
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Password</label>
                   <input
                     required
                     type="password"
-                    disabled={loading}
-                    className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
-                    placeholder="••••••••"
+                    className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary"
                     value={registerForm.password}
                     onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Confirm <span className="text-error">*</span></label>
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Confirm</label>
                   <input
                     required
                     type="password"
-                    disabled={loading}
-                    className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
-                    placeholder="••••••••"
+                    className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary"
                     value={registerForm.confirm_password}
                     onChange={(e) => setRegisterForm({...registerForm, confirm_password: e.target.value})}
                   />
                 </div>
               </div>
-
-              <div className="space-y-2 py-2">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-wider block mb-2">CV Intake Mode</label>
-                <div className="flex space-x-4">
-                  <label className="flex items-center space-x-2 cursor-pointer group">
-                    <input
-                      type="radio"
-                      disabled={loading}
-                      name="cv_ingestion_mode"
-                      className="w-4 h-4 text-primary focus:ring-primary border-border"
-                      checked={registerForm.cv_ingestion_mode === 'platform_email'}
-                      onChange={() => setRegisterForm({...registerForm, cv_ingestion_mode: 'platform_email'})}
-                    />
-                    <span className="text-sm text-textMain group-hover:text-primary transition-colors">Generated</span>
-                  </label>
-                  <label className="flex items-center space-x-2 cursor-pointer group">
-                    <input
-                      type="radio"
-                      disabled={loading}
-                      name="cv_ingestion_mode"
-                      className="w-4 h-4 text-primary focus:ring-primary border-border"
-                      checked={registerForm.cv_ingestion_mode === 'forwarding'}
-                      onChange={() => setRegisterForm({...registerForm, cv_ingestion_mode: 'forwarding'})}
-                    />
-                    <span className="text-sm text-textMain group-hover:text-primary transition-colors">Forwarding</span>
-                  </label>
-                </div>
-              </div>
-
-              {registerForm.cv_ingestion_mode === 'forwarding' && (
-                 <div className="space-y-2 animate-fade-in">
-                  <label className="text-xs font-bold text-textMuted uppercase tracking-wider">Forwarding Source Email</label>
-                  <input
-                    required
-                    type="email"
-                    disabled={loading}
-                    className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary disabled:bg-slate-50"
-                    placeholder="jobs@company.com"
-                    value={registerForm.forward_email}
-                    onChange={(e) => setRegisterForm({...registerForm, forward_email: e.target.value})}
-                  />
-                  <p className="text-[10px] text-textMuted italic">The email address you will use to forward CVs from.</p>
-                </div>
-              )}
-
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-primary hover:bg-primaryDark text-white py-3 rounded-xl font-bold transition-all disabled:opacity-50 mt-4 flex items-center justify-center shadow-lg shadow-primary/20"
+                className="w-full bg-primary hover:bg-primaryDark text-white py-3 rounded-xl font-bold transition-all shadow-lg"
               >
-                {loading ? (
-                   <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : "Create Account"}
+                {loading ? "Creating..." : "Create Account"}
               </button>
             </form>
           )}
