@@ -61,6 +61,13 @@ const App: React.FC = () => {
     addToast("Logged out successfully", "info");
   };
 
+  const handleViewApplications = (id: string, filter: string) => {
+    console.log(`[App] Navigating to applications. ID (UUID): ${id}, Filter: ${filter}`);
+    setSelectedJobId(id);
+    setAppFilter(filter as ApplicationFilter);
+    setCurrentPage('applications');
+  };
+
   if (!auth.token) {
     return (
       <div className="min-h-screen bg-slate-50">
@@ -81,12 +88,7 @@ const App: React.FC = () => {
               setSelectedJobId(id);
               setCurrentPage('job-details');
             }}
-            onViewApplications={(id, filter) => {
-              console.log(`[App] Navigating to applications. ID (UUID): ${id}, Filter: ${filter}`);
-              setSelectedJobId(id);
-              setAppFilter(filter as ApplicationFilter);
-              setCurrentPage('applications');
-            }}
+            onViewApplications={handleViewApplications}
             onAddJob={() => setIsAddJobOpen(true)}
             addToast={addToast}
           />
@@ -101,6 +103,7 @@ const App: React.FC = () => {
             jobId={selectedJobId!} 
             auth={auth} 
             onBack={() => setCurrentPage('jobs')}
+            onViewApplications={handleViewApplications}
             addToast={addToast}
           />
         );

@@ -8,10 +8,11 @@ interface JobDetailsProps {
   jobId: string;
   auth: AuthState;
   onBack: () => void;
+  onViewApplications: (jobId: string, filter: string) => void;
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
-export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, addToast }) => {
+export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onViewApplications, addToast }) => {
   const [details, setDetails] = useState<JobDetailsType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +48,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, add
         setError(errorMsg);
         addToast(errorMsg, "error");
         
-        // Updated Mock Fallback as per specific request
+        // Updated Mock Fallback
         setDetails({
           job_id: jobId,
           job_code: 'JB-772',
@@ -182,18 +183,22 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, add
         </div>
       </section>
 
-      {/* 4️⃣ Applications Overview (KPIs) - Removed Evaluated and Pending */}
+      {/* 4️⃣ Applications Overview (KPIs) - Updated to Dashboard style and Navigation */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total', value: details.applications_total, color: 'text-textMain' },
-          { label: 'Qualifying', value: details.applications_above_threshold || 0, color: 'text-success' },
-          { label: 'Failing', value: details.applications_below_threshold || 0, color: 'text-error' },
-          { label: 'Recommended', value: details.applications_recommended || 0, color: 'text-indigo-600' },
+          { label: 'Total', value: details.applications_total, filter: 'all', color: 'text-textMain' },
+          { label: 'Qualified', value: details.applications_qualified || 0, filter: 'qualified', color: 'text-success' },
+          { label: 'Partial', value: details.applications_partial || 0, filter: 'partial', color: 'text-warning' },
+          { label: 'Rejected', value: details.applications_rejected || 0, filter: 'rejected', color: 'text-error' },
         ].map((kpi, idx) => (
-          <div key={idx} className="bg-white p-5 rounded-2xl border border-border shadow-sm flex flex-col items-center justify-center text-center">
-            <span className={`text-2xl font-black ${kpi.color}`}>{kpi.value}</span>
-            <span className="text-[10px] font-black text-textMuted uppercase tracking-widest mt-1">{kpi.label}</span>
-          </div>
+          <button 
+            key={idx} 
+            onClick={() => onViewApplications(details.job_id, kpi.filter)}
+            className="bg-white p-5 rounded-2xl border border-border shadow-sm flex flex-col items-center justify-center text-center cursor-pointer hover:border-primary/50 hover:shadow-md transition-all group"
+          >
+            <span className={`text-2xl font-black ${kpi.color} group-hover:scale-110 transition-transform`}>{kpi.value}</span>
+            <span className="text-[10px] font-black text-textMuted uppercase tracking-widest mt-1 group-hover:text-primary transition-colors">{kpi.label}</span>
+          </button>
         ))}
       </section>
 
