@@ -6,6 +6,17 @@ export interface User {
   cv_ingestion_mode?: 'platform_email' | 'forwarding';
 }
 
+export interface UserProfile {
+  user_id: string;
+  tenant_id: string;
+  tenant_name: string;
+  admin_name: string;
+  email: string;
+  role: string;
+  intake_method: 'IMAP' | 'FORWARD';
+  forwarding_email: string | null;
+}
+
 export interface AuthState {
   token: string | null;
   user: User | null;

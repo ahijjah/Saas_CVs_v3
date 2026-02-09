@@ -9,7 +9,10 @@ export const WEBHOOK_CONFIG = {
   GET_JOB_DETAILS_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/job-details',
   CREATE_JOB_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/jobs/create',
   GET_APPLICATIONS_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/applications2',
-  APPLICATION_DETAILS_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/application-details'
+  APPLICATION_DETAILS_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/application-details',
+  GET_PROFILE_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/me',
+  UPDATE_PROFILE_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/me',
+  CHANGE_PASSWORD_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/me/change-password'
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

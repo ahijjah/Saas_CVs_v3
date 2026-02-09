@@ -7,6 +7,7 @@ import { JobsDashboard } from './pages/JobsDashboard';
 import { JobDetails } from './pages/JobDetails';
 import { ApplicationsList } from './pages/ApplicationsList';
 import { AddJobModal } from './components/AddJobModal';
+import { Settings } from './pages/Settings';
 import { ToastContainer, ToastType } from './components/Toast';
 
 const App: React.FC = () => {
@@ -118,6 +119,13 @@ const App: React.FC = () => {
             initialFilter={appFilter}
             auth={auth} 
             onBack={() => setCurrentPage('jobs')}
+            addToast={addToast}
+          />
+        );
+      case 'settings':
+        return (
+          <Settings 
+            auth={auth}
             addToast={addToast}
           />
         );
