@@ -65,7 +65,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
 
     setLoading(true);
     try {
-      await apiService.post(WEBHOOK_CONFIG.REGISTER_WEBHOOK_URL, registerForm);
+      // Ensure payload matches backend expectations: admin_name and intake_mode
+      const payload = {
+        ...registerForm,
+        intake_mode: registerForm.cv_ingestion_mode // preferred field name
+      };
+      
+      await apiService.post(WEBHOOK_CONFIG.REGISTER_WEBHOOK_URL, payload);
       addToast("Registration successful!", "success");
       setActiveTab('login');
     } catch (err: any) {
@@ -154,9 +160,22 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
                 <input
                   required
                   type="text"
+                  disabled={loading}
                   className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary"
                   value={registerForm.company_name}
                   onChange={(e) => setRegisterForm({...registerForm, company_name: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Admin Full Name</label>
+                <input
+                  required
+                  type="text"
+                  disabled={loading}
+                  className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary"
+                  placeholder="John Doe"
+                  value={registerForm.admin_name}
+                  onChange={(e) => setRegisterForm({...registerForm, admin_name: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
@@ -164,10 +183,24 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
                 <input
                   required
                   type="email"
+                  disabled={loading}
                   className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary"
+                  placeholder="admin@company.com"
                   value={registerForm.admin_email}
                   onChange={(e) => setRegisterForm({...registerForm, admin_email: e.target.value})}
                 />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Intake Mode</label>
+                <select
+                  disabled={loading}
+                  className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary bg-white"
+                  value={registerForm.cv_ingestion_mode}
+                  onChange={(e) => setRegisterForm({...registerForm, cv_ingestion_mode: e.target.value as any})}
+                >
+                  <option value="platform_email">Platform Email (Dedicated Inbox)</option>
+                  <option value="forwarding">Forwarding (Manual Routing)</option>
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -175,7 +208,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
                   <input
                     required
                     type="password"
+                    disabled={loading}
                     className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary"
+                    placeholder="••••••••"
                     value={registerForm.password}
                     onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
                   />
@@ -185,7 +220,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
                   <input
                     required
                     type="password"
+                    disabled={loading}
                     className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary"
+                    placeholder="••••••••"
                     value={registerForm.confirm_password}
                     onChange={(e) => setRegisterForm({...registerForm, confirm_password: e.target.value})}
                   />
