@@ -65,11 +65,20 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
 
     setLoading(true);
     try {
-      // Ensure payload matches backend expectations: admin_name and intake_mode
-      const payload = {
-        ...registerForm,
-        intake_mode: registerForm.cv_ingestion_mode // preferred field name
+      // Explicit payload construction as per backend expectations
+      const payload: any = {
+        company_name: registerForm.company_name,
+        admin_email: registerForm.admin_email,
+        admin_name: registerForm.admin_name,
+        password: registerForm.password,
+        confirm_password: registerForm.confirm_password,
+        intake_mode: registerForm.cv_ingestion_mode
       };
+
+      // Conditionally include forward_email if mode is forwarding
+      if (registerForm.cv_ingestion_mode === 'forwarding') {
+        payload.forward_email = registerForm.forward_email;
+      }
       
       await apiService.post(WEBHOOK_CONFIG.REGISTER_WEBHOOK_URL, payload);
       addToast("Registration successful!", "success");
@@ -202,6 +211,22 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
                   <option value="forwarding">Forwarding (Manual Routing)</option>
                 </select>
               </div>
+
+              {registerForm.cv_ingestion_mode === 'forwarding' && (
+                <div className="space-y-2 animate-fade-in">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Forwarding Email</label>
+                  <input
+                    required
+                    type="email"
+                    disabled={loading}
+                    className="w-full px-4 py-2 border border-border rounded-lg outline-none focus:border-primary"
+                    placeholder="cv@yourcompany.com"
+                    value={registerForm.forward_email}
+                    onChange={(e) => setRegisterForm({...registerForm, forward_email: e.target.value})}
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Password</label>
