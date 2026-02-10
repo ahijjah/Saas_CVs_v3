@@ -21,7 +21,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [editForm, setEditForm] = useState({
     tenant_name: '',
     admin_name: '',
-    cv_ingestion_mode: 'IMAP' as 'IMAP' | 'FORWARD',
+    cv_ingestion_mode: 'platform_email' as 'platform_email' | 'FORWARD',
     forwarding_email: ''
   });
 
@@ -48,11 +48,15 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
       if (response && response.success && response.profile) {
         const p = response.profile;
         setProfile(p);
+        
+        // Map legacy IMAP to platform_email for display/state consistency
+        const mappedIngestionMode = (p.intake_method === 'IMAP' ? 'platform_email' : p.intake_method) as 'platform_email' | 'FORWARD';
+
         // Initialize form with fetched data
         setEditForm({
           tenant_name: p.tenant_name || '',
           admin_name: p.admin_name || '',
-          cv_ingestion_mode: (p.intake_method as any) || 'IMAP',
+          cv_ingestion_mode: mappedIngestionMode || 'platform_email',
           forwarding_email: p.forwarding_email || ''
         });
       }
@@ -65,10 +69,11 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
 
   const handleCancelEdit = () => {
     if (profile) {
+      const mappedIngestionMode = (profile.intake_method === 'IMAP' ? 'platform_email' : profile.intake_method) as 'platform_email' | 'FORWARD';
       setEditForm({
         tenant_name: profile.tenant_name || '',
         admin_name: profile.admin_name || '',
-        cv_ingestion_mode: (profile.intake_method as any) || 'IMAP',
+        cv_ingestion_mode: mappedIngestionMode || 'platform_email',
         forwarding_email: profile.forwarding_email || ''
       });
     }
@@ -90,6 +95,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     setSavingProfile(true);
     try {
       // Build payload using current edit state with exact backend field names
+      // cv_ingestion_mode is now platform_email or FORWARD
       const payload: any = {
         tenant_name: editForm.tenant_name,
         admin_name: editForm.admin_name,
@@ -165,6 +171,12 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     </button>
   );
 
+  const formatIngestionMode = (mode: string) => {
+    if (mode === 'IMAP' || mode === 'platform_email') return 'Platform Email';
+    if (mode === 'FORWARD') return 'Forwarding';
+    return mode || 'N/A';
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-64 space-y-4">
@@ -217,7 +229,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
             </div>
             <div className="space-y-1">
               <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">CV Ingestion Mode</p>
-              <p className="text-sm font-bold text-textMain">{profile?.intake_method || 'N/A'}</p>
+              <p className="text-sm font-bold text-textMain">{formatIngestionMode(profile?.intake_method || '')}</p>
             </div>
             <div className="space-y-1">
               <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">Tenant Status</p>
@@ -287,19 +299,22 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-textMuted uppercase tracking-widest">CV Ingestion Mode</label>
                   <div className="flex space-x-4 pt-1">
-                    {['IMAP', 'FORWARD'].map((method) => (
-                      <label key={method} className="flex items-center space-x-2 cursor-pointer group">
+                    {[
+                      { value: 'platform_email', label: 'Platform Email' },
+                      { value: 'FORWARD', label: 'Forwarding' }
+                    ].map((mode) => (
+                      <label key={mode.value} className="flex items-center space-x-2 cursor-pointer group">
                         <div className="relative flex items-center justify-center">
                           <input
                             type="radio"
                             className="peer appearance-none w-4 h-4 border border-border rounded-full checked:border-primary transition-all"
-                            checked={editForm.cv_ingestion_mode === method}
-                            onChange={() => setEditForm(prev => ({ ...prev, cv_ingestion_mode: method as any }))}
+                            checked={editForm.cv_ingestion_mode === mode.value}
+                            onChange={() => setEditForm(prev => ({ ...prev, cv_ingestion_mode: mode.value as any }))}
                           />
                           <div className="absolute w-2 h-2 rounded-full bg-primary scale-0 peer-checked:scale-100 transition-transform"></div>
                         </div>
-                        <span className={`text-xs font-bold uppercase tracking-wider ${editForm.cv_ingestion_mode === method ? 'text-primary' : 'text-textMuted group-hover:text-textMain'}`}>
-                          {method}
+                        <span className={`text-xs font-bold uppercase tracking-wider ${editForm.cv_ingestion_mode === mode.value ? 'text-primary' : 'text-textMuted group-hover:text-textMain'}`}>
+                          {mode.label}
                         </span>
                       </label>
                     ))}
