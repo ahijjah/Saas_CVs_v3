@@ -17,11 +17,13 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [savingPassword, setSavingPassword] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Form states
-  const [tenantName, setTenantName] = useState('');
-  const [adminName, setAdminName] = useState('');
-  const [intakeMethod, setIntakeMethod] = useState<'IMAP' | 'FORWARD'>('IMAP');
-  const [forwardingEmail, setForwardingEmail] = useState('');
+  // Consolidated Form State
+  const [editForm, setEditForm] = useState({
+    tenant_name: '',
+    admin_name: '',
+    cv_ingestion_mode: 'IMAP' as 'IMAP' | 'FORWARD',
+    forwarding_email: ''
+  });
 
   // Password form states
   const [passwordForm, setPasswordForm] = useState({
@@ -46,10 +48,13 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
       if (response && response.success && response.profile) {
         const p = response.profile;
         setProfile(p);
-        setTenantName(p.tenant_name || '');
-        setAdminName(p.admin_name || '');
-        setIntakeMethod(p.intake_method || 'IMAP');
-        setForwardingEmail(p.forwarding_email || '');
+        // Initialize form with fetched data
+        setEditForm({
+          tenant_name: p.tenant_name || '',
+          admin_name: p.admin_name || '',
+          cv_ingestion_mode: (p.intake_method as any) || 'IMAP',
+          forwarding_email: p.forwarding_email || ''
+        });
       }
     } catch (err: any) {
       addToast(err.message || "Failed to load profile.", "error");
@@ -60,31 +65,42 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
 
   const handleCancelEdit = () => {
     if (profile) {
-      setTenantName(profile.tenant_name || '');
-      setAdminName(profile.admin_name || '');
-      setIntakeMethod(profile.intake_method || 'IMAP');
-      setForwardingEmail(profile.forwarding_email || '');
+      setEditForm({
+        tenant_name: profile.tenant_name || '',
+        admin_name: profile.admin_name || '',
+        cv_ingestion_mode: (profile.intake_method as any) || 'IMAP',
+        forwarding_email: profile.forwarding_email || ''
+      });
     }
     setIsEditing(false);
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setEditForm(prev => ({ ...prev, [name]: value }));
+  };
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (intakeMethod === 'FORWARD' && (!forwardingEmail || !/^\S+@\S+\.\S+$/.test(forwardingEmail))) {
+    if (editForm.cv_ingestion_mode === 'FORWARD' && (!editForm.forwarding_email || !/^\S+@\S+\.\S+$/.test(editForm.forwarding_email))) {
       addToast("Please provide a valid forwarding email.", "error");
       return;
     }
 
     setSavingProfile(true);
     try {
+      // Build payload using current edit state with exact backend field names
       const payload: any = {
-        tenant_name: tenantName,
-        admin_name: adminName,
-        intake_method: intakeMethod
+        tenant_name: editForm.tenant_name,
+        admin_name: editForm.admin_name,
+        cv_ingestion_mode: editForm.cv_ingestion_mode
       };
-      if (intakeMethod === 'FORWARD') {
-        payload.forwarding_email = forwardingEmail;
+      
+      if (editForm.cv_ingestion_mode === 'FORWARD') {
+        payload.forwarding_email = editForm.forwarding_email;
       }
+
+      console.log("UPDATE PROFILE PAYLOAD", payload);
 
       const response = await apiService.put(WEBHOOK_CONFIG.UPDATE_PROFILE_WEBHOOK_URL, payload, auth.token!);
       
@@ -228,10 +244,11 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                   <label className="text-xs font-black text-textMuted uppercase tracking-widest">Tenant Name</label>
                   <input
                     required
+                    name="tenant_name"
                     type="text"
                     className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm font-medium bg-white"
-                    value={tenantName}
-                    onChange={(e) => setTenantName(e.target.value)}
+                    value={editForm.tenant_name}
+                    onChange={handleInputChange}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -259,11 +276,12 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                   <label className="text-xs font-black text-textMuted uppercase tracking-widest">Admin Name</label>
                   <input
                     required
+                    name="admin_name"
                     type="text"
                     placeholder="e.g. John Smith"
                     className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm font-medium bg-white"
-                    value={adminName}
-                    onChange={(e) => setAdminName(e.target.value)}
+                    value={editForm.admin_name}
+                    onChange={handleInputChange}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -275,28 +293,29 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                           <input
                             type="radio"
                             className="peer appearance-none w-4 h-4 border border-border rounded-full checked:border-primary transition-all"
-                            checked={intakeMethod === method}
-                            onChange={() => setIntakeMethod(method as any)}
+                            checked={editForm.cv_ingestion_mode === method}
+                            onChange={() => setEditForm(prev => ({ ...prev, cv_ingestion_mode: method as any }))}
                           />
                           <div className="absolute w-2 h-2 rounded-full bg-primary scale-0 peer-checked:scale-100 transition-transform"></div>
                         </div>
-                        <span className={`text-xs font-bold uppercase tracking-wider ${intakeMethod === method ? 'text-primary' : 'text-textMuted group-hover:text-textMain'}`}>
+                        <span className={`text-xs font-bold uppercase tracking-wider ${editForm.cv_ingestion_mode === method ? 'text-primary' : 'text-textMuted group-hover:text-textMain'}`}>
                           {method}
                         </span>
                       </label>
                     ))}
                   </div>
                 </div>
-                {intakeMethod === 'FORWARD' && (
+                {editForm.cv_ingestion_mode === 'FORWARD' && (
                   <div className="space-y-1.5 animate-fade-in">
                     <label className="text-xs font-black text-textMuted uppercase tracking-widest">Forwarding Email</label>
                     <input
                       required
+                      name="forwarding_email"
                       type="email"
                       placeholder="cv@company.com"
                       className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm font-medium bg-white"
-                      value={forwardingEmail}
-                      onChange={(e) => setForwardingEmail(e.target.value)}
+                      value={editForm.forwarding_email}
+                      onChange={handleInputChange}
                     />
                   </div>
                 )}
