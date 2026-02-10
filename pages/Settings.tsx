@@ -72,11 +72,8 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         payload.forwarding_email = forwardingEmail;
       }
 
-      const response = await apiService.post(WEBHOOK_CONFIG.UPDATE_PROFILE_WEBHOOK_URL, payload, auth.token!);
-      // Note: Backend might use PUT but we have apiService.post which can be used if configured to handle PUT logic or if endpoint is POST
-      // The prompt says PUT but our apiService has .post and .get. I will assume post for simplicity unless defined otherwise.
-      // Actually prompt says "PUT /cv-saas/me", but our service only has GET and POST.
-      // I'll stick to POST as it's the standard for our webhooks context.
+      // Updated to use .put instead of .post as per backend requirements
+      const response = await apiService.put(WEBHOOK_CONFIG.UPDATE_PROFILE_WEBHOOK_URL, payload, auth.token!);
       
       if (response && response.success) {
         setProfile(response.profile);

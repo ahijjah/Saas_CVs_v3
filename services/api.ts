@@ -55,6 +55,24 @@ export const apiService = {
     return handleResponse(response);
   },
 
+  async put(url: string, data: any, token?: string) {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    
+    const activeToken = token || localStorage.getItem(TOKEN_KEY);
+    if (activeToken) {
+      headers['Authorization'] = `Bearer ${activeToken}`;
+    }
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
+
   async get(url: string, params: Record<string, string> = {}, token?: string) {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
