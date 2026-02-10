@@ -18,6 +18,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [isEditing, setIsEditing] = useState(false);
 
   // Form states
+  const [tenantName, setTenantName] = useState('');
   const [adminName, setAdminName] = useState('');
   const [intakeMethod, setIntakeMethod] = useState<'IMAP' | 'FORWARD'>('IMAP');
   const [forwardingEmail, setForwardingEmail] = useState('');
@@ -45,6 +46,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
       if (response && response.success && response.profile) {
         const p = response.profile;
         setProfile(p);
+        setTenantName(p.tenant_name || '');
         setAdminName(p.admin_name || '');
         setIntakeMethod(p.intake_method || 'IMAP');
         setForwardingEmail(p.forwarding_email || '');
@@ -58,6 +60,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
 
   const handleCancelEdit = () => {
     if (profile) {
+      setTenantName(profile.tenant_name || '');
       setAdminName(profile.admin_name || '');
       setIntakeMethod(profile.intake_method || 'IMAP');
       setForwardingEmail(profile.forwarding_email || '');
@@ -75,6 +78,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     setSavingProfile(true);
     try {
       const payload: any = {
+        tenant_name: tenantName,
         admin_name: adminName,
         intake_method: intakeMethod
       };
@@ -184,7 +188,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         {!isEditing ? (
           <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8 animate-fade-in">
             <div className="space-y-1">
-              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">Company / Tenant</p>
+              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">Tenant Name</p>
               <p className="text-sm font-bold text-textMain">{profile?.tenant_name || 'N/A'}</p>
             </div>
             <div className="space-y-1">
@@ -196,8 +200,18 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
               <p className="text-sm font-bold text-textMain">{profile?.admin_name || 'N/A'}</p>
             </div>
             <div className="space-y-1">
-              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">Intake Method</p>
+              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">CV Ingestion Mode</p>
               <p className="text-sm font-bold text-textMain">{profile?.intake_method || 'N/A'}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">Tenant Status</p>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 uppercase tracking-tighter">
+                Active
+              </span>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">User Role</p>
+              <p className="text-sm font-bold text-textMain">{profile?.role || 'N/A'}</p>
             </div>
             {profile?.intake_method === 'FORWARD' && (
               <div className="space-y-1 md:col-span-2">
@@ -211,12 +225,13 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-black text-textMuted uppercase tracking-widest">Company / Tenant (Read-only)</label>
+                  <label className="text-xs font-black text-textMuted uppercase tracking-widest">Tenant Name</label>
                   <input
-                    readOnly
+                    required
                     type="text"
-                    className="w-full px-4 py-2 border border-border rounded-lg bg-slate-50 text-textMuted text-sm outline-none cursor-not-allowed opacity-60"
-                    value={profile?.tenant_name || ''}
+                    className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm font-medium bg-white"
+                    value={tenantName}
+                    onChange={(e) => setTenantName(e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -224,8 +239,17 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                   <input
                     readOnly
                     type="text"
-                    className="w-full px-4 py-2 border border-border rounded-lg bg-slate-50 text-textMuted text-sm outline-none cursor-not-allowed opacity-60"
+                    className="w-full px-4 py-2 border border-border rounded-lg bg-slate-100 text-textMuted text-sm outline-none cursor-not-allowed opacity-60"
                     value={profile?.email || ''}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-textMuted uppercase tracking-widest">Tenant Status (Read-only)</label>
+                  <input
+                    readOnly
+                    type="text"
+                    className="w-full px-4 py-2 border border-border rounded-lg bg-slate-100 text-green-800 text-sm outline-none cursor-not-allowed font-bold"
+                    value="ACTIVE"
                   />
                 </div>
               </div>
@@ -243,7 +267,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-black text-textMuted uppercase tracking-widest">Intake Method</label>
+                  <label className="text-xs font-black text-textMuted uppercase tracking-widest">CV Ingestion Mode</label>
                   <div className="flex space-x-4 pt-1">
                     {['IMAP', 'FORWARD'].map((method) => (
                       <label key={method} className="flex items-center space-x-2 cursor-pointer group">
@@ -274,9 +298,17 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                       value={forwardingEmail}
                       onChange={(e) => setForwardingEmail(e.target.value)}
                     />
-                    <p className="text-[10px] text-textMuted italic">CVs sent to this address will be automatically routed for analysis.</p>
                   </div>
                 )}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-textMuted uppercase tracking-widest">User Role (Read-only)</label>
+                  <input
+                    readOnly
+                    type="text"
+                    className="w-full px-4 py-2 border border-border rounded-lg bg-slate-100 text-textMuted text-sm outline-none cursor-not-allowed opacity-60"
+                    value={profile?.role || ''}
+                  />
+                </div>
               </div>
             </div>
 
@@ -302,7 +334,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         )}
       </section>
 
-      {/* Change Password Section */}
+      {/* Change Password Section (Unchanged per instructions) */}
       <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
         <div className="px-8 py-6 border-b border-border bg-slate-50">
           <h3 className="text-lg font-bold text-textMain">Security</h3>
