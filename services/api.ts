@@ -91,5 +91,12 @@ export const apiService = {
       headers,
     });
     return handleResponse(response);
+  },
+
+  /**
+   * Public request to send a password reset email.
+   */
+  async requestPasswordReset(email: string) {
+    return this.post(WEBHOOK_CONFIG.FORGOT_PASSWORD_WEBHOOK_URL, { email });
   }
 };

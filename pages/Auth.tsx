@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
@@ -165,7 +166,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Password</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Password</label>
+                  <a href="/forgot-password" className="text-[10px] font-bold text-primary hover:underline uppercase tracking-widest">
+                    Forgot password?
+                  </a>
+                </div>
                 <div className="relative">
                   <input
                     required

@@ -9,6 +9,7 @@ import { ApplicationsList } from './pages/ApplicationsList';
 import { AddJobModal } from './components/AddJobModal';
 import { Settings } from './pages/Settings';
 import { ResetPassword } from './pages/ResetPassword';
+import { ForgotPassword } from './pages/ForgotPassword';
 import { ToastContainer, ToastType } from './components/Toast';
 
 const App: React.FC = () => {
@@ -72,7 +73,7 @@ const App: React.FC = () => {
     setCurrentPage('applications');
   };
 
-  // Handle simple routing for reset password
+  // Handle simple routing
   const path = window.location.pathname;
   if (path === '/reset-password') {
     return (
@@ -81,6 +82,15 @@ const App: React.FC = () => {
           addToast={addToast} 
           onSuccess={handleLogout} 
         />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </div>
+    );
+  }
+
+  if (path === '/forgot-password') {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <ForgotPassword addToast={addToast} />
         <ToastContainer toasts={toasts} removeToast={removeToast} />
       </div>
     );
