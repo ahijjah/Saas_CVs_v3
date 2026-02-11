@@ -8,6 +8,7 @@ import { JobDetails } from './pages/JobDetails';
 import { ApplicationsList } from './pages/ApplicationsList';
 import { AddJobModal } from './components/AddJobModal';
 import { Settings } from './pages/Settings';
+import { ResetPassword } from './pages/ResetPassword';
 import { ToastContainer, ToastType } from './components/Toast';
 
 const App: React.FC = () => {
@@ -56,10 +57,12 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('cv_analyzer_auth');
     setAuth({ token: null, user: null });
     setCurrentPage('jobs');
     setSelectedJobId(null);
-    addToast("Logged out successfully", "info");
   };
 
   const handleViewApplications = (id: string, filter: string) => {
@@ -68,6 +71,20 @@ const App: React.FC = () => {
     setAppFilter(filter as ApplicationFilter);
     setCurrentPage('applications');
   };
+
+  // Handle simple routing for reset password
+  const path = window.location.pathname;
+  if (path === '/reset-password') {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <ResetPassword 
+          addToast={addToast} 
+          onSuccess={handleLogout} 
+        />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </div>
+    );
+  }
 
   if (!auth.token) {
     return (
@@ -148,7 +165,10 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-background">
       <Layout 
         user={auth.user} 
-        onLogout={handleLogout} 
+        onLogout={() => {
+          handleLogout();
+          addToast("Logged out successfully", "info");
+        }} 
         currentPage={currentPage} 
         onNavigate={setCurrentPage}
       >
