@@ -16,6 +16,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   // Consolidated Form State
   const [editForm, setEditForm] = useState({
@@ -95,7 +96,6 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     setSavingProfile(true);
     try {
       // Build payload using current edit state with exact backend field names
-      // cv_ingestion_mode is now platform_email or FORWARD
       const payload: any = {
         tenant_name: editForm.tenant_name,
         admin_name: editForm.admin_name,
@@ -138,6 +138,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
       const response = await apiService.post(WEBHOOK_CONFIG.CHANGE_PASSWORD_WEBHOOK_URL, passwordForm, auth.token!);
       if (response && response.success) {
         addToast("Password changed successfully!", "success");
+        setIsChangingPassword(false);
         setPasswordForm({
           current_password: '',
           new_password: '',
@@ -149,6 +150,15 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     } finally {
       setSavingPassword(false);
     }
+  };
+
+  const handleCancelPassword = () => {
+    setIsChangingPassword(false);
+    setPasswordForm({
+      current_password: '',
+      new_password: '',
+      confirm_password: ''
+    });
   };
 
   const PasswordToggle = ({ isVisible, onToggle, label }: { isVisible: boolean, onToggle: () => void, label: string }) => (
@@ -198,7 +208,10 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
           <div className="flex items-center space-x-3">
             {!isEditing && (
               <button 
-                onClick={() => setIsEditing(true)}
+                onClick={() => {
+                  setIsEditing(true);
+                  setIsChangingPassword(false);
+                }}
                 className="flex items-center space-x-2 px-4 py-1.5 bg-white border border-border rounded-lg text-xs font-bold text-textMain hover:bg-slate-100 transition-colors shadow-sm"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -368,79 +381,110 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         )}
       </section>
 
-      {/* Change Password Section (Unchanged per instructions) */}
+      {/* Change Password Section */}
       <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
-        <div className="px-8 py-6 border-b border-border bg-slate-50">
-          <h3 className="text-lg font-bold text-textMain">Security</h3>
-          <p className="text-xs text-textMuted font-semibold uppercase tracking-wider">Manage your account password</p>
+        <div className="px-8 py-6 border-b border-border bg-slate-50 flex justify-between items-center">
+          <div>
+            <h3 className="text-lg font-bold text-textMain">Security</h3>
+            <p className="text-xs text-textMuted font-semibold uppercase tracking-wider">Manage your account password</p>
+          </div>
+          {!isChangingPassword && (
+            <button 
+              onClick={() => {
+                setIsChangingPassword(true);
+                setIsEditing(false);
+              }}
+              className="flex items-center space-x-2 px-4 py-1.5 bg-white border border-border rounded-lg text-xs font-bold text-textMain hover:bg-slate-100 transition-colors shadow-sm"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+              <span>Change Password</span>
+            </button>
+          )}
         </div>
 
-        <form onSubmit={handleChangePassword} className="p-8 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-1.5">
-              <label className="text-xs font-black text-textMuted uppercase tracking-widest">Current Password</label>
-              <div className="relative">
-                <input
-                  required
-                  type={showCurrentPassword ? "text" : "password"}
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={passwordForm.current_password}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
-                />
-                <PasswordToggle 
-                  isVisible={showCurrentPassword} 
-                  onToggle={() => setShowCurrentPassword(!showCurrentPassword)} 
-                  label="current password" 
-                />
+        {isChangingPassword ? (
+          <form onSubmit={handleChangePassword} className="p-8 space-y-6 animate-fade-in bg-slate-50/30">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-textMuted uppercase tracking-widest">Current Password</label>
+                <div className="relative">
+                  <input
+                    required
+                    type={showCurrentPassword ? "text" : "password"}
+                    className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
+                    value={passwordForm.current_password}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
+                  />
+                  <PasswordToggle 
+                    isVisible={showCurrentPassword} 
+                    onToggle={() => setShowCurrentPassword(!showCurrentPassword)} 
+                    label="current password" 
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-textMuted uppercase tracking-widest">New Password</label>
+                <div className="relative">
+                  <input
+                    required
+                    type={showNewPassword ? "text" : "password"}
+                    className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
+                    value={passwordForm.new_password}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
+                  />
+                  <PasswordToggle 
+                    isVisible={showNewPassword} 
+                    onToggle={() => setShowNewPassword(!showNewPassword)} 
+                    label="new password" 
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-textMuted uppercase tracking-widest">Confirm New Password</label>
+                <div className="relative">
+                  <input
+                    required
+                    type={showConfirmPassword ? "text" : "password"}
+                    className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
+                    value={passwordForm.confirm_password}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
+                  />
+                  <PasswordToggle 
+                    isVisible={showConfirmPassword} 
+                    onToggle={() => setShowConfirmPassword(!showConfirmPassword)} 
+                    label="confirm new password" 
+                  />
+                </div>
               </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-black text-textMuted uppercase tracking-widest">New Password</label>
-              <div className="relative">
-                <input
-                  required
-                  type={showNewPassword ? "text" : "password"}
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={passwordForm.new_password}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
-                />
-                <PasswordToggle 
-                  isVisible={showNewPassword} 
-                  onToggle={() => setShowNewPassword(!showNewPassword)} 
-                  label="new password" 
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-black text-textMuted uppercase tracking-widest">Confirm New Password</label>
-              <div className="relative">
-                <input
-                  required
-                  type={showConfirmPassword ? "text" : "password"}
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={passwordForm.confirm_password}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
-                />
-                <PasswordToggle 
-                  isVisible={showConfirmPassword} 
-                  onToggle={() => setShowConfirmPassword(!showConfirmPassword)} 
-                  label="confirm new password" 
-                />
-              </div>
-            </div>
-          </div>
 
-          <div className="pt-6 border-t border-border flex justify-end">
-            <button
-              type="submit"
-              disabled={savingPassword}
-              className="bg-slate-900 hover:bg-black text-white px-8 py-2.5 rounded-xl font-bold shadow-lg transition-all flex items-center space-x-2 disabled:opacity-50"
-            >
-              {savingPassword && <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>}
-              <span>{savingPassword ? 'Changing...' : 'Change Password'}</span>
-            </button>
+            <div className="pt-6 border-t border-border flex justify-end space-x-4">
+              <button
+                type="button"
+                onClick={handleCancelPassword}
+                disabled={savingPassword}
+                className="px-6 py-2.5 rounded-xl font-bold text-textMuted hover:text-textMain transition-all text-sm disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingPassword}
+                className="bg-slate-900 hover:bg-black text-white px-8 py-2.5 rounded-xl font-bold shadow-lg transition-all flex items-center space-x-2 disabled:opacity-50"
+              >
+                {savingPassword && <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>}
+                <span>{savingPassword ? 'Changing...' : 'Update Password'}</span>
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="px-8 py-10 text-center bg-white">
+            <p className="text-sm text-textMuted mb-2">Your password was last changed recently.</p>
+            <p className="text-xs text-textMuted opacity-60">We recommend changing your password every 90 days to keep your account secure.</p>
           </div>
-        </form>
+        )}
       </section>
     </div>
   );
