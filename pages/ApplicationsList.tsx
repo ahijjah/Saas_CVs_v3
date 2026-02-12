@@ -104,6 +104,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     setFilter(f);
   };
 
+  const getStatusStyles = (status: string) => {
+    const s = (status || '').toLowerCase().trim();
+    if (s === 'qualified') return { pill: 'bg-green-100 text-green-800', badge: 'bg-success' };
+    if (s === 'partial') return { pill: 'bg-amber-100 text-amber-800', badge: 'bg-warning' };
+    return { pill: 'bg-red-100 text-red-800', badge: 'bg-error' };
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -140,40 +147,37 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
             No applications found matching this criteria.
           </div>
         ) : (
-          filteredApplications.map((app) => (
-            <div key={app.id || app.application_id} className="bg-white p-6 rounded-xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between hover:border-primary/30 transition-all">
-              <div className="flex items-center space-x-6">
-                <div className={`w-14 h-14 rounded-full flex flex-col items-center justify-center font-bold text-white shadow-sm ${
-                  app.score >= 80 ? 'bg-success' : app.score >= 60 ? 'bg-warning' : 'bg-error'
-                }`}>
-                  <span className="text-lg">{app.score}</span>
-                  <span className="text-[10px] opacity-80 uppercase leading-none">PTS</span>
+          filteredApplications.map((app) => {
+            const styles = getStatusStyles(app.status);
+            return (
+              <div key={app.id || app.application_id} className="bg-white p-6 rounded-xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between hover:border-primary/30 transition-all">
+                <div className="flex items-center space-x-6">
+                  <div className={`w-14 h-14 aspect-square shrink-0 flex-none rounded-full flex flex-col items-center justify-center font-bold text-white shadow-sm ${styles.badge}`}>
+                    <span className="text-lg leading-none">{app.score}</span>
+                    <span className="text-[10px] opacity-80 uppercase leading-none mt-0.5">PTS</span>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-textMain">{app.candidate_name}</h4>
+                    <p className="text-xs text-textMuted">Applied on {app.applied_date}</p>
+                    <p className="text-sm text-textMain mt-2 max-w-xl italic">"{app.summary}"</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-lg font-bold text-textMain">{app.candidate_name}</h4>
-                  <p className="text-xs text-textMuted">Applied on {app.applied_date}</p>
-                  <p className="text-sm text-textMain mt-2 max-w-xl italic">"{app.summary}"</p>
-                </div>
-              </div>
 
-              <div className="mt-4 md:mt-0 flex flex-col items-end space-y-2">
-                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                  (app.status ?? '').toLowerCase().trim() === 'qualified' ? 'bg-green-100 text-green-800' :
-                  (app.status ?? '').toLowerCase().trim() === 'partial' ? 'bg-amber-100 text-amber-800' :
-                  'bg-red-100 text-red-800'
-                }`}>
-                  {app.status}
-                </span>
-                <button 
-                  disabled={detailsLoading}
-                  onClick={() => handleViewAnalysis(app)}
-                  className="text-primary hover:text-primaryDark text-sm font-semibold flex items-center disabled:opacity-50"
-                >
-                  {detailsLoading ? 'Loading analysis...' : 'View full analysis →'}
-                </button>
+                <div className="mt-4 md:mt-0 flex flex-col items-end space-y-2">
+                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${styles.pill}`}>
+                    {app.status}
+                  </span>
+                  <button 
+                    disabled={detailsLoading}
+                    onClick={() => handleViewAnalysis(app)}
+                    className="text-primary hover:text-primaryDark text-sm font-semibold flex items-center disabled:opacity-50"
+                  >
+                    {detailsLoading ? 'Loading analysis...' : 'View full analysis →'}
+                  </button>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
