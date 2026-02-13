@@ -14,14 +14,49 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { AdminUsers } from './pages/AdminUsers';
 import { ToastContainer, ToastType } from './components/Toast';
 
+/**
+ * Helper to decode JWT payload without external libraries.
+ */
+function decodeJwtPayload(token: string) {
+  try {
+    const payload = token.split('.')[1];
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 const App: React.FC = () => {
-  // Auth State - initialized from individual localStorage keys
+  // Auth State - initialized from individual localStorage keys and JWT decoding
   const [auth, setAuth] = useState<AuthState>(() => {
     try {
       const token = localStorage.getItem('token');
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
-      return { token, user };
+      if (token) {
+        const payload = decodeJwtPayload(token);
+        if (payload) {
+          const role = String(payload.role ?? '').toLowerCase();
+          const tenant_id = String(payload.tenant_id ?? '');
+          const email = String(payload.email ?? '');
+          const sub = String(payload.sub ?? '');
+
+          // Try to get cached user metadata for tenant names etc, but trust token for role
+          const userStr = localStorage.getItem('user');
+          const cachedUser = userStr ? JSON.parse(userStr) : {};
+
+          return {
+            token,
+            user: { 
+              ...cachedUser,
+              role, 
+              tenant_id, 
+              email, 
+              sub 
+            }
+          };
+        }
+      }
+      return { token: null, user: null };
     } catch (e) {
       return { token: null, user: null };
     }
@@ -29,11 +64,11 @@ const App: React.FC = () => {
 
   const isSuperAdmin = auth.user?.role?.toLowerCase() === 'super_admin';
   
-  // Set initial page based on role
+  // Set initial page based on role and persistence
   const [currentPage, setCurrentPage] = useState<string>(() => {
     const saved = localStorage.getItem('last_page');
     if (saved) return saved;
-    return auth.user?.role?.toLowerCase() === 'super_admin' ? 'admin-dashboard' : 'jobs';
+    return isSuperAdmin ? 'admin-dashboard' : 'jobs';
   });
 
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -68,10 +103,22 @@ const App: React.FC = () => {
   }, [currentPage]);
 
   const handleLoginSuccess = (token: string, user: User) => {
-    setAuth({ token, user });
+    // Decode token to ensure we have the most authoritative role
+    const payload = decodeJwtPayload(token);
+    const role = String(payload?.role ?? user.role ?? '').toLowerCase();
+    
+    const updatedUser = {
+      ...user,
+      role,
+      tenant_id: payload?.tenant_id || user.tenant_id,
+      email: payload?.email || user.email
+    };
+
+    setAuth({ token, user: updatedUser });
     addToast("Welcome back!", "success");
-    // Routing Logic: Super Admin goes to admin dashboard
-    if (user.role?.toLowerCase() === 'super_admin') {
+
+    // Routing Logic based on normalized role
+    if (role === 'super_admin') {
       setCurrentPage('admin-dashboard');
     } else {
       setCurrentPage('jobs');
@@ -94,7 +141,7 @@ const App: React.FC = () => {
     setCurrentPage('applications');
   };
 
-  // Handle simple routing
+  // Handle simple routing for external links
   const path = window.location.pathname;
   if (path === '/reset-password') {
     return (
@@ -127,8 +174,10 @@ const App: React.FC = () => {
   }
 
   const renderContent = () => {
-    // Access Control: If not super_admin but trying to see admin pages, redirect
-    if (!isSuperAdmin && (currentPage === 'admin-dashboard' || currentPage === 'admin-users')) {
+    const role = (auth.user?.role || '').toLowerCase();
+
+    // Access Control: Protect super_admin pages
+    if (role !== 'super_admin' && (currentPage === 'admin-dashboard' || currentPage === 'admin-users')) {
       setCurrentPage('jobs');
       return null;
     }
@@ -187,11 +236,12 @@ const App: React.FC = () => {
           />
         );
       default:
+        // Default redirect based on role
         return (
           <div className="flex flex-col items-center justify-center h-full py-12 text-center">
             <h3 className="text-lg font-medium text-textMain">Page not found</h3>
             <button 
-              onClick={() => setCurrentPage(isSuperAdmin ? 'admin-dashboard' : 'jobs')}
+              onClick={() => setCurrentPage(role === 'super_admin' ? 'admin-dashboard' : 'jobs')}
               className="mt-4 text-primary hover:underline"
             >
               Return to dashboard
