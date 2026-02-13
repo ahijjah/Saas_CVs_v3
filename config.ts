@@ -14,7 +14,13 @@ export const WEBHOOK_CONFIG = {
   UPDATE_PROFILE_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/me',
   CHANGE_PASSWORD_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/me/change-password',
   RESET_PASSWORD_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/reset-password',
-  FORGOT_PASSWORD_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/forgot-password'
+  FORGOT_PASSWORD_WEBHOOK_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/forgot-password',
+  // Super Admin Endpoints
+  ADMIN_DASHBOARD_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/admin/dashboard',
+  ADMIN_TENANTS_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/admin/tenants',
+  ADMIN_USERS_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/admin/users',
+  ADMIN_USER_STATUS_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/admin/users/status',
+  ADMIN_TENANT_STATUS_URL: 'https://n8n.ai970.cloud/webhook/cv-saas/admin/tenants/status'
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

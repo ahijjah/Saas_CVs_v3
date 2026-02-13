@@ -1,8 +1,11 @@
 
 export interface User {
+  user_id?: string;
+  sub?: string;
+  tenant_id?: string;
   email: string;
   role: string;
-  tenant_name: string;
+  tenant_name?: string;
   cv_ingestion_mode?: 'platform_email' | 'forwarding';
 }
 
@@ -20,6 +23,41 @@ export interface UserProfile {
 export interface AuthState {
   token: string | null;
   user: User | null;
+}
+
+// Super Admin Interfaces
+export interface AdminOverview {
+  total_tenants: number;
+  active_tenants: number;
+  total_users: number;
+  total_jobs: number;
+  total_applications: number;
+  applications_today: number;
+  failed_ingest_24h: number;
+}
+
+export interface Tenant {
+  tenant_id: string;
+  tenant_name: string;
+  tenant_code: string;
+  status: 'active' | 'suspended';
+  created_at: string;
+  users_count: number;
+  jobs_count: number;
+  applications_count: number;
+}
+
+export interface AdminUser {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  status: 'active' | 'disabled';
+  created_at: string;
+  last_login_at: string | null;
+  tenant_id: string;
+  tenant_name: string;
+  tenant_code: string;
 }
 
 export interface Job {
