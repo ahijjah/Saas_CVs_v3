@@ -98,8 +98,18 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                   <div key={job.job_id} className="p-4 space-y-4">
                     <div className="flex justify-between items-start">
                       <div className="min-w-0 flex-1 pr-2">
-                        <div className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{job.job_code}</div>
-                        <div className="text-sm font-bold text-textMain truncate">{job.job_title}</div>
+                        <button 
+                          onClick={() => handleViewDetailsClick(job)}
+                          className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1 hover:text-primary hover:underline transition-colors text-left block"
+                        >
+                          {job.job_code}
+                        </button>
+                        <button 
+                          onClick={() => handleViewDetailsClick(job)}
+                          className="text-sm font-bold text-textMain truncate hover:text-primary hover:underline transition-colors text-left block w-full"
+                        >
+                          {job.job_title}
+                        </button>
                         <div className="text-xs text-textMuted truncate">{job.job_client}</div>
                       </div>
                       <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tighter ${
@@ -186,9 +196,21 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                   ) : (
                     jobs.map((job) => (
                       <tr key={job.job_id} className="hover:bg-slate-50 transition-colors group">
-                        <td className="px-6 py-4 text-sm font-medium text-textMain whitespace-nowrap">{job.job_code}</td>
+                        <td className="px-6 py-4 text-sm font-medium whitespace-nowrap">
+                          <button 
+                            onClick={() => handleViewDetailsClick(job)}
+                            className="text-primary hover:underline transition-colors font-medium"
+                          >
+                            {job.job_code}
+                          </button>
+                        </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm font-semibold text-textMain whitespace-nowrap">{job.job_title}</div>
+                          <button 
+                            onClick={() => handleViewDetailsClick(job)}
+                            className="text-sm font-semibold text-primary hover:underline transition-colors text-left block"
+                          >
+                            {job.job_title}
+                          </button>
                           <div className="text-xs text-textMuted whitespace-nowrap">{job.job_client}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
