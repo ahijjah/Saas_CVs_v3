@@ -469,7 +469,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
               return (
                 <div key={f.title} className={`group rounded-2xl border p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-white ${c.border}`}>
                   <div className={`w-12 h-12 rounded-xl ${c.bg} flex items-center justify-center mb-4`}>
-                    <div style={{ background: `linear-gradient(135deg,${c.cs},${c.ce})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+                    <div style={{ color: c.cs }}>
                       {featureIcons[i]}
                     </div>
                   </div>
