@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthState, User, ApplicationFilter } from './types';
 import { AuthPage } from './pages/Auth';
+import { LandingPage } from './pages/LandingPage';
 import { Layout } from './components/Layout';
 import { JobsDashboard } from './pages/JobsDashboard';
 import { JobDetails } from './pages/JobDetails';
@@ -74,6 +75,7 @@ const App: React.FC = () => {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [appFilter, setAppFilter] = useState<ApplicationFilter>('all');
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
 
   const [toasts, setToasts] = useState<{ id: number; message: string; type: ToastType }[]>([]);
   
@@ -133,6 +135,7 @@ const App: React.FC = () => {
     setAuth({ token: null, user: null });
     setCurrentPage('jobs');
     setSelectedJobId(null);
+    setShowAuth(false);
   };
 
   const handleViewApplications = (id: string, filter: string) => {
@@ -165,6 +168,14 @@ const App: React.FC = () => {
   }
 
   if (!auth.token) {
+    if (!showAuth) {
+      return (
+        <LandingPage
+          onGetStarted={() => setShowAuth(true)}
+          onSignIn={() => setShowAuth(true)}
+        />
+      );
+    }
     return (
       <div className="min-h-screen bg-slate-50">
         <AuthPage onLoginSuccess={handleLoginSuccess} addToast={addToast} />
