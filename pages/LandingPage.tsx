@@ -308,6 +308,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
     return () => window.removeEventListener('scroll', h);
   }, []);
 
+  // Keep document-level lang + dir in sync so screen readers and browsers respond correctly
+  useEffect(() => {
+    document.documentElement.lang = lang === 'ar' ? 'ar' : 'en';
+    document.documentElement.dir  = lang === 'ar' ? 'rtl' : 'ltr';
+    return () => {
+      document.documentElement.lang = 'en';
+      document.documentElement.dir  = 'ltr';
+    };
+  }, [lang]);
+
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
 
   const Arrow = () => (

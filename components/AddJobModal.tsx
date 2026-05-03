@@ -43,9 +43,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     end_date: ''
   });
 
-  useEffect(() => {
-    console.log("AddJobModal mounted. User context:", user);
-  }, [user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -82,8 +79,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
         payload,
         token
       );
-
-      console.log("CREATE JOB RESPONSE:", responseData);
 
       const createdJobId = responseData.job_id || responseData.job_code || formData.job_code;
       addToast("Job campaign created successfully!", "success");

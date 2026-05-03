@@ -106,8 +106,6 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         payload.forwarding_email = editForm.forwarding_email;
       }
 
-      console.log("UPDATE PROFILE PAYLOAD", payload);
-
       const response = await apiService.put(WEBHOOK_CONFIG.UPDATE_PROFILE_WEBHOOK_URL, payload, auth.token!);
       
       if (response && response.success) {

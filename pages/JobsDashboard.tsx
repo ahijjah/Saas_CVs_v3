@@ -50,14 +50,11 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
     fetchJobs();
   }, [auth.token, addToast]);
 
-  // Logging wrappers to ensure job_id vs job_code is correctly tracked
   const handleViewApplicationsClick = (job: Job, filter: string) => {
-    console.log(`[JobsDashboard] onViewApplications click. job_id (UUID): ${job.job_id}, job_code: ${job.job_code}, filter: ${filter}`);
     onViewApplications(job.job_id, filter);
   };
 
   const handleViewDetailsClick = (job: Job) => {
-    console.log(`[JobsDashboard] onViewDetails click. job_id (UUID): ${job.job_id}, job_code: ${job.job_code}`);
     onViewDetails(job.job_id);
   };
 
