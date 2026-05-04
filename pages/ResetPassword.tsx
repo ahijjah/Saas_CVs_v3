@@ -3,21 +3,64 @@ import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { ToastType } from '../components/Toast';
+import { useLanguage } from '../context/LanguageContext';
 
 interface ResetPasswordProps {
   addToast: (msg: string, type: ToastType) => void;
   onSuccess: () => void;
 }
 
+const T = {
+  en: {
+    subtitle: 'Security & Identity',
+    title: 'Reset Password',
+    desc: 'Please enter a new secure password for your account.',
+    newPassword: 'New Password',
+    confirmPassword: 'Confirm Password',
+    minChars: 'Min 9 characters',
+    repeat: 'Repeat password',
+    updating: 'Updating...',
+    resetBtn: 'Reset Password',
+    successTitle: 'Password Updated!',
+    successDesc: 'You will be redirected to the login page in a few seconds.',
+    redirectLink: 'Click here if not redirected',
+    langBtn: 'عربي',
+  },
+  ar: {
+    subtitle: 'الأمان والهوية',
+    title: 'إعادة تعيين كلمة المرور',
+    desc: 'يرجى إدخال كلمة مرور جديدة وآمنة لحسابك.',
+    newPassword: 'كلمة المرور الجديدة',
+    confirmPassword: 'تأكيد كلمة المرور',
+    minChars: '٩ أحرف على الأقل',
+    repeat: 'أعد كتابة كلمة المرور',
+    updating: 'جارٍ التحديث...',
+    resetBtn: 'إعادة تعيين كلمة المرور',
+    successTitle: 'تم تحديث كلمة المرور!',
+    successDesc: 'سيتم تحويلك إلى صفحة تسجيل الدخول خلال ثوانٍ.',
+    redirectLink: 'انقر هنا إذا لم يتم التحويل',
+    langBtn: 'English',
+  },
+};
+
+const GlobeIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+    <circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+  </svg>
+);
+
 export const ResetPassword: React.FC<ResetPasswordProps> = ({ addToast, onSuccess }) => {
+  const { lang, setLang, isAr } = useLanguage();
+  const t = T[lang];
+
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  
+
   const [form, setForm] = useState({
     new_password: '',
     confirm_password: ''
@@ -59,9 +102,7 @@ export const ResetPassword: React.FC<ResetPasswordProps> = ({ addToast, onSucces
       if (response && response.success) {
         setSuccess(true);
         addToast("Password reset successfully!", "success");
-        // Clear auth data via parent callback
         onSuccess();
-        // Automatic redirect after 3 seconds
         setTimeout(() => {
           window.location.href = '/';
         }, 3000);
@@ -88,7 +129,7 @@ export const ResetPassword: React.FC<ResetPasswordProps> = ({ addToast, onSucces
     <button
       type="button"
       onClick={onToggle}
-      className="absolute right-3 top-1/2 -translate-y-1/2 text-textMuted hover:text-primary p-1"
+      className={`absolute top-1/2 -translate-y-1/2 text-textMuted hover:text-primary p-1 ${isAr ? 'left-3' : 'right-3'}`}
     >
       {isVisible ? (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>
@@ -101,42 +142,48 @@ export const ResetPassword: React.FC<ResetPasswordProps> = ({ addToast, onSucces
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-50 animate-fade-in">
       <div className="mb-8 text-center">
-        <h1 className="text-3xl font-bold text-primary mb-2 tracking-tight">CV Analyzer</h1>
-        <p className="text-textMuted max-w-xs mx-auto">Security & Identity</p>
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <h1 className="text-3xl font-bold text-primary tracking-tight">CV Analyzer</h1>
+          <button onClick={() => setLang(isAr ? 'en' : 'ar')}
+            className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 hover:border-primary text-textMuted hover:text-primary transition-all">
+            <GlobeIcon />{t.langBtn}
+          </button>
+        </div>
+        <p className="text-textMuted max-w-xs mx-auto">{t.subtitle}</p>
       </div>
 
       <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-border overflow-hidden">
         <div className="p-8">
-          <h2 className="text-xl font-bold text-textMain mb-2">Reset Password</h2>
-          <p className="text-sm text-textMuted mb-8">Please enter a new secure password for your account.</p>
+          <h2 className="text-xl font-bold text-textMain mb-2">{t.title}</h2>
+          <p className="text-sm text-textMuted mb-8">{t.desc}</p>
 
           {success ? (
             <div className="text-center py-8 space-y-4 animate-scale-in">
               <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
               </div>
-              <p className="font-bold text-textMain">Password Updated!</p>
-              <p className="text-sm text-textMuted">You will be redirected to the login page in a few seconds.</p>
-              <a href="/" className="inline-block text-primary font-bold text-sm hover:underline pt-4">Click here if not redirected</a>
+              <p className="font-bold text-textMain">{t.successTitle}</p>
+              <p className="text-sm text-textMuted">{t.successDesc}</p>
+              <a href="/" className="inline-block text-primary font-bold text-sm hover:underline pt-4">{t.redirectLink}</a>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
               {error && (
-                <div className="p-4 bg-red-50 border-l-4 border-error text-error text-xs rounded flex items-start animate-shake">
-                  <svg className="w-4 h-4 mr-2 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <div className={`p-4 bg-red-50 ${isAr ? 'border-r-4' : 'border-l-4'} border-error text-error text-xs rounded flex items-start animate-shake`}>
+                  <svg className={`w-4 h-4 shrink-0 mt-0.5 ${isAr ? 'ml-2' : 'mr-2'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   <span>{error}</span>
                 </div>
               )}
 
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">New Password</label>
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.newPassword}</label>
                 <div className="relative">
                   <input
                     required
                     disabled={loading || !token}
                     type={showPass ? "text" : "password"}
-                    placeholder="Min 9 characters"
-                    className="w-full pl-4 pr-12 py-3 border border-border rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all text-sm"
+                    placeholder={t.minChars}
+                    className={`w-full py-3 border border-border rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all text-sm ${isAr ? 'pr-4 pl-12' : 'pl-4 pr-12'}`}
                     value={form.new_password}
                     onChange={(e) => setForm({ ...form, new_password: e.target.value })}
                   />
@@ -145,14 +192,14 @@ export const ResetPassword: React.FC<ResetPasswordProps> = ({ addToast, onSucces
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Confirm Password</label>
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.confirmPassword}</label>
                 <div className="relative">
                   <input
                     required
                     disabled={loading || !token}
                     type={showConfirm ? "text" : "password"}
-                    placeholder="Repeat password"
-                    className="w-full pl-4 pr-12 py-3 border border-border rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all text-sm"
+                    placeholder={t.repeat}
+                    className={`w-full py-3 border border-border rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all text-sm ${isAr ? 'pr-4 pl-12' : 'pl-4 pr-12'}`}
                     value={form.confirm_password}
                     onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
                   />
@@ -166,11 +213,11 @@ export const ResetPassword: React.FC<ResetPasswordProps> = ({ addToast, onSucces
                 className="w-full bg-primary hover:bg-primaryDark text-white py-3.5 rounded-xl font-bold shadow-lg shadow-primary/20 transition-all flex items-center justify-center disabled:opacity-50 disabled:bg-slate-300"
               >
                 {loading ? (
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-                    <span>Updating...</span>
+                    <span>{t.updating}</span>
                   </div>
-                ) : "Reset Password"}
+                ) : t.resetBtn}
               </button>
             </form>
           )}

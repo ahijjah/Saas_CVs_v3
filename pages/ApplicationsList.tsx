@@ -4,6 +4,7 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { Application, AuthState, ApplicationFilter } from '../types';
 import { ApplicationDetails } from './ApplicationDetails';
+import { useLanguage } from '../context/LanguageContext';
 
 interface ApplicationsListProps {
   jobId: string;
@@ -13,9 +14,43 @@ interface ApplicationsListProps {
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
-export const ApplicationsList: React.FC<ApplicationsListProps> = ({ 
-  jobId, initialFilter, auth, onBack, addToast 
+const T = {
+  en: {
+    backToCampaigns: 'Back to Campaigns',
+    filterAll: 'All',
+    filterQualified: 'Qualified',
+    filterPartial: 'Partial',
+    filterRejected: 'Rejected',
+    loading: 'Loading applications...',
+    noApps: 'No applications found matching this criteria.',
+    appliedOn: 'Applied on',
+    viewAnalysis: 'View full analysis →',
+    loadingAnalysis: 'Loading analysis...',
+    pts: 'PTS',
+  },
+  ar: {
+    backToCampaigns: 'العودة إلى الحملات',
+    filterAll: 'الكل',
+    filterQualified: 'مؤهلون',
+    filterPartial: 'جزئيون',
+    filterRejected: 'مرفوضون',
+    loading: 'جارٍ تحميل الطلبات...',
+    noApps: 'لا توجد طلبات مطابقة لهذه المعايير.',
+    appliedOn: 'تاريخ التقديم',
+    viewAnalysis: '← عرض التحليل الكامل',
+    loadingAnalysis: 'جارٍ تحميل التحليل...',
+    pts: 'نقطة',
+  },
+};
+
+const FILTER_KEYS: ApplicationFilter[] = ['all', 'qualified', 'partial', 'rejected'];
+
+export const ApplicationsList: React.FC<ApplicationsListProps> = ({
+  jobId, initialFilter, auth, onBack, addToast
 }) => {
+  const { lang } = useLanguage();
+  const t = T[lang];
+
   const [view, setView] = useState<'list' | 'details'>('list');
   const [applicationsAll, setApplicationsAll] = useState<Application[]>([]);
   const [selectedDetails, setSelectedDetails] = useState<any | null>(null);
@@ -23,12 +58,19 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   const [loading, setLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
+  const filterLabels: Record<ApplicationFilter, string> = {
+    all: t.filterAll,
+    qualified: t.filterQualified,
+    partial: t.filterPartial,
+    rejected: t.filterRejected,
+  };
+
   const fetchApplications = async () => {
     setLoading(true);
     try {
       const data = await apiService.get(
-        WEBHOOK_CONFIG.GET_APPLICATIONS_WEBHOOK_URL, 
-        { job_id: jobId }, 
+        WEBHOOK_CONFIG.GET_APPLICATIONS_WEBHOOK_URL,
+        { job_id: jobId },
         auth.token!
       );
       const arr = Array.isArray(data) ? data : [];
@@ -51,14 +93,12 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         auth.token!
       );
 
-      // Unwrap array if returned as [{...}]
       const detailsObj = Array.isArray(detailsRaw) ? detailsRaw[0] : detailsRaw;
 
       if (!detailsObj) {
         throw new Error("Application data not found");
       }
 
-      // Normalize backend response for ApplicationDetails component
       const normalized = {
         application_id: detailsObj?.application_id,
         candidate_name: detailsObj?.candidate_name,
@@ -67,7 +107,6 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         scores: detailsObj?.scores,
         analysis: detailsObj?.analysis || {},
         raw_ai_response: detailsObj?.raw_ai_response,
-        // Map common fields to root for convenience
         summary: detailsObj?.analysis?.summary,
         strengths: detailsObj?.analysis?.strengths || detailsObj?.raw_ai_response?.evidence_skills,
         risks: detailsObj?.analysis?.gaps_identified || detailsObj?.analysis?.risks
@@ -87,22 +126,18 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     fetchApplications();
   }, [jobId]);
 
-  const filteredApplications = filter === 'all' 
-    ? applicationsAll 
+  const filteredApplications = filter === 'all'
+    ? applicationsAll
     : applicationsAll.filter(a => (a.status ?? '').toLowerCase().trim() === filter);
 
   if (view === 'details' && selectedDetails) {
     return (
-      <ApplicationDetails 
-        data={selectedDetails} 
-        onBack={() => setView('list')} 
+      <ApplicationDetails
+        data={selectedDetails}
+        onBack={() => setView('list')}
       />
     );
   }
-
-  const handleFilterClick = (f: ApplicationFilter) => {
-    setFilter(f);
-  };
 
   const getStatusStyles = (status: string) => {
     const s = (status || '').toLowerCase().trim();
@@ -113,24 +148,24 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <button onClick={onBack} className="flex items-center text-primary hover:underline text-sm font-medium">
-          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <button onClick={onBack} className="flex items-center text-primary hover:underline text-sm font-medium gap-1">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
-          Back to Campaigns
+          {t.backToCampaigns}
         </button>
 
         <div className="flex bg-slate-100 p-1 rounded-lg">
-          {(['all', 'qualified', 'partial', 'rejected'] as ApplicationFilter[]).map((f) => (
+          {FILTER_KEYS.map((f) => (
             <button
               key={f}
-              onClick={() => handleFilterClick(f)}
+              onClick={() => setFilter(f)}
               className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
                 filter === f ? 'bg-white text-primary shadow-sm' : 'text-textMuted hover:text-textMain'
               }`}
             >
-              {f}
+              {filterLabels[f]}
             </button>
           ))}
         </div>
@@ -140,39 +175,39 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         {loading ? (
           <div className="p-12 text-center text-textMuted flex flex-col items-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
-            Loading applications...
+            {t.loading}
           </div>
         ) : filteredApplications.length === 0 ? (
           <div className="bg-white p-12 rounded-xl border border-border text-center text-textMuted">
-            No applications found matching this criteria.
+            {t.noApps}
           </div>
         ) : (
           filteredApplications.map((app) => {
             const styles = getStatusStyles(app.status);
             return (
               <div key={app.id || app.application_id} className="bg-white p-6 rounded-xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between hover:border-primary/30 transition-all">
-                <div className="flex items-center space-x-6">
+                <div className="flex items-center gap-6">
                   <div className={`w-14 h-14 aspect-square shrink-0 flex-none rounded-full flex flex-col items-center justify-center font-bold text-white shadow-sm ${styles.badge}`}>
                     <span className="text-lg leading-none">{app.score}</span>
-                    <span className="text-[10px] opacity-80 uppercase leading-none mt-0.5">PTS</span>
+                    <span className="text-[10px] opacity-80 uppercase leading-none mt-0.5">{t.pts}</span>
                   </div>
                   <div>
                     <h4 className="text-lg font-bold text-textMain">{app.candidate_name}</h4>
-                    <p className="text-xs text-textMuted">Applied on {app.applied_date}</p>
+                    <p className="text-xs text-textMuted">{t.appliedOn} {app.applied_date}</p>
                     <p className="text-sm text-textMain mt-2 max-w-xl italic">"{app.summary}"</p>
                   </div>
                 </div>
 
-                <div className="mt-4 md:mt-0 flex flex-col items-end space-y-2">
+                <div className="mt-4 md:mt-0 flex flex-col items-end gap-2">
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${styles.pill}`}>
                     {app.status}
                   </span>
-                  <button 
+                  <button
                     disabled={detailsLoading}
                     onClick={() => handleViewAnalysis(app)}
                     className="text-primary hover:text-primaryDark text-sm font-semibold flex items-center disabled:opacity-50"
                   >
-                    {detailsLoading ? 'Loading analysis...' : 'View full analysis →'}
+                    {detailsLoading ? t.loadingAnalysis : t.viewAnalysis}
                   </button>
                 </div>
               </div>

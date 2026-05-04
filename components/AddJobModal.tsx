@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG, GLOBAL_FORWARDING_EMAIL } from '../config';
 import { User } from '../types';
+import { useLanguage } from '../context/LanguageContext';
 
 interface AddJobModalProps {
   onClose: () => void;
@@ -28,7 +29,69 @@ interface FormData {
   end_date: string;
 }
 
+const T = {
+  en: {
+    title: 'Create New Job',
+    subtitle: 'Campaign Details & Candidate Criteria',
+    inboxNote: 'Dedicated Job Inbox',
+    inboxDesc: 'A dedicated job inbox will be generated automatically. You can find the address in the job details after creation.',
+    fwdNote: 'Forwarding Required',
+    fwdDesc: (email: string) => `Please forward all CVs for this job to ${email}. Our AI will route them automatically.`,
+    jobCode: 'Job Code',
+    status: 'Status',
+    client: 'Client',
+    jobType: 'Job Type',
+    jobDuration: 'Job Duration',
+    jobTitle: 'Job Title',
+    jobLocation: 'Job Location',
+    jobDesc: 'Job Description',
+    otherInfo: 'Other Information',
+    endDate: 'End Date',
+    cancel: 'Cancel',
+    creating: 'Creating...',
+    submit: 'Submit Job',
+    statusOpen: 'Open',
+    statusDraft: 'Draft',
+    statusClosed: 'Closed',
+    typeFullTime: 'Full-time',
+    typePartTime: 'Part-time',
+    typeContract: 'Contract',
+    typeConsultancy: 'Consultancy',
+  },
+  ar: {
+    title: 'إنشاء وظيفة جديدة',
+    subtitle: 'تفاصيل الحملة ومعايير المرشحين',
+    inboxNote: 'صندوق بريد وظيفي مخصص',
+    inboxDesc: 'سيتم إنشاء صندوق بريد مخصص للوظيفة تلقائياً. يمكنك العثور على العنوان في تفاصيل الوظيفة بعد الإنشاء.',
+    fwdNote: 'التوجيه مطلوب',
+    fwdDesc: (email: string) => `يرجى إعادة توجيه جميع السير الذاتية لهذه الوظيفة إلى ${email}. سيقوم الذكاء الاصطناعي بتوجيهها تلقائياً.`,
+    jobCode: 'رمز الوظيفة',
+    status: 'الحالة',
+    client: 'العميل',
+    jobType: 'نوع الوظيفة',
+    jobDuration: 'مدة الوظيفة',
+    jobTitle: 'المسمى الوظيفي',
+    jobLocation: 'موقع الوظيفة',
+    jobDesc: 'وصف الوظيفة',
+    otherInfo: 'معلومات إضافية',
+    endDate: 'تاريخ الانتهاء',
+    cancel: 'إلغاء',
+    creating: 'جارٍ الإنشاء...',
+    submit: 'إرسال الوظيفة',
+    statusOpen: 'مفتوحة',
+    statusDraft: 'مسودة',
+    statusClosed: 'مغلقة',
+    typeFullTime: 'دوام كامل',
+    typePartTime: 'دوام جزئي',
+    typeContract: 'عقد',
+    typeConsultancy: 'استشارات',
+  },
+};
+
 export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, token, user, addToast }) => {
+  const { lang, isAr } = useLanguage();
+  const t = T[lang];
+
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     job_code: '',
@@ -43,7 +106,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     end_date: ''
   });
 
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -51,7 +113,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       if (!formData.job_code || !formData.job_type || !formData.job_title || !formData.job_description) {
         addToast("Please fill in all required fields.", "error");
@@ -73,7 +135,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
         end_date: formData.end_date || null
       };
 
-      // Use consistent apiService for all calls to ensure headers are correctly handled
       const responseData = await apiService.post(
         WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL,
         payload,
@@ -83,11 +144,11 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       const createdJobId = responseData.job_id || responseData.job_code || formData.job_code;
       addToast("Job campaign created successfully!", "success");
       onSuccess(createdJobId);
-      
+
     } catch (err: any) {
       console.error("SUBMIT ERROR", err);
-      const errorMsg = err.name === 'TypeError' && err.message === 'Failed to fetch' 
-        ? "Network error. The creation service is unreachable." 
+      const errorMsg = err.name === 'TypeError' && err.message === 'Failed to fetch'
+        ? "Network error. The creation service is unreachable."
         : (err.message || "Failed to create job.");
       addToast(errorMsg, "error");
     } finally {
@@ -104,8 +165,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
         <form onSubmit={handleSubmit} className="flex flex-col h-full">
           <div className="px-8 py-6 border-b border-border flex justify-between items-center bg-white sticky top-0 z-10">
             <div>
-              <h3 className="text-xl font-bold text-textMain">Create New Job</h3>
-              <p className="text-xs text-textMuted uppercase tracking-wider font-semibold mt-0.5">Campaign Details & Candidate Criteria</p>
+              <h3 className="text-xl font-bold text-textMain">{t.title}</h3>
+              <p className="text-xs text-textMuted uppercase tracking-wider font-semibold mt-0.5">{t.subtitle}</p>
             </div>
             <button type="button" onClick={onClose} className="text-textMuted hover:text-textMain transition-colors p-2 hover:bg-slate-100 rounded-full">
                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,34 +176,32 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
           </div>
 
           <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto bg-white">
-            
+
             {normalizedMode === 'platform_email' && (
-              <div className="bg-blue-50 border-l-4 border-blue-500 rounded-r-xl p-4 flex items-start space-x-4 animate-fade-in">
+              <div className={`bg-blue-50 ${isAr ? 'border-r-4' : 'border-l-4'} border-blue-500 rounded-xl p-4 flex items-start gap-4 animate-fade-in`}>
                 <div className="text-blue-500 shrink-0 mt-0.5">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-blue-900 uppercase tracking-tight">Dedicated Job Inbox</h4>
-                  <p className="text-sm text-blue-800 leading-relaxed mt-1">
-                    A dedicated job inbox will be generated automatically. You can find the address in the job details after creation.
-                  </p>
+                  <h4 className="text-sm font-bold text-blue-900 uppercase tracking-tight">{t.inboxNote}</h4>
+                  <p className="text-sm text-blue-800 leading-relaxed mt-1">{t.inboxDesc}</p>
                 </div>
               </div>
             )}
 
             {normalizedMode === 'forwarding' && (
-              <div className="bg-amber-50 border-l-4 border-amber-500 rounded-r-xl p-4 flex items-start space-x-4 animate-fade-in">
+              <div className={`bg-amber-50 ${isAr ? 'border-r-4' : 'border-l-4'} border-amber-500 rounded-xl p-4 flex items-start gap-4 animate-fade-in`}>
                 <div className="text-amber-500 shrink-0 mt-0.5">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-amber-900 uppercase tracking-tight">Forwarding Required</h4>
+                  <h4 className="text-sm font-bold text-amber-900 uppercase tracking-tight">{t.fwdNote}</h4>
                   <p className="text-sm text-amber-800 leading-relaxed mt-1">
-                    Please forward all CVs for this job to <span className="font-bold underline">{GLOBAL_FORWARDING_EMAIL}</span>. Our AI will route them automatically.
+                    {t.fwdDesc(GLOBAL_FORWARDING_EMAIL)}
                   </p>
                 </div>
               </div>
@@ -150,7 +209,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">Job Code <span className="text-error font-black">*</span></label>
+                <label className="text-xs font-bold text-textMuted uppercase">{t.jobCode} <span className="text-error font-black">*</span></label>
                 <input
                   required
                   name="job_code"
@@ -162,20 +221,20 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">Status</label>
+                <label className="text-xs font-bold text-textMuted uppercase">{t.status}</label>
                 <select
                   name="status"
                   className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
                   value={formData.status}
                   onChange={handleChange}
                 >
-                  <option value="Open">Open</option>
-                  <option value="Draft">Draft</option>
-                  <option value="Closed">Closed</option>
+                  <option value="Open">{t.statusOpen}</option>
+                  <option value="Draft">{t.statusDraft}</option>
+                  <option value="Closed">{t.statusClosed}</option>
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">Client</label>
+                <label className="text-xs font-bold text-textMuted uppercase">{t.client}</label>
                 <input
                   name="client"
                   type="text"
@@ -189,7 +248,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">Job Type <span className="text-error font-black">*</span></label>
+                <label className="text-xs font-bold text-textMuted uppercase">{t.jobType} <span className="text-error font-black">*</span></label>
                 <select
                   required
                   name="job_type"
@@ -197,14 +256,14 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                   value={formData.job_type}
                   onChange={handleChange}
                 >
-                  <option value="Full-time">Full-time</option>
-                  <option value="Part-time">Part-time</option>
-                  <option value="Contract">Contract</option>
-                  <option value="Consultancy">Consultancy</option>
+                  <option value="Full-time">{t.typeFullTime}</option>
+                  <option value="Part-time">{t.typePartTime}</option>
+                  <option value="Contract">{t.typeContract}</option>
+                  <option value="Consultancy">{t.typeConsultancy}</option>
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">Job Duration</label>
+                <label className="text-xs font-bold text-textMuted uppercase">{t.jobDuration}</label>
                 <input
                   name="job_duration"
                   type="text"
@@ -218,7 +277,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">Job Title <span className="text-error font-black">*</span></label>
+                <label className="text-xs font-bold text-textMuted uppercase">{t.jobTitle} <span className="text-error font-black">*</span></label>
                 <input
                   required
                   name="job_title"
@@ -230,7 +289,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">Job Location</label>
+                <label className="text-xs font-bold text-textMuted uppercase">{t.jobLocation}</label>
                 <input
                   name="job_location"
                   type="text"
@@ -243,7 +302,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-textMuted uppercase">Job Description <span className="text-error font-black">*</span></label>
+              <label className="text-xs font-bold text-textMuted uppercase">{t.jobDesc} <span className="text-error font-black">*</span></label>
               <textarea
                 required
                 name="job_description"
@@ -257,7 +316,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">Other Information</label>
+                <label className="text-xs font-bold text-textMuted uppercase">{t.otherInfo}</label>
                 <textarea
                   name="other_information"
                   rows={3}
@@ -268,7 +327,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">End Date</label>
+                <label className="text-xs font-bold text-textMuted uppercase">{t.endDate}</label>
                 <input
                   name="end_date"
                   type="date"
@@ -280,14 +339,14 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
             </div>
           </div>
 
-          <div className="px-8 py-5 bg-slate-50 border-t border-border flex justify-end items-center space-x-4 sticky bottom-0 z-10">
+          <div className="px-8 py-5 bg-slate-50 border-t border-border flex justify-end items-center gap-4 sticky bottom-0 z-10">
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
               className="px-6 py-2 text-sm font-semibold text-textMuted hover:text-textMain transition-colors disabled:opacity-50"
             >
-              Cancel
+              {t.cancel}
             </button>
             <button
               type="submit"
@@ -300,11 +359,9 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Creating...
+                  {t.creating}
                 </>
-              ) : (
-                "Submit Job"
-              )}
+              ) : t.submit}
             </button>
           </div>
         </form>
