@@ -1,0 +1,297 @@
+{
+  "name": "CVN_GET Application Details",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hqTiKPs1JoyrjSeN",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hqTiKPs1JoyrjSeN",
+          "cachedResultName": "CV_auth_guard_verify_jwt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        176,
+        -112
+      ],
+      "id": "70b4ca28-3453-43ec-b0cc-8a8d5f9048c9",
+      "name": "Call 'CV_auth_guard_verify_jwt'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        384,
+        0
+      ],
+      "id": "6e6860be-60d6-405a-bb28-1653c34ff0b3",
+      "name": "Merge – Body + Auth"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1632,
+        0
+      ],
+      "id": "043bea1d-08f1-4ee6-9b48-6eb0f2bd43e3",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "path": "/cv-saas/application-details",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "f180ff7b-f713-4dea-be62-151c3bf9c76d",
+      "name": "Trig_get_Job_Applications",
+      "webhookId": "f53c2fc8-a3de-4d51-98f6-84342112ad11"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c19c797a-3c88-4117-8153-b002e422c7a2",
+              "name": "application_id",
+              "value": "={{ $json.query.application_id }}",
+              "type": "string"
+            },
+            {
+              "id": "de77bd62-36df-4a91-bc8e-e5df35fb94fc",
+              "name": "tenant_id",
+              "value": "={{ $json.auth.tenant_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        592,
+        0
+      ],
+      "id": "4cf9ac34-ff37-4da0-95b7-af7fb30b3ebc",
+      "name": "Map application Field"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  a.application_id,\n  a.job_id,\n  a.tenant_id,\n  a.candidate_name,\n  a.decision,\n  COALESCE(a.final_score, 0) AS overall_score,\n  a.received_at\nFROM cv_analyzer.job_applications a\nWHERE a.application_id = $1\n  AND a.tenant_id = $2;\n",
+        "options": {
+          "queryReplacement": "={{ $json.application_id }}, {{ $json.tenant_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        800,
+        0
+      ],
+      "id": "ff402132-1857-4686-ae45-acc1ea6f8acd",
+      "name": "Get Application",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  score_skills,\n  score_experience,\n  score_education,\n  score_certifications,\n  score_soft_skills,\n  score_domain_knowledge,\n  score_other_requirements,\n  cv_skills_matched,\n  cv_experience_summary,\n  cv_education_summary,\n  cv_certifications_found,\n  cv_domain_experience,\n  cv_other_notes,\n  gaps_identified,\n  interview_focus_points,\n  interview_suggested_questions,\n  evaluation_notes,\n  raw_ai_response\nFROM cv_analyzer.job_application_scores\nWHERE application_id = $1\n  AND tenant_id = $2\nORDER BY scored_at DESC\nLIMIT 1;\n",
+        "options": {
+          "queryReplacement": "={{ $json.application_id }}, {{ $json.tenant_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1008,
+        0
+      ],
+      "id": "bc6e0dc6-aa1b-4eaf-bd80-b0433112198e",
+      "name": "Get Scores",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  job_id,\n  skills_required,\n  skills_preferred,\n  experience_min_years,\n  experience_roles,\n  experience_responsibilities,\n  education_level,\n  education_fields,\n  certifications,\n  soft_skills,\n  domain_knowledge,\n  other_requirements,\n  weight_skills,\n  weight_experience,\n  weight_education,\n  weight_certifications,\n  weight_soft_skills,\n  weight_domain_knowledge,\n  weight_other_requirements\nFROM cv_analyzer.job_evaluation_profiles\nWHERE job_id = $1\n  AND tenant_id = $2;\n",
+        "options": {
+          "queryReplacement": "={{ $('Get Application').item.json.job_id }}, {{ $('Get Application').item.json.tenant_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1216,
+        0
+      ],
+      "id": "ef21befc-8b6f-4859-83bc-8b929746b947",
+      "name": "Get Evaluation Profile",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const app = $items(\"Get Application\")[0].json;\nconst scores = $items(\"Get Scores\")[0]?.json || {};\nconst weights = $items(\"Get Evaluation Profile\")[0]?.json || {};\n\n// helpers\nconst toNum = (v, d = 0) => {\n  const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));\n  return Number.isFinite(n) ? n : d;\n};\n\n// Parse Postgres array text like {\"A\",\"B\"} -> [\"A\",\"B\"]\nconst parsePgArrayText = (v) => {\n  if (v == null) return [];\n  if (Array.isArray(v)) return v.filter(x => x != null).map(x => String(x).trim()).filter(Boolean);\n\n  const s = String(v).trim();\n  if (!s) return [];\n\n  // already JSON array string\n  if (s.startsWith('[')) {\n    try {\n      const arr = JSON.parse(s);\n      return Array.isArray(arr) ? arr.map(x => String(x).trim()).filter(Boolean) : [];\n    } catch {\n      // fall through\n    }\n  }\n\n  // postgres array text: {\"A\",\"B\"} or {A,B}\n  if (s.startsWith('{') && s.endsWith('}')) {\n    const inner = s.slice(1, -1).trim();\n    if (!inner) return [];\n    return inner\n      .split(',')\n      .map(x => x.trim().replace(/^\"(.*)\"$/, '$1')) // remove surrounding quotes\n      .map(x => x.replace(/\\\\\"/g, '\"'))\n      .filter(Boolean);\n  }\n\n  // fallback: treat as single item\n  return [s];\n};\n\n// Ensure an array of strings, even if field is a single string\nconst toStringArray = (v) => {\n  if (v == null) return [];\n  if (Array.isArray(v)) return v.filter(x => x != null).map(x => String(x).trim()).filter(Boolean);\n\n  const s = String(v).trim();\n  if (!s) return [];\n  if (s.startsWith('{') && s.endsWith('}')) return parsePgArrayText(s);\n  if (s.startsWith('[')) {\n    try {\n      const arr = JSON.parse(s);\n      return Array.isArray(arr) ? arr.map(x => String(x).trim()).filter(Boolean) : [];\n    } catch {\n      // fall through\n    }\n  }\n  if (s.includes('\\n')) return s.split('\\n').map(x => x.trim()).filter(Boolean);\n  return [s];\n};\n\n// overall score\nconst overallScore =\n  toNum(app.overall_score, NaN) ||\n  toNum(app.final_score, 0) ||\n  0;\n\n// build scoring dimension: keep old keys + add new keys\nconst buildDim = (percentRaw, maxPointsRaw) => {\n  const percent = Math.max(0, Math.min(100, toNum(percentRaw, 0)));\n  const max_points = Math.max(0, toNum(maxPointsRaw, 0));\n\n  const points = +(percent * (max_points / 100)).toFixed(2);\n  const bar_percent = max_points > 0 ? +((points / max_points) * 100).toFixed(2) : 0;\n\n  return {\n    // OLD contract (frontend likely uses these)\n    achieved: points,\n    max: max_points,\n\n    // NEW fields\n    percent,\n    points,\n    max_points,\n    bar_percent\n  };\n};\n\nconst dimScores = {\n  skills: buildDim(scores.score_skills, weights.weight_skills),\n  experience: buildDim(scores.score_experience, weights.weight_experience),\n  education: buildDim(scores.score_education, weights.weight_education),\n  certifications: buildDim(scores.score_certifications, weights.weight_certifications),\n  soft_skills: buildDim(scores.score_soft_skills, weights.weight_soft_skills),\n  domain_knowledge: buildDim(scores.score_domain_knowledge, weights.weight_domain_knowledge),\n  other_requirements: buildDim(scores.score_other_requirements, weights.weight_other_requirements),\n};\n\nreturn [{\n  json: {\n    application_id: app.application_id,\n    candidate_name: app.candidate_name,\n    decision: (app.decision || '').toLowerCase(),\n    overall_score: overallScore,\n\n    // scoring dimensions (old + new)\n    scores: dimScores,\n\n    analysis: {\n      summary: scores.evaluation_notes || '',\n      cv_skills_matched: scores.cv_skills_matched || '',\n      cv_experience_summary: scores.cv_experience_summary || '',\n      cv_education_summary: scores.cv_education_summary || '',\n      cv_domain_experience: scores.cv_domain_experience || '',\n      cv_other_notes: scores.cv_other_notes || '',\n\n      // arrays / normalization\n      cv_certifications_found: parsePgArrayText(scores.cv_certifications_found),\n      gaps_identified: toStringArray(scores.gaps_identified),\n      interview_focus_points: toStringArray(scores.interview_focus_points),\n      interview_suggested_questions: parsePgArrayText(scores.interview_suggested_questions),\n    },\n\n    raw_ai_response: scores.raw_ai_response || {}\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        0
+      ],
+      "id": "3a92c127-1ece-4007-aef4-0f947a20fec4",
+      "name": "Build Application Details Response"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Merge – Body + Auth": {
+      "main": [
+        [
+          {
+            "node": "Map application Field",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'CV_auth_guard_verify_jwt'": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trig_get_Job_Applications": {
+      "main": [
+        [
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Map application Field": {
+      "main": [
+        [
+          {
+            "node": "Get Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Application": {
+      "main": [
+        [
+          {
+            "node": "Get Scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Scores": {
+      "main": [
+        [
+          {
+            "node": "Get Evaluation Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Evaluation Profile": {
+      "main": [
+        [
+          {
+            "node": "Build Application Details Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Application Details Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6412720e-6ee4-448b-9e2f-092feef21287",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "vCwWNllTpxVrXC35",
+  "tags": []
+}

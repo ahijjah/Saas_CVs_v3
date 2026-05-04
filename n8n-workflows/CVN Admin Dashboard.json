@@ -1,0 +1,395 @@
+{
+  "name": "CVN Admin Dashboard",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "cv-saas/admin/dashboard",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "4f389d80-f294-4022-90db-a38a572eaec7",
+      "name": "Webhook",
+      "webhookId": "08a7dda1-023e-4930-9537-f93b7e32a841"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hqTiKPs1JoyrjSeN",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hqTiKPs1JoyrjSeN",
+          "cachedResultName": "CV_auth_guard_verify_jwt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        224,
+        16
+      ],
+      "id": "9f08c468-5b2c-48df-a087-9b56df95eeb5",
+      "name": "Call 'CV_auth_guard_verify_jwt'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  (SELECT COUNT(*) FROM cv_analyzer.saas_tenants) AS total_tenants,\n  (SELECT COUNT(*) FROM cv_analyzer.saas_tenants WHERE status = 'active') AS active_tenants,\n  (SELECT COUNT(*) FROM cv_analyzer.saas_users) AS total_users,\n  (SELECT COUNT(*) FROM cv_analyzer.job_posts) AS total_jobs,\n  (SELECT COUNT(*) FROM cv_analyzer.job_applications) AS total_applications,\n  (SELECT COUNT(*) FROM cv_analyzer.job_applications WHERE received_at >= CURRENT_DATE) AS applications_today,\n  (SELECT COUNT(*) FROM cv_analyzer.email_ingest_log \n   WHERE status != 'success' \n   AND received_at >= NOW() - INTERVAL '24 hours') AS failed_ingest_24h;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1376,
+        -48
+      ],
+      "id": "96d14374-e1ec-4a69-89cf-c965b0452900",
+      "name": "Get Overview",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    t.tenant_id,\n    t.tenant_name,\n    t.tenant_code,\n    t.status,\n    t.created_at,\n    (SELECT COUNT(*) FROM cv_analyzer.saas_users u WHERE u.tenant_id = t.tenant_id)::int AS users_count,\n    (SELECT COUNT(*) FROM cv_analyzer.job_posts j WHERE j.tenant_id = t.tenant_id)::int AS jobs_count,\n    (SELECT COUNT(*) FROM cv_analyzer.job_applications a WHERE a.tenant_id = t.tenant_id)::int AS applications_count\nFROM cv_analyzer.saas_tenants t\nORDER BY t.created_at DESC;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1584,
+        -48
+      ],
+      "id": "1eee1a1e-ddaa-4b86-9918-c4feb93c9927",
+      "name": "Get Tenants",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const overview = $items(\"Get Overview\")[0].json;\nconst tenants = $items(\"Get Tenants\").map(i => i.json);\n\nreturn [{\n  json: {\n    overview,\n    tenants\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        -48
+      ],
+      "id": "d84481bc-acc2-4198-b07b-f94cd64cd0b9",
+      "name": "Format Response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ddc21f61-a957-4d09-859a-acbf83e1033e",
+              "leftValue": "={{ $json.auth.role }}",
+              "rightValue": "super_admin",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        -16
+      ],
+      "id": "9d216a1e-dec9-4107-bbe4-f4de5a74457a",
+      "name": "validate role"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"error\": \"Access denied - Super Admin only\"\n}\n",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1584,
+        176
+      ],
+      "id": "dbf15996-ef80-4562-b5f8-a17a5b214459",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5249c2d1-6ff6-460f-a6b3-027c777c5d20",
+              "name": "error",
+              "value": "Access denied - Super Admin only",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1392,
+        176
+      ],
+      "id": "3b730e52-cc9b-44b4-a404-183125ed4c4a",
+      "name": "ERROR Set 403"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1392,
+        384
+      ],
+      "id": "fcd68097-c3d7-47b9-b66b-b168466f4674",
+      "name": "Not Super response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f27e727c-50c4-45c3-be69-e2131e69945c",
+              "leftValue": "={{$json.error}}",
+              "rightValue": "super_admin",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        512,
+        32
+      ],
+      "id": "18be3c50-57d1-44f1-aab5-70908634ee71",
+      "name": "IF (Auth Error?)"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2000,
+        -48
+      ],
+      "id": "8dd2fcb1-0941-4970-aeb2-4fe59a02bd60",
+      "name": "Respond to Webhook (200)"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5249c2d1-6ff6-460f-a6b3-027c777c5d20",
+              "name": "error",
+              "value": "NOT valued",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        976,
+        288
+      ],
+      "id": "a5670833-994a-4146-9ac3-bf61f4bd1782",
+      "name": "ERROR not valued token"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'CV_auth_guard_verify_jwt'": {
+      "main": [
+        [
+          {
+            "node": "IF (Auth Error?)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Overview": {
+      "main": [
+        [
+          {
+            "node": "Get Tenants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Tenants": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (200)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate role": {
+      "main": [
+        [
+          {
+            "node": "Get Overview",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ERROR Set 403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERROR Set 403": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF (Auth Error?)": {
+      "main": [
+        [
+          {
+            "node": "validate role",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ERROR not valued token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook (200)": {
+      "main": [
+        []
+      ]
+    },
+    "ERROR not valued token": {
+      "main": [
+        [
+          {
+            "node": "Not Super response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "82a48bec-8acf-4e91-9869-b3ebfea3d26e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "xJvVULmCp4Ff0RJ5",
+  "tags": []
+}

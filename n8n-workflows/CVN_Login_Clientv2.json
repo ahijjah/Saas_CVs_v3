@@ -1,0 +1,466 @@
+{
+  "name": "CVN_Login_Clientv2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cv-saas/login",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "84ee42e0-aa9d-4fad-a6de-02301a878a2f",
+      "name": "LOGIN - Webhook",
+      "webhookId": "38a90071-87c5-4f90-bec5-7741574c5bc6"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cc6ec594-f2bd-4ad9-b907-1fa8ac598f00",
+              "name": "email",
+              "value": "={{ $json.body.email }}",
+              "type": "string"
+            },
+            {
+              "id": "d9951c2e-4e50-4a47-a8fd-8ba0d4bb28be",
+              "name": "password_plain",
+              "value": "={{ $json.body.password }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "acba9254-1c6f-4b35-b649-67798321b7e5",
+      "name": "LOGIN - Set Fields"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n{\n  \"success\": true,\n  \"token\": $(\"LOGIN – Create JWT\").first().json.token,\n  \"user\": $(\"LOGIN - Decide Result\").first().json.user_id,\n  \"cv_ingestion_mode\": $(\"get_ingestion_mode\").first().json.cv_ingestion_mode,\n  \"message\": \"Login successful\"\n}\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1840,
+        176
+      ],
+      "id": "5a36cd46-db1b-476c-bd87-fb2d6ca8bc05",
+      "name": "LOGIN - Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node (Run Once for Each Item)\n\nconst email = String($json.email || '').trim().toLowerCase();\nconst password = String($json.password_plain || '').trim();\n\nconst errors = [];\n\n// Required checks\nif (!email) errors.push({ field: \"email\", message: \"Email is required\" });\nif (!password) errors.push({ field: \"password\", message: \"Password is required\" });\n\n// Basic email shape check (frontend may do more)\nif (email && (!email.includes('@') || email.length < 6)) {\n  errors.push({ field: \"email\", message: \"Invalid email\" });\n}\n\n// Keep your existing rule\nif (password && password.length < 10) {\n  errors.push({ field: \"password\", message: \"Password too short (min 10 characters)\" });\n}\n\n// If validation failed → return unified error payload (do NOT throw)\nif (errors.length > 0) {\n  return [{\n    json: {\n      success: false,\n      code: \"LOGIN_VALIDATION_ERROR\",\n      message: \"Validation failed\",\n      errors,\n      http_status: 400\n    }\n  }];\n}\n\n// Valid → pass normalized values forward\nreturn [{\n  json: {\n    email,\n    password_plain: password\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "62af3c17-f725-4f84-8db7-ff0acca4ae80",
+      "name": "LOGIN - Validate"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM cv_analyzer.auth_login($1, $2);",
+        "options": {
+          "queryReplacement": "={{ $json.email }},{{ $json.password_plain }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        832,
+        160
+      ],
+      "id": "011bb0ab-abce-4c3b-bc16-7fafd8f0fee9",
+      "name": "LOGIN - Verify Credentials",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $items(\"LOGIN - Verify Credentials\");\n\n// No valid row returned (wrong email OR wrong password)\nif (\n  rows.length === 0 ||\n  !rows[0].json ||\n  !rows[0].json.user_id\n) {\n  return [{\n    json: {\n      success: false,\n      code: \"LOGIN_INVALID_CREDENTIALS\",\n      message: \"Invalid email or password\",\n      http_status: 401\n    }\n  }];\n}\n\n// Valid login\nconst user = rows[0].json;\n\nreturn [{\n  json: {\n    success: true,\n    code: \"LOGIN_SUCCESS\",\n    message: \"Login successful\",\n    http_status: 200,\n    user_id: user.user_id,\n    tenant_id: user.tenant_id,\n    email: user.email,\n    role: user.role\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        160
+      ],
+      "id": "16d104fd-2dfe-413e-b5b6-0cda1c5ce643",
+      "name": "LOGIN - Decide Result",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "useJson": true,
+        "claimsJson": "={\n  \"sub\": \"{{ $json.user_id }}\",\n  \"tenant_id\": \"{{ $json.tenant_id }}\",\n  \"email\": \"{{ $json.email }}\",\n  \"role\": \"{{ $json.role }}\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        1616,
+        176
+      ],
+      "id": "c5e29149-74e0-4455-898a-c988c366c923",
+      "name": "LOGIN – Create JWT",
+      "credentials": {
+        "jwtAuth": {
+          "id": "FTrxt4dMIJO6H8E0",
+          "name": "CV_SAAS_JWT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": "={{$json.http_status}}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1840,
+        -32
+      ],
+      "id": "4d4678dd-791e-4861-8589-4b78aa8f9551",
+      "name": "LOGIN - Response Failed"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "saas_tenants",
+          "mode": "list",
+          "cachedResultName": "saas_tenants"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "tenant_id",
+              "value": "={{ $json.tenant_id }}"
+            }
+          ]
+        },
+        "options": {
+          "outputColumns": [
+            "cv_ingestion_mode"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1008,
+        160
+      ],
+      "id": "37e9556f-91e7-4b01-a6e6-0c7d765bdd5e",
+      "name": "get_ingestion_mode",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7b5d647d-d497-4120-b99b-f3a00bc40b25",
+              "leftValue": "={{ $json.success === false && $json.code === 'LOGIN_VALIDATION_ERROR' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "f545671b-1d07-4ad6-9c3b-52f4be5bf82b",
+      "name": "LOGIN - Validation Failed?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bd2d8a4b-c86d-4744-95f2-81310415ffd7",
+              "leftValue": "={{ $json.success === false && $json.code === 'LOGIN_INVALID_CREDENTIALS' }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1376,
+        160
+      ],
+      "id": "1a2876a1-42de-4bae-a46c-06b6eabb4ca0",
+      "name": "LOGIN - Invalid Credentials?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a377f568-ae0b-4d8a-997b-c82693ed8acd",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "1c090bdb-a2b9-4526-b286-32c665215ef1",
+              "name": "code",
+              "value": "={{ $json.code }}",
+              "type": "string"
+            },
+            {
+              "id": "bd43dc60-a1aa-4b55-ae0c-440241d415d0",
+              "name": "message",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "b3b516a0-a7cc-4f6f-a924-3bfcb5515cdd",
+              "name": "errors",
+              "value": "={{ $json.errors || null }}",
+              "type": "string"
+            },
+            {
+              "id": "8818996c-a87c-43a4-8036-d7c2b8b8f528",
+              "name": "http_status",
+              "value": "={{ $json.http_status }}\n",
+              "type": "number"
+            },
+            {
+              "id": "dbfc7d21-fd09-4bc9-b061-05fae4e80bf2",
+              "name": "field",
+              "value": "={{ $json.field || null }}",
+              "type": "string"
+            },
+            {
+              "id": "896df1f2-820f-44d1-bc92-7db0980be039",
+              "name": "details",
+              "value": "={{ $json.details || null }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1616,
+        -32
+      ],
+      "id": "d8195ee5-3bbf-4f67-ad63-683efa199f50",
+      "name": "LOGIN - Build Validation Error"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "LOGIN - Webhook": {
+      "main": [
+        [
+          {
+            "node": "LOGIN - Set Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOGIN - Set Fields": {
+      "main": [
+        [
+          {
+            "node": "LOGIN - Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOGIN - Validate": {
+      "main": [
+        [
+          {
+            "node": "LOGIN - Validation Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOGIN - Verify Credentials": {
+      "main": [
+        [
+          {
+            "node": "get_ingestion_mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOGIN - Decide Result": {
+      "main": [
+        [
+          {
+            "node": "LOGIN - Invalid Credentials?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOGIN – Create JWT": {
+      "main": [
+        [
+          {
+            "node": "LOGIN - Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_ingestion_mode": {
+      "main": [
+        [
+          {
+            "node": "LOGIN - Decide Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOGIN - Validation Failed?": {
+      "main": [
+        [
+          {
+            "node": "LOGIN - Build Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LOGIN - Verify Credentials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOGIN - Invalid Credentials?": {
+      "main": [
+        [
+          {
+            "node": "LOGIN - Build Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LOGIN – Create JWT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOGIN - Build Validation Error": {
+      "main": [
+        [
+          {
+            "node": "LOGIN - Response Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "582c274d-d860-43ef-b670-118fd3544d52",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "1HzXUMGzO6zT1T5U",
+  "tags": []
+}

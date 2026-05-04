@@ -1,0 +1,1192 @@
+{
+  "name": "CVN_create_job",
+  "nodes": [
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an HR evaluation engine.\nYour task is to analyze a job description and extract ONLY structured evaluation criteria\nthat will be used later to score candidates objectively.\nCRITICAL RULES (MANDATORY):\n1. Output MUST be valid JSON ONLY. No text, no explanations, no markdown.\n2. Output MUST follow EXACTLY the schema provided below.\n3. Do NOT add, remove, rename, or nest keys.\n4. Do NOT invent evaluation categories.\n5. Do NOT include job title, job ID, or any metadata.\n6. Do NOT place numeric values anywhere except inside \"scoring_weights\".\n7. Use arrays of strings for all criteria lists.\n8. If information is missing, use empty strings \"\" or empty arrays [].\n9. \"scoring_weights\" values MUST sum to EXACTLY 100.\n10. If you cannot comply with this schema, return an EMPTY JSON object {}."
+            },
+            {
+              "content": "=Analyze the following job description and extract evaluation criteria.\n\nJob Description:\n{{ $json['Job Description'] }}\nReturn the result using EXACTLY the JSON schema below.\n{\n  \"skills\": {\n    \"required\": [],\n    \"preferred\": []\n  },\n  \"experience\": {\n    \"minimum_years\": \"\",\n    \"relevant_roles\": [],\n    \"key_responsibilities\": []\n  },\n  \"education\": {\n    \"minimum_level\": \"\",\n    \"fields_of_study\": []\n  },\n  \"certifications\": [],\n  \"soft_skills\": [],\n  \"domain_knowledge\": [],\n  \"other_requirements\": [],\n  \"scoring_weights\": {\n    \"skills\": 0,\n    \"experience\": 0,\n    \"education\": 0,\n    \"certifications\": 0,\n    \"soft_skills\": 0,\n    \"domain_knowledge\": 0,\n    \"other_requirements\": 0\n  }\n}\nRules:\n- Always include ALL keys even if empty.\n- Use empty arrays [] when unknown.\n- min_years must be a number."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        -16
+      ],
+      "id": "d91e1a51-6224-4527-9852-0a496fb1e80f",
+      "name": "Analyze Job Description",
+      "credentials": {
+        "openAiApi": {
+          "id": "1kAnrHUIv7p5NSBi",
+          "name": "OpenAi account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7b518408-e64a-4059-8e72-4f1095fed1a0",
+              "name": "tenant_id",
+              "value": "={{ $json.auth.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "dbd923f5-2125-44bc-aded-a67129676ae1",
+              "name": "created_by",
+              "value": "={{ $json.auth.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "58e8a829-bc57-4ddb-aee8-357e444adb89",
+              "name": "job code",
+              "value": "={{ $json.body.job_code }}",
+              "type": "string"
+            },
+            {
+              "id": "ab64624b-72b7-475d-9259-f434f1cf92a2",
+              "name": "Job Status",
+              "value": "={{ $json.body.status }}",
+              "type": "string"
+            },
+            {
+              "id": "b477fed1-6bae-4aff-a3c7-e4530fe9061e",
+              "name": "Job Client",
+              "value": "={{ $json.body.client }}",
+              "type": "string"
+            },
+            {
+              "id": "b5c34cb5-85e0-4815-8f7b-99091e5cfa7c",
+              "name": "Job Type",
+              "value": "={{ $json.body.job_type }}",
+              "type": "string"
+            },
+            {
+              "id": "c2b32b3d-8506-421c-847c-14181ec4083f",
+              "name": "Job Duration",
+              "value": "={{ $json.body.job_duration }}",
+              "type": "string"
+            },
+            {
+              "id": "822b5e08-b585-41d9-96ed-e8fbca429cff",
+              "name": "job_location",
+              "value": "={{ $json.body.job_location }}",
+              "type": "string"
+            },
+            {
+              "id": "16c528b1-a8e9-4909-847b-7c18b76a1d71",
+              "name": "Job Title",
+              "value": "={{ $json.body.job_title }}",
+              "type": "string"
+            },
+            {
+              "id": "9721284b-b8c6-49a4-a2e2-84d78b105759",
+              "name": "Job Description",
+              "value": "={{ $json.body.job_description }}",
+              "type": "string"
+            },
+            {
+              "id": "68a5300e-b8b8-4a72-aad9-59e5bfd35d3c",
+              "name": "End Date",
+              "value": "={{ $json.body.end_date }}",
+              "type": "string"
+            },
+            {
+              "id": "c8d26ef9-8ea0-44a0-803d-38f2c8c3d8df",
+              "name": "Other Information",
+              "value": "={{ $json.body.other_information }}",
+              "type": "string"
+            },
+            {
+              "id": "53bc3511-1a5c-4f44-9a89-02ace75450e9",
+              "name": "Job_Code",
+              "value": "={{ $('Merge – Body + Auth').item.json.body.job_code }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        800,
+        -16
+      ],
+      "id": "e5d7d942-a2f6-42f3-a510-e84fb211165f",
+      "name": "Map Job Field"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_posts",
+          "mode": "list",
+          "cachedResultName": "job_posts"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $('Map Job Field').item.json.tenant_id }}",
+            "status": "={{ $('Map Job Field').item.json['Job Status'] }}",
+            "job_client": "={{ $('Map Job Field').item.json['Job Client'] }}",
+            "job_type": "={{ $('Map Job Field').item.json['Job Type'] }}",
+            "job_duration": "={{ $('Map Job Field').item.json['Job Duration'] }}",
+            "job_location": "={{ $('Map Job Field').item.json.job_location }}",
+            "job_title": "={{ $('Map Job Field').item.json['Job Title'] }}",
+            "job_description": "={{ $('Map Job Field').item.json['Job Description'] }}",
+            "end_date": "={{ $('Map Job Field').item.json['End Date'] }}",
+            "other_information": "={{ $('Map Job Field').item.json['Other Information'] }}",
+            "created_at": "={{ $now }}",
+            "job_code": "={{ $('Map Job Field').item.json['job code'] }}",
+            "cv_ingestion_node": "={{ $json.cv_ingestion_mode }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_client",
+              "displayName": "job_client",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_type",
+              "displayName": "job_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_duration",
+              "displayName": "job_duration",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_location",
+              "displayName": "job_location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_title",
+              "displayName": "job_title",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_description",
+              "displayName": "job_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "other_information",
+              "displayName": "other_information",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "end_date",
+              "displayName": "end_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "platform_email",
+              "displayName": "platform_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "cv_ingestion_node",
+              "displayName": "cv_ingestion_node",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1808,
+        -48
+      ],
+      "id": "0b20cc94-591b-4640-a94a-54cc9e0ac335",
+      "name": "Insert Job",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Extract raw text from the LangChain/OpenAI output structure\nconst rawText = $input.first().json.output[0].content[0].text;\n\ntry {\n  // 2. Professional Clean: Remove markdown code blocks if the LLM included them\n  const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();\n  \n  // 3. Parse the JSON\n  const data = JSON.parse(cleanText);\n\n  // Helper: Convert arrays to comma-separated strings for standard DB text fields\n  const arrayToString = (arr) => (Array.isArray(arr) ? arr.join(', ') : '');\n\n  // 4. Validate Weights (Ensures they sum to 100 or provides defaults)\n  const weights = data.scoring_weights || {};\n  const totalWeight = Object.values(weights).reduce((a, b) => a + (Number(b) || 0), 0);\n\n  // Return the mapped object\n  return {\n    skills_required: arrayToString(data.skills?.required),\n    skills_preferred: arrayToString(data.skills?.preferred),\n    experience_min_years: parseInt(data.experience?.minimum_years) || 0,\n    experience_roles: arrayToString(data.experience?.relevant_roles),\n    experience_responsibilities: arrayToString(data.experience?.key_responsibilities),\n    education_level: data.education?.minimum_level || '',\n    education_fields: arrayToString(data.education?.fields_of_study),\n    certifications: arrayToString(data.certifications),\n    soft_skills: arrayToString(data.soft_skills),\n    domain_knowledge: arrayToString(data.domain_knowledge),\n    other_requirements: arrayToString(data.other_requirements),\n    // Map weights and ensure they are numbers\n    weight_skills: Number(weights.skills) || 0,\n    weight_experience: Number(weights.experience) || 0,\n    weight_education: Number(weights.education) || 0,\n    weight_certifications: Number(weights.certifications) || 0,\n    weight_soft_skills: Number(weights.soft_skills) || 0,\n    weight_domain_knowledge: Number(weights.domain_knowledge) || 0,\n    weight_other_requirements: Number(weights.other_requirements) || 0,\n    // Add a flag if weights were invalid (useful for a Filter node later)\n    weights_valid: totalWeight === 100\n  };\n\n} catch (error) {\n  // Catching parsing errors to prevent the whole workflow from crashing\n  throw new Error(`Failed to parse LLM output. Raw text was: ${rawText}. Error: ${error.message}`);\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        -32
+      ],
+      "id": "9dc1bb82-994a-4497-8994-efd00e60023d",
+      "name": "Prepare insert Row",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_evaluation_profiles",
+          "mode": "list",
+          "cachedResultName": "job_evaluation_profiles"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "job_id": "={{ $('Insert Job').item.json.job_id }}",
+            "skills_required": "={{ $('Prepare insert Row').item.json.skills_required }}",
+            "skills_preferred": "={{ $('Prepare insert Row').item.json.skills_preferred }}",
+            "experience_min_years": "={{ $('Prepare insert Row').item.json.experience_min_years }}",
+            "experience_roles": "={{ $('Prepare insert Row').item.json.experience_roles }}",
+            "experience_responsibilities": "={{ $('Prepare insert Row').item.json.experience_responsibilities }}",
+            "education_level": "={{ $('Prepare insert Row').item.json.education_level }}",
+            "education_fields": "={{ $('Prepare insert Row').item.json.education_fields }}",
+            "certifications": "={{ $('Prepare insert Row').item.json.certifications }}",
+            "soft_skills": "={{ $('Prepare insert Row').item.json.soft_skills }}",
+            "domain_knowledge": "={{ $('Prepare insert Row').item.json.domain_knowledge }}",
+            "other_requirements": "={{ $('Prepare insert Row').item.json.other_requirements }}",
+            "weight_skills": "={{ $('Prepare insert Row').item.json.weight_skills }}",
+            "weight_experience": "={{ $('Prepare insert Row').item.json.weight_experience }}",
+            "weight_education": "={{ $('Prepare insert Row').item.json.weight_education }}",
+            "weight_certifications": "={{ $('Prepare insert Row').item.json.weight_certifications }}",
+            "weight_soft_skills": "={{ $('Prepare insert Row').item.json.weight_soft_skills }}",
+            "weight_domain_knowledge": "={{ $('Prepare insert Row').item.json.weight_domain_knowledge }}",
+            "weight_other_requirements": "={{ $('Prepare insert Row').item.json.weight_other_requirements }}",
+            "analyzed_at": "={{ $now }}",
+            "analysis_json": "={{ $('Analyze Job Description').item.json.output[0].content[0].text }}",
+            "tenant_id": "={{ $('Insert Job').item.json.tenant_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "skills_required",
+              "displayName": "skills_required",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "skills_preferred",
+              "displayName": "skills_preferred",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "experience_min_years",
+              "displayName": "experience_min_years",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "experience_roles",
+              "displayName": "experience_roles",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "experience_responsibilities",
+              "displayName": "experience_responsibilities",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "education_level",
+              "displayName": "education_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "education_fields",
+              "displayName": "education_fields",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "certifications",
+              "displayName": "certifications",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "soft_skills",
+              "displayName": "soft_skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "domain_knowledge",
+              "displayName": "domain_knowledge",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "other_requirements",
+              "displayName": "other_requirements",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "weight_skills",
+              "displayName": "weight_skills",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "weight_experience",
+              "displayName": "weight_experience",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "weight_education",
+              "displayName": "weight_education",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "weight_certifications",
+              "displayName": "weight_certifications",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "weight_soft_skills",
+              "displayName": "weight_soft_skills",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "weight_domain_knowledge",
+              "displayName": "weight_domain_knowledge",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "weight_other_requirements",
+              "displayName": "weight_other_requirements",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "analysis_json",
+              "displayName": "analysis_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "analyzed_at",
+              "displayName": "analyzed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2416,
+        -48
+      ],
+      "id": "bb836e74-7534-459c-ae32-0a07d96f3885",
+      "name": "Insert rows in analyzing profile",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cv-saas/jobs/create",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        128,
+        0
+      ],
+      "id": "c98b320b-83b7-4abe-8406-3b5af52d624d",
+      "name": "Webhook – Create Job",
+      "webhookId": "e08c8544-163f-49d6-8aff-241dd6c5cb71"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"success\",\n  \"job_id\": \"{{ $json.id || $json.insertId || $json.job_id }}\",\n  \"message\": \"Job created successfully\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2672,
+        -64
+      ],
+      "id": "3fb82ec6-0470-4815-bb91-c995e0f50cba",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hqTiKPs1JoyrjSeN",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hqTiKPs1JoyrjSeN",
+          "cachedResultName": "CV_auth_guard_verify_jwt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        368,
+        -128
+      ],
+      "id": "ffd7c505-40e9-4938-b38c-eae59cf87b86",
+      "name": "Call 'CV_auth_guard_verify_jwt'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        592,
+        -16
+      ],
+      "id": "84927754-5ab4-4493-ad92-0172b26e9f7a",
+      "name": "Merge – Body + Auth"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n{\n  \"success\": false,\n  \"message\": \"Job was saved, but the AI analysis failed. Please refresh or configure criteria manually.\",\n  \"data\": {\n    \"job_id\": $(\"Insert Job\").first()?.json?.job_id || null,\n    \"error_details\": $json?.message || \"AI returned invalid format\"\n  }\n}\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1696,
+        240
+      ],
+      "id": "e75357d6-b979-48b4-acab-9e2d2ad67878",
+      "name": "Respond: AI Error"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n{\n  \"success\": false,\n  \"message\": \"Job was created, but the evaluation profile could not be saved.\",\n  \"data\": {\n    \"job_id\": $(\"Insert Job\").first().json.job_id,\n    \"error_details\": $json.message,\n    \"hint\": \"Check if the evaluation profile table has a unique constraint or if the AI output was too long for the column.\"\n  }\n}\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2672,
+        112
+      ],
+      "id": "fb8dfe9d-0f3f-484a-977d-2d20a42453e2",
+      "name": "Respond: Profile Save Error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "33c33db1-aa3b-48fc-9b04-cd4cba4c0da0",
+              "leftValue": "={{ $json.cv_ingestion_mode }}",
+              "rightValue": "platform_email",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1728,
+        -368
+      ],
+      "id": "4ae09d09-742f-4617-8c96-3e06a14bbe54",
+      "name": "If",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "saas_tenants",
+          "mode": "list",
+          "cachedResultName": "saas_tenants"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "tenant_id",
+              "value": "={{ $('Map Job Field').item.json.tenant_id }}"
+            }
+          ]
+        },
+        "options": {
+          "outputColumns": [
+            "cv_ingestion_mode"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1632,
+        -48
+      ],
+      "id": "df95b081-7f24-41d6-83dc-2d5f7a5fcbdd",
+      "name": "Get Ingestion mode",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_posts",
+          "mode": "list",
+          "cachedResultName": "job_posts"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "job_id": "={{ $('Insert Job').item.json.job_id }}",
+            "cv_ingestion_node": "={{ $('Get Ingestion mode').item.json.cv_ingestion_mode }}",
+            "platform_email": "={{ `${$('Insert Job').item.json.job_id}@ai970.cloud` }}"
+          },
+          "matchingColumns": [
+            "job_id"
+          ],
+          "schema": [
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "job_client",
+              "displayName": "job_client",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "job_type",
+              "displayName": "job_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "job_duration",
+              "displayName": "job_duration",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "job_location",
+              "displayName": "job_location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "job_title",
+              "displayName": "job_title",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "job_description",
+              "displayName": "job_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "other_information",
+              "displayName": "other_information",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "end_date",
+              "displayName": "end_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "platform_email",
+              "displayName": "platform_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_ingestion_node",
+              "displayName": "cv_ingestion_node",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2224,
+        -48
+      ],
+      "id": "131f2d89-b0ff-47f4-a1a9-74fb87958aab",
+      "name": "Update rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p \"/files/tenants/{{ $json.tenant_id }}/jobs/{{ $json.job_id }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2016,
+        -48
+      ],
+      "id": "662055de-66a4-4d40-8c4d-6c0be27a2057",
+      "name": "Create Job Directory"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Map Job Field": {
+      "main": [
+        [
+          {
+            "node": "Analyze Job Description",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Job": {
+      "main": [
+        [
+          {
+            "node": "Create Job Directory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Job Description": {
+      "main": [
+        [
+          {
+            "node": "Prepare insert Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare insert Row": {
+      "main": [
+        [
+          {
+            "node": "Get Ingestion mode",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook – Create Job": {
+      "main": [
+        [
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Insert rows in analyzing profile": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Profile Save Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'CV_auth_guard_verify_jwt'": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge – Body + Auth": {
+      "main": [
+        [
+          {
+            "node": "Map Job Field",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        []
+      ]
+    },
+    "Get Ingestion mode": {
+      "main": [
+        [
+          {
+            "node": "Insert Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update rows in a table": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in analyzing profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Job Directory": {
+      "main": [
+        [
+          {
+            "node": "Update rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jerusalem",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 60,
+    "availableInMCP": false,
+    "errorWorkflow": "ykiRJcF2aEJSyTfl"
+  },
+  "versionId": "66aa97b7-8a7f-428c-82f1-5ba90572250d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "wOigeWkd1ZiXt88u",
+  "tags": []
+}

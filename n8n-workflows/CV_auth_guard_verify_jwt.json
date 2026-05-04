@@ -1,0 +1,303 @@
+{
+  "name": "CV_auth_guard_verify_jwt",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "verify",
+        "token": "={{ $json.token.toString().trim() }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        368,
+        176
+      ],
+      "id": "ce950299-d8fd-45a2-b3c1-bc190c154f00",
+      "name": "JWT Verify – Guard Token",
+      "credentials": {
+        "jwtAuth": {
+          "id": "FTrxt4dMIJO6H8E0",
+          "name": "CV_SAAS_JWT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $json.payload || {};\n\nif (!p.sub || !p.tenant_id) {\n  return [{ json: { error: 'Invalid JWT payload', statusCode: 401 } }];\n}\n\nreturn [{\n  json: {\n    user_id: p.sub,\n    tenant_id: p.tenant_id,\n    email: p.email,\n    role: p.role\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        176
+      ],
+      "id": "dbc00450-fe96-4fb2-be1f-293fa26a93c0",
+      "name": "Normalize JWT Payload"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "saas_users",
+          "mode": "list",
+          "cachedResultName": "saas_users"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "user_id",
+              "value": "={{$json.user_id}}"
+            },
+            {
+              "column": "tenant_id",
+              "value": "={{$json.tenant_id}}"
+            },
+            {
+              "column": "status",
+              "value": "active"
+            }
+          ]
+        },
+        "options": {
+          "outputColumns": [
+            "user_id",
+            "tenant_id",
+            "email",
+            "full_name",
+            "role",
+            "status"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        176
+      ],
+      "id": "d54e11b1-90b0-48d6-bec1-66b23df79d70",
+      "name": "Postgres – Check Active User",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0ff3d535-0b28-4a00-8b4f-1aa74ffaa94e",
+              "name": "token",
+              "value": "={{ $json.headers.authorization.split(' ')[1] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        176,
+        176
+      ],
+      "id": "bae43d34-5dce-4768-9c90-6e8ee824db85",
+      "name": "Extract Authorization Header2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3075fa33-6c99-4fe9-afbc-e32cd197f7ba",
+              "name": "auth.user_id",
+              "value": "={{ $json.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "88e774e9-3418-4ccb-bd7b-06658c0b4a68",
+              "name": "auth.tenant_id",
+              "value": "={{ $json.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "b0ab8324-7b14-499a-be08-6168e62e3f7b",
+              "name": "auth.email",
+              "value": "={{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "6bea18f1-d162-4fec-96bc-91e959f809f2",
+              "name": "auth.full_name",
+              "value": "={{ $json.full_name }}",
+              "type": "string"
+            },
+            {
+              "id": "fd1a1705-ad5b-4646-b4b1-df155fea4f18",
+              "name": "auth.role",
+              "value": "={{ $json.role }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1344,
+        176
+      ],
+      "id": "5b8e4816-bfd5-40fd-a891-da618b24e07e",
+      "name": "Set – Auth Context"
+    },
+    {
+      "parameters": {
+        "jsCode": "// If Postgres returns 0 rows, n8n may still pass an empty item depending on config.\n// We enforce a clear output either way.\n\nconst row = $json;\n\nif (!row || !row.user_id) {\n  return [{\n    json: {\n      error: 'User not active or not found',\n      statusCode: 403\n    }\n  }];\n}\n\nreturn [{ json: row }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        176
+      ],
+      "id": "e86fe08d-7ff4-4b6a-b763-5a005b58c3c1",
+      "name": "Validate Active User Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "// When \"Continue On Fail\" is ON, failed JWT verify returns an item with error info.\n// We convert it to a standard 401 response.\n\nif ($json.errorMessage || $json.error) {\n  return [{\n    json: {\n      error: 'Invalid or expired token',\n      statusCode: 401\n    }\n  }];\n}\n\n// Success: JWT node returns { payload: {...} }\nreturn [{ json: $json }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        176
+      ],
+      "id": "acab3dbe-26d4-48fc-bdd9-8534d525427e",
+      "name": "Handle JWT Verify Result"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -16,
+        176
+      ],
+      "id": "ef0ff366-0997-40a4-913c-436f3b736e53",
+      "name": "When Executed by Another Workflow"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "JWT Verify – Guard Token": {
+      "main": [
+        [
+          {
+            "node": "Handle JWT Verify Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize JWT Payload": {
+      "main": [
+        [
+          {
+            "node": "Postgres – Check Active User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres – Check Active User": {
+      "main": [
+        [
+          {
+            "node": "Validate Active User Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Authorization Header2": {
+      "main": [
+        [
+          {
+            "node": "JWT Verify – Guard Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set – Auth Context": {
+      "main": [
+        []
+      ]
+    },
+    "Validate Active User Result": {
+      "main": [
+        [
+          {
+            "node": "Set – Auth Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle JWT Verify Result": {
+      "main": [
+        [
+          {
+            "node": "Normalize JWT Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Extract Authorization Header2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "9ccc838d-5dd9-474e-90c8-2dd901407b83",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "hqTiKPs1JoyrjSeN",
+  "tags": []
+}

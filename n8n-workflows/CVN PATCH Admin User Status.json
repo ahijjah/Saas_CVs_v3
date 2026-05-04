@@ -1,0 +1,558 @@
+{
+  "name": "CVN PATCH Admin User Status",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hqTiKPs1JoyrjSeN",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hqTiKPs1JoyrjSeN",
+          "cachedResultName": "CV_auth_guard_verify_jwt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        -224
+      ],
+      "id": "dfb2b2c2-ac78-4d50-bdf9-da5d8996496d",
+      "name": "Call 'CV_auth_guard_verify_jwt'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        448,
+        -16
+      ],
+      "id": "bf0c05e1-9585-49ba-97ad-5331f89416a6",
+      "name": "Merge – Body + Auth"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5249c2d1-6ff6-460f-a6b3-027c777c5d20",
+              "name": "error",
+              "value": "Access denied - Super Admin only",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1104,
+        240
+      ],
+      "id": "bb2e36fa-07b0-4640-9199-98ae8a96ec59",
+      "name": "ERROR Set 403"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1584,
+        256
+      ],
+      "id": "8f945278-f8d3-4695-84ee-d729cae8263a",
+      "name": "RESP - 400"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1280,
+        240
+      ],
+      "id": "05237fe1-9d46-42bb-83d0-3e3ac8fc8c22",
+      "name": "RESP - 403"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"user\": \"={{ $items('DB - Update User Status')[0].json }}\"\n}\n",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2256,
+        -256
+      ],
+      "id": "138f0de7-d2a5-4153-a3c3-058295fa7f1e",
+      "name": "RESP - 200"
+    },
+    {
+      "parameters": {
+        "httpMethod": "PATCH",
+        "path": "cv-saas/admin/users/status",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "dc44d3ed-4c6f-4b19-be3a-86c67bad7e8a",
+      "name": "WH - Admin User Status",
+      "webhookId": "4a9ad8cc-5769-4a58-8994-1ee39cd9d9d4"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e52997d0-6d67-420e-9804-cad81b3dfe62",
+              "name": "auth_user_id",
+              "value": "={{ $json.auth.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "bb4174ed-f863-443e-82cc-346529e044ff",
+              "name": "auth_tenant_id",
+              "value": "={{ $json.auth.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "da14584a-8255-4b76-84eb-51bb12def166",
+              "name": "auth_role",
+              "value": "={{ $json.auth.role }}",
+              "type": "string"
+            },
+            {
+              "id": "6c09513d-5f7f-4457-a8b4-cdfaa221e6c7",
+              "name": "target_user_id",
+              "value": "={{$json.body.user_id}}",
+              "type": "string"
+            },
+            {
+              "id": "01d93fc5-c009-4acf-9d89-fcad63b573c8",
+              "name": "target_status",
+              "value": "={{ $json.body.status }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        656,
+        -16
+      ],
+      "id": "5408273b-dee2-4940-b0ee-49fa80d45318",
+      "name": "Set - Request Context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ddc21f61-a957-4d09-859a-acbf83e1033e",
+              "leftValue": "={{ $json.auth_role }}",
+              "rightValue": "super_admin",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        -16
+      ],
+      "id": "c11b3468-c106-4f3c-9585-3885742d40ee",
+      "name": "IF - Is Super Admin?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const userId = String($json.target_user_id || '').trim();\nconst status = String($json.target_status || '').trim().toLowerCase();\n\nif (!userId) {\n  return [{ json: { error: \"user_id is required\", statusCode: 400 } }];\n}\n\nif (![\"active\", \"disabled\"].includes(status)) {\n  return [{ json: { error: \"status must be 'active' or 'disabled'\", statusCode: 400 } }];\n}\n\nreturn [{\n  json: {\n    ...$json,\n    target_user_id: userId,\n    target_status: status,\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        -112
+      ],
+      "id": "eac93f57-a89b-4a05-a504-1f0b416a535f",
+      "name": "Validate Input"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9888b981-8a06-4893-8197-e2ae27444f37",
+              "leftValue": "={{$json.statusCode}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1296,
+        -112
+      ],
+      "id": "b672b802-4ea6-4280-8cde-b99c8d886e69",
+      "name": "IF - Validation Error?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE cv_analyzer.saas_users\nSET status = $1\nWHERE user_id = $2\nRETURNING user_id, email, full_name, role, status, tenant_id;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.target_status,\n  $json.target_user_id\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1872,
+        -128
+      ],
+      "id": "05f8be9d-d2c0-4b90-a4fb-83c04d175038",
+      "name": "DB - Update User Status",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "26f327ab-7324-4811-8f91-8e441f0f60fa",
+              "leftValue": "={{$items(\"DB - Update User Status\").length}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2048,
+        -144
+      ],
+      "id": "9167328d-8049-4032-8938-7fa909bcf412",
+      "name": "IF - User Found?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"error\": \"User not found\" }",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2272,
+        -32
+      ],
+      "id": "9d77fb50-edc4-46f2-ac99-b1a9380a4500",
+      "name": "RESP - 404"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c67692fe-30af-4602-a40b-514eb2cdab55",
+              "leftValue": "={{$json.target_user_id}}",
+              "rightValue": "={{$json.auth_user_id}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1504,
+        -208
+      ],
+      "id": "78c1ea8d-38d0-44a7-957b-ace7cd29fce2",
+      "name": "IF - Target is Me?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"error\": \"You cannot change your own status\" }",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1872,
+        256
+      ],
+      "id": "4dbcc9ee-3350-4fab-a6c8-facf96311d46",
+      "name": "RESP - 400 own"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Merge – Body + Auth": {
+      "main": [
+        [
+          {
+            "node": "Set - Request Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'CV_auth_guard_verify_jwt'": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERROR Set 403": {
+      "main": [
+        [
+          {
+            "node": "RESP - 403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RESP - 200": {
+      "main": [
+        []
+      ]
+    },
+    "WH - Admin User Status": {
+      "main": [
+        [
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Set - Request Context": {
+      "main": [
+        [
+          {
+            "node": "IF - Is Super Admin?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Is Super Admin?": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ERROR Set 403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "IF - Validation Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Validation Error?": {
+      "main": [
+        [
+          {
+            "node": "IF - Target is Me?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RESP - 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Update User Status": {
+      "main": [
+        [
+          {
+            "node": "IF - User Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - User Found?": {
+      "main": [
+        [
+          {
+            "node": "RESP - 200",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RESP - 404",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Target is Me?": {
+      "main": [
+        [
+          {
+            "node": "RESP - 400 own",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB - Update User Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "530b37f9-e8d3-4b12-a375-e0df50388348",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "dNMZAshbyz6EpTcI",
+  "tags": []
+}

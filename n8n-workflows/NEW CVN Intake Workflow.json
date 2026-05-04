@@ -1,0 +1,4315 @@
+{
+  "name": "NEW CVN Intake Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "format": "resolved",
+        "options": {
+          "trackLastMessageId": false
+        }
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "66bfd7b1-eb3b-4b0e-9ee2-befa6c7751a8",
+      "name": "Email Trigger (IMAP)",
+      "credentials": {
+        "imap": {
+          "id": "QxwASUu6Z5WQyCfA",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c452aad5-caeb-42e2-946d-5d48f5897735",
+              "name": "msg_id",
+              "value": "={{$json.messageId}}",
+              "type": "string"
+            },
+            {
+              "id": "5e7407fb-1534-433d-ac77-b6005933f03a",
+              "name": "from_email",
+              "value": "={{$json.from.value[0].address}}",
+              "type": "string"
+            },
+            {
+              "id": "e6ca40ee-8cb8-44ec-923d-e2fc00194e2b",
+              "name": "to_emails",
+              "value": "={{ ($json.headers.to || '').replace(/^To:\\s*/i,'').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "5d3ddae6-4b28-4397-9ec2-624183611ce8",
+              "name": "delivered_to",
+              "value": "={{$json.headers[\"delivered-to\"]}}",
+              "type": "string"
+            },
+            {
+              "id": "51acb09b-ceab-404f-9fe0-6d62dda919ec",
+              "name": "subject",
+              "value": "={{$json.subject}}",
+              "type": "string"
+            },
+            {
+              "id": "a776d641-01da-4b60-88aa-5490e7857e7f",
+              "name": "body_text",
+              "value": "={{$json.text}}",
+              "type": "string"
+            },
+            {
+              "id": "8410a607-b461-40ca-a474-3f7e85dfb4e0",
+              "name": "combined_email_text",
+              "value": "={{ \n  ($json.subject || '') + ' ' +\n  ($json.text || '') + ' ' +\n  ($json.html || '') \n}}",
+              "type": "string"
+            },
+            {
+              "id": "588336bd-2fed-47f7-9a33-bb032247d96d",
+              "name": "attachments",
+              "value": "={{ $binary.keys() }}",
+              "type": "array"
+            },
+            {
+              "id": "c957ff3b-c48f-4753-9a67-84f57eabe473",
+              "name": "Date",
+              "value": "={{ new Date($json.headers.date).toISOString().slice(0,19).replace('T',' ') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "ab3f2ade-c8df-4784-a8f8-d77098ac7a09",
+      "name": "Normalize Email key fields"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "email_ingest_log",
+          "mode": "list",
+          "cachedResultName": "email_ingest_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message_id": "={{ $json.msg_id }}",
+            "from_email": "={{ $json.from_email }}",
+            "received_at": "={{ $json.Date }}",
+            "to_email": "={{ $json.to_emails }}",
+            "status": "RECEIVED"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "from_email",
+              "displayName": "from_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "to_email",
+              "displayName": "to_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "routing_method",
+              "displayName": "routing_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_reason",
+              "displayName": "failure_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_message",
+              "displayName": "failure_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        0
+      ],
+      "id": "468fc29f-31f1-4883-9759-040f408facc1",
+      "name": "Insert to LOG table",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9d192fae-f0fb-4865-8400-447e928ecef7",
+              "leftValue": "={{ $json.to_email }}",
+              "rightValue": "jobs@ai970.cloud",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        608,
+        0
+      ],
+      "id": "8b17e83c-e339-4b80-94e7-e1062ff7e4bb",
+      "name": "Forward or EMAIL"
+    },
+    {
+      "parameters": {
+        "jsCode": "let results = [];\n\nfor (const item of $input.all()) {\n  if (!item.binary) continue;\n\n  const meta = {\n    subject: item.json?.subject,\n    from: item.json?.from,\n    to: item.json?.to,\n    date: item.json?.date,\n    messageId: item.json?.messageId,\n    delivered_to: item.json?.headers?.[\"delivered-to\"] || \"\",\n        body_text: item.json?.text || \"\",\n    combined_email_text:\n      (item.json?.subject || \"\") +\n      (item.json?.text || \"\") +\n      (item.json?.html || \"\"),\n  };\n\n  for (const key of Object.keys(item.binary)) {\n    results.push({\n      json: {\n        ...meta,\n        attachment_key: key,\n        fileName: item.binary[key]?.fileName,\n        mimeType: item.binary[key]?.mimeType,\n      },\n      binary: {\n        data: item.binary[key],   // IMPORTANT: always use one fixed name: \"data\"\n      },\n    });\n  }\n}\n\nreturn results;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        176,
+        384
+      ],
+      "id": "e5b9517e-c102-4ae4-85f6-48b249a231b3",
+      "name": "split attachments and email context"
+    },
+    {
+      "parameters": {
+        "content": "## Intake Normalization & Routing",
+        "height": 672,
+        "width": 880
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -48,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "3bc165d7-4567-4435-b935-aa245a1195cc",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Phase 3A - Forwarded Intake Processing",
+        "height": 736,
+        "width": 1984,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        848,
+        -320
+      ],
+      "typeVersion": 1,
+      "id": "36fc6970-005c-4a6b-9f10-fa29a233123f",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "saas_inboxes",
+          "mode": "list",
+          "cachedResultName": "saas_inboxes"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "inbox_email",
+              "value": "={{ $('Insert to LOG table').item.json.from_email }}"
+            },
+            {
+              "column": "is_active",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "outputColumns": [
+            "tenant_id"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        880,
+        -16
+      ],
+      "id": "e1957ca9-089b-41a5-a9c3-269e77c8710d",
+      "name": "check sender belongs to tenant",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d5770228-5841-4354-970c-2adb221aebc8",
+              "leftValue": "={{ Object.keys($json || {}).length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1056,
+        -16
+      ],
+      "id": "006b943e-1b84-4ec3-b9a3-48428dc0c4b6",
+      "name": "tenant_id_founded"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "email_ingest_log",
+          "mode": "list",
+          "cachedResultName": "email_ingest_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ingest_id": "={{ $('Forward or EMAIL').item.json.ingest_id }}",
+            "tenant_id": "={{ $json.tenant_id }}",
+            "routing_method": "FORWARD"
+          },
+          "matchingColumns": [
+            "ingest_id"
+          ],
+          "schema": [
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "from_email",
+              "displayName": "from_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "to_email",
+              "displayName": "to_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "routing_method",
+              "displayName": "routing_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_reason",
+              "displayName": "failure_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_message",
+              "displayName": "failure_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1184,
+        -256
+      ],
+      "id": "a8807be8-8162-4235-93cd-89806d731c2b",
+      "name": "LOG - Update Tenant ID (B1 Success)",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "79697fc2-8088-45ca-955d-9d012578aa7e",
+              "name": "job_code_extraction",
+              "value": "={{\n  (() => {\n    const text = String($('Normalize Email key fields').item.json.combined_email_text || '');\n\n    // Normalize separators\n    const normalized = text\n      .replace(/([A-Za-z]{2,10})\\s*[\\/_]\\s*(\\d{4})\\s*[\\/_]\\s*(\\d{1,6})/g, '$1-$2-$3')\n      .replace(/([A-Za-z]{2,10})\\s+(\\d{4})\\s+(\\d{1,6})/g, '$1-$2-$3');\n\n    // Extract ONLY the code part using a CAPTURE GROUP (no trailing characters possible)\n    const m = normalized.match(/\\b([A-Za-z]{2,10}-\\d{4}-\\d{1,6})\\b/);\n\n    if (!m) return null;\n\n    // If you want to enforce \"exactly one\", count matches too\n    const all = normalized.match(/\\b[A-Za-z]{2,10}-\\d{4}-\\d{1,6}\\b/g) || [];\n    const unique = [...new Set(all.map(x => x.toUpperCase()))];\n\n    return unique.length === 1 ? m[1].toUpperCase() : null;\n  })()\n}}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1376,
+        -256
+      ],
+      "id": "7a48107c-233d-4c1d-aad4-805d7acf645d",
+      "name": "B2 - Extract Job Code (Forwarding)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "abe1a2c0-cd4a-4b5b-8456-3a98db707bc5",
+              "leftValue": "={{ $json.job_code_extraction !== null }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1568,
+        -256
+      ],
+      "id": "155c1c37-9e58-4ce4-b28b-dec43e5af833",
+      "name": "B2 - IF Job Code Valid"
+    },
+    {
+      "parameters": {
+        "content": "## Phase 3B – Platform Email Processing ",
+        "height": 544,
+        "width": 1120,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        848,
+        464
+      ],
+      "typeVersion": 1,
+      "id": "a32e5d9f-b8b3-4cfa-834f-70ba1ebc060f",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "email_ingest_log",
+          "mode": "list",
+          "cachedResultName": "email_ingest_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "REJECTED",
+            "failure_reason": "sender email not registered or Tenant not Active",
+            "ingest_id": "={{ $('Forward or EMAIL').item.json.ingest_id }}"
+          },
+          "matchingColumns": [
+            "ingest_id"
+          ],
+          "schema": [
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "from_email",
+              "displayName": "from_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "to_email",
+              "displayName": "to_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "routing_method",
+              "displayName": "routing_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_reason",
+              "displayName": "failure_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_message",
+              "displayName": "failure_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1440,
+        256
+      ],
+      "id": "a2e8c94a-70b5-478b-99c4-672537878fb6",
+      "name": "update LOG Tenant not found",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@ai970.cloud",
+        "toEmail": "={{ $('Forward or EMAIL').item.json.from_email }}",
+        "subject": "={{ $('Set Tenant Error').item.json.email_subject }}",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n<style>\n  .card { font-family: sans-serif; max-width: 500px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }\n  .header { background-color: #1a202c; color: white; padding: 20px; text-align: center; }\n  .content { padding: 30px; line-height: 1.6; color: #2d3748; }\n  .status-badge { display: inline-block; background: {{ $('Set Tenant Error').item.json.status_color }}; color: white; padding: 6px 16px; border-radius: 50px; font-size: 12px; font-weight: 700; margin-bottom: 20px; text-transform: uppercase; }\n  .details-box { background: #f7fafc; border-left: 4px solid{{ $('Set Tenant Error').item.json.status_color }} ; padding: 15px; margin: 20px 0; border-radius: 0 4px 4px 0; }\n  .instruction-box { background: #fffaf0; border: 1px dashed #ed8936; padding: 15px; border-radius: 8px; margin-top: 20px; color: #744210; }\n  .footer { font-size: 11px; color: #a0aec0; text-align: center; padding: 20px; }\n</style>\n</head>\n<body>\n  <div class=\"card\">\n    <div class=\"header\"><h2>AI970 Intake System</h2></div>\n    <div class=\"content\">\n      <div class=\"status-badge\">{{ $('Set Tenant Error').item.json.status_label }}</div>\n      <p>Hello,</p>\n      <p>We encountered a configuration issue that prevented us from processing your submission.</p>\n      \n      <div class=\"details-box\">\n        <strong>Issue:</strong> {{ $('Set Tenant Error').item.json.error_reason }}<br>\n        <strong>Timestamp:</strong> {{ DateTime.now().toFormat('ff') }}\n      </div>\n\n      <div class=\"instruction-box\">\n        <strong>How to resolve:</strong><br>\n        {{ $('Set Tenant Error').item.json.instructions }}\n      </div>\n    </div>\n    <div class=\"footer\">Ref: {{ 'ERR-' + DateTime.now().toMillis() }}</div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "replyTo": "jobs@ai970.cloud"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1616,
+        256
+      ],
+      "id": "ecc0453e-54d2-4688-84ce-05dcef61237c",
+      "name": "Send Reply - Sender Not Registered",
+      "webhookId": "3ad938d7-58ae-49d3-93ab-07b8e361df40",
+      "credentials": {
+        "smtp": {
+          "id": "YiCqAl5XxRs2xI99",
+          "name": "Email Send"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1792,
+        256
+      ],
+      "id": "0d90d5bf-d7a5-4932-8c86-51844b2fdf0c",
+      "name": "Stop - B1 Failed"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "35b76901-0c5f-4434-b2ec-875bcef2678e",
+              "name": "status",
+              "value": "error",
+              "type": "string"
+            },
+            {
+              "id": "57dc3de3-da6a-4a9f-b505-e15ed0e24ff1",
+              "name": "status_label",
+              "value": "TENANT ERROR",
+              "type": "string"
+            },
+            {
+              "id": "85ab73f0-c7eb-467f-b510-b3b60988b555",
+              "name": "status_color",
+              "value": "#e53e3e",
+              "type": "string"
+            },
+            {
+              "id": "a59758dc-1b7e-41aa-b974-605dbbab1439",
+              "name": "email_subject",
+              "value": "Application Rejected – Sender Not Registered",
+              "type": "string"
+            },
+            {
+              "id": "c19fd31c-da43-4dc7-a7e4-5deefea39d6d",
+              "name": "error_reason",
+              "value": "Organization Not Found or Inactive",
+              "type": "string"
+            },
+            {
+              "id": "4ec8f764-7e1e-45ae-a3d9-984090b1e233",
+              "name": "instructions",
+              "value": "The used email is either not linked to Tenant or has been deactivated. Please verify the used email and your subscription status in the portal.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1264,
+        256
+      ],
+      "id": "a05ffa51-cd10-46e4-9e95-a8cf27d7c5a8",
+      "name": "Set Tenant Error"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        96
+      ],
+      "id": "c190cd1f-1478-4948-b16e-6289d6b2d674",
+      "name": "Stop - B1 Failed1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "35b76901-0c5f-4434-b2ec-875bcef2678e",
+              "name": "status",
+              "value": "error",
+              "type": "string"
+            },
+            {
+              "id": "57dc3de3-da6a-4a9f-b505-e15ed0e24ff1",
+              "name": "status_label",
+              "value": "JOB CODE ERROR",
+              "type": "string"
+            },
+            {
+              "id": "85ab73f0-c7eb-467f-b510-b3b60988b555",
+              "name": "status_color",
+              "value": "#e53e3e",
+              "type": "string"
+            },
+            {
+              "id": "a59758dc-1b7e-41aa-b974-605dbbab1439",
+              "name": "email_subject",
+              "value": "Application Rejected – Missing Job Code",
+              "type": "string"
+            },
+            {
+              "id": "c19fd31c-da43-4dc7-a7e4-5deefea39d6d",
+              "name": "error_reason",
+              "value": "Job code was not found or could not be identified in the forwarded email.",
+              "type": "string"
+            },
+            {
+              "id": "4ec8f764-7e1e-45ae-a3d9-984090b1e233",
+              "name": "instructions",
+              "value": "Please forward the application email again and ensure the job reference code is clearly included.",
+              "type": "string"
+            },
+            {
+              "id": "48e3c1bc-4cf2-4120-b6dc-60a95cd2efa2",
+              "name": "Failure reason",
+              "value": "Missing or invalid job code in forwarded email.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1760,
+        96
+      ],
+      "id": "cd251d6b-291f-485b-a9ec-57d017a111e8",
+      "name": "SET JOB CODE missed Error"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "email_ingest_log",
+          "mode": "list",
+          "cachedResultName": "email_ingest_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "REJECTED",
+            "ingest_id": "={{ $('Forward or EMAIL').item.json.ingest_id }}",
+            "failure_reason": "={{ $json['Failure reason'] }}"
+          },
+          "matchingColumns": [
+            "ingest_id"
+          ],
+          "schema": [
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "from_email",
+              "displayName": "from_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "to_email",
+              "displayName": "to_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "routing_method",
+              "displayName": "routing_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_reason",
+              "displayName": "failure_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_message",
+              "displayName": "failure_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1952,
+        96
+      ],
+      "id": "891762ee-0989-4b96-8138-e51975dd66db",
+      "name": "LOG - Reject Job Not Found (B3 Failed)",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@ai970.cloud",
+        "toEmail": "={{ $('Forward or EMAIL').item.json.from_email }}",
+        "subject": "={{ $('SET JOB CODE missed Error').item.json.email_subject }}",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n<style>\n  .card { font-family: sans-serif; max-width: 500px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }\n  .header { background-color: #1a202c; color: white; padding: 20px; text-align: center; }\n  .content { padding: 30px; line-height: 1.6; color: #2d3748; }\n  .status-badge { display: inline-block; background: {{ $('SET JOB CODE missed Error').item.json.status_color }} ; color: white; padding: 6px 16px; border-radius: 50px; font-size: 12px; font-weight: 700; margin-bottom: 20px; text-transform: uppercase; }\n  .details-box { background: #f7fafc; border-left: 4px solid{{ $('SET JOB CODE missed Error').item.json.status_color }} ; padding: 15px; margin: 20px 0; border-radius: 0 4px 4px 0; }\n  .instruction-box { background: #fffaf0; border: 1px dashed #ed8936; padding: 15px; border-radius: 8px; margin-top: 20px; color: #744210; }\n  .footer { font-size: 11px; color: #a0aec0; text-align: center; padding: 20px; }\n</style>\n</head>\n<body>\n  <div class=\"card\">\n    <div class=\"header\"><h2>AI970 Intake System</h2></div>\n    <div class=\"content\">\n      <div class=\"status-badge\">{{ $('SET JOB CODE missed Error').item.json.status_label }}</div>\n      <p>Hello,</p>\n      <p>We encountered a configuration issue that prevented us from processing your submission.</p>\n      \n      <div class=\"details-box\">\n        <strong>Issue:</strong> {{ $('SET JOB CODE missed Error').item.json.error_reason }}<br>\n        <strong>Timestamp:</strong> {{ DateTime.now().toFormat('ff') }}\n      </div>\n\n      <div class=\"instruction-box\">\n        <strong>How to resolve:</strong><br>\n        {{ $('SET JOB CODE missed Error').item.json.instructions }}\n      </div>\n    </div>\n    <div class=\"footer\">Ref: {{ 'ERR-' + DateTime.now().toMillis() }}</div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "replyTo": "jobs@ai970.cloud"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2144,
+        96
+      ],
+      "id": "e4d9d4c8-519f-4d4d-92f4-65c0acf831f5",
+      "name": "Send Reply - JOB CODE missed",
+      "webhookId": "3ad938d7-58ae-49d3-93ab-07b8e361df40",
+      "credentials": {
+        "smtp": {
+          "id": "YiCqAl5XxRs2xI99",
+          "name": "Email Send"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT job_id\nFROM cv_analyzer.job_posts\nWHERE tenant_id = $1\n  AND lower(job_code) = lower($2)\n  AND status = 'Open'\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $json.tenant_id }}, {{ $('B2 - Extract Job Code (Forwarding)').item.json.job_code_extraction }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1776,
+        -272
+      ],
+      "id": "26cc90ea-6ccc-4686-bef4-70bb21432cb3",
+      "name": "B3 - Validate Job Code (Tenant Active Job)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ab4476eb-7c3c-4d65-8576-bb6d1dda30b8",
+              "leftValue": "={{ Object.keys($json || {}).length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1968,
+        -272
+      ],
+      "id": "9a64378f-759f-44fe-b76f-be166cec495f",
+      "name": "B3 - IF Job Exists"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2640,
+        -96
+      ],
+      "id": "3844abf6-dea9-4651-aaef-9d92b386c4e3",
+      "name": "Stop - B1 Failed2"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "email_ingest_log",
+          "mode": "list",
+          "cachedResultName": "email_ingest_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "REJECTED",
+            "ingest_id": "={{ $('Forward or EMAIL').item.json.ingest_id }}",
+            "failure_reason": "={{ $json['Failure reason'] }}",
+            "job_code": "={{ $('B2 - IF Job Code Valid').item.json.job_code_extraction }}",
+            "failure_message": "={{ $json.error_reason }}"
+          },
+          "matchingColumns": [
+            "ingest_id"
+          ],
+          "schema": [
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "from_email",
+              "displayName": "from_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "to_email",
+              "displayName": "to_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "routing_method",
+              "displayName": "routing_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_reason",
+              "displayName": "failure_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_message",
+              "displayName": "failure_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2272,
+        -96
+      ],
+      "id": "d857cd11-243b-4c75-b334-a31b72e27bb9",
+      "name": "LOG - Reject Job Not Found (B3 Failed)1",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "35b76901-0c5f-4434-b2ec-875bcef2678e",
+              "name": "status",
+              "value": "error",
+              "type": "string"
+            },
+            {
+              "id": "57dc3de3-da6a-4a9f-b505-e15ed0e24ff1",
+              "name": "status_label",
+              "value": "JOB CODE ERROR",
+              "type": "string"
+            },
+            {
+              "id": "85ab73f0-c7eb-467f-b510-b3b60988b555",
+              "name": "status_color",
+              "value": "#e53e3e",
+              "type": "string"
+            },
+            {
+              "id": "a59758dc-1b7e-41aa-b974-605dbbab1439",
+              "name": "email_subject",
+              "value": "Application Rejected – Job not found",
+              "type": "string"
+            },
+            {
+              "id": "c19fd31c-da43-4dc7-a7e4-5deefea39d6d",
+              "name": "error_reason",
+              "value": "The job reference provided in the email does not match any active job for the Tenant",
+              "type": "string"
+            },
+            {
+              "id": "4ec8f764-7e1e-45ae-a3d9-984090b1e233",
+              "name": "instructions",
+              "value": "Please verify the job reference and resend the applications with the correct JOB CODE in a new email",
+              "type": "string"
+            },
+            {
+              "id": "48e3c1bc-4cf2-4120-b6dc-60a95cd2efa2",
+              "name": "Failure reason",
+              "value": "Job code not found or inactive for the tenant.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2096,
+        -96
+      ],
+      "id": "8294c53d-e223-47cc-bc4e-5de073b4c79d",
+      "name": "SET JOB CODE not found"
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@ai970.cloud",
+        "toEmail": "={{ $('Forward or EMAIL').item.json.from_email }}",
+        "subject": "={{ $('SET JOB CODE not found').item.json.email_subject }}",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n<style>\n  .card { font-family: sans-serif; max-width: 500px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }\n  .header { background-color: #1a202c; color: white; padding: 20px; text-align: center; }\n  .content { padding: 30px; line-height: 1.6; color: #2d3748; }\n  .status-badge { display: inline-block; background: {{ $('SET JOB CODE not found').item.json.status_color }} ; color: white; padding: 6px 16px; border-radius: 50px; font-size: 12px; font-weight: 700; margin-bottom: 20px; text-transform: uppercase; }\n  .details-box { background: #f7fafc; border-left: 4px solid{{ $('SET JOB CODE not found').item.json.status_color }} ; padding: 15px; margin: 20px 0; border-radius: 0 4px 4px 0; }\n  .instruction-box { background: #fffaf0; border: 1px dashed #ed8936; padding: 15px; border-radius: 8px; margin-top: 20px; color: #744210; }\n  .footer { font-size: 11px; color: #a0aec0; text-align: center; padding: 20px; }\n</style>\n</head>\n<body>\n  <div class=\"card\">\n    <div class=\"header\"><h2>AI970 Intake System</h2></div>\n    <div class=\"content\">\n      <div class=\"status-badge\">{{ $('SET JOB CODE not found').item.json.status_label }}</div>\n      <p>Hello,</p>\n      <p>We encountered a configuration issue that prevented us from processing your submission.</p>\n      \n      <div class=\"details-box\">\n        <strong>Issue:</strong> {{ $('SET JOB CODE not found').item.json.error_reason }}<br>\n        <strong>Timestamp:</strong> {{ DateTime.now().toFormat('ff') }}\n      </div>\n\n      <div class=\"instruction-box\">\n        <strong>How to resolve:</strong><br>\n        {{ $('SET JOB CODE not found').item.json.instructions }}\n      </div>\n    </div>\n    <div class=\"footer\">Ref: {{ 'ERR-' + DateTime.now().toMillis() }}</div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "replyTo": "jobs@ai970.cloud"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2464,
+        -96
+      ],
+      "id": "56f0372e-ecfd-415d-af03-24e604fad892",
+      "name": "Send Reply - JOB CODE not Found",
+      "webhookId": "3ad938d7-58ae-49d3-93ab-07b8e361df40",
+      "credentials": {
+        "smtp": {
+          "id": "YiCqAl5XxRs2xI99",
+          "name": "Email Send"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "email_ingest_log",
+          "mode": "list",
+          "cachedResultName": "email_ingest_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ingest_id": "={{ $('Insert to LOG table').item.json.ingest_id }}",
+            "job_id": "={{ $('B3 - Validate Job Code (Tenant Active Job)').item.json.job_id }}",
+            "status": "ACCEPTED_FOR_PROCESSING",
+            "job_code": "={{ $('B2 - IF Job Code Valid').item.json.job_code_extraction }}"
+          },
+          "matchingColumns": [
+            "ingest_id"
+          ],
+          "schema": [
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "from_email",
+              "displayName": "from_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "to_email",
+              "displayName": "to_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "routing_method",
+              "displayName": "routing_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_reason",
+              "displayName": "failure_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_message",
+              "displayName": "failure_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2192,
+        -288
+      ],
+      "id": "11c34559-b8a2-45a7-8009-b90307b5cede",
+      "name": "LOG - Update Job ID + Accepted (B3 Success)",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_posts",
+          "mode": "list",
+          "cachedResultName": "job_posts"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "platform_email",
+              "value": "={{ $('Normalize Email key fields').item.json.to_emails }}"
+            }
+          ]
+        },
+        "options": {
+          "outputColumns": [
+            "tenant_id",
+            "job_id",
+            "status",
+            "job_code",
+            "platform_email",
+            "cv_ingestion_node"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        912,
+        624
+      ],
+      "id": "0ed29af9-dd38-4437-b9be-a0bdf2640023",
+      "name": "Get Job details from temp email",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "email_ingest_log",
+          "mode": "list",
+          "cachedResultName": "email_ingest_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ingest_id": "={{ $('Insert to LOG table').item.json.ingest_id }}",
+            "job_id": "={{ $('Get Job details from temp email').item.json.job_id }}",
+            "status": "ACCEPTED_FOR_PROCESSING",
+            "tenant_id": "={{ $('Get Job details from temp email').item.json.tenant_id }}",
+            "job_code": "={{ $json.job_code }}",
+            "routing_method": "JOB_EMAIL"
+          },
+          "matchingColumns": [
+            "ingest_id"
+          ],
+          "schema": [
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "from_email",
+              "displayName": "from_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "to_email",
+              "displayName": "to_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "routing_method",
+              "displayName": "routing_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_reason",
+              "displayName": "failure_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_message",
+              "displayName": "failure_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1328,
+        608
+      ],
+      "id": "98140a5e-dc04-471c-bbcd-47be7fffde6b",
+      "name": "LOG - Update Tenant and Job ID + Accepted",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7ecb0092-19cd-400b-a571-cceea1e399d4",
+              "leftValue": "={{ Object.keys($json || {}).length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1088,
+        624
+      ],
+      "id": "c20d2394-2b36-42e9-9536-92970801b81f",
+      "name": "If record founded for email"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "email_ingest_log",
+          "mode": "list",
+          "cachedResultName": "email_ingest_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "REJECTED",
+            "ingest_id": "={{ $('Forward or EMAIL').item.json.ingest_id }}",
+            "failure_reason": "={{ $json.failure_reason }}",
+            "failure_message": "={{ $json.error_reason }}"
+          },
+          "matchingColumns": [
+            "ingest_id"
+          ],
+          "schema": [
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "from_email",
+              "displayName": "from_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "to_email",
+              "displayName": "to_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "routing_method",
+              "displayName": "routing_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_reason",
+              "displayName": "failure_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_message",
+              "displayName": "failure_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1440,
+        848
+      ],
+      "id": "c027071c-512d-4355-b53a-5639decfcaf4",
+      "name": "update LOG Tenant not found1",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@ai970.cloud",
+        "toEmail": "={{ $('Forward or EMAIL').item.json.from_email }}",
+        "subject": "={{ $('SET - 3B Email Not Linked to Job').item.json.email_subject }}",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n<style>\n  .card { font-family: sans-serif; max-width: 500px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }\n  .header { background-color: #1a202c; color: white; padding: 20px; text-align: center; }\n  .content { padding: 30px; line-height: 1.6; color: #2d3748; }\n  .status-badge { display: inline-block; background: {{ $('SET - 3B Email Not Linked to Job').item.json.status_color }}; color: white; padding: 6px 16px; border-radius: 50px; font-size: 12px; font-weight: 700; margin-bottom: 20px; text-transform: uppercase; }\n  .details-box { background: #f7fafc; border-left: 4px solid{{ $('SET - 3B Email Not Linked to Job').item.json.status_color }} ; padding: 15px; margin: 20px 0; border-radius: 0 4px 4px 0; }\n  .instruction-box { background: #fffaf0; border: 1px dashed #ed8936; padding: 15px; border-radius: 8px; margin-top: 20px; color: #744210; }\n  .footer { font-size: 11px; color: #a0aec0; text-align: center; padding: 20px; }\n</style>\n</head>\n<body>\n  <div class=\"card\">\n    <div class=\"header\"><h2>AI970 Intake System</h2></div>\n    <div class=\"content\">\n      <div class=\"status-badge\">{{ $('SET - 3B Email Not Linked to Job').item.json.status_label }}</div>\n      <p>Hello,</p>\n      <p>We encountered a configuration issue that prevented us from processing your submission.</p>\n      \n      <div class=\"details-box\">\n        <strong>Issue:</strong> {{ $('SET - 3B Email Not Linked to Job').item.json.error_reason }}<br>\n        <strong>Timestamp:</strong> {{ DateTime.now().toFormat('ff') }}\n      </div>\n\n      <div class=\"instruction-box\">\n        <strong>How to resolve:</strong><br>\n        {{ $('SET - 3B Email Not Linked to Job').item.json.instructions }}\n      </div>\n    </div>\n    <div class=\"footer\">Ref: {{ 'ERR-' + DateTime.now().toMillis() }}</div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "replyTo": "jobs@ai970.cloud"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1616,
+        848
+      ],
+      "id": "3a67a803-2f99-477d-9ea3-ac15c134cc4e",
+      "name": "Send Reply - Sender Not Registered1",
+      "webhookId": "3ad938d7-58ae-49d3-93ab-07b8e361df40",
+      "credentials": {
+        "smtp": {
+          "id": "YiCqAl5XxRs2xI99",
+          "name": "Email Send"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1792,
+        848
+      ],
+      "id": "f72b4a39-a280-4667-b178-6c598f470878",
+      "name": "Stop - B1 Failed3"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "35b76901-0c5f-4434-b2ec-875bcef2678e",
+              "name": "status",
+              "value": "error",
+              "type": "string"
+            },
+            {
+              "id": "57dc3de3-da6a-4a9f-b505-e15ed0e24ff1",
+              "name": "status_label",
+              "value": "JOB NOT IDENTIFIED",
+              "type": "string"
+            },
+            {
+              "id": "85ab73f0-c7eb-467f-b510-b3b60988b555",
+              "name": "status_color",
+              "value": "#e53e3e",
+              "type": "string"
+            },
+            {
+              "id": "a59758dc-1b7e-41aa-b974-605dbbab1439",
+              "name": "email_subject",
+              "value": "Application Rejected – Job Not Identified",
+              "type": "string"
+            },
+            {
+              "id": "c19fd31c-da43-4dc7-a7e4-5deefea39d6d",
+              "name": "error_reason",
+              "value": "The email address used is not linked to any active job on the platform.",
+              "type": "string"
+            },
+            {
+              "id": "4ec8f764-7e1e-45ae-a3d9-984090b1e233",
+              "name": "instructions",
+              "value": "Please apply using the correct job-specific email address or contact the employer for assistance.",
+              "type": "string"
+            },
+            {
+              "id": "01603376-2bee-44e9-b705-89ccf0d39171",
+              "name": "failure_reason",
+              "value": "Email address not mapped to any job.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1264,
+        848
+      ],
+      "id": "4a3736ea-0337-486d-815f-5d50ddce7f34",
+      "name": "SET - 3B Email Not Linked to Job"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "13d70bbc-a183-4443-b5fd-48e5c5fdd319",
+              "leftValue": "={{ Array.isArray($('Normalize Email key fields').item.json.attachments) ? $('Normalize Email key fields').item.json.attachments.length > 0 : String($json.attachment_keys || '[]') !== '[]' }}",
+              "rightValue": " []",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2560,
+        608
+      ],
+      "id": "c26ba687-e618-489d-8dbb-56c016c80973",
+      "name": "Has attachments"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_applications",
+          "mode": "list",
+          "cachedResultName": "job_applications"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $('Store File to the drive').item.json.tenant_id }}",
+            "job_id": "={{ $('Store File to the drive').item.json.job_id }}",
+            "ingest_id": "={{ $('Has attachments').item.json.ingest_id }}",
+            "cv_file_url": "={{ $('Store File to the drive').item.json.fileName }}",
+            "status": "RECEIVED",
+            "received_at": "={{ $now }}",
+            "final_score": 0,
+            "cv_raw_text": "={{ $json.text }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "application_id",
+              "displayName": "application_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidate_email",
+              "displayName": "candidate_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidate_name",
+              "displayName": "candidate_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidate_phone",
+              "displayName": "candidate_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_file_url",
+              "displayName": "cv_file_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_file_hash",
+              "displayName": "cv_file_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intake_channel",
+              "displayName": "intake_channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "analysis_started_at",
+              "displayName": "analysis_started_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "analysis_completed_at",
+              "displayName": "analysis_completed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "final_score",
+              "displayName": "final_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "decision",
+              "displayName": "decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_raw_text",
+              "displayName": "cv_raw_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4624,
+        416
+      ],
+      "id": "2d19ee51-afed-4f8f-ba34-d503e6cae0c6",
+      "name": "insert to job applications",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3312,
+        624
+      ],
+      "id": "baa0459b-9e24-460c-8e93-e1c7eb1fc670",
+      "name": "Stop - B1 Failed4"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "35b76901-0c5f-4434-b2ec-875bcef2678e",
+              "name": "status",
+              "value": "error",
+              "type": "string"
+            },
+            {
+              "id": "57dc3de3-da6a-4a9f-b505-e15ed0e24ff1",
+              "name": "status_label",
+              "value": "NO ATTACHMENT",
+              "type": "string"
+            },
+            {
+              "id": "85ab73f0-c7eb-467f-b510-b3b60988b555",
+              "name": "status_color",
+              "value": "#e53e3e",
+              "type": "string"
+            },
+            {
+              "id": "a59758dc-1b7e-41aa-b974-605dbbab1439",
+              "name": "email_subject",
+              "value": "Application Rejected – No CV Attached",
+              "type": "string"
+            },
+            {
+              "id": "c19fd31c-da43-4dc7-a7e4-5deefea39d6d",
+              "name": "error_reason",
+              "value": "No CV attachment was found in your email.",
+              "type": "string"
+            },
+            {
+              "id": "4ec8f764-7e1e-45ae-a3d9-984090b1e233",
+              "name": "instructions",
+              "value": "Please resend your application and attach your CV as a PDF or DOCX file.",
+              "type": "string"
+            },
+            {
+              "id": "48e3c1bc-4cf2-4120-b6dc-60a95cd2efa2",
+              "name": "Failure reason",
+              "value": "Missing CV attachment.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2752,
+        624
+      ],
+      "id": "32245f87-5a58-408e-ba32-2bc56832c19a",
+      "name": "SET - No Attachment"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "email_ingest_log",
+          "mode": "list",
+          "cachedResultName": "email_ingest_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "REJECTED",
+            "ingest_id": "={{ $('Forward or EMAIL').item.json.ingest_id }}",
+            "failure_reason": "={{ $json['Failure reason'] }}",
+            "failure_message": "={{ $json.error_reason }}"
+          },
+          "matchingColumns": [
+            "ingest_id"
+          ],
+          "schema": [
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_code",
+              "displayName": "job_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "from_email",
+              "displayName": "from_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "to_email",
+              "displayName": "to_email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "routing_method",
+              "displayName": "routing_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_reason",
+              "displayName": "failure_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "failure_message",
+              "displayName": "failure_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2928,
+        624
+      ],
+      "id": "9ef30f85-607b-45d4-8f7b-f9b90729c2d9",
+      "name": "LOG - Reject No Attachment",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@ai970.cloud",
+        "toEmail": "={{ $('Forward or EMAIL').item.json.from_email }}",
+        "subject": "={{ $('SET - No Attachment').item.json.email_subject }}",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n<style>\n  .card { font-family: sans-serif; max-width: 500px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }\n  .header { background-color: #1a202c; color: white; padding: 20px; text-align: center; }\n  .content { padding: 30px; line-height: 1.6; color: #2d3748; }\n  .status-badge { display: inline-block; background: {{ $('SET - No Attachment').item.json.status_color }} ; color: white; padding: 6px 16px; border-radius: 50px; font-size: 12px; font-weight: 700; margin-bottom: 20px; text-transform: uppercase; }\n  .details-box { background: #f7fafc; border-left: 4px solid{{ $('SET - No Attachment').item.json.status_color }} ; padding: 15px; margin: 20px 0; border-radius: 0 4px 4px 0; }\n  .instruction-box { background: #fffaf0; border: 1px dashed #ed8936; padding: 15px; border-radius: 8px; margin-top: 20px; color: #744210; }\n  .footer { font-size: 11px; color: #a0aec0; text-align: center; padding: 20px; }\n</style>\n</head>\n<body>\n  <div class=\"card\">\n    <div class=\"header\"><h2>AI970 Intake System</h2></div>\n    <div class=\"content\">\n      <div class=\"status-badge\">{{ $('SET - No Attachment').item.json.status_label }}</div>\n      <p>Hello,</p>\n      <p>We encountered a configuration issue that prevented us from processing your submission.</p>\n      \n      <div class=\"details-box\">\n        <strong>Issue:</strong> {{ $('SET - No Attachment').item.json.error_reason }}<br>\n        <strong>Timestamp:</strong> {{ DateTime.now().toFormat('ff') }}\n      </div>\n\n      <div class=\"instruction-box\">\n        <strong>How to resolve:</strong><br>\n        {{ $('SET - No Attachment').item.json.instructions }}\n      </div>\n    </div>\n    <div class=\"footer\">Ref: {{ 'ERR-' + DateTime.now().toMillis() }}</div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "replyTo": "jobs@ai970.cloud"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3120,
+        624
+      ],
+      "id": "fbf24600-b444-409a-bf40-6b98ba52d0a4",
+      "name": "Send Reply - No Attachment",
+      "webhookId": "3ad938d7-58ae-49d3-93ab-07b8e361df40",
+      "credentials": {
+        "smtp": {
+          "id": "YiCqAl5XxRs2xI99",
+          "name": "Email Send"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2976,
+        384
+      ],
+      "id": "e69e39ad-297d-4806-9cd3-6d9f00517a5d",
+      "name": "merge attachments",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "504345df-21be-41e4-be98-592eb39aae41",
+              "leftValue": "={{ /\\.(pdf|docx)$/i.test($binary[Object.keys($binary)[0]].fileName) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3184,
+        384
+      ],
+      "id": "74a58850-a7d0-425f-a4ea-f99462464d68",
+      "name": "IF – Attachment Type Allowed"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/files/tenants/{{ $json.tenant_id }}/jobs/{{ $json.job_id }}/{{ $binary.data.fileName }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        3904,
+        416
+      ],
+      "id": "821726d6-216d-46e5-b8a3-5d715b806d07",
+      "name": "Store File to the drive"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        3552,
+        304
+      ],
+      "id": "4dda96e7-ca2f-4b47-97ef-6b2f6ca7cd48",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "=data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        4416,
+        336
+      ],
+      "id": "1bb3ce2d-7c0d-49dd-97a8-64565502b1b9",
+      "name": "cv_text-_PDF",
+      "alwaysOutputData": false,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ai970-docx2pdf:8000/convert/docx-to-pdf",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4272,
+        464
+      ],
+      "id": "01331834-40c4-46ce-b9bd-de2a68150571",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_evaluation_profiles",
+          "mode": "list",
+          "cachedResultName": "job_evaluation_profiles"
+        },
+        "returnAll": true,
+        "where": {
+          "values": [
+            {
+              "column": "job_id",
+              "value": "={{ $json.job_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4784,
+        416
+      ],
+      "id": "05b0f2ed-dd93-40b4-bd34-67391937a78c",
+      "name": "job_profile",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7f9ea5d7-4470-49d6-9638-6ec90eaf1fa6",
+              "name": "skills_required",
+              "value": "={{ $json[\"skills_required\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "c1d840ab-c28f-43a6-8813-87bafa3b7309",
+              "name": "skills_preferred",
+              "value": "={{ $json[\"skills_preferred\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "6dae4bf4-b0d7-44c3-a530-28f63b8d4111",
+              "name": "experience_min_years",
+              "value": "={{ $json.experience_min_years }}",
+              "type": "string"
+            },
+            {
+              "id": "329d644c-1c4d-4be5-bf6a-b36033aad265",
+              "name": "experience_roles",
+              "value": "={{ $json[\"experience_roles\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "32174af1-b1bd-4f12-8234-07f39dfcb4c9",
+              "name": "experience_responsibilities",
+              "value": "={{ $json[\"experience_responsibilities\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "980bd5bb-84b0-4a55-8a46-0ca8ad9d45d3",
+              "name": "education_level",
+              "value": "={{ $json[\"education_level\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "c1323fbd-a822-4711-b2b6-f4755e146135",
+              "name": "education_fields",
+              "value": "={{ $json[\"education_fields\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "dc3a53e5-d5b8-4601-9dcd-bde816124128",
+              "name": "certifications",
+              "value": "={{ $json[\"certifications\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "053a9749-876f-4349-a202-831be2c16b5c",
+              "name": "soft_skills",
+              "value": "={{ $json[\"soft_skills\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "083a7b88-19bf-4f5b-b8b3-3e9792b08b78",
+              "name": "domain_knowledge",
+              "value": "={{ $json[\"domain_knowledge\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "937dc370-c369-4df0-91d8-e97fcd155977",
+              "name": "other_requirements",
+              "value": "={{ $json[\"other_requirements\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "17170f92-6588-4d21-a321-18822facfc50",
+              "name": "weight_skills",
+              "value": "={{ $json[\"weight_skills\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "c9767934-84c2-4f61-b999-288e4ed3b6af",
+              "name": "weight_experience",
+              "value": "={{ $json[\"weight_experience\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "ba3a2157-5218-4c6c-978c-1c9b45215a2c",
+              "name": "weight_education",
+              "value": "={{ $json[\"weight_education\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "92f81f17-67be-4f73-9762-1a969c90fb10",
+              "name": "weight_certifications",
+              "value": "={{ $json[\"weight_certifications\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "dedc817a-f9d1-4359-951b-d5f81e8a45f9",
+              "name": "weight_soft_skills",
+              "value": "={{ $json[\"weight_soft_skills\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "bea448f9-bf71-46aa-9eeb-f34ed8bc1326",
+              "name": "weight_domain_knowledge",
+              "value": "={{ $json[\"weight_domain_knowledge\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "54d2c5dc-29f9-473b-aead-254a9f1bfc15",
+              "name": "weight_other_requirements",
+              "value": "={{ $json[\"weight_other_requirements\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "6ca10fc6-9ba2-4281-b470-3e950167cc7f",
+              "name": "job_full_requirements",
+              "value": "=--- JOB SPECIFICATIONS ---\nSkills (Required): {{ $json.skills_required }}\nSkills (Preferred): {{ $json.skills_preferred }}\nMin Years Experience: {{ $json.experience_min_years }}\nTarget Roles: {{ $json.experience_roles }}\nKey Responsibilities: {{ $json.experience_responsibilities }}\nEducation Level: {{ $json.education_level }}\nSpecific Fields: {{ $json.education_fields }}\nCertifications Needed: {{ $json.certifications }}\nSoft Skills: {{ $json.soft_skills }}\nDomain Knowledge: {{ $json.domain_knowledge }}\nOther: {{ $json.other_requirements }}\n\n--- SCORING WEIGHTS (Total 100%) ---\nSkills Weight: {{ $json.weight_skills }}%\nExperience Weight: {{ $json.weight_experience }}%\nEducation Weight: {{ $json.weight_education }}%\nCertifications Weight: {{ $json.weight_certifications }}%\nSoft Skills Weight: {{ $json.weight_soft_skills }}%\nDomain Weight: {{ $json.weight_domain_knowledge }}%\nOther Weight: {{ $json.weight_other_requirements }}%",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4944,
+        416
+      ],
+      "id": "9104b88d-5b12-4aa1-af9c-c29533b66cc8",
+      "name": "JOB Description"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ea7afdb7-15a0-4ac1-99f2-993b0b2e3996",
+              "name": "System_promot",
+              "value": "You are a professional HR Data Analyst.  Rules: - Output MUST be valid JSON only (no markdown, no code fences, no extra text). - Use only evidence explicitly present in the CV text. Do not invent facts. - Score based on semantic understanding, not keyword overlap:   - Synonyms and equivalent concepts count as matches.   - Strong evidence = clear responsibilities/projects/tools/results.   - Medium = stated experience with limited detail.   - Weak = generic claims without specifics. - Provide raw scores (integers 0–100) for each category and include evidence arrays. - Do NOT apply weights and do NOT calculate match_score. Set match_score to null. - If candidate name/phone/email are not explicitly present, set them to null. - Use exactly the keys provided in the user prompt.\nFor certifications: give full score only for recognized professional certifications; give partial score for trainings/courses.\nExperience score should be proportional to (candidate_years / min_years), capped at 100, but boosted when responsibilities strongly match.",
+              "type": "string"
+            },
+            {
+              "id": "4493e8cb-51b2-44c9-85fa-71a6ab588d1e",
+              "name": "user_prompt",
+              "value": "=JOB REQUIREMENTS (STRUCTURED – USE ONLY THESE):\n\nRequired Skills:\n{{ $json.skills_required }}\n\nPreferred Skills:\n{{ $json.skills_preferred }}\n\nExperience:\n- Minimum Years: {{ $json.experience_min_years }}\n- Relevant Roles: {{ $json.experience_roles }}\n- Key Responsibilities:\n{{ $json.experience_responsibilities }}\n\nEducation:\n- Minimum Level: {{ $json.education_level }}\n- Fields of Study:\n{{ $json.education_fields }}\n\nCertifications:\n{{ $json.certifications }}\n\nSoft Skills:\n{{ $json.soft_skills }}\n\nDomain Knowledge:\n{{ $json.domain_knowledge }}\n\nOther Requirements:\n{{ $json.other_requirements }}\n\nCANDIDATE CV TEXT:\n{{ $('cv_text-_PDF').item.json.text }}\n\nReturn valid JSON only (no markdown) using this structure:\n\n{\n  \"candidate_name\": null,\n  \"candidate_phone\": null,\n  \"candidate_email\": null,\n  \"match_score\": null,\n  \"summary\": \"Max 2 sentences\",\n  \"missing_skills\": [],\n  \"score_skills\": 0,\n  \"score_experience\": 0,\n  \"score_education\": 0,\n  \"score_certifications\": 0,\n  \"score_soft_skills\": 0,\n  \"score_domain_knowledge\": 0,\n  \"score_other_requirements\": 0,\n  \"evidence_skills\": [],\n  \"evidence_experience\": [],\n  \"evidence_education\": [],\n  \"evidence_certifications\": [],\n  \"evidence_soft_skills\": [],\n  \"evidence_domain_knowledge\": [],\n  \"evidence_other_requirements\": [],\n  \"cv_skills_matched\": \"\",\n  \"cv_experience_summary\": \"\",\n  \"cv_education_summary\": \"\",\n  \"cv_certifications_found\": [],\n  \"cv_domain_experience\": \"\",\n  \"cv_other_notes\": \"\",\n  \"gaps_identified\": \"\",\n  \"interview_focus_points\": \"\",\n  \"interview_suggested_questions\": [],\n  \"evaluation_notes\": \"\"\n}",
+              "type": "string"
+            },
+            {
+              "id": "87fc96e5-8ea7-4f7b-a186-79ef6b644e88",
+              "name": "CV_text",
+              "value": "={{ $('cv_text-_PDF').item.json.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5104,
+        416
+      ],
+      "id": "9f76858c-8ab6-4f18-af34-21d0ee8d4d6c",
+      "name": "Prompts"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "={{$json.System_promot}}"
+            },
+            {
+              "content": "={{$json.user_prompt}}"
+            }
+          ]
+        },
+        "simplify": false,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2,
+      "position": [
+        5264,
+        416
+      ],
+      "id": "8be47ef3-4560-4fae-be9c-e40dbc65c95a",
+      "name": "Message a model",
+      "credentials": {
+        "openAiApi": {
+          "id": "1kAnrHUIv7p5NSBi",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction stripFences(s) {\n  return String(s || \"\")\n    .replace(/^```json\\s*/i, \"\")\n    .replace(/^```\\s*/i, \"\")\n    .replace(/```$/g, \"\")\n    .trim();\n}\n\nconst requiredKeys = [\n  \"candidate_name\",\n  \"candidate_phone\",\n  \"candidate_email\",\n  \"match_score\",\n  \"summary\",\n  \"missing_skills\",\n  \"score_skills\",\n  \"score_experience\",\n  \"score_education\",\n  \"score_certifications\",\n  \"score_soft_skills\",\n  \"score_domain_knowledge\",\n  \"score_other_requirements\",\n];\n\nreturn items.map((item) => {\n  try {\n    const rawText = item.json.output?.[0]?.content?.[0]?.text;\n    if (!rawText) throw new Error(\"Missing OpenAI output text at item.json.output[0].content[0].text\");\n\n    const clean = stripFences(rawText);\n    const data = JSON.parse(clean);\n\n    // Basic key validation\n    for (const k of requiredKeys) {\n      if (!(k in data)) throw new Error(`Missing required key: ${k}`);\n    }\n\n    // Ensure missing_skills is array\n    if (!Array.isArray(data.missing_skills)) data.missing_skills = [];\n\n    // match_score must be null here (as per our prompt)\n    // if model returns a number, we still accept but overwrite in calc node\n    return { json: data };\n  } catch (e) {\n    return {\n      json: {\n        error: \"LLM JSON parse/validation failed\",\n        message: e.message,\n        original: item.json,\n      },\n    };\n  }\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5536,
+        416
+      ],
+      "id": "22d16fc8-a899-4c25-82c4-b5c7cb712519",
+      "name": "Clean AI Output"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_applications",
+          "mode": "list",
+          "cachedResultName": "job_applications"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "application_id": "={{ $('insert to job applications').item.json.application_id }}",
+            "candidate_email": "={{ $json.candidate_email }}",
+            "candidate_name": "={{ $json.candidate_name }}",
+            "candidate_phone": "={{ $json.candidate_phone }}",
+            "notes": "={{ $json.evaluation_notes }}",
+            "final_score": "={{ $json.match_score }}",
+            "decision": "={{ $json.match_score >= 85 ? 'qualified' : ($json.match_score >= 65 ? 'partial' : 'rejected') }}",
+            "analysis_started_at": "={{ DateTime.fromSeconds($('Message a model').item.json.created_at).toFormat('yyyy-MM-dd HH:mm:ss') }}",
+            "analysis_completed_at": "={{ DateTime.fromSeconds($('Message a model').item.json.completed_at).toFormat('yyyy-MM-dd HH:mm:ss') }}",
+            "status": "={{ $('Message a model').item.json.status }}",
+            "received_at": "={{ $now }}"
+          },
+          "matchingColumns": [
+            "application_id"
+          ],
+          "schema": [
+            {
+              "id": "application_id",
+              "displayName": "application_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidate_email",
+              "displayName": "candidate_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidate_name",
+              "displayName": "candidate_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidate_phone",
+              "displayName": "candidate_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_file_url",
+              "displayName": "cv_file_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_file_hash",
+              "displayName": "cv_file_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intake_channel",
+              "displayName": "intake_channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "analysis_started_at",
+              "displayName": "analysis_started_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "analysis_completed_at",
+              "displayName": "analysis_completed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "final_score",
+              "displayName": "final_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "decision",
+              "displayName": "decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ingest_id",
+              "displayName": "ingest_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_raw_text",
+              "displayName": "cv_raw_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        5904,
+        416
+      ],
+      "id": "1f26e297-0936-4274-89d4-48a3eb1ba6c9",
+      "name": "Update job_applications",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_application_scores",
+          "mode": "list",
+          "cachedResultName": "job_application_scores"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "application_id": "={{ $('insert to job applications').item.json.application_id }}",
+            "job_id": "={{ $('insert to job applications').item.json.job_id }}",
+            "score_skills": "={{ $('Clean AI Output').item.json.score_skills }}",
+            "score_experience": "={{ $('Clean AI Output').item.json.score_experience }}",
+            "score_education": "={{ $('Clean AI Output').item.json.score_education }}",
+            "score_certifications": "={{ $('Clean AI Output').item.json.score_certifications }}",
+            "score_soft_skills": "={{ $('Clean AI Output').item.json.score_soft_skills }}",
+            "score_domain_knowledge": "={{ $('Clean AI Output').item.json.score_domain_knowledge }}",
+            "score_other_requirements": "={{ $('Clean AI Output').item.json.score_other_requirements }}",
+            "cv_skills_matched": "={{ $('Clean AI Output').item.json.cv_skills_matched }}",
+            "cv_experience_summary": "={{ $('Clean AI Output').item.json.cv_experience_summary }}",
+            "cv_education_summary": "={{ $('Clean AI Output').item.json.cv_education_summary }}",
+            "cv_certifications_found": "={{ $('Clean AI Output').item.json.cv_certifications_found }}",
+            "cv_domain_experience": "={{ $('Clean AI Output').item.json.cv_domain_experience }}",
+            "cv_other_notes": "={{ $('Clean AI Output').item.json.cv_other_notes }}",
+            "gaps_identified": "={{ $('Clean AI Output').item.json.gaps_identified }}",
+            "interview_focus_points": "={{ $('Clean AI Output').item.json.interview_focus_points }}",
+            "interview_suggested_questions": "={{ $('Clean AI Output').item.json.interview_suggested_questions }}",
+            "evaluation_notes": "={{ $('Clean AI Output').item.json.evaluation_notes }}",
+            "raw_ai_response": "={{ JSON.parse($('Message a model').item.json.output[0].content[0].text.replace(/```json\\n|```/g, '').trim()) }}",
+            "tenant_id": "={{ $('insert to job applications').item.json.tenant_id }}",
+            "ai_model": "OpenAI MINI 3.0",
+            "scored_at": "={{ $now }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "score_id",
+              "displayName": "score_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "application_id",
+              "displayName": "application_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score_skills",
+              "displayName": "score_skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score_experience",
+              "displayName": "score_experience",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score_education",
+              "displayName": "score_education",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score_certifications",
+              "displayName": "score_certifications",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score_soft_skills",
+              "displayName": "score_soft_skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score_domain_knowledge",
+              "displayName": "score_domain_knowledge",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score_other_requirements",
+              "displayName": "score_other_requirements",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_skills_matched",
+              "displayName": "cv_skills_matched",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_experience_summary",
+              "displayName": "cv_experience_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_education_summary",
+              "displayName": "cv_education_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_certifications_found",
+              "displayName": "cv_certifications_found",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_domain_experience",
+              "displayName": "cv_domain_experience",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cv_other_notes",
+              "displayName": "cv_other_notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "gaps_identified",
+              "displayName": "gaps_identified",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "interview_focus_points",
+              "displayName": "interview_focus_points",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "interview_suggested_questions",
+              "displayName": "interview_suggested_questions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evaluation_notes",
+              "displayName": "evaluation_notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "scored_at",
+              "displayName": "scored_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_model",
+              "displayName": "ai_model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_ai_response",
+              "displayName": "raw_ai_response",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        6048,
+        416
+      ],
+      "id": "12a3a687-da6b-4eaf-b28b-4814db19f33d",
+      "name": "Insert job_application_scores",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst jd = $node[\"JOB Description\"].json;\n\nfunction toNum(v, fallback = 0) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : fallback;\n}\nfunction clamp0to100(v) {\n  const n = Math.round(toNum(v, 0));\n  return Math.max(0, Math.min(100, n));\n}\n\nconst weights = {\n  skills: toNum(jd.weight_skills, 0),\n  experience: toNum(jd.weight_experience, 0),\n  education: toNum(jd.weight_education, 0),\n  certifications: toNum(jd.weight_certifications, 0),\n  soft_skills: toNum(jd.weight_soft_skills, 0),\n  domain_knowledge: toNum(jd.weight_domain_knowledge, 0),\n  other_requirements: toNum(jd.weight_other_requirements, 0),\n};\n\nreturn items.map((item) => {\n  const j = item.json;\n  if (j.error) return item;\n\n  const scores = {\n    skills: clamp0to100(j.score_skills),\n    experience: clamp0to100(j.score_experience),\n    education: clamp0to100(j.score_education),\n    certifications: clamp0to100(j.score_certifications),\n    soft_skills: clamp0to100(j.score_soft_skills),\n    domain_knowledge: clamp0to100(j.score_domain_knowledge),\n    other_requirements: clamp0to100(j.score_other_requirements),\n  };\n\n  const matchScore =\n    (scores.skills * weights.skills) / 100 +\n    (scores.experience * weights.experience) / 100 +\n    (scores.education * weights.education) / 100 +\n    (scores.certifications * weights.certifications) / 100 +\n    (scores.soft_skills * weights.soft_skills) / 100 +\n    (scores.domain_knowledge * weights.domain_knowledge) / 100 +\n    (scores.other_requirements * weights.other_requirements) / 100;\n\n  j.match_score = Math.round(matchScore);\n  return { json: j };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5712,
+        416
+      ],
+      "id": "d86a50b6-a1b9-474f-97a9-60a72dcd07be",
+      "name": "Compute Match Score"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a59758dc-1b7e-41aa-b974-605dbbab1439",
+              "name": "email_subject",
+              "value": "={{ $json.count > 1 ? \"[Batch Processed] \" + $json.count + \" CVs Received\" : \"[Confirmation] CV Received: \" + ($json.job_title || \"Position\") }}",
+              "type": "string"
+            },
+            {
+              "id": "57dc3de3-da6a-4a9f-b505-e15ed0e24ff1",
+              "name": "status_label",
+              "value": "SUCCESSFULLY RECEIVED",
+              "type": "string"
+            },
+            {
+              "id": "85ab73f0-c7eb-467f-b510-b3b60988b555",
+              "name": "status_color",
+              "value": "#27ae60",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4336,
+        64
+      ],
+      "id": "4e01ff62-b5f1-47b7-a88e-9c82036e993f",
+      "name": "Prepare Email Variables"
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@ai970.cloud",
+        "toEmail": "={{ $('IF – Attachment Type Allowed').item.json.from_email }}",
+        "subject": "={{ $json.email_subject }}",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n<style>\n  .card { font-family: sans-serif; max-width: 500px; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }\n  .header { background-color: #2c3e50; color: white; padding: 20px; text-align: center; }\n  .content { padding: 30px; line-height: 1.6; color: #333; }\n  .status-badge { display: inline-block; background: #27ae60; color: white; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; margin-bottom: 20px; }\n  .details { background: #f9f9f9; padding: 15px; border-radius: 5px; margin-top: 20px; font-size: 14px; }\n  .footer { font-size: 12px; color: #7f8c8d; text-align: center; padding: 20px; }\n</style>\n</head>\n<body>\n  <div class=\"card\">\n    <div class=\"header\">\n      <h2 style=\"margin:0;\">AI970 Intake System</h2>\n    </div>\n    <div class=\"content\">\n      <div class=\"status-badge\">SUCCESSFULLY RECEIVED</div>\n      <p>Hello,</p>\n      <p>This is an automated confirmation that your email was receivedreceived by our intake system.</p>\n      \n      <div class=\"details\">\n        <strong>Job Title:</strong> {{ $json.job_title || 'General Intake' }}<br>\n        <strong>Processing Time:</strong> {{ DateTime.now().toFormat('ff') }}<br>\n       \n      </div>\n\n      <p style=\"margin-top:20px;\">\n        Our analysis engine is now reviewing the data. No further action is required from your side at this moment.\n      </p>\n    </div>\n    <div class=\"footer\">\n      Ref ID: {{ $('Insert job_application_scores').item.json.application_id || 'Batch-' + DateTime.now().toMillis() }}<br>\n      © 2026 AI970 Cloud Integration\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        4528,
+        64
+      ],
+      "id": "00635687-27db-4553-8295-3fa0357c02aa",
+      "name": "Send Success Receipt",
+      "webhookId": "a1aaae33-bcad-437f-a0df-d34fd23f9a5f",
+      "credentials": {
+        "smtp": {
+          "id": "YiCqAl5XxRs2xI99",
+          "name": "Email Send"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "##ِAttachment",
+        "height": 752,
+        "width": 960,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2512,
+        240
+      ],
+      "typeVersion": 1,
+      "id": "a96ead5b-cf93-4f2d-9bb1-1b0ae316e60e",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "##CV Analysis",
+        "height": 448,
+        "width": 2496,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3488,
+        240
+      ],
+      "typeVersion": 1,
+      "id": "a292fcad-e467-46b5-b6c7-8d69ca464c8c",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "27516043-4363-4c9c-b2a2-1224af5ec7d6",
+              "leftValue": "={{ $json.mimeType }}",
+              "rightValue": "pdf",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4064,
+        416
+      ],
+      "id": "13599bf5-39e0-47f6-9cba-7c8dd0140ed2",
+      "name": "Attachment Type"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Email Trigger (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Email key fields",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "split attachments and email context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Email key fields": {
+      "main": [
+        [
+          {
+            "node": "Insert to LOG table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to LOG table": {
+      "main": [
+        [
+          {
+            "node": "Forward or EMAIL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check sender belongs to tenant": {
+      "main": [
+        [
+          {
+            "node": "tenant_id_founded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tenant_id_founded": {
+      "main": [
+        [
+          {
+            "node": "LOG - Update Tenant ID (B1 Success)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Tenant Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOG - Update Tenant ID (B1 Success)": {
+      "main": [
+        [
+          {
+            "node": "B2 - Extract Job Code (Forwarding)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B2 - Extract Job Code (Forwarding)": {
+      "main": [
+        [
+          {
+            "node": "B2 - IF Job Code Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward or EMAIL": {
+      "main": [
+        [
+          {
+            "node": "check sender belongs to tenant",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Job details from temp email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update LOG Tenant not found": {
+      "main": [
+        [
+          {
+            "node": "Send Reply - Sender Not Registered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reply - Sender Not Registered": {
+      "main": [
+        [
+          {
+            "node": "Stop - B1 Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Tenant Error": {
+      "main": [
+        [
+          {
+            "node": "update LOG Tenant not found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B2 - IF Job Code Valid": {
+      "main": [
+        [
+          {
+            "node": "B3 - Validate Job Code (Tenant Active Job)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SET JOB CODE missed Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SET JOB CODE missed Error": {
+      "main": [
+        [
+          {
+            "node": "LOG - Reject Job Not Found (B3 Failed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOG - Reject Job Not Found (B3 Failed)": {
+      "main": [
+        [
+          {
+            "node": "Send Reply - JOB CODE missed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reply - JOB CODE missed": {
+      "main": [
+        [
+          {
+            "node": "Stop - B1 Failed1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B3 - Validate Job Code (Tenant Active Job)": {
+      "main": [
+        [
+          {
+            "node": "B3 - IF Job Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOG - Reject Job Not Found (B3 Failed)1": {
+      "main": [
+        [
+          {
+            "node": "Send Reply - JOB CODE not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "B3 - IF Job Exists": {
+      "main": [
+        [
+          {
+            "node": "LOG - Update Job ID + Accepted (B3 Success)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SET JOB CODE not found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SET JOB CODE not found": {
+      "main": [
+        [
+          {
+            "node": "LOG - Reject Job Not Found (B3 Failed)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reply - JOB CODE not Found": {
+      "main": [
+        [
+          {
+            "node": "Stop - B1 Failed2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Job details from temp email": {
+      "main": [
+        [
+          {
+            "node": "If record founded for email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If record founded for email": {
+      "main": [
+        [
+          {
+            "node": "LOG - Update Tenant and Job ID + Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SET - 3B Email Not Linked to Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update LOG Tenant not found1": {
+      "main": [
+        [
+          {
+            "node": "Send Reply - Sender Not Registered1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reply - Sender Not Registered1": {
+      "main": [
+        [
+          {
+            "node": "Stop - B1 Failed3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SET - 3B Email Not Linked to Job": {
+      "main": [
+        [
+          {
+            "node": "update LOG Tenant not found1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOG - Update Job ID + Accepted (B3 Success)": {
+      "main": [
+        [
+          {
+            "node": "Has attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOG - Update Tenant and Job ID + Accepted": {
+      "main": [
+        [
+          {
+            "node": "Has attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has attachments": {
+      "main": [
+        [
+          {
+            "node": "merge attachments",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SET - No Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SET - No Attachment": {
+      "main": [
+        [
+          {
+            "node": "LOG - Reject No Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LOG - Reject No Attachment": {
+      "main": [
+        [
+          {
+            "node": "Send Reply - No Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reply - No Attachment": {
+      "main": [
+        [
+          {
+            "node": "Stop - B1 Failed4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "split attachments and email context": {
+      "main": [
+        [
+          {
+            "node": "merge attachments",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "merge attachments": {
+      "main": [
+        [
+          {
+            "node": "IF – Attachment Type Allowed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF – Attachment Type Allowed": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store File to the drive": {
+      "main": [
+        [
+          {
+            "node": "Attachment Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email Variables",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Store File to the drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cv_text-_PDF": {
+      "main": [
+        [
+          {
+            "node": "insert to job applications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "cv_text-_PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "job_profile": {
+      "main": [
+        [
+          {
+            "node": "JOB Description",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JOB Description": {
+      "main": [
+        [
+          {
+            "node": "Prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompts": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Clean AI Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean AI Output": {
+      "main": [
+        [
+          {
+            "node": "Compute Match Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update job_applications": {
+      "main": [
+        [
+          {
+            "node": "Insert job_application_scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Match Score": {
+      "main": [
+        [
+          {
+            "node": "Update job_applications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "insert to job applications": {
+      "main": [
+        [
+          {
+            "node": "job_profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert job_application_scores": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email Variables": {
+      "main": [
+        [
+          {
+            "node": "Send Success Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attachment Type": {
+      "main": [
+        [
+          {
+            "node": "cv_text-_PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b7bd18d8-d742-487c-8294-3d4d1ee95934",
+  "meta": {
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "RqI67XtzSHAcGgJT",
+  "tags": []
+}

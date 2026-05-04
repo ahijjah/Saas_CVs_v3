@@ -1,0 +1,411 @@
+{
+  "name": "CVN_Job_Details",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7b518408-e64a-4059-8e72-4f1095fed1a0",
+              "name": "tenant_id",
+              "value": "={{ $json.auth.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "dbd923f5-2125-44bc-aded-a67129676ae1",
+              "name": "created_by",
+              "value": "={{ $json.auth.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "58e8a829-bc57-4ddb-aee8-357e444adb89",
+              "name": "job_id",
+              "value": "={{ $json.query.job_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        800,
+        -16
+      ],
+      "id": "e7defa88-444a-49bd-a31f-dd9deec5d34f",
+      "name": "Map Job Field"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hqTiKPs1JoyrjSeN",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hqTiKPs1JoyrjSeN",
+          "cachedResultName": "CV_auth_guard_verify_jwt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        368,
+        -128
+      ],
+      "id": "858f5262-27f5-4186-b592-0a1d8145edaf",
+      "name": "Call 'CV_auth_guard_verify_jwt'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        592,
+        -16
+      ],
+      "id": "5b3074e3-6c4c-4205-83b7-fc6032fae984",
+      "name": "Merge – Body + Auth"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n{\n  \"success\": false,\n  \"message\": \"Job was saved, but the AI analysis failed. Please refresh or configure criteria manually.\",\n  \"data\": {\n    \"job_id\": $(\"Insert Job\").first()?.json?.job_id || null,\n    \"error_details\": $json?.message || \"AI returned invalid format\"\n  }\n}\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1696,
+        240
+      ],
+      "id": "fdfb5ad9-96e1-4918-8564-b6dd8969e145",
+      "name": "Respond: AI Error",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n{\n  \"success\": false,\n  \"message\": \"Job was created, but the evaluation profile could not be saved.\",\n  \"data\": {\n    \"job_id\": $(\"Insert Job\").first().json.job_id,\n    \"error_details\": $json.message,\n    \"hint\": \"Check if the evaluation profile table has a unique constraint or if the AI output was too long for the column.\"\n  }\n}\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2064,
+        176
+      ],
+      "id": "c64d53bd-2d9d-47ea-9e6c-94380ab6645c",
+      "name": "Respond: Profile Save Error",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_evaluation_profiles",
+          "mode": "list",
+          "cachedResultName": "job_evaluation_profiles"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "tenant_id",
+              "value": "={{ $('Map Job Field').item.json.tenant_id }}"
+            },
+            {
+              "column": "job_id",
+              "value": "={{ $('Get Job Meta data').item.json.job_id }}"
+            }
+          ]
+        },
+        "options": {
+          "outputColumns": [
+            "*"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1392,
+        -16
+      ],
+      "id": "e608eefd-a320-42d8-937b-92c3d7c681bf",
+      "name": "Get job details",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "cv-saas/job-details",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        64,
+        -32
+      ],
+      "id": "4901b4c8-e266-408f-9ca5-ce3deca28ea7",
+      "name": "Webhook – Get Job Details2",
+      "webhookId": "7213edeb-34b9-4063-8227-26a20f918655"
+    },
+    {
+      "parameters": {
+        "jsCode": "// This forces the response to be an ARRAY, which fixed the .map() error\nreturn [\n  {\n    json: {\n      \"job_id\": $input.first().json.job_id,\n      \"job_code\": $('Get Job Meta data').first().json.job_code,\n      \"job_title\": $('Get Job Meta data').first().json.job_title,\n      \"job_client\": $('Get Job Meta data').first().json.job_client,\n      \"job_status\": $('Get Job Meta data').first().json.status,\n      \"description\": $('Get Job Meta data').first().json.job_description,\n      \"location\": $('Get Job Meta data').first().json.job_location,\n      \"creatio_date\": $('Get Job Meta data').first().json.created_at,\n      \"Closing_date\": $('Get Job Meta data').first().json.end_date,\n      \"skills_required\": $input.first().json.analysis_json.skills.required,\n      \"Skills_preferred\": $input.first().json.analysis_json.skills.preferred,\n      \"experience_min_years\": $input.first().json.analysis_json.experience.minimum_years,\n      \"Relevent_roles\": $input.first().json.analysis_json.experience.relevant_roles,\n      \"Key_Responsibilities\": $input.first().json.analysis_json.experience.key_responsibilities,\n      \n      \"education_level\": $input.first().json.analysis_json.education.minimum_level,\n      \"education_fields\": $input.first().json.analysis_json.education.fields_of_study,\n      \"Education_Feilds\": $input.first().json.education_fields,\n      \"Certifications\": $input.first().json.certifications,\n      \"domain_knowledge\":$input.first().json.domain_knowledge,\n      \"Soft_skills\": $input.first().json.soft_skills,\n      \"other_requirement\": $input.first().json.other_requirements,\n      \"scoring_weights\":$input.first().json.weight_skills,\n      \"skills_list\": $input.first().json.analysis_json.skills.required,\n      \"experience_list\": $input.first().json.analysis_json.experience.key_responsibilities,\n      \"education_list\": $input.first().json.analysis_json.education.fields_of_study,\n      \"certifications_list\": $input.first().json.analysis_json.certifications,\n      // ... include any other fields you need here\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        -336
+      ],
+      "id": "357126ff-fe66-4169-8f04-b4e8cc4d1604",
+      "name": "job details to frontend",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// This forces the response to be an ARRAY, which fixed the .map() error\nreturn [\n  {\n    json: {\n      \"job_id\": $input.first().json.job_id,\n      \"skills_list\": $input.first().json.analysis_json.skills.required,\n      \"experience_list\": $input.first().json.analysis_json.experience.key_responsibilities,\n      \"education_list\": $input.first().json.analysis_json.education.fields_of_study,\n      \"certifications_list\": $input.first().json.analysis_json.certifications,\n      \"\"\n      // ... include any other fields you need here\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        -336
+      ],
+      "id": "d891844e-3229-4c8f-a7de-0a3f166694e8",
+      "name": "job details to frontend1",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "cv_analyzer",
+          "mode": "list",
+          "cachedResultName": "cv_analyzer"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_posts",
+          "mode": "list",
+          "cachedResultName": "job_posts"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "tenant_id",
+              "value": "={{ $json.tenant_id }}"
+            },
+            {
+              "column": "job_id",
+              "value": "={{ $json.job_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1008,
+        -16
+      ],
+      "id": "2478dab2-1128-4400-8fcb-669c424fbfce",
+      "name": "Get Job Meta data",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- Read data directly from nodes (wiring-safe) ---\nconst meta = $('Get Job Meta data').first().json;\nconst jobDetails = $('Get job details').first().json; // contains analysis_json (and anything else you already relied on)\nconst apply = $('Job apply method').first().json;\n\n// --- Read application stats (Postgres node you added) ---\nconst stats = $('Get Job Applications Stats').first()?.json || {};\n\n// helper\nconst toNum = (v, d = 0) => {\n  const n = typeof v === 'number' ? v : parseInt(String(v ?? ''), 10);\n  return Number.isFinite(n) ? n : d;\n};\n\n// Dashboard-style counters (what the new frontend shows)\nconst applications_total     = toNum(stats.applications_total, 0);\nconst applications_qualified = toNum(stats.applications_qualified, 0);\nconst applications_partial   = toNum(stats.applications_partial, 0);\nconst applications_rejected  = toNum(stats.applications_rejected, 0);\n\n// Keep the old fields too (won’t hurt, and keeps backward compatibility)\nconst applications_above_threshold = applications_qualified + applications_partial;\nconst applications_below_threshold = applications_rejected;\nconst applications_recommended     = applications_qualified;\n\nreturn [\n  {\n    json: {\n      details: {\n        job_id: meta.job_id,\n        job_code: meta.job_code,     // useful for FE / consistency\n        Job_Code: meta.job_code,     // keep old field (if anything still uses it)\n\n        job_status: meta.status,\n        job_title: meta.job_title,\n        job_client: meta.job_client,\n        job_type: meta.job_type,\n        location: meta.job_location,\n\n        posted_date: (() => {\n          const v = meta.created_at;\n          return v ? String(v).split('T')[0] : null;\n        })(),\n        closing_date: (() => {\n          const v = meta.end_date;\n          return v ? String(v).split('T')[0] : null;\n        })(),\n\n        // ✅ NEW: what JobDetails (2).tsx KPIs expect\n        applications_total,\n        applications_qualified,\n        applications_partial,\n        applications_rejected,\n\n        // ✅ Keep existing fields (no harm, may be used elsewhere)\n        applications_above_threshold,\n        applications_below_threshold,\n        applications_recommended,\n\n        ingestion_note: apply.ingestion_note,\n        description: meta.job_description,\n      },\n\n      // FE does: analysis_json: payload.analysis\n      analysis: jobDetails.analysis_json ?? $input.first()?.json?.analysis_json,\n    },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        -16
+      ],
+      "id": "55993aa3-1f5c-4a8e-ba93-40eca653ab2a",
+      "name": "job det to FE Full"
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $('Get Job Meta data').first().json;\n\nconst ingestionModeRaw = (meta.cv_ingestion_node || '').toString().trim().toLowerCase();\nconst ingestionMode =\n  ingestionModeRaw === 'forwarding' ? 'forward' : ingestionModeRaw; // normalize\n\nconst platformEmail = meta.platform_email || null;\nconst jobCode = meta.job_code || meta.job_id || '';\n\nconst FORWARD_EMAIL = 'jobs@ai970.cloud';\n\nlet ingestion_email = null;\nlet ingestion_note = '';\n\nif (ingestionMode === 'forward') {\n  ingestion_email = null;\n  ingestion_note =\n    `CVs for this job must be forwarded to ${FORWARD_EMAIL}. ` +\n    (jobCode\n      ? `Please include the job reference (${jobCode}) in the email subject or body to ensure correct routing.`\n      : `Please include the job reference in the email subject or body to ensure correct routing.`);\n\n} else if (ingestionMode === 'platform_email') {\n  ingestion_email = platformEmail;\n  ingestion_note = platformEmail\n    ? `Applicants must send their CVs directly to ${platformEmail}.`\n    : `Applicants must send their CVs to the designated platform email address.`;\n\n} else {\n  // fallback: still return something useful\n  ingestion_email = platformEmail;\n  ingestion_note =\n    `CV submission method is not clearly configured. Please contact support or verify the job ingestion settings.`;\n}\n\nreturn [\n  {\n    json: {\n      ingestion_mode: ingestionModeRaw,   // keep original value for FE (forwarding/platform_email)\n      ingestion_email,\n      ingestion_note,\n    },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        -16
+      ],
+      "id": "6c16de5f-199b-438b-8e8c-685a5e89a2bc",
+      "name": "Job apply method"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  COUNT(a.application_id) AS applications_total,\n  COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified') AS applications_qualified,\n  COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')   AS applications_partial,\n  COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')  AS applications_rejected\nFROM cv_analyzer.job_applications a\nWHERE a.tenant_id = '{{ $('Map Job Field').first().json.tenant_id }}'::uuid\n  AND a.job_id  = '{{ $('Get Job Meta data').first().json.job_id }}';\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1616,
+        -16
+      ],
+      "id": "dfee35c2-d6de-452d-b9e3-c446da3cd38b",
+      "name": "Get Job Applications Stats",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Map Job Field": {
+      "main": [
+        [
+          {
+            "node": "Get Job Meta data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'CV_auth_guard_verify_jwt'": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge – Body + Auth": {
+      "main": [
+        [
+          {
+            "node": "Map Job Field",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get job details": {
+      "main": [
+        [
+          {
+            "node": "Get Job Applications Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook – Get Job Details2": {
+      "main": [
+        [
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Job Meta data": {
+      "main": [
+        [
+          {
+            "node": "Job apply method",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job apply method": {
+      "main": [
+        [
+          {
+            "node": "Get job details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Job Applications Stats": {
+      "main": [
+        [
+          {
+            "node": "job det to FE Full",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jerusalem",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 60,
+    "availableInMCP": false,
+    "errorWorkflow": "ykiRJcF2aEJSyTfl"
+  },
+  "versionId": "749194ed-fd7d-450e-8dd7-f36bc81f9c97",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "8Vqji6zntPoAoAg1",
+  "tags": []
+}

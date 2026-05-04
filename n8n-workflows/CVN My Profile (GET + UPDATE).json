@@ -1,0 +1,470 @@
+{
+  "name": "CVN My Profile (GET + UPDATE)",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hqTiKPs1JoyrjSeN",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hqTiKPs1JoyrjSeN",
+          "cachedResultName": "CV_auth_guard_verify_jwt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        288,
+        0
+      ],
+      "id": "8e5f322d-2dca-4160-9b38-481bfe6bd611",
+      "name": "Call 'CV_auth_guard_verify_jwt'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        496,
+        112
+      ],
+      "id": "5897b1aa-f409-4366-a337-5989133e5be7",
+      "name": "Merge – Body + Auth"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7b518408-e64a-4059-8e72-4f1095fed1a0",
+              "name": "tenant_id",
+              "value": "={{ $json.auth.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "82828de9-a0ad-424d-a2a7-c5ca14c455ba",
+              "name": "user_id",
+              "value": "={{ $json.auth.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "d763c073-4204-4e8a-b996-e19f32e2e26e",
+              "name": "method",
+              "value": "={{ $json.method }}",
+              "type": "string"
+            },
+            {
+              "id": "7374334c-e8ff-4eb5-b614-969d48b46688",
+              "name": "Admin_name",
+              "value": "={{ $json.Admin_name }}",
+              "type": "string"
+            },
+            {
+              "id": "5d64246d-8b34-4fe6-bc85-649b5577e5ea",
+              "name": "intake_method",
+              "value": "={{ $json.intake_method }}",
+              "type": "string"
+            },
+            {
+              "id": "739531ac-916c-4879-bcd6-d5eb06998cc1",
+              "name": "forwarding_email",
+              "value": "={{ $json.forwarding_email }}",
+              "type": "string"
+            },
+            {
+              "id": "f79f7064-4753-47d0-a9d4-6e61ff11e0b2",
+              "name": "tenant_name",
+              "value": "={{ $json.tenant_name }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        688,
+        112
+      ],
+      "id": "460b5839-3c4d-4fd3-a90d-7edbb5150244",
+      "name": "Map tenant Field"
+    },
+    {
+      "parameters": {
+        "multipleMethods": true,
+        "httpMethod": [
+          "GET",
+          "PUT"
+        ],
+        "path": "/cv-saas/me",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -304,
+        112
+      ],
+      "id": "36bb7f63-339e-464c-94c8-73336af0eb88",
+      "name": "API - Me",
+      "webhookId": "d977658d-f256-47e5-a0b3-31e0b747b65a"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e5b30ae8-2275-47eb-b9cd-c3f1fc5cbf5d",
+              "leftValue": "={{ String($json.method || '').trim().toUpperCase() === 'GET' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        112
+      ],
+      "id": "06047205-b98d-4979-a30c-924127126680",
+      "name": "IF Method is GET"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  u.user_id,\n  u.tenant_id,\n  u.full_name AS admin_name,\n  u.email,\n  u.role,\n\n  t.tenant_name,\n  t.status AS tenant_status,\n\n  t.cv_ingestion_mode,\n  t.cv_ingestion_mode AS intake_method,      -- ✅ backward compatible for frontend\n\n  i.inbox_email AS forwarding_email          -- ✅ frontend-friendly name\n\nFROM cv_analyzer.saas_users u\nJOIN cv_analyzer.saas_tenants t\n  ON t.tenant_id = u.tenant_id\nLEFT JOIN cv_analyzer.saas_inboxes i\n  ON i.tenant_id = u.tenant_id\n\nWHERE u.tenant_id = '{{ $json.tenant_id }}'::uuid\n  AND u.user_id   = '{{ $json.user_id }}'::uuid\nLIMIT 1;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1152,
+        0
+      ],
+      "id": "c42c88ac-4a2c-4c95-bd0e-f863e92757df",
+      "name": "DB - Get My Profile",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, profile: $items(\"DB - Get My Profile\")[0].json } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1328,
+        0
+      ],
+      "id": "f62eedbb-9f8f-4f4e-9588-b2dfa249bb7d",
+      "name": "RESP - My Profile"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nconst tenant_id = item.tenant_id;\nconst user_id = item.user_id;\n\nif (!tenant_id || !user_id) {\n  throw new Error(\"Missing tenant_id or user_id\");\n}\n\nconst clean = (v) => {\n  if (v === undefined || v === null) return undefined;\n  if (typeof v !== \"string\") return v;\n  const s = v.trim();\n  if (s === \"\" || s === \"undefined\" || s === \"null\") return undefined;\n  return s;\n};\n\n// ✅ map from your actual keys\nconst mapped = {\n  tenant_name: clean(item.tenant_name),\n  admin_name: clean(item.Admin_name),                 // <-- capital A input\n  cv_ingestion_mode: clean(item.intake_method),       // <-- intake_method input\n  forwarding_email: clean(item.forwarding_email),\n};\n\nconst updates = {};\nfor (const k of [\"tenant_name\", \"admin_name\", \"cv_ingestion_mode\", \"forwarding_email\"]) {\n  if (mapped[k] !== undefined) updates[k] = mapped[k];\n}\n\nif (Object.keys(updates).length === 0) {\n  throw new Error(\"No allowed fields to update\");\n}\n\n// FORWARD rule\nif (updates.cv_ingestion_mode === \"FORWARD\" && !updates.forwarding_email) {\n  throw new Error(\"forwarding_email is required when cv_ingestion_mode = FORWARD\");\n}\n\nif (updates.cv_ingestion_mode && updates.cv_ingestion_mode !== \"FORWARD\") {\n  delete updates.forwarding_email;\n}\n\nreturn [{\n  json: {\n    tenant_id,\n    user_id,\n    ...updates,\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        208
+      ],
+      "id": "2395a62a-310e-41ed-ba25-aa0a1dbdcf92",
+      "name": "Validate - Profile Update"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- 1) Update admin name\nUPDATE cv_analyzer.saas_users\nSET full_name = COALESCE(NULLIF('{{ $item(0).$node[\"Validate - Profile Update\"].json.admin_name || \"\" }}',''), full_name)\nWHERE tenant_id = '{{ $item(0).$node[\"Validate - Profile Update\"].json.tenant_id }}'::uuid\n  AND user_id   = '{{ $item(0).$node[\"Validate - Profile Update\"].json.user_id }}'::uuid;\n\n-- 2) Update tenant\nUPDATE cv_analyzer.saas_tenants\nSET\n  tenant_name = COALESCE(NULLIF('{{ $item(0).$node[\"Validate - Profile Update\"].json.tenant_name || \"\" }}',''), tenant_name),\n  cv_ingestion_mode = COALESCE(NULLIF('{{ $item(0).$node[\"Validate - Profile Update\"].json.cv_ingestion_mode || \"\" }}',''), cv_ingestion_mode)\nWHERE tenant_id = '{{ $item(0).$node[\"Validate - Profile Update\"].json.tenant_id }}'::uuid;\n\n-- 3) Update inbox email only if FORWARD\nUPDATE cv_analyzer.saas_inboxes\nSET inbox_email = COALESCE(NULLIF('{{ $item(0).$node[\"Validate - Profile Update\"].json.forwarding_email || \"\" }}',''), inbox_email)\nWHERE tenant_id = '{{ $item(0).$node[\"Validate - Profile Update\"].json.tenant_id }}'::uuid\n  AND '{{ $item(0).$node[\"Validate - Profile Update\"].json.cv_ingestion_mode || \"\" }}' = 'FORWARD';\n\n-- 4) Return profile\nSELECT\n  u.user_id,\n  u.tenant_id,\n  u.full_name AS admin_name,\n  u.email,\n  u.role,\n  t.tenant_name,\n  t.cv_ingestion_mode,\n  t.status AS tenant_status,\n  i.inbox_email AS forwarding_email\nFROM cv_analyzer.saas_users u\nJOIN cv_analyzer.saas_tenants t ON t.tenant_id = u.tenant_id\nLEFT JOIN cv_analyzer.saas_inboxes i ON i.tenant_id = u.tenant_id\nWHERE u.tenant_id = '{{ $item(0).$node[\"Validate - Profile Update\"].json.tenant_id }}'::uuid\n  AND u.user_id   = '{{ $item(0).$node[\"Validate - Profile Update\"].json.user_id }}'::uuid\nLIMIT 1;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1344,
+        208
+      ],
+      "id": "73f925d8-a605-4df8-a87d-3893948c8fcf",
+      "name": "DB - Update My Profile",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, profile: $json }) }}\n",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1552,
+        208
+      ],
+      "id": "00a42c5a-7692-433a-962a-aa575a35d5eb",
+      "name": "RESP - Profile Updated"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "152c73ec-d4c3-4035-9047-5386b09e1ecf",
+              "name": "method",
+              "value": "PUT",
+              "type": "string"
+            },
+            {
+              "id": "ba1552a3-0850-4312-88ef-4900dc4d6410",
+              "name": "=Admin_name",
+              "value": "={{ $json.body.admin_name }}",
+              "type": "string"
+            },
+            {
+              "id": "c5281a86-a603-4600-90b8-817389d8fb9a",
+              "name": "intake_method",
+              "value": "={{ $json.body.cv_ingestion_mode }}",
+              "type": "string"
+            },
+            {
+              "id": "5e212aa6-9467-44a1-ae4e-25eae83ad345",
+              "name": "forwarding_email",
+              "value": "={{ $json.body.forwarding_email }}",
+              "type": "string"
+            },
+            {
+              "id": "395df81e-35b2-4830-86b3-5a0e3d050564",
+              "name": "tenant_name",
+              "value": "={{ $json.body.tenant_name }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        112,
+        208
+      ],
+      "id": "4c30fffe-1bda-4e62-bafc-3eaaf1a3a2a2",
+      "name": "SET Method"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7c6872cb-da90-47f2-9ed5-0968c41544d3",
+              "name": "method",
+              "value": "GET",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        48,
+        96
+      ],
+      "id": "d7fff75f-b0a7-4f0e-b9ea-4e143a946ac0",
+      "name": "Set GET"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Call 'CV_auth_guard_verify_jwt'": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge – Body + Auth": {
+      "main": [
+        [
+          {
+            "node": "Map tenant Field",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map tenant Field": {
+      "main": [
+        [
+          {
+            "node": "IF Method is GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API - Me": {
+      "main": [
+        [
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Set GET",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SET Method",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Method is GET": {
+      "main": [
+        [
+          {
+            "node": "DB - Get My Profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate - Profile Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Get My Profile": {
+      "main": [
+        [
+          {
+            "node": "RESP - My Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate - Profile Update": {
+      "main": [
+        [
+          {
+            "node": "DB - Update My Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Update My Profile": {
+      "main": [
+        [
+          {
+            "node": "RESP - Profile Updated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SET Method": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Set GET": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "cf2a7064-3252-48e2-a21f-45bfd0a1d44e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "YyTIjeZRazDmKIr0",
+  "tags": []
+}

@@ -1,0 +1,377 @@
+{
+  "name": "CVN GET Admin Tenants (Paged)",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hqTiKPs1JoyrjSeN",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hqTiKPs1JoyrjSeN",
+          "cachedResultName": "CV_auth_guard_verify_jwt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        -144
+      ],
+      "id": "2f33deba-8be8-43e9-81b0-8cc8f10c90f3",
+      "name": "Call 'CV_auth_guard_verify_jwt'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $items(\"Validate + Normalize Query\")[0].json;\n\nconst total = $items(\"DB - Tenants Total Count\")[0].json.total;\nconst tenants = $items(\"DB - Tenants Page\").map(i => i.json);\n\nreturn [{\n  json: {\n    page: ctx.page,\n    limit: ctx.limit,\n    total,\n    total_pages: Math.ceil(total / ctx.limit),\n    tenants\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        -96
+      ],
+      "id": "ef0d920c-8634-4cc9-a93e-4e6bf84b6743",
+      "name": "Format Response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"error\": \"Access denied - Super Admin only\"\n}\n",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1216,
+        224
+      ],
+      "id": "4cae357e-cd87-461b-8f43-7078191a389e",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1808,
+        -96
+      ],
+      "id": "1a9f1290-8817-48fb-b9dd-2ed8b43f2a9e",
+      "name": "Respond to Webhook (200)"
+    },
+    {
+      "parameters": {
+        "path": "cv-saas/admin/tenants",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "0adf849d-467e-4f7e-beec-d4b425b72ead",
+      "name": "WH - Admin Tenants List",
+      "webhookId": "a3f663ea-88a4-4d76-b82c-a8ee732e7a33"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        384,
+        0
+      ],
+      "id": "fac9610c-53b8-4bc9-acae-ebcc12105c0e",
+      "name": "Merge – Body + Auth"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9aecd2b1-7f02-4446-9ea0-1dc8cd858540",
+              "name": "auth_role",
+              "value": "={{ $json.auth.role }}",
+              "type": "string"
+            },
+            {
+              "id": "79795db6-1b1d-4823-b7cb-4722eddc439d",
+              "name": "page",
+              "value": "={{ $json.query.page  || \"\"}}",
+              "type": "string"
+            },
+            {
+              "id": "ebf93dbc-0553-4386-8cdb-945e45ac2ee6",
+              "name": "limit",
+              "value": "={{$json.query.limit || 20}}",
+              "type": "string"
+            },
+            {
+              "id": "fef6e4ac-b818-4b6b-bbe4-898c97cde91b",
+              "name": "search",
+              "value": "={{$json.query.search || \"\"}}",
+              "type": "string"
+            },
+            {
+              "id": "862c15ab-0bcc-41dc-af2a-74ca73bbb7ea",
+              "name": "status",
+              "value": "={{$json.query.status || \"\"}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        544,
+        0
+      ],
+      "id": "22d6bc15-e836-48e7-ab21-8775fe80ace2",
+      "name": "Set - Normalize Context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ddc21f61-a957-4d09-859a-acbf83e1033e",
+              "leftValue": "={{ $('Merge – Body + Auth').item.json.auth.role }}",
+              "rightValue": "super_admin",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        736,
+        0
+      ],
+      "id": "5e27c46c-2f37-4aef-bbe3-1e505672fb68",
+      "name": "IF - Is Super Admin?"
+    },
+    {
+      "parameters": {
+        "jsCode": "let page = parseInt($json.page, 10);\nlet limit = parseInt($json.limit, 10);\n\nif (!Number.isFinite(page) || page < 1) page = 1;\nif (!Number.isFinite(limit) || limit < 1) limit = 20;\nif (limit > 100) limit = 100;\n\nconst search = String($json.search || \"\").trim();\nconst statusRaw = String($json.status || \"\").trim().toLowerCase();\nconst status = [\"active\",\"suspended\"].includes(statusRaw) ? statusRaw : \"\";\n\nconst offset = (page - 1) * limit;\n\nreturn [{\n  json: {\n    ...$json,\n    page,\n    limit,\n    offset,\n    search,\n    status\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        -96
+      ],
+      "id": "8f71ec47-d32d-4faa-b8cf-fbb1e18857ec",
+      "name": "Validate + Normalize Query"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*)::int AS total\nFROM cv_analyzer.saas_tenants t\nWHERE\n  ($1 = '' OR t.status = $1)\n  AND (\n    $2 = '' OR\n    t.tenant_name ILIKE '%' || $2 || '%' OR\n    t.tenant_code ILIKE '%' || $2 || '%'\n  );\n",
+        "options": {
+          "queryReplacement": "={{$json.status}}, {{$json.search}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1168,
+        -96
+      ],
+      "id": "07314db7-a1d5-43fe-8cb8-9a1123ecf3c0",
+      "name": "DB - Tenants Total Count",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  t.tenant_id,\n  t.tenant_name,\n  t.tenant_code,\n  t.status,\n  t.created_at,\n  (SELECT COUNT(*) FROM cv_analyzer.saas_users u WHERE u.tenant_id = t.tenant_id)::int AS users_count,\n  (SELECT COUNT(*) FROM cv_analyzer.job_posts j WHERE j.tenant_id = t.tenant_id)::int AS jobs_count,\n  (SELECT COUNT(*) FROM cv_analyzer.job_applications a WHERE a.tenant_id = t.tenant_id)::int AS applications_count\nFROM cv_analyzer.saas_tenants t\nWHERE\n  ($1 = '' OR t.status = $1)\n  AND (\n    $2 = '' OR\n    t.tenant_name ILIKE '%' || $2 || '%' OR\n    t.tenant_code ILIKE '%' || $2 || '%'\n  )\nORDER BY t.created_at DESC\nLIMIT $3 OFFSET $4;\n",
+        "options": {
+          "queryReplacement": "={{ $('Validate + Normalize Query').item.json.status }},{{ $('Validate + Normalize Query').item.json.search }} ,{{ $('Validate + Normalize Query').item.json.limit }} , {{ $('Validate + Normalize Query').item.json.offset }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1392,
+        -96
+      ],
+      "id": "2f9d6319-ce0d-4456-8e5d-cb640fa57630",
+      "name": "DB - Tenants Page",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Call 'CV_auth_guard_verify_jwt'": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (200)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook (200)": {
+      "main": [
+        []
+      ]
+    },
+    "WH - Admin Tenants List": {
+      "main": [
+        [
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge – Body + Auth": {
+      "main": [
+        [
+          {
+            "node": "Set - Normalize Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Normalize Context": {
+      "main": [
+        [
+          {
+            "node": "IF - Is Super Admin?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Is Super Admin?": {
+      "main": [
+        [
+          {
+            "node": "Validate + Normalize Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate + Normalize Query": {
+      "main": [
+        [
+          {
+            "node": "DB - Tenants Total Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Tenants Total Count": {
+      "main": [
+        [
+          {
+            "node": "DB - Tenants Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Tenants Page": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2725f41f-e259-4a4a-9dae-0c9ede43db30",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "PwcqIIFynDgTreib",
+  "tags": []
+}

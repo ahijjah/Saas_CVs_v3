@@ -1,0 +1,197 @@
+{
+  "name": "CVN_GET jobs dashboard",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "cv-saas/jobs",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "a50d222e-dcb8-41c6-898a-8408dc6784bc",
+      "name": "Webhook",
+      "webhookId": "d977658d-f256-47e5-a0b3-31e0b747b65a"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hqTiKPs1JoyrjSeN",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hqTiKPs1JoyrjSeN",
+          "cachedResultName": "CV_auth_guard_verify_jwt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        176,
+        -112
+      ],
+      "id": "ad074f2a-8cdb-4137-91b8-364df728ede6",
+      "name": "Call 'CV_auth_guard_verify_jwt'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        384,
+        0
+      ],
+      "id": "05686c80-35a5-4c96-ba6a-3ac6fe738774",
+      "name": "Merge – Body + Auth"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  j.job_id,\n  j.job_code,\n  j.job_title,\n  j.job_client,\n  j.status AS job_status,\n\n  COUNT(a.application_id) AS applications_total,\n  COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified') AS applications_qualified,\n  COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')   AS applications_partial,\n  COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')  AS applications_rejected\n\nFROM cv_analyzer.job_posts j\nLEFT JOIN cv_analyzer.job_applications a\n  ON a.job_id = j.job_id\n AND a.tenant_id = j.tenant_id\n\nWHERE j.tenant_id = '{{ $json.tenant_id }}'::uuid\n\nGROUP BY\n  j.job_id,\n  j.job_code,\n  j.job_title,\n  j.job_client,\n  j.status\n\nORDER BY j.created_at DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        800,
+        0
+      ],
+      "id": "7977fb6a-5b31-4ec5-a0bf-df21709f45c7",
+      "name": "Get Job Meta data",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7b518408-e64a-4059-8e72-4f1095fed1a0",
+              "name": "tenant_id",
+              "value": "={{ $json.auth.tenant_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        592,
+        0
+      ],
+      "id": "6e819270-17e9-441d-9e4c-a7d292cb8b33",
+      "name": "Map tenant Field"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$input.all().map(item => item.json)}}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1008,
+        0
+      ],
+      "id": "0f587d7b-1854-4a24-b5b8-9d280ccbbddb",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge – Body + Auth": {
+      "main": [
+        [
+          {
+            "node": "Map tenant Field",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'CV_auth_guard_verify_jwt'": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map tenant Field": {
+      "main": [
+        [
+          {
+            "node": "Get Job Meta data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Job Meta data": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "fc78e5ab-8842-46c8-9ee5-e77ca9f211ef",
+  "meta": {
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "ztPIHLLGZ5aNEAUl",
+  "tags": []
+}

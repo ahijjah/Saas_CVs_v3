@@ -1,0 +1,561 @@
+{
+  "name": "CVN Update Tenant Status",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hqTiKPs1JoyrjSeN",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hqTiKPs1JoyrjSeN",
+          "cachedResultName": "CV_auth_guard_verify_jwt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        -224
+      ],
+      "id": "77613d5c-27a2-49a0-a222-d75a50acb0f7",
+      "name": "Call 'CV_auth_guard_verify_jwt'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        448,
+        -16
+      ],
+      "id": "d690428a-c6d1-4c89-9aba-c320fb872df5",
+      "name": "Merge – Body + Auth"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ddc21f61-a957-4d09-859a-acbf83e1033e",
+              "leftValue": "={{ $json.auth_role }}",
+              "rightValue": "super_admin",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        -16
+      ],
+      "id": "41ad803f-878b-441c-b73c-20ee47383f8a",
+      "name": "validate role"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5249c2d1-6ff6-460f-a6b3-027c777c5d20",
+              "name": "error",
+              "value": "Access denied - Super Admin only",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1136,
+        160
+      ],
+      "id": "b02401fb-23aa-4f36-a7fc-e46a1b4fb044",
+      "name": "ERROR Set 403"
+    },
+    {
+      "parameters": {
+        "httpMethod": "PATCH",
+        "path": "cv-saas/admin/tenants/status",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "0db2f5fe-080d-450d-931e-5d96a83477ac",
+      "name": "WH - Admin Tenant Status",
+      "webhookId": "dbc8a7eb-5d6d-456a-b2cb-ef41320c1921"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1360,
+        16
+      ],
+      "id": "8812adad-66dd-452a-9fc3-3c5403c8cef9",
+      "name": "RESP - 400"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1360,
+        160
+      ],
+      "id": "13339360-8d92-4fd5-9801-17949c66da7d",
+      "name": "RESP - 403"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"tenant\": \"={{ $items('DB - Update Tenant Status')[0].json }}\",\n  \"users_disabled_count\": \"={{ $json.target_status === 'suspended' ? $items('DB - Disable Tenant Users').length : 0 }}\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2208,
+        -192
+      ],
+      "id": "0f8e3d64-bb15-4596-8653-8afea739f6f1",
+      "name": "RESP - 200"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e52997d0-6d67-420e-9804-cad81b3dfe62",
+              "name": "auth_user_id",
+              "value": "={{ $json.auth.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "bb4174ed-f863-443e-82cc-346529e044ff",
+              "name": "auth_tenant_id",
+              "value": "={{ $json.auth.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "da14584a-8255-4b76-84eb-51bb12def166",
+              "name": "auth_role",
+              "value": "={{ $json.auth.role }}",
+              "type": "string"
+            },
+            {
+              "id": "6c09513d-5f7f-4457-a8b4-cdfaa221e6c7",
+              "name": "target_tenant_id",
+              "value": "={{ $json.body.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "01d93fc5-c009-4acf-9d89-fcad63b573c8",
+              "name": "target_status",
+              "value": "={{ $json.body.status }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        656,
+        -16
+      ],
+      "id": "578c89a0-f32b-473d-8cd3-9aef06dcbe31",
+      "name": "Set - Normalize Context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "16240413-56a0-4244-9711-b9227a66a19d",
+              "leftValue": "={{$json.target_tenant_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "c8e533ea-6ca2-428d-b343-8dffbcd0f3af",
+              "leftValue": "={{   $json.target_tenant_id &&   ['active', 'suspended'].includes(     String($json.target_status || '').toLowerCase()   ) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        -176
+      ],
+      "id": "45a27f59-0049-476c-ade0-02bc8f2ffa1f",
+      "name": "IF - Validate Body"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE cv_analyzer.saas_tenants\nSET status = $2\nWHERE tenant_id = $1\nRETURNING tenant_id, tenant_name, tenant_code, status, created_at;",
+        "options": {
+          "queryReplacement": "={{$json.target_tenant_id}}, {{$json.target_status}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1344,
+        -192
+      ],
+      "id": "de334062-a0f1-4628-b76b-4f4cbe5974e9",
+      "name": "DB - Update Tenant Status",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "37c8fbd8-3dd3-4e0f-a66a-94061339259a",
+              "leftValue": "={{$items(\"DB - Update Tenant Status\").length}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1552,
+        -192
+      ],
+      "id": "e0415d32-e252-4e8e-a4e8-87d7a3d42a4f",
+      "name": "IF - Tenant Found?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"error\": \"Tenant not found\" }",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2048,
+        80
+      ],
+      "id": "cbae295f-0402-46f1-8fc8-326536147284",
+      "name": "RESP - 404"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3e2d2a3a-36d3-4e93-a45b-3047d734d6bf",
+              "leftValue": "={{$json.target_status}}",
+              "rightValue": "suspended",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        -288
+      ],
+      "id": "c728e9ce-1114-4a00-9cb3-8261523037cf",
+      "name": "IF - Suspended?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE cv_analyzer.saas_users\nSET status = 'disabled'\nWHERE tenant_id = $1\nRETURNING user_id;\n",
+        "options": {
+          "queryReplacement": "={{ [ $json.target_tenant_id ] }}\n"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1968,
+        -384
+      ],
+      "id": "2cda0c60-0d02-491a-9eb9-3b642bd2c799",
+      "name": "DB - Disable Tenant Users",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Merge – Body + Auth": {
+      "main": [
+        [
+          {
+            "node": "Set - Normalize Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'CV_auth_guard_verify_jwt'": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate role": {
+      "main": [
+        [
+          {
+            "node": "IF - Validate Body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ERROR Set 403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERROR Set 403": {
+      "main": [
+        [
+          {
+            "node": "RESP - 403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WH - Admin Tenant Status": {
+      "main": [
+        [
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "RESP - 200": {
+      "main": [
+        []
+      ]
+    },
+    "Set - Normalize Context": {
+      "main": [
+        [
+          {
+            "node": "validate role",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Validate Body": {
+      "main": [
+        [
+          {
+            "node": "DB - Update Tenant Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RESP - 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Update Tenant Status": {
+      "main": [
+        [
+          {
+            "node": "IF - Tenant Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Tenant Found?": {
+      "main": [
+        [
+          {
+            "node": "IF - Suspended?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RESP - 404",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Suspended?": {
+      "main": [
+        [
+          {
+            "node": "DB - Disable Tenant Users",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RESP - 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB - Disable Tenant Users": {
+      "main": [
+        [
+          {
+            "node": "RESP - 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "487ba7d8-bb3f-48cf-8437-cafcebf17f4d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "ErpaLasBlXV1uPVz",
+  "tags": []
+}
