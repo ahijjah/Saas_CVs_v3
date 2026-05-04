@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AuthState, User, ApplicationFilter } from './types';
+import { LanguageProvider } from './context/LanguageContext';
 import { AuthPage } from './pages/Auth';
 import { LandingPage } from './pages/LandingPage';
 import { Layout } from './components/Layout';
@@ -28,7 +29,7 @@ function decodeJwtPayload(token: string) {
   }
 }
 
-const App: React.FC = () => {
+const AppInner: React.FC = () => {
   // Auth State - initialized from individual localStorage keys and JWT decoding
   const [auth, setAuth] = useState<AuthState>(() => {
     try {
@@ -294,5 +295,11 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+const App: React.FC = () => (
+  <LanguageProvider>
+    <AppInner />
+  </LanguageProvider>
+);
 
 export default App;
