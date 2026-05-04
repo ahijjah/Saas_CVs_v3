@@ -1,0 +1,228 @@
+{
+  "name": "CVN_GET Applications - ALL",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "hqTiKPs1JoyrjSeN",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/hqTiKPs1JoyrjSeN",
+          "cachedResultName": "CV_auth_guard_verify_jwt"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        176,
+        -112
+      ],
+      "id": "28786298-195b-4a50-a07b-ccaa8d3f7148",
+      "name": "Call 'CV_auth_guard_verify_jwt'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        384,
+        0
+      ],
+      "id": "28e7abac-4a87-4dc4-9ae5-08c3b34fe6dd",
+      "name": "Merge – Body + Auth"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7b518408-e64a-4059-8e72-4f1095fed1a0",
+              "name": "tenant_id",
+              "value": "={{ $json.auth.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "623d043c-87e8-48a4-80c3-df85fedc30d8",
+              "name": "Job_id",
+              "value": "={{ $json.query.job_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        592,
+        0
+      ],
+      "id": "22b504f6-caf9-4544-a352-1a58e2f57da1",
+      "name": "Map tenant Field"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1216,
+        0
+      ],
+      "id": "26320843-b0a8-4f90-a052-e74dec15f6a0",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "path": "cv-saas/applications2",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "f8770642-c0bb-43ed-99d2-4943c04755f4",
+      "name": "Trig_get_Job_Applications",
+      "webhookId": "b68df9d4-ec6a-4b36-bbe5-0683f3017922"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\n\nreturn rows.map(r => ({\n  json: {\n    id: r.application_code || r.application_id, // what you show in UI\n    application_id: r.application_id,           // optional (hidden)\n    candidate_name: r.candidate_name,\n    score: Number(r.score || 0),\n    status: r.status,\n    applied_date: r.applied_date,\n    summary: r.summary || ''\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        0
+      ],
+      "id": "63ef0623-46f1-4aab-bce6-3575d657c4f9",
+      "name": "shape response"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  a.application_id,\n  a.candidate_name,\n  a.decision AS status,\n  COALESCE(a.final_score, 0) AS score,\n  to_char(a.received_at::date, 'YYYY-MM-DD') AS applied_date,\n  COALESCE(s.evaluation_notes, '') AS summary\nFROM cv_analyzer.job_applications a\nLEFT JOIN LATERAL (\n  SELECT\n    evaluation_notes\n  FROM cv_analyzer.job_application_scores s\n  WHERE s.application_id = a.application_id\n    AND s.tenant_id = a.tenant_id\n  ORDER BY s.scored_at DESC\n  LIMIT 1\n) s ON true\nWHERE a.job_id = $1\n  AND a.tenant_id = $2\nORDER BY a.received_at DESC;\n",
+        "options": {
+          "queryReplacement": "={{ $json.Job_id }}, {{ $json.tenant_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        800,
+        0
+      ],
+      "id": "9e5b8cd7-358a-4aac-b0f9-f505c8eb8709",
+      "name": "Get Job applications data",
+      "credentials": {
+        "postgres": {
+          "id": "vUXV7XQLjuy24ou7",
+          "name": "CV_postgress_account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Merge – Body + Auth": {
+      "main": [
+        [
+          {
+            "node": "Map tenant Field",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'CV_auth_guard_verify_jwt'": {
+      "main": [
+        [
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map tenant Field": {
+      "main": [
+        [
+          {
+            "node": "Get Job applications data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trig_get_Job_Applications": {
+      "main": [
+        [
+          {
+            "node": "Call 'CV_auth_guard_verify_jwt'",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge – Body + Auth",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "shape response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Job applications data": {
+      "main": [
+        [
+          {
+            "node": "shape response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "049ae39e-6f9c-4718-af98-a1a290ca72bf",
+  "meta": {
+    "instanceId": "852ace82502f1630c551a4bbda97d57fde3fa4e8f7b58c5893f1be8db4fb30f1"
+  },
+  "id": "s4Pr7Ix2aT9MCAaB",
+  "tags": []
+}
