@@ -1,11 +1,20 @@
-"""Celery task: poll IMAP inbox for new CV emails."""
+"""
+Celery task: poll IMAP inbox for new CV emails.
+
+Supports two routing modes per job:
+  Option 1 — Forwarding: email sent to FORWARDING_EMAIL (from system_config),
+             job identified by job_code in subject (e.g. JOB-2026-0001).
+  Option 2 — Alias: email sent directly to {job_id}@{domain},
+             job resolved from TO address automatically.
+
+Deduplication: message_id (email level) + SHA-256 hash (file level).
+"""
 import asyncio
 import email
+import email.utils
 import hashlib
-import imaplib
 import logging
 import re
-import tempfile
 from email.header import decode_header
 from pathlib import Path
 
@@ -16,9 +25,12 @@ logger = logging.getLogger(__name__)
 ATTACHMENT_MIME_TYPES = {
     "application/pdf": "pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-    # Common alternate MIME type for DOCX
     "application/msword": "doc",
+    "application/octet-stream": "pdf",  # fallback — treat unknown binary as PDF
 }
+
+# Matches JOB-2026-0001, JOB-2026-001, job-2026-1, etc.
+JOB_CODE_RE = re.compile(r'\bJOB[-_](\d{4})[-_](\d{1,4})\b', re.IGNORECASE)
 
 
 @celery_app.task(name="workers.cv_intake.poll_imap_inbox")
@@ -27,6 +39,7 @@ def poll_imap_inbox():
 
 
 async def _poll_async() -> None:
+    import imaplib
     from config import get_settings
     cfg = get_settings()
 
@@ -45,7 +58,7 @@ async def _poll_async() -> None:
             return
 
         ids = msg_ids[0].split()
-        logger.info("IMAP: found %d unseen messages", len(ids))
+        logger.info("IMAP: %d unseen messages", len(ids))
 
         for msg_id_bytes in ids:
             try:
@@ -58,11 +71,9 @@ async def _poll_async() -> None:
         logger.error("IMAP polling error: %s", exc)
 
 
-async def _process_message(imap: imaplib.IMAP4, msg_id_bytes: bytes) -> None:
+async def _process_message(imap, msg_id_bytes: bytes) -> None:
     from config import get_settings
     from database import AsyncSessionLocal, set_rls_context
-    from services.docx_service import convert_docx_to_pdf
-    from services.pdf_service import extract_text_from_pdf
     from sqlalchemy import text
 
     cfg = get_settings()
@@ -71,16 +82,18 @@ async def _process_message(imap: imaplib.IMAP4, msg_id_bytes: bytes) -> None:
     raw = msg_data[0][1]
     msg = email.message_from_bytes(raw)
 
-    # Decode headers
     message_id = msg.get("Message-ID", "").strip()
-    subject = _decode_header(msg.get("Subject", ""))
-    sender = email.utils.parseaddr(msg.get("From", ""))[1]
-    recipient = email.utils.parseaddr(msg.get("To", ""))[1].lower()
+    subject    = _decode_header_str(msg.get("Subject", ""))
+    sender     = email.utils.parseaddr(msg.get("From", ""))[1].lower()
+    sender_name = email.utils.parseaddr(msg.get("From", ""))[0] or sender.split("@")[0]
+    # TO may be a list; grab the first address that's relevant
+    to_header  = msg.get("To", "") or msg.get("Delivered-To", "")
+    recipient  = email.utils.parseaddr(to_header)[1].lower()
 
     async with AsyncSessionLocal() as db:
         await set_rls_context(db, "", "super_admin")
 
-        # Deduplication check
+        # ── Email-level deduplication ─────────────────────────────────────
         if message_id:
             dup = await db.execute(
                 text("SELECT log_id FROM email_ingest_log WHERE message_id = :mid"),
@@ -91,42 +104,75 @@ async def _process_message(imap: imaplib.IMAP4, msg_id_bytes: bytes) -> None:
                 imap.store(msg_id_bytes, "+FLAGS", "\\Seen")
                 return
 
-        # Determine ingestion mode: platform_email or forwarding
-        job_id, tenant_id, ingestion_mode = await _resolve_routing(db, recipient, subject, sender, cfg)
-
-        if not job_id or not tenant_id:
-            await _log_ingest(db, message_id, sender, recipient, subject, None, None, None, "skipped",
-                              "Could not resolve job or tenant")
-            imap.store(msg_id_bytes, "+FLAGS", "\\Seen")
-            return
-
-        # Fetch job title
-        job_row = await db.execute(
-            text("SELECT title FROM jobs WHERE job_id = :jid AND status = 'active'"),
-            {"jid": job_id},
+        # Load FORWARDING_EMAIL from system_config
+        fwd_row = await db.execute(
+            text("SELECT value FROM system_config WHERE key = 'forwarding_email'")
         )
-        job = job_row.mappings().first()
-        if not job:
-            await _log_ingest(db, message_id, sender, recipient, subject, tenant_id, job_id,
-                              None, "skipped", "Job not active")
+        forwarding_email = (fwd_row.scalar_one_or_none() or cfg.imap_user).lower()
+
+        # ── Resolve routing ───────────────────────────────────────────────
+        job_id, tenant_id, ingestion_mode, reject_reason = await _resolve_routing(
+            db, recipient, subject, forwarding_email
+        )
+
+        if not job_id:
+            logger.warning("Unroutable email from %s — %s", sender, reject_reason)
+            await _log_ingest(db, message_id, sender, recipient, subject,
+                              None, None, None, "unassigned", reject_reason, "unknown")
             imap.store(msg_id_bytes, "+FLAGS", "\\Seen")
             return
 
-        # Extract candidate name from sender
-        sender_name = email.utils.parseaddr(msg.get("From", ""))[0] or sender.split("@")[0]
-
-        # Process attachments
+        # ── Process attachments ───────────────────────────────────────────
         processed_any = False
         for part in msg.walk():
-            content_type = part.get_content_type()
-            if content_type not in ATTACHMENT_MIME_TYPES:
-                continue
-            if part.get_content_disposition() not in ("attachment", "inline"):
+            content_type = part.get_content_type().lower()
+            disposition  = (part.get_content_disposition() or "").lower()
+
+            # Accept attachments; also accept inline binaries with filenames
+            filename = part.get_filename()
+            if not filename and disposition not in ("attachment",):
                 continue
 
-            filename = part.get_filename() or f"cv.{ATTACHMENT_MIME_TYPES[content_type]}"
+            # Resolve MIME type — fall back to extension sniffing
+            if content_type not in ATTACHMENT_MIME_TYPES:
+                if filename:
+                    ext = filename.rsplit(".", 1)[-1].lower()
+                    if ext == "pdf":
+                        content_type = "application/pdf"
+                    elif ext in ("docx",):
+                        content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    elif ext in ("doc",):
+                        content_type = "application/msword"
+                    else:
+                        await _log_ingest(db, message_id, sender, recipient, subject,
+                                          tenant_id, job_id, None, "rejected",
+                                          f"Unsupported file type: {filename}", ingestion_mode)
+                        continue
+                else:
+                    continue
+
             attachment_bytes = part.get_payload(decode=True)
             if not attachment_bytes:
+                continue
+
+            filename = filename or f"cv.{ATTACHMENT_MIME_TYPES[content_type]}"
+            file_hash = hashlib.sha256(attachment_bytes).hexdigest()
+
+            # ── File-level deduplication ──────────────────────────────────
+            hash_dup = await db.execute(
+                text("""
+                    SELECT log_id FROM email_ingest_log
+                    WHERE attachment_hash = :hash AND job_id = :jid
+                """),
+                {"hash": file_hash, "jid": job_id},
+            )
+            if hash_dup.first():
+                logger.info("Skipping duplicate file (hash %s) for job %s", file_hash[:8], job_id)
+                await _log_ingest(db, message_id, sender, recipient, subject,
+                                  tenant_id, job_id, None, "duplicate",
+                                  "Identical file already processed", ingestion_mode,
+                                  file_hash, filename)
+                processed_any = True  # still mark as seen
                 continue
 
             try:
@@ -135,78 +181,70 @@ async def _process_message(imap: imaplib.IMAP4, msg_id_bytes: bytes) -> None:
                     attachment_bytes, content_type, filename, cfg,
                 )
                 await _log_ingest(db, message_id, sender, recipient, subject,
-                                  tenant_id, job_id, application_id, "scored", None, ingestion_mode)
+                                  tenant_id, job_id, application_id, "scored",
+                                  None, ingestion_mode, file_hash, filename)
                 processed_any = True
             except Exception as exc:
-                logger.error("Failed processing attachment %s: %s", filename, exc)
+                logger.error("Failed processing %s: %s", filename, exc)
                 await _log_ingest(db, message_id, sender, recipient, subject,
-                                  tenant_id, job_id, None, "failed", str(exc), ingestion_mode)
+                                  tenant_id, job_id, None, "failed",
+                                  str(exc), ingestion_mode, file_hash, filename)
 
         if not processed_any:
             await _log_ingest(db, message_id, sender, recipient, subject,
-                              tenant_id, job_id, None, "skipped", "No valid attachments", ingestion_mode)
+                              tenant_id, job_id, None, "skipped",
+                              "No valid attachments found", ingestion_mode)
 
-        imap.store(msg_id_bytes, "+FLAGS", "\\Seen")
+    imap.store(msg_id_bytes, "+FLAGS", "\\Seen")
 
 
-async def _resolve_routing(db, recipient: str, subject: str, sender: str, cfg) -> tuple[str | None, str | None, str]:
-    """Return (job_id, tenant_id, ingestion_mode)."""
+async def _resolve_routing(
+    db, recipient: str, subject: str, forwarding_email: str
+) -> tuple[str | None, str | None, str, str | None]:
+    """Return (job_id, tenant_id, ingestion_mode, reject_reason)."""
     from sqlalchemy import text
 
-    # Platform email mode: {job_id}@{email_domain}
-    local_part = recipient.split("@")[0] if "@" in recipient else ""
-    domain_part = recipient.split("@")[1] if "@" in recipient else ""
-
-    # Try to match job by platform_email
+    # ── Option 2: Alias — TO address matches a job's platform_email ──────
     job_row = await db.execute(
         text("""
-            SELECT j.job_id, j.tenant_id FROM jobs j
-            WHERE j.platform_email = :email AND j.status = 'active'
+            SELECT j.job_id, j.tenant_id, j.alias_enabled
+            FROM jobs j
+            WHERE LOWER(j.platform_email) = :email AND j.status = 'active'
         """),
         {"email": recipient},
     )
     job = job_row.mappings().first()
     if job:
-        return str(job["job_id"]), str(job["tenant_id"]), "platform_email"
+        if not job["alias_enabled"]:
+            return None, None, "platform_email", "Alias receiving disabled for this job"
+        return str(job["job_id"]), str(job["tenant_id"]), "platform_email", None
 
-    # Forwarding mode: recipient is a tenant's forwarding_email
-    # Extract job code from subject (e.g. [JOB-<uuid>] or job_id directly)
-    job_code_match = re.search(r"[Jj][Oo][Bb][- _]([0-9a-f-]{36})", subject)
-    if job_code_match:
-        candidate_job_id = job_code_match.group(1)
+    # ── Option 1: Forwarding — recipient is the central FORWARDING_EMAIL ─
+    if recipient == forwarding_email or recipient.split("@")[0] == forwarding_email.split("@")[0]:
+        # Extract job_code from subject: JOB-2026-0001 or JOB-2026-1
+        match = JOB_CODE_RE.search(subject)
+        if not match:
+            # Also try body snippet if needed — for now log as unassigned
+            return None, None, "forwarding", f"No job code found in subject: '{subject}'"
+
+        job_code = f"JOB-{match.group(1)}-{int(match.group(2)):04d}"
+
         fwd_row = await db.execute(
             text("""
-                SELECT j.job_id, j.tenant_id FROM jobs j
-                WHERE j.job_id = :jid AND j.status = 'active'
+                SELECT j.job_id, j.tenant_id, j.forwarding_enabled
+                FROM jobs j
+                WHERE UPPER(j.job_code) = UPPER(:code) AND j.status = 'active'
             """),
-            {"jid": candidate_job_id},
+            {"code": job_code},
         )
         fwd_job = fwd_row.mappings().first()
-        if fwd_job:
-            return str(fwd_job["job_id"]), str(fwd_job["tenant_id"]), "forwarding"
+        if not fwd_job:
+            return None, None, "forwarding", f"Job code '{job_code}' not found or not active"
+        if not fwd_job["forwarding_enabled"]:
+            return None, None, "forwarding", f"Forwarding receiving disabled for job '{job_code}'"
+        return str(fwd_job["job_id"]), str(fwd_job["tenant_id"]), "forwarding", None
 
-    # Validate sender belongs to a registered tenant (sender domain check)
-    sender_domain = sender.split("@")[1] if "@" in sender else ""
-    tenant_row = await db.execute(
-        text("SELECT tenant_id FROM tenants WHERE email_domain = :domain AND status = 'active'"),
-        {"domain": sender_domain},
-    )
-    tenant = tenant_row.mappings().first()
-    if tenant:
-        # Try to find most recent active job for this tenant if only one exists
-        jobs_row = await db.execute(
-            text("""
-                SELECT job_id FROM jobs
-                WHERE tenant_id = :tid AND status = 'active'
-                ORDER BY created_at DESC LIMIT 1
-            """),
-            {"tid": str(tenant["tenant_id"])},
-        )
-        j = jobs_row.mappings().first()
-        if j:
-            return str(j["job_id"]), str(tenant["tenant_id"]), "forwarding"
-
-    return None, None, "unknown"
+    return None, None, "unknown", f"Recipient '{recipient}' not recognised"
 
 
 async def _create_application_and_score(
@@ -220,16 +258,14 @@ async def _create_application_and_score(
     filename: str,
     cfg,
 ) -> str:
-    from services.docx_service import convert_docx_to_pdf
-    from services.pdf_service import extract_text_from_pdf
     from sqlalchemy import text
     from workers.cv_score import score_cv_task
 
-    # Create application
     app_result = await db.execute(
         text("""
             INSERT INTO applications
-                (job_id, tenant_id, candidate_name, candidate_email, submission_source, processing_status)
+                (job_id, tenant_id, candidate_name, candidate_email,
+                 submission_source, processing_status)
             VALUES (:jid, :tid, :name, :email, 'email', 'pending')
             RETURNING application_id
         """),
@@ -237,32 +273,30 @@ async def _create_application_and_score(
     )
     application_id = str(app_result.scalar_one())
 
-    # Save file
     ext = ATTACHMENT_MIME_TYPES.get(mime_type, "pdf")
-    file_dir = Path(cfg.files_base_path) / "tenants" / tenant_id / "jobs" / job_id
+    file_dir  = Path(cfg.files_base_path) / "tenants" / tenant_id / "jobs" / job_id
     file_dir.mkdir(parents=True, exist_ok=True)
     file_path = file_dir / f"{application_id}.{ext}"
     file_path.write_bytes(file_bytes)
 
-    relative_path = str(file_path.relative_to(cfg.files_base_path))
     await db.execute(
         text("""
             INSERT INTO application_files
-                (application_id, tenant_id, original_name, mime_type, file_path, file_size_bytes, extraction_status)
+                (application_id, tenant_id, original_name, mime_type,
+                 file_path, file_size_bytes, extraction_status)
             VALUES (:aid, :tid, :orig, :mime, :path, :size, 'pending')
         """),
         {
-            "aid": application_id,
-            "tid": tenant_id,
+            "aid":  application_id,
+            "tid":  tenant_id,
             "orig": filename,
             "mime": mime_type,
-            "path": relative_path,
+            "path": str(file_path.relative_to(cfg.files_base_path)),
             "size": len(file_bytes),
         },
     )
     await db.commit()
 
-    # Enqueue scoring (async Celery task)
     score_cv_task.delay(
         application_id=application_id,
         job_id=job_id,
@@ -270,43 +304,62 @@ async def _create_application_and_score(
         file_path=str(file_path),
         mime_type=mime_type,
     )
-
     return application_id
 
 
 async def _log_ingest(
-    db, message_id, sender, recipient, subject,
-    tenant_id, job_id, application_id, log_status, error_msg,
-    ingestion_mode="unknown",
+    db,
+    message_id: str | None,
+    sender: str,
+    recipient: str,
+    subject: str,
+    tenant_id: str | None,
+    job_id: str | None,
+    application_id: str | None,
+    log_status: str,
+    error_msg: str | None,
+    ingestion_mode: str = "unknown",
+    attachment_hash: str | None = None,
+    attachment_name: str | None = None,
 ) -> None:
     from sqlalchemy import text
 
     await db.execute(
         text("""
-            INSERT INTO email_ingest_log
-                (message_id, sender_email, recipient_email, subject,
-                 tenant_id, job_id, application_id, ingestion_mode, status, error_message)
-            VALUES (:mid, :sender, :recipient, :subject,
-                    :tid, :jid, :aid, :mode, :status, :err)
-            ON CONFLICT (message_id) DO NOTHING
+            INSERT INTO email_ingest_log (
+                message_id, sender_email, recipient_email, subject,
+                tenant_id, job_id, application_id,
+                ingestion_mode, status, error_message,
+                attachment_hash, attachment_name
+            ) VALUES (
+                :mid, :sender, :recipient, :subject,
+                :tid, :jid, :aid,
+                :mode, :status, :err,
+                :hash, :att_name
+            )
+            ON CONFLICT (message_id) DO UPDATE SET
+                status        = EXCLUDED.status,
+                error_message = EXCLUDED.error_message
         """),
         {
-            "mid": message_id or None,
-            "sender": sender,
+            "mid":      message_id,
+            "sender":   sender,
             "recipient": recipient,
-            "subject": subject,
-            "tid": tenant_id,
-            "jid": job_id,
-            "aid": application_id,
-            "mode": ingestion_mode,
-            "status": log_status,
-            "err": error_msg,
+            "subject":  subject,
+            "tid":      tenant_id,
+            "jid":      job_id,
+            "aid":      application_id,
+            "mode":     ingestion_mode,
+            "status":   log_status,
+            "err":      error_msg,
+            "hash":     attachment_hash,
+            "att_name": attachment_name,
         },
     )
     await db.commit()
 
 
-def _decode_header(raw: str) -> str:
+def _decode_header_str(raw: str) -> str:
     parts = decode_header(raw)
     decoded = []
     for part, enc in parts:

@@ -1,4 +1,4 @@
-import os
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -11,13 +11,12 @@ from auth.dependencies import CurrentUserDep, get_current_user
 from config import get_settings
 from database import get_db, set_rls_context
 from services.ai_service import extract_job_criteria
-from services.threshold_service import get_thresholds
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 settings = get_settings()
 
 
-# ── Schemas ──────────────────────────────────────────────────────────────────
+# ── Schemas ───────────────────────────────────────────────────────────────────
 
 class CreateJobRequest(BaseModel):
     title: str
@@ -44,6 +43,36 @@ class UpdateCriteriaRequest(BaseModel):
     weight_other: int | None = None
 
 
+class UpdateIngestionRequest(BaseModel):
+    forwarding_enabled: bool | None = None
+    alias_enabled: bool | None = None
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+async def _get_forwarding_email(db) -> str:
+    """Load FORWARDING_EMAIL from system_config (falls back to env IMAP_USER)."""
+    row = await db.execute(
+        text("SELECT value FROM system_config WHERE key = 'forwarding_email'")
+    )
+    result = row.scalar_one_or_none()
+    return result or settings.imap_user
+
+
+async def _next_job_code(db) -> str:
+    """Generate next sequential job code: JOB-YYYY-NNNN."""
+    year = datetime.now().year
+    count_row = await db.execute(
+        text("""
+            SELECT COUNT(*) FROM jobs
+            WHERE EXTRACT(YEAR FROM created_at) = :year
+        """),
+        {"year": year},
+    )
+    seq = count_row.scalar_one() + 1
+    return f"JOB-{year}-{seq:04d}"
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("")
@@ -54,10 +83,14 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
         text("""
             SELECT
                 j.job_id,
-                j.title        AS job_title,
-                j.department   AS job_client,
+                j.job_code,
+                j.title           AS job_title,
+                j.department      AS job_client,
                 INITCAP(j.status) AS job_status,
-                j.platform_email, j.created_at,
+                j.platform_email,
+                j.forwarding_enabled,
+                j.alias_enabled,
+                j.created_at,
                 COUNT(a.application_id)                                             AS applications_total,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
@@ -74,13 +107,15 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
     for r in rows.mappings():
         uid = str(r["job_id"])
         jobs.append({
-            "job_id":   uid,
-            "job_code": uid[:8].upper(),
-            "job_title":  r["job_title"],
-            "job_client": r["job_client"] or "",
-            "job_status": r["job_status"],
-            "platform_email": r["platform_email"],
-            "posted_date": r["created_at"].date().isoformat() if r["created_at"] else None,
+            "job_id":             uid,
+            "job_code":           r["job_code"] or uid[:8].upper(),
+            "job_title":          r["job_title"],
+            "job_client":         r["job_client"] or "",
+            "job_status":         r["job_status"],
+            "platform_email":     r["platform_email"],
+            "forwarding_enabled": r["forwarding_enabled"],
+            "alias_enabled":      r["alias_enabled"],
+            "posted_date":        r["created_at"].date().isoformat() if r["created_at"] else None,
             "applications_total":     r["applications_total"],
             "applications_qualified": r["applications_qualified"],
             "applications_partial":   r["applications_partial"],
@@ -97,7 +132,6 @@ async def create_job(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Fetch tenant email domain for platform_email construction
     t_row = await db.execute(
         text("SELECT email_domain FROM tenants WHERE tenant_id = :tid"),
         {"tid": current_user.tenant_id},
@@ -106,38 +140,37 @@ async def create_job(
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
-    # Insert job
+    job_code = await _next_job_code(db)
+
     job_result = await db.execute(
         text("""
             INSERT INTO jobs (tenant_id, created_by, title, department, description,
-                              qualified_threshold, partial_threshold, status)
-            VALUES (:tid, :uid, :title, :dept, :desc, :qt, :pt, 'active')
+                              qualified_threshold, partial_threshold, job_code, status)
+            VALUES (:tid, :uid, :title, :dept, :desc, :qt, :pt, :job_code, 'active')
             RETURNING job_id
         """),
         {
-            "tid": current_user.tenant_id,
-            "uid": current_user.user_id,
-            "title": body.title,
-            "dept": body.department,
-            "desc": body.description,
-            "qt": body.qualified_threshold,
-            "pt": body.partial_threshold,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "title":    body.title,
+            "dept":     body.department,
+            "desc":     body.description,
+            "qt":       body.qualified_threshold,
+            "pt":       body.partial_threshold,
+            "job_code": job_code,
         },
     )
     job_id = str(job_result.scalar_one())
 
-    # Set platform email
     platform_email = f"{job_id}@{tenant['email_domain']}"
     await db.execute(
         text("UPDATE jobs SET platform_email = :email WHERE job_id = :jid"),
         {"email": platform_email, "jid": job_id},
     )
 
-    # Create file storage directory
     job_dir = Path(settings.files_base_path) / "tenants" / current_user.tenant_id / "jobs" / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    # AI criteria extraction
     try:
         ai_criteria = await extract_job_criteria(body.description)
     except Exception:
@@ -166,22 +199,22 @@ async def create_job(
             )
         """),
         {
-            "jid": job_id,
-            "skills": ai_criteria.get("skills", []),
+            "jid":      job_id,
+            "skills":   ai_criteria.get("skills", []),
             "experience": ai_criteria.get("experience", []),
             "education": ai_criteria.get("education", []),
-            "certs": ai_criteria.get("certifications", []),
-            "soft": ai_criteria.get("soft_skills", []),
-            "domain": ai_criteria.get("domain_knowledge", []),
-            "other": ai_criteria.get("other_requirements", []),
+            "certs":    ai_criteria.get("certifications", []),
+            "soft":     ai_criteria.get("soft_skills", []),
+            "domain":   ai_criteria.get("domain_knowledge", []),
+            "other":    ai_criteria.get("other_requirements", []),
             "w_skills": ai_criteria.get("weight_skills", 30),
-            "w_exp": ai_criteria.get("weight_experience", 25),
-            "w_edu": ai_criteria.get("weight_education", 15),
-            "w_cert": ai_criteria.get("weight_certifications", 10),
-            "w_soft": ai_criteria.get("weight_soft_skills", 10),
+            "w_exp":    ai_criteria.get("weight_experience", 25),
+            "w_edu":    ai_criteria.get("weight_education", 15),
+            "w_cert":   ai_criteria.get("weight_certifications", 10),
+            "w_soft":   ai_criteria.get("weight_soft_skills", 10),
             "w_domain": ai_criteria.get("weight_domain_knowledge", 5),
-            "w_other": ai_criteria.get("weight_other", 5),
-            "model": settings.openai_model,
+            "w_other":  ai_criteria.get("weight_other", 5),
+            "model":    settings.openai_model,
         },
     )
     await db.commit()
@@ -189,6 +222,7 @@ async def create_job(
     return {
         "success": True,
         "job_id": job_id,
+        "job_code": job_code,
         "platform_email": platform_email,
         "message": "Job created successfully",
     }
@@ -205,8 +239,9 @@ async def get_job_details(
     job_row = await db.execute(
         text("""
             SELECT
-                j.job_id, j.title, j.department, j.description,
-                j.status, j.platform_email, j.cv_ingestion_mode,
+                j.job_id, j.job_code, j.title, j.department, j.description,
+                j.status, j.platform_email,
+                j.forwarding_enabled, j.alias_enabled,
                 j.qualified_threshold, j.partial_threshold,
                 j.created_at,
                 COUNT(a.application_id)                                             AS applications_total,
@@ -214,7 +249,7 @@ async def get_job_details(
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected,
                 t.cv_ingestion_mode AS tenant_ingestion_mode,
-                t.forwarding_email
+                t.forwarding_email  AS tenant_forwarding_email
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
             JOIN tenants t ON t.tenant_id = j.tenant_id
@@ -241,31 +276,75 @@ async def get_job_details(
     )
     criteria = criteria_row.mappings().first()
 
-    ingestion_note = (
-        f"Send CVs to: {job['platform_email']}"
-        if job["tenant_ingestion_mode"] == "platform_email"
-        else f"Forward CVs to: {job['forwarding_email']}"
-    )
+    # Load FORWARDING_EMAIL from system_config
+    forwarding_email = await _get_forwarding_email(db)
+
+    job_code = job["job_code"] or str(job["job_id"])[:8].upper()
 
     return {
         "details": {
-            "job_id": str(job["job_id"]),
-            "title": job["title"],
-            "department": job["department"],
-            "description": job["description"],
-            "status": job["status"],
-            "platform_email": job["platform_email"],
-            "created_at": job["created_at"].isoformat() if job["created_at"] else None,
-            "applications_total": job["applications_total"],
+            "job_id":             str(job["job_id"]),
+            "job_code":           job_code,
+            "job_title":          job["title"],
+            "job_client":         job["department"] or "",
+            "job_status":         job["status"].capitalize(),
+            "description":        job["description"],
+            "platform_email":     job["platform_email"],
+            "forwarding_email":   forwarding_email,
+            "forwarding_enabled": job["forwarding_enabled"],
+            "alias_enabled":      job["alias_enabled"],
+            "created_at":         job["created_at"].isoformat() if job["created_at"] else None,
+            "applications_total":     job["applications_total"],
             "applications_qualified": job["applications_qualified"],
-            "applications_partial": job["applications_partial"],
-            "applications_rejected": job["applications_rejected"],
-            "qualified_threshold": job["qualified_threshold"],
-            "partial_threshold": job["partial_threshold"],
-            "ingestion_note": ingestion_note,
+            "applications_partial":   job["applications_partial"],
+            "applications_rejected":  job["applications_rejected"],
+            "qualified_threshold":    job["qualified_threshold"],
+            "partial_threshold":      job["partial_threshold"],
+            # Legacy field — kept for backward compat
+            "ingestion_note": (
+                f"Send CVs directly to: {job['platform_email']}"
+                if job["alias_enabled"]
+                else f"Forward CVs to: {forwarding_email} — include {job_code} in subject"
+            ),
         },
         "analysis": dict(criteria) if criteria else None,
     }
+
+
+@router.put("/{job_id}/ingestion")
+async def update_ingestion_settings(
+    job_id: str,
+    body: UpdateIngestionRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Toggle forwarding_enabled / alias_enabled for a job."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    job_row = await db.execute(
+        text("SELECT job_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
+        {"jid": job_id, "tid": current_user.tenant_id},
+    )
+    if not job_row.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    updates: dict = {}
+    if body.forwarding_enabled is not None:
+        updates["forwarding_enabled"] = body.forwarding_enabled
+    if body.alias_enabled is not None:
+        updates["alias_enabled"] = body.alias_enabled
+
+    if not updates:
+        return {"success": True, "message": "No changes"}
+
+    set_sql = ", ".join(f"{k} = :{k}" for k in updates)
+    updates["jid"] = job_id
+    await db.execute(
+        text(f"UPDATE jobs SET {set_sql} WHERE job_id = :jid"),
+        updates,
+    )
+    await db.commit()
+    return {"success": True, "message": "Ingestion settings updated"}
 
 
 @router.put("/{job_id}/criteria")
@@ -275,10 +354,8 @@ async def update_criteria(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Edit AI-generated scoring criteria for a job."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Verify job belongs to tenant
     job_row = await db.execute(
         text("SELECT job_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
         {"jid": job_id, "tid": current_user.tenant_id},
@@ -286,7 +363,6 @@ async def update_criteria(
     if not job_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
-    # Fetch existing criteria for merge
     existing_row = await db.execute(
         text("""
             SELECT weight_skills, weight_experience, weight_education,
@@ -300,40 +376,29 @@ async def update_criteria(
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Criteria not found for this job")
 
-    # Merge weights
     w = {
-        "weight_skills": body.weight_skills if body.weight_skills is not None else existing["weight_skills"],
-        "weight_experience": body.weight_experience if body.weight_experience is not None else existing["weight_experience"],
-        "weight_education": body.weight_education if body.weight_education is not None else existing["weight_education"],
-        "weight_certifications": body.weight_certifications if body.weight_certifications is not None else existing["weight_certifications"],
-        "weight_soft_skills": body.weight_soft_skills if body.weight_soft_skills is not None else existing["weight_soft_skills"],
+        "weight_skills":           body.weight_skills           if body.weight_skills           is not None else existing["weight_skills"],
+        "weight_experience":       body.weight_experience       if body.weight_experience       is not None else existing["weight_experience"],
+        "weight_education":        body.weight_education        if body.weight_education        is not None else existing["weight_education"],
+        "weight_certifications":   body.weight_certifications   if body.weight_certifications   is not None else existing["weight_certifications"],
+        "weight_soft_skills":      body.weight_soft_skills      if body.weight_soft_skills      is not None else existing["weight_soft_skills"],
         "weight_domain_knowledge": body.weight_domain_knowledge if body.weight_domain_knowledge is not None else existing["weight_domain_knowledge"],
-        "weight_other": body.weight_other if body.weight_other is not None else existing["weight_other"],
+        "weight_other":            body.weight_other            if body.weight_other            is not None else existing["weight_other"],
     }
-    total = sum(w.values())
-    if total != 100:
+    if sum(w.values()) != 100:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Weights must sum to 100. Current total: {total}",
+            detail=f"Weights must sum to 100. Current total: {sum(w.values())}",
         )
 
     update_fields: dict = {**w, "last_edited_by": current_user.user_id, "jid": job_id}
-    if body.skills is not None:
-        update_fields["skills"] = body.skills
-    if body.experience is not None:
-        update_fields["experience"] = body.experience
-    if body.education is not None:
-        update_fields["education"] = body.education
-    if body.certifications is not None:
-        update_fields["certifications"] = body.certifications
-    if body.soft_skills is not None:
-        update_fields["soft_skills"] = body.soft_skills
-    if body.domain_knowledge is not None:
-        update_fields["domain_knowledge"] = body.domain_knowledge
-    if body.other_requirements is not None:
-        update_fields["other_requirements"] = body.other_requirements
+    for col in ["skills", "experience", "education", "certifications",
+                "soft_skills", "domain_knowledge", "other_requirements"]:
+        val = getattr(body, col, None)
+        if val is not None:
+            update_fields[col] = val
 
-    array_sets = " ".join(
+    array_sets = "".join(
         f", {col} = :{col}"
         for col in ["skills", "experience", "education", "certifications",
                     "soft_skills", "domain_knowledge", "other_requirements"]

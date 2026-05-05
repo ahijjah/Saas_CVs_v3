@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { JobDetails as JobDetailsType, AuthState } from '../types';
@@ -39,6 +39,19 @@ const T = {
     evalWeightLabels: ['Skills', 'Experience', 'Education', 'Certifications', 'Soft Skills', 'Domain Knowledge', 'Other'],
     weightsNote: "Weights are read-only and were defined during the job creation workflow. They represent the AI's priority ranking during candidate evaluation.",
     jobDesc: 'Original Job Description',
+    cvReceiving: 'CV Receiving Options',
+    option1Title: 'Option 1 — Forwarding to Central Email',
+    option1Desc: 'The client forwards CVs from their own system to the central inbox. Include the job code in the email subject for automatic routing.',
+    option1ForwardTo: 'Forward CVs to',
+    option1SubjectHint: 'Required subject format',
+    option2Title: 'Option 2 — Dedicated Alias (Recommended)',
+    option2Desc: 'Share this address directly with applicants or publish it on your careers page. CVs are automatically assigned to this job — no job code needed.',
+    option2AliasLabel: 'Dedicated alias',
+    copyBtn: 'Copy',
+    copied: 'Copied!',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    recommended: 'Recommended',
   },
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
@@ -65,17 +78,58 @@ const T = {
     evalWeightLabels: ['المهارات', 'الخبرة', 'التعليم', 'الشهادات', 'المهارات الناعمة', 'معرفة المجال', 'أخرى'],
     weightsNote: 'الأوزان للقراءة فقط وتم تحديدها خلال سير عمل إنشاء الوظيفة. تمثل ترتيب أولويات الذكاء الاصطناعي أثناء تقييم المرشحين.',
     jobDesc: 'وصف الوظيفة الأصلي',
+    cvReceiving: 'خيارات استقبال السير الذاتية',
+    option1Title: 'الخيار 1 — إعادة التوجيه إلى البريد المركزي',
+    option1Desc: 'يُعيد العميل توجيه السير الذاتية من نظامه الخاص إلى البريد الوارد المركزي. أدرج رمز الوظيفة في موضوع البريد للتوجيه التلقائي.',
+    option1ForwardTo: 'أرسل السير الذاتية إلى',
+    option1SubjectHint: 'صيغة الموضوع المطلوبة',
+    option2Title: 'الخيار 2 — بريد مخصص لكل وظيفة (مُوصى به)',
+    option2Desc: 'شارك هذا العنوان مع المتقدمين مباشرةً أو انشره في صفحة الوظائف. يُعيَّن البريد الوارد تلقائياً لهذه الوظيفة دون الحاجة لرمز الوظيفة.',
+    option2AliasLabel: 'البريد المخصص',
+    copyBtn: 'نسخ',
+    copied: 'تم النسخ!',
+    enabled: 'مفعّل',
+    disabled: 'معطّل',
+    recommended: 'مُوصى به',
   },
 };
 
 export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onViewApplications, addToast }) => {
-  const { lang } = useLanguage();
+  const { lang, isAr } = useLanguage();
   const t = T[lang];
 
   const [details, setDetails] = useState<JobDetailsType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [copiedAlias, setCopiedAlias] = useState(false);
+  const [togglingFwd, setTogglingFwd] = useState(false);
+  const [togglingAlias, setTogglingAlias] = useState(false);
+
+  const handleCopyAlias = useCallback((email: string) => {
+    navigator.clipboard.writeText(email).then(() => {
+      setCopiedAlias(true);
+      setTimeout(() => setCopiedAlias(false), 2000);
+    });
+  }, []);
+
+  const handleToggle = useCallback(async (field: 'forwarding_enabled' | 'alias_enabled', value: boolean) => {
+    if (!details) return;
+    const setToggling = field === 'forwarding_enabled' ? setTogglingFwd : setTogglingAlias;
+    setToggling(true);
+    try {
+      await apiService.put(
+        `${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/${details.job_id}/ingestion`,
+        { [field]: value },
+        auth.token!,
+      );
+      setDetails(prev => prev ? { ...prev, [field]: value } : prev);
+    } catch {
+      addToast('Failed to update ingestion setting.', 'error');
+    } finally {
+      setToggling(false);
+    }
+  }, [details, auth.token, addToast]);
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -218,11 +272,83 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           </div>
         </div>
 
-        {details.ingestion_note && (
-          <div className="bg-blue-50/80 border-b border-blue-100 px-8 py-4">
-            <p className="text-sm font-medium text-blue-900 leading-relaxed">{details.ingestion_note}</p>
+        {/* CV Receiving Options */}
+        <div className="border-b border-border px-8 py-6">
+          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-5 flex items-center gap-2">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+            {t.cvReceiving}
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            {/* Option 1 — Forwarding */}
+            <div className={`rounded-2xl border-2 p-5 transition-all ${details.forwarding_enabled ? 'border-primary/20 bg-blue-50/40' : 'border-slate-200 bg-slate-50/60 opacity-60'}`}>
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-xs font-black text-textMain">{t.option1Title}</p>
+                  <p className="text-[11px] text-textMuted mt-0.5 leading-relaxed">{t.option1Desc}</p>
+                </div>
+                <button
+                  disabled={togglingFwd}
+                  onClick={() => handleToggle('forwarding_enabled', !details.forwarding_enabled)}
+                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.forwarding_enabled ? 'bg-primary' : 'bg-slate-300'} ${togglingFwd ? 'opacity-50' : ''}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.forwarding_enabled ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                </button>
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option1ForwardTo}</p>
+                  <code className="text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 block text-primary">{details.forwarding_email || 'jobs@ai970.cloud'}</code>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option1SubjectHint}</p>
+                  <code className="text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 block text-textMain">CV Submission - {details.job_code || details.job_id}</code>
+                </div>
+              </div>
+              <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.forwarding_enabled ? 'text-success' : 'text-textMuted'}`}>
+                {details.forwarding_enabled ? `● ${t.enabled}` : `○ ${t.disabled}`}
+              </p>
+            </div>
+
+            {/* Option 2 — Dedicated Alias */}
+            <div className={`rounded-2xl border-2 p-5 transition-all ${details.alias_enabled ? 'border-success/30 bg-green-50/40' : 'border-slate-200 bg-slate-50/60 opacity-60'}`}>
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-black text-textMain">{t.option2Title}</p>
+                    <span className="text-[9px] font-black bg-success text-white px-1.5 py-0.5 rounded-full uppercase">{t.recommended}</span>
+                  </div>
+                  <p className="text-[11px] text-textMuted mt-0.5 leading-relaxed">{t.option2Desc}</p>
+                </div>
+                <button
+                  disabled={togglingAlias}
+                  onClick={() => handleToggle('alias_enabled', !details.alias_enabled)}
+                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.alias_enabled ? 'bg-success' : 'bg-slate-300'} ${togglingAlias ? 'opacity-50' : ''}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.alias_enabled ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                </button>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option2AliasLabel}</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 text-success truncate">{details.platform_email || '—'}</code>
+                  {details.platform_email && (
+                    <button
+                      onClick={() => handleCopyAlias(details.platform_email!)}
+                      className="shrink-0 px-3 py-1.5 bg-success text-white text-[10px] font-black rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      {copiedAlias ? t.copied : t.copyBtn}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.alias_enabled ? 'text-success' : 'text-textMuted'}`}>
+                {details.alias_enabled ? `● ${t.enabled}` : `○ ${t.disabled}`}
+              </p>
+            </div>
+
           </div>
-        )}
+        </div>
 
         <div className="p-8 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
           {t.metaLabels.map((label, idx) => (
