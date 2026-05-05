@@ -1,0 +1,177 @@
+"""
+Dynamic Prompt & Weight Configuration
+
+Loads AI prompts, scoring weights, and strictness levels from the database
+system_config table. Falls back to hardcoded defaults if DB is unavailable.
+
+This decouples configuration from code — operators can tune the AI behaviour
+without a code deployment.
+"""
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass, field
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# ── Default weight profiles ───────────────────────────────────────────────────
+# Named profiles that can be referenced by job type.
+DEFAULT_WEIGHT_PROFILES: dict[str, dict[str, int]] = {
+    "technical": {
+        "weight_skills": 35,
+        "weight_experience": 25,
+        "weight_education": 15,
+        "weight_certifications": 10,
+        "weight_soft_skills": 5,
+        "weight_domain_knowledge": 5,
+        "weight_other": 5,
+    },
+    "managerial": {
+        "weight_skills": 15,
+        "weight_experience": 30,
+        "weight_education": 10,
+        "weight_certifications": 5,
+        "weight_soft_skills": 25,
+        "weight_domain_knowledge": 10,
+        "weight_other": 5,
+    },
+    "sales": {
+        "weight_skills": 15,
+        "weight_experience": 25,
+        "weight_education": 5,
+        "weight_certifications": 5,
+        "weight_soft_skills": 30,
+        "weight_domain_knowledge": 15,
+        "weight_other": 5,
+    },
+    "default": {
+        "weight_skills": 30,
+        "weight_experience": 25,
+        "weight_education": 15,
+        "weight_certifications": 10,
+        "weight_soft_skills": 10,
+        "weight_domain_knowledge": 5,
+        "weight_other": 5,
+    },
+}
+
+# ── Strictness levels ─────────────────────────────────────────────────────────
+# Controls how harshly the AI scores candidates.
+STRICTNESS_PROMPTS: dict[str, str] = {
+    "strict": (
+        "Apply STRICT evaluation standards. "
+        "Only award high scores (80+) when there is direct, explicit evidence. "
+        "Ambiguous or implied skills should score below 60."
+    ),
+    "balanced": (
+        "Apply BALANCED evaluation standards. "
+        "Award scores based on the weight of evidence. "
+        "Reasonable inferences from related experience are acceptable."
+    ),
+    "lenient": (
+        "Apply LENIENT evaluation standards. "
+        "Give candidates the benefit of the doubt for transferable skills. "
+        "Potential and learning ability are as important as direct experience."
+    ),
+}
+
+
+@dataclass
+class PromptConfig:
+    """Resolved configuration for a single scoring run."""
+    weight_profile: str = "default"
+    weights: dict[str, int] = field(default_factory=lambda: DEFAULT_WEIGHT_PROFILES["default"].copy())
+    strictness: str = "balanced"
+    strictness_instruction: str = ""
+    output_language: str = "ar"
+    gatekeeper_threshold: float = 0.40
+    gatekeeper_enabled: bool = True
+    # Per-job mandatory skills (if non-empty, missing any = automatic penalty)
+    mandatory_skills: list[str] = field(default_factory=list)
+    mandatory_skills_weight: float = 0.0  # extra weight for mandatory skills check
+
+
+async def load_prompt_config(
+    db,
+    tenant_id: str,
+    job_id: str | None = None,
+    *,
+    overrides: dict[str, Any] | None = None,
+) -> PromptConfig:
+    """
+    Build a PromptConfig by reading system_config (and optionally job-level
+    overrides) from the database, then applying any request-level overrides.
+
+    Priority (highest → lowest):
+      1. Request-level overrides (API body params)
+      2. Job-level config (jobs.scoring_config JSONB, if column exists)
+      3. Tenant-level config (tenants.scoring_config JSONB, if column exists)
+      4. system_config table defaults
+      5. Hardcoded defaults in this module
+    """
+    from config import get_settings
+    from sqlalchemy import text
+
+    cfg = get_settings()
+
+    # Load system_config
+    sys_rows = await db.execute(
+        text("""
+            SELECT key, value FROM system_config
+            WHERE key IN (
+                'gatekeeper_semantic_threshold', 'gatekeeper_enabled',
+                'output_language', 'default_weight_profile', 'default_strictness'
+            )
+        """)
+    )
+    sys_map: dict[str, str] = {r["key"]: r["value"] for r in sys_rows.mappings()}
+
+    gatekeeper_threshold = float(sys_map.get("gatekeeper_semantic_threshold", cfg.gatekeeper_semantic_threshold))
+    gatekeeper_enabled = sys_map.get("gatekeeper_enabled", "true").lower() == "true"
+    output_language = sys_map.get("output_language", cfg.output_language)
+    weight_profile_name = sys_map.get("default_weight_profile", "default")
+    strictness = sys_map.get("default_strictness", "balanced")
+
+    weights = DEFAULT_WEIGHT_PROFILES.get(weight_profile_name, DEFAULT_WEIGHT_PROFILES["default"]).copy()
+
+    # Apply overrides
+    if overrides:
+        if "weight_profile" in overrides:
+            profile = overrides["weight_profile"]
+            if profile in DEFAULT_WEIGHT_PROFILES:
+                weights = DEFAULT_WEIGHT_PROFILES[profile].copy()
+                weight_profile_name = profile
+
+        # Allow per-dimension weight override
+        for wk in ["weight_skills", "weight_experience", "weight_education",
+                   "weight_certifications", "weight_soft_skills",
+                   "weight_domain_knowledge", "weight_other"]:
+            if wk in overrides and isinstance(overrides[wk], int):
+                weights[wk] = overrides[wk]
+
+        if "strictness" in overrides and overrides["strictness"] in STRICTNESS_PROMPTS:
+            strictness = overrides["strictness"]
+        if "gatekeeper_threshold" in overrides:
+            gatekeeper_threshold = float(overrides["gatekeeper_threshold"])
+        if "output_language" in overrides:
+            output_language = overrides["output_language"]
+
+    # Validate weights sum to 100
+    total = sum(weights.values())
+    if total != 100:
+        diff = 100 - total
+        weights["weight_skills"] = weights.get("weight_skills", 0) + diff
+
+    return PromptConfig(
+        weight_profile=weight_profile_name,
+        weights=weights,
+        strictness=strictness,
+        strictness_instruction=STRICTNESS_PROMPTS.get(strictness, STRICTNESS_PROMPTS["balanced"]),
+        output_language=output_language,
+        gatekeeper_threshold=gatekeeper_threshold,
+        gatekeeper_enabled=gatekeeper_enabled,
+        mandatory_skills=overrides.get("mandatory_skills", []) if overrides else [],
+        mandatory_skills_weight=float(overrides.get("mandatory_skills_weight", 0)) if overrides else 0.0,
+    )

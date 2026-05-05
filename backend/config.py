@@ -1,5 +1,4 @@
 from functools import lru_cache
-from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -62,6 +61,22 @@ class Settings(BaseSettings):
 
     # LibreOffice binary path (headless DOCX→PDF)
     libreoffice_bin: str = "soffice"
+
+    # ── Gatekeeper (local pre-filtering) ──────────────────────────────────────
+    # Master switch — set to False to always call LLM (useful for testing)
+    gatekeeper_enabled: bool = True
+    # Semantic similarity floor (0.0-1.0). CVs below this skip the LLM.
+    gatekeeper_semantic_threshold: float = 0.40
+    # rapidfuzz partial_ratio threshold for skill matching (0-100)
+    gatekeeper_skill_fuzzy_threshold: float = 80.0
+    # Sentence-transformer model name (must be available on HuggingFace)
+    embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+
+    # ── Bilingual output ──────────────────────────────────────────────────────
+    # Language for AI-generated human-readable fields in scoring output
+    # 'ar' = Arabic (default for Arabic-market SaaS)
+    # 'en' = English
+    output_language: str = "ar"
 
 
 @lru_cache

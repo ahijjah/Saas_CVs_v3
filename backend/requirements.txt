@@ -26,8 +26,26 @@ aiosmtplib==3.0.2
 celery==5.4.0
 redis==5.2.1
 
-# PDF
+# PDF (high-performance bilingual extraction)
 pymupdf==1.24.14
 
-# HTTP client (for any outbound calls)
+# ── Intelligence Layer (Gatekeeper + Bilingual NLP) ───────────────────────────
+
+# Local semantic similarity — multilingual model runs fully on-device
+# Model: paraphrase-multilingual-MiniLM-L12-v2 (~120MB, supports AR+EN)
+sentence-transformers==3.3.1
+
+# Bilingual fuzzy skill matching (Arabic + English token comparison)
+rapidfuzz==3.10.1
+
+# Arabic text normalization and tokenization
+pyarabic==0.6.15
+
+# Lightweight language detection (zero external API calls)
+langdetect==1.0.9
+
+# NumPy for cosine similarity computation
+numpy==1.26.4
+
+# HTTP client
 httpx==0.28.1
