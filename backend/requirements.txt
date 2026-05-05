@@ -1,0 +1,51 @@
+# FastAPI
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+
+# Database
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Auth
+pyjwt==2.10.1
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+
+# Config
+pydantic-settings==2.6.1
+
+# OpenAI
+openai==1.57.0
+
+# Email
+aiosmtplib==3.0.2
+
+# Celery + Redis
+celery==5.4.0
+redis==5.2.1
+
+# PDF (high-performance bilingual extraction)
+pymupdf==1.24.14
+
+# ── Intelligence Layer (Gatekeeper + Bilingual NLP) ───────────────────────────
+
+# Local semantic similarity — multilingual model runs fully on-device
+# Model: paraphrase-multilingual-MiniLM-L12-v2 (~120MB, supports AR+EN)
+sentence-transformers==3.3.1
+
+# Bilingual fuzzy skill matching (Arabic + English token comparison)
+rapidfuzz==3.10.1
+
+# Arabic text normalization and tokenization
+pyarabic==0.6.15
+
+# Lightweight language detection (zero external API calls)
+langdetect==1.0.9
+
+# NumPy for cosine similarity computation
+numpy==1.26.4
+
+# HTTP client
+httpx==0.28.1
