@@ -19,8 +19,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CV Analyzer API",
     version="1.0.0",
-    docs_url="/docs" if settings.debug else None,
-    redoc_url="/redoc" if settings.debug else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan,
 )
 

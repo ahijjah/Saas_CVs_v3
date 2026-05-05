@@ -53,7 +53,10 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
     rows = await db.execute(
         text("""
             SELECT
-                j.job_id, j.title, j.department, j.status,
+                j.job_id,
+                j.title        AS job_title,
+                j.department   AS job_client,
+                INITCAP(j.status) AS job_status,
                 j.platform_email, j.created_at,
                 COUNT(a.application_id)                                             AS applications_total,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
@@ -67,11 +70,23 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
         """),
         {"tid": current_user.tenant_id},
     )
-    jobs = [dict(r) for r in rows.mappings()]
-    for j in jobs:
-        j["job_id"] = str(j["job_id"])
-        j["created_at"] = j["created_at"].date().isoformat() if j["created_at"] else None
-    return {"jobs": jobs}
+    jobs = []
+    for r in rows.mappings():
+        uid = str(r["job_id"])
+        jobs.append({
+            "job_id":   uid,
+            "job_code": uid[:8].upper(),
+            "job_title":  r["job_title"],
+            "job_client": r["job_client"] or "",
+            "job_status": r["job_status"],
+            "platform_email": r["platform_email"],
+            "posted_date": r["created_at"].date().isoformat() if r["created_at"] else None,
+            "applications_total":     r["applications_total"],
+            "applications_qualified": r["applications_qualified"],
+            "applications_partial":   r["applications_partial"],
+            "applications_rejected":  r["applications_rejected"],
+        })
+    return jobs
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
