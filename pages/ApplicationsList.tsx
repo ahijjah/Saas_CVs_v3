@@ -21,6 +21,7 @@ const T = {
     filterQualified: 'Qualified',
     filterPartial: 'Partial',
     filterRejected: 'Rejected',
+    filterLowMatch: 'Low Match',
     loading: 'Loading applications...',
     noApps: 'No applications found matching this criteria.',
     appliedOn: 'Applied on',
@@ -34,6 +35,7 @@ const T = {
     filterQualified: 'مؤهلون',
     filterPartial: 'جزئيون',
     filterRejected: 'مرفوضون',
+    filterLowMatch: 'تطابق منخفض',
     loading: 'جارٍ تحميل الطلبات...',
     noApps: 'لا توجد طلبات مطابقة لهذه المعايير.',
     appliedOn: 'تاريخ التقديم',
@@ -43,7 +45,7 @@ const T = {
   },
 };
 
-const FILTER_KEYS: ApplicationFilter[] = ['all', 'qualified', 'partial', 'rejected'];
+const FILTER_KEYS: ApplicationFilter[] = ['all', 'qualified', 'partial', 'rejected', 'low_match'];
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   jobId, initialFilter, auth, onBack, addToast
@@ -63,6 +65,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     qualified: t.filterQualified,
     partial: t.filterPartial,
     rejected: t.filterRejected,
+    low_match: t.filterLowMatch,
   };
 
   const fetchApplications = async () => {
@@ -100,16 +103,25 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
       }
 
       const normalized = {
-        application_id: detailsObj?.application_id,
-        candidate_name: detailsObj?.candidate_name,
-        overall_score: Number(detailsObj?.overall_score || detailsObj?.score || 0),
-        decision: (detailsObj?.decision || detailsObj?.status || "").toLowerCase(),
-        scores: detailsObj?.scores,
-        analysis: detailsObj?.analysis || {},
-        raw_ai_response: detailsObj?.raw_ai_response,
-        summary: detailsObj?.analysis?.summary,
-        strengths: detailsObj?.analysis?.strengths || detailsObj?.raw_ai_response?.evidence_skills,
-        risks: detailsObj?.analysis?.gaps_identified || detailsObj?.analysis?.risks
+        application_id:        detailsObj?.application_id,
+        candidate_name:        detailsObj?.candidate_name,
+        overall_score:         Number(detailsObj?.overall_score || detailsObj?.score || 0),
+        decision:              (detailsObj?.decision || detailsObj?.status || "").toLowerCase(),
+        scores:                detailsObj?.scores,
+        analysis:              detailsObj?.analysis || {},
+        raw_ai_response:       detailsObj?.raw_ai_response,
+        summary:               detailsObj?.analysis?.summary,
+        strengths:             detailsObj?.analysis?.strengths || detailsObj?.raw_ai_response?.evidence_skills,
+        risks:                 detailsObj?.analysis?.gaps_identified || detailsObj?.analysis?.risks,
+        // Intelligence pipeline fields
+        cv_language:           detailsObj?.cv_language,
+        local_similarity_score: detailsObj?.local_similarity_score,
+        skill_match_ratio:     detailsObj?.skill_match_ratio,
+        gatekeeper_passed:     detailsObj?.gatekeeper_passed,
+        matched_skills:        detailsObj?.matched_skills || [],
+        missing_skills:        detailsObj?.missing_skills || [],
+        red_flags:             detailsObj?.red_flags || detailsObj?.analysis?.red_flags || [],
+        reasoning:             detailsObj?.reasoning || {},
       };
 
       setSelectedDetails(normalized);
@@ -141,8 +153,9 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   const getStatusStyles = (status: string) => {
     const s = (status || '').toLowerCase().trim();
-    if (s === 'qualified') return { pill: 'bg-green-100 text-green-800', badge: 'bg-success' };
-    if (s === 'partial') return { pill: 'bg-amber-100 text-amber-800', badge: 'bg-warning' };
+    if (s === 'qualified')  return { pill: 'bg-green-100 text-green-800',  badge: 'bg-success' };
+    if (s === 'partial')    return { pill: 'bg-amber-100 text-amber-800',  badge: 'bg-warning' };
+    if (s === 'low_match')  return { pill: 'bg-slate-100 text-slate-600',  badge: 'bg-slate-400' };
     return { pill: 'bg-red-100 text-red-800', badge: 'bg-error' };
   };
 

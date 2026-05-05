@@ -124,7 +124,7 @@ export interface Application {
   application_id: string; // Required for details lookup
   candidate_name: string;
   score: number;
-  status: 'qualified' | 'partial' | 'rejected';
+  status: 'qualified' | 'partial' | 'rejected' | 'low_match';
   applied_date: string;
   summary: string;
 }
@@ -132,12 +132,13 @@ export interface Application {
 export interface ScoreDimension {
   achieved: number;
   max: number;
+  reasoning?: string;
 }
 
 export interface ApplicationDetailedAnalysis {
   application_id: string;
   candidate_name: string;
-  decision: 'qualified' | 'partial' | 'rejected';
+  decision: 'qualified' | 'partial' | 'rejected' | 'low_match';
   overall_score: number;
   scores: {
     skills?: ScoreDimension;
@@ -158,11 +159,19 @@ export interface ApplicationDetailedAnalysis {
     interview_focus_points?: string[];
     interview_suggested_questions?: string[];
     evaluation_notes?: string;
-    // Existing fields for backward compatibility/rendering
     strengths?: string[];
     risks?: string[];
   };
+  // Intelligence pipeline fields
+  cv_language?: string;
+  local_similarity_score?: number;
+  skill_match_ratio?: number;
+  gatekeeper_passed?: boolean;
+  matched_skills?: string[];
+  missing_skills?: string[];
+  red_flags?: string[];
+  reasoning?: Record<string, string>;
   raw_ai_response?: any;
 }
 
-export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'all';
+export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all';
