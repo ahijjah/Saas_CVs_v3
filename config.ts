@@ -1,5 +1,5 @@
 
-const API_BASE = 'https://api.ai970.cloud';
+const API_BASE = 'http://72.62.31.221:8000';
 
 export const WEBHOOK_CONFIG = {
   LOGIN_WEBHOOK_URL:             `${API_BASE}/auth/login`,
