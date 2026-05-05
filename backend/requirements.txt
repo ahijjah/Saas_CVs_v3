@@ -1,0 +1,33 @@
+# FastAPI
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+
+# Database
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Auth
+pyjwt==2.10.1
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+
+# Config
+pydantic-settings==2.6.1
+
+# OpenAI
+openai==1.57.0
+
+# Email
+aiosmtplib==3.0.2
+
+# Celery + Redis
+celery==5.4.0
+redis==5.2.1
+
+# PDF
+pymupdf==1.24.14
+
+# HTTP client (for any outbound calls)
+httpx==0.28.1
