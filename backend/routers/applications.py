@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep
+from auth.dependencies import CurrentUserDep, get_current_user
 from config import get_settings
 from database import get_db, set_rls_context
 from workers.cv_score import score_cv_task
@@ -158,10 +158,10 @@ async def get_application_details(
 async def upload_cv(
     job_id: Annotated[str, Form()],
     candidate_name: Annotated[str, Form()],
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
     candidate_email: Annotated[str | None, Form()] = None,
     file: UploadFile = File(...),
-    current_user: CurrentUserDep = Depends(get_current_user),
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(get_db),
 ):
     # Validate file type
     if file.content_type not in ALLOWED_MIME_TYPES:

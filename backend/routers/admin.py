@@ -8,8 +8,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep, RequireSuperAdmin, get_current_user
-from auth.password import hash_password
+from auth.dependencies import CurrentUserDep, RequireSuperAdmin
 from config import get_settings
 from database import get_db, set_rls_context
 from services.email_service import send_invite_email
@@ -17,8 +16,6 @@ from services.email_service import send_invite_email
 router = APIRouter(prefix="/admin", tags=["admin"])
 settings = get_settings()
 
-
-# ── Schemas ──────────────────────────────────────────────────────────────────
 
 class CreateTenantRequest(BaseModel):
     name: str
@@ -32,26 +29,16 @@ class UpdateUserStatusRequest(BaseModel):
     user_id: str
     status: str
 
-    def validate_status(self) -> None:
-        if self.status not in ("active", "disabled"):
-            raise ValueError("status must be 'active' or 'disabled'")
-
 
 class UpdateTenantStatusRequest(BaseModel):
     tenant_id: str
     status: str
-
-    def validate_status(self) -> None:
-        if self.status not in ("active", "suspended"):
-            raise ValueError("status must be 'active' or 'suspended'")
 
 
 class InviteUserRequest(BaseModel):
     email: EmailStr
     role: str = "recruiter"
 
-
-# ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/dashboard", dependencies=[RequireSuperAdmin])
 async def admin_dashboard(
@@ -76,8 +63,8 @@ async def admin_dashboard(
     tenant_rows = await db.execute(text("""
         SELECT
             t.tenant_id, t.name, t.plan, t.status, t.created_at,
-            COUNT(DISTINCT u.user_id)   AS user_count,
-            COUNT(DISTINCT j.job_id)    AS job_count,
+            COUNT(DISTINCT u.user_id) AS user_count,
+            COUNT(DISTINCT j.job_id) AS job_count,
             COUNT(DISTINCT a.application_id) AS application_count
         FROM tenants t
         LEFT JOIN users u ON u.tenant_id = t.tenant_id
@@ -87,6 +74,7 @@ async def admin_dashboard(
         ORDER BY t.created_at DESC
         LIMIT 10
     """))
+
     tenants = []
     for r in tenant_rows.mappings():
         tenants.append({
@@ -105,23 +93,24 @@ async def admin_dashboard(
 
 @router.get("/tenants", dependencies=[RequireSuperAdmin])
 async def list_tenants(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
     page: int = 1,
     limit: int = 20,
     search: str | None = None,
     status_filter: str | None = None,
-    current_user: CurrentUserDep = Depends(get_current_user),
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(get_db),
 ):
     limit = min(limit, 100)
     offset = (page - 1) * limit
     await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     where_clauses = []
-    params: dict = {"limit": limit, "offset": offset}
+    params = {"limit": limit, "offset": offset}
 
     if search:
         where_clauses.append("(t.name ILIKE :search OR t.email_domain ILIKE :search)")
         params["search"] = f"%{search}%"
+
     if status_filter:
         where_clauses.append("t.status = :status_filter")
         params["status_filter"] = status_filter
@@ -129,7 +118,8 @@ async def list_tenants(
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
     count_row = await db.execute(
-        text(f"SELECT COUNT(*) FROM tenants t {where_sql}"), params
+        text(f"SELECT COUNT(*) FROM tenants t {where_sql}"),
+        params,
     )
     total = count_row.scalar_one()
 
@@ -147,6 +137,7 @@ async def list_tenants(
         """),
         params,
     )
+
     tenants = []
     for r in rows.mappings():
         tenants.append({
@@ -186,8 +177,10 @@ async def create_tenant(
             "max_jobs": body.max_jobs,
         },
     )
+
     tenant_id = str(result.scalar_one())
     await db.commit()
+
     return {"success": True, "tenant_id": tenant_id}
 
 
@@ -198,7 +191,10 @@ async def update_tenant_status(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     if body.status not in ("active", "suspended"):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid status",
+        )
 
     await set_rls_context(db, current_user.tenant_id, "super_admin")
 
@@ -207,7 +203,6 @@ async def update_tenant_status(
         {"status": body.status, "tid": body.tenant_id},
     )
 
-    # Cascade: suspending a tenant disables all its users
     if body.status == "suspended":
         await db.execute(
             text("UPDATE users SET status = 'disabled' WHERE tenant_id = :tid"),
@@ -215,43 +210,50 @@ async def update_tenant_status(
         )
 
     await db.commit()
+
     return {"success": True, "message": f"Tenant {body.status}"}
 
 
 @router.get("/users", dependencies=[RequireSuperAdmin])
 async def list_users(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
     page: int = 1,
     limit: int = 20,
     search: str | None = None,
     role: str | None = None,
     status_filter: str | None = None,
     tenant_id: str | None = None,
-    current_user: CurrentUserDep = Depends(get_current_user),
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(get_db),
 ):
     limit = min(limit, 100)
     offset = (page - 1) * limit
     await set_rls_context(db, current_user.tenant_id, "super_admin")
 
-    where_clauses: list[str] = []
-    params: dict = {"limit": limit, "offset": offset}
+    where_clauses = []
+    params = {"limit": limit, "offset": offset}
 
     if search:
         where_clauses.append("(u.email ILIKE :search OR u.full_name ILIKE :search)")
         params["search"] = f"%{search}%"
+
     if role:
         where_clauses.append("u.role = :role")
         params["role"] = role
+
     if status_filter:
         where_clauses.append("u.status = :status_filter")
         params["status_filter"] = status_filter
+
     if tenant_id:
         where_clauses.append("u.tenant_id = :tenant_id")
         params["tenant_id"] = tenant_id
 
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-    count_row = await db.execute(text(f"SELECT COUNT(*) FROM users u {where_sql}"), params)
+    count_row = await db.execute(
+        text(f"SELECT COUNT(*) FROM users u {where_sql}"),
+        params,
+    )
     total = count_row.scalar_one()
 
     rows = await db.execute(
@@ -267,6 +269,7 @@ async def list_users(
         """),
         params,
     )
+
     users = []
     for r in rows.mappings():
         users.append({
@@ -293,12 +296,16 @@ async def create_user(
 ):
     await set_rls_context(db, current_user.tenant_id, "super_admin")
 
-    # Check email uniqueness
     existing = await db.execute(
-        text("SELECT user_id FROM users WHERE email = :email"), {"email": body.email}
+        text("SELECT user_id FROM users WHERE email = :email"),
+        {"email": body.email},
     )
+
     if existing.first():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
 
     token = secrets.token_urlsafe(48)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
@@ -319,15 +326,16 @@ async def create_user(
         },
     )
 
-    # Fetch tenant info for invite email
-    t_row = await db.execute(
-        text("SELECT name FROM tenants WHERE tenant_id = :tid"), {"tid": tenant_id}
+    tenant_row = await db.execute(
+        text("SELECT name FROM tenants WHERE tenant_id = :tid"),
+        {"tid": tenant_id},
     )
-    tenant = t_row.mappings().first()
+    tenant = tenant_row.mappings().first()
 
     await db.commit()
 
     invite_link = f"{settings.app_base_url}/accept-invite?token={token}"
+
     await send_invite_email(
         to_email=body.email,
         inviter_name=current_user.full_name,
@@ -345,15 +353,22 @@ async def update_user_status(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     if body.status not in ("active", "disabled"):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid status",
+        )
 
-    # Admins can manage their own tenant's users; super_admin can manage all
     if current_user.role not in ("super_admin", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
 
-    # Cannot disable yourself
     if body.user_id == current_user.user_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot change your own status")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change your own status",
+        )
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
@@ -361,8 +376,13 @@ async def update_user_status(
         text("UPDATE users SET status = :status WHERE user_id = :uid RETURNING user_id"),
         {"status": body.status, "uid": body.user_id},
     )
+
     if not result.first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
 
     await db.commit()
+
     return {"success": True, "message": f"User {body.status}"}
