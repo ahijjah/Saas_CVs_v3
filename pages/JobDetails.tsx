@@ -43,7 +43,7 @@ const T = {
     option1Title: 'Option 1 — Forwarding to Central Email',
     option1Desc: 'The client forwards CVs from their own system to the central inbox. Include the job code in the email subject for automatic routing.',
     option1ForwardTo: 'Forward CVs to',
-    option1SubjectHint: 'Required subject format',
+    option1SubjectHint: 'Include in email subject',
     option2Title: 'Option 2 — Dedicated Alias (Recommended)',
     option2Desc: 'Share this address directly with applicants or publish it on your careers page. CVs are automatically assigned to this job — no job code needed.',
     option2AliasLabel: 'Dedicated alias',
@@ -82,7 +82,7 @@ const T = {
     option1Title: 'الخيار 1 — إعادة التوجيه إلى البريد المركزي',
     option1Desc: 'يُعيد العميل توجيه السير الذاتية من نظامه الخاص إلى البريد الوارد المركزي. أدرج رمز الوظيفة في موضوع البريد للتوجيه التلقائي.',
     option1ForwardTo: 'أرسل السير الذاتية إلى',
-    option1SubjectHint: 'صيغة الموضوع المطلوبة',
+    option1SubjectHint: 'أدرج في موضوع البريد الإلكتروني',
     option2Title: 'الخيار 2 — بريد مخصص لكل وظيفة (مُوصى به)',
     option2Desc: 'شارك هذا العنوان مع المتقدمين مباشرةً أو انشره في صفحة الوظائف. يُعيَّن البريد الوارد تلقائياً لهذه الوظيفة دون الحاجة لرمز الوظيفة.',
     option2AliasLabel: 'البريد المخصص',
@@ -106,12 +106,32 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [togglingFwd, setTogglingFwd] = useState(false);
   const [togglingAlias, setTogglingAlias] = useState(false);
 
-  const handleCopyAlias = useCallback((email: string) => {
-    navigator.clipboard.writeText(email).then(() => {
+  const handleCopyAlias = useCallback((text: string) => {
+    const confirm = () => {
       setCopiedAlias(true);
       setTimeout(() => setCopiedAlias(false), 2000);
-    });
-  }, []);
+    };
+    const fallback = () => {
+      try {
+        const el = document.createElement('textarea');
+        el.value = text;
+        el.style.position = 'fixed';
+        el.style.opacity = '0';
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        confirm();
+      } catch {
+        addToast('Could not copy — please copy manually.', 'error');
+      }
+    };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(confirm).catch(fallback);
+    } else {
+      fallback();
+    }
+  }, [addToast]);
 
   const handleToggle = useCallback(async (field: 'forwarding_enabled' | 'alias_enabled', value: boolean) => {
     if (!details) return;
@@ -302,7 +322,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 </div>
                 <div>
                   <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option1SubjectHint}</p>
-                  <code className="text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 block text-textMain">CV Submission - {details.job_code || details.job_id}</code>
+                  <code className="text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 block text-textMain">{details.job_code || details.job_id}</code>
                 </div>
               </div>
               <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.forwarding_enabled ? 'text-success' : 'text-textMuted'}`}>

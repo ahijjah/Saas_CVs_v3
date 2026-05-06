@@ -170,7 +170,7 @@ async def create_job(
     )
     job_id = str(job_result.scalar_one())
 
-    platform_email = f"{job_id}@{tenant['email_domain']}"
+    platform_email = f"{job_code}@{tenant['email_domain']}"
     await db.execute(
         text("UPDATE jobs SET platform_email = :email WHERE job_id = :jid"),
         {"email": platform_email, "jid": job_id},
