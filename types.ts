@@ -68,6 +68,7 @@ export interface Job {
   job_status: 'Active' | 'Closed' | 'Draft';
   job_type?: string;
   location?: string;
+  duration?: string;
   posted_date?: string;
   closing_date?: string;
   salary_range?: string;

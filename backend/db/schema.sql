@@ -101,6 +101,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_by      UUID        NOT NULL REFERENCES users (user_id),
     title           VARCHAR(255) NOT NULL,
     department      VARCHAR(255),
+    location        VARCHAR(255),
+    job_type        VARCHAR(100),
+    duration        VARCHAR(100),
     description     TEXT        NOT NULL,   -- raw job description text
     platform_email  VARCHAR(255),           -- {job_id}@{tenant.email_domain}; set after insert
     status          VARCHAR(20)  NOT NULL DEFAULT 'active'

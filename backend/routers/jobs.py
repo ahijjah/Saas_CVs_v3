@@ -21,6 +21,9 @@ settings = get_settings()
 class CreateJobRequest(BaseModel):
     title: str
     department: str | None = None
+    location: str | None = None
+    job_type: str | None = None
+    duration: str | None = None
     description: str
     qualified_threshold: int | None = None
     partial_threshold: int | None = None
@@ -144,9 +147,11 @@ async def create_job(
 
     job_result = await db.execute(
         text("""
-            INSERT INTO jobs (tenant_id, created_by, title, department, description,
+            INSERT INTO jobs (tenant_id, created_by, title, department, location,
+                              job_type, duration, description,
                               qualified_threshold, partial_threshold, job_code, status)
-            VALUES (:tid, :uid, :title, :dept, :desc, :qt, :pt, :job_code, 'active')
+            VALUES (:tid, :uid, :title, :dept, :location, :job_type, :duration, :desc,
+                    :qt, :pt, :job_code, 'active')
             RETURNING job_id
         """),
         {
@@ -154,6 +159,9 @@ async def create_job(
             "uid":      current_user.user_id,
             "title":    body.title,
             "dept":     body.department,
+            "location": body.location,
+            "job_type": body.job_type,
+            "duration": body.duration,
             "desc":     body.description,
             "qt":       body.qualified_threshold,
             "pt":       body.partial_threshold,

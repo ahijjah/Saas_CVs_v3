@@ -17,6 +17,8 @@ interface FormData {
   title: string;
   department: string;
   location: string;
+  job_type: string;
+  duration: string;
   description: string;
 }
 
@@ -31,6 +33,8 @@ const T = {
     jobTitle: 'Job Title',
     department: 'Department / Client',
     jobLocation: 'Location',
+    jobType: 'Job Type',
+    duration: 'Duration',
     jobDesc: 'Job Description',
     jobDescPlaceholder: 'Describe the role, responsibilities, required skills and experience…',
     cancel: 'Cancel',
@@ -49,6 +53,8 @@ const T = {
     jobTitle: 'المسمى الوظيفي',
     department: 'القسم / العميل',
     jobLocation: 'الموقع',
+    jobType: 'نوع الوظيفة',
+    duration: 'المدة',
     jobDesc: 'وصف الوظيفة',
     jobDescPlaceholder: 'صف الدور والمسؤوليات والمهارات والخبرات المطلوبة…',
     cancel: 'إلغاء',
@@ -68,6 +74,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     title: '',
     department: '',
     location: '',
+    job_type: '',
+    duration: '',
     description: '',
   });
 
@@ -89,6 +97,9 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     try {
       const payload: Record<string, string> = { title, description };
       if (formData.department.trim()) payload.department = formData.department.trim();
+      if (formData.location.trim()) payload.location = formData.location.trim();
+      if (formData.job_type.trim()) payload.job_type = formData.job_type.trim();
+      if (formData.duration.trim()) payload.duration = formData.duration.trim();
 
       const responseData = await apiService.post(
         WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL,
@@ -186,17 +197,41 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               </div>
             </div>
 
-            {/* Location */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.jobLocation}</label>
-              <input
-                name="location"
-                type="text"
-                placeholder="Hybrid / Riyadh, SA"
-                className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                value={formData.location}
-                onChange={handleChange}
-              />
+            {/* Location + Job Type + Duration */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.jobLocation}</label>
+                <input
+                  name="location"
+                  type="text"
+                  placeholder="Hybrid / Riyadh, SA"
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  value={formData.location}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.jobType}</label>
+                <input
+                  name="job_type"
+                  type="text"
+                  placeholder="Full-time"
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  value={formData.job_type}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.duration}</label>
+                <input
+                  name="duration"
+                  type="text"
+                  placeholder="Permanent"
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  value={formData.duration}
+                  onChange={handleChange}
+                />
+              </div>
             </div>
 
             {/* Description */}
