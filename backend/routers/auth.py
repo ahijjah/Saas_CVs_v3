@@ -147,7 +147,13 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
     return {
         "success": True,
         "token": token,
-        "user": str(user["user_id"]),
+        "user": {
+            "user_id": str(user["user_id"]),
+            "sub": str(user["user_id"]),
+            "tenant_id": str(user["tenant_id"]),
+            "email": user["email"],
+            "role": user["role"],
+        },
         "cv_ingestion_mode": user["cv_ingestion_mode"],
         "message": "Login successful",
     }
@@ -205,7 +211,13 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
     return {
         "success": True,
         "token": token,
-        "user": user_id,
+        "user": {
+            "user_id": user_id,
+            "sub": user_id,
+            "tenant_id": tenant_id,
+            "email": body.email,
+            "role": "admin",
+        },
         "cv_ingestion_mode": "platform_email",
         "message": "Registration successful",
     }

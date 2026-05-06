@@ -91,7 +91,7 @@ async def admin_dashboard(
     for r in tenant_rows.mappings():
         tenants.append({
             "tenant_id": str(r["tenant_id"]),
-            "name": r["name"],
+            "tenant_name": r["name"],
             "plan": r["plan"],
             "status": r["status"],
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
@@ -151,7 +151,7 @@ async def list_tenants(
     for r in rows.mappings():
         tenants.append({
             "tenant_id": str(r["tenant_id"]),
-            "name": r["name"],
+            "tenant_name": r["name"],
             "email_domain": r["email_domain"],
             "plan": r["plan"],
             "max_users": r["max_users"],
