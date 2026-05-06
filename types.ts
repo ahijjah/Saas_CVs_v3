@@ -117,6 +117,10 @@ export interface AnalysisJson {
 export interface JobDetails extends Job {
   description: string;
   analysis_json: AnalysisJson;
+  platform_email?: string;
+  forwarding_email?: string;
+  forwarding_enabled?: boolean;
+  alias_enabled?: boolean;
 }
 
 export interface Application {

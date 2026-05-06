@@ -55,7 +55,7 @@ async def list_applications(
             "applied_date": r["applied_date"].isoformat() if r["applied_date"] else None,
             "summary": r["summary"],
         })
-    return {"applications": apps}
+    return apps
 
 
 @router.get("/details")
@@ -79,8 +79,12 @@ async def get_application_details(
                 s.score_certifications, s.score_soft_skills,
                 s.score_domain_knowledge, s.score_other,
                 s.weights_snapshot,
-                s.strengths, s.gaps_identified,
+                s.strengths, s.gaps_identified, s.red_flags,
                 s.evaluation_notes, s.interview_questions,
+                s.reasoning, s.raw_ai_response,
+                s.local_similarity_score, s.skill_match_ratio,
+                s.matched_skills, s.missing_skills,
+                s.cv_language, s.gatekeeper_passed,
                 s.ai_model
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
@@ -98,43 +102,55 @@ async def get_application_details(
     def build_dim(score_key: str, weight_key: str) -> dict:
         score = app[score_key] or 0
         weight = weights.get(weight_key, 0)
-        points = round(score * weight / 100, 2)
-        return {
-            "achieved": score,
-            "max": 100,
-            "percent": score,
-            "points": points,
-            "weight": weight,
-        }
+        return {"achieved": score, "max": 100, "weight": weight}
+
+    reasoning = app["reasoning"] or {}
 
     return {
         "application_id": str(app["application_id"]),
         "candidate_name": app["candidate_name"],
         "candidate_email": app["candidate_email"],
         "decision": app["decision"],
+        "overall_score": float(app["final_score"]) if app["final_score"] is not None else 0,
         "submission_source": app["submission_source"],
         "processing_status": app["processing_status"],
         "applied_at": app["applied_at"].isoformat() if app["applied_at"] else None,
         "scored_at": app["scored_at"].isoformat() if app["scored_at"] else None,
         "job_id": str(app["job_id"]),
         "job_title": app["job_title"],
-        "final_score": float(app["final_score"]) if app["final_score"] is not None else None,
         "qualified_threshold_used": app["qualified_threshold_used"],
         "partial_threshold_used": app["partial_threshold_used"],
-        "dimensions": {
-            "skills": build_dim("score_skills", "weight_skills"),
-            "experience": build_dim("score_experience", "weight_experience"),
-            "education": build_dim("score_education", "weight_education"),
-            "certifications": build_dim("score_certifications", "weight_certifications"),
-            "soft_skills": build_dim("score_soft_skills", "weight_soft_skills"),
+        # Shape matches ApplicationDetailedAnalysis.scores in types.ts
+        "scores": {
+            "skills":           build_dim("score_skills",           "weight_skills"),
+            "experience":       build_dim("score_experience",       "weight_experience"),
+            "education":        build_dim("score_education",        "weight_education"),
+            "certifications":   build_dim("score_certifications",   "weight_certifications"),
+            "soft_skills":      build_dim("score_soft_skills",      "weight_soft_skills"),
             "domain_knowledge": build_dim("score_domain_knowledge", "weight_domain_knowledge"),
-            "other": build_dim("score_other", "weight_other"),
+            "other_requirements": build_dim("score_other",          "weight_other"),
         },
-        "strengths": app["strengths"] or [],
-        "gaps_identified": app["gaps_identified"] or [],
-        "evaluation_notes": app["evaluation_notes"],
-        "interview_questions": app["interview_questions"] or [],
-        "ai_model": app["ai_model"],
+        # Shape matches ApplicationDetailedAnalysis.analysis in types.ts
+        "analysis": {
+            "summary":                    app["evaluation_notes"] or "",
+            "strengths":                  app["strengths"] or [],
+            "risks":                      app["gaps_identified"] or [],
+            "gaps_identified":            app["gaps_identified"] or [],
+            "evaluation_notes":           app["evaluation_notes"],
+            "interview_suggested_questions": app["interview_questions"] or [],
+            "interview_focus_points":     [],
+        },
+        # Intelligence fields from Gatekeeper + LLM
+        "red_flags":              app["red_flags"] or [],
+        "reasoning":              reasoning,
+        "cv_language":            app["cv_language"],
+        "local_similarity_score": float(app["local_similarity_score"]) if app["local_similarity_score"] is not None else None,
+        "skill_match_ratio":      float(app["skill_match_ratio"]) if app["skill_match_ratio"] is not None else None,
+        "matched_skills":         app["matched_skills"] or [],
+        "missing_skills":         app["missing_skills"] or [],
+        "gatekeeper_passed":      app["gatekeeper_passed"],
+        "ai_model":               app["ai_model"],
+        "raw_ai_response":        app["raw_ai_response"],
     }
 
 
