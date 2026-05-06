@@ -14,12 +14,12 @@ interface AddJobModalProps {
 }
 
 interface FormData {
-  title: string;
-  department: string;
-  location: string;
+  job_title: string;
+  job_description: string;
+  client: string;
+  job_location: string;
   job_type: string;
-  duration: string;
-  description: string;
+  job_duration: string;
 }
 
 const T = {
@@ -71,12 +71,12 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({
-    title: '',
-    department: '',
-    location: '',
+    job_title: '',
+    job_description: '',
+    client: '',
+    job_location: '',
     job_type: '',
-    duration: '',
-    description: '',
+    job_duration: '',
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -87,19 +87,20 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const title = formData.title.trim();
-    const description = formData.description.trim();
+    const title = formData.job_title.trim();
+    const description = formData.job_description.trim();
 
     if (!title) { addToast(t.errorTitle, 'error'); return; }
     if (!description) { addToast(t.errorDesc, 'error'); return; }
 
     setLoading(true);
     try {
-      const payload: Record<string, string> = { title, description };
-      if (formData.department.trim()) payload.department = formData.department.trim();
-      if (formData.location.trim()) payload.location = formData.location.trim();
+      // Map form fields to backend API fields (POST /jobs)
+      const payload: Record<string, string | null> = { title, description };
+      if (formData.client.trim()) payload.department = formData.client.trim();
+      if (formData.job_location.trim()) payload.location = formData.job_location.trim();
       if (formData.job_type.trim()) payload.job_type = formData.job_type.trim();
-      if (formData.duration.trim()) payload.duration = formData.duration.trim();
+      if (formData.job_duration.trim()) payload.duration = formData.job_duration.trim();
 
       const responseData = await apiService.post(
         WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL,
@@ -119,7 +120,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     }
   };
 
-  const isFormValid = formData.title.trim().length > 0 && formData.description.trim().length > 0;
+  const isFormValid = formData.job_title.trim().length > 0 && formData.job_description.trim().length > 0;
   const normalizedMode = user?.cv_ingestion_mode?.toLowerCase();
 
   return (
@@ -176,22 +177,22 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 </label>
                 <input
                   required
-                  name="title"
+                  name="job_title"
                   type="text"
                   placeholder="Senior Backend Developer"
                   className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={formData.title}
+                  value={formData.job_title}
                   onChange={handleChange}
                 />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.department}</label>
                 <input
-                  name="department"
+                  name="client"
                   type="text"
                   placeholder="Engineering / Acme Corp"
                   className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={formData.department}
+                  value={formData.client}
                   onChange={handleChange}
                 />
               </div>
@@ -202,11 +203,11 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.jobLocation}</label>
                 <input
-                  name="location"
+                  name="job_location"
                   type="text"
                   placeholder="Hybrid / Riyadh, SA"
                   className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={formData.location}
+                  value={formData.job_location}
                   onChange={handleChange}
                 />
               </div>
@@ -224,11 +225,11 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.duration}</label>
                 <input
-                  name="duration"
+                  name="job_duration"
                   type="text"
                   placeholder="Permanent"
                   className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={formData.duration}
+                  value={formData.job_duration}
                   onChange={handleChange}
                 />
               </div>
@@ -241,16 +242,16 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               </label>
               <textarea
                 required
-                name="description"
+                name="job_description"
                 rows={7}
                 placeholder={t.jobDescPlaceholder}
                 className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm leading-relaxed"
-                value={formData.description}
+                value={formData.job_description}
                 onChange={handleChange}
               />
               <p className="text-xs text-textMuted">
-                {formData.description.trim().length > 0
-                  ? `${formData.description.trim().length} chars — AI will extract criteria automatically`
+                {formData.job_description.trim().length > 0
+                  ? `${formData.job_description.trim().length} chars — AI will extract criteria automatically`
                   : 'The more detail you provide, the better the AI scoring will be.'}
               </p>
             </div>
