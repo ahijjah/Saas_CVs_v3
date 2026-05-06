@@ -13,20 +13,11 @@ interface AddJobModalProps {
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
-type JobType = 'Full-time' | 'Part-time' | 'Contract' | 'Consultancy';
-type JobStatus = 'Draft' | 'Open' | 'Closed';
-
 interface FormData {
-  job_code: string;
-  status: JobStatus;
-  client: string;
-  job_type: JobType;
-  job_duration: string;
-  job_location: string;
-  job_title: string;
-  job_description: string;
-  other_information: string;
-  end_date: string;
+  title: string;
+  department: string;
+  location: string;
+  description: string;
 }
 
 const T = {
@@ -37,26 +28,16 @@ const T = {
     inboxDesc: 'A dedicated job inbox will be generated automatically. You can find the address in the job details after creation.',
     fwdNote: 'Forwarding Required',
     fwdDesc: (email: string) => `Please forward all CVs for this job to ${email}. Our AI will route them automatically.`,
-    jobCode: 'Job Code',
-    status: 'Status',
-    client: 'Client',
-    jobType: 'Job Type',
-    jobDuration: 'Job Duration',
     jobTitle: 'Job Title',
-    jobLocation: 'Job Location',
+    department: 'Department / Client',
+    jobLocation: 'Location',
     jobDesc: 'Job Description',
-    otherInfo: 'Other Information',
-    endDate: 'End Date',
+    jobDescPlaceholder: 'Describe the role, responsibilities, required skills and experience…',
     cancel: 'Cancel',
-    creating: 'Creating...',
-    submit: 'Submit Job',
-    statusOpen: 'Open',
-    statusDraft: 'Draft',
-    statusClosed: 'Closed',
-    typeFullTime: 'Full-time',
-    typePartTime: 'Part-time',
-    typeContract: 'Contract',
-    typeConsultancy: 'Consultancy',
+    creating: 'Creating…',
+    submit: 'Create Job',
+    errorTitle: 'Job title is required.',
+    errorDesc: 'Job description is required.',
   },
   ar: {
     title: 'إنشاء وظيفة جديدة',
@@ -65,26 +46,16 @@ const T = {
     inboxDesc: 'سيتم إنشاء صندوق بريد مخصص للوظيفة تلقائياً. يمكنك العثور على العنوان في تفاصيل الوظيفة بعد الإنشاء.',
     fwdNote: 'التوجيه مطلوب',
     fwdDesc: (email: string) => `يرجى إعادة توجيه جميع السير الذاتية لهذه الوظيفة إلى ${email}. سيقوم الذكاء الاصطناعي بتوجيهها تلقائياً.`,
-    jobCode: 'رمز الوظيفة',
-    status: 'الحالة',
-    client: 'العميل',
-    jobType: 'نوع الوظيفة',
-    jobDuration: 'مدة الوظيفة',
     jobTitle: 'المسمى الوظيفي',
-    jobLocation: 'موقع الوظيفة',
+    department: 'القسم / العميل',
+    jobLocation: 'الموقع',
     jobDesc: 'وصف الوظيفة',
-    otherInfo: 'معلومات إضافية',
-    endDate: 'تاريخ الانتهاء',
+    jobDescPlaceholder: 'صف الدور والمسؤوليات والمهارات والخبرات المطلوبة…',
     cancel: 'إلغاء',
-    creating: 'جارٍ الإنشاء...',
-    submit: 'إرسال الوظيفة',
-    statusOpen: 'مفتوحة',
-    statusDraft: 'مسودة',
-    statusClosed: 'مغلقة',
-    typeFullTime: 'دوام كامل',
-    typePartTime: 'دوام جزئي',
-    typeContract: 'عقد',
-    typeConsultancy: 'استشارات',
+    creating: 'جارٍ الإنشاء…',
+    submit: 'إنشاء الوظيفة',
+    errorTitle: 'المسمى الوظيفي مطلوب.',
+    errorDesc: 'وصف الوظيفة مطلوب.',
   },
 };
 
@@ -94,16 +65,10 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({
-    job_code: '',
-    status: 'Open',
-    client: '',
-    job_type: 'Full-time',
-    job_duration: '',
-    job_location: '',
-    job_title: '',
-    job_description: '',
-    other_information: '',
-    end_date: ''
+    title: '',
+    department: '',
+    location: '',
+    description: '',
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -114,26 +79,16 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const title = formData.title.trim();
+    const description = formData.description.trim();
+
+    if (!title) { addToast(t.errorTitle, 'error'); return; }
+    if (!description) { addToast(t.errorDesc, 'error'); return; }
+
+    setLoading(true);
     try {
-      if (!formData.job_code || !formData.job_type || !formData.job_title || !formData.job_description) {
-        addToast("Please fill in all required fields.", "error");
-        return;
-      }
-
-      setLoading(true);
-
-      const payload = {
-        job_code: formData.job_code,
-        status: formData.status,
-        client: formData.client || null,
-        job_type: formData.job_type,
-        job_duration: formData.job_duration || null,
-        job_location: formData.job_location || null,
-        job_title: formData.job_title,
-        job_description: formData.job_description,
-        other_information: formData.other_information || null,
-        end_date: formData.end_date || null
-      };
+      const payload: Record<string, string> = { title, description };
+      if (formData.department.trim()) payload.department = formData.department.trim();
 
       const responseData = await apiService.post(
         WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL,
@@ -141,22 +96,19 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
         token
       );
 
-      const createdJobId = responseData.job_id || responseData.job_code || formData.job_code;
-      addToast("Job campaign created successfully!", "success");
-      onSuccess(createdJobId);
-
+      addToast('Job created successfully!', 'success');
+      onSuccess(responseData.job_id || '');
     } catch (err: any) {
-      console.error("SUBMIT ERROR", err);
       const errorMsg = err.name === 'TypeError' && err.message === 'Failed to fetch'
-        ? "Network error. The creation service is unreachable."
-        : (err.message || "Failed to create job.");
-      addToast(errorMsg, "error");
+        ? 'Network error. The creation service is unreachable.'
+        : (err.message || 'Failed to create job.');
+      addToast(errorMsg, 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const isFormValid = formData.job_code && formData.job_type && formData.job_title && formData.job_description;
+  const isFormValid = formData.title.trim().length > 0 && formData.description.trim().length > 0;
   const normalizedMode = user?.cv_ingestion_mode?.toLowerCase();
 
   return (
@@ -175,12 +127,12 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
             </button>
           </div>
 
-          <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto bg-white">
+          <div className="p-8 space-y-5 max-h-[70vh] overflow-y-auto bg-white">
 
             {normalizedMode === 'platform_email' && (
-              <div className={`bg-blue-50 ${isAr ? 'border-r-4' : 'border-l-4'} border-blue-500 rounded-xl p-4 flex items-start gap-4 animate-fade-in`}>
+              <div className={`bg-blue-50 ${isAr ? 'border-r-4' : 'border-l-4'} border-blue-500 rounded-xl p-4 flex items-start gap-4`}>
                 <div className="text-blue-500 shrink-0 mt-0.5">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
@@ -192,150 +144,80 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
             )}
 
             {normalizedMode === 'forwarding' && (
-              <div className={`bg-amber-50 ${isAr ? 'border-r-4' : 'border-l-4'} border-amber-500 rounded-xl p-4 flex items-start gap-4 animate-fade-in`}>
+              <div className={`bg-amber-50 ${isAr ? 'border-r-4' : 'border-l-4'} border-amber-500 rounded-xl p-4 flex items-start gap-4`}>
                 <div className="text-amber-500 shrink-0 mt-0.5">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-amber-900 uppercase tracking-tight">{t.fwdNote}</h4>
-                  <p className="text-sm text-amber-800 leading-relaxed mt-1">
-                    {t.fwdDesc(GLOBAL_FORWARDING_EMAIL)}
-                  </p>
+                  <p className="text-sm text-amber-800 leading-relaxed mt-1">{t.fwdDesc(GLOBAL_FORWARDING_EMAIL)}</p>
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Title + Department */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">{t.jobCode} <span className="text-error font-black">*</span></label>
+                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">
+                  {t.jobTitle} <span className="text-error">*</span>
+                </label>
                 <input
                   required
-                  name="job_code"
-                  type="text"
-                  placeholder="ENG-001"
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={formData.job_code}
-                  onChange={handleChange}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">{t.status}</label>
-                <select
-                  name="status"
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
-                  value={formData.status}
-                  onChange={handleChange}
-                >
-                  <option value="Open">{t.statusOpen}</option>
-                  <option value="Draft">{t.statusDraft}</option>
-                  <option value="Closed">{t.statusClosed}</option>
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">{t.client}</label>
-                <input
-                  name="client"
-                  type="text"
-                  placeholder="Company Name"
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={formData.client}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">{t.jobType} <span className="text-error font-black">*</span></label>
-                <select
-                  required
-                  name="job_type"
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
-                  value={formData.job_type}
-                  onChange={handleChange}
-                >
-                  <option value="Full-time">{t.typeFullTime}</option>
-                  <option value="Part-time">{t.typePartTime}</option>
-                  <option value="Contract">{t.typeContract}</option>
-                  <option value="Consultancy">{t.typeConsultancy}</option>
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">{t.jobDuration}</label>
-                <input
-                  name="job_duration"
-                  type="text"
-                  placeholder="e.g. 12 months"
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={formData.job_duration}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">{t.jobTitle} <span className="text-error font-black">*</span></label>
-                <input
-                  required
-                  name="job_title"
+                  name="title"
                   type="text"
                   placeholder="Senior Backend Developer"
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={formData.job_title}
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  value={formData.title}
                   onChange={handleChange}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">{t.jobLocation}</label>
+                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.department}</label>
                 <input
-                  name="job_location"
+                  name="department"
                   type="text"
-                  placeholder="Hybrid / London, UK"
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={formData.job_location}
+                  placeholder="Engineering / Acme Corp"
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  value={formData.department}
                   onChange={handleChange}
                 />
               </div>
             </div>
 
+            {/* Location */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-textMuted uppercase">{t.jobDesc} <span className="text-error font-black">*</span></label>
-              <textarea
-                required
-                name="job_description"
-                rows={4}
-                placeholder="Outline role responsibilities..."
-                className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm leading-relaxed"
-                value={formData.job_description}
+              <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.jobLocation}</label>
+              <input
+                name="location"
+                type="text"
+                placeholder="Hybrid / Riyadh, SA"
+                className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                value={formData.location}
                 onChange={handleChange}
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">{t.otherInfo}</label>
-                <textarea
-                  name="other_information"
-                  rows={3}
-                  placeholder="Benefits, etc."
-                  className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm leading-relaxed"
-                  value={formData.other_information}
-                  onChange={handleChange}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase">{t.endDate}</label>
-                <input
-                  name="end_date"
-                  type="date"
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
-                  value={formData.end_date}
-                  onChange={handleChange}
-                />
-              </div>
+            {/* Description */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-textMuted uppercase tracking-widest">
+                {t.jobDesc} <span className="text-error">*</span>
+              </label>
+              <textarea
+                required
+                name="description"
+                rows={7}
+                placeholder={t.jobDescPlaceholder}
+                className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm leading-relaxed"
+                value={formData.description}
+                onChange={handleChange}
+              />
+              <p className="text-xs text-textMuted">
+                {formData.description.trim().length > 0
+                  ? `${formData.description.trim().length} chars — AI will extract criteria automatically`
+                  : 'The more detail you provide, the better the AI scoring will be.'}
+              </p>
             </div>
           </div>
 
