@@ -1,7 +1,10 @@
 """
 Tenant-scoped user management endpoints.
 Tenant admins can list, create, and activate/deactivate users within their own tenant.
-Plan user limits are enforced on create and re-activate.
+
+ISOLATION GUARANTEE: every SQL statement that touches the users table carries an
+explicit `tenant_id = :tid` predicate.  This is the authoritative enforcement
+layer — it does NOT rely on RLS being active or correctly configured.
 """
 from typing import Annotated
 
@@ -16,6 +19,8 @@ from database import get_db, set_rls_context
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
+# Roles a tenant admin is permitted to assign to new users.
+# super_admin is intentionally excluded — only /admin/users can create those.
 ALLOWED_ROLES = {"admin", "recruiter", "viewer"}
 
 
@@ -48,15 +53,23 @@ class UpdateUserStatusRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _require_admin(current_user) -> None:
-    if current_user.role not in ("admin", "super_admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+def _require_tenant_admin(current_user) -> None:
+    """Allow only tenant admins.  Super-admins must use /admin/users instead."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant admin access required.",
+        )
 
 
 async def _get_active_count_and_limit(tenant_id: str, db) -> tuple[int, int]:
+    """Return (active_user_count, max_users) scoped to a specific tenant_id."""
     count_row = await db.execute(
-        text("SELECT COUNT(*) FROM users WHERE status = 'active'")
-        # RLS restricts this to the current tenant automatically
+        text("""
+            SELECT COUNT(*) FROM users
+            WHERE tenant_id = :tid AND status = 'active'
+        """),
+        {"tid": tenant_id},
     )
     active_count = int(count_row.scalar_one())
 
@@ -76,15 +89,17 @@ async def list_tenant_users(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    _require_admin(current_user)
+    _require_tenant_admin(current_user)
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     rows = await db.execute(
         text("""
             SELECT user_id, email, full_name, role, status, created_at, last_login_at
             FROM users
+            WHERE tenant_id = :tid
             ORDER BY created_at ASC
-        """)
+        """),
+        {"tid": current_user.tenant_id},
     )
     users = [
         {
@@ -116,7 +131,7 @@ async def create_tenant_user(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    _require_admin(current_user)
+    _require_tenant_admin(current_user)
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     active_count, max_users = await _get_active_count_and_limit(current_user.tenant_id, db)
@@ -129,6 +144,7 @@ async def create_tenant_user(
     password_hash = hash_password(body.password)
 
     try:
+        # tenant_id is always taken from the JWT — never from the request body.
         user_result = await db.execute(
             text("""
                 INSERT INTO users (tenant_id, email, password_hash, full_name, role, status)
@@ -175,13 +191,16 @@ async def update_tenant_user_status(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    _require_admin(current_user)
+    _require_tenant_admin(current_user)
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # RLS ensures user_id belongs to current tenant
+    # tenant_id = :tid ensures a cross-tenant user_id returns 404, not the real row.
     user_row = await db.execute(
-        text("SELECT user_id, role, status FROM users WHERE user_id = :uid"),
-        {"uid": user_id},
+        text("""
+            SELECT user_id, role, status FROM users
+            WHERE user_id = :uid AND tenant_id = :tid
+        """),
+        {"uid": user_id, "tid": current_user.tenant_id},
     )
     user = user_row.mappings().first()
     if not user:
@@ -193,7 +212,6 @@ async def update_tenant_user_status(
             detail="You cannot deactivate your own account.",
         )
 
-    # Enforce plan limit when re-activating a disabled user
     if body.status == "active" and user["status"] != "active":
         active_count, max_users = await _get_active_count_and_limit(current_user.tenant_id, db)
         if active_count >= max_users:
@@ -202,9 +220,14 @@ async def update_tenant_user_status(
                 detail="User limit reached for your current plan.",
             )
 
+    # tenant_id = :tid in the UPDATE prevents cross-tenant writes even if user_id
+    # somehow matched a row from another tenant (e.g., UUID collision).
     await db.execute(
-        text("UPDATE users SET status = :status WHERE user_id = :uid"),
-        {"status": body.status, "uid": user_id},
+        text("""
+            UPDATE users SET status = :status
+            WHERE user_id = :uid AND tenant_id = :tid
+        """),
+        {"status": body.status, "uid": user_id, "tid": current_user.tenant_id},
     )
     await db.commit()
 
