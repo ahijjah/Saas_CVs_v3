@@ -117,11 +117,13 @@ export interface AnalysisJson {
 
 export interface JobDetails extends Job {
   description: string;
-  analysis_json: AnalysisJson;
+  analysis_json: AnalysisJson | null;
   platform_email?: string;
   forwarding_email?: string;
   forwarding_enabled?: boolean;
   alias_enabled?: boolean;
+  criteria_extraction_status?: 'pending' | 'processing' | 'completed' | 'failed';
+  criteria_extraction_error?: string | null;
 }
 
 export interface Application {

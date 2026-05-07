@@ -52,6 +52,10 @@ const T = {
     enabled: 'Enabled',
     disabled: 'Disabled',
     recommended: 'Recommended',
+    criteriaPending: 'AI criteria analysis is being generated. This page will refresh automatically.',
+    criteriaProcessing: 'AI criteria analysis is in progress. This page will refresh automatically.',
+    criteriaFailed: 'AI criteria analysis failed.',
+    retryExtraction: 'Retry',
   },
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
@@ -91,6 +95,10 @@ const T = {
     enabled: 'مفعّل',
     disabled: 'معطّل',
     recommended: 'مُوصى به',
+    criteriaPending: 'جارٍ إنشاء تحليل معايير الذكاء الاصطناعي. ستُحدَّث هذه الصفحة تلقائياً.',
+    criteriaProcessing: 'تحليل معايير الذكاء الاصطناعي قيد التنفيذ. ستُحدَّث هذه الصفحة تلقائياً.',
+    criteriaFailed: 'فشل تحليل معايير الذكاء الاصطناعي.',
+    retryExtraction: 'إعادة المحاولة',
   },
 };
 
@@ -105,6 +113,41 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [copiedAlias, setCopiedAlias] = useState(false);
   const [togglingFwd, setTogglingFwd] = useState(false);
   const [togglingAlias, setTogglingAlias] = useState(false);
+
+  // Poll every 5 seconds while AI extraction is running
+  useEffect(() => {
+    const status = details?.criteria_extraction_status;
+    if (status !== 'pending' && status !== 'processing') return;
+    const timer = setTimeout(async () => {
+      try {
+        const data = await apiService.get(
+          WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL,
+          { job_id: jobId },
+          auth.token!
+        );
+        if (data) {
+          const payload = Array.isArray(data) ? data[0] : data;
+          setDetails({ ...payload.details, analysis_json: payload.analysis });
+        }
+      } catch { /* ignore polling errors */ }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [details?.criteria_extraction_status, jobId, auth.token]);
+
+  const handleRetryExtraction = useCallback(async () => {
+    if (!details) return;
+    try {
+      await apiService.post(
+        `${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/${details.job_id}/criteria/retry`,
+        {},
+        auth.token!
+      );
+      setDetails(prev => prev ? { ...prev, criteria_extraction_status: 'pending', criteria_extraction_error: null } : prev);
+      addToast('AI analysis retry queued.', 'success');
+    } catch {
+      addToast('Failed to retry AI analysis.', 'error');
+    }
+  }, [details, auth.token, addToast]);
 
   const handleCopyAlias = useCallback((text: string) => {
     const confirm = () => {
@@ -253,7 +296,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   if (!details) return null;
 
-  const analysis = details.analysis_json;
+  const analysis = details.analysis_json ?? undefined;
   const metaValues = [details.job_client, details.job_type || 'Full-time', details.location || 'Remote', details.posted_date || '-', details.closing_date || '-'];
   const kpiValues = [
     { value: details.applications_total, filter: 'all', color: 'text-textMain' },
@@ -262,7 +305,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     { value: details.applications_rejected || 0, filter: 'rejected', color: 'text-error' },
   ];
   const weightLabels = t.evalWeightLabels;
-  const weightKeys: (keyof typeof analysis.scoring_weights)[] = ['skills', 'experience', 'education', 'certifications', 'soft_skills', 'domain_knowledge', 'other_requirements'];
+  const weightKeys: ('skills' | 'experience' | 'education' | 'certifications' | 'soft_skills' | 'domain_knowledge' | 'other_requirements')[] = ['skills', 'experience', 'education', 'certifications', 'soft_skills', 'domain_knowledge', 'other_requirements'];
   const otherCats = [
     { label: t.certifications, items: analysis?.certifications },
     { label: t.domainKnowledge, items: analysis?.domain_knowledge },
@@ -393,6 +436,44 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           </button>
         ))}
       </section>
+
+      {/* AI Criteria Extraction Status Banner */}
+      {details.criteria_extraction_status && details.criteria_extraction_status !== 'completed' && (
+        <div className={`rounded-2xl border p-4 flex items-center justify-between gap-4 ${
+          details.criteria_extraction_status === 'failed'
+            ? 'bg-red-50 border-red-200'
+            : 'bg-amber-50 border-amber-200'
+        }`}>
+          <div className="flex items-center gap-3">
+            {details.criteria_extraction_status === 'failed' ? (
+              <svg className="w-5 h-5 text-error shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            ) : (
+              <svg className="animate-spin w-5 h-5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            )}
+            <div>
+              <p className="text-sm font-bold text-textMain">
+                {details.criteria_extraction_status === 'failed' ? t.criteriaFailed : details.criteria_extraction_status === 'processing' ? t.criteriaProcessing : t.criteriaPending}
+              </p>
+              {details.criteria_extraction_status === 'failed' && details.criteria_extraction_error && (
+                <p className="text-xs text-error/80 mt-0.5">{details.criteria_extraction_error}</p>
+              )}
+            </div>
+          </div>
+          {details.criteria_extraction_status === 'failed' && (
+            <button
+              onClick={handleRetryExtraction}
+              className="shrink-0 px-4 py-1.5 bg-error text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors"
+            >
+              {t.retryExtraction}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

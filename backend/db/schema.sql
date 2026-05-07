@@ -141,6 +141,13 @@ CREATE TABLE IF NOT EXISTS job_criteria (
     weight_soft_skills      SMALLINT NOT NULL DEFAULT 10,
     weight_domain_knowledge SMALLINT NOT NULL DEFAULT 5,
     weight_other            SMALLINT NOT NULL DEFAULT 5,
+    -- Async extraction tracking
+    criteria_extraction_status VARCHAR(20)  NOT NULL DEFAULT 'pending'
+                        CHECK (criteria_extraction_status IN ('pending', 'processing', 'completed', 'failed')),
+    criteria_extraction_error  TEXT,
+    criteria_extracted_at      TIMESTAMPTZ,
+    -- Structured JSON matching the frontend AnalysisJson interface (populated by Celery task)
+    analysis_json              JSONB,
     -- Audit
     ai_model        VARCHAR(100),           -- model used to generate (e.g. gpt-4o-mini)
     ai_generated_at TIMESTAMPTZ,

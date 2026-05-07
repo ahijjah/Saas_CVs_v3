@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import CurrentUserDep, get_current_user
 from config import get_settings
 from database import get_db, set_rls_context
-from services.ai_service import extract_job_criteria
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 settings = get_settings()
@@ -176,63 +175,31 @@ async def create_job(
         {"email": platform_email, "jid": job_id},
     )
 
+    # Insert a pending criteria row immediately — AI extraction runs in background.
+    # Default weights (30+25+15+10+10+5+5=100) satisfy the weights_sum_100 constraint.
+    await db.execute(
+        text("""
+            INSERT INTO job_criteria (job_id, criteria_extraction_status)
+            VALUES (:jid, 'pending')
+        """),
+        {"jid": job_id},
+    )
+    await db.commit()
+
     job_dir = Path(settings.files_base_path) / "tenants" / current_user.tenant_id / "jobs" / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        ai_criteria = await extract_job_criteria(body.description)
-    except Exception:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI criteria extraction failed. Please try again.",
-        )
-
-    await db.execute(
-        text("""
-            INSERT INTO job_criteria (
-                job_id,
-                skills, experience, education, certifications,
-                soft_skills, domain_knowledge, other_requirements,
-                weight_skills, weight_experience, weight_education,
-                weight_certifications, weight_soft_skills,
-                weight_domain_knowledge, weight_other,
-                ai_model, ai_generated_at
-            ) VALUES (
-                :jid,
-                :skills, :experience, :education, :certs,
-                :soft, :domain, :other,
-                :w_skills, :w_exp, :w_edu, :w_cert, :w_soft, :w_domain, :w_other,
-                :model, now()
-            )
-        """),
-        {
-            "jid":      job_id,
-            "skills":   ai_criteria.get("skills", []),
-            "experience": ai_criteria.get("experience", []),
-            "education": ai_criteria.get("education", []),
-            "certs":    ai_criteria.get("certifications", []),
-            "soft":     ai_criteria.get("soft_skills", []),
-            "domain":   ai_criteria.get("domain_knowledge", []),
-            "other":    ai_criteria.get("other_requirements", []),
-            "w_skills": ai_criteria.get("weight_skills", 30),
-            "w_exp":    ai_criteria.get("weight_experience", 25),
-            "w_edu":    ai_criteria.get("weight_education", 15),
-            "w_cert":   ai_criteria.get("weight_certifications", 10),
-            "w_soft":   ai_criteria.get("weight_soft_skills", 10),
-            "w_domain": ai_criteria.get("weight_domain_knowledge", 5),
-            "w_other":  ai_criteria.get("weight_other", 5),
-            "model":    settings.openai_model,
-        },
-    )
-    await db.commit()
+    # Queue async AI extraction — does not block job creation
+    from workers.criteria_worker import extract_criteria_task
+    extract_criteria_task.delay(job_id, body.description)
 
     return {
         "success": True,
         "job_id": job_id,
         "job_code": job_code,
         "platform_email": platform_email,
-        "message": "Job created successfully",
+        "criteria_extraction_status": "pending",
+        "message": "Job created successfully. AI criteria extraction started in background.",
     }
 
 
@@ -272,8 +239,10 @@ async def get_job_details(
 
     criteria_row = await db.execute(
         text("""
-            SELECT skills, experience, education, certifications,
-                   soft_skills, domain_knowledge, other_requirements,
+            SELECT analysis_json,
+                   criteria_extraction_status,
+                   criteria_extraction_error,
+                   criteria_extracted_at,
                    weight_skills, weight_experience, weight_education,
                    weight_certifications, weight_soft_skills,
                    weight_domain_knowledge, weight_other,
@@ -288,6 +257,12 @@ async def get_job_details(
     forwarding_email = await _get_forwarding_email(db)
 
     job_code = job["job_code"] or str(job["job_id"])[:8].upper()
+
+    extraction_status = criteria["criteria_extraction_status"] if criteria else "pending"
+    extraction_error  = criteria["criteria_extraction_error"]  if criteria else None
+
+    # analysis_json is the nested AnalysisJson structure; fall back to None when pending
+    analysis_json = criteria["analysis_json"] if criteria else None
 
     return {
         "details": {
@@ -308,6 +283,8 @@ async def get_job_details(
             "applications_rejected":  job["applications_rejected"],
             "qualified_threshold":    job["qualified_threshold"],
             "partial_threshold":      job["partial_threshold"],
+            "criteria_extraction_status": extraction_status,
+            "criteria_extraction_error":  extraction_error,
             # Legacy field — kept for backward compat
             "ingestion_note": (
                 f"Send CVs directly to: {job['platform_email']}"
@@ -315,7 +292,7 @@ async def get_job_details(
                 else f"Forward CVs to: {forwarding_email} — include {job_code} in subject"
             ),
         },
-        "analysis": dict(criteria) if criteria else None,
+        "analysis": analysis_json,
     }
 
 
@@ -432,3 +409,37 @@ async def update_criteria(
     )
     await db.commit()
     return {"success": True, "message": "Criteria updated"}
+
+
+@router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)
+async def retry_criteria_extraction(
+    job_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Re-queue AI criteria extraction for a job whose extraction previously failed."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    job_row = await db.execute(
+        text("SELECT description FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
+        {"jid": job_id, "tid": current_user.tenant_id},
+    )
+    job = job_row.mappings().first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    await db.execute(
+        text("""
+            UPDATE job_criteria
+            SET criteria_extraction_status = 'pending',
+                criteria_extraction_error  = NULL
+            WHERE job_id = :jid
+        """),
+        {"jid": job_id},
+    )
+    await db.commit()
+
+    from workers.criteria_worker import extract_criteria_task
+    extract_criteria_task.delay(job_id, job["description"])
+
+    return {"success": True, "message": "Criteria extraction re-queued."}

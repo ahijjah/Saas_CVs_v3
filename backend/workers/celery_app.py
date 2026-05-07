@@ -12,6 +12,7 @@ celery_app = Celery(
     include=[
         "workers.cv_score",
         "workers.cv_intake",
+        "workers.criteria_worker",
     ],
 )
 
