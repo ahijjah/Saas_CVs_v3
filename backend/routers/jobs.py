@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -361,6 +362,23 @@ async def update_criteria(
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Criteria not found for this job")
 
+    # Validate individual weight ranges
+    incoming_weights = {
+        "weight_skills":           body.weight_skills,
+        "weight_experience":       body.weight_experience,
+        "weight_education":        body.weight_education,
+        "weight_certifications":   body.weight_certifications,
+        "weight_soft_skills":      body.weight_soft_skills,
+        "weight_domain_knowledge": body.weight_domain_knowledge,
+        "weight_other":            body.weight_other,
+    }
+    for field, val in incoming_weights.items():
+        if val is not None and not (0 <= val <= 100):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Each weight must be between 0 and 100. '{field}' is {val}.",
+            )
+
     w = {
         "weight_skills":           body.weight_skills           if body.weight_skills           is not None else existing["weight_skills"],
         "weight_experience":       body.weight_experience       if body.weight_experience       is not None else existing["weight_experience"],
@@ -370,13 +388,25 @@ async def update_criteria(
         "weight_domain_knowledge": body.weight_domain_knowledge if body.weight_domain_knowledge is not None else existing["weight_domain_knowledge"],
         "weight_other":            body.weight_other            if body.weight_other            is not None else existing["weight_other"],
     }
-    if sum(w.values()) != 100:
+    total = sum(w.values())
+    if total != 100:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Weights must sum to 100. Current total: {sum(w.values())}",
+            detail=f"Evaluation weights must total exactly 100%. Current total: {total}%.",
         )
 
-    update_fields: dict = {**w, "last_edited_by": current_user.user_id, "jid": job_id}
+    # Sync scoring_weights inside analysis_json so GET /details reflects updated values
+    new_scoring_weights = json.dumps({
+        "skills":           w["weight_skills"],
+        "experience":       w["weight_experience"],
+        "education":        w["weight_education"],
+        "certifications":   w["weight_certifications"],
+        "soft_skills":      w["weight_soft_skills"],
+        "domain_knowledge": w["weight_domain_knowledge"],
+        "other_requirements": w["weight_other"],
+    })
+
+    update_fields: dict = {**w, "new_scoring_weights": new_scoring_weights, "last_edited_by": current_user.user_id, "jid": job_id}
     for col in ["skills", "experience", "education", "certifications",
                 "soft_skills", "domain_knowledge", "other_requirements"]:
         val = getattr(body, col, None)
@@ -400,6 +430,11 @@ async def update_criteria(
                 weight_soft_skills = :weight_soft_skills,
                 weight_domain_knowledge = :weight_domain_knowledge,
                 weight_other = :weight_other,
+                analysis_json = CASE
+                    WHEN analysis_json IS NOT NULL THEN
+                        jsonb_set(analysis_json, '{{scoring_weights}}', CAST(:new_scoring_weights AS jsonb), true)
+                    ELSE analysis_json
+                END,
                 last_edited_by = :last_edited_by,
                 last_edited_at = now()
                 {array_sets}

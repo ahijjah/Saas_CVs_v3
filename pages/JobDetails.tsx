@@ -37,7 +37,15 @@ const T = {
     noData: 'No specific data.',
     evalLogic: 'Evaluation Logic',
     evalWeightLabels: ['Skills', 'Experience', 'Education', 'Certifications', 'Soft Skills', 'Domain Knowledge', 'Other'],
-    weightsNote: "Weights are read-only and were defined during the job creation workflow. They represent the AI's priority ranking during candidate evaluation.",
+    editWeights: 'Edit Weights',
+    saveWeights: 'Save Weights',
+    cancelEdit: 'Cancel',
+    normalizeWeights: 'Normalize to 100%',
+    resetAiWeights: 'Reset to AI Weights',
+    weightTotal: 'Total',
+    weightSuccess: 'Total weight is 100%',
+    weightUnder: 'Remaining {r}% must be assigned.',
+    weightOver: 'Total exceeds 100% by {e}%.',
     jobDesc: 'Original Job Description',
     cvReceiving: 'CV Receiving Options',
     option1Title: 'Option 1 — Forwarding to Central Email',
@@ -80,7 +88,15 @@ const T = {
     noData: 'لا توجد بيانات محددة.',
     evalLogic: 'منطق التقييم',
     evalWeightLabels: ['المهارات', 'الخبرة', 'التعليم', 'الشهادات', 'المهارات الناعمة', 'معرفة المجال', 'أخرى'],
-    weightsNote: 'الأوزان للقراءة فقط وتم تحديدها خلال سير عمل إنشاء الوظيفة. تمثل ترتيب أولويات الذكاء الاصطناعي أثناء تقييم المرشحين.',
+    editWeights: 'تعديل الأوزان',
+    saveWeights: 'حفظ الأوزان',
+    cancelEdit: 'إلغاء',
+    normalizeWeights: 'توحيد إلى 100%',
+    resetAiWeights: 'إعادة تعيين أوزان الذكاء الاصطناعي',
+    weightTotal: 'المجموع',
+    weightSuccess: 'مجموع الأوزان 100%',
+    weightUnder: 'يجب تخصيص {r}% المتبقية.',
+    weightOver: 'المجموع يتجاوز 100% بمقدار {e}%.',
     jobDesc: 'وصف الوظيفة الأصلي',
     cvReceiving: 'خيارات استقبال السير الذاتية',
     option1Title: 'الخيار 1 — إعادة التوجيه إلى البريد المركزي',
@@ -113,6 +129,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [copiedAlias, setCopiedAlias] = useState(false);
   const [togglingFwd, setTogglingFwd] = useState(false);
   const [togglingAlias, setTogglingAlias] = useState(false);
+  const [editingWeights, setEditingWeights] = useState(false);
+  const [draftWeights, setDraftWeights] = useState<Record<string, number>>({});
+  const [savingWeights, setSavingWeights] = useState(false);
 
   // Poll every 5 seconds while AI extraction is running
   useEffect(() => {
@@ -193,6 +212,71 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       setToggling(false);
     }
   }, [details, auth.token, addToast]);
+
+  const _weightKeys = ['skills', 'experience', 'education', 'certifications', 'soft_skills', 'domain_knowledge', 'other_requirements'] as const;
+
+  const handleEditWeights = useCallback(() => {
+    if (!details) return;
+    const current = (details.analysis_json?.scoring_weights ?? {}) as Record<string, number>;
+    setDraftWeights(Object.fromEntries(_weightKeys.map(k => [k, current[k] ?? 0])));
+    setEditingWeights(true);
+  }, [details]);
+
+  const handleNormalizeWeights = useCallback(() => {
+    const entries = Object.entries(draftWeights);
+    const total = entries.reduce((s, [, v]) => s + v, 0);
+    if (total === 0) return;
+    const normalized: Record<string, number> = {};
+    entries.forEach(([k, v]) => { normalized[k] = Math.round((v / total) * 100); });
+    const diff = 100 - Object.values(normalized).reduce((s, v) => s + v, 0);
+    if (diff !== 0) {
+      const maxKey = [...entries].sort((a, b) => b[1] - a[1])[0][0];
+      normalized[maxKey] = (normalized[maxKey] ?? 0) + diff;
+    }
+    setDraftWeights(normalized);
+  }, [draftWeights]);
+
+  const handleResetWeights = useCallback(() => {
+    if (!details) return;
+    const ai = (details.analysis_json?.scoring_weights ?? {}) as Record<string, number>;
+    setDraftWeights(Object.fromEntries(_weightKeys.map(k => [k, ai[k] ?? 0])));
+  }, [details]);
+
+  const handleSaveWeights = useCallback(async () => {
+    if (!details) return;
+    setSavingWeights(true);
+    try {
+      await apiService.put(
+        `${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/${details.job_id}/criteria`,
+        {
+          weight_skills:           draftWeights['skills']            ?? 0,
+          weight_experience:       draftWeights['experience']        ?? 0,
+          weight_education:        draftWeights['education']         ?? 0,
+          weight_certifications:   draftWeights['certifications']    ?? 0,
+          weight_soft_skills:      draftWeights['soft_skills']       ?? 0,
+          weight_domain_knowledge: draftWeights['domain_knowledge']  ?? 0,
+          weight_other:            draftWeights['other_requirements'] ?? 0,
+        },
+        auth.token!
+      );
+      setDetails(prev => {
+        if (!prev || !prev.analysis_json) return prev;
+        return {
+          ...prev,
+          analysis_json: {
+            ...prev.analysis_json,
+            scoring_weights: { ...draftWeights } as any,
+          },
+        };
+      });
+      setEditingWeights(false);
+      addToast('Evaluation weights updated successfully.', 'success');
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to update weights.', 'error');
+    } finally {
+      setSavingWeights(false);
+    }
+  }, [details, draftWeights, auth.token, addToast]);
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -311,6 +395,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     { label: t.domainKnowledge, items: analysis?.domain_knowledge },
     { label: t.otherRequirements, items: analysis?.other_requirements },
   ];
+  const weightTotal = editingWeights ? Object.values(draftWeights).reduce((s, v) => s + v, 0) : 0;
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12 animate-fade-in">
@@ -566,28 +651,125 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         {/* Evaluation Logic */}
         <div className="space-y-6">
           <div className="bg-white rounded-3xl border border-border p-8 shadow-sm sticky top-8">
-            <h3 className="text-sm font-black text-textMain uppercase tracking-widest mb-8 flex items-center">
-              <span className="w-2 h-4 bg-indigo-600 rounded-full mr-3"></span> {t.evalLogic}
-            </h3>
-            <div className="space-y-6">
-              {weightKeys.map((key, i) => {
-                const weight = analysis?.scoring_weights?.[key];
-                return weight ? (
-                  <div key={i}>
-                    <div className="flex justify-between text-[10px] font-black uppercase mb-2">
-                      <span className="text-textMuted">{weightLabels[i]}</span>
-                      <span className="text-textMain">{weight}%</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${weight}%` }}></div>
-                    </div>
-                  </div>
-                ) : null;
-              })}
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-sm font-black text-textMain uppercase tracking-widest flex items-center">
+                <span className="w-2 h-4 bg-indigo-600 rounded-full mr-3"></span> {t.evalLogic}
+              </h3>
+              {!editingWeights && analysis?.scoring_weights && (
+                <button
+                  onClick={handleEditWeights}
+                  className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest transition-colors"
+                >
+                  {t.editWeights}
+                </button>
+              )}
             </div>
-            <div className="mt-8 pt-8 border-t border-border">
-              <p className="text-[10px] text-textMuted italic leading-relaxed">{t.weightsNote}</p>
-            </div>
+
+            {editingWeights ? (
+              <>
+                <div className="space-y-4">
+                  {weightKeys.map((key, i) => {
+                    const val = draftWeights[key] ?? 0;
+                    const isOver = weightTotal > 100 && val > 0;
+                    return (
+                      <div key={i}>
+                        <div className="flex justify-between text-[10px] font-black uppercase mb-1.5">
+                          <span className="text-textMuted">{weightLabels[i]}</span>
+                          <span className={isOver ? 'text-error' : 'text-textMuted'}>{val}%</span>
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={val}
+                          onChange={e => {
+                            const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                            setDraftWeights(prev => ({ ...prev, [key]: v }));
+                          }}
+                          className={`w-full px-3 py-2 text-sm font-bold rounded-xl border-2 focus:outline-none transition-colors ${
+                            isOver
+                              ? 'border-error bg-red-50 text-error'
+                              : 'border-border bg-slate-50 text-textMain focus:border-indigo-400'
+                          }`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Live total indicator */}
+                <div className={`mt-4 px-3 py-2.5 rounded-xl text-[11px] font-bold flex items-center justify-between ${
+                  weightTotal === 100
+                    ? 'bg-green-50 text-success border border-green-200'
+                    : weightTotal > 100
+                    ? 'bg-red-50 text-error border border-red-200'
+                    : 'bg-amber-50 text-warning border border-amber-200'
+                }`}>
+                  <span>
+                    {weightTotal === 100
+                      ? t.weightSuccess
+                      : weightTotal > 100
+                      ? t.weightOver.replace('{e}', String(weightTotal - 100))
+                      : t.weightUnder.replace('{r}', String(100 - weightTotal))}
+                  </span>
+                  <span className="font-black shrink-0 ml-2">{t.weightTotal}: {weightTotal}%</span>
+                </div>
+
+                {/* Utility buttons */}
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleNormalizeWeights}
+                    className="px-2 py-2 text-[10px] font-black text-indigo-600 border border-indigo-200 rounded-xl hover:bg-indigo-50 uppercase tracking-widest transition-colors leading-tight"
+                  >
+                    {t.normalizeWeights}
+                  </button>
+                  <button
+                    onClick={handleResetWeights}
+                    className="px-2 py-2 text-[10px] font-black text-textMuted border border-border rounded-xl hover:bg-slate-50 uppercase tracking-widest transition-colors leading-tight"
+                  >
+                    {t.resetAiWeights}
+                  </button>
+                </div>
+
+                {/* Save / Cancel */}
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setEditingWeights(false)}
+                    className="px-3 py-2.5 text-xs font-bold text-textMuted border border-border rounded-xl hover:bg-slate-50 transition-colors"
+                  >
+                    {t.cancelEdit}
+                  </button>
+                  <button
+                    onClick={handleSaveWeights}
+                    disabled={weightTotal !== 100 || savingWeights}
+                    className={`px-3 py-2.5 text-xs font-bold rounded-xl transition-colors ${
+                      weightTotal === 100 && !savingWeights
+                        ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                        : 'bg-slate-200 text-textMuted cursor-not-allowed'
+                    }`}
+                  >
+                    {savingWeights ? '…' : t.saveWeights}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-6">
+                {weightKeys.map((key, i) => {
+                  const weight = analysis?.scoring_weights?.[key];
+                  return weight ? (
+                    <div key={i}>
+                      <div className="flex justify-between text-[10px] font-black uppercase mb-2">
+                        <span className="text-textMuted">{weightLabels[i]}</span>
+                        <span className="text-textMain">{weight}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${weight}%` }}></div>
+                      </div>
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
