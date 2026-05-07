@@ -11,6 +11,15 @@ Flow:
 import asyncio
 import json
 import logging
+import sys
+from pathlib import Path
+
+# Ensure the backend root is always on sys.path so modules like 'database',
+# 'config', and 'services' are importable regardless of how or where the
+# Celery worker process is invoked (Docker, systemd, direct CLI, fork pool).
+_backend_root = str(Path(__file__).resolve().parent.parent)
+if _backend_root not in sys.path:
+    sys.path.insert(0, _backend_root)
 
 from workers.celery_app import celery_app
 
