@@ -29,7 +29,8 @@ async function handleResponse(response: Response) {
 
   if (!response.ok) {
     // Throw an error with the backend's specific message if available
-    const errorMsg = data?.message || data?.error || `API Error: ${response.status} ${response.statusText}`;
+    const detail = Array.isArray(data?.detail) ? data.detail.map((d: any) => d.msg).join(', ') : data?.detail;
+    const errorMsg = detail || data?.message || data?.error || `API Error: ${response.status} ${response.statusText}`;
     throw new Error(errorMsg);
   }
 
@@ -93,9 +94,14 @@ export const apiService = {
     return handleResponse(response);
   },
 
-  /**
-   * Public request to send a password reset email.
-   */
+  async patch(url: string, data: any, token?: string) {
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    const activeToken = token || localStorage.getItem(TOKEN_KEY);
+    if (activeToken) headers['Authorization'] = `Bearer ${activeToken}`;
+    const response = await fetch(url, { method: 'PATCH', headers, body: JSON.stringify(data) });
+    return handleResponse(response);
+  },
+
   async requestPasswordReset(email: string) {
     return this.post(WEBHOOK_CONFIG.FORGOT_PASSWORD_WEBHOOK_URL, { email });
   }

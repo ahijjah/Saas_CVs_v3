@@ -52,19 +52,32 @@ class RegisterRequest(BaseModel):
 class UpdateProfileRequest(BaseModel):
     admin_name: str | None = None
     tenant_name: str | None = None
+    email_domain: str | None = None
     cv_ingestion_mode: str | None = None
     forwarding_email: str | None = None
 
     @field_validator("cv_ingestion_mode")
     @classmethod
     def valid_mode(cls, v: str | None) -> str | None:
-        if v is not None and v not in ("platform_email", "forwarding"):
+        if v is None:
+            return v
+        # Accept both frontend ('FORWARD') and stored ('forwarding') values
+        _map = {
+            'platform_email': 'platform_email',
+            'IMAP': 'platform_email',
+            'forwarding': 'forwarding',
+            'FORWARD': 'forwarding',
+        }
+        normalized = _map.get(v)
+        if normalized is None:
             raise ValueError("cv_ingestion_mode must be 'platform_email' or 'forwarding'")
-        return v
+        return normalized
 
 
 class ChangePasswordRequest(BaseModel):
-    old_password: str
+    # Accept both field names from frontend
+    old_password: str | None = None
+    current_password: str | None = None
     new_password: str
     confirm_password: str
 
@@ -101,6 +114,51 @@ def _hash_token(token: str) -> str:
 
 def _generate_reset_token() -> str:
     return secrets.token_urlsafe(48)
+
+
+async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
+    """Fetch full profile data and return serialized dict."""
+    row = await db.execute(
+        text("""
+            SELECT u.user_id, u.full_name, u.email, u.role,
+                   t.tenant_id, t.name AS tenant_name, t.email_domain,
+                   t.cv_ingestion_mode, t.forwarding_email,
+                   t.plan, t.max_users, t.max_jobs,
+                   t.status AS tenant_status, t.created_at AS tenant_created_at
+            FROM users u
+            JOIN tenants t ON t.tenant_id = u.tenant_id
+            WHERE u.user_id = :uid
+        """),
+        {"uid": user_id},
+    )
+    p = row.mappings().first()
+    if not p:
+        return None
+
+    count_row = await db.execute(
+        text("SELECT COUNT(*) FROM users WHERE status = 'active'")
+    )
+    active_count = int(count_row.scalar_one())
+
+    intake_method = "IMAP" if p["cv_ingestion_mode"] == "platform_email" else "FORWARD"
+
+    return {
+        "user_id": str(p["user_id"]),
+        "tenant_id": str(p["tenant_id"]),
+        "tenant_name": p["tenant_name"],
+        "admin_name": p["full_name"],
+        "email": p["email"],
+        "role": p["role"],
+        "intake_method": intake_method,
+        "forwarding_email": p["forwarding_email"],
+        "email_domain": p["email_domain"],
+        "plan": p["plan"],
+        "max_users": p["max_users"],
+        "max_jobs": p["max_jobs"],
+        "tenant_status": p["tenant_status"],
+        "tenant_created_at": p["tenant_created_at"].isoformat() if p["tenant_created_at"] else None,
+        "active_users_count": active_count,
+    }
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -227,32 +285,11 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
 async def get_profile(current_user: CurrentUserDep, db: Annotated[AsyncSession, Depends(get_db)]):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    row = await db.execute(
-        text("""
-            SELECT u.user_id, u.full_name, u.email, u.role,
-                   t.tenant_id, t.name AS tenant_name, t.email_domain,
-                   t.cv_ingestion_mode, t.forwarding_email
-            FROM users u
-            JOIN tenants t ON t.tenant_id = u.tenant_id
-            WHERE u.user_id = :uid
-        """),
-        {"uid": current_user.user_id},
-    )
-    profile = row.mappings().first()
+    profile = await _fetch_profile(current_user.user_id, current_user.tenant_id, db)
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
 
-    return {
-        "user_id": str(profile["user_id"]),
-        "full_name": profile["full_name"],
-        "email": profile["email"],
-        "role": profile["role"],
-        "tenant_id": str(profile["tenant_id"]),
-        "tenant_name": profile["tenant_name"],
-        "email_domain": profile["email_domain"],
-        "cv_ingestion_mode": profile["cv_ingestion_mode"],
-        "forwarding_email": profile["forwarding_email"],
-    }
+    return {"success": True, "profile": profile}
 
 
 @router.put("/me")
@@ -269,24 +306,28 @@ async def update_profile(
             {"name": body.admin_name, "uid": current_user.user_id},
         )
 
-    if body.tenant_name or body.cv_ingestion_mode is not None or body.forwarding_email is not None:
-        updates = {}
-        if body.tenant_name:
-            updates["name"] = body.tenant_name
-        if body.cv_ingestion_mode is not None:
-            updates["cv_ingestion_mode"] = body.cv_ingestion_mode
-        if body.forwarding_email is not None:
-            updates["forwarding_email"] = body.forwarding_email
+    tenant_updates: dict = {}
+    if body.tenant_name:
+        tenant_updates["name"] = body.tenant_name
+    if body.email_domain:
+        tenant_updates["email_domain"] = body.email_domain
+    if body.cv_ingestion_mode is not None:
+        tenant_updates["cv_ingestion_mode"] = body.cv_ingestion_mode
+    if body.forwarding_email is not None:
+        tenant_updates["forwarding_email"] = body.forwarding_email
 
-        set_clauses = ", ".join(f"{k} = :{k}" for k in updates)
-        updates["tid"] = current_user.tenant_id
+    if tenant_updates:
+        set_clauses = ", ".join(f"{k} = :{k}" for k in tenant_updates)
+        tenant_updates["tid"] = current_user.tenant_id
         await db.execute(
             text(f"UPDATE tenants SET {set_clauses} WHERE tenant_id = :tid"),
-            updates,
+            tenant_updates,
         )
 
     await db.commit()
-    return {"success": True, "message": "Profile updated"}
+
+    profile = await _fetch_profile(current_user.user_id, current_user.tenant_id, db)
+    return {"success": True, "profile": profile, "message": "Profile updated"}
 
 
 @router.post("/change-password")
@@ -295,9 +336,13 @@ async def change_password(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    actual_old = body.old_password or body.current_password
+    if not actual_old:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is required")
+
     if body.new_password != body.confirm_password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
-    if body.new_password == body.old_password:
+    if body.new_password == actual_old:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must differ from old password")
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
@@ -307,7 +352,7 @@ async def change_password(
         {"uid": current_user.user_id},
     )
     user = row.mappings().first()
-    if not user or not verify_password(body.old_password, user["password_hash"]):
+    if not user or not verify_password(actual_old, user["password_hash"]):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect current password")
 
     new_hash = hash_password(body.new_password)

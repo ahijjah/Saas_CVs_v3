@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from database import engine
-from routers import admin, applications, auth, jobs
+from routers import admin, applications, auth, jobs, tenant
 
 settings = get_settings()
 
@@ -36,6 +36,7 @@ app.include_router(auth.router)
 app.include_router(jobs.router)
 app.include_router(applications.router)
 app.include_router(admin.router)
+app.include_router(tenant.router)
 
 
 @app.get("/health")

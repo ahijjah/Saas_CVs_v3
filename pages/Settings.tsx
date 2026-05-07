@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { AuthState, UserProfile } from '../types';
+import { AuthState, UserProfile, TenantUser } from '../types';
 import { ToastType } from '../components/Toast';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -17,16 +17,21 @@ const T = {
     profileTitle: 'Profile Settings',
     profileSub: 'Your personal and organizational details',
     editProfile: 'Edit Profile',
-    tenantName: 'Tenant Name',
+    tenantName: 'Company Name',
+    emailDomain: 'Email Domain',
     emailReadOnly: 'Email Address',
     adminName: 'Admin Name',
     cvIngestionMode: 'CV Ingestion Mode',
     tenantStatus: 'Tenant Status',
-    active: 'Active',
     userRole: 'User Role',
     forwardingEmail: 'Forwarding Email',
     platformEmail: 'Platform Email',
     forwarding: 'Forwarding',
+    plan: 'Plan',
+    maxUsers: 'Max Users',
+    maxJobs: 'Max Campaigns',
+    activeUsers: 'Active Users',
+    memberSince: 'Member Since',
     emailROLabel: 'Email Address (Read-only)',
     statusROLabel: 'Tenant Status (Read-only)',
     roleROLabel: 'User Role (Read-only)',
@@ -44,22 +49,50 @@ const T = {
     changingPass: 'Changing...',
     passHintMain: 'Your password was last changed recently.',
     passHintSub: 'We recommend changing your password every 90 days to keep your account secure.',
+    // Users section
+    usersTitle: 'Team Members',
+    usersSub: 'Manage users within your organization',
+    addUser: 'Add User',
+    userLimitReached: 'Plan limit reached',
+    usersOf: 'of',
+    active: 'Active',
+    disabled: 'Disabled',
+    activate: 'Activate',
+    deactivate: 'Deactivate',
+    noUsers: 'No team members found.',
+    addUserTitle: 'Add New User',
+    fullName: 'Full Name',
+    email: 'Email',
+    password: 'Password',
+    role: 'Role',
+    roles: { admin: 'Admin', recruiter: 'Recruiter', viewer: 'Viewer' },
+    addUserSave: 'Add User',
+    addUserSaving: 'Adding...',
+    cancelAdd: 'Cancel',
+    lastLogin: 'Last login',
+    never: 'Never',
+    joined: 'Joined',
   },
   ar: {
     loading: 'جارٍ تحميل الملف الشخصي...',
     profileTitle: 'إعدادات الملف الشخصي',
     profileSub: 'تفاصيلك الشخصية والتنظيمية',
     editProfile: 'تعديل الملف الشخصي',
-    tenantName: 'اسم المستأجر',
+    tenantName: 'اسم الشركة',
+    emailDomain: 'نطاق البريد الإلكتروني',
     emailReadOnly: 'عنوان البريد الإلكتروني',
     adminName: 'اسم المسؤول',
     cvIngestionMode: 'طريقة استقبال السير الذاتية',
     tenantStatus: 'حالة المستأجر',
-    active: 'نشط',
     userRole: 'دور المستخدم',
     forwardingEmail: 'بريد التوجيه',
     platformEmail: 'بريد المنصة',
     forwarding: 'إعادة التوجيه',
+    plan: 'الخطة',
+    maxUsers: 'الحد الأقصى للمستخدمين',
+    maxJobs: 'الحد الأقصى للحملات',
+    activeUsers: 'المستخدمون النشطون',
+    memberSince: 'عضو منذ',
     emailROLabel: 'عنوان البريد الإلكتروني (للقراءة فقط)',
     statusROLabel: 'حالة المستأجر (للقراءة فقط)',
     roleROLabel: 'دور المستخدم (للقراءة فقط)',
@@ -77,6 +110,28 @@ const T = {
     changingPass: 'جارٍ التغيير...',
     passHintMain: 'تم تغيير كلمة المرور مؤخراً.',
     passHintSub: 'نوصي بتغيير كلمة المرور كل 90 يوماً للحفاظ على أمان حسابك.',
+    usersTitle: 'أعضاء الفريق',
+    usersSub: 'إدارة المستخدمين داخل مؤسستك',
+    addUser: 'إضافة مستخدم',
+    userLimitReached: 'تم الوصول إلى حد الخطة',
+    usersOf: 'من',
+    active: 'نشط',
+    disabled: 'معطّل',
+    activate: 'تفعيل',
+    deactivate: 'تعطيل',
+    noUsers: 'لا يوجد أعضاء في الفريق.',
+    addUserTitle: 'إضافة مستخدم جديد',
+    fullName: 'الاسم الكامل',
+    email: 'البريد الإلكتروني',
+    password: 'كلمة المرور',
+    role: 'الدور',
+    roles: { admin: 'مسؤول', recruiter: 'موظف توظيف', viewer: 'مشاهد' },
+    addUserSave: 'إضافة مستخدم',
+    addUserSaving: 'جارٍ الإضافة...',
+    cancelAdd: 'إلغاء',
+    lastLogin: 'آخر تسجيل دخول',
+    never: 'لم يسجّل بعد',
+    joined: 'انضم في',
   },
 };
 
@@ -93,55 +148,91 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
 
   const [editForm, setEditForm] = useState({
     tenant_name: '',
+    email_domain: '',
     admin_name: '',
     cv_ingestion_mode: 'platform_email' as 'platform_email' | 'FORWARD',
-    forwarding_email: ''
+    forwarding_email: '',
   });
 
   const [passwordForm, setPasswordForm] = useState({
     current_password: '',
     new_password: '',
-    confirm_password: ''
+    confirm_password: '',
   });
 
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
+  // Users section state
+  const [tenantUsers, setTenantUsers] = useState<TenantUser[]>([]);
+  const [usersActiveCount, setUsersActiveCount] = useState(0);
+  const [usersMaxCount, setUsersMaxCount] = useState(0);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [addUserForm, setAddUserForm] = useState({ email: '', full_name: '', password: '', role: 'recruiter' });
+  const [savingUser, setSavingUser] = useState(false);
+  const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
 
-  const fetchProfile = async () => {
+  const isAdmin = auth.user?.role === 'admin' || auth.user?.role === 'super_admin';
+
+  const fetchProfile = useCallback(async () => {
     setLoading(true);
     try {
       const response = await apiService.get(WEBHOOK_CONFIG.GET_PROFILE_WEBHOOK_URL, {}, auth.token!);
-      if (response && response.success && response.profile) {
-        const p = response.profile;
+      if (response?.success && response.profile) {
+        const p: UserProfile = response.profile;
         setProfile(p);
-        const mappedIngestionMode = (p.intake_method === 'IMAP' ? 'platform_email' : p.intake_method) as 'platform_email' | 'FORWARD';
+        const mappedMode = p.intake_method === 'IMAP' ? 'platform_email' : 'FORWARD' as 'platform_email' | 'FORWARD';
         setEditForm({
           tenant_name: p.tenant_name || '',
+          email_domain: p.email_domain || '',
           admin_name: p.admin_name || '',
-          cv_ingestion_mode: mappedIngestionMode || 'platform_email',
-          forwarding_email: p.forwarding_email || ''
+          cv_ingestion_mode: mappedMode,
+          forwarding_email: p.forwarding_email || '',
         });
       }
     } catch (err: any) {
-      addToast(err.message || "Failed to load profile.", "error");
+      addToast(err.message || 'Failed to load profile.', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [auth.token, addToast]);
+
+  const fetchTenantUsers = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoadingUsers(true);
+    try {
+      const response = await apiService.get(WEBHOOK_CONFIG.TENANT_USERS_URL, {}, auth.token!);
+      if (response?.success) {
+        setTenantUsers(response.users || []);
+        setUsersActiveCount(response.active_count ?? 0);
+        setUsersMaxCount(response.max_users ?? 0);
+      }
+    } catch (err: any) {
+      addToast(err.message || 'Failed to load users.', 'error');
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, [auth.token, addToast, isAdmin]);
+
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
+
+  useEffect(() => {
+    if (isAdmin) fetchTenantUsers();
+  }, [fetchTenantUsers, isAdmin]);
 
   const handleCancelEdit = () => {
     if (profile) {
-      const mappedIngestionMode = (profile.intake_method === 'IMAP' ? 'platform_email' : profile.intake_method) as 'platform_email' | 'FORWARD';
+      const mappedMode = profile.intake_method === 'IMAP' ? 'platform_email' : 'FORWARD' as 'platform_email' | 'FORWARD';
       setEditForm({
         tenant_name: profile.tenant_name || '',
+        email_domain: profile.email_domain || '',
         admin_name: profile.admin_name || '',
-        cv_ingestion_mode: mappedIngestionMode || 'platform_email',
-        forwarding_email: profile.forwarding_email || ''
+        cv_ingestion_mode: mappedMode,
+        forwarding_email: profile.forwarding_email || '',
       });
     }
     setIsEditing(false);
@@ -155,31 +246,28 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editForm.cv_ingestion_mode === 'FORWARD' && (!editForm.forwarding_email || !/^\S+@\S+\.\S+$/.test(editForm.forwarding_email))) {
-      addToast("Please provide a valid forwarding email.", "error");
+      addToast('Please provide a valid forwarding email.', 'error');
       return;
     }
-
     setSavingProfile(true);
     try {
       const payload: any = {
         tenant_name: editForm.tenant_name,
+        email_domain: editForm.email_domain,
         admin_name: editForm.admin_name,
-        cv_ingestion_mode: editForm.cv_ingestion_mode
+        cv_ingestion_mode: editForm.cv_ingestion_mode,
       };
-
       if (editForm.cv_ingestion_mode === 'FORWARD') {
         payload.forwarding_email = editForm.forwarding_email;
       }
-
       const response = await apiService.put(WEBHOOK_CONFIG.UPDATE_PROFILE_WEBHOOK_URL, payload, auth.token!);
-
-      if (response && response.success) {
+      if (response?.success) {
         setProfile(response.profile);
         setIsEditing(false);
-        addToast("Profile updated successfully!", "success");
+        addToast('Profile updated successfully!', 'success');
       }
     } catch (err: any) {
-      addToast(err.message || "Failed to update profile.", "error");
+      addToast(err.message || 'Failed to update profile.', 'error');
     } finally {
       setSavingProfile(false);
     }
@@ -188,24 +276,29 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (passwordForm.new_password !== passwordForm.confirm_password) {
-      addToast("New passwords do not match.", "error");
+      addToast('New passwords do not match.', 'error');
       return;
     }
     if (passwordForm.new_password.length < 8) {
-      addToast("New password must be at least 8 characters.", "error");
+      addToast('New password must be at least 8 characters.', 'error');
       return;
     }
-
     setSavingPassword(true);
     try {
-      const response = await apiService.post(WEBHOOK_CONFIG.CHANGE_PASSWORD_WEBHOOK_URL, passwordForm, auth.token!);
-      if (response && response.success) {
-        addToast("Password changed successfully!", "success");
+      // Send both field names for compat; backend accepts either
+      const response = await apiService.post(WEBHOOK_CONFIG.CHANGE_PASSWORD_WEBHOOK_URL, {
+        old_password: passwordForm.current_password,
+        current_password: passwordForm.current_password,
+        new_password: passwordForm.new_password,
+        confirm_password: passwordForm.confirm_password,
+      }, auth.token!);
+      if (response?.success) {
+        addToast('Password changed successfully!', 'success');
         setIsChangingPassword(false);
         setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
       }
     } catch (err: any) {
-      addToast(err.message || "Failed to change password.", "error");
+      addToast(err.message || 'Failed to change password.', 'error');
     } finally {
       setSavingPassword(false);
     }
@@ -216,7 +309,47 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
   };
 
-  const PasswordToggle = ({ isVisible, onToggle, label }: { isVisible: boolean, onToggle: () => void, label: string }) => (
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingUser(true);
+    try {
+      const response = await apiService.post(WEBHOOK_CONFIG.TENANT_USERS_URL, addUserForm, auth.token!);
+      if (response?.success) {
+        setTenantUsers(prev => [...prev, response.user]);
+        setUsersActiveCount(prev => prev + 1);
+        setShowAddUser(false);
+        setAddUserForm({ email: '', full_name: '', password: '', role: 'recruiter' });
+        addToast('User added successfully.', 'success');
+      }
+    } catch (err: any) {
+      addToast(err.message || 'Failed to add user.', 'error');
+    } finally {
+      setSavingUser(false);
+    }
+  };
+
+  const handleToggleUserStatus = async (userId: string, currentStatus: string) => {
+    setTogglingUserId(userId);
+    const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
+    try {
+      const response = await apiService.patch(
+        `${WEBHOOK_CONFIG.TENANT_USERS_URL}/${userId}/status`,
+        { status: newStatus },
+        auth.token!
+      );
+      if (response?.success) {
+        setTenantUsers(prev => prev.map(u => u.user_id === userId ? { ...u, status: newStatus as 'active' | 'disabled' } : u));
+        setUsersActiveCount(prev => newStatus === 'active' ? prev + 1 : prev - 1);
+        addToast(response.message || 'User status updated.', 'success');
+      }
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update user status.', 'error');
+    } finally {
+      setTogglingUserId(null);
+    }
+  };
+
+  const PasswordToggle = ({ isVisible, onToggle, label }: { isVisible: boolean; onToggle: () => void; label: string }) => (
     <button
       type="button"
       onClick={onToggle}
@@ -238,9 +371,21 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
 
   const formatIngestionMode = (mode: string) => {
     if (mode === 'IMAP' || mode === 'platform_email') return t.platformEmail;
-    if (mode === 'FORWARD') return t.forwarding;
+    if (mode === 'FORWARD' || mode === 'forwarding') return t.forwarding;
     return mode || 'N/A';
   };
+
+  const formatDate = (iso: string | null | undefined) => {
+    if (!iso) return 'N/A';
+    return new Date(iso).toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const planLabel = (plan?: string) => {
+    if (!plan) return 'N/A';
+    return plan.charAt(0).toUpperCase() + plan.slice(1);
+  };
+
+  const atLimit = usersActiveCount >= usersMaxCount && usersMaxCount > 0;
 
   if (loading) {
     return (
@@ -253,7 +398,8 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12 animate-fade-in">
-      {/* Profile Section */}
+
+      {/* ── Profile Section ─────────────────────────────────────────────────── */}
       <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
         <div className="px-8 py-6 border-b border-border bg-slate-50 flex justify-between items-center">
           <div>
@@ -261,7 +407,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
             <p className="text-xs text-textMuted font-semibold uppercase tracking-wider">{t.profileSub}</p>
           </div>
           <div className="flex items-center gap-3">
-            {!isEditing && (
+            {!isEditing && isAdmin && (
               <button
                 onClick={() => { setIsEditing(true); setIsChangingPassword(false); }}
                 className="flex items-center gap-2 px-4 py-1.5 bg-white border border-border rounded-lg text-xs font-bold text-textMain hover:bg-slate-100 transition-colors shadow-sm"
@@ -272,46 +418,72 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                 <span>{t.editProfile}</span>
               </button>
             )}
-            <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${profile?.role === 'Admin' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-700'}`}>
-              {profile?.role}
+            <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${profile?.role === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-700'}`}>
+              {profile?.role || auth.user?.role}
             </div>
           </div>
         </div>
 
         {!isEditing ? (
-          <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8 animate-fade-in">
-            <div className="space-y-1">
-              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.tenantName}</p>
-              <p className="text-sm font-bold text-textMain">{profile?.tenant_name || 'N/A'}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.emailReadOnly}</p>
-              <p className="text-sm font-bold text-textMain">{profile?.email || 'N/A'}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.adminName}</p>
-              <p className="text-sm font-bold text-textMain">{profile?.admin_name || 'N/A'}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.cvIngestionMode}</p>
-              <p className="text-sm font-bold text-textMain">{formatIngestionMode(profile?.intake_method || '')}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.tenantStatus}</p>
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 uppercase tracking-tighter">
-                {t.active}
-              </span>
-            </div>
-            <div className="space-y-1">
-              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.userRole}</p>
-              <p className="text-sm font-bold text-textMain">{profile?.role || 'N/A'}</p>
-            </div>
-            {profile?.intake_method === 'FORWARD' && (
-              <div className="space-y-1 md:col-span-2">
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.forwardingEmail}</p>
-                <p className="text-sm font-bold text-textMain">{profile?.forwarding_email || 'N/A'}</p>
+          <div className="p-8 space-y-8 animate-fade-in">
+            {/* Core identity fields */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.tenantName}</p>
+                <p className="text-sm font-bold text-textMain">{profile?.tenant_name || 'N/A'}</p>
               </div>
-            )}
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.emailDomain}</p>
+                <p className="text-sm font-bold text-textMain">{profile?.email_domain || 'N/A'}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.emailReadOnly}</p>
+                <p className="text-sm font-bold text-textMain">{profile?.email || 'N/A'}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.adminName}</p>
+                <p className="text-sm font-bold text-textMain">{profile?.admin_name || 'N/A'}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.cvIngestionMode}</p>
+                <p className="text-sm font-bold text-textMain">{formatIngestionMode(profile?.intake_method || '')}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.userRole}</p>
+                <p className="text-sm font-bold text-textMain">{profile?.role || 'N/A'}</p>
+              </div>
+              {(profile?.intake_method === 'FORWARD') && (
+                <div className="space-y-1 md:col-span-2">
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.forwardingEmail}</p>
+                  <p className="text-sm font-bold text-textMain">{profile?.forwarding_email || 'N/A'}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Plan / limits strip */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 border-t border-border">
+              <div className="bg-slate-50 rounded-xl p-4 text-center">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.plan}</p>
+                <p className="text-sm font-black text-primary">{planLabel(profile?.plan)}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4 text-center">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.tenantStatus}</p>
+                <span className={`inline-block px-2 py-0.5 rounded text-xs font-black uppercase tracking-tight ${profile?.tenant_status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                  {profile?.tenant_status || 'N/A'}
+                </span>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4 text-center">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.activeUsers}</p>
+                <p className="text-sm font-black text-textMain">
+                  {profile?.active_users_count ?? 'N/A'}
+                  {profile?.max_users ? <span className="text-textMuted font-normal"> / {profile.max_users}</span> : null}
+                </p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4 text-center">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.memberSince}</p>
+                <p className="text-xs font-bold text-textMain">{formatDate(profile?.tenant_created_at)}</p>
+              </div>
+            </div>
           </div>
         ) : (
           <form onSubmit={handleUpdateProfile} className="p-8 space-y-6 animate-fade-in bg-slate-50/30">
@@ -329,6 +501,17 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                   />
                 </div>
                 <div className="space-y-1.5">
+                  <label className="text-xs font-black text-textMuted uppercase tracking-widest">{t.emailDomain}</label>
+                  <input
+                    name="email_domain"
+                    type="text"
+                    placeholder="company.com"
+                    className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm font-medium bg-white"
+                    value={editForm.email_domain}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                <div className="space-y-1.5">
                   <label className="text-xs font-black text-textMuted uppercase tracking-widest">{t.emailROLabel}</label>
                   <input
                     readOnly
@@ -337,17 +520,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                     value={profile?.email || ''}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-textMuted uppercase tracking-widest">{t.statusROLabel}</label>
-                  <input
-                    readOnly
-                    type="text"
-                    className="w-full px-4 py-2 border border-border rounded-lg bg-slate-100 text-green-800 text-sm outline-none cursor-not-allowed font-bold"
-                    value="ACTIVE"
-                  />
-                </div>
               </div>
-
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-textMuted uppercase tracking-widest">{t.adminName}</label>
@@ -366,7 +539,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                   <div className="flex gap-4 pt-1">
                     {[
                       { value: 'platform_email', label: t.platformEmail },
-                      { value: 'FORWARD', label: t.forwarding }
+                      { value: 'FORWARD', label: t.forwarding },
                     ].map((mode) => (
                       <label key={mode.value} className="flex items-center gap-2 cursor-pointer group">
                         <div className="relative flex items-center justify-center">
@@ -410,21 +583,13 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                 </div>
               </div>
             </div>
-
             <div className="pt-6 border-t border-border flex justify-end gap-4">
-              <button
-                type="button"
-                onClick={handleCancelEdit}
-                disabled={savingProfile}
-                className="px-6 py-2.5 rounded-xl font-bold text-textMuted hover:text-textMain transition-all text-sm disabled:opacity-50"
-              >
+              <button type="button" onClick={handleCancelEdit} disabled={savingProfile}
+                className="px-6 py-2.5 rounded-xl font-bold text-textMuted hover:text-textMain transition-all text-sm disabled:opacity-50">
                 {t.cancel}
               </button>
-              <button
-                type="submit"
-                disabled={savingProfile}
-                className="bg-primary hover:bg-primaryDark text-white px-8 py-2.5 rounded-xl font-bold shadow-lg shadow-primary/20 transition-all flex items-center gap-2 disabled:opacity-50"
-              >
+              <button type="submit" disabled={savingProfile}
+                className="bg-primary hover:bg-primaryDark text-white px-8 py-2.5 rounded-xl font-bold shadow-lg shadow-primary/20 transition-all flex items-center gap-2 disabled:opacity-50">
                 {savingProfile && <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>}
                 <span>{savingProfile ? t.saving : t.save}</span>
               </button>
@@ -433,7 +598,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         )}
       </section>
 
-      {/* Security Section */}
+      {/* ── Security Section ─────────────────────────────────────────────────── */}
       <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
         <div className="px-8 py-6 border-b border-border bg-slate-50 flex justify-between items-center">
           <div>
@@ -452,65 +617,36 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
             </button>
           )}
         </div>
-
         {isChangingPassword ? (
           <form onSubmit={handleChangePassword} className="p-8 space-y-6 animate-fade-in bg-slate-50/30">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-textMuted uppercase tracking-widest">{t.currentPass}</label>
-                <div className="relative">
-                  <input
-                    required
-                    type={showCurrentPassword ? "text" : "password"}
-                    className={`w-full py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white ${isAr ? 'pr-4 pl-10' : 'pl-4 pr-10'}`}
-                    value={passwordForm.current_password}
-                    onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
-                  />
-                  <PasswordToggle isVisible={showCurrentPassword} onToggle={() => setShowCurrentPassword(!showCurrentPassword)} label="current password" />
+              {[
+                { label: t.currentPass, field: 'current_password' as const, visible: showCurrentPassword, toggle: () => setShowCurrentPassword(p => !p) },
+                { label: t.newPass, field: 'new_password' as const, visible: showNewPassword, toggle: () => setShowNewPassword(p => !p) },
+                { label: t.confirmPass, field: 'confirm_password' as const, visible: showConfirmPassword, toggle: () => setShowConfirmPassword(p => !p) },
+              ].map(({ label, field, visible, toggle }) => (
+                <div key={field} className="space-y-1.5">
+                  <label className="text-xs font-black text-textMuted uppercase tracking-widest">{label}</label>
+                  <div className="relative">
+                    <input
+                      required
+                      type={visible ? 'text' : 'password'}
+                      className={`w-full py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white ${isAr ? 'pr-4 pl-10' : 'pl-4 pr-10'}`}
+                      value={passwordForm[field]}
+                      onChange={e => setPasswordForm(prev => ({ ...prev, [field]: e.target.value }))}
+                    />
+                    <PasswordToggle isVisible={visible} onToggle={toggle} label={label} />
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-textMuted uppercase tracking-widest">{t.newPass}</label>
-                <div className="relative">
-                  <input
-                    required
-                    type={showNewPassword ? "text" : "password"}
-                    className={`w-full py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white ${isAr ? 'pr-4 pl-10' : 'pl-4 pr-10'}`}
-                    value={passwordForm.new_password}
-                    onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
-                  />
-                  <PasswordToggle isVisible={showNewPassword} onToggle={() => setShowNewPassword(!showNewPassword)} label="new password" />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-textMuted uppercase tracking-widest">{t.confirmPass}</label>
-                <div className="relative">
-                  <input
-                    required
-                    type={showConfirmPassword ? "text" : "password"}
-                    className={`w-full py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white ${isAr ? 'pr-4 pl-10' : 'pl-4 pr-10'}`}
-                    value={passwordForm.confirm_password}
-                    onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
-                  />
-                  <PasswordToggle isVisible={showConfirmPassword} onToggle={() => setShowConfirmPassword(!showConfirmPassword)} label="confirm password" />
-                </div>
-              </div>
+              ))}
             </div>
-
             <div className="pt-6 border-t border-border flex justify-end gap-4">
-              <button
-                type="button"
-                onClick={handleCancelPassword}
-                disabled={savingPassword}
-                className="px-6 py-2.5 rounded-xl font-bold text-textMuted hover:text-textMain transition-all text-sm disabled:opacity-50"
-              >
+              <button type="button" onClick={handleCancelPassword} disabled={savingPassword}
+                className="px-6 py-2.5 rounded-xl font-bold text-textMuted hover:text-textMain transition-all text-sm disabled:opacity-50">
                 {t.cancelPass}
               </button>
-              <button
-                type="submit"
-                disabled={savingPassword}
-                className="bg-slate-900 hover:bg-black text-white px-8 py-2.5 rounded-xl font-bold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50"
-              >
+              <button type="submit" disabled={savingPassword}
+                className="bg-slate-900 hover:bg-black text-white px-8 py-2.5 rounded-xl font-bold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50">
                 {savingPassword && <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>}
                 <span>{savingPassword ? t.changingPass : t.updatePass}</span>
               </button>
@@ -523,6 +659,145 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
           </div>
         )}
       </section>
+
+      {/* ── Team Members Section (admin only) ────────────────────────────────── */}
+      {isAdmin && (
+        <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="px-8 py-6 border-b border-border bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-bold text-textMain">{t.usersTitle}</h3>
+              <p className="text-xs text-textMuted font-semibold uppercase tracking-wider">{t.usersSub}</p>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              {/* Active count badge */}
+              <div className={`px-3 py-1 rounded-lg text-xs font-black ${atLimit ? 'bg-red-50 text-error border border-red-200' : 'bg-slate-100 text-textMuted'}`}>
+                {usersActiveCount} {t.usersOf} {usersMaxCount} {t.active.toLowerCase()}
+              </div>
+              <button
+                onClick={() => { setShowAddUser(true); setIsEditing(false); setIsChangingPassword(false); }}
+                disabled={atLimit || showAddUser}
+                title={atLimit ? t.userLimitReached : t.addUser}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ${atLimit || showAddUser ? 'bg-slate-100 text-textMuted cursor-not-allowed' : 'bg-primary text-white hover:bg-primaryDark'}`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+                {atLimit ? t.userLimitReached : t.addUser}
+              </button>
+            </div>
+          </div>
+
+          {/* Add User Form */}
+          {showAddUser && (
+            <form onSubmit={handleAddUser} className="px-8 py-6 border-b border-border bg-blue-50/30 animate-fade-in">
+              <h4 className="text-xs font-black text-textMuted uppercase tracking-widest mb-4">{t.addUserTitle}</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.fullName}</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Jane Smith"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    value={addUserForm.full_name}
+                    onChange={e => setAddUserForm(prev => ({ ...prev, full_name: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.email}</label>
+                  <input
+                    required
+                    type="email"
+                    placeholder="jane@company.com"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    value={addUserForm.email}
+                    onChange={e => setAddUserForm(prev => ({ ...prev, email: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.password}</label>
+                  <input
+                    required
+                    type="password"
+                    placeholder="Min. 8 characters"
+                    minLength={8}
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    value={addUserForm.password}
+                    onChange={e => setAddUserForm(prev => ({ ...prev, password: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.role}</label>
+                  <select
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    value={addUserForm.role}
+                    onChange={e => setAddUserForm(prev => ({ ...prev, role: e.target.value }))}
+                  >
+                    {Object.entries(t.roles).map(([val, label]) => (
+                      <option key={val} value={val}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 mt-4">
+                <button type="button" onClick={() => { setShowAddUser(false); setAddUserForm({ email: '', full_name: '', password: '', role: 'recruiter' }); }}
+                  disabled={savingUser}
+                  className="px-5 py-2 text-sm font-bold text-textMuted hover:text-textMain transition-colors disabled:opacity-50">
+                  {t.cancelAdd}
+                </button>
+                <button type="submit" disabled={savingUser}
+                  className="px-6 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primaryDark transition-colors flex items-center gap-2 disabled:opacity-50">
+                  {savingUser && <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>}
+                  {savingUser ? t.addUserSaving : t.addUserSave}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Users List */}
+          <div className="divide-y divide-border">
+            {loadingUsers ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : tenantUsers.length === 0 ? (
+              <div className="px-8 py-10 text-center text-sm text-textMuted">{t.noUsers}</div>
+            ) : (
+              tenantUsers.map(user => (
+                <div key={user.user_id} className="px-8 py-4 flex items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${user.status === 'active' ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-textMuted'}`}>
+                      {user.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-textMain truncate">{user.full_name}</p>
+                      <p className="text-[11px] text-textMuted truncate">{user.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="hidden sm:block text-[10px] font-black uppercase tracking-widest text-textMuted px-2 py-1 bg-slate-100 rounded-md">
+                      {(t.roles as any)[user.role] || user.role}
+                    </span>
+                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-textMuted'}`}>
+                      {user.status === 'active' ? t.active : t.disabled}
+                    </span>
+                    {user.user_id !== auth.user?.user_id && (
+                      <button
+                        onClick={() => handleToggleUserStatus(user.user_id, user.status)}
+                        disabled={togglingUserId === user.user_id || (user.status === 'disabled' && atLimit)}
+                        title={user.status === 'disabled' && atLimit ? t.userLimitReached : undefined}
+                        className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${user.status === 'active' ? 'border-red-200 text-error hover:bg-red-50' : 'border-green-200 text-success hover:bg-green-50'}`}
+                      >
+                        {togglingUserId === user.user_id ? '…' : user.status === 'active' ? t.deactivate : t.activate}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

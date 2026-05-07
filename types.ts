@@ -18,6 +18,24 @@ export interface UserProfile {
   role: string;
   intake_method: 'IMAP' | 'FORWARD';
   forwarding_email: string | null;
+  // Extended tenant detail fields
+  email_domain?: string;
+  plan?: string;
+  max_users?: number;
+  max_jobs?: number;
+  tenant_status?: string;
+  tenant_created_at?: string | null;
+  active_users_count?: number;
+}
+
+export interface TenantUser {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  status: 'active' | 'disabled';
+  created_at: string | null;
+  last_login_at: string | null;
 }
 
 export interface AuthState {

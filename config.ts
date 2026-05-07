@@ -26,6 +26,8 @@ export const WEBHOOK_CONFIG = {
   ADMIN_CREATE_USER_URL:     `${API_BASE}/admin/users`,
   // CV receiving ingestion settings (append /{job_id}/ingestion)
   JOB_INGESTION_BASE_URL:    `${API_BASE}/jobs`,
+  // Tenant user management
+  TENANT_USERS_URL:          `${API_BASE}/tenant/users`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';
