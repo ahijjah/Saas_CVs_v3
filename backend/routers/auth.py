@@ -136,7 +136,13 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
         return None
 
     count_row = await db.execute(
-        text("SELECT COUNT(*) FROM users WHERE status = 'active'")
+    text("""
+        SELECT COUNT(*)
+        FROM users
+        WHERE tenant_id = :tenant_id
+          AND status = 'active'
+    """),
+    {"tenant_id": p["tenant_id"]},
     )
     active_count = int(count_row.scalar_one())
 
