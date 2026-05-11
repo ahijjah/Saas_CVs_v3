@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { JobDetails as JobDetailsType, AuthState } from '../types';
+import { JobDetails as JobDetailsType, AuthState, UploadedCV } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface JobDetailsProps {
@@ -47,19 +47,35 @@ const T = {
     weightUnder: 'Remaining {r}% must be assigned.',
     weightOver: 'Total exceeds 100% by {e}%.',
     jobDesc: 'Original Job Description',
-    cvReceiving: 'CV Receiving Options',
-    option1Title: 'Option 1 — Forwarding to Central Email',
-    option1Desc: 'The client forwards CVs from their own system to the central inbox. Include the job code in the email subject for automatic routing.',
+    waysToReceive: 'Ways to Receive Applications',
+    option1Title: 'Forward to Central Email',
+    option1Desc: 'Forward CVs from your system to the central inbox. Include the job code for automatic routing.',
     option1ForwardTo: 'Forward CVs to',
-    option1SubjectHint: 'Include in email subject',
-    option2Title: 'Option 2 — Dedicated Alias (Recommended)',
-    option2Desc: 'Share this address directly with applicants or publish it on your careers page. CVs are automatically assigned to this job — no job code needed.',
+    option2Title: 'Dedicated Job Email Alias',
+    option2Desc: 'Share this address directly with applicants or publish it on your careers page. CVs are automatically assigned to this job.',
     option2AliasLabel: 'Dedicated alias',
+    jobRef: 'Job reference',
+    jobRefHint: 'Include this job code in the email subject or body.',
     copyBtn: 'Copy',
     copied: 'Copied!',
     enabled: 'Enabled',
     disabled: 'Disabled',
     recommended: 'Recommended',
+    manualUploadTitle: 'Manual CV Upload',
+    manualUploadDesc: 'For internal or recruiter use. Upload PDF or DOCX files directly to this job.',
+    uploadBtn: 'Upload CVs',
+    uploadingBtn: 'Uploading...',
+    chooseFiles: 'Choose files (PDF / DOCX)',
+    uploadedCVsTitle: 'Uploaded CVs',
+    noUploads: 'No CVs uploaded yet.',
+    scoreBtnLabel: 'Score uploaded CVs',
+    scoringBtnLabel: 'Scoring...',
+    progressLabel: '{scored} of {total} scored',
+    statusPending: 'Queued',
+    statusProcessing: 'Scoring...',
+    statusScored: 'Scored',
+    statusLowMatch: 'Low match',
+    statusFailed: 'Failed',
     criteriaPending: 'AI criteria analysis is being generated. This page will refresh automatically.',
     criteriaProcessing: 'AI criteria analysis is in progress. This page will refresh automatically.',
     criteriaFailed: 'AI criteria analysis failed.',
@@ -98,19 +114,35 @@ const T = {
     weightUnder: 'يجب تخصيص {r}% المتبقية.',
     weightOver: 'المجموع يتجاوز 100% بمقدار {e}%.',
     jobDesc: 'وصف الوظيفة الأصلي',
-    cvReceiving: 'خيارات استقبال السير الذاتية',
-    option1Title: 'الخيار 1 — إعادة التوجيه إلى البريد المركزي',
-    option1Desc: 'يُعيد العميل توجيه السير الذاتية من نظامه الخاص إلى البريد الوارد المركزي. أدرج رمز الوظيفة في موضوع البريد للتوجيه التلقائي.',
+    waysToReceive: 'طرق استقبال الطلبات',
+    option1Title: 'إعادة التوجيه إلى البريد المركزي',
+    option1Desc: 'أرسل السير الذاتية من نظامك إلى البريد المركزي. أدرج رمز الوظيفة للتوجيه التلقائي.',
     option1ForwardTo: 'أرسل السير الذاتية إلى',
-    option1SubjectHint: 'أدرج في موضوع البريد الإلكتروني',
-    option2Title: 'الخيار 2 — بريد مخصص لكل وظيفة (مُوصى به)',
-    option2Desc: 'شارك هذا العنوان مع المتقدمين مباشرةً أو انشره في صفحة الوظائف. يُعيَّن البريد الوارد تلقائياً لهذه الوظيفة دون الحاجة لرمز الوظيفة.',
+    option2Title: 'بريد مخصص لكل وظيفة',
+    option2Desc: 'شارك هذا العنوان مع المتقدمين مباشرةً أو انشره في صفحة الوظائف. يُعيَّن البريد الوارد تلقائياً لهذه الوظيفة.',
     option2AliasLabel: 'البريد المخصص',
+    jobRef: 'رمز الوظيفة',
+    jobRefHint: 'أدرج هذا الرمز في موضوع البريد الإلكتروني أو نصه.',
     copyBtn: 'نسخ',
     copied: 'تم النسخ!',
     enabled: 'مفعّل',
     disabled: 'معطّل',
     recommended: 'مُوصى به',
+    manualUploadTitle: 'رفع السيرة الذاتية يدوياً',
+    manualUploadDesc: 'للاستخدام الداخلي أو من قِبل المسؤولين عن التوظيف. ارفع ملفات PDF أو DOCX مباشرةً.',
+    uploadBtn: 'رفع السير الذاتية',
+    uploadingBtn: 'جارٍ الرفع...',
+    chooseFiles: 'اختر ملفات (PDF / DOCX)',
+    uploadedCVsTitle: 'السير الذاتية المرفوعة',
+    noUploads: 'لم يتم رفع أي سيرة ذاتية بعد.',
+    scoreBtnLabel: 'تقييم السير الذاتية المرفوعة',
+    scoringBtnLabel: 'جارٍ التقييم...',
+    progressLabel: '{scored} من {total} تم تقييمها',
+    statusPending: 'في الانتظار',
+    statusProcessing: 'جارٍ التقييم...',
+    statusScored: 'تم التقييم',
+    statusLowMatch: 'تطابق منخفض',
+    statusFailed: 'فشل',
     criteriaPending: 'جارٍ إنشاء تحليل معايير الذكاء الاصطناعي. ستُحدَّث هذه الصفحة تلقائياً.',
     criteriaProcessing: 'تحليل معايير الذكاء الاصطناعي قيد التنفيذ. ستُحدَّث هذه الصفحة تلقائياً.',
     criteriaFailed: 'فشل تحليل معايير الذكاء الاصطناعي.',
@@ -127,13 +159,99 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [error, setError] = useState<string | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
   const [copiedAlias, setCopiedAlias] = useState(false);
+  const [copiedJobRef, setCopiedJobRef] = useState(false);
   const [togglingFwd, setTogglingFwd] = useState(false);
   const [togglingAlias, setTogglingAlias] = useState(false);
   const [editingWeights, setEditingWeights] = useState(false);
   const [draftWeights, setDraftWeights] = useState<Record<string, number>>({});
   const [savingWeights, setSavingWeights] = useState(false);
 
-  // Poll every 5 seconds while AI extraction is running
+  // Criteria extraction polling tick — increments after each poll so the
+  // effect always re-schedules even when status string stays unchanged.
+  const [criteriaPolltick, setCriteriaPolltick] = useState(0);
+
+  // Manual CV upload state
+  const [uploadedCVs, setUploadedCVs] = useState<UploadedCV[]>([]);
+  const [loadingUploads, setLoadingUploads] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [scoring, setScoring] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Initial job details fetch ───────────────────────────────────────────────
+  useEffect(() => {
+    const fetchDetails = async () => {
+      if (!jobId) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await apiService.get(
+          WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL,
+          { job_id: jobId },
+          auth.token!
+        );
+        if (data) {
+          const payload = Array.isArray(data) ? data[0] : data;
+          setDetails({ ...payload.details, analysis_json: payload.analysis });
+        } else {
+          throw new Error('No data received for this job ID.');
+        }
+      } catch (err: any) {
+        const errorMsg =
+          err.name === 'TypeError' && err.message === 'Failed to fetch'
+            ? 'Network connection error.'
+            : err.message || 'Failed to load job details.';
+        setError(errorMsg);
+        addToast(errorMsg, 'error');
+        // Provide stub data for offline development
+        setDetails({
+          job_id: jobId,
+          job_code: 'JB-772',
+          job_title: 'Senior Frontend Engineer',
+          job_client: 'Global Finance Solutions',
+          job_status: 'Active',
+          job_type: 'Full-time',
+          location: 'London (Hybrid)',
+          posted_date: '2023-10-15',
+          closing_date: '2023-11-30',
+          ingestion_note: '',
+          ingestion_mode: 'forwarding',
+          ingestion_email: null,
+          applications_total: 142,
+          applications_qualified: 24,
+          applications_partial: 45,
+          applications_rejected: 73,
+          applications_above_threshold: 18,
+          applications_below_threshold: 102,
+          applications_recommended: 12,
+          description: 'We are seeking a highly skilled Senior Frontend Engineer to lead the development of our core product interface.',
+          analysis_json: {
+            skills: {
+              required: ['React', 'TypeScript', 'Tailwind CSS', 'State Management (Redux/Zustand)'],
+              preferred: ['Next.js', 'GraphQL', 'Jest/Cypress', 'Web Accessibility (WCAG)'],
+            },
+            experience: {
+              minimum_years: 5,
+              relevant_roles: ['Senior Frontend Engineer', 'Lead Developer', 'React Specialist'],
+              key_responsibilities: ['Architect scalable frontend components', 'Optimizing application performance', 'Mentoring junior engineering staff'],
+            },
+            education: {
+              minimum_level: "Bachelor's Degree",
+              fields_of_study: ['Computer Science', 'Software Engineering', 'Information Technology'],
+            },
+            certifications: ['AWS Certified Developer', 'Meta Frontend Professional'],
+            domain_knowledge: ['FinTech', 'Enterprise SaaS', 'Data Visualization'],
+            other_requirements: ['Strong communication skills', 'Agile/Scrum experience'],
+            scoring_weights: { skills: 40, experience: 30, education: 10, certifications: 5, soft_skills: 10, domain_knowledge: 5 },
+          },
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDetails();
+  }, [jobId, auth.token]);
+
+  // ── Poll job analysis status every 5 s while pending/processing ────────────
   useEffect(() => {
     const status = details?.criteria_extraction_status;
     if (status !== 'pending' && status !== 'processing') return;
@@ -148,10 +266,41 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           const payload = Array.isArray(data) ? data[0] : data;
           setDetails({ ...payload.details, analysis_json: payload.analysis });
         }
-      } catch { /* ignore polling errors */ }
+      } catch { /* ignore transient polling errors */ }
+      setCriteriaPolltick(t => t + 1); // always re-trigger effect
     }, 5000);
     return () => clearTimeout(timer);
-  }, [details?.criteria_extraction_status, jobId, auth.token]);
+  }, [criteriaPolltick, details?.criteria_extraction_status, jobId, auth.token]);
+
+  // ── Fetch uploaded CVs ──────────────────────────────────────────────────────
+  const fetchUploadedCVs = useCallback(async () => {
+    if (!jobId) return;
+    setLoadingUploads(true);
+    try {
+      const data = await apiService.get(
+        WEBHOOK_CONFIG.UPLOADED_CVS_URL,
+        { job_id: jobId },
+        auth.token!
+      );
+      setUploadedCVs(Array.isArray(data) ? data : []);
+    } catch { /* ignore */ } finally {
+      setLoadingUploads(false);
+    }
+  }, [jobId, auth.token]);
+
+  useEffect(() => { fetchUploadedCVs(); }, [fetchUploadedCVs]);
+
+  // ── Poll scoring progress while any CV is still processing ─────────────────
+  useEffect(() => {
+    const inProgress = uploadedCVs.some(
+      cv => cv.processing_status === 'pending' || cv.processing_status === 'processing'
+    );
+    if (!inProgress || uploadedCVs.length === 0) return;
+    const timer = setTimeout(() => { fetchUploadedCVs(); }, 3000);
+    return () => clearTimeout(timer);
+  }, [uploadedCVs, fetchUploadedCVs]);
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleRetryExtraction = useCallback(async () => {
     if (!details) return;
@@ -162,23 +311,20 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         auth.token!
       );
       setDetails(prev => prev ? { ...prev, criteria_extraction_status: 'pending', criteria_extraction_error: null } : prev);
+      setCriteriaPolltick(0);
       addToast('AI analysis retry queued.', 'success');
     } catch {
       addToast('Failed to retry AI analysis.', 'error');
     }
   }, [details, auth.token, addToast]);
 
-  const handleCopyAlias = useCallback((text: string) => {
-    const confirm = () => {
-      setCopiedAlias(true);
-      setTimeout(() => setCopiedAlias(false), 2000);
-    };
+  const handleCopy = useCallback((text: string, setFlag: (v: boolean) => void) => {
+    const confirm = () => { setFlag(true); setTimeout(() => setFlag(false), 2000); };
     const fallback = () => {
       try {
         const el = document.createElement('textarea');
         el.value = text;
-        el.style.position = 'fixed';
-        el.style.opacity = '0';
+        el.style.cssText = 'position:fixed;opacity:0';
         document.body.appendChild(el);
         el.select();
         document.execCommand('copy');
@@ -188,11 +334,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         addToast('Could not copy — please copy manually.', 'error');
       }
     };
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(confirm).catch(fallback);
-    } else {
-      fallback();
-    }
+    navigator.clipboard ? navigator.clipboard.writeText(text).then(confirm).catch(fallback) : fallback();
   }, [addToast]);
 
   const handleToggle = useCallback(async (field: 'forwarding_enabled' | 'alias_enabled', value: boolean) => {
@@ -203,7 +345,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       await apiService.put(
         `${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/${details.job_id}/ingestion`,
         { [field]: value },
-        auth.token!,
+        auth.token!
       );
       setDetails(prev => prev ? { ...prev, [field]: value } : prev);
     } catch {
@@ -249,25 +391,19 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       await apiService.put(
         `${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/${details.job_id}/criteria`,
         {
-          weight_skills:           draftWeights['skills']            ?? 0,
-          weight_experience:       draftWeights['experience']        ?? 0,
-          weight_education:        draftWeights['education']         ?? 0,
-          weight_certifications:   draftWeights['certifications']    ?? 0,
-          weight_soft_skills:      draftWeights['soft_skills']       ?? 0,
-          weight_domain_knowledge: draftWeights['domain_knowledge']  ?? 0,
-          weight_other:            draftWeights['other_requirements'] ?? 0,
+          weight_skills:           draftWeights['skills']             ?? 0,
+          weight_experience:       draftWeights['experience']         ?? 0,
+          weight_education:        draftWeights['education']          ?? 0,
+          weight_certifications:   draftWeights['certifications']     ?? 0,
+          weight_soft_skills:      draftWeights['soft_skills']        ?? 0,
+          weight_domain_knowledge: draftWeights['domain_knowledge']   ?? 0,
+          weight_other:            draftWeights['other_requirements']  ?? 0,
         },
         auth.token!
       );
       setDetails(prev => {
         if (!prev || !prev.analysis_json) return prev;
-        return {
-          ...prev,
-          analysis_json: {
-            ...prev.analysis_json,
-            scoring_weights: { ...draftWeights } as any,
-          },
-        };
+        return { ...prev, analysis_json: { ...prev.analysis_json, scoring_weights: { ...draftWeights } as any } };
       });
       setEditingWeights(false);
       addToast('Evaluation weights updated successfully.', 'success');
@@ -278,84 +414,48 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     }
   }, [details, draftWeights, auth.token, addToast]);
 
-  useEffect(() => {
-    const fetchDetails = async () => {
-      if (!jobId) return;
-      setLoading(true);
-      setError(null);
-
+  const handleUpload = useCallback(async (files: FileList) => {
+    if (!files.length) return;
+    setUploading(true);
+    let successCount = 0;
+    let failCount = 0;
+    for (const file of Array.from(files)) {
+      const fd = new FormData();
+      fd.append('job_id', jobId);
+      fd.append('candidate_name', file.name.replace(/\.[^.]+$/, ''));
+      fd.append('file', file);
       try {
-        const data = await apiService.get(
-          WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL,
-          { job_id: jobId },
-          auth.token!
-        );
-
-        if (data) {
-          const payload = Array.isArray(data) ? data[0] : data;
-          setDetails({
-            ...payload.details,
-            analysis_json: payload.analysis,
-          });
-        } else {
-          throw new Error("No data received for this job ID.");
-        }
-      } catch (err: any) {
-        console.error("Fetch job details failed:", err);
-        const errorMsg = err.name === 'TypeError' && err.message === 'Failed to fetch'
-          ? "Network connection error." : (err.message || "Failed to load job details.");
-
-        setError(errorMsg);
-        addToast(errorMsg, "error");
-
-        setDetails({
-          job_id: jobId,
-          job_code: 'JB-772',
-          job_title: 'Senior Frontend Engineer',
-          job_client: 'Global Finance Solutions',
-          job_status: 'Active',
-          job_type: 'Full-time',
-          location: 'London (Hybrid)',
-          posted_date: '2023-10-15',
-          closing_date: '2023-11-30',
-          ingestion_note: 'CVs for this job must be forwarded to jobs@ai970.cloud. Please include the job reference (JOB-2026-0001) in the email subject or body.',
-          ingestion_mode: 'forwarding',
-          ingestion_email: null,
-          applications_total: 142,
-          applications_qualified: 24,
-          applications_partial: 45,
-          applications_rejected: 73,
-          applications_above_threshold: 18,
-          applications_below_threshold: 102,
-          applications_recommended: 12,
-          description: "We are seeking a highly skilled Senior Frontend Engineer to lead the development of our core product interface.",
-          analysis_json: {
-            skills: {
-              required: ["React", "TypeScript", "Tailwind CSS", "State Management (Redux/Zustand)"],
-              preferred: ["Next.js", "GraphQL", "Jest/Cypress", "Web Accessibility (WCAG)"]
-            },
-            experience: {
-              minimum_years: 5,
-              relevant_roles: ["Senior Frontend Engineer", "Lead Developer", "React Specialist"],
-              key_responsibilities: ["Architect scalable frontend components", "Optimizing application performance", "Mentoring junior engineering staff"]
-            },
-            education: {
-              minimum_level: "Bachelor's Degree",
-              fields_of_study: ["Computer Science", "Software Engineering", "Information Technology"]
-            },
-            certifications: ["AWS Certified Developer", "Meta Frontend Professional"],
-            domain_knowledge: ["FinTech", "Enterprise SaaS", "Data Visualization"],
-            other_requirements: ["Strong communication skills", "Agile/Scrum experience"],
-            scoring_weights: { skills: 40, experience: 30, education: 10, certifications: 5, soft_skills: 10, domain_knowledge: 5 }
-          }
-        });
-      } finally {
-        setLoading(false);
+        await apiService.postForm(WEBHOOK_CONFIG.CV_UPLOAD_URL, fd, auth.token!);
+        successCount++;
+      } catch {
+        failCount++;
       }
-    };
+    }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (successCount > 0) addToast(`${successCount} CV(s) uploaded successfully.`, 'success');
+    if (failCount > 0) addToast(`${failCount} CV(s) failed to upload.`, 'error');
+    await fetchUploadedCVs();
+  }, [jobId, auth.token, addToast, fetchUploadedCVs]);
 
-    fetchDetails();
-  }, [jobId, auth.token]);
+  const handleScorePending = useCallback(async () => {
+    setScoring(true);
+    try {
+      const result = await apiService.post(
+        WEBHOOK_CONFIG.SCORE_PENDING_URL,
+        { job_id: jobId },
+        auth.token!
+      );
+      addToast(result?.message || 'CV scoring queued.', 'success');
+      await fetchUploadedCVs();
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to trigger scoring.', 'error');
+    } finally {
+      setScoring(false);
+    }
+  }, [jobId, auth.token, addToast, fetchUploadedCVs]);
+
+  // ── Derived values ─────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -397,10 +497,40 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   ];
   const weightTotal = editingWeights ? Object.values(draftWeights).reduce((s, v) => s + v, 0) : 0;
 
+  const jobCode = details.job_code || details.job_id;
+  const cvsScoredCount = uploadedCVs.filter(cv => cv.processing_status === 'scored' || cv.processing_status === 'low_match').length;
+  const cvsTotal = uploadedCVs.length;
+  const cvsScoringInProgress = uploadedCVs.some(cv => cv.processing_status === 'pending' || cv.processing_status === 'processing');
+  const cvsPendingOrFailed = uploadedCVs.some(cv => cv.processing_status === 'pending' || cv.processing_status === 'failed');
+
+  const cvStatusDisplay = (cv: UploadedCV) => {
+    switch (cv.processing_status) {
+      case 'pending':     return { label: t.statusPending,    color: 'text-amber-600 bg-amber-50 border-amber-200', spin: false };
+      case 'processing':  return { label: t.statusProcessing, color: 'text-blue-600 bg-blue-50 border-blue-200',   spin: true  };
+      case 'scored':      return { label: cv.score != null ? `${Math.round(cv.score)}` : t.statusScored, color: 'text-success bg-green-50 border-green-200', spin: false };
+      case 'low_match':   return { label: t.statusLowMatch,   color: 'text-slate-500 bg-slate-50 border-slate-200', spin: false };
+      case 'failed':      return { label: t.statusFailed,     color: 'text-error bg-red-50 border-red-200',        spin: false };
+      default:            return { label: cv.processing_status, color: 'text-textMuted bg-slate-50 border-slate-200', spin: false };
+    }
+  };
+
+  const decisionBadge = (cv: UploadedCV) => {
+    if (cv.processing_status !== 'scored' || !cv.decision) return null;
+    const map: Record<string, string> = {
+      qualified: 'bg-green-100 text-success',
+      partial:   'bg-amber-100 text-warning',
+      rejected:  'bg-red-100 text-error',
+    };
+    return <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${map[cv.decision] || 'bg-slate-100 text-textMuted'}`}>{cv.decision}</span>;
+  };
+
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12 animate-fade-in">
-      {/* Job Metadata */}
+
+      {/* ── Job Metadata Card ───────────────────────────────────────────────── */}
       <section className="bg-white rounded-3xl shadow-sm border border-border overflow-hidden">
+
+        {/* Header */}
         <div className="px-8 py-6 bg-slate-50 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <button onClick={onBack} className="p-2 hover:bg-white rounded-lg transition-colors text-textMuted hover:text-primary">
@@ -420,15 +550,17 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           </div>
         </div>
 
-        {/* CV Receiving Options */}
+        {/* ── Ways to Receive Applications ─────────────────────────────────── */}
         <div className="border-b border-border px-8 py-6">
           <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-5 flex items-center gap-2">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-            {t.cvReceiving}
+            {t.waysToReceive}
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-            {/* Option 1 — Forwarding */}
+          {/* Top row: Option 1 + Option 2 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
+            {/* Option 1 — Forward to central email */}
             <div className={`rounded-2xl border-2 p-5 transition-all ${details.forwarding_enabled ? 'border-primary/20 bg-blue-50/40' : 'border-slate-200 bg-slate-50/60 opacity-60'}`}>
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
@@ -443,22 +575,16 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.forwarding_enabled ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
                 </button>
               </div>
-              <div className="space-y-2">
-                <div>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option1ForwardTo}</p>
-                  <code className="text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 block text-primary">{details.forwarding_email || 'jobs@ai970.cloud'}</code>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option1SubjectHint}</p>
-                  <code className="text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 block text-textMain">{details.job_code || details.job_id}</code>
-                </div>
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option1ForwardTo}</p>
+                <code className="text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 block text-primary">{details.forwarding_email || 'jobs@ai970.cloud'}</code>
               </div>
               <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.forwarding_enabled ? 'text-success' : 'text-textMuted'}`}>
                 {details.forwarding_enabled ? `● ${t.enabled}` : `○ ${t.disabled}`}
               </p>
             </div>
 
-            {/* Option 2 — Dedicated Alias */}
+            {/* Option 2 — Dedicated alias */}
             <div className={`rounded-2xl border-2 p-5 transition-all ${details.alias_enabled ? 'border-success/30 bg-green-50/40' : 'border-slate-200 bg-slate-50/60 opacity-60'}`}>
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
@@ -482,7 +608,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <code className="flex-1 text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 text-success truncate">{details.platform_email || '—'}</code>
                   {details.platform_email && (
                     <button
-                      onClick={() => handleCopyAlias(details.platform_email!)}
+                      onClick={() => handleCopy(details.platform_email!, setCopiedAlias)}
                       className="shrink-0 px-3 py-1.5 bg-success text-white text-[10px] font-black rounded-lg hover:bg-green-700 transition-colors"
                     >
                       {copiedAlias ? t.copied : t.copyBtn}
@@ -494,10 +620,168 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 {details.alias_enabled ? `● ${t.enabled}` : `○ ${t.disabled}`}
               </p>
             </div>
+          </div>
 
+          {/* Job reference snippet — unified, below both options */}
+          <div className="bg-slate-50 border border-border rounded-2xl px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.jobRef}</p>
+              <code className="text-sm font-mono font-black text-textMain">{jobCode}</code>
+              <p className="text-[10px] text-textMuted mt-0.5">{t.jobRefHint}</p>
+            </div>
+            <button
+              onClick={() => handleCopy(jobCode, setCopiedJobRef)}
+              className="shrink-0 px-4 py-2 bg-white border border-border text-[10px] font-black text-textMain rounded-xl hover:bg-slate-100 transition-colors"
+            >
+              {copiedJobRef ? t.copied : t.copyBtn}
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center">
+              <span className="px-3 bg-white text-[10px] font-black text-textMuted uppercase tracking-widest">
+                {isAr ? 'أو ارفع يدوياً' : 'or upload manually'}
+              </span>
+            </div>
+          </div>
+
+          {/* ── Option 3: Manual CV Upload (internal/recruiter) ─────────────── */}
+          <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/30 p-5">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="shrink-0 w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center">
+                <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-xs font-black text-indigo-900">{t.manualUploadTitle}</p>
+                <p className="text-[11px] text-indigo-600/80 mt-0.5 leading-relaxed">{t.manualUploadDesc}</p>
+              </div>
+            </div>
+
+            {/* File input + upload button */}
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                id="cv-file-input"
+                onChange={e => { if (e.target.files?.length) handleUpload(e.target.files); }}
+              />
+              <label
+                htmlFor="cv-file-input"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-[11px] font-black text-indigo-700 rounded-xl cursor-pointer hover:bg-indigo-50 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                {t.chooseFiles}
+              </label>
+              <button
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+                className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${uploading ? 'bg-indigo-300 text-white cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+              >
+                {uploading ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                    {t.uploadingBtn}
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                    {t.uploadBtn}
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Uploaded CVs list */}
+            {loadingUploads && uploadedCVs.length === 0 ? (
+              <div className="flex items-center gap-2 text-[11px] text-textMuted py-2">
+                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                Loading...
+              </div>
+            ) : uploadedCVs.length > 0 ? (
+              <div className="mt-2">
+                {/* Header row with progress */}
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] font-black text-indigo-800 uppercase tracking-wider">
+                    {t.uploadedCVsTitle} ({cvsTotal})
+                  </p>
+                  {cvsTotal > 0 && (
+                    <p className="text-[10px] font-bold text-indigo-600">
+                      {t.progressLabel.replace('{scored}', String(cvsScoredCount)).replace('{total}', String(cvsTotal))}
+                    </p>
+                  )}
+                </div>
+
+                {/* Progress bar */}
+                {cvsTotal > 0 && (
+                  <div className="w-full bg-indigo-100 h-1.5 rounded-full mb-3 overflow-hidden">
+                    <div
+                      className="bg-indigo-500 h-full rounded-full transition-all duration-500"
+                      style={{ width: `${(cvsScoredCount / cvsTotal) * 100}%` }}
+                    />
+                  </div>
+                )}
+
+                {/* CV rows */}
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {uploadedCVs.map(cv => {
+                    const st = cvStatusDisplay(cv);
+                    return (
+                      <div key={cv.application_id} className="flex items-center gap-3 bg-white rounded-xl border border-indigo-100 px-3 py-2">
+                        <svg className="w-3.5 h-3.5 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        <p className="flex-1 text-[11px] font-bold text-textMain truncate min-w-0">
+                          {cv.original_filename || cv.candidate_name}
+                        </p>
+                        {decisionBadge(cv)}
+                        <span className={`shrink-0 inline-flex items-center gap-1 text-[9px] font-black border rounded-full px-2 py-0.5 ${st.color}`}>
+                          {st.spin && <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>}
+                          {st.label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Score button */}
+                <div className="mt-3 flex justify-end">
+                  <button
+                    disabled={scoring || !cvsPendingOrFailed || cvsScoringInProgress}
+                    onClick={handleScorePending}
+                    className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${
+                      scoring || !cvsPendingOrFailed || cvsScoringInProgress
+                        ? 'bg-slate-200 text-textMuted cursor-not-allowed'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    }`}
+                  >
+                    {scoring || cvsScoringInProgress ? (
+                      <>
+                        <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                        {t.scoringBtnLabel}
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                        {t.scoreBtnLabel}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-indigo-400 italic">{t.noUploads}</p>
+            )}
           </div>
         </div>
 
+        {/* Meta labels */}
         <div className="p-8 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
           {t.metaLabels.map((label, idx) => (
             <div key={idx}>
@@ -508,7 +792,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         </div>
       </section>
 
-      {/* KPIs */}
+      {/* ── KPIs ───────────────────────────────────────────────────────────── */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpiValues.map((kpi, idx) => (
           <button
@@ -522,12 +806,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         ))}
       </section>
 
-      {/* AI Criteria Extraction Status Banner */}
+      {/* ── AI Criteria Extraction Status Banner ───────────────────────────── */}
       {details.criteria_extraction_status && details.criteria_extraction_status !== 'completed' && (
         <div className={`rounded-2xl border p-4 flex items-center justify-between gap-4 ${
-          details.criteria_extraction_status === 'failed'
-            ? 'bg-red-50 border-red-200'
-            : 'bg-amber-50 border-amber-200'
+          details.criteria_extraction_status === 'failed' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'
         }`}>
           <div className="flex items-center gap-3">
             {details.criteria_extraction_status === 'failed' ? (
@@ -537,12 +819,16 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             ) : (
               <svg className="animate-spin w-5 h-5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
             )}
             <div>
               <p className="text-sm font-bold text-textMain">
-                {details.criteria_extraction_status === 'failed' ? t.criteriaFailed : details.criteria_extraction_status === 'processing' ? t.criteriaProcessing : t.criteriaPending}
+                {details.criteria_extraction_status === 'failed'
+                  ? t.criteriaFailed
+                  : details.criteria_extraction_status === 'processing'
+                  ? t.criteriaProcessing
+                  : t.criteriaPending}
               </p>
               {details.criteria_extraction_status === 'failed' && details.criteria_extraction_error && (
                 <p className="text-xs text-error/80 mt-0.5">{details.criteria_extraction_error}</p>
@@ -550,19 +836,17 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             </div>
           </div>
           {details.criteria_extraction_status === 'failed' && (
-            <button
-              onClick={handleRetryExtraction}
-              className="shrink-0 px-4 py-1.5 bg-error text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors"
-            >
+            <button onClick={handleRetryExtraction} className="shrink-0 px-4 py-1.5 bg-error text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">
               {t.retryExtraction}
             </button>
           )}
         </div>
       )}
 
-      {/* Main Grid */}
+      {/* ── Main Grid: Criteria + Eval Logic ───────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
+
           {/* Skills */}
           <div className="bg-white rounded-3xl border border-border p-8 shadow-sm">
             <h3 className="text-sm font-black text-textMain uppercase tracking-widest mb-6 flex items-center">
@@ -639,9 +923,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               <div key={idx} className="bg-white rounded-3xl border border-border p-6 shadow-sm">
                 <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-4">{cat.label}</h4>
                 <ul className="space-y-2">
-                  {(cat.items || []).length > 0 ? (cat.items || []).map((item, i) => (
-                    <li key={i} className="text-[11px] font-bold text-textMain leading-snug">• {item}</li>
-                  )) : <li className="text-[10px] text-textMuted italic">{t.noData}</li>}
+                  {(cat.items || []).length > 0
+                    ? (cat.items || []).map((item, i) => (
+                        <li key={i} className="text-[11px] font-bold text-textMain leading-snug">• {item}</li>
+                      ))
+                    : <li className="text-[10px] text-textMuted italic">{t.noData}</li>}
                 </ul>
               </div>
             ))}
@@ -656,10 +942,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 <span className="w-2 h-4 bg-indigo-600 rounded-full mr-3"></span> {t.evalLogic}
               </h3>
               {!editingWeights && analysis?.scoring_weights && (
-                <button
-                  onClick={handleEditWeights}
-                  className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest transition-colors"
-                >
+                <button onClick={handleEditWeights} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest transition-colors">
                   {t.editWeights}
                 </button>
               )}
@@ -697,7 +980,6 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   })}
                 </div>
 
-                {/* Live total indicator */}
                 <div className={`mt-4 px-3 py-2.5 rounded-xl text-[11px] font-bold flex items-center justify-between ${
                   weightTotal === 100
                     ? 'bg-green-50 text-success border border-green-200'
@@ -715,28 +997,17 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <span className="font-black shrink-0 ml-2">{t.weightTotal}: {weightTotal}%</span>
                 </div>
 
-                {/* Utility buttons */}
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    onClick={handleNormalizeWeights}
-                    className="px-2 py-2 text-[10px] font-black text-indigo-600 border border-indigo-200 rounded-xl hover:bg-indigo-50 uppercase tracking-widest transition-colors leading-tight"
-                  >
+                  <button onClick={handleNormalizeWeights} className="px-2 py-2 text-[10px] font-black text-indigo-600 border border-indigo-200 rounded-xl hover:bg-indigo-50 uppercase tracking-widest transition-colors leading-tight">
                     {t.normalizeWeights}
                   </button>
-                  <button
-                    onClick={handleResetWeights}
-                    className="px-2 py-2 text-[10px] font-black text-textMuted border border-border rounded-xl hover:bg-slate-50 uppercase tracking-widest transition-colors leading-tight"
-                  >
+                  <button onClick={handleResetWeights} className="px-2 py-2 text-[10px] font-black text-textMuted border border-border rounded-xl hover:bg-slate-50 uppercase tracking-widest transition-colors leading-tight">
                     {t.resetAiWeights}
                   </button>
                 </div>
 
-                {/* Save / Cancel */}
                 <div className="mt-2 grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setEditingWeights(false)}
-                    className="px-3 py-2.5 text-xs font-bold text-textMuted border border-border rounded-xl hover:bg-slate-50 transition-colors"
-                  >
+                  <button onClick={() => setEditingWeights(false)} className="px-3 py-2.5 text-xs font-bold text-textMuted border border-border rounded-xl hover:bg-slate-50 transition-colors">
                     {t.cancelEdit}
                   </button>
                   <button
@@ -774,7 +1045,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         </div>
       </div>
 
-      {/* Job Description */}
+      {/* ── Job Description ────────────────────────────────────────────────── */}
       <section className="bg-white rounded-3xl border border-border overflow-hidden">
         <button
           onClick={() => setDescExpanded(!descExpanded)}

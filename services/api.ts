@@ -102,6 +102,16 @@ export const apiService = {
     return handleResponse(response);
   },
 
+  async postForm(url: string, data: FormData, token?: string) {
+    const headers: HeadersInit = {};
+    const activeToken = token || localStorage.getItem(TOKEN_KEY);
+    if (activeToken) {
+      headers['Authorization'] = `Bearer ${activeToken}`;
+    }
+    const response = await fetch(url, { method: 'POST', headers, body: data });
+    return handleResponse(response);
+  },
+
   async requestPasswordReset(email: string) {
     return this.post(WEBHOOK_CONFIG.FORGOT_PASSWORD_WEBHOOK_URL, { email });
   }

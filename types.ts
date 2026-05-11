@@ -200,3 +200,13 @@ export interface ApplicationDetailedAnalysis {
 }
 
 export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all';
+
+export interface UploadedCV {
+  application_id: string;
+  candidate_name: string;
+  processing_status: 'pending' | 'processing' | 'scored' | 'low_match' | 'failed';
+  decision: string | null;
+  score: number | null;
+  uploaded_at: string | null;
+  original_filename: string | null;
+}

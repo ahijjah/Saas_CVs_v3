@@ -22,6 +22,8 @@ export const WEBHOOK_CONFIG = {
   ADMIN_TENANT_STATUS_URL:   `${API_BASE}/admin/tenants/status`,
   // New endpoints (no n8n equivalent)
   CV_UPLOAD_URL:             `${API_BASE}/applications/upload`,
+  UPLOADED_CVS_URL:          `${API_BASE}/applications/uploaded`,
+  SCORE_PENDING_URL:         `${API_BASE}/applications/score-pending`,
   ADMIN_CREATE_TENANT_URL:   `${API_BASE}/admin/tenants`,
   ADMIN_CREATE_USER_URL:     `${API_BASE}/admin/users`,
   // CV receiving ingestion settings (append /{job_id}/ingestion)

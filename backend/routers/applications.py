@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +15,10 @@ from workers.cv_score import score_cv_task
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 settings = get_settings()
+
+
+class ScorePendingRequest(BaseModel):
+    job_id: str
 
 ALLOWED_MIME_TYPES = {
     "application/pdf": "pdf",
@@ -249,6 +254,94 @@ async def upload_cv(
         "status": "processing",
         "message": "CV uploaded and queued for scoring",
     }
+
+
+@router.get("/uploaded")
+async def list_uploaded_cvs(
+    job_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """List manually uploaded CVs for a job with their processing status."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    rows = await db.execute(
+        text("""
+            SELECT
+                a.application_id,
+                a.candidate_name,
+                a.processing_status,
+                a.decision,
+                s.final_score,
+                a.applied_at,
+                af.original_name
+            FROM applications a
+            LEFT JOIN application_files af ON af.application_id = a.application_id
+            LEFT JOIN application_scores s ON s.application_id = a.application_id
+            WHERE a.job_id = :jid
+              AND a.tenant_id = :tid
+              AND a.submission_source = 'manual_upload'
+            ORDER BY a.applied_at DESC
+        """),
+        {"jid": job_id, "tid": current_user.tenant_id},
+    )
+    uploads = []
+    for r in rows.mappings():
+        uploads.append({
+            "application_id": str(r["application_id"]),
+            "candidate_name": r["candidate_name"],
+            "processing_status": r["processing_status"],
+            "decision": r["decision"],
+            "score": float(r["final_score"]) if r["final_score"] is not None else None,
+            "uploaded_at": r["applied_at"].isoformat() if r["applied_at"] else None,
+            "original_filename": r["original_name"],
+        })
+    return uploads
+
+
+@router.post("/score-pending", status_code=status.HTTP_202_ACCEPTED)
+async def score_pending_uploads(
+    body: ScorePendingRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Enqueue scoring for all unscored manually uploaded CVs for a job."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    job_row = await db.execute(
+        text("SELECT job_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
+        {"jid": body.job_id, "tid": current_user.tenant_id},
+    )
+    if not job_row.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    rows = await db.execute(
+        text("""
+            SELECT a.application_id, af.file_path, af.mime_type
+            FROM applications a
+            JOIN application_files af ON af.application_id = a.application_id
+            WHERE a.job_id = :jid
+              AND a.tenant_id = :tid
+              AND a.submission_source = 'manual_upload'
+              AND a.processing_status IN ('pending', 'failed')
+        """),
+        {"jid": body.job_id, "tid": current_user.tenant_id},
+    )
+    pending = rows.mappings().all()
+
+    count = 0
+    for row in pending:
+        full_path = str(Path(settings.files_base_path) / row["file_path"])
+        score_cv_task.delay(
+            application_id=str(row["application_id"]),
+            job_id=body.job_id,
+            tenant_id=current_user.tenant_id,
+            file_path=full_path,
+            mime_type=row["mime_type"],
+        )
+        count += 1
+
+    return {"success": True, "queued": count, "message": f"Queued scoring for {count} CV(s)"}
 
 
 # Import here to avoid circular import
