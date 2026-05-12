@@ -175,7 +175,10 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [savingUser, setSavingUser] = useState(false);
   const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
 
-  const isAdmin = auth.user?.role === 'admin' || auth.user?.role === 'super_admin';
+  const role = (auth.user?.role || '').toLowerCase();
+  const isSuperAdmin = role === 'super_admin';
+  // Team management is only for tenant-level admins, not platform super_admin
+  const isTenantAdmin = role === 'admin';
 
   const fetchProfile = useCallback(async () => {
     setLoading(true);
@@ -201,7 +204,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   }, [auth.token, addToast]);
 
   const fetchTenantUsers = useCallback(async () => {
-    if (!isAdmin) return;
+    if (!isTenantAdmin) return;
     setLoadingUsers(true);
     try {
       const response = await apiService.get(WEBHOOK_CONFIG.TENANT_USERS_URL, {}, auth.token!);
@@ -221,15 +224,15 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     } finally {
       setLoadingUsers(false);
     }
-  }, [auth.token, addToast, isAdmin]);
+  }, [auth.token, addToast, isTenantAdmin]);
 
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
 
   useEffect(() => {
-    if (isAdmin) fetchTenantUsers();
-  }, [fetchTenantUsers, isAdmin]);
+    if (isTenantAdmin) fetchTenantUsers();
+  }, [fetchTenantUsers, isTenantAdmin]);
 
   const handleCancelEdit = () => {
     if (profile) {
@@ -414,7 +417,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
             <p className="text-xs text-textMuted font-semibold uppercase tracking-wider">{t.profileSub}</p>
           </div>
           <div className="flex items-center gap-3">
-            {!isEditing && isAdmin && (
+            {!isEditing && isTenantAdmin && (
               <button
                 onClick={() => { setIsEditing(true); setIsChangingPassword(false); }}
                 className="flex items-center gap-2 px-4 py-1.5 bg-white border border-border rounded-lg text-xs font-bold text-textMain hover:bg-slate-100 transition-colors shadow-sm"
@@ -667,8 +670,23 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         )}
       </section>
 
-      {/* ── Team Members Section (admin only) ────────────────────────────────── */}
-      {isAdmin && (
+      {/* ── Team Members Section ─────────────────────────────────────────────── */}
+      {isSuperAdmin && (
+        <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="px-8 py-6 border-b border-border bg-slate-50">
+            <h3 className="text-lg font-bold text-textMain">{t.usersTitle}</h3>
+            <p className="text-xs text-textMuted font-semibold uppercase tracking-wider">{t.usersSub}</p>
+          </div>
+          <div className="px-8 py-10 text-center">
+            <svg className="w-8 h-8 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <p className="text-sm font-bold text-textMain mb-1">Team management is available for tenant administrators.</p>
+            <p className="text-xs text-textMuted">Use the Admin Users panel to manage users across all tenants.</p>
+          </div>
+        </section>
+      )}
+      {isTenantAdmin && (
         <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
           <div className="px-8 py-6 border-b border-border bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
