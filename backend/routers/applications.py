@@ -241,19 +241,10 @@ async def upload_cv(
     )
     await db.commit()
 
-    # Enqueue scoring task
-    score_cv_task.delay(
-        application_id=application_id,
-        job_id=job_id,
-        tenant_id=current_user.tenant_id,
-        file_path=str(file_path),
-        mime_type=file.content_type,
-    )
-
     return {
         "application_id": application_id,
-        "status": "processing",
-        "message": "CV uploaded and queued for scoring",
+        "status": "pending",
+        "message": "CV uploaded. Click 'Score uploaded CVs' to start scoring.",
     }
 
 

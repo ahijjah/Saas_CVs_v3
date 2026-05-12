@@ -296,12 +296,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   useEffect(() => { fetchUploadedCVs(); }, [fetchUploadedCVs]);
 
-  // ── Poll scoring progress while any CV is still processing ─────────────────
+  // ── Poll scoring progress while any CV is actively processing ─────────────
+  // Only poll when processing (not when pending-waiting-for-Score-click).
   useEffect(() => {
-    const inProgress = uploadedCVs.some(
-      cv => cv.processing_status === 'pending' || cv.processing_status === 'processing'
-    );
-    if (!inProgress || uploadedCVs.length === 0) return;
+    const activelyProcessing = uploadedCVs.some(cv => cv.processing_status === 'processing');
+    if (!activelyProcessing) return;
     const timer = setTimeout(() => { fetchUploadedCVs(); }, 3000);
     return () => clearTimeout(timer);
   }, [uploadedCVs, fetchUploadedCVs]);
@@ -517,10 +516,13 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const weightTotal = editingWeights ? Object.values(draftWeights).reduce((s, v) => s + v, 0) : 0;
 
   const jobCode = details.job_code || details.job_id;
+  // Queue = CVs waiting to be scored or currently being scored; scored/failed ones leave the queue
+  const cvsInQueue = uploadedCVs.filter(cv => cv.processing_status === 'pending' || cv.processing_status === 'processing');
   const cvsScoredCount = uploadedCVs.filter(cv => cv.processing_status === 'scored' || cv.processing_status === 'low_match').length;
   const cvsTotal = uploadedCVs.length;
-  const cvsScoringInProgress = uploadedCVs.some(cv => cv.processing_status === 'pending' || cv.processing_status === 'processing');
-  const cvsPendingOrFailed = uploadedCVs.some(cv => cv.processing_status === 'pending' || cv.processing_status === 'failed');
+  const cvsActivelyProcessing = cvsInQueue.some(cv => cv.processing_status === 'processing');
+  const cvsHasPending = cvsInQueue.some(cv => cv.processing_status === 'pending');
+  const cvsScoringInProgress = scoring || cvsActivelyProcessing;
 
   const cvStatusDisplay = (cv: UploadedCV) => {
     switch (cv.processing_status) {
@@ -606,6 +608,20 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   </button>
                 </div>
               </div>
+              {/* Job reference — nested inside Option 1 */}
+              <div className="mt-3 bg-white/60 border border-blue-100 rounded-xl px-3 py-2.5 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.jobRef}</p>
+                  <code className="text-xs font-mono font-black text-textMain">{jobCode}</code>
+                  <p className="text-[10px] text-textMuted mt-0.5 leading-tight">{t.jobRefHint}</p>
+                </div>
+                <button
+                  onClick={() => handleCopy(jobCode, setCopiedJobRef)}
+                  className="shrink-0 px-3 py-1.5 bg-white border border-border text-[10px] font-black text-textMain rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  {copiedJobRef ? t.copied : t.copyBtn}
+                </button>
+              </div>
               <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.forwarding_enabled ? 'text-success' : 'text-textMuted'}`}>
                 {details.forwarding_enabled ? `● ${t.enabled}` : `○ ${t.disabled}`}
               </p>
@@ -649,21 +665,6 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             </div>
           </div>
 
-          {/* Job reference snippet — unified, below both options */}
-          <div className="bg-slate-50 border border-border rounded-2xl px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.jobRef}</p>
-              <code className="text-sm font-mono font-black text-textMain">{jobCode}</code>
-              <p className="text-[10px] text-textMuted mt-0.5">{t.jobRefHint}</p>
-            </div>
-            <button
-              onClick={() => handleCopy(jobCode, setCopiedJobRef)}
-              className="shrink-0 px-4 py-2 bg-white border border-border text-[10px] font-black text-textMain rounded-xl hover:bg-slate-100 transition-colors"
-            >
-              {copiedJobRef ? t.copied : t.copyBtn}
-            </button>
-          </div>
-
           {/* Divider */}
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
@@ -703,15 +704,15 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               />
               <label
                 htmlFor="cv-file-input"
-                className={`inline-flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-[11px] font-black text-indigo-700 rounded-xl transition-colors ${uploading || !!deletingCVId ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer hover:bg-indigo-50'}`}
+                className={`inline-flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-[11px] font-black text-indigo-700 rounded-xl transition-colors ${uploading || cvsScoringInProgress || !!deletingCVId ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer hover:bg-indigo-50'}`}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                 {t.chooseFiles}
               </label>
               <button
-                disabled={uploading || !!deletingCVId}
+                disabled={uploading || cvsScoringInProgress || !!deletingCVId}
                 onClick={() => fileInputRef.current?.click()}
-                className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${uploading || !!deletingCVId ? 'bg-indigo-300 text-white cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${uploading || cvsScoringInProgress || !!deletingCVId ? 'bg-indigo-300 text-white cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
               >
                 {uploading ? (
                   <>
@@ -727,20 +728,21 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               </button>
             </div>
 
-            {/* Uploaded CVs list */}
+            {/* Uploaded CVs list — shows only pending/processing (queue); scored CVs leave this block */}
             {loadingUploads && uploadedCVs.length === 0 ? (
               <div className="flex items-center gap-2 text-[11px] text-textMuted py-2">
                 <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
                 Loading...
               </div>
-            ) : uploadedCVs.length > 0 ? (
+            ) : cvsInQueue.length > 0 ? (
               <div className="mt-2">
-                {/* Header row with progress */}
+                {/* Header row */}
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-[10px] font-black text-indigo-800 uppercase tracking-wider">
-                    {t.uploadedCVsTitle} ({cvsTotal})
+                    {t.uploadedCVsTitle} ({cvsInQueue.length})
                   </p>
-                  {cvsTotal > 0 && (
+                  {/* Progress label — only while scoring is running */}
+                  {cvsScoringInProgress && cvsTotal > 0 && (
                     <p className="text-[10px] font-bold text-indigo-600">
                       {t.progressLabel
                         .replace('{scored}', String(cvsScoredCount))
@@ -750,8 +752,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   )}
                 </div>
 
-                {/* Progress bar */}
-                {cvsTotal > 0 && (
+                {/* Progress bar — only while scoring is running */}
+                {cvsScoringInProgress && cvsTotal > 0 && (
                   <div className="w-full bg-indigo-100 h-1.5 rounded-full mb-3 overflow-hidden">
                     <div
                       className="bg-indigo-500 h-full rounded-full transition-all duration-500"
@@ -760,51 +762,54 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   </div>
                 )}
 
-                {/* CV rows */}
+                {/* CV rows — queue only (pending / processing) */}
                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                  {uploadedCVs.map(cv => {
+                  {cvsInQueue.map(cv => {
                     const st = cvStatusDisplay(cv);
                     const isDeleting = deletingCVId === cv.application_id;
+                    const canDelete = cv.processing_status === 'pending' && !cvsScoringInProgress;
                     return (
                       <div key={cv.application_id} className="flex items-center gap-3 bg-white rounded-xl border border-indigo-100 px-3 py-2">
                         <svg className="w-3.5 h-3.5 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                         <p className="flex-1 text-[11px] font-bold text-textMain truncate min-w-0">
                           {cv.original_filename || cv.candidate_name}
                         </p>
-                        {decisionBadge(cv)}
                         <span className={`shrink-0 inline-flex items-center gap-1 text-[9px] font-black border rounded-full px-2 py-0.5 ${st.color}`}>
                           {st.spin && <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>}
                           {st.label}
                         </span>
-                        <button
-                          disabled={!!deletingCVId}
-                          onClick={() => handleDeleteCV(cv.application_id)}
-                          title={isDeleting ? t.deletingCV : t.deleteCV}
-                          className={`shrink-0 p-1 rounded-lg transition-colors ${deletingCVId ? 'opacity-40 cursor-not-allowed' : 'text-red-400 hover:text-red-600 hover:bg-red-50'}`}
-                        >
-                          {isDeleting ? (
-                            <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                          ) : (
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                          )}
-                        </button>
+                        {/* Delete only available before scoring starts */}
+                        {canDelete && (
+                          <button
+                            disabled={!!deletingCVId}
+                            onClick={() => handleDeleteCV(cv.application_id)}
+                            title={isDeleting ? t.deletingCV : t.deleteCV}
+                            className={`shrink-0 p-1 rounded-lg transition-colors ${deletingCVId ? 'opacity-40 cursor-not-allowed' : 'text-red-400 hover:text-red-600 hover:bg-red-50'}`}
+                          >
+                            {isDeleting ? (
+                              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                            ) : (
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            )}
+                          </button>
+                        )}
                       </div>
                     );
                   })}
                 </div>
 
-                {/* Score button */}
+                {/* Score button — enabled only when pending CVs exist and scoring is not running */}
                 <div className="mt-3 flex justify-end">
                   <button
-                    disabled={scoring || !cvsPendingOrFailed || cvsScoringInProgress || !!deletingCVId}
+                    disabled={!cvsHasPending || cvsScoringInProgress || !!deletingCVId}
                     onClick={handleScorePending}
                     className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${
-                      scoring || !cvsPendingOrFailed || cvsScoringInProgress || !!deletingCVId
+                      !cvsHasPending || cvsScoringInProgress || !!deletingCVId
                         ? 'bg-slate-200 text-textMuted cursor-not-allowed'
                         : 'bg-indigo-600 text-white hover:bg-indigo-700'
                     }`}
                   >
-                    {scoring || cvsScoringInProgress ? (
+                    {cvsScoringInProgress ? (
                       <>
                         <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
                         {t.scoringBtnLabel}
