@@ -169,6 +169,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [usersActiveCount, setUsersActiveCount] = useState(0);
   const [usersMaxCount, setUsersMaxCount] = useState(0);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [usersAccessDenied, setUsersAccessDenied] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
   const [addUserForm, setAddUserForm] = useState({ email: '', full_name: '', password: '', role: 'recruiter' });
   const [savingUser, setSavingUser] = useState(false);
@@ -205,12 +206,18 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     try {
       const response = await apiService.get(WEBHOOK_CONFIG.TENANT_USERS_URL, {}, auth.token!);
       if (response?.success) {
+        setUsersAccessDenied(false);
         setTenantUsers(response.users || []);
         setUsersActiveCount(response.active_count ?? 0);
         setUsersMaxCount(response.max_users ?? 0);
       }
     } catch (err: any) {
-      addToast(err.message || 'Failed to load users.', 'error');
+      const msg: string = err.message || '';
+      if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('forbidden') || msg.toLowerCase().includes('not authorized')) {
+        setUsersAccessDenied(true);
+      } else {
+        addToast(msg || 'Failed to load users.', 'error');
+      }
     } finally {
       setLoadingUsers(false);
     }
@@ -759,6 +766,14 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
             {loadingUsers ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : usersAccessDenied ? (
+              <div className="px-8 py-10 text-center">
+                <svg className="w-8 h-8 mx-auto mb-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                </svg>
+                <p className="text-sm font-bold text-textMain mb-1">You do not have permission to access this section</p>
+                <p className="text-xs text-textMuted">Contact your system administrator for access.</p>
               </div>
             ) : tenantUsers.length === 0 ? (
               <div className="px-8 py-10 text-center text-sm text-textMuted">{t.noUsers}</div>

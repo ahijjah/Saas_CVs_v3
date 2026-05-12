@@ -13,12 +13,11 @@ async function handleResponse(response: Response) {
     data = null;
   }
 
-  // Handle Unauthorized/Forbidden
-  if (response.status === 401 || response.status === 403) {
-    // If we're not on the login page or this isn't a login attempt, clear session
+  // Handle Unauthorized — only 401 means the session/token is invalid
+  if (response.status === 401) {
     const isLoginEndpoint = response.url.includes('login');
     if (!isLoginEndpoint) {
-      console.warn('Session expired or unauthorized. Clearing storage.');
+      console.warn('Session expired. Clearing storage.');
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
       localStorage.removeItem('cv_analyzer_auth');
@@ -26,6 +25,7 @@ async function handleResponse(response: Response) {
       return new Promise(() => {});
     }
   }
+  // 403 Forbidden = valid session but insufficient permissions; let it fall through to error handling
 
   if (!response.ok) {
     // Throw an error with the backend's specific message if available
