@@ -303,6 +303,23 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     }
   }, [jobId, auth.token]);
 
+  // Silent background refresh of job details (stats/KPIs). No loading state,
+  // no error toast — used after scoring completion so counters update in place.
+  const fetchJobDetails = useCallback(async () => {
+    if (!jobId) return;
+    try {
+      const data = await apiService.get(
+        WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL,
+        { job_id: jobId },
+        auth.token!
+      );
+      if (data) {
+        const payload = Array.isArray(data) ? data[0] : data;
+        setDetails({ ...payload.details, analysis_json: payload.analysis });
+      }
+    } catch { /* ignore transient errors during background refresh */ }
+  }, [jobId, auth.token]);
+
   const fetchQueueStatus = useCallback(async () => {
     if (!jobId) return;
     try {
@@ -328,14 +345,16 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     return () => clearTimeout(timer);
   }, [queueStatus, scoring, fetchQueueStatus, fetchUploadedCVs]);
 
-  // ── Detect batch completion → final CV list refresh ────────────────────────
+  // ── Detect batch completion → refresh job stats + CV list (once) ──────────
   useEffect(() => {
     const isNowProcessing = queueStatus?.is_processing ?? false;
     if (prevIsProcessingRef.current && !isNowProcessing) {
+      // Batch just finished: pull fresh KPI counters and clear the queue list
+      fetchJobDetails();
       fetchUploadedCVs();
     }
     prevIsProcessingRef.current = isNowProcessing;
-  }, [queueStatus?.is_processing, fetchUploadedCVs]);
+  }, [queueStatus?.is_processing, fetchJobDetails, fetchUploadedCVs]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
