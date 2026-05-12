@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { JobDetails as JobDetailsType, AuthState, UploadedCV } from '../types';
+import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface JobDetailsProps {
@@ -73,11 +73,14 @@ const T = {
     progressLabel: '{scored} of {total} CVs processed — {pct}%',
     deleteCV: 'Delete',
     deletingCV: 'Deleting...',
-    statusPending: 'Queued',
+    statusPending: 'Pending',
+    statusQueued: 'In Queue',
     statusProcessing: 'Scoring...',
     statusScored: 'Scored',
     statusLowMatch: 'Low match',
     statusFailed: 'Failed',
+    resetStuck: 'Reset stuck CVs',
+    resettingStuck: 'Resetting...',
     criteriaPending: 'AI criteria analysis is being generated. This page will refresh automatically.',
     criteriaProcessing: 'AI criteria analysis is in progress. This page will refresh automatically.',
     criteriaFailed: 'AI criteria analysis failed.',
@@ -143,10 +146,13 @@ const T = {
     deleteCV: 'حذف',
     deletingCV: 'جارٍ الحذف...',
     statusPending: 'في الانتظار',
+    statusQueued: 'في الطابور',
     statusProcessing: 'جارٍ التقييم...',
     statusScored: 'تم التقييم',
     statusLowMatch: 'تطابق منخفض',
     statusFailed: 'فشل',
+    resetStuck: 'إعادة تعيين المعلّقة',
+    resettingStuck: 'جارٍ الإعادة...',
     criteriaPending: 'جارٍ إنشاء تحليل معايير الذكاء الاصطناعي. ستُحدَّث هذه الصفحة تلقائياً.',
     criteriaProcessing: 'تحليل معايير الذكاء الاصطناعي قيد التنفيذ. ستُحدَّث هذه الصفحة تلقائياً.',
     criteriaFailed: 'فشل تحليل معايير الذكاء الاصطناعي.',
@@ -181,6 +187,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [uploading, setUploading] = useState(false);
   const [scoring, setScoring] = useState(false);
   const [deletingCVId, setDeletingCVId] = useState<string | null>(null);
+  const [queueStatus, setQueueStatus] = useState<UploadQueueStatus | null>(null);
+  const [resettingStuck, setResettingStuck] = useState(false);
+  const prevIsProcessingRef = useRef<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Initial job details fetch ───────────────────────────────────────────────
@@ -294,16 +303,39 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     }
   }, [jobId, auth.token]);
 
-  useEffect(() => { fetchUploadedCVs(); }, [fetchUploadedCVs]);
+  const fetchQueueStatus = useCallback(async () => {
+    if (!jobId) return;
+    try {
+      const data = await apiService.get(
+        WEBHOOK_CONFIG.QUEUE_STATUS_URL,
+        { job_id: jobId },
+        auth.token!
+      );
+      setQueueStatus(data);
+    } catch { /* ignore */ }
+  }, [jobId, auth.token]);
 
-  // ── Poll scoring progress while any CV is actively processing ─────────────
-  // Only poll when processing (not when pending-waiting-for-Score-click).
+  useEffect(() => { fetchUploadedCVs(); }, [fetchUploadedCVs]);
+  useEffect(() => { fetchQueueStatus(); }, [fetchQueueStatus]);
+
+  // ── Poll while a batch is in-flight ───────────────────────────────────────
   useEffect(() => {
-    const activelyProcessing = uploadedCVs.some(cv => cv.processing_status === 'processing');
-    if (!activelyProcessing) return;
-    const timer = setTimeout(() => { fetchUploadedCVs(); }, 3000);
+    if (!queueStatus?.is_processing && !scoring) return;
+    const timer = setTimeout(async () => {
+      await fetchQueueStatus();
+      await fetchUploadedCVs();
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [uploadedCVs, fetchUploadedCVs]);
+  }, [queueStatus, scoring, fetchQueueStatus, fetchUploadedCVs]);
+
+  // ── Detect batch completion → final CV list refresh ────────────────────────
+  useEffect(() => {
+    const isNowProcessing = queueStatus?.is_processing ?? false;
+    if (prevIsProcessingRef.current && !isNowProcessing) {
+      fetchUploadedCVs();
+    }
+    prevIsProcessingRef.current = isNowProcessing;
+  }, [queueStatus?.is_processing, fetchUploadedCVs]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -451,14 +483,35 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         { job_id: jobId },
         auth.token!
       );
+      if (result?.queued === 0) {
+        addToast(result?.message || 'No pending CVs to score.', 'success');
+        return;
+      }
       addToast(result?.message || 'CV scoring queued.', 'success');
-      await fetchUploadedCVs();
+      await Promise.all([fetchQueueStatus(), fetchUploadedCVs()]);
     } catch (err: any) {
       addToast(err?.message || 'Failed to trigger scoring.', 'error');
     } finally {
       setScoring(false);
     }
-  }, [jobId, auth.token, addToast, fetchUploadedCVs]);
+  }, [jobId, auth.token, addToast, fetchUploadedCVs, fetchQueueStatus]);
+
+  const handleResetStuck = useCallback(async () => {
+    setResettingStuck(true);
+    try {
+      const result = await apiService.post(
+        WEBHOOK_CONFIG.RESET_STUCK_URL,
+        { job_id: jobId },
+        auth.token!
+      );
+      addToast(result?.message || 'Stuck CVs reset to pending.', 'success');
+      await Promise.all([fetchQueueStatus(), fetchUploadedCVs()]);
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to reset stuck CVs.', 'error');
+    } finally {
+      setResettingStuck(false);
+    }
+  }, [jobId, auth.token, addToast, fetchUploadedCVs, fetchQueueStatus]);
 
   const handleDeleteCV = useCallback(async (applicationId: string) => {
     setDeletingCVId(applicationId);
@@ -517,17 +570,25 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   const jobCode = details.job_code || details.job_id;
   // Queue = CVs waiting to be scored or currently being scored; scored/failed ones leave the queue
-  const cvsInQueue = uploadedCVs.filter(cv => cv.processing_status === 'pending' || cv.processing_status === 'processing');
-  const cvsScoredCount = uploadedCVs.filter(cv => cv.processing_status === 'scored' || cv.processing_status === 'low_match').length;
-  const cvsTotal = uploadedCVs.length;
-  const cvsActivelyProcessing = cvsInQueue.some(cv => cv.processing_status === 'processing');
+  const cvsInQueue = uploadedCVs.filter(cv =>
+    cv.processing_status === 'pending' ||
+    cv.processing_status === 'queued' ||
+    cv.processing_status === 'processing'
+  );
+  const cvsScoredCount = queueStatus?.completed ?? uploadedCVs.filter(cv => cv.processing_status === 'scored' || cv.processing_status === 'low_match').length;
+  const cvsTotal = queueStatus?.total ?? uploadedCVs.length;
+  const cvsActivelyProcessing = queueStatus?.is_processing ?? cvsInQueue.some(cv => cv.processing_status === 'queued' || cv.processing_status === 'processing');
   const cvsHasPending = cvsInQueue.some(cv => cv.processing_status === 'pending');
   const cvsScoringInProgress = scoring || cvsActivelyProcessing;
+  const progressPct = queueStatus && cvsTotal > 0
+    ? queueStatus.percentage
+    : cvsTotal > 0 ? Math.round((cvsScoredCount / cvsTotal) * 100) : 0;
 
   const cvStatusDisplay = (cv: UploadedCV) => {
     switch (cv.processing_status) {
-      case 'pending':     return { label: t.statusPending,    color: 'text-amber-600 bg-amber-50 border-amber-200', spin: false };
-      case 'processing':  return { label: t.statusProcessing, color: 'text-blue-600 bg-blue-50 border-blue-200',   spin: true  };
+      case 'pending':     return { label: t.statusPending,    color: 'text-amber-600 bg-amber-50 border-amber-200',   spin: false };
+      case 'queued':      return { label: t.statusQueued,     color: 'text-indigo-600 bg-indigo-50 border-indigo-200', spin: true  };
+      case 'processing':  return { label: t.statusProcessing, color: 'text-blue-600 bg-blue-50 border-blue-200',       spin: true  };
       case 'scored':      return { label: cv.score != null ? `${Math.round(cv.score)}` : t.statusScored, color: 'text-success bg-green-50 border-green-200', spin: false };
       case 'low_match':   return { label: t.statusLowMatch,   color: 'text-slate-500 bg-slate-50 border-slate-200', spin: false };
       case 'failed':      return { label: t.statusFailed,     color: 'text-error bg-red-50 border-red-200',        spin: false };
@@ -747,7 +808,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                       {t.progressLabel
                         .replace('{scored}', String(cvsScoredCount))
                         .replace('{total}', String(cvsTotal))
-                        .replace('{pct}', String(Math.round((cvsScoredCount / cvsTotal) * 100)))}
+                        .replace('{pct}', String(progressPct))}
                     </p>
                   )}
                 </div>
@@ -757,7 +818,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <div className="w-full bg-indigo-100 h-1.5 rounded-full mb-3 overflow-hidden">
                     <div
                       className="bg-indigo-500 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${(cvsScoredCount / cvsTotal) * 100}%` }}
+                      style={{ width: `${progressPct}%` }}
                     />
                   </div>
                 )}
@@ -798,8 +859,27 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   })}
                 </div>
 
-                {/* Score button — enabled only when pending CVs exist and scoring is not running */}
-                <div className="mt-3 flex justify-end">
+                {/* Score button row — reset-stuck appears when there are stuck CVs */}
+                <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
+                  {queueStatus?.has_stuck && (
+                    <button
+                      disabled={resettingStuck}
+                      onClick={handleResetStuck}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black rounded-lg border transition-colors ${
+                        resettingStuck
+                          ? 'border-red-200 bg-red-50 text-red-400 cursor-not-allowed'
+                          : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
+                      }`}
+                    >
+                      {resettingStuck ? (
+                        <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                      ) : (
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                      )}
+                      {resettingStuck ? t.resettingStuck : t.resetStuck}
+                    </button>
+                  )}
+                  <div className="flex-1" />
                   <button
                     disabled={!cvsHasPending || cvsScoringInProgress || !!deletingCVId}
                     onClick={handleScorePending}

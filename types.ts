@@ -204,9 +204,21 @@ export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_matc
 export interface UploadedCV {
   application_id: string;
   candidate_name: string;
-  processing_status: 'pending' | 'processing' | 'scored' | 'low_match' | 'failed';
+  processing_status: 'pending' | 'queued' | 'processing' | 'scored' | 'low_match' | 'failed';
   decision: string | null;
   score: number | null;
   uploaded_at: string | null;
   original_filename: string | null;
+}
+
+export interface UploadQueueStatus {
+  total: number;
+  pending: number;
+  queued: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  is_processing: boolean;
+  has_stuck: boolean;
+  percentage: number;
 }

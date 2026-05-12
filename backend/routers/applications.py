@@ -1,4 +1,3 @@
-import os
 import uuid
 from pathlib import Path
 from typing import Annotated
@@ -19,6 +18,11 @@ settings = get_settings()
 
 class ScorePendingRequest(BaseModel):
     job_id: str
+
+
+class ResetStuckRequest(BaseModel):
+    job_id: str
+
 
 ALLOWED_MIME_TYPES = {
     "application/pdf": "pdf",
@@ -126,7 +130,6 @@ async def get_application_details(
         "job_title": app["job_title"],
         "qualified_threshold_used": app["qualified_threshold_used"],
         "partial_threshold_used": app["partial_threshold_used"],
-        # Shape matches ApplicationDetailedAnalysis.scores in types.ts
         "scores": {
             "skills":           build_dim("score_skills",           "weight_skills"),
             "experience":       build_dim("score_experience",       "weight_experience"),
@@ -136,7 +139,6 @@ async def get_application_details(
             "domain_knowledge": build_dim("score_domain_knowledge", "weight_domain_knowledge"),
             "other_requirements": build_dim("score_other",          "weight_other"),
         },
-        # Shape matches ApplicationDetailedAnalysis.analysis in types.ts
         "analysis": {
             "summary":                    app["evaluation_notes"] or "",
             "strengths":                  app["strengths"] or [],
@@ -146,7 +148,6 @@ async def get_application_details(
             "interview_suggested_questions": app["interview_questions"] or [],
             "interview_focus_points":     [],
         },
-        # Intelligence fields from Gatekeeper + LLM
         "red_flags":              app["red_flags"] or [],
         "reasoning":              reasoning,
         "cv_language":            app["cv_language"],
@@ -169,14 +170,12 @@ async def upload_cv(
     candidate_email: Annotated[str | None, Form()] = None,
     file: UploadFile = File(...),
 ):
-    # Validate file type
     if file.content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Only PDF and DOCX files are accepted",
         )
 
-    # Validate file size
     content = await file.read()
     max_bytes = settings.max_file_size_mb * 1024 * 1024
     if len(content) > max_bytes:
@@ -187,7 +186,6 @@ async def upload_cv(
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Verify job exists and belongs to tenant
     job_row = await db.execute(
         text("SELECT job_id, title FROM jobs WHERE job_id = :jid AND tenant_id = :tid AND status = 'active'"),
         {"jid": job_id, "tid": current_user.tenant_id},
@@ -196,7 +194,6 @@ async def upload_cv(
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active job not found")
 
-    # Create application record
     app_result = await db.execute(
         text("""
             INSERT INTO applications
@@ -213,7 +210,6 @@ async def upload_cv(
     )
     application_id = str(app_result.scalar_one())
 
-    # Store file
     ext = ALLOWED_MIME_TYPES[file.content_type]
     file_name = f"{application_id}.{ext}"
     file_dir = Path(settings.files_base_path) / "tenants" / current_user.tenant_id / "jobs" / job_id
@@ -223,7 +219,6 @@ async def upload_cv(
 
     relative_path = str(file_path.relative_to(settings.files_base_path))
 
-    # Create file record
     await db.execute(
         text("""
             INSERT INTO application_files
@@ -297,7 +292,11 @@ async def score_pending_uploads(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Enqueue scoring for all unscored manually uploaded CVs for a job."""
+    """Atomically claim all pending CVs (pending→queued) then enqueue scoring tasks.
+
+    The CTE UPDATE is atomic: concurrent requests see each CV in 'pending' exactly
+    once, eliminating double-enqueue on rapid double-click.
+    """
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     job_row = await db.execute(
@@ -307,22 +306,37 @@ async def score_pending_uploads(
     if not job_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
+    batch_id = str(uuid.uuid4())
+
+    # Atomic claim: UPDATE pending→queued and return file info in one statement.
+    # Any concurrent request will find zero 'pending' rows and claim nothing.
     rows = await db.execute(
         text("""
-            SELECT a.application_id, af.file_path, af.mime_type
-            FROM applications a
-            JOIN application_files af ON af.application_id = a.application_id
-            WHERE a.job_id = :jid
-              AND a.tenant_id = :tid
-              AND a.submission_source = 'manual_upload'
-              AND a.processing_status IN ('pending', 'failed')
+            WITH claimed AS (
+                UPDATE applications
+                SET processing_status = 'queued',
+                    scoring_batch_id   = :batch_id::uuid,
+                    queued_at          = now()
+                WHERE job_id = :jid
+                  AND tenant_id = :tid
+                  AND submission_source = 'manual_upload'
+                  AND processing_status = 'pending'
+                RETURNING application_id
+            )
+            SELECT c.application_id, af.file_path, af.mime_type
+            FROM claimed c
+            JOIN application_files af ON af.application_id = c.application_id
         """),
-        {"jid": body.job_id, "tid": current_user.tenant_id},
+        {"batch_id": batch_id, "jid": body.job_id, "tid": current_user.tenant_id},
     )
-    pending = rows.mappings().all()
+    claimed = rows.mappings().all()
+    await db.commit()
+
+    if not claimed:
+        return {"success": True, "queued": 0, "batch_id": None, "message": "No pending CVs to score."}
 
     count = 0
-    for row in pending:
+    for row in claimed:
         full_path = str(Path(settings.files_base_path) / row["file_path"])
         score_cv_task.delay(
             application_id=str(row["application_id"]),
@@ -333,7 +347,105 @@ async def score_pending_uploads(
         )
         count += 1
 
-    return {"success": True, "queued": count, "message": f"Queued scoring for {count} CV(s)"}
+    return {"success": True, "queued": count, "batch_id": batch_id, "message": f"Queued scoring for {count} CV(s)"}
+
+
+@router.get("/queue-status")
+async def get_queue_status(
+    job_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Backend-driven progress snapshot for manual upload queue."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE processing_status = 'pending')    AS pending,
+                COUNT(*) FILTER (WHERE processing_status = 'queued')     AS queued,
+                COUNT(*) FILTER (WHERE processing_status = 'processing') AS processing,
+                COUNT(*) FILTER (WHERE processing_status IN ('scored', 'low_match')) AS completed,
+                COUNT(*) FILTER (WHERE processing_status = 'failed')     AS failed,
+                COUNT(*) FILTER (
+                    WHERE processing_status IN ('queued', 'processing')
+                      AND queued_at IS NOT NULL
+                      AND queued_at < now() - INTERVAL '10 minutes'
+                ) AS stuck
+            FROM applications
+            WHERE job_id = :jid
+              AND tenant_id = :tid
+              AND submission_source = 'manual_upload'
+        """),
+        {"jid": job_id, "tid": current_user.tenant_id},
+    )
+    r = row.mappings().first()
+    if not r:
+        return {
+            "total": 0, "pending": 0, "queued": 0, "processing": 0,
+            "completed": 0, "failed": 0,
+            "is_processing": False, "has_stuck": False, "percentage": 0,
+        }
+
+    total = int(r["total"])
+    completed = int(r["completed"])
+    in_flight = int(r["queued"]) + int(r["processing"])
+    percentage = round((completed / total) * 100) if total > 0 else 0
+
+    return {
+        "total": total,
+        "pending": int(r["pending"]),
+        "queued": int(r["queued"]),
+        "processing": int(r["processing"]),
+        "completed": completed,
+        "failed": int(r["failed"]),
+        "is_processing": in_flight > 0,
+        "has_stuck": int(r["stuck"]) > 0,
+        "percentage": percentage,
+    }
+
+
+@router.post("/reset-stuck", status_code=status.HTTP_200_OK)
+async def reset_stuck_cvs(
+    body: ResetStuckRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Reset queued/processing CVs that have been stuck for >10 minutes back to pending."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    job_row = await db.execute(
+        text("SELECT job_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
+        {"jid": body.job_id, "tid": current_user.tenant_id},
+    )
+    if not job_row.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    result = await db.execute(
+        text("""
+            UPDATE applications
+            SET processing_status = 'pending',
+                scoring_batch_id  = NULL,
+                queued_at         = NULL
+            WHERE job_id = :jid
+              AND tenant_id = :tid
+              AND submission_source = 'manual_upload'
+              AND processing_status IN ('queued', 'processing')
+              AND queued_at IS NOT NULL
+              AND queued_at < now() - INTERVAL '10 minutes'
+            RETURNING application_id
+        """),
+        {"jid": body.job_id, "tid": current_user.tenant_id},
+    )
+    reset_count = len(result.mappings().all())
+    await db.commit()
+
+    return {
+        "success": True,
+        "reset": reset_count,
+        "message": f"Reset {reset_count} stuck CV(s) back to pending.",
+    }
 
 
 @router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -342,10 +454,9 @@ async def delete_uploaded_cv(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Delete a manually uploaded CV and its associated records. Tenant-isolated."""
+    """Delete a manually uploaded CV. Only allowed when status=pending. Tenant-isolated."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Verify the application exists, belongs to this tenant, and is a manual upload
     row = await db.execute(
         text("""
             SELECT a.application_id
@@ -353,20 +464,22 @@ async def delete_uploaded_cv(
             WHERE a.application_id = :aid
               AND a.tenant_id = :tid
               AND a.submission_source = 'manual_upload'
+              AND a.processing_status = 'pending'
         """),
         {"aid": application_id, "tid": current_user.tenant_id},
     )
     if not row.first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found or cannot be deleted in its current state",
+        )
 
-    # Fetch file path before deleting records
     file_row = await db.execute(
         text("SELECT file_path FROM application_files WHERE application_id = :aid AND tenant_id = :tid"),
         {"aid": application_id, "tid": current_user.tenant_id},
     )
     file_record = file_row.mappings().first()
 
-    # Delete child records then parent
     await db.execute(
         text("DELETE FROM application_scores WHERE application_id = :aid"),
         {"aid": application_id},
@@ -381,7 +494,6 @@ async def delete_uploaded_cv(
     )
     await db.commit()
 
-    # Remove physical file from disk (best-effort)
     if file_record and file_record["file_path"]:
         try:
             full_path = Path(settings.files_base_path) / file_record["file_path"]
