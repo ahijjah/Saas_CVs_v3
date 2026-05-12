@@ -14,6 +14,9 @@ import { ResetPassword } from './pages/ResetPassword';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { AdminUsers } from './pages/AdminUsers';
+import { PlatformConfigPage } from './pages/PlatformConfig';
+import { SubscriptionPlansPage } from './pages/SubscriptionPlans';
+import { TenantSubscriptionsPage } from './pages/TenantSubscriptions';
 import { ToastContainer, ToastType } from './components/Toast';
 
 /**
@@ -189,7 +192,11 @@ const AppInner: React.FC = () => {
     const role = (auth.user?.role || '').toLowerCase();
 
     // Access Control: Protect super_admin pages
-    if (role !== 'super_admin' && (currentPage === 'admin-dashboard' || currentPage === 'admin-users')) {
+    const superAdminPages = [
+      'admin-dashboard', 'admin-users',
+      'admin-platform-config', 'admin-subscription-plans', 'admin-tenant-subscriptions',
+    ];
+    if (role !== 'super_admin' && superAdminPages.includes(currentPage)) {
       setCurrentPage('jobs');
       return null;
     }
@@ -199,6 +206,12 @@ const AppInner: React.FC = () => {
         return <AdminDashboard auth={auth} addToast={addToast} />;
       case 'admin-users':
         return <AdminUsers auth={auth} addToast={addToast} />;
+      case 'admin-platform-config':
+        return <PlatformConfigPage auth={auth} addToast={addToast} />;
+      case 'admin-subscription-plans':
+        return <SubscriptionPlansPage auth={auth} addToast={addToast} />;
+      case 'admin-tenant-subscriptions':
+        return <TenantSubscriptionsPage auth={auth} addToast={addToast} />;
       case 'jobs':
         return (
           <JobsDashboard 
