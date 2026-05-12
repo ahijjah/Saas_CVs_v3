@@ -45,7 +45,8 @@ const T = {
   },
 };
 
-const FILTER_KEYS: ApplicationFilter[] = ['all', 'qualified', 'partial', 'rejected', 'low_match'];
+// low_match is an internal status; it maps to 'rejected' for display purposes
+const FILTER_KEYS: ApplicationFilter[] = ['all', 'qualified', 'partial', 'rejected'];
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   jobId, initialFilter, auth, onBack, addToast
@@ -138,9 +139,11 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     fetchApplications();
   }, [jobId]);
 
+  // low_match is treated as rejected for all display/filter purposes
+  const normaliseStatus = (s: string) => s === 'low_match' ? 'rejected' : s;
   const filteredApplications = filter === 'all'
     ? applicationsAll
-    : applicationsAll.filter(a => (a.status ?? '').toLowerCase().trim() === filter);
+    : applicationsAll.filter(a => normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
 
   if (view === 'details' && selectedDetails) {
     return (
@@ -152,11 +155,10 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   }
 
   const getStatusStyles = (status: string) => {
-    const s = (status || '').toLowerCase().trim();
-    if (s === 'qualified')  return { pill: 'bg-green-100 text-green-800',  badge: 'bg-success' };
-    if (s === 'partial')    return { pill: 'bg-amber-100 text-amber-800',  badge: 'bg-warning' };
-    if (s === 'low_match')  return { pill: 'bg-slate-100 text-slate-600',  badge: 'bg-slate-400' };
-    return { pill: 'bg-red-100 text-red-800', badge: 'bg-error' };
+    const s = normaliseStatus((status || '').toLowerCase().trim());
+    if (s === 'qualified')  return { pill: 'bg-green-100 text-green-800',  badge: 'bg-success',  label: t.filterQualified };
+    if (s === 'partial')    return { pill: 'bg-amber-100 text-amber-800',  badge: 'bg-warning',  label: t.filterPartial };
+    return                         { pill: 'bg-red-100 text-red-800',      badge: 'bg-error',    label: t.filterRejected };
   };
 
   return (
@@ -213,7 +215,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
                 <div className="mt-4 md:mt-0 flex flex-col items-end gap-2">
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${styles.pill}`}>
-                    {app.status}
+                    {styles.label}
                   </span>
                   <button
                     disabled={detailsLoading}

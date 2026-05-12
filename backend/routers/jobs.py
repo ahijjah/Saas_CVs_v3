@@ -94,10 +94,10 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
                 j.forwarding_enabled,
                 j.alias_enabled,
                 j.created_at,
-                COUNT(a.application_id)                                             AS applications_total,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected
+                COUNT(a.application_id)                                                                  AS applications_total,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')                         AS applications_qualified,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')                           AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.decision IN ('rejected', 'low_match'))          AS applications_rejected
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
             WHERE j.tenant_id = :tid
@@ -220,10 +220,10 @@ async def get_job_details(
                 j.forwarding_enabled, j.alias_enabled,
                 j.qualified_threshold, j.partial_threshold,
                 j.created_at,
-                COUNT(a.application_id)                                             AS applications_total,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected,
+                COUNT(a.application_id)                                                                  AS applications_total,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')                         AS applications_qualified,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')                           AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.decision IN ('rejected', 'low_match'))          AS applications_rejected,
                 t.cv_ingestion_mode AS tenant_ingestion_mode,
                 t.forwarding_email  AS tenant_forwarding_email
             FROM jobs j

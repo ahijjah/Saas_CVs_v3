@@ -92,6 +92,7 @@ OUTPUT: Valid JSON only — no markdown, no explanation, no code blocks.
 
 Return exactly this structure:
 {
+  "candidate_name": "<full name as it appears in the CV header/contact section, or empty string if not found>",
   "score_skills": <integer 0-100>,
   "score_experience": <integer 0-100>,
   "score_education": <integer 0-100>,
@@ -269,6 +270,7 @@ async def score_cv(
         result = json.loads(raw)
 
         # Ensure new required fields exist (backwards compatibility)
+        result.setdefault("candidate_name", "")
         result.setdefault("red_flags", [])
         result.setdefault("reasoning", {})
         return result

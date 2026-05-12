@@ -229,6 +229,14 @@ async def _score_cv_async(
         q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
         decision = determine_decision(final_score, q_thresh, p_thresh)
 
+        # Update candidate_name from AI extraction if provided (overrides filename-derived name)
+        extracted_name = (ai_result.get("candidate_name") or "").strip()
+        if extracted_name:
+            await db.execute(
+                text("UPDATE applications SET candidate_name = :name WHERE application_id = :aid"),
+                {"name": extracted_name, "aid": application_id},
+            )
+
         # ── Step 7: Write scores ──────────────────────────────────────────────
         await db.execute(
             text("""
