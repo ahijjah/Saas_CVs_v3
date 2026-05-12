@@ -315,7 +315,7 @@ async def score_pending_uploads(
             WITH claimed AS (
                 UPDATE applications
                 SET processing_status = 'queued',
-                    scoring_batch_id   = :batch_id::uuid,
+                    scoring_batch_id   = CAST(:batch_id AS uuid),
                     queued_at          = now()
                 WHERE job_id = :jid
                   AND tenant_id = :tid
