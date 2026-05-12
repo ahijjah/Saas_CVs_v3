@@ -319,6 +319,10 @@ export interface PlatformSecret {
   has_value: boolean;
   updated_at: string | null;
   updated_by_email: string;
+  source: 'env' | 'db';
+  restart_required: boolean;
+  min_length: number;
+  critical_warning?: string | null;
 }
 
 // ─── AI Prompts ───────────────────────────────────────────────────────────────

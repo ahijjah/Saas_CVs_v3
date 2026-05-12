@@ -9,11 +9,10 @@ SECURITY CONTRACT:
 
 IMPORTANT — Runtime Integration Note:
 The application currently reads secrets from environment variables at startup.
-Values stored here are an auditable management layer. To make runtime components
-use a DB-stored secret, the relevant service code must be updated to load from
-this table at startup or reload, followed by a service restart.
+Values stored here are an auditable management layer. After updating a secret here,
+the corresponding environment variable must also be updated and the service restarted
+for the new value to take effect at runtime.
 """
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -27,6 +26,44 @@ from database import get_db, set_rls_context
 router = APIRouter(prefix="/admin/platform-secrets", tags=["platform-secrets"])
 
 _CRITICAL_KEYS = {"JWT_SECRET", "DB_PASSWORD", "OPENAI_API_KEY"}
+
+# Per-key metadata returned to the frontend for display and validation.
+# source: where the runtime actually reads the value from.
+# restart_required: whether a service restart is needed after update.
+# min_length: minimum accepted value length for the PUT endpoint.
+_SECRET_META: dict[str, dict] = {
+    "OPENAI_API_KEY":         {"source": "env", "restart_required": True, "min_length": 20},
+    "JWT_SECRET":             {"source": "env", "restart_required": True, "min_length": 32},
+    "SMTP_PASSWORD":          {"source": "env", "restart_required": True, "min_length": 1},
+    "IMAP_PASSWORD":          {"source": "env", "restart_required": True, "min_length": 1},
+    "REDIS_PASSWORD":         {"source": "env", "restart_required": True, "min_length": 1},
+    "DB_PASSWORD":            {"source": "env", "restart_required": True, "min_length": 1},
+    "SMTP_USER":              {"source": "env", "restart_required": True, "min_length": 3},
+    "IMAP_USER":              {"source": "env", "restart_required": True, "min_length": 3},
+    "EMAIL_FROM_ADDRESS":     {"source": "env", "restart_required": True, "min_length": 5},
+    "SMTP_HOST":              {"source": "env", "restart_required": True, "min_length": 3},
+    "IMAP_HOST":              {"source": "env", "restart_required": True, "min_length": 3},
+    "REDIS_URL":              {"source": "env", "restart_required": True, "min_length": 8},
+    "CELERY_BROKER_URL":      {"source": "env", "restart_required": True, "min_length": 8},
+    "CELERY_RESULT_BACKEND":  {"source": "env", "restart_required": True, "min_length": 8},
+}
+_DEFAULT_META: dict = {"source": "env", "restart_required": True, "min_length": 1}
+
+# Per-key warning messages shown in the confirmation modal.
+_CRITICAL_WARNINGS: dict[str, str] = {
+    "JWT_SECRET": (
+        "Changing JWT_SECRET immediately invalidates ALL active user sessions. "
+        "Every logged-in user will be logged out and will need to sign in again."
+    ),
+    "OPENAI_API_KEY": (
+        "Without a valid OPENAI_API_KEY the entire AI scoring pipeline stops working. "
+        "CV evaluations will fail until a working key is active."
+    ),
+    "DB_PASSWORD": (
+        "Changing DB_PASSWORD will cause the service to lose database connectivity "
+        "until it is restarted with the matching password in the environment."
+    ),
+}
 
 
 def _mask(value: str) -> str:
@@ -59,6 +96,7 @@ async def list_secrets(
 
     secrets = []
     for r in rows.mappings():
+        meta = _SECRET_META.get(r["key"], _DEFAULT_META)
         secrets.append({
             "key":              r["key"],
             "masked_value":     r["masked_value"] or "",
@@ -68,6 +106,10 @@ async def list_secrets(
             "has_value":        r["has_value"],
             "updated_at":       r["updated_at"].isoformat() if r["updated_at"] else None,
             "updated_by_email": r["updated_by_email"] or "",
+            "source":           meta["source"],
+            "restart_required": meta["restart_required"],
+            "min_length":       meta.get("min_length", 1),
+            "critical_warning": _CRITICAL_WARNINGS.get(r["key"]),
         })
 
     return {"success": True, "secrets": secrets}
@@ -84,21 +126,33 @@ async def update_secret(
 ):
     await set_rls_context(db, current_user.tenant_id, "super_admin")
 
-    if not body.value or not body.value.strip():
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Secret value cannot be empty.")
+    val = body.value.strip() if body.value else ""
+    if not val:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Secret value cannot be empty.",
+        )
 
-    # Verify the key exists
+    meta = _SECRET_META.get(key, _DEFAULT_META)
+    min_len = meta.get("min_length", 1)
+    if len(val) < min_len:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"'{key}' must be at least {min_len} characters long.",
+        )
+
     row = await db.execute(
         text("SELECT key, is_critical FROM platform_secrets WHERE key = :k"),
         {"k": key},
     )
     existing = row.mappings().first()
     if not existing:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"Secret key '{key}' not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Secret key '{key}' not found.",
+        )
 
-    masked = _mask(body.value.strip())
+    masked = _mask(val)
 
     await db.execute(text("""
         UPDATE platform_secrets
@@ -110,7 +164,7 @@ async def update_secret(
             updated_by_email = :email
         WHERE key = :k
     """), {
-        "val":    body.value.strip(),
+        "val":    val,
         "masked": masked,
         "uid":    current_user.user_id,
         "email":  current_user.email,
@@ -119,11 +173,15 @@ async def update_secret(
     await db.commit()
 
     is_critical = existing["is_critical"]
-    warning = (
-        f"⚠️ '{key}' is a critical secret. "
-        "Ensure the running service is restarted or reloaded to pick up the new value. "
-        "JWT_SECRET changes invalidate all active user sessions."
-    ) if is_critical else None
+    if is_critical:
+        warning = (
+            _CRITICAL_WARNINGS.get(key)
+            or f"'{key}' is a critical secret. Restart the service for the new value to take effect."
+        )
+    elif meta.get("restart_required"):
+        warning = "Service restart required for the new value to take effect at runtime."
+    else:
+        warning = None
 
     return {
         "success":      True,

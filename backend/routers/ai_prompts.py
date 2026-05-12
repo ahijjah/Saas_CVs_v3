@@ -16,7 +16,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,8 @@ from database import get_db, set_rls_context
 router = APIRouter(prefix="/admin/ai-prompts", tags=["ai-prompts"])
 
 VALID_CATEGORIES = {"criteria", "scoring", "screening", "summary", "interview"}
+VALID_MODELS = {"gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"}
+VALID_LANGUAGES = {"ar", "en", "auto"}
 
 # Hardcoded defaults so "Reset to default" can recreate the original prompts.
 # These mirror the constants in ai_service.py.
@@ -187,6 +189,27 @@ class CreatePromptRequest(BaseModel):
     output_language: str = "ar"
     notes: str | None = None
 
+    @field_validator("prompt_category")
+    @classmethod
+    def validate_category(cls, v: str) -> str:
+        if v not in VALID_CATEGORIES:
+            raise ValueError(f"prompt_category must be one of: {', '.join(sorted(VALID_CATEGORIES))}")
+        return v
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        if v not in VALID_MODELS:
+            raise ValueError(f"model must be one of: {', '.join(sorted(VALID_MODELS))}")
+        return v
+
+    @field_validator("output_language")
+    @classmethod
+    def validate_language(cls, v: str) -> str:
+        if v not in VALID_LANGUAGES:
+            raise ValueError(f"output_language must be one of: {', '.join(sorted(VALID_LANGUAGES))}")
+        return v
+
 
 class UpdatePromptRequest(BaseModel):
     prompt_name: str | None = None
@@ -197,6 +220,20 @@ class UpdatePromptRequest(BaseModel):
     max_tokens: int | None = Field(None, ge=1, le=32000)
     output_language: str | None = None
     notes: str | None = None
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_MODELS:
+            raise ValueError(f"model must be one of: {', '.join(sorted(VALID_MODELS))}")
+        return v
+
+    @field_validator("output_language")
+    @classmethod
+    def validate_language(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_LANGUAGES:
+            raise ValueError(f"output_language must be one of: {', '.join(sorted(VALID_LANGUAGES))}")
+        return v
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -241,7 +278,12 @@ async def list_prompts(
     """))
 
     prompts = [_row_to_dict(r) for r in rows.mappings()]
-    return {"success": True, "prompts": prompts}
+    return {
+        "success": True,
+        "prompts": prompts,
+        "valid_models": sorted(VALID_MODELS),
+        "valid_languages": sorted(VALID_LANGUAGES),
+    }
 
 
 # ── GET /admin/ai-prompts/{prompt_code} ───────────────────────────────────────
@@ -281,10 +323,6 @@ async def create_prompt(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     await set_rls_context(db, current_user.tenant_id, "super_admin")
-
-    if body.prompt_category not in VALID_CATEGORIES:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail=f"prompt_category must be one of: {', '.join(sorted(VALID_CATEGORIES))}")
 
     # Determine next version number for this prompt_code
     ver_row = await db.execute(

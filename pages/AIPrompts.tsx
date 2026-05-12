@@ -25,7 +25,17 @@ const CATEGORY_COLORS: Record<string, string> = {
   interview: 'bg-amber-100 text-amber-700',
 };
 
+const PIPELINE_DESCRIPTIONS: Record<string, string> = {
+  criteria_extraction: 'Extracts structured hiring criteria (skills, experience, education, weights) from a job description.',
+  cv_scoring:          'Full 7-dimension bilingual CV scoring — Level 3 deep evaluation.',
+  level2_screening:    'Lightweight binary PASS/REJECT pre-screen — Level 2 fast gate-keeper.',
+};
+
 const KNOWN_CODES = ['criteria_extraction', 'cv_scoring', 'level2_screening'];
+
+// Defaults used when backend does not return valid_models (graceful fallback)
+const FALLBACK_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'];
+const FALLBACK_LANGUAGES = ['ar', 'en', 'auto'];
 
 type ModalMode = 'edit' | 'create' | null;
 
@@ -56,21 +66,30 @@ const BLANK_FORM: FormState = {
 };
 
 export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
-  const [prompts, setPrompts]           = useState<AIPrompt[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [selectedCode, setSelectedCode] = useState<string | null>(null);
-  const [modalMode, setModalMode]       = useState<ModalMode>(null);
-  const [editingId, setEditingId]       = useState<string | null>(null);
-  const [form, setForm]                 = useState<FormState>(BLANK_FORM);
-  const [saving, setSaving]             = useState(false);
-  const [activating, setActivating]     = useState<string | null>(null);
-  const [resetting, setResetting]       = useState<string | null>(null);
+  const [prompts, setPrompts]             = useState<AIPrompt[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [validModels, setValidModels]     = useState<string[]>(FALLBACK_MODELS);
+  const [validLanguages, setValidLanguages] = useState<string[]>(FALLBACK_LANGUAGES);
+  const [selectedCode, setSelectedCode]   = useState<string | null>(null);
+  const [modalMode, setModalMode]         = useState<ModalMode>(null);
+  const [editingId, setEditingId]         = useState<string | null>(null);
+  const [form, setForm]                   = useState<FormState>(BLANK_FORM);
+  const [saving, setSaving]               = useState(false);
+  const [activating, setActivating]       = useState<string | null>(null);
+  const [resetting, setResetting]         = useState<string | null>(null);
+  const [confirmActivate, setConfirmActivate] = useState<AIPrompt | null>(null);
+  const [confirmReset, setConfirmReset]   = useState<string | null>(null);
+  const [formErrors, setFormErrors]       = useState<Partial<Record<keyof FormState, string>>>({});
 
   const fetchPrompts = useCallback(async () => {
     setLoading(true);
     try {
       const res = await apiService.get(WEBHOOK_CONFIG.AI_PROMPTS_URL, {}, auth.token!);
-      if (res?.success) setPrompts(res.prompts || []);
+      if (res?.success) {
+        setPrompts(res.prompts || []);
+        if (res.valid_models?.length) setValidModels(res.valid_models);
+        if (res.valid_languages?.length) setValidLanguages(res.valid_languages);
+      }
     } catch (err: any) {
       addToast(err.message || 'Failed to load prompts.', 'error');
     } finally {
@@ -80,20 +99,30 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
 
   useEffect(() => { fetchPrompts(); }, [fetchPrompts]);
 
-  // Group all versions by prompt_code
   const grouped = prompts.reduce<Record<string, AIPrompt[]>>((acc, p) => {
     (acc[p.prompt_code] = acc[p.prompt_code] || []).push(p);
     return acc;
   }, {});
 
-  // All unique codes (known ones first, then any custom ones)
   const allCodes = [
     ...KNOWN_CODES.filter(c => grouped[c]),
     ...Object.keys(grouped).filter(c => !KNOWN_CODES.includes(c)),
   ];
 
+  const validateForm = (): boolean => {
+    const errors: Partial<Record<keyof FormState, string>> = {};
+    if (!form.prompt_code.trim()) errors.prompt_code = 'Prompt code is required';
+    if (!form.prompt_name.trim()) errors.prompt_name = 'Display name is required';
+    if (!form.system_prompt.trim()) errors.system_prompt = 'System prompt is required';
+    if (form.temperature < 0 || form.temperature > 2) errors.temperature = 'Must be between 0 and 2';
+    if (form.max_tokens < 1 || form.max_tokens > 32000) errors.max_tokens = 'Must be between 1 and 32000';
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const openCreate = () => {
-    setForm({ ...BLANK_FORM });
+    setForm({ ...BLANK_FORM, model: validModels[0] || 'gpt-4o-mini' });
+    setFormErrors({});
     setEditingId(null);
     setModalMode('create');
   };
@@ -111,15 +140,13 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
       output_language:      p.output_language,
       notes:                '',
     });
+    setFormErrors({});
     setEditingId(p.prompt_id);
     setModalMode('edit');
   };
 
   const handleSave = async () => {
-    if (!form.system_prompt.trim()) {
-      addToast('System prompt cannot be empty.', 'error');
-      return;
-    }
+    if (!validateForm()) return;
     setSaving(true);
     try {
       if (modalMode === 'create') {
@@ -144,19 +171,20 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
     }
   };
 
-  const handleActivate = async (promptId: string, promptCode: string) => {
-    setActivating(promptId);
+  const handleActivate = async (prompt: AIPrompt) => {
+    setActivating(prompt.prompt_id);
+    setConfirmActivate(null);
     try {
       const res = await apiService.post(
-        `${WEBHOOK_CONFIG.AI_PROMPTS_URL}/${promptId}/activate`,
+        `${WEBHOOK_CONFIG.AI_PROMPTS_URL}/${prompt.prompt_id}/activate`,
         {},
         auth.token!,
       );
       if (res?.success) {
-        addToast(`Activated — future scoring jobs for '${promptCode}' will use this version.`, 'success');
+        addToast(`'${prompt.prompt_code}' v${prompt.version} is now active — future scoring will use this prompt.`, 'success');
         setPrompts(prev => prev.map(p =>
-          p.prompt_code === promptCode
-            ? { ...p, is_active: p.prompt_id === promptId }
+          p.prompt_code === prompt.prompt_code
+            ? { ...p, is_active: p.prompt_id === prompt.prompt_id }
             : p
         ));
       }
@@ -169,6 +197,7 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
 
   const handleResetDefault = async (promptCode: string) => {
     setResetting(promptCode);
+    setConfirmReset(null);
     try {
       const res = await apiService.post(
         `${WEBHOOK_CONFIG.AI_PROMPTS_URL}/${promptCode}/reset-default`,
@@ -186,10 +215,21 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
     }
   };
 
-  const formatDate = (iso: string | null) => {
-    if (!iso) return '';
-    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  };
+  const formatDate = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+
+  const Field = ({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) => (
+    <div className="space-y-1.5">
+      <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{label}</label>
+      {children}
+      {error && <p className="text-[11px] text-error font-medium">{error}</p>}
+    </div>
+  );
+
+  const inputCls = (err?: string) =>
+    `w-full px-3 py-2 border rounded-lg text-sm bg-white outline-none transition-colors ${
+      err ? 'border-error focus:ring-2 focus:ring-error/20' : 'border-border focus:ring-2 focus:ring-primary/20 focus:border-primary'
+    }`;
 
   if (loading) {
     return (
@@ -211,19 +251,18 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
         <div>
           <p className="text-sm font-bold text-blue-800">Active prompts affect future scoring only</p>
           <p className="text-xs text-blue-700 mt-0.5 leading-relaxed">
-            Changing the active prompt does not re-score existing CVs. New scoring jobs submitted after activation
-            will use the new prompt. The pipeline falls back to hardcoded defaults if no active DB prompt exists for a code.
+            Changing the active prompt does not re-score existing CVs. New scoring jobs submitted after
+            activation will use the new prompt. The pipeline falls back to hardcoded defaults if no
+            active DB prompt exists for a code.
           </p>
         </div>
       </div>
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">
-            {prompts.length} prompt version{prompts.length !== 1 ? 's' : ''} across {allCodes.length} code{allCodes.length !== 1 ? 's' : ''}
-          </p>
-        </div>
+        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">
+          {prompts.length} version{prompts.length !== 1 ? 's' : ''} across {allCodes.length} code{allCodes.length !== 1 ? 's' : ''}
+        </p>
         <button onClick={openCreate}
           className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primaryDark transition-colors shadow-sm shadow-primary/20">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,24 +272,21 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
         </button>
       </div>
 
-      {/* Prompt code tabs */}
+      {/* Code filter tabs */}
       {allCodes.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setSelectedCode(null)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${selectedCode === null ? 'bg-primary text-white' : 'bg-white border border-border text-textMuted hover:text-textMain'}`}
-          >
+          <button onClick={() => setSelectedCode(null)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${selectedCode === null ? 'bg-primary text-white' : 'bg-white border border-border text-textMuted hover:text-textMain'}`}>
             All codes
           </button>
           {allCodes.map(code => {
             const active = grouped[code]?.find(p => p.is_active);
             return (
               <button key={code} onClick={() => setSelectedCode(selectedCode === code ? null : code)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${selectedCode === code ? 'bg-primary text-white' : 'bg-white border border-border text-textMuted hover:text-textMain'}`}
-              >
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${selectedCode === code ? 'bg-primary text-white' : 'bg-white border border-border text-textMuted hover:text-textMain'}`}>
                 <span className="font-mono">{code}</span>
-                {active && <span className="w-1.5 h-1.5 rounded-full bg-green-500" title="Has active version" />}
-                {!active && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="No active version — using hardcoded default" />}
+                <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-green-500' : 'bg-amber-400'}`}
+                  title={active ? 'Has active version' : 'No active version — using hardcoded default'} />
               </button>
             );
           })}
@@ -261,28 +297,34 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
       {(selectedCode ? [selectedCode] : allCodes).map(code => {
         const versions = grouped[code] || [];
         const hasDefault = KNOWN_CODES.includes(code);
+        const activeVersion = versions.find(p => p.is_active);
         return (
           <section key={code} className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
-            {/* Section header */}
-            <div className="px-8 py-5 border-b border-border bg-slate-50 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+            <div className="px-8 py-5 border-b border-border bg-slate-50 flex flex-col sm:flex-row sm:items-start gap-3 justify-between">
               <div>
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <p className="text-sm font-black text-textMain font-mono">{code}</p>
-                  {versions.find(p => p.is_active) ? (
-                    <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded text-[10px] font-black uppercase tracking-widest">Active version set</span>
+                  {activeVersion ? (
+                    <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded text-[10px] font-black uppercase tracking-widest">
+                      Active: v{activeVersion.version}
+                    </span>
                   ) : (
-                    <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-black uppercase tracking-widest">Using hardcoded default</span>
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-black uppercase tracking-widest">
+                      Using hardcoded default
+                    </span>
                   )}
                 </div>
-                <p className="text-xs text-textMuted">{versions.length} version{versions.length !== 1 ? 's' : ''}</p>
+                {PIPELINE_DESCRIPTIONS[code] && (
+                  <p className="text-xs text-textMuted">{PIPELINE_DESCRIPTIONS[code]}</p>
+                )}
+                <p className="text-[10px] text-textMuted mt-1">{versions.length} version{versions.length !== 1 ? 's' : ''}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 {hasDefault && (
                   <button
-                    onClick={() => handleResetDefault(code)}
+                    onClick={() => setConfirmReset(code)}
                     disabled={resetting === code}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-xs font-bold text-textMuted hover:bg-slate-100 transition-colors disabled:opacity-50"
-                  >
+                    className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-xs font-bold text-textMuted hover:bg-slate-100 transition-colors disabled:opacity-50">
                     {resetting === code
                       ? <div className="w-3 h-3 border-2 border-textMuted/30 border-t-textMuted rounded-full animate-spin" />
                       : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -293,13 +335,12 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
               </div>
             </div>
 
-            {/* Version rows */}
             {versions.length === 0 ? (
               <div className="px-8 py-10 text-center text-sm text-textMuted">No versions yet.</div>
             ) : (
               <div className="divide-y divide-border">
                 {versions.map(p => (
-                  <div key={p.prompt_id} className={`px-8 py-5 flex flex-col lg:flex-row lg:items-start gap-4 ${p.is_active ? 'bg-green-50/30' : ''}`}>
+                  <div key={p.prompt_id} className={`px-8 py-5 flex flex-col lg:flex-row lg:items-start gap-4 ${p.is_active ? 'bg-green-50/40' : ''}`}>
                     <div className="flex-1 min-w-0 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-bold text-textMain">{p.prompt_name}</span>
@@ -314,23 +355,22 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-4 text-[11px] text-textMuted flex-wrap">
-                        <span className="font-mono">{p.model}</span>
-                        <span>temp={p.temperature}</span>
-                        <span>max_tokens={p.max_tokens}</span>
-                        <span>lang={p.output_language}</span>
-                        {p.updated_by_email && <span>by {p.updated_by_email}</span>}
-                        {p.updated_at && <span>{formatDate(p.updated_at)}</span>}
+                      {/* Metadata row */}
+                      <div className="flex items-center gap-3 text-[11px] text-textMuted flex-wrap">
+                        <span className="font-mono font-semibold text-textMain">{p.model}</span>
+                        <span>temp <strong>{p.temperature}</strong></span>
+                        <span>max_tokens <strong>{p.max_tokens}</strong></span>
+                        <span>lang <strong>{p.output_language}</strong></span>
+                        {p.updated_by_email && <span>· {p.updated_by_email}</span>}
+                        {p.updated_at && <span>· {formatDate(p.updated_at)}</span>}
                       </div>
 
-                      {p.notes && (
-                        <p className="text-xs text-textMuted italic">{p.notes}</p>
-                      )}
+                      {p.notes && <p className="text-xs text-textMuted italic">{p.notes}</p>}
 
                       {/* System prompt preview */}
                       <div className="mt-2 bg-slate-50 border border-border rounded-lg p-3">
-                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">System Prompt (preview)</p>
-                        <p className="text-xs text-textMuted font-mono whitespace-pre-wrap leading-relaxed line-clamp-4 overflow-hidden">
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">System Prompt Preview</p>
+                        <p className="text-xs text-textMuted font-mono whitespace-pre-wrap leading-relaxed line-clamp-4">
                           {p.system_prompt.slice(0, 400)}{p.system_prompt.length > 400 ? '…' : ''}
                         </p>
                       </div>
@@ -347,10 +387,9 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
                       </button>
                       {!p.is_active && (
                         <button
-                          onClick={() => handleActivate(p.prompt_id, p.prompt_code)}
+                          onClick={() => setConfirmActivate(p)}
                           disabled={activating === p.prompt_id}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition-colors disabled:opacity-50"
-                        >
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition-colors disabled:opacity-50">
                           {activating === p.prompt_id
                             ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                             : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
@@ -380,6 +419,80 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
         </div>
       )}
 
+      {/* Activate confirmation modal */}
+      {confirmActivate && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 animate-fade-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-textMain">Activate Prompt Version</h3>
+                <p className="text-xs text-textMuted font-mono">{confirmActivate.prompt_code} · v{confirmActivate.version}</p>
+              </div>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-xs text-blue-700 leading-relaxed">
+              Activating <strong>{confirmActivate.prompt_name}</strong> (v{confirmActivate.version}) will
+              replace the current active version for <strong>{confirmActivate.prompt_code}</strong>.
+              All new CV scoring jobs submitted after activation will use this prompt.
+              Existing evaluations are not affected.
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs text-textMuted bg-slate-50 rounded-lg p-3 mb-5">
+              <div><span className="font-bold">Model:</span> {confirmActivate.model}</div>
+              <div><span className="font-bold">Temperature:</span> {confirmActivate.temperature}</div>
+              <div><span className="font-bold">Max tokens:</span> {confirmActivate.max_tokens}</div>
+              <div><span className="font-bold">Language:</span> {confirmActivate.output_language}</div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmActivate(null)}
+                className="px-5 py-2 rounded-xl text-sm font-bold text-textMuted hover:text-textMain transition-colors">
+                Cancel
+              </button>
+              <button onClick={() => handleActivate(confirmActivate)}
+                className="px-6 py-2 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-colors">
+                Activate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset to default confirmation modal */}
+      {confirmReset && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 animate-fade-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-textMain">Reset to Default</h3>
+                <p className="text-xs font-mono text-textMuted">{confirmReset}</p>
+              </div>
+            </div>
+            <p className="text-xs text-textMuted mb-6 leading-relaxed">
+              This will create a new version of <strong>{confirmReset}</strong> from the hardcoded default
+              and immediately activate it. Your custom versions will be preserved in history.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmReset(null)}
+                className="px-5 py-2 rounded-xl text-sm font-bold text-textMuted hover:text-textMain transition-colors">
+                Cancel
+              </button>
+              <button onClick={() => handleResetDefault(confirmReset)}
+                className="px-6 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primaryDark transition-colors">
+                Reset & Activate Default
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Create / Edit modal */}
       {modalMode && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -396,117 +509,95 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
             </div>
 
             <div className="px-8 py-6 space-y-5 max-h-[70vh] overflow-y-auto">
-              {/* Warning */}
               <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">
-                Changes here affect <strong>future scoring jobs only</strong>. Existing evaluations are not re-run.
-                New versions start as inactive — you must explicitly activate them.
+                Changes affect <strong>future scoring jobs only</strong>. New versions start as inactive — activate explicitly.
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Prompt Code *</label>
-                  <input
-                    type="text" placeholder="e.g. criteria_extraction"
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                <Field label="Prompt Code *" error={formErrors.prompt_code}>
+                  <input type="text" placeholder="e.g. criteria_extraction"
+                    className={`${inputCls(formErrors.prompt_code)} font-mono`}
                     value={form.prompt_code}
                     onChange={e => setForm(f => ({ ...f, prompt_code: e.target.value }))}
                     readOnly={modalMode === 'edit'}
                   />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Display Name *</label>
-                  <input
-                    type="text" placeholder="e.g. Job Criteria Extraction"
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                </Field>
+                <Field label="Display Name *" error={formErrors.prompt_name}>
+                  <input type="text" placeholder="e.g. Job Criteria Extraction"
+                    className={inputCls(formErrors.prompt_name)}
                     value={form.prompt_name}
                     onChange={e => setForm(f => ({ ...f, prompt_name: e.target.value }))}
                   />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Category</label>
-                  <select
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                </Field>
+                <Field label="Category">
+                  <select className={inputCls()}
                     value={form.prompt_category}
-                    onChange={e => setForm(f => ({ ...f, prompt_category: e.target.value as PromptCategory }))}
-                  >
+                    onChange={e => setForm(f => ({ ...f, prompt_category: e.target.value as PromptCategory }))}>
                     {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
                       <option key={k} value={k}>{v}</option>
                     ))}
                   </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Model</label>
-                  <input
-                    type="text" placeholder="gpt-4o-mini"
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                </Field>
+                <Field label="Model">
+                  <select className={inputCls()}
                     value={form.model}
-                    onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Temperature (0–2)</label>
-                  <input
-                    type="number" min="0" max="2" step="0.05"
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                    onChange={e => setForm(f => ({ ...f, model: e.target.value }))}>
+                    {validModels.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </Field>
+                <Field label="Temperature (0–2)" error={formErrors.temperature}>
+                  <input type="number" min="0" max="2" step="0.05"
+                    className={inputCls(formErrors.temperature)}
                     value={form.temperature}
                     onChange={e => setForm(f => ({ ...f, temperature: parseFloat(e.target.value) || 0 }))}
                   />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Max Tokens</label>
-                  <input
-                    type="number" min="1" max="32000"
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                </Field>
+                <Field label="Max Tokens" error={formErrors.max_tokens}>
+                  <input type="number" min="1" max="32000"
+                    className={inputCls(formErrors.max_tokens)}
                     value={form.max_tokens}
                     onChange={e => setForm(f => ({ ...f, max_tokens: parseInt(e.target.value) || 1000 }))}
                   />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Output Language</label>
-                  <select
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                </Field>
+                <Field label="Output Language">
+                  <select className={inputCls()}
                     value={form.output_language}
-                    onChange={e => setForm(f => ({ ...f, output_language: e.target.value }))}
-                  >
-                    <option value="ar">Arabic (ar)</option>
-                    <option value="en">English (en)</option>
-                    <option value="auto">Auto-detect</option>
+                    onChange={e => setForm(f => ({ ...f, output_language: e.target.value }))}>
+                    {validLanguages.map(l => (
+                      <option key={l} value={l}>
+                        {l === 'ar' ? 'Arabic (ar)' : l === 'en' ? 'English (en)' : 'Auto-detect (auto)'}
+                      </option>
+                    ))}
                   </select>
-                </div>
+                </Field>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">System Prompt *</label>
-                <textarea
-                  rows={12}
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-y"
+              <Field label="System Prompt *" error={formErrors.system_prompt}>
+                <textarea rows={12}
+                  className={`${inputCls(formErrors.system_prompt)} font-mono resize-y`}
                   placeholder="Enter the system prompt…"
                   value={form.system_prompt}
                   onChange={e => setForm(f => ({ ...f, system_prompt: e.target.value }))}
                 />
                 <p className="text-[10px] text-textMuted">{form.system_prompt.length.toLocaleString()} characters</p>
-              </div>
+              </Field>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">User Prompt Template (optional)</label>
-                <textarea
-                  rows={4}
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-y"
+              <Field label="User Prompt Template (optional)">
+                <textarea rows={4}
+                  className={`${inputCls()} font-mono resize-y`}
                   placeholder="Optional template with {variable} placeholders…"
                   value={form.user_prompt_template}
                   onChange={e => setForm(f => ({ ...f, user_prompt_template: e.target.value }))}
                 />
-              </div>
+              </Field>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Change Notes</label>
-                <input
-                  type="text" placeholder="What changed in this version?"
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              <Field label="Change Notes">
+                <input type="text" placeholder="What changed in this version?"
+                  className={inputCls()}
                   value={form.notes}
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                 />
-              </div>
+              </Field>
             </div>
 
             <div className="px-8 py-5 border-t border-border flex justify-end gap-3 bg-slate-50/50">
@@ -514,7 +605,7 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
                 className="px-5 py-2 rounded-xl text-sm font-bold text-textMuted hover:text-textMain transition-colors disabled:opacity-50">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving || !form.system_prompt.trim() || !form.prompt_code.trim()}
+              <button onClick={handleSave} disabled={saving}
                 className="px-8 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primaryDark transition-colors flex items-center gap-2 disabled:opacity-50">
                 {saving && <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
                 {saving ? 'Saving…' : modalMode === 'create' ? 'Create Version' : 'Save Changes'}
