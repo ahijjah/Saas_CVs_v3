@@ -133,6 +133,67 @@ REQUIRED FIELD RULES:
 """
 
 
+# ── Level 2: Lightweight binary screening ─────────────────────────────────────
+
+LEVEL2_SYSTEM_PROMPT = """\
+أنت مساعد فرز مبدئي سريع للسير الذاتية.
+You are a fast CV pre-screener performing a binary qualification check.
+
+TASK: Decide whether this candidate meets the MINIMUM BAR for the role.
+The CV excerpt and job requirements are provided. Do NOT do detailed scoring.
+
+PASS: Candidate has enough relevant background to warrant full evaluation.
+REJECT: Candidate clearly lacks minimum qualifications (wrong field, zero relevant experience, etc.).
+
+Be strict but fair. Default to PASS when uncertain — a REJECT here saves a full scoring call.
+
+OUTPUT: Valid JSON only — no markdown, no explanation.
+{"decision": "PASS" | "REJECT", "reason": "<one sentence in English>"}
+"""
+
+
+async def lightweight_screen_cv(
+    cv_text: str,
+    job_title: str,
+    required_skills: list[str],
+) -> dict[str, str]:
+    """Level 2 lightweight binary screen (PASS/REJECT). Costs ~10x less than full scoring.
+
+    Defaults to PASS on any error to avoid false rejections.
+    """
+    client = _get_client()
+
+    skills_str = ", ".join(required_skills[:12]) if required_skills else "not specified"
+    cv_excerpt = cv_text[:2500]
+
+    user_prompt = (
+        f"Job Title: {job_title}\n"
+        f"Key Requirements: {skills_str}\n\n"
+        f"CV Excerpt:\n{cv_excerpt}"
+    )
+
+    try:
+        response = await client.chat.completions.create(
+            model=settings.openai_model,
+            messages=[
+                {"role": "system", "content": LEVEL2_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.1,
+            max_tokens=120,
+            response_format={"type": "json_object"},
+        )
+        raw = response.choices[0].message.content
+        result = json.loads(raw)
+        result.setdefault("decision", "PASS")
+        result.setdefault("reason", "")
+        return result
+    except Exception as exc:
+        logger.error("Level 2 lightweight screening failed: %s", exc)
+        # Default to PASS — never discard a candidate due to our own error
+        return {"decision": "PASS", "reason": "Screening error — proceeding to full evaluation"}
+
+
 async def extract_job_criteria(job_description: str) -> dict[str, Any]:
     """
     Call OpenAI to extract structured hiring criteria from a job description.

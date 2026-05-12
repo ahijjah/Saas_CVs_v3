@@ -259,6 +259,8 @@ async def list_uploaded_cvs(
                 a.candidate_name,
                 a.processing_status,
                 a.decision,
+                a.evaluation_stage,
+                a.evaluation_exit_reason,
                 s.final_score,
                 a.applied_at,
                 af.original_name
@@ -272,14 +274,25 @@ async def list_uploaded_cvs(
         """),
         {"jid": job_id, "tid": current_user.tenant_id},
     )
+
+    _stage_labels = {
+        1: "Level 1 — Local Pre-screening",
+        2: "Level 2 — Lightweight AI Evaluation",
+        3: "Level 3 — Full AI Scoring",
+    }
+
     uploads = []
     for r in rows.mappings():
+        stage = r["evaluation_stage"]
         uploads.append({
-            "application_id": str(r["application_id"]),
-            "candidate_name": r["candidate_name"],
-            "processing_status": r["processing_status"],
-            "decision": r["decision"],
-            "score": float(r["final_score"]) if r["final_score"] is not None else None,
+            "application_id":        str(r["application_id"]),
+            "candidate_name":        r["candidate_name"],
+            "processing_status":     r["processing_status"],
+            "decision":              r["decision"],
+            "evaluation_stage":      stage,
+            "evaluation_stage_label": _stage_labels.get(stage) if stage else None,
+            "evaluation_exit_reason": r["evaluation_exit_reason"],
+            "score":       float(r["final_score"]) if r["final_score"] is not None else None,
             "uploaded_at": r["applied_at"].isoformat() if r["applied_at"] else None,
             "original_filename": r["original_name"],
         })

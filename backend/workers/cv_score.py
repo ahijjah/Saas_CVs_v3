@@ -1,14 +1,21 @@
 """
-Celery task: score a CV against job criteria using the full intelligence pipeline.
+Celery task: score a CV through the 3-level evaluation pipeline.
 
 Pipeline:
   1. File read + DOCX→PDF conversion
   2. PDF text extraction (PyMuPDF)
-  3. Local Gatekeeper (semantic similarity + bilingual skill matching)
-     → If score < threshold: mark 'low_match', skip LLM (cost saving)
-  4. OpenAI GPT-4o-mini bilingual scoring (only if Gatekeeper passes)
-  5. Write application_scores + update applications table
-  6. Send confirmation email to candidate
+  3. Level 1 — Local Gatekeeper (semantic similarity + bilingual skill matching)
+     → Below threshold: mark 'low_match', evaluation_stage=1, skip LLM (cost saving)
+  4. Level 2 — Lightweight LLM binary screen (PASS/REJECT, ~10x cheaper than full)
+     → REJECT: mark 'rejected', evaluation_stage=2, skip full scoring
+  5. Level 3 — Full LLM scoring (GPT-4o-mini bilingual)
+     → Produces final score, decision, strengths, gaps, candidate name
+  6. Write application_scores + update applications table
+  7. Send confirmation email to candidate
+
+evaluation_stage in the applications table is updated after each level so the
+frontend can show live progress during polling (Level 1→2→3 transitions visible
+within the 3-second polling interval).
 """
 import asyncio
 import json
@@ -30,7 +37,7 @@ def score_cv_task(
     mime_type: str,
     scoring_overrides: dict | None = None,
 ):
-    """Score a CV file through the full Gatekeeper → LLM pipeline."""
+    """Score a CV file through the 3-level evaluation pipeline."""
     try:
         asyncio.run(_score_cv_async(
             application_id, job_id, tenant_id, file_path, mime_type,
@@ -54,7 +61,12 @@ async def _score_cv_async(
 ) -> None:
     from config import get_settings
     from database import AsyncSessionLocal, set_rls_context
-    from services.ai_service import compute_final_score, determine_decision, score_cv
+    from services.ai_service import (
+        compute_final_score,
+        determine_decision,
+        lightweight_screen_cv,
+        score_cv,
+    )
     from services.docx_service import convert_docx_to_pdf
     from services.email_service import send_cv_received_email
     from services.local_processor import run_gatekeeper
@@ -108,10 +120,8 @@ async def _score_cv_async(
         if not criteria:
             raise RuntimeError(f"No criteria found for job {job_id}")
 
-        # Load dynamic prompt config (weights, strictness, gatekeeper settings)
         prompt_cfg = await load_prompt_config(db, tenant_id, job_id, overrides=scoring_overrides)
 
-        # Merge AI criteria weights with prompt_cfg weights if overrides supplied
         weights = {
             "weight_skills":           prompt_cfg.weights.get("weight_skills", criteria["weight_skills"]),
             "weight_experience":       prompt_cfg.weights.get("weight_experience", criteria["weight_experience"]),
@@ -124,7 +134,9 @@ async def _score_cv_async(
 
         required_skills = list(criteria.get("skills") or []) + list(criteria.get("certifications") or [])
 
-        # ── Step 4: Gatekeeper (local pre-filter) ─────────────────────────────
+        # ════════════════════════════════════════════════════════════════════════
+        # LEVEL 1 — Local Gatekeeper (free, no LLM call)
+        # ════════════════════════════════════════════════════════════════════════
         gatekeeper_result = run_gatekeeper(
             cv_text=raw_cv_text,
             job_description=criteria["job_description"],
@@ -133,16 +145,9 @@ async def _score_cv_async(
             skill_threshold=cfg.gatekeeper_skill_fuzzy_threshold,
         )
 
-        # Persist Gatekeeper results regardless of outcome
-        await db.execute(
-            text("UPDATE applications SET gatekeeper_passed = :gp WHERE application_id = :aid"),
-            {"gp": gatekeeper_result.gatekeeper_passed, "aid": application_id},
-        )
-
         if prompt_cfg.gatekeeper_enabled and not gatekeeper_result.gatekeeper_passed:
-            # ── Short-circuit: mark low_match, skip LLM ───────────────────────
             logger.info(
-                "Gatekeeper REJECTED application %s — similarity=%.1f%% threshold=%.0f%%",
+                "Level 1 REJECTED application %s — similarity=%.1f%% threshold=%.0f%%",
                 application_id,
                 gatekeeper_result.semantic_similarity_pct,
                 prompt_cfg.gatekeeper_threshold * 100,
@@ -151,15 +156,16 @@ async def _score_cv_async(
             await db.execute(
                 text("""
                     UPDATE applications SET
-                        processing_status = 'low_match',
-                        decision = 'low_match',
-                        scored_at = now()
+                        gatekeeper_passed    = false,
+                        evaluation_stage     = 1,
+                        evaluation_exit_reason = :reason,
+                        processing_status   = 'low_match',
+                        decision            = 'low_match',
+                        scored_at           = now()
                     WHERE application_id = :aid
                 """),
-                {"aid": application_id},
+                {"reason": gatekeeper_result.rejection_reason, "aid": application_id},
             )
-
-            # Store lightweight score record (no AI fields)
             await db.execute(
                 text("""
                     INSERT INTO application_scores (
@@ -183,37 +189,121 @@ async def _score_cv_async(
                     )
                 """),
                 {
-                    "aid": application_id,
-                    "weights": json.dumps(weights),
-                    "sim": gatekeeper_result.semantic_similarity_pct,
+                    "aid":        application_id,
+                    "weights":    json.dumps(weights),
+                    "sim":        gatekeeper_result.semantic_similarity_pct,
                     "skill_ratio": gatekeeper_result.skill_match_ratio,
-                    "matched": gatekeeper_result.matched_skills,
-                    "missing": gatekeeper_result.missing_skills,
-                    "cv_lang": gatekeeper_result.cv_language,
-                    "notes": gatekeeper_result.rejection_reason,
-                    "reasoning": json.dumps({"gatekeeper": gatekeeper_result.rejection_reason}),
+                    "matched":    gatekeeper_result.matched_skills,
+                    "missing":    gatekeeper_result.missing_skills,
+                    "cv_lang":    gatekeeper_result.cv_language,
+                    "notes":      gatekeeper_result.rejection_reason,
+                    "reasoning":  json.dumps({"level1_gatekeeper": gatekeeper_result.rejection_reason}),
                 },
             )
             await db.commit()
             return
 
-        # ── Step 5: LLM scoring (Gatekeeper passed) ───────────────────────────
+        # Level 1 passed — persist gatekeeper data + stage so frontend shows progress
+        await db.execute(
+            text("""
+                UPDATE applications SET
+                    gatekeeper_passed = true,
+                    evaluation_stage  = 1
+                WHERE application_id = :aid
+            """),
+            {"aid": application_id},
+        )
+        await db.commit()  # also commits extracted_text update from Step 2
+
+        # ════════════════════════════════════════════════════════════════════════
+        # LEVEL 2 — Lightweight LLM binary screen (cheap: short prompt, 120 tokens)
+        # ════════════════════════════════════════════════════════════════════════
+        level2 = await lightweight_screen_cv(
+            cv_text=gatekeeper_result.cleaned_cv_text,
+            job_title=criteria["job_title"],
+            required_skills=required_skills,
+        )
+
+        if level2["decision"] == "REJECT":
+            logger.info(
+                "Level 2 REJECTED application %s — %s",
+                application_id, level2["reason"],
+            )
+
+            await db.execute(
+                text("""
+                    UPDATE applications SET
+                        evaluation_stage       = 2,
+                        evaluation_exit_reason = :reason,
+                        processing_status      = 'scored',
+                        decision               = 'rejected',
+                        scored_at              = now()
+                    WHERE application_id = :aid
+                """),
+                {"reason": level2["reason"], "aid": application_id},
+            )
+            await db.execute(
+                text("""
+                    INSERT INTO application_scores (
+                        application_id,
+                        score_skills, score_experience, score_education,
+                        score_certifications, score_soft_skills,
+                        score_domain_knowledge, score_other,
+                        final_score, weights_snapshot, ai_model,
+                        local_similarity_score, skill_match_ratio,
+                        matched_skills, missing_skills,
+                        cv_language, gatekeeper_passed,
+                        evaluation_notes, reasoning
+                    ) VALUES (
+                        :aid,
+                        0, 0, 0, 0, 0, 0, 0,
+                        0, :weights, 'lightweight_screener',
+                        :sim, :skill_ratio,
+                        :matched, :missing,
+                        :cv_lang, true,
+                        :notes, :reasoning
+                    )
+                """),
+                {
+                    "aid":        application_id,
+                    "weights":    json.dumps(weights),
+                    "sim":        gatekeeper_result.semantic_similarity_pct,
+                    "skill_ratio": gatekeeper_result.skill_match_ratio,
+                    "matched":    gatekeeper_result.matched_skills,
+                    "missing":    gatekeeper_result.missing_skills,
+                    "cv_lang":    gatekeeper_result.cv_language,
+                    "notes":      level2["reason"],
+                    "reasoning":  json.dumps({"level2_screen": level2["reason"]}),
+                },
+            )
+            await db.commit()
+            return
+
+        # Level 2 passed — update stage so frontend shows "Level 3: Full scoring..."
+        await db.execute(
+            text("UPDATE applications SET evaluation_stage = 2 WHERE application_id = :aid"),
+            {"aid": application_id},
+        )
+        await db.commit()
+
+        # ════════════════════════════════════════════════════════════════════════
+        # LEVEL 3 — Full LLM scoring (complete evaluation)
+        # ════════════════════════════════════════════════════════════════════════
         criteria_dict = {
-            "skills":              criteria["skills"],
-            "experience":          criteria["experience"],
-            "education":           criteria["education"],
-            "certifications":      criteria["certifications"],
-            "soft_skills":         criteria["soft_skills"],
-            "domain_knowledge":    criteria["domain_knowledge"],
-            "other_requirements":  criteria["other_requirements"],
+            "skills":             criteria["skills"],
+            "experience":         criteria["experience"],
+            "education":          criteria["education"],
+            "certifications":     criteria["certifications"],
+            "soft_skills":        criteria["soft_skills"],
+            "domain_knowledge":   criteria["domain_knowledge"],
+            "other_requirements": criteria["other_requirements"],
             **weights,
         }
 
-        # Pass gatekeeper context to AI as a hint (not a constraint)
         gatekeeper_context = {
             "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
-            "matched_skills": gatekeeper_result.matched_skills,
-            "missing_skills": gatekeeper_result.missing_skills,
+            "matched_skills":          gatekeeper_result.matched_skills,
+            "missing_skills":          gatekeeper_result.missing_skills,
         }
 
         ai_result = await score_cv(
@@ -224,12 +314,10 @@ async def _score_cv_async(
             gatekeeper_context=gatekeeper_context,
         )
 
-        # ── Step 6: Compute final score + decision ────────────────────────────
         final_score = compute_final_score(ai_result, weights)
         q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
         decision = determine_decision(final_score, q_thresh, p_thresh)
 
-        # Update candidate_name from AI extraction if provided (overrides filename-derived name)
         extracted_name = (ai_result.get("candidate_name") or "").strip()
         if extracted_name:
             await db.execute(
@@ -237,7 +325,6 @@ async def _score_cv_async(
                 {"name": extracted_name, "aid": application_id},
             )
 
-        # ── Step 7: Write scores ──────────────────────────────────────────────
         await db.execute(
             text("""
                 INSERT INTO application_scores (
@@ -265,41 +352,42 @@ async def _score_cv_async(
                 )
             """),
             {
-                "aid": application_id,
-                "s_skills": ai_result.get("score_skills", 0),
-                "s_exp":    ai_result.get("score_experience", 0),
-                "s_edu":    ai_result.get("score_education", 0),
-                "s_cert":   ai_result.get("score_certifications", 0),
-                "s_soft":   ai_result.get("score_soft_skills", 0),
-                "s_domain": ai_result.get("score_domain_knowledge", 0),
-                "s_other":  ai_result.get("score_other", 0),
-                "final":    final_score,
-                "weights":  json.dumps(weights),
-                "model":    cfg.openai_model,
-                "strengths":  ai_result.get("strengths", []),
-                "gaps":       ai_result.get("gaps_identified", []),
-                "red_flags":  ai_result.get("red_flags", []),
-                "notes":      ai_result.get("evaluation_notes"),
-                "questions":  ai_result.get("interview_questions", []),
-                "reasoning":  json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
-                "raw":        json.dumps(ai_result, ensure_ascii=False),
-                "sim":        gatekeeper_result.semantic_similarity_pct,
+                "aid":       application_id,
+                "s_skills":  ai_result.get("score_skills", 0),
+                "s_exp":     ai_result.get("score_experience", 0),
+                "s_edu":     ai_result.get("score_education", 0),
+                "s_cert":    ai_result.get("score_certifications", 0),
+                "s_soft":    ai_result.get("score_soft_skills", 0),
+                "s_domain":  ai_result.get("score_domain_knowledge", 0),
+                "s_other":   ai_result.get("score_other", 0),
+                "final":     final_score,
+                "weights":   json.dumps(weights),
+                "model":     cfg.openai_model,
+                "strengths": ai_result.get("strengths", []),
+                "gaps":      ai_result.get("gaps_identified", []),
+                "red_flags": ai_result.get("red_flags", []),
+                "notes":     ai_result.get("evaluation_notes"),
+                "questions": ai_result.get("interview_questions", []),
+                "reasoning": json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
+                "raw":       json.dumps(ai_result, ensure_ascii=False),
+                "sim":       gatekeeper_result.semantic_similarity_pct,
                 "skill_ratio": gatekeeper_result.skill_match_ratio,
-                "matched":    gatekeeper_result.matched_skills,
-                "missing":    gatekeeper_result.missing_skills,
-                "cv_lang":    gatekeeper_result.cv_language,
-                "gk_passed":  gatekeeper_result.gatekeeper_passed,
+                "matched":   gatekeeper_result.matched_skills,
+                "missing":   gatekeeper_result.missing_skills,
+                "cv_lang":   gatekeeper_result.cv_language,
+                "gk_passed": gatekeeper_result.gatekeeper_passed,
             },
         )
 
         await db.execute(
             text("""
                 UPDATE applications SET
-                    decision = :decision,
-                    processing_status = 'scored',
+                    decision                = :decision,
+                    processing_status       = 'scored',
+                    evaluation_stage        = 3,
                     qualified_threshold_used = :qt,
-                    partial_threshold_used = :pt,
-                    scored_at = now()
+                    partial_threshold_used  = :pt,
+                    scored_at               = now()
                 WHERE application_id = :aid
             """),
             {"decision": decision, "qt": q_thresh, "pt": p_thresh, "aid": application_id},
@@ -307,7 +395,7 @@ async def _score_cv_async(
         await db.commit()
 
         logger.info(
-            "Scored application %s | lang=%s | sim=%.1f%% | final=%.2f | decision=%s",
+            "Level 3 SCORED application %s | lang=%s | sim=%.1f%% | final=%.2f | decision=%s",
             application_id,
             gatekeeper_result.cv_language,
             gatekeeper_result.semantic_similarity_pct,
@@ -315,7 +403,7 @@ async def _score_cv_async(
             decision,
         )
 
-        # ── Step 8: Send confirmation email ───────────────────────────────────
+        # ── Confirmation email ─────────────────────────────────────────────────
         app_row = await db.execute(
             text("SELECT candidate_email, candidate_name FROM applications WHERE application_id = :aid"),
             {"aid": application_id},

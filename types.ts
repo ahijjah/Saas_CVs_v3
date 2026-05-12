@@ -206,6 +206,9 @@ export interface UploadedCV {
   candidate_name: string;
   processing_status: 'pending' | 'queued' | 'processing' | 'scored' | 'low_match' | 'failed';
   decision: string | null;
+  evaluation_stage: 1 | 2 | 3 | null;
+  evaluation_stage_label: string | null;
+  evaluation_exit_reason: string | null;
   score: number | null;
   uploaded_at: string | null;
   original_filename: string | null;
