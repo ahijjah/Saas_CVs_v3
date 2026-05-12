@@ -24,6 +24,7 @@ export const WEBHOOK_CONFIG = {
   CV_UPLOAD_URL:             `${API_BASE}/applications/upload`,
   UPLOADED_CVS_URL:          `${API_BASE}/applications/uploaded`,
   SCORE_PENDING_URL:         `${API_BASE}/applications/score-pending`,
+  DELETE_APPLICATION_URL:    `${API_BASE}/applications`,
   ADMIN_CREATE_TENANT_URL:   `${API_BASE}/admin/tenants`,
   ADMIN_CREATE_USER_URL:     `${API_BASE}/admin/users`,
   // CV receiving ingestion settings (append /{job_id}/ingestion)

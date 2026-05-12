@@ -23,6 +23,7 @@ class ScorePendingRequest(BaseModel):
 ALLOWED_MIME_TYPES = {
     "application/pdf": "pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/msword": "doc",
 }
 
 
@@ -342,6 +343,61 @@ async def score_pending_uploads(
         count += 1
 
     return {"success": True, "queued": count, "message": f"Queued scoring for {count} CV(s)"}
+
+
+@router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_uploaded_cv(
+    application_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Delete a manually uploaded CV and its associated records. Tenant-isolated."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    # Verify the application exists, belongs to this tenant, and is a manual upload
+    row = await db.execute(
+        text("""
+            SELECT a.application_id
+            FROM applications a
+            WHERE a.application_id = :aid
+              AND a.tenant_id = :tid
+              AND a.submission_source = 'manual_upload'
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    if not row.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    # Fetch file path before deleting records
+    file_row = await db.execute(
+        text("SELECT file_path FROM application_files WHERE application_id = :aid AND tenant_id = :tid"),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    file_record = file_row.mappings().first()
+
+    # Delete child records then parent
+    await db.execute(
+        text("DELETE FROM application_scores WHERE application_id = :aid"),
+        {"aid": application_id},
+    )
+    await db.execute(
+        text("DELETE FROM application_files WHERE application_id = :aid AND tenant_id = :tid"),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    await db.execute(
+        text("DELETE FROM applications WHERE application_id = :aid AND tenant_id = :tid"),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    await db.commit()
+
+    # Remove physical file from disk (best-effort)
+    if file_record and file_record["file_path"]:
+        try:
+            full_path = Path(settings.files_base_path) / file_record["file_path"]
+            if full_path.exists():
+                full_path.unlink()
+        except OSError:
+            pass
 
 
 # Import here to avoid circular import

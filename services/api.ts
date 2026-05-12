@@ -112,6 +112,14 @@ export const apiService = {
     return handleResponse(response);
   },
 
+  async delete(url: string, token?: string) {
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    const activeToken = token || localStorage.getItem(TOKEN_KEY);
+    if (activeToken) headers['Authorization'] = `Bearer ${activeToken}`;
+    const response = await fetch(url, { method: 'DELETE', headers });
+    return handleResponse(response);
+  },
+
   async requestPasswordReset(email: string) {
     return this.post(WEBHOOK_CONFIG.FORGOT_PASSWORD_WEBHOOK_URL, { email });
   }

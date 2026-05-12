@@ -62,15 +62,17 @@ const T = {
     disabled: 'Disabled',
     recommended: 'Recommended',
     manualUploadTitle: 'Manual CV Upload',
-    manualUploadDesc: 'For internal or recruiter use. Upload PDF or DOCX files directly to this job.',
+    manualUploadDesc: 'For internal or recruiter use. Upload PDF, DOC, or DOCX files directly to this job.',
     uploadBtn: 'Upload CVs',
     uploadingBtn: 'Uploading...',
-    chooseFiles: 'Choose files (PDF / DOCX)',
+    chooseFiles: 'Choose files (PDF / DOC / DOCX)',
     uploadedCVsTitle: 'Uploaded CVs',
     noUploads: 'No CVs uploaded yet.',
     scoreBtnLabel: 'Score uploaded CVs',
     scoringBtnLabel: 'Scoring...',
-    progressLabel: '{scored} of {total} scored',
+    progressLabel: '{scored} of {total} CVs processed — {pct}%',
+    deleteCV: 'Delete',
+    deletingCV: 'Deleting...',
     statusPending: 'Queued',
     statusProcessing: 'Scoring...',
     statusScored: 'Scored',
@@ -129,15 +131,17 @@ const T = {
     disabled: 'معطّل',
     recommended: 'مُوصى به',
     manualUploadTitle: 'رفع السيرة الذاتية يدوياً',
-    manualUploadDesc: 'للاستخدام الداخلي أو من قِبل المسؤولين عن التوظيف. ارفع ملفات PDF أو DOCX مباشرةً.',
+    manualUploadDesc: 'للاستخدام الداخلي أو من قِبل المسؤولين عن التوظيف. ارفع ملفات PDF أو DOC أو DOCX مباشرةً.',
     uploadBtn: 'رفع السير الذاتية',
     uploadingBtn: 'جارٍ الرفع...',
-    chooseFiles: 'اختر ملفات (PDF / DOCX)',
+    chooseFiles: 'اختر ملفات (PDF / DOC / DOCX)',
     uploadedCVsTitle: 'السير الذاتية المرفوعة',
     noUploads: 'لم يتم رفع أي سيرة ذاتية بعد.',
     scoreBtnLabel: 'تقييم السير الذاتية المرفوعة',
     scoringBtnLabel: 'جارٍ التقييم...',
-    progressLabel: '{scored} من {total} تم تقييمها',
+    progressLabel: '{scored} من {total} تمت معالجتها — {pct}%',
+    deleteCV: 'حذف',
+    deletingCV: 'جارٍ الحذف...',
     statusPending: 'في الانتظار',
     statusProcessing: 'جارٍ التقييم...',
     statusScored: 'تم التقييم',
@@ -160,6 +164,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [descExpanded, setDescExpanded] = useState(false);
   const [copiedAlias, setCopiedAlias] = useState(false);
   const [copiedJobRef, setCopiedJobRef] = useState(false);
+  const [copiedFwdEmail, setCopiedFwdEmail] = useState(false);
   const [togglingFwd, setTogglingFwd] = useState(false);
   const [togglingAlias, setTogglingAlias] = useState(false);
   const [editingWeights, setEditingWeights] = useState(false);
@@ -175,6 +180,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [loadingUploads, setLoadingUploads] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [scoring, setScoring] = useState(false);
+  const [deletingCVId, setDeletingCVId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Initial job details fetch ───────────────────────────────────────────────
@@ -455,6 +461,19 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     }
   }, [jobId, auth.token, addToast, fetchUploadedCVs]);
 
+  const handleDeleteCV = useCallback(async (applicationId: string) => {
+    setDeletingCVId(applicationId);
+    try {
+      await apiService.delete(`${WEBHOOK_CONFIG.DELETE_APPLICATION_URL}/${applicationId}`, auth.token!);
+      setUploadedCVs(prev => prev.filter(cv => cv.application_id !== applicationId));
+      addToast('CV deleted.', 'success');
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to delete CV.', 'error');
+    } finally {
+      setDeletingCVId(null);
+    }
+  }, [auth.token, addToast]);
+
   // ── Derived values ─────────────────────────────────────────────────────────
 
   if (loading) {
@@ -577,7 +596,15 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               </div>
               <div>
                 <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option1ForwardTo}</p>
-                <code className="text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 block text-primary">{details.forwarding_email || 'jobs@ai970.cloud'}</code>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 text-primary truncate">{details.forwarding_email || 'jobs@ai970.cloud'}</code>
+                  <button
+                    onClick={() => handleCopy(details.forwarding_email || 'jobs@ai970.cloud', setCopiedFwdEmail)}
+                    className="shrink-0 px-3 py-1.5 bg-primary text-white text-[10px] font-black rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    {copiedFwdEmail ? t.copied : t.copyBtn}
+                  </button>
+                </div>
               </div>
               <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.forwarding_enabled ? 'text-success' : 'text-textMuted'}`}>
                 {details.forwarding_enabled ? `● ${t.enabled}` : `○ ${t.disabled}`}
@@ -669,22 +696,22 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 className="hidden"
                 id="cv-file-input"
                 onChange={e => { if (e.target.files?.length) handleUpload(e.target.files); }}
               />
               <label
                 htmlFor="cv-file-input"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-[11px] font-black text-indigo-700 rounded-xl cursor-pointer hover:bg-indigo-50 transition-colors"
+                className={`inline-flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-[11px] font-black text-indigo-700 rounded-xl transition-colors ${uploading || !!deletingCVId ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer hover:bg-indigo-50'}`}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                 {t.chooseFiles}
               </label>
               <button
-                disabled={uploading}
+                disabled={uploading || !!deletingCVId}
                 onClick={() => fileInputRef.current?.click()}
-                className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${uploading ? 'bg-indigo-300 text-white cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${uploading || !!deletingCVId ? 'bg-indigo-300 text-white cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
               >
                 {uploading ? (
                   <>
@@ -715,7 +742,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   </p>
                   {cvsTotal > 0 && (
                     <p className="text-[10px] font-bold text-indigo-600">
-                      {t.progressLabel.replace('{scored}', String(cvsScoredCount)).replace('{total}', String(cvsTotal))}
+                      {t.progressLabel
+                        .replace('{scored}', String(cvsScoredCount))
+                        .replace('{total}', String(cvsTotal))
+                        .replace('{pct}', String(Math.round((cvsScoredCount / cvsTotal) * 100)))}
                     </p>
                   )}
                 </div>
@@ -734,6 +764,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
                   {uploadedCVs.map(cv => {
                     const st = cvStatusDisplay(cv);
+                    const isDeleting = deletingCVId === cv.application_id;
                     return (
                       <div key={cv.application_id} className="flex items-center gap-3 bg-white rounded-xl border border-indigo-100 px-3 py-2">
                         <svg className="w-3.5 h-3.5 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
@@ -745,6 +776,18 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                           {st.spin && <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>}
                           {st.label}
                         </span>
+                        <button
+                          disabled={!!deletingCVId}
+                          onClick={() => handleDeleteCV(cv.application_id)}
+                          title={isDeleting ? t.deletingCV : t.deleteCV}
+                          className={`shrink-0 p-1 rounded-lg transition-colors ${deletingCVId ? 'opacity-40 cursor-not-allowed' : 'text-red-400 hover:text-red-600 hover:bg-red-50'}`}
+                        >
+                          {isDeleting ? (
+                            <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                          ) : (
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          )}
+                        </button>
                       </div>
                     );
                   })}
@@ -753,10 +796,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 {/* Score button */}
                 <div className="mt-3 flex justify-end">
                   <button
-                    disabled={scoring || !cvsPendingOrFailed || cvsScoringInProgress}
+                    disabled={scoring || !cvsPendingOrFailed || cvsScoringInProgress || !!deletingCVId}
                     onClick={handleScorePending}
                     className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${
-                      scoring || !cvsPendingOrFailed || cvsScoringInProgress
+                      scoring || !cvsPendingOrFailed || cvsScoringInProgress || !!deletingCVId
                         ? 'bg-slate-200 text-textMuted cursor-not-allowed'
                         : 'bg-indigo-600 text-white hover:bg-indigo-700'
                     }`}
