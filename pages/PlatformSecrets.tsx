@@ -30,14 +30,18 @@ const CATEGORY_COLORS: Record<string, string> = {
 const CATEGORY_ORDER = ['security', 'ai', 'email', 'database', 'queue', 'general'];
 
 export const PlatformSecretsPage: React.FC<Props> = ({ auth, addToast }) => {
-  const [secrets, setSecrets]             = useState<PlatformSecret[]>([]);
-  const [loading, setLoading]             = useState(true);
-  const [editKey, setEditKey]             = useState<string | null>(null);
-  const [newValue, setNewValue]           = useState('');
-  const [showValue, setShowValue]         = useState(false);
-  const [saving, setSaving]               = useState(false);
-  const [confirmSecret, setConfirmSecret] = useState<PlatformSecret | null>(null);
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const [secrets, setSecrets]                   = useState<PlatformSecret[]>([]);
+  const [loading, setLoading]                   = useState(true);
+  const [editKey, setEditKey]                   = useState<string | null>(null);
+  const [newValue, setNewValue]                 = useState('');
+  const [showValue, setShowValue]               = useState(false);
+  const [saving, setSaving]                     = useState(false);
+  const [confirmSecret, setConfirmSecret]       = useState<PlatformSecret | null>(null);
+  const [validationError, setValidationError]   = useState<string | null>(null);
+  // Restart state — enabled only after a restart_required secret is successfully updated
+  const [restartPending, setRestartPending]     = useState(false);
+  const [confirmRestart, setConfirmRestart]     = useState(false);
+  const [restarting, setRestarting]             = useState(false);
 
   const fetchSecrets = useCallback(async () => {
     setLoading(true);
@@ -98,6 +102,10 @@ export const PlatformSecretsPage: React.FC<Props> = ({ auth, addToast }) => {
         setSecrets(prev => prev.map(s =>
           s.key === editKey ? { ...s, masked_value: res.masked_value, has_value: true } : s
         ));
+        // Enable restart button if this secret requires a service restart
+        if (res.restart_required || secret?.restart_required) {
+          setRestartPending(true);
+        }
         setEditKey(null);
         setNewValue('');
         setValidationError(null);
@@ -106,6 +114,30 @@ export const PlatformSecretsPage: React.FC<Props> = ({ auth, addToast }) => {
       addToast(err.message || 'Failed to update secret.', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRestart = async () => {
+    setConfirmRestart(false);
+    setRestarting(true);
+    try {
+      const res = await apiService.post(
+        WEBHOOK_CONFIG.PLATFORM_SECRETS_RESTART_URL,
+        {},
+        auth.token!,
+      );
+      if (res?.success) {
+        addToast(res.message || 'Backend services restart requested successfully.', 'success');
+        setRestartPending(false);
+      } else {
+        // success=false means manual restart required — show as info, not error
+        addToast(res?.message || 'Restart must be performed manually from the server.', 'info' as ToastType);
+        // Keep restartPending=true so the user knows a restart is still needed
+      }
+    } catch (err: any) {
+      addToast(err.message || 'Failed to request restart.', 'error');
+    } finally {
+      setRestarting(false);
     }
   };
 
@@ -149,6 +181,37 @@ export const PlatformSecretsPage: React.FC<Props> = ({ auth, addToast }) => {
         </div>
       </div>
 
+      {/* Restart required banner — shown after a restart_required secret is updated */}
+      {restartPending && (
+        <div className="bg-orange-50 border border-orange-300 rounded-xl px-6 py-4 flex items-start justify-between gap-4">
+          <div className="flex gap-3">
+            <svg className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <div>
+              <p className="text-sm font-bold text-orange-800">Some changes require backend services to restart before they take effect.</p>
+              <p className="text-xs text-orange-700 mt-0.5">
+                One or more secrets marked as <strong>restart required</strong> were updated.
+                Use the button to request a controlled restart, or restart services manually from the server.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setConfirmRestart(true)}
+            disabled={restarting}
+            className="shrink-0 flex items-center gap-2 px-5 py-2 bg-orange-600 text-white rounded-xl text-sm font-bold hover:bg-orange-700 transition-colors disabled:opacity-50 shadow-sm"
+          >
+            {restarting
+              ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+            }
+            {restarting ? 'Requesting…' : 'Restart Backend Services'}
+          </button>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {(['total', 'configured', 'missing', 'critical'] as const).map(stat => {
@@ -169,6 +232,44 @@ export const PlatformSecretsPage: React.FC<Props> = ({ auth, addToast }) => {
           );
         })}
       </div>
+
+      {/* Restart confirmation modal */}
+      {confirmRestart && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 animate-fade-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </div>
+              <h3 className="text-base font-bold text-textMain">Restart Backend Services?</h3>
+            </div>
+            <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 mb-5">
+              <p className="text-xs text-orange-700 leading-relaxed">
+                This will restart the backend <strong>API, worker, and beat</strong> services.
+                The system may be unavailable for a short period while services come back up.
+                Active scoring jobs may be interrupted.
+              </p>
+            </div>
+            <ul className="text-xs text-textMuted space-y-1.5 mb-6 list-disc list-inside">
+              <li>Logged-in users may need to refresh their browser.</li>
+              <li>CV scoring jobs in progress may need to be re-queued.</li>
+              <li>Services will restart with <strong>environment variables</strong> — ensure they have been updated separately.</li>
+            </ul>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmRestart(false)}
+                className="px-5 py-2 rounded-xl text-sm font-bold text-textMuted hover:text-textMain transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleRestart}
+                className="px-6 py-2 bg-orange-600 text-white rounded-xl text-sm font-bold hover:bg-orange-700 transition-colors">
+                Restart Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Critical confirmation dialog */}
       {confirmSecret && (

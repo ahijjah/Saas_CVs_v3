@@ -13,6 +13,9 @@ Values stored here are an auditable management layer. After updating a secret he
 the corresponding environment variable must also be updated and the service restarted
 for the new value to take effect at runtime.
 """
+import logging
+import os
+import subprocess
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,9 +26,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import CurrentUserDep, RequireSuperAdmin
 from database import get_db, set_rls_context
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/admin/platform-secrets", tags=["platform-secrets"])
 
 _CRITICAL_KEYS = {"JWT_SECRET", "DB_PASSWORD", "OPENAI_API_KEY"}
+
+# Fixed list of services the restart endpoint may act on.
+# Never derived from user input.
+_MANAGED_SERVICES = ["api", "worker", "beat"]
 
 # Per-key metadata returned to the frontend for display and validation.
 # source: where the runtime actually reads the value from.
@@ -188,4 +197,98 @@ async def update_secret(
         "key":          key,
         "masked_value": masked,
         "warning":      warning,
+        "restart_required": meta.get("restart_required", False),
     }
+
+
+# ── POST /admin/platform-secrets/restart-services ────────────────────────────
+
+@router.post("/restart-services", dependencies=[RequireSuperAdmin])
+async def restart_services(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Request a controlled restart of the api, worker, and beat services.
+
+    Security:
+    - RequireSuperAdmin only.
+    - Service list is hardcoded — no user input accepted.
+    - All attempts are logged with requesting user identity.
+
+    Behaviour:
+    - Checks for Docker socket at /var/run/docker.sock.
+    - If available: runs `docker compose restart api worker beat` (fixed args, no shell).
+    - If not available: returns success=False with a manual-restart message.
+    """
+    await set_rls_context(db, current_user.tenant_id, "super_admin")
+
+    logger.warning(
+        "Service restart requested by %s (user_id=%s)",
+        current_user.email,
+        current_user.user_id,
+    )
+
+    docker_socket = "/var/run/docker.sock"
+    if not os.path.exists(docker_socket):
+        logger.info(
+            "Restart request by %s denied — Docker socket not accessible",
+            current_user.email,
+        )
+        return {
+            "success": False,
+            "message": (
+                "Restart must be performed manually from the server. "
+                "The Docker socket is not accessible from within this container. "
+                "Run: docker compose restart api worker beat"
+            ),
+        }
+
+    # Docker socket is accessible — attempt restart with fixed service list only.
+    cmd = ["docker", "compose", "restart"] + _MANAGED_SERVICES
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            logger.warning(
+                "Services %s restarted successfully by %s",
+                _MANAGED_SERVICES,
+                current_user.email,
+            )
+            return {
+                "success": True,
+                "message": (
+                    f"Backend services restart requested successfully "
+                    f"({', '.join(_MANAGED_SERVICES)}). "
+                    "The API may be briefly unavailable while it comes back up."
+                ),
+            }
+        else:
+            logger.error(
+                "docker compose restart failed (code %d): %s",
+                result.returncode,
+                result.stderr[:500],
+            )
+            return {
+                "success": False,
+                "message": (
+                    "Restart command failed. Please restart services manually. "
+                    f"Error: {result.stderr[:200]}"
+                ),
+            }
+    except subprocess.TimeoutExpired:
+        logger.error("docker compose restart timed out for %s", current_user.email)
+        return {
+            "success": False,
+            "message": "Restart command timed out. Services may still be restarting — check server status.",
+        }
+    except (FileNotFoundError, OSError) as exc:
+        logger.error("docker command unavailable: %s", exc)
+        return {
+            "success": False,
+            "message": "Restart must be performed manually from the server — docker command not found.",
+        }

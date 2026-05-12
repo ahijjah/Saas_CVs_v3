@@ -39,6 +39,7 @@ export const WEBHOOK_CONFIG = {
   TENANT_SUBSCRIPTION_BASE_URL: `${API_BASE}/admin/tenants`,
   // Platform Control — Secrets & Credentials
   PLATFORM_SECRETS_URL:         `${API_BASE}/admin/platform-secrets`,
+  PLATFORM_SECRETS_RESTART_URL: `${API_BASE}/admin/platform-secrets/restart-services`,
   // Platform Control — AI Prompts
   AI_PROMPTS_URL:               `${API_BASE}/admin/ai-prompts`,
 };
