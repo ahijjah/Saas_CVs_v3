@@ -18,11 +18,46 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS system_config (
     key         VARCHAR(100) PRIMARY KEY,
     value       TEXT        NOT NULL,
+    type        VARCHAR(20)  NOT NULL DEFAULT 'string'
+                    CHECK (type IN ('string', 'number', 'boolean', 'json')),
+    category    VARCHAR(50)  NOT NULL DEFAULT 'general'
+                    CHECK (category IN ('scoring', 'ai', 'email', 'queue', 'subscription', 'security', 'general')),
+    editable    BOOLEAN      NOT NULL DEFAULT true,
     description TEXT,
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by  UUID        REFERENCES users (user_id) ON DELETE SET NULL
 );
 
 -- Seed defaults (applied via seed.sql; schema only defines structure)
+
+-------------------------------------------------------------------------------
+-- subscription_plans
+-- Platform-level plan catalogue (no RLS — visible to super_admin only via app)
+-------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS subscription_plans (
+    plan_id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_code       VARCHAR(50)  NOT NULL,
+    plan_name       VARCHAR(100) NOT NULL,
+    description     TEXT,
+    monthly_price   NUMERIC(10,2) NOT NULL DEFAULT 0,
+    yearly_price    NUMERIC(10,2) NOT NULL DEFAULT 0,
+    currency        VARCHAR(10)   NOT NULL DEFAULT 'USD',
+    trial_days      INT           NOT NULL DEFAULT 14,
+    max_campaigns   INT           NOT NULL DEFAULT 5,
+    max_processed_cvs_per_month INT NOT NULL DEFAULT 500,
+    max_users       INT           NOT NULL DEFAULT 3,
+    api_access          BOOLEAN   NOT NULL DEFAULT false,
+    advanced_analytics  BOOLEAN   NOT NULL DEFAULT false,
+    priority_support    BOOLEAN   NOT NULL DEFAULT false,
+    custom_ai_prompts   BOOLEAN   NOT NULL DEFAULT false,
+    status          VARCHAR(20)   NOT NULL DEFAULT 'active'
+                        CHECK (status IN ('active', 'inactive')),
+    display_order   INT           NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_by      UUID          REFERENCES users (user_id) ON DELETE SET NULL,
+    CONSTRAINT uq_subscription_plan_code UNIQUE (plan_code)
+);
 
 -------------------------------------------------------------------------------
 -- tenants
@@ -31,7 +66,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     tenant_id   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     name        VARCHAR(255) NOT NULL,
     email_domain VARCHAR(253) NOT NULL,    -- e.g. "company.com"; platform_email = {job_id}@{email_domain}
-    plan        VARCHAR(50)  NOT NULL DEFAULT 'starter',  -- starter | professional | enterprise
+    plan        VARCHAR(50)  NOT NULL DEFAULT 'starter',  -- references subscription_plans.plan_code
     max_users   INT          NOT NULL DEFAULT 3,
     max_jobs    INT          NOT NULL DEFAULT 10,
     cv_ingestion_mode VARCHAR(20) NOT NULL DEFAULT 'platform_email'
@@ -42,11 +77,19 @@ CREATE TABLE IF NOT EXISTS tenants (
     partial_threshold   SMALLINT CHECK (partial_threshold   BETWEEN 0 AND 100),
     status      VARCHAR(20)  NOT NULL DEFAULT 'active'
                     CHECK (status IN ('active', 'suspended')),
+    -- Subscription tracking
+    subscription_status  VARCHAR(20) DEFAULT 'trial'
+                    CHECK (subscription_status IN ('trial', 'active', 'suspended', 'expired')),
+    trial_start_at        TIMESTAMPTZ,
+    trial_end_at          TIMESTAMPTZ,
+    subscription_started_at TIMESTAMPTZ,
+    subscription_ends_at    TIMESTAMPTZ,
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants (status);
+CREATE INDEX IF NOT EXISTS idx_tenants_subscription_status ON tenants (subscription_status);
 
 -------------------------------------------------------------------------------
 -- users
@@ -356,8 +399,10 @@ CREATE POLICY tenant_isolation_ingest_log ON email_ingest_log
         OR tenant_id::text = current_setting('app.current_tenant_id', true)
     );
 
--- system_config: readable by all, writable only by super_admin through app
-GRANT SELECT ON system_config TO cv_app;
+-- system_config: readable by all, writable by super_admin through app
+GRANT SELECT, INSERT, UPDATE, DELETE ON system_config TO cv_app;
+-- subscription_plans: platform-level, managed only by super_admin
+GRANT SELECT, INSERT, UPDATE, DELETE ON subscription_plans TO cv_app;
 
 -------------------------------------------------------------------------------
 -- updated_at triggers
@@ -370,6 +415,7 @@ BEGIN
 END;
 $$;
 
+CREATE TRIGGER trg_subscription_plans_updated_at BEFORE UPDATE ON subscription_plans FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_tenants_updated_at   BEFORE UPDATE ON tenants        FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_users_updated_at     BEFORE UPDATE ON users          FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_jobs_updated_at      BEFORE UPDATE ON jobs           FOR EACH ROW EXECUTE FUNCTION set_updated_at();

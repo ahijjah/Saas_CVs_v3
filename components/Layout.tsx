@@ -15,16 +15,34 @@ const T = {
   en: {
     campaigns: 'Campaigns', settings: 'Settings',
     sysAdmin: 'System Admin', tenantMgmt: 'Tenant Management',
+    platformControl: 'Platform Control',
     logout: 'Logout', superAdmin: 'Super Admin', usersGlobal: 'Users Global',
+    platformConfig: 'Platform Config', subscriptionPlans: 'Subscription Plans',
+    tenantSubscriptions: 'Tenant Subscriptions',
     organization: 'Organization', langBtn: 'عربي',
-    pageNames: { jobs: 'Campaigns', 'job-details': 'Job Details', applications: 'Applications', settings: 'Settings', 'admin-dashboard': 'Super Admin', 'admin-users': 'Users Global' } as Record<string, string>,
+    pageNames: {
+      jobs: 'Campaigns', 'job-details': 'Job Details', applications: 'Applications',
+      settings: 'Settings', 'admin-dashboard': 'Super Admin', 'admin-users': 'Users Global',
+      'admin-platform-config': 'Platform Config',
+      'admin-subscription-plans': 'Subscription Plans',
+      'admin-tenant-subscriptions': 'Tenant Subscriptions',
+    } as Record<string, string>,
   },
   ar: {
     campaigns: 'الحملات', settings: 'الإعدادات',
     sysAdmin: 'مشرف النظام', tenantMgmt: 'إدارة المستأجر',
+    platformControl: 'التحكم بالمنصة',
     logout: 'تسجيل الخروج', superAdmin: 'المشرف العام', usersGlobal: 'المستخدمون',
+    platformConfig: 'إعدادات المنصة', subscriptionPlans: 'خطط الاشتراك',
+    tenantSubscriptions: 'اشتراكات المستأجرين',
     organization: 'المنظمة', langBtn: 'English',
-    pageNames: { jobs: 'الحملات', 'job-details': 'تفاصيل الوظيفة', applications: 'الطلبات', settings: 'الإعدادات', 'admin-dashboard': 'المشرف العام', 'admin-users': 'المستخدمون' } as Record<string, string>,
+    pageNames: {
+      jobs: 'الحملات', 'job-details': 'تفاصيل الوظيفة', applications: 'الطلبات',
+      settings: 'الإعدادات', 'admin-dashboard': 'المشرف العام', 'admin-users': 'المستخدمون',
+      'admin-platform-config': 'إعدادات المنصة',
+      'admin-subscription-plans': 'خطط الاشتراك',
+      'admin-tenant-subscriptions': 'اشتراكات المستأجرين',
+    } as Record<string, string>,
   },
 };
 
@@ -68,6 +86,24 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
     )},
   ];
 
+  const platformControlItems = [
+    { id: 'admin-platform-config', label: t.platformConfig, icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+      </svg>
+    )},
+    { id: 'admin-subscription-plans', label: t.subscriptionPlans, icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+      </svg>
+    )},
+    { id: 'admin-tenant-subscriptions', label: t.tenantSubscriptions, icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+      </svg>
+    )},
+  ];
+
   const handleNavigate = (id: string) => { onNavigate(id); setIsSidebarOpen(false); };
 
   const pageTitle = t.pageNames[currentPage] || currentPage.replace(/-/g, ' ');
@@ -97,17 +133,30 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
 
         <nav className="flex-1 px-4 py-4 space-y-6 overflow-y-auto">
           {isSuperAdmin && (
-            <div>
-              <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.sysAdmin}</p>
-              <div className="space-y-1">
-                {adminMenuItems.map((item) => (
-                  <button key={item.id} onClick={() => handleNavigate(item.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${currentPage === item.id ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}>
-                    {item.icon}<span>{item.label}</span>
-                  </button>
-                ))}
+            <>
+              <div>
+                <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.sysAdmin}</p>
+                <div className="space-y-1">
+                  {adminMenuItems.map((item) => (
+                    <button key={item.id} onClick={() => handleNavigate(item.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${currentPage === item.id ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}>
+                      {item.icon}<span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+              <div>
+                <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.platformControl}</p>
+                <div className="space-y-1">
+                  {platformControlItems.map((item) => (
+                    <button key={item.id} onClick={() => handleNavigate(item.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}>
+                      {item.icon}<span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
           <div>
             <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.tenantMgmt}</p>

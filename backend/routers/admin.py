@@ -1,7 +1,7 @@
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
@@ -33,6 +33,12 @@ class UpdateUserStatusRequest(BaseModel):
 class UpdateTenantStatusRequest(BaseModel):
     tenant_id: str
     status: str
+
+
+class UpdateTenantSubscriptionRequest(BaseModel):
+    action: str          # assign_plan | extend_trial | suspend | reactivate
+    plan_code: str | None = None
+    trial_end_at: str | None = None   # ISO date string for extend_trial
 
 
 class InviteUserRequest(BaseModel):
@@ -344,6 +350,186 @@ async def create_user(
     )
 
     return {"success": True, "message": "Invitation sent"}
+
+
+@router.get("/tenants/{tenant_id}/usage", dependencies=[RequireSuperAdmin])
+async def get_tenant_usage(
+    tenant_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, Any]:
+    """Return current usage vs plan limits for a single tenant."""
+    await set_rls_context(db, current_user.tenant_id, "super_admin")
+
+    tenant_row = await db.execute(
+        text("""
+            SELECT t.tenant_id, t.name, t.plan, t.max_users, t.max_jobs,
+                   t.subscription_status, t.trial_end_at,
+                   t.subscription_started_at, t.subscription_ends_at
+            FROM tenants t
+            WHERE t.tenant_id = CAST(:tid AS uuid)
+        """),
+        {"tid": tenant_id},
+    )
+    tenant = tenant_row.mappings().first()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    plan_row = await db.execute(
+        text("""
+            SELECT max_campaigns, max_processed_cvs_per_month, max_users,
+                   api_access, advanced_analytics, priority_support, custom_ai_prompts
+            FROM subscription_plans WHERE plan_code = :code
+        """),
+        {"code": tenant["plan"]},
+    )
+    plan = plan_row.mappings().first()
+
+    limits = {
+        "max_campaigns": plan["max_campaigns"] if plan else tenant["max_jobs"],
+        "max_users": plan["max_users"] if plan else tenant["max_users"],
+        "max_processed_cvs_per_month": plan["max_processed_cvs_per_month"] if plan else 500,
+    }
+
+    usage_row = await db.execute(
+        text("""
+            SELECT
+                (SELECT COUNT(*) FROM jobs
+                 WHERE tenant_id = CAST(:tid AS uuid) AND status = 'active') AS active_campaigns,
+                (SELECT COUNT(*) FROM users
+                 WHERE tenant_id = CAST(:tid AS uuid) AND status = 'active') AS active_users,
+                (SELECT COUNT(*) FROM applications a
+                 JOIN jobs j ON j.job_id = a.job_id
+                 WHERE j.tenant_id = CAST(:tid AS uuid)
+                   AND a.processing_status = 'scored'
+                   AND date_trunc('month', a.scored_at) = date_trunc('month', now())) AS cvs_processed_this_month
+        """),
+        {"tid": tenant_id},
+    )
+    usage_data = usage_row.mappings().first()
+
+    usage = {
+        "active_campaigns": int(usage_data["active_campaigns"]),
+        "active_users": int(usage_data["active_users"]),
+        "processed_cvs_this_month": int(usage_data["cvs_processed_this_month"]),
+    }
+
+    def pct(used: int, limit: int) -> float:
+        return round(min(used / limit * 100, 100), 1) if limit > 0 else 0.0
+
+    return {
+        "tenant_id": tenant_id,
+        "tenant_name": tenant["name"],
+        "plan": tenant["plan"],
+        "subscription_status": tenant["subscription_status"],
+        "trial_end_at": tenant["trial_end_at"].isoformat() if tenant["trial_end_at"] else None,
+        "subscription_started_at": (
+            tenant["subscription_started_at"].isoformat()
+            if tenant["subscription_started_at"] else None
+        ),
+        "subscription_ends_at": (
+            tenant["subscription_ends_at"].isoformat()
+            if tenant["subscription_ends_at"] else None
+        ),
+        "limits": limits,
+        "usage": usage,
+        "percentage_used": {
+            "campaigns": pct(usage["active_campaigns"], limits["max_campaigns"]),
+            "users": pct(usage["active_users"], limits["max_users"]),
+            "cvs": pct(usage["processed_cvs_this_month"], limits["max_processed_cvs_per_month"]),
+        },
+        "plan_features": {
+            "api_access": plan["api_access"] if plan else False,
+            "advanced_analytics": plan["advanced_analytics"] if plan else False,
+            "priority_support": plan["priority_support"] if plan else False,
+            "custom_ai_prompts": plan["custom_ai_prompts"] if plan else False,
+        },
+    }
+
+
+@router.patch("/tenants/{tenant_id}/subscription", dependencies=[RequireSuperAdmin])
+async def update_tenant_subscription(
+    tenant_id: str,
+    body: UpdateTenantSubscriptionRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, Any]:
+    """Assign plan, extend trial, suspend, or reactivate a tenant subscription."""
+    await set_rls_context(db, current_user.tenant_id, "super_admin")
+
+    existing = await db.execute(
+        text("SELECT tenant_id FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": tenant_id},
+    )
+    if not existing.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    if body.action == "assign_plan":
+        if not body.plan_code:
+            raise HTTPException(status_code=422, detail="plan_code required for assign_plan")
+        plan_check = await db.execute(
+            text("SELECT plan_id FROM subscription_plans WHERE plan_code = :code AND status = 'active'"),
+            {"code": body.plan_code},
+        )
+        if not plan_check.first():
+            raise HTTPException(status_code=422, detail="Plan not found or not active")
+        await db.execute(
+            text("""
+                UPDATE tenants SET
+                    plan = :plan_code,
+                    subscription_status = 'active',
+                    subscription_started_at = COALESCE(subscription_started_at, now())
+                WHERE tenant_id = CAST(:tid AS uuid)
+            """),
+            {"plan_code": body.plan_code, "tid": tenant_id},
+        )
+
+    elif body.action == "extend_trial":
+        if not body.trial_end_at:
+            raise HTTPException(status_code=422, detail="trial_end_at required for extend_trial")
+        try:
+            new_end = datetime.fromisoformat(body.trial_end_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="trial_end_at must be a valid ISO date")
+        await db.execute(
+            text("""
+                UPDATE tenants SET
+                    subscription_status = 'trial',
+                    trial_start_at = COALESCE(trial_start_at, now()),
+                    trial_end_at = :end_at
+                WHERE tenant_id = CAST(:tid AS uuid)
+            """),
+            {"end_at": new_end, "tid": tenant_id},
+        )
+
+    elif body.action == "suspend":
+        await db.execute(
+            text("""
+                UPDATE tenants SET subscription_status = 'suspended'
+                WHERE tenant_id = CAST(:tid AS uuid)
+            """),
+            {"tid": tenant_id},
+        )
+
+    elif body.action == "reactivate":
+        await db.execute(
+            text("""
+                UPDATE tenants SET
+                    subscription_status = 'active',
+                    subscription_started_at = COALESCE(subscription_started_at, now())
+                WHERE tenant_id = CAST(:tid AS uuid)
+            """),
+            {"tid": tenant_id},
+        )
+
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="action must be one of: assign_plan, extend_trial, suspend, reactivate",
+        )
+
+    await db.commit()
+    return {"success": True, "action": body.action}
 
 
 @router.patch("/users/status")

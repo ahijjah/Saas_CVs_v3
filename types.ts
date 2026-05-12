@@ -225,3 +225,85 @@ export interface UploadQueueStatus {
   has_stuck: boolean;
   percentage: number;
 }
+
+// ─── Platform Control ─────────────────────────────────────────────────────────
+
+export interface PlatformConfig {
+  key: string;
+  value: string;
+  type: 'string' | 'number' | 'boolean' | 'json';
+  category: 'scoring' | 'ai' | 'email' | 'queue' | 'subscription' | 'security' | 'general';
+  description: string | null;
+  editable: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
+  updated_by_email: string | null;
+}
+
+export interface SubscriptionPlan {
+  plan_id: string;
+  plan_code: string;
+  plan_name: string;
+  description: string | null;
+  monthly_price: number;
+  yearly_price: number;
+  currency: string;
+  trial_days: number;
+  max_campaigns: number;
+  max_processed_cvs_per_month: number;
+  max_users: number;
+  api_access: boolean;
+  advanced_analytics: boolean;
+  priority_support: boolean;
+  custom_ai_prompts: boolean;
+  status: 'active' | 'inactive';
+  display_order: number;
+  created_at: string | null;
+  updated_at: string | null;
+  updated_by_email: string | null;
+}
+
+export interface TenantSubscriptionRow {
+  tenant_id: string;
+  tenant_name: string;
+  email_domain?: string;
+  plan: string;
+  subscription_status: 'trial' | 'active' | 'suspended' | 'expired';
+  trial_end_at: string | null;
+  subscription_started_at: string | null;
+  subscription_ends_at: string | null;
+  status: 'active' | 'suspended';
+  created_at: string;
+  user_count?: number;
+}
+
+export interface TenantUsage {
+  tenant_id: string;
+  tenant_name: string;
+  plan: string;
+  subscription_status: string;
+  trial_end_at: string | null;
+  subscription_started_at: string | null;
+  subscription_ends_at: string | null;
+  limits: {
+    max_campaigns: number;
+    max_users: number;
+    max_processed_cvs_per_month: number;
+  };
+  usage: {
+    active_campaigns: number;
+    active_users: number;
+    processed_cvs_this_month: number;
+  };
+  percentage_used: {
+    campaigns: number;
+    users: number;
+    cvs: number;
+  };
+  plan_features: {
+    api_access: boolean;
+    advanced_analytics: boolean;
+    priority_support: boolean;
+    custom_ai_prompts: boolean;
+  };
+}

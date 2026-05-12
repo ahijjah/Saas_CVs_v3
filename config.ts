@@ -33,6 +33,10 @@ export const WEBHOOK_CONFIG = {
   JOB_INGESTION_BASE_URL:    `${API_BASE}/jobs`,
   // Tenant user management
   TENANT_USERS_URL:          `${API_BASE}/tenant/users`,
+  // Platform Control (super_admin)
+  PLATFORM_CONFIG_URL:          `${API_BASE}/admin/platform-config`,
+  SUBSCRIPTION_PLANS_URL:       `${API_BASE}/admin/subscription-plans`,
+  TENANT_SUBSCRIPTION_BASE_URL: `${API_BASE}/admin/tenants`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';
