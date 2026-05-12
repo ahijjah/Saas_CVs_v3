@@ -19,6 +19,7 @@ const T = {
     logout: 'Logout', superAdmin: 'Super Admin', usersGlobal: 'Users Global',
     platformConfig: 'Platform Config', subscriptionPlans: 'Subscription Plans',
     tenantSubscriptions: 'Tenant Subscriptions',
+    secrets: 'Secrets & Credentials', aiPrompts: 'AI Prompts',
     organization: 'Organization', langBtn: 'عربي',
     pageNames: {
       jobs: 'Campaigns', 'job-details': 'Job Details', applications: 'Applications',
@@ -26,6 +27,7 @@ const T = {
       'admin-platform-config': 'Platform Config',
       'admin-subscription-plans': 'Subscription Plans',
       'admin-tenant-subscriptions': 'Tenant Subscriptions',
+      'admin-platform-secrets': 'Secrets & Credentials', 'admin-ai-prompts': 'AI Prompts',
     } as Record<string, string>,
   },
   ar: {
@@ -35,6 +37,7 @@ const T = {
     logout: 'تسجيل الخروج', superAdmin: 'المشرف العام', usersGlobal: 'المستخدمون',
     platformConfig: 'إعدادات المنصة', subscriptionPlans: 'خطط الاشتراك',
     tenantSubscriptions: 'اشتراكات المستأجرين',
+    secrets: 'المفاتيح والبيانات السرية', aiPrompts: 'موجهات الذكاء الاصطناعي',
     organization: 'المنظمة', langBtn: 'English',
     pageNames: {
       jobs: 'الحملات', 'job-details': 'تفاصيل الوظيفة', applications: 'الطلبات',
@@ -42,6 +45,7 @@ const T = {
       'admin-platform-config': 'إعدادات المنصة',
       'admin-subscription-plans': 'خطط الاشتراك',
       'admin-tenant-subscriptions': 'اشتراكات المستأجرين',
+      'admin-platform-secrets': 'المفاتيح السرية', 'admin-ai-prompts': 'موجهات الذكاء الاصطناعي',
     } as Record<string, string>,
   },
 };
@@ -102,6 +106,16 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
       </svg>
     )},
+    { id: 'admin-platform-secrets', label: t.secrets, icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+      </svg>
+    )},
+    { id: 'admin-ai-prompts', label: t.aiPrompts, icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>
+    )},
   ];
 
   const handleNavigate = (id: string) => { onNavigate(id); setIsSidebarOpen(false); };
@@ -150,7 +164,7 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
                 <div className="space-y-1">
                   {platformControlItems.map((item) => (
                     <button key={item.id} onClick={() => handleNavigate(item.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}>
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${currentPage === item.id ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}>
                       {item.icon}<span>{item.label}</span>
                     </button>
                   ))}

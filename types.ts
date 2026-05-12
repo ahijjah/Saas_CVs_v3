@@ -90,7 +90,7 @@ export interface Job {
   posted_date?: string;
   closing_date?: string;
   salary_range?: string;
-  ingestion_note?: string; 
+  ingestion_note?: string;
   ingestion_mode?: 'forwarding' | 'platform_email';
   ingestion_email?: string | null;
   applications_total: number;
@@ -306,4 +306,40 @@ export interface TenantUsage {
     priority_support: boolean;
     custom_ai_prompts: boolean;
   };
+}
+
+// ─── Platform Secrets ─────────────────────────────────────────────────────────
+
+export interface PlatformSecret {
+  key: string;
+  masked_value: string;
+  description: string;
+  category: string;
+  is_critical: boolean;
+  has_value: boolean;
+  updated_at: string | null;
+  updated_by_email: string;
+}
+
+// ─── AI Prompts ───────────────────────────────────────────────────────────────
+
+export type PromptCategory = 'criteria' | 'scoring' | 'screening' | 'summary' | 'interview';
+
+export interface AIPrompt {
+  prompt_id: string;
+  prompt_code: string;
+  prompt_name: string;
+  prompt_category: PromptCategory;
+  system_prompt: string;
+  user_prompt_template: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  output_language: string;
+  is_active: boolean;
+  version: number;
+  notes: string;
+  created_at: string | null;
+  updated_at: string | null;
+  updated_by_email: string;
 }

@@ -65,6 +65,7 @@ async def _score_cv_async(
         compute_final_score,
         determine_decision,
         lightweight_screen_cv,
+        load_active_prompt,
         score_cv,
     )
     from services.docx_service import convert_docx_to_pdf
@@ -121,6 +122,10 @@ async def _score_cv_async(
             raise RuntimeError(f"No criteria found for job {job_id}")
 
         prompt_cfg = await load_prompt_config(db, tenant_id, job_id, overrides=scoring_overrides)
+
+        # Load active DB prompts; each falls back to hardcoded default if no active version
+        level2_prompt = await load_active_prompt(db, "level2_screening")
+        scoring_prompt = await load_active_prompt(db, "cv_scoring")
 
         weights = {
             "weight_skills":           prompt_cfg.weights.get("weight_skills", criteria["weight_skills"]),
@@ -222,6 +227,7 @@ async def _score_cv_async(
             cv_text=gatekeeper_result.cleaned_cv_text,
             job_title=criteria["job_title"],
             required_skills=required_skills,
+            prompt_override=level2_prompt,
         )
 
         if level2["decision"] == "REJECT":
@@ -312,6 +318,7 @@ async def _score_cv_async(
             job_title=criteria["job_title"],
             cv_language=gatekeeper_result.cv_language,
             gatekeeper_context=gatekeeper_context,
+            prompt_override=scoring_prompt,
         )
 
         final_score = compute_final_score(ai_result, weights)

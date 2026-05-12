@@ -37,7 +37,7 @@ def extract_criteria_task(self, job_id: str, description: str) -> None:
 
 async def _extract_async(job_id: str, description: str) -> None:
     from database import AsyncSessionLocal, set_rls_context
-    from services.ai_service import extract_job_criteria, flatten_criteria_for_scoring
+    from services.ai_service import extract_job_criteria, flatten_criteria_for_scoring, load_active_prompt
     from config import get_settings
     from sqlalchemy import text
 
@@ -55,7 +55,10 @@ async def _extract_async(job_id: str, description: str) -> None:
         )
         await db.commit()
 
-    analysis = await extract_job_criteria(description)
+        # Load active DB prompt; falls back to hardcoded default if none active
+        criteria_prompt = await load_active_prompt(db, "criteria_extraction")
+
+    analysis = await extract_job_criteria(description, prompt_override=criteria_prompt)
     flat = flatten_criteria_for_scoring(analysis)
 
     async with AsyncSessionLocal() as db:

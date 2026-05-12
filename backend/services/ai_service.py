@@ -10,6 +10,8 @@ import logging
 from typing import Any
 
 from openai import AsyncOpenAI
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 
@@ -24,6 +26,38 @@ def _get_client() -> AsyncOpenAI:
     if _client is None:
         _client = AsyncOpenAI(api_key=settings.openai_api_key)
     return _client
+
+
+async def load_active_prompt(db: AsyncSession, prompt_code: str) -> dict | None:
+    """Load the active DB prompt for a given code. Returns None if none is active.
+
+    Falls back to None so callers can use their hardcoded defaults.
+    This function is safe to call from Celery workers — it never raises.
+    """
+    try:
+        result = await db.execute(
+            text("""
+                SELECT system_prompt, user_prompt_template, model, temperature, max_tokens, output_language
+                FROM ai_prompts
+                WHERE prompt_code = :code AND is_active = TRUE
+                LIMIT 1
+            """),
+            {"code": prompt_code},
+        )
+        row = result.mappings().first()
+        if row:
+            return {
+                "system_prompt":        row["system_prompt"],
+                "user_prompt_template": row["user_prompt_template"],
+                "model":                row["model"],
+                "temperature":          float(row["temperature"]),
+                "max_tokens":           row["max_tokens"],
+                "output_language":      row["output_language"],
+            }
+        return None
+    except Exception as exc:
+        logger.warning("Could not load active prompt '%s' from DB: %s — using hardcoded default", prompt_code, exc)
+        return None
 
 
 # ── Bilingual criteria extraction ─────────────────────────────────────────────
@@ -156,10 +190,12 @@ async def lightweight_screen_cv(
     cv_text: str,
     job_title: str,
     required_skills: list[str],
+    prompt_override: dict | None = None,
 ) -> dict[str, str]:
     """Level 2 lightweight binary screen (PASS/REJECT). Costs ~10x less than full scoring.
 
     Defaults to PASS on any error to avoid false rejections.
+    prompt_override: active DB prompt dict from load_active_prompt(), or None for hardcoded default.
     """
     client = _get_client()
 
@@ -172,15 +208,20 @@ async def lightweight_screen_cv(
         f"CV Excerpt:\n{cv_excerpt}"
     )
 
+    system_prompt = (prompt_override or {}).get("system_prompt") or LEVEL2_SYSTEM_PROMPT
+    model         = (prompt_override or {}).get("model")         or settings.openai_model
+    temperature   = (prompt_override or {}).get("temperature",  0.1)
+    max_tokens    = (prompt_override or {}).get("max_tokens",   120)
+
     try:
         response = await client.chat.completions.create(
-            model=settings.openai_model,
+            model=model,
             messages=[
-                {"role": "system", "content": LEVEL2_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.1,
-            max_tokens=120,
+            temperature=temperature,
+            max_tokens=max_tokens,
             response_format={"type": "json_object"},
         )
         raw = response.choices[0].message.content
@@ -194,20 +235,30 @@ async def lightweight_screen_cv(
         return {"decision": "PASS", "reason": "Screening error — proceeding to full evaluation"}
 
 
-async def extract_job_criteria(job_description: str) -> dict[str, Any]:
+async def extract_job_criteria(
+    job_description: str,
+    prompt_override: dict | None = None,
+) -> dict[str, Any]:
     """
     Call OpenAI to extract structured hiring criteria from a job description.
     Returns a nested dict matching the frontend AnalysisJson interface.
+
+    prompt_override: active DB prompt dict from load_active_prompt(), or None for hardcoded default.
     """
     client = _get_client()
+
+    system_prompt = (prompt_override or {}).get("system_prompt") or CRITERIA_SYSTEM_PROMPT
+    model         = (prompt_override or {}).get("model")         or settings.openai_model
+    temperature   = (prompt_override or {}).get("temperature",  0.2)
+
     try:
         response = await client.chat.completions.create(
-            model=settings.openai_model,
+            model=model,
             messages=[
-                {"role": "system", "content": CRITERIA_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Job Description:\n\n{job_description}"},
             ],
-            temperature=0.2,
+            temperature=temperature,
             response_format={"type": "json_object"},
         )
         raw = response.choices[0].message.content
@@ -275,6 +326,7 @@ async def score_cv(
     job_title: str,
     cv_language: str = "unknown",
     gatekeeper_context: dict | None = None,
+    prompt_override: dict | None = None,
 ) -> dict[str, Any]:
     """
     Call OpenAI to score a CV against extracted criteria.
@@ -285,9 +337,15 @@ async def score_cv(
         job_title:          Human-readable job title
         cv_language:        Detected language ('ar', 'en', 'mixed') — passed to prompt for context
         gatekeeper_context: Optional pre-filter results to include in prompt for context
+        prompt_override:    Active DB prompt dict from load_active_prompt(), or None for hardcoded default.
     """
     client = _get_client()
     criteria_text = json.dumps(criteria, indent=2, ensure_ascii=False)
+
+    system_prompt = (prompt_override or {}).get("system_prompt") or SCORING_SYSTEM_PROMPT
+    model         = (prompt_override or {}).get("model")         or settings.openai_model
+    temperature   = (prompt_override or {}).get("temperature",  0.2)
+    max_tokens    = (prompt_override or {}).get("max_tokens",   3000)
 
     # Build context paragraph for the AI
     lang_hint = {
@@ -319,12 +377,13 @@ async def score_cv(
 
     try:
         response = await client.chat.completions.create(
-            model=settings.openai_model,
+            model=model,
             messages=[
-                {"role": "system", "content": SCORING_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.2,
+            temperature=temperature,
+            max_tokens=max_tokens,
             response_format={"type": "json_object"},
         )
         raw = response.choices[0].message.content

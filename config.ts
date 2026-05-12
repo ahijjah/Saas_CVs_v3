@@ -37,6 +37,10 @@ export const WEBHOOK_CONFIG = {
   PLATFORM_CONFIG_URL:          `${API_BASE}/admin/platform-config`,
   SUBSCRIPTION_PLANS_URL:       `${API_BASE}/admin/subscription-plans`,
   TENANT_SUBSCRIPTION_BASE_URL: `${API_BASE}/admin/tenants`,
+  // Platform Control — Secrets & Credentials
+  PLATFORM_SECRETS_URL:         `${API_BASE}/admin/platform-secrets`,
+  // Platform Control — AI Prompts
+  AI_PROMPTS_URL:               `${API_BASE}/admin/ai-prompts`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';
