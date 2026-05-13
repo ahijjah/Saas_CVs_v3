@@ -189,6 +189,7 @@ const T = {
 export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onViewApplications, addToast }) => {
   const { lang, isAr } = useLanguage();
   const t = T[lang];
+  const isSuperAdmin = (auth.user?.role || '').toLowerCase() === 'super_admin';
 
   const [details, setDetails] = useState<JobDetailsType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -775,9 +776,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   </div>
                   <button
                     onClick={() => handleIngestionToggle('restrict_forwarding_sender_to_tenant_email', !details.restrict_forwarding_sender_to_tenant_email)}
-                    className={`shrink-0 relative w-9 h-4.5 rounded-full transition-colors focus:outline-none ${details.restrict_forwarding_sender_to_tenant_email ? 'bg-primary' : 'bg-slate-300'}`}
+                    className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details.restrict_forwarding_sender_to_tenant_email ? 'bg-primary' : 'bg-slate-300'}`}
                   >
-                    <span className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-transform ${details.restrict_forwarding_sender_to_tenant_email ? (isAr ? '-translate-x-4.5' : 'translate-x-4.5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.restrict_forwarding_sender_to_tenant_email ? (isAr ? '-translate-x-4' : 'translate-x-4') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
                   </button>
                 </div>
               )}
@@ -846,18 +847,24 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               </div>
             ))}
 
-            {/* AI Comparison */}
+            {/* AI Comparison — super_admin can toggle; tenant admin sees read-only badge */}
             <div className="flex items-center justify-between gap-3 pt-2">
               <div>
                 <p className="text-xs font-black text-textMain">{t.aiComparisonToggle}</p>
                 <p className="text-[10px] text-textMuted">{t.aiComparisonHint}</p>
               </div>
-              <button
-                onClick={() => handleSettingsToggle('enable_ai_comparison', !details.enable_ai_comparison)}
-                className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details.enable_ai_comparison ? 'bg-violet-500' : 'bg-slate-300'}`}
-              >
-                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.enable_ai_comparison ? (isAr ? '-translate-x-4' : 'translate-x-4') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
-              </button>
+              {isSuperAdmin ? (
+                <button
+                  onClick={() => handleSettingsToggle('enable_ai_comparison', !details.enable_ai_comparison)}
+                  className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details.enable_ai_comparison ? 'bg-violet-500' : 'bg-slate-300'}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.enable_ai_comparison ? (isAr ? '-translate-x-4' : 'translate-x-4') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                </button>
+              ) : (
+                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${details.enable_ai_comparison ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>
+                  {details.enable_ai_comparison ? t.enabled : t.disabled}
+                </span>
+              )}
             </div>
           </div>
 

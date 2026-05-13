@@ -155,13 +155,20 @@ async def create_job(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    # Verify tenant exists
     t_row = await db.execute(
-        text("SELECT email_domain FROM tenants WHERE tenant_id = :tid"),
+        text("SELECT tenant_id FROM tenants WHERE tenant_id = :tid"),
         {"tid": current_user.tenant_id},
     )
-    tenant = t_row.mappings().first()
-    if not tenant:
+    if not t_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    # Platform alias must use the platform domain, never the tenant domain.
+    # Read from system_config so super admin can change it without a redeploy.
+    domain_row = await db.execute(
+        text("SELECT value FROM system_config WHERE key = 'platform_email_domain'")
+    )
+    platform_domain = (domain_row.scalar_one_or_none() or "ai970.cloud").strip()
 
     job_code = await _next_job_code(db)
 
@@ -190,7 +197,7 @@ async def create_job(
     )
     job_id = str(job_result.scalar_one())
 
-    platform_email = f"{job_code}@{tenant['email_domain']}"
+    platform_email = f"{job_code.lower()}@{platform_domain}"
     await db.execute(
         text("UPDATE jobs SET platform_email = :email WHERE job_id = :jid"),
         {"email": platform_email, "jid": job_id},
@@ -390,17 +397,22 @@ async def update_job_settings(
     if not job_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+
     updates: dict = {}
     for field in (
         "send_confirmation_to_cv_email_for_upload",
         "send_confirmation_to_cv_email_for_forwarding",
         "send_confirmation_to_sender_for_forwarding",
         "send_confirmation_to_cv_email_for_platform_email",
-        "enable_ai_comparison",
     ):
         val = getattr(body, field, None)
         if val is not None:
             updates[field] = val
+
+    # enable_ai_comparison is a super_admin-only field; ignore silently for others
+    if is_super_admin and body.enable_ai_comparison is not None:
+        updates["enable_ai_comparison"] = body.enable_ai_comparison
 
     if not updates:
         return {"success": True, "message": "No changes"}
