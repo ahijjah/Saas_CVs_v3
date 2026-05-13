@@ -112,7 +112,7 @@ async def _process_message(imap, msg_id_bytes: bytes) -> None:
 
         # ── Resolve routing ───────────────────────────────────────────────
         job_id, tenant_id, ingestion_mode, reject_reason = await _resolve_routing(
-            db, recipient, subject, forwarding_email
+            db, recipient, subject, forwarding_email, sender=sender
         )
 
         if not job_id:
@@ -179,6 +179,7 @@ async def _process_message(imap, msg_id_bytes: bytes) -> None:
                 application_id = await _create_application_and_score(
                     db, job_id, tenant_id, sender_name, sender,
                     attachment_bytes, content_type, filename, cfg,
+                    ingestion_mode=ingestion_mode,
                 )
                 await _log_ingest(db, message_id, sender, recipient, subject,
                                   tenant_id, job_id, application_id, "scored",
@@ -199,15 +200,15 @@ async def _process_message(imap, msg_id_bytes: bytes) -> None:
 
 
 async def _resolve_routing(
-    db, recipient: str, subject: str, forwarding_email: str
+    db, recipient: str, subject: str, forwarding_email: str, sender: str = ""
 ) -> tuple[str | None, str | None, str, str | None]:
     """Return (job_id, tenant_id, ingestion_mode, reject_reason)."""
     from sqlalchemy import text
 
-    # ── Option 2: Alias — TO address matches a job's platform_email ──────
+    # ── Option 2: Platform email alias — TO matches a job's platform_email ─
     job_row = await db.execute(
         text("""
-            SELECT j.job_id, j.tenant_id, j.alias_enabled
+            SELECT j.job_id, j.tenant_id, j.receive_cv_via_platform_email
             FROM jobs j
             WHERE LOWER(j.platform_email) = :email AND j.status = 'active'
         """),
@@ -215,8 +216,8 @@ async def _resolve_routing(
     )
     job = job_row.mappings().first()
     if job:
-        if not job["alias_enabled"]:
-            return None, None, "platform_email", "Alias receiving disabled for this job"
+        if not job["receive_cv_via_platform_email"]:
+            return None, None, "platform_email", "Platform email receiving disabled for this job"
         return str(job["job_id"]), str(job["tenant_id"]), "platform_email", None
 
     # ── Option 1: Forwarding — recipient is the central FORWARDING_EMAIL ─
@@ -224,15 +225,18 @@ async def _resolve_routing(
         # Extract job_code from subject: JOB-2026-0001 or JOB-2026-1
         match = JOB_CODE_RE.search(subject)
         if not match:
-            # Also try body snippet if needed — for now log as unassigned
             return None, None, "forwarding", f"No job code found in subject: '{subject}'"
 
         job_code = f"JOB-{match.group(1)}-{int(match.group(2)):04d}"
 
         fwd_row = await db.execute(
             text("""
-                SELECT j.job_id, j.tenant_id, j.forwarding_enabled
+                SELECT j.job_id, j.tenant_id,
+                       j.receive_cv_via_forwarding_email,
+                       j.restrict_forwarding_sender_to_tenant_email,
+                       t.email_domain
                 FROM jobs j
+                JOIN tenants t ON t.tenant_id = j.tenant_id
                 WHERE UPPER(j.job_code) = UPPER(:code) AND j.status = 'active'
             """),
             {"code": job_code},
@@ -240,8 +244,16 @@ async def _resolve_routing(
         fwd_job = fwd_row.mappings().first()
         if not fwd_job:
             return None, None, "forwarding", f"Job code '{job_code}' not found or not active"
-        if not fwd_job["forwarding_enabled"]:
+        if not fwd_job["receive_cv_via_forwarding_email"]:
             return None, None, "forwarding", f"Forwarding receiving disabled for job '{job_code}'"
+        # Sender-domain restriction: only allow emails from the tenant's own domain
+        if fwd_job["restrict_forwarding_sender_to_tenant_email"] and fwd_job["email_domain"]:
+            sender_domain = sender.split("@")[-1].lower() if "@" in sender else ""
+            if sender_domain != fwd_job["email_domain"].lower():
+                return None, None, "forwarding", (
+                    f"Sender domain '{sender_domain}' not allowed for job '{job_code}' "
+                    f"(tenant domain: {fwd_job['email_domain']})"
+                )
         return str(fwd_job["job_id"]), str(fwd_job["tenant_id"]), "forwarding", None
 
     return None, None, "unknown", f"Recipient '{recipient}' not recognised"
@@ -257,19 +269,23 @@ async def _create_application_and_score(
     mime_type: str,
     filename: str,
     cfg,
+    ingestion_mode: str = "forwarding",
 ) -> str:
     from sqlalchemy import text
     from workers.cv_score import score_cv_task
+
+    submission_source = "platform_email" if ingestion_mode == "platform_email" else "email_forwarding"
 
     app_result = await db.execute(
         text("""
             INSERT INTO applications
                 (job_id, tenant_id, candidate_name, candidate_email,
                  submission_source, processing_status)
-            VALUES (:jid, :tid, :name, :email, 'email', 'pending')
+            VALUES (:jid, :tid, :name, :email, :src, 'pending')
             RETURNING application_id
         """),
-        {"jid": job_id, "tid": tenant_id, "name": candidate_name, "email": candidate_email},
+        {"jid": job_id, "tid": tenant_id, "name": candidate_name, "email": candidate_email,
+         "src": submission_source},
     )
     application_id = str(app_result.scalar_one())
 

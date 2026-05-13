@@ -56,11 +56,11 @@ class UpdateIngestionRequest(BaseModel):
 
 
 class UpdateJobSettingsRequest(BaseModel):
-    send_confirmation_on_receipt: bool | None = None
-    send_confirmation_on_qualified: bool | None = None
-    send_confirmation_on_rejected: bool | None = None
-    send_confirmation_on_partial: bool | None = None
-    enable_ai_comparison: bool | None = None
+    send_confirmation_to_cv_email_for_upload:         bool | None = None
+    send_confirmation_to_cv_email_for_forwarding:     bool | None = None
+    send_confirmation_to_sender_for_forwarding:       bool | None = None
+    send_confirmation_to_cv_email_for_platform_email: bool | None = None
+    enable_ai_comparison:                             bool | None = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -94,8 +94,13 @@ async def _next_job_code(db) -> str:
 async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, Depends(get_db)]):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+
+    # super_admin sees all tenants; others see only their own
+    where_clause = "" if is_super_admin else "WHERE j.tenant_id = :tid"
+
     rows = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 j.job_id,
                 j.job_code,
@@ -106,14 +111,16 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
                 j.receive_cv_via_forwarding_email,
                 j.receive_cv_via_platform_email,
                 j.created_at,
+                t.tenant_name,
                 COUNT(a.application_id)                                             AS applications_total,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected
             FROM jobs j
+            JOIN tenants t ON t.tenant_id = j.tenant_id
             LEFT JOIN applications a ON a.job_id = j.job_id
-            WHERE j.tenant_id = :tid
-            GROUP BY j.job_id
+            {where_clause}
+            GROUP BY j.job_id, t.tenant_name
             ORDER BY j.created_at DESC
         """),
         {"tid": current_user.tenant_id},
@@ -128,6 +135,7 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
             "job_client":         r["job_client"] or "",
             "job_status":         r["job_status"],
             "platform_email":     r["platform_email"],
+            "tenant_name":        r["tenant_name"],
             "receive_cv_via_forwarding_email": r["receive_cv_via_forwarding_email"],
             "receive_cv_via_platform_email":   r["receive_cv_via_platform_email"],
             "posted_date":        r["created_at"].date().isoformat() if r["created_at"] else None,
@@ -232,10 +240,10 @@ async def get_job_details(
                 j.receive_cv_via_forwarding_email,
                 j.receive_cv_via_platform_email,
                 j.restrict_forwarding_sender_to_tenant_email,
-                j.send_confirmation_on_receipt,
-                j.send_confirmation_on_qualified,
-                j.send_confirmation_on_rejected,
-                j.send_confirmation_on_partial,
+                j.send_confirmation_to_cv_email_for_upload,
+                j.send_confirmation_to_cv_email_for_forwarding,
+                j.send_confirmation_to_sender_for_forwarding,
+                j.send_confirmation_to_cv_email_for_platform_email,
                 j.enable_ai_comparison,
                 j.qualified_threshold, j.partial_threshold,
                 j.created_at,
@@ -296,10 +304,10 @@ async def get_job_details(
             "receive_cv_via_forwarding_email":            via_forwarding,
             "receive_cv_via_platform_email":              via_platform,
             "restrict_forwarding_sender_to_tenant_email": job["restrict_forwarding_sender_to_tenant_email"],
-            "send_confirmation_on_receipt":   job["send_confirmation_on_receipt"],
-            "send_confirmation_on_qualified": job["send_confirmation_on_qualified"],
-            "send_confirmation_on_rejected":  job["send_confirmation_on_rejected"],
-            "send_confirmation_on_partial":   job["send_confirmation_on_partial"],
+            "send_confirmation_to_cv_email_for_upload":         job["send_confirmation_to_cv_email_for_upload"],
+            "send_confirmation_to_cv_email_for_forwarding":     job["send_confirmation_to_cv_email_for_forwarding"],
+            "send_confirmation_to_sender_for_forwarding":       job["send_confirmation_to_sender_for_forwarding"],
+            "send_confirmation_to_cv_email_for_platform_email": job["send_confirmation_to_cv_email_for_platform_email"],
             "enable_ai_comparison":           job["enable_ai_comparison"],
             "created_at":         job["created_at"].isoformat() if job["created_at"] else None,
             "applications_total":     job["applications_total"],
@@ -384,10 +392,10 @@ async def update_job_settings(
 
     updates: dict = {}
     for field in (
-        "send_confirmation_on_receipt",
-        "send_confirmation_on_qualified",
-        "send_confirmation_on_rejected",
-        "send_confirmation_on_partial",
+        "send_confirmation_to_cv_email_for_upload",
+        "send_confirmation_to_cv_email_for_forwarding",
+        "send_confirmation_to_sender_for_forwarding",
+        "send_confirmation_to_cv_email_for_platform_email",
         "enable_ai_comparison",
     ):
         val = getattr(body, field, None)

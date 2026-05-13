@@ -70,7 +70,7 @@ async def _score_cv_async(
     )
     from services.docx_service import convert_docx_to_pdf
     from services.email_service import send_cv_received_email
-    from services.llm_provider import get_comparison_client
+    from services.llm_provider import get_comparison_client_async
     from services.local_processor import run_gatekeeper
     from services.pdf_service import extract_text_from_pdf
     from services.prompt_config import load_prompt_config
@@ -113,10 +113,10 @@ async def _score_cv_async(
             text("""
                 SELECT jc.*, j.title AS job_title, j.description AS job_description,
                        j.enable_ai_comparison,
-                       j.send_confirmation_on_receipt,
-                       j.send_confirmation_on_qualified,
-                       j.send_confirmation_on_rejected,
-                       j.send_confirmation_on_partial
+                       j.send_confirmation_to_cv_email_for_upload,
+                       j.send_confirmation_to_cv_email_for_forwarding,
+                       j.send_confirmation_to_sender_for_forwarding,
+                       j.send_confirmation_to_cv_email_for_platform_email
                 FROM job_criteria jc
                 JOIN jobs j ON j.job_id = jc.job_id
                 WHERE jc.job_id = :jid
@@ -461,7 +461,7 @@ async def _score_cv_async(
         # ════════════════════════════════════════════════════════════════════════
         if criteria.get("enable_ai_comparison"):
             try:
-                comparison_client = get_comparison_client()
+                comparison_client = await get_comparison_client_async(db)
                 if comparison_client is not None:
                     comp_result = await score_cv(
                         cv_text=gatekeeper_result.cleaned_cv_text,
@@ -525,42 +525,61 @@ async def _score_cv_async(
             except Exception as exc:
                 logger.warning("AI comparison scoring failed for %s: %s", application_id, exc)
 
-        # ── Confirmation email ─────────────────────────────────────────────────
+        # ── Confirmation email (source-aware routing) ──────────────────────────
         try:
             app_row = await db.execute(
                 text("""
                     SELECT candidate_email, candidate_email_from_cv,
-                           candidate_name, confirmation_email_recipient
+                           candidate_name, confirmation_email_recipient,
+                           submission_source, email_sender_address
                     FROM applications WHERE application_id = :aid
                 """),
                 {"aid": application_id},
             )
             app_data = app_row.mappings().first()
             if app_data:
-                # Resolve recipient: explicit override → CV-extracted → submitted
-                recipient = (
+                source = app_data["submission_source"] or "manual_upload"
+
+                # CV owner email: explicit override → CV-extracted → submitted
+                cv_email = (
                     app_data["confirmation_email_recipient"]
                     or app_data["candidate_email_from_cv"]
                     or app_data["candidate_email"]
                 )
+                sender_email = app_data["email_sender_address"]
 
-                send_receipt   = criteria.get("send_confirmation_on_receipt",   True)
-                send_qualified = criteria.get("send_confirmation_on_qualified", False)
-                send_rejected  = criteria.get("send_confirmation_on_rejected",  False)
-                send_partial   = criteria.get("send_confirmation_on_partial",   False)
+                if source == "manual_upload":
+                    # Only send to CV email if the toggle is on for uploads
+                    if cv_email and criteria.get("send_confirmation_to_cv_email_for_upload", False):
+                        await send_cv_received_email(
+                            to_email=cv_email,
+                            candidate_name=app_data["candidate_name"],
+                            job_title=criteria["job_title"],
+                        )
 
-                should_send = send_receipt or (
-                    (decision == "qualified" and send_qualified)
-                    or (decision == "rejected" and send_rejected)
-                    or (decision == "partial"  and send_partial)
-                )
+                elif source == "email_forwarding":
+                    # Two independent sends: to CV owner and/or to the forwarding sender
+                    if cv_email and criteria.get("send_confirmation_to_cv_email_for_forwarding", False):
+                        await send_cv_received_email(
+                            to_email=cv_email,
+                            candidate_name=app_data["candidate_name"],
+                            job_title=criteria["job_title"],
+                        )
+                    if sender_email and criteria.get("send_confirmation_to_sender_for_forwarding", True):
+                        await send_cv_received_email(
+                            to_email=sender_email,
+                            candidate_name=app_data["candidate_name"],
+                            job_title=criteria["job_title"],
+                        )
 
-                if recipient and should_send:
-                    await send_cv_received_email(
-                        to_email=recipient,
-                        candidate_name=app_data["candidate_name"],
-                        job_title=criteria["job_title"],
-                    )
+                elif source == "platform_email":
+                    if cv_email and criteria.get("send_confirmation_to_cv_email_for_platform_email", True):
+                        await send_cv_received_email(
+                            to_email=cv_email,
+                            candidate_name=app_data["candidate_name"],
+                            job_title=criteria["job_title"],
+                        )
+
         except Exception as exc:
             logger.warning("Confirmation email failed for application %s: %s", application_id, exc)
 

@@ -45,6 +45,17 @@ const T = {
     interviewPrep: 'Interview Preparation',
     focusAreas: 'Focus Areas',
     suggestedQs: 'Suggested Questions',
+    aiComparison: 'AI Comparison Results',
+    compProvider: 'Provider',
+    compModel: 'Model',
+    compScore: 'Score',
+    compDelta: 'Delta vs primary',
+    promptTracking: 'Scoring Audit',
+    primaryProvider: 'Primary Provider',
+    primaryModel: 'Primary Model',
+    scoringPrompt: 'Scoring Prompt',
+    level2Prompt: 'Level 2 Prompt',
+    promptVersion: 'v',
     rawPayload: 'Developer: Raw AI Payload',
   },
   ar: {
@@ -83,6 +94,17 @@ const T = {
     interviewPrep: 'التحضير للمقابلة',
     focusAreas: 'مجالات التركيز',
     suggestedQs: 'أسئلة مقترحة',
+    aiComparison: 'نتائج المقارنة بالذكاء الاصطناعي',
+    compProvider: 'المزود',
+    compModel: 'النموذج',
+    compScore: 'النتيجة',
+    compDelta: 'الفارق عن الأساسي',
+    promptTracking: 'تدقيق التقييم',
+    primaryProvider: 'المزود الأساسي',
+    primaryModel: 'النموذج الأساسي',
+    scoringPrompt: 'نموذج التقييم',
+    level2Prompt: 'نموذج المستوى 2',
+    promptVersion: 'إ',
     rawPayload: 'المطور: البيانات الخام للذكاء الاصطناعي',
   },
 };
@@ -421,6 +443,122 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             </div>
           </div>
         </div>
+      )}
+
+      {/* AI Comparison Results */}
+      {(data.ai_comparisons?.length ?? 0) > 0 && (
+        <section className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
+          <div className="px-8 py-5 border-b border-slate-100">
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
+              <span className="w-2 h-4 bg-violet-500 rounded-full"></span>
+              {t.aiComparison}
+            </h3>
+          </div>
+          <div className="p-8 space-y-6">
+            {data.ai_comparisons!.map((cmp, i) => {
+              const delta = cmp.final_score - score;
+              const deltaLabel = delta > 0 ? `+${delta}` : String(delta);
+              const deltaColor = delta > 5 ? 'text-green-600' : delta < -5 ? 'text-red-600' : 'text-gray-500';
+              return (
+                <div key={i} className="bg-slate-50 rounded-2xl p-5 space-y-3">
+                  <div className="flex flex-wrap gap-4 items-center">
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compProvider}</p>
+                      <p className="text-sm font-semibold text-textMain capitalize">{cmp.provider}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compModel}</p>
+                      <p className="text-sm font-mono text-textMain">{cmp.model}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compScore}</p>
+                      <p className="text-2xl font-black text-textMain">{cmp.final_score}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compDelta}</p>
+                      <p className={`text-lg font-black ${deltaColor}`}>{deltaLabel}</p>
+                    </div>
+                  </div>
+                  {/* Per-dimension comparison bars */}
+                  {cmp.score_skills != null && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+                      {([
+                        [t.scoreBars[0], cmp.score_skills,           data.scores?.skills?.achieved],
+                        [t.scoreBars[1], cmp.score_experience,       data.scores?.experience?.achieved],
+                        [t.scoreBars[2], cmp.score_education,        data.scores?.education?.achieved],
+                        [t.scoreBars[3], cmp.score_certifications,   data.scores?.certifications?.achieved],
+                        [t.scoreBars[4], cmp.score_soft_skills,      data.scores?.soft_skills?.achieved],
+                        [t.scoreBars[5], cmp.score_domain_knowledge, data.scores?.domain_knowledge?.achieved],
+                      ] as [string, number | undefined, number | undefined][]).map(([label, compScore, primScore], idx) => {
+                        if (compScore == null) return null;
+                        const d = primScore != null ? compScore - primScore : null;
+                        return (
+                          <div key={idx} className="bg-white rounded-xl p-2 text-center">
+                            <p className="text-[9px] font-bold text-textMuted uppercase tracking-wider truncate">{label}</p>
+                            <p className="text-lg font-black text-textMain">{compScore}</p>
+                            {d != null && (
+                              <p className={`text-[10px] font-bold ${d > 0 ? 'text-green-600' : d < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                {d > 0 ? `+${d}` : String(d)}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Scoring Audit — provider, model, prompt versions */}
+      {(data.scoring_provider || data.ai_model || data.scoring_prompt_code || data.level2_prompt_code) && (
+        <section className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
+          <div className="px-8 py-5 border-b border-slate-100">
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
+              <span className="w-2 h-4 bg-slate-400 rounded-full"></span>
+              {t.promptTracking}
+            </h3>
+          </div>
+          <div className="px-8 py-5 flex flex-wrap gap-6 text-sm">
+            {data.scoring_provider && (
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.primaryProvider}</p>
+                <p className="text-textMain font-semibold capitalize">{data.scoring_provider}</p>
+              </div>
+            )}
+            {data.ai_model && (
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.primaryModel}</p>
+                <p className="text-textMain font-mono">{data.ai_model}</p>
+              </div>
+            )}
+            {data.scoring_prompt_code && (
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.scoringPrompt}</p>
+                <p className="text-textMain font-mono">
+                  {data.scoring_prompt_code}
+                  {data.scoring_prompt_version != null && (
+                    <span className="ml-1 text-xs text-textMuted">{t.promptVersion}{data.scoring_prompt_version}</span>
+                  )}
+                </p>
+              </div>
+            )}
+            {data.level2_prompt_code && (
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.level2Prompt}</p>
+                <p className="text-textMain font-mono">
+                  {data.level2_prompt_code}
+                  {data.level2_prompt_version != null && (
+                    <span className="ml-1 text-xs text-textMuted">{t.promptVersion}{data.level2_prompt_version}</span>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
       {/* Raw Data */}

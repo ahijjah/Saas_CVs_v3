@@ -13,6 +13,9 @@ interface JobsDashboardProps {
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
+const isSuperAdmin = (auth: AuthState) =>
+  (auth.user?.role || '').toLowerCase() === 'super_admin';
+
 const T = {
   en: {
     title: 'Active Recruitment Campaigns',
@@ -28,6 +31,7 @@ const T = {
     viewDetails: 'View Campaign Details',
     colCode: 'Job Code',
     colTitle: 'Title / Client',
+    colTenant: 'Tenant',
     colStatus: 'Status',
     colTotal: 'Total',
     colQualified: 'Qualified',
@@ -35,6 +39,8 @@ const T = {
     colRejected: 'Rejected',
     colActions: 'Actions',
     viewDetailsLink: 'View Details',
+    filterByTenant: 'Filter by tenant',
+    allTenants: 'All tenants',
   },
   ar: {
     title: 'حملات التوظيف النشطة',
@@ -50,6 +56,7 @@ const T = {
     viewDetails: 'عرض تفاصيل الحملة',
     colCode: 'رمز الوظيفة',
     colTitle: 'المسمى / العميل',
+    colTenant: 'المستأجر',
     colStatus: 'الحالة',
     colTotal: 'الإجمالي',
     colQualified: 'مؤهلون',
@@ -57,6 +64,8 @@ const T = {
     colRejected: 'مرفوضون',
     colActions: 'الإجراءات',
     viewDetailsLink: 'عرض التفاصيل',
+    filterByTenant: 'تصفية حسب المستأجر',
+    allTenants: 'جميع المستأجرين',
   },
 };
 
@@ -72,6 +81,8 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tenantFilter, setTenantFilter] = useState('');
+  const superAdmin = isSuperAdmin(auth);
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -107,6 +118,14 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
     onViewDetails(job.job_id);
   };
 
+  const tenantOptions = superAdmin
+    ? Array.from(new Set(jobs.map(j => j.tenant_name).filter(Boolean))) as string[]
+    : [];
+
+  const filteredJobs = tenantFilter
+    ? jobs.filter(j => j.tenant_name === tenantFilter)
+    : jobs;
+
   return (
     <div className="space-y-6 p-1 sm:p-0">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -114,6 +133,18 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
           <h3 className="text-lg font-medium text-textMain">{t.title}</h3>
           <p className="text-sm text-textMuted">{t.sub}</p>
         </div>
+        {superAdmin && tenantOptions.length > 0 && (
+          <select
+            value={tenantFilter}
+            onChange={e => setTenantFilter(e.target.value)}
+            className="w-full sm:w-48 border border-border rounded-xl px-3 py-2 text-sm text-textMain bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            <option value="">{t.allTenants}</option>
+            {tenantOptions.map(tn => (
+              <option key={tn} value={tn}>{tn}</option>
+            ))}
+          </select>
+        )}
         <button
           onClick={onAddJob}
           className="w-full sm:w-auto bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-xl font-bold flex items-center justify-center transition-all shadow-lg shadow-primary/20 gap-2"
@@ -135,12 +166,12 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
           <>
             {/* Mobile View: Cards */}
             <div className="block sm:hidden divide-y divide-border">
-              {jobs.length === 0 ? (
+              {filteredJobs.length === 0 ? (
                 <div className="p-8 text-center text-textMuted">
                   {t.noJobs}
                 </div>
               ) : (
-                jobs.map((job) => (
+                filteredJobs.map((job) => (
                   <div key={job.job_id} className="p-4 space-y-4">
                     <div className="flex justify-between items-start">
                       <div className="min-w-0 flex-1 pr-2">
@@ -224,6 +255,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                   <tr>
                     <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider whitespace-nowrap">{t.colCode}</th>
                     <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider whitespace-nowrap">{t.colTitle}</th>
+                    {superAdmin && <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider whitespace-nowrap">{t.colTenant}</th>}
                     <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider whitespace-nowrap">{t.colStatus}</th>
                     <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider text-center whitespace-nowrap">{t.colTotal}</th>
                     <th className="px-6 py-4 text-xs font-semibold text-success uppercase tracking-wider text-center whitespace-nowrap">{t.colQualified}</th>
@@ -233,14 +265,14 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {jobs.length === 0 ? (
+                  {filteredJobs.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-textMuted">
+                      <td colSpan={superAdmin ? 9 : 8} className="px-6 py-12 text-center text-textMuted">
                         {t.noJobsTable}
                       </td>
                     </tr>
                   ) : (
-                    jobs.map((job) => (
+                    filteredJobs.map((job) => (
                       <tr key={job.job_id} className="hover:bg-slate-50 transition-colors group">
                         <td className="px-6 py-4 text-sm font-medium whitespace-nowrap">
                           <button
@@ -259,6 +291,9 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                           </button>
                           <div className="text-xs text-textMuted whitespace-nowrap">{job.job_client}</div>
                         </td>
+                        {superAdmin && (
+                          <td className="px-6 py-4 text-xs text-textMuted whitespace-nowrap">{job.tenant_name || '—'}</td>
+                        )}
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             job.job_status === 'Active' ? 'bg-green-100 text-green-800' :

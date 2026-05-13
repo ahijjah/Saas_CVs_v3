@@ -83,6 +83,7 @@ export interface Job {
   job_title: string;
   job_client: string;
   job_status: 'Active' | 'Closed' | 'Draft';
+  tenant_name?: string;
   job_type?: string;
   location?: string;
   duration?: string;
@@ -141,11 +142,11 @@ export interface JobDetails extends Job {
   receive_cv_via_forwarding_email?: boolean;
   receive_cv_via_platform_email?: boolean;
   restrict_forwarding_sender_to_tenant_email?: boolean;
-  // Confirmation email toggles
-  send_confirmation_on_receipt?: boolean;
-  send_confirmation_on_qualified?: boolean;
-  send_confirmation_on_rejected?: boolean;
-  send_confirmation_on_partial?: boolean;
+  // Confirmation email toggles (source-aware)
+  send_confirmation_to_cv_email_for_upload?: boolean;
+  send_confirmation_to_cv_email_for_forwarding?: boolean;
+  send_confirmation_to_sender_for_forwarding?: boolean;
+  send_confirmation_to_cv_email_for_platform_email?: boolean;
   // AI comparison toggle
   enable_ai_comparison?: boolean;
   criteria_extraction_status?: 'pending' | 'processing' | 'completed' | 'failed';

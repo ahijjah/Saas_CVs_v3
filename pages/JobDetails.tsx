@@ -89,6 +89,15 @@ const T = {
     criteriaProcessing: 'AI criteria analysis is in progress. This page will refresh automatically.',
     criteriaFailed: 'AI criteria analysis failed.',
     retryExtraction: 'Retry',
+    restrictSender: 'Restrict to tenant email domain',
+    restrictSenderHint: 'Only accept forwarded CVs from your own email domain.',
+    confirmationSettings: 'Confirmation Email & AI Settings',
+    confirmUpload: 'Send confirmation to candidate email on manual upload',
+    confirmFwdCvEmail: 'Send confirmation to candidate email on forwarding',
+    confirmFwdSenderEmail: 'Send confirmation to forwarding sender',
+    confirmPlatformEmail: 'Send confirmation to candidate email on platform email',
+    aiComparisonToggle: 'Enable AI comparison scoring',
+    aiComparisonHint: 'Run a secondary LLM to compare scoring results.',
   },
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
@@ -165,6 +174,15 @@ const T = {
     criteriaProcessing: 'تحليل معايير الذكاء الاصطناعي قيد التنفيذ. ستُحدَّث هذه الصفحة تلقائياً.',
     criteriaFailed: 'فشل تحليل معايير الذكاء الاصطناعي.',
     retryExtraction: 'إعادة المحاولة',
+    restrictSender: 'تقييد بنطاق البريد الخاص بالمستأجر',
+    restrictSenderHint: 'قبول السير المُعاد توجيهها من نطاقك فقط.',
+    confirmationSettings: 'إعدادات تأكيد البريد والذكاء الاصطناعي',
+    confirmUpload: 'إرسال تأكيد لبريد المرشح عند الرفع اليدوي',
+    confirmFwdCvEmail: 'إرسال تأكيد لبريد المرشح عند إعادة التوجيه',
+    confirmFwdSenderEmail: 'إرسال تأكيد لمُرسل الإعادة',
+    confirmPlatformEmail: 'إرسال تأكيد لبريد المرشح عبر البريد المخصص',
+    aiComparisonToggle: 'تفعيل التقييم المقارن بالذكاء الاصطناعي',
+    aiComparisonHint: 'تشغيل نموذج ذكاء اصطناعي ثانوي لمقارنة النتائج.',
   },
 };
 
@@ -401,10 +419,15 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     navigator.clipboard ? navigator.clipboard.writeText(text).then(confirm).catch(fallback) : fallback();
   }, [addToast]);
 
-  const handleToggle = useCallback(async (field: 'forwarding_enabled' | 'alias_enabled', value: boolean) => {
+  const handleIngestionToggle = useCallback(async (
+    field: 'receive_cv_via_forwarding_email' | 'receive_cv_via_platform_email' | 'restrict_forwarding_sender_to_tenant_email',
+    value: boolean,
+  ) => {
     if (!details) return;
-    const setToggling = field === 'forwarding_enabled' ? setTogglingFwd : setTogglingAlias;
-    setToggling(true);
+    const setToggling = field === 'receive_cv_via_forwarding_email' ? setTogglingFwd
+                      : field === 'receive_cv_via_platform_email' ? setTogglingAlias
+                      : null;
+    setToggling?.(true);
     try {
       await apiService.put(
         `${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/${details.job_id}/ingestion`,
@@ -415,7 +438,29 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     } catch {
       addToast('Failed to update ingestion setting.', 'error');
     } finally {
-      setToggling(false);
+      setToggling?.(false);
+    }
+  }, [details, auth.token, addToast]);
+
+  const handleSettingsToggle = useCallback(async (
+    field: 'send_confirmation_to_cv_email_for_upload'
+         | 'send_confirmation_to_cv_email_for_forwarding'
+         | 'send_confirmation_to_sender_for_forwarding'
+         | 'send_confirmation_to_cv_email_for_platform_email'
+         | 'enable_ai_comparison',
+    value: boolean,
+  ) => {
+    if (!details) return;
+    try {
+      await apiService.put(
+        `${WEBHOOK_CONFIG.JOB_SETTINGS_BASE_URL}/${details.job_id}/settings`,
+        { [field]: value },
+        auth.token!
+      );
+      setDetails(prev => prev ? { ...prev, [field]: value } : prev);
+      addToast('Setting updated.', 'success');
+    } catch {
+      addToast('Failed to update setting.', 'error');
     }
   }, [details, auth.token, addToast]);
 
@@ -681,7 +726,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
 
             {/* Option 1 — Forward to central email */}
-            <div className={`rounded-2xl border-2 p-5 transition-all ${details.forwarding_enabled ? 'border-primary/20 bg-blue-50/40' : 'border-slate-200 bg-slate-50/60 opacity-60'}`}>
+            <div className={`rounded-2xl border-2 p-5 transition-all ${details.receive_cv_via_forwarding_email ? 'border-primary/20 bg-blue-50/40' : 'border-slate-200 bg-slate-50/60 opacity-60'}`}>
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
                   <p className="text-xs font-black text-textMain">{t.option1Title}</p>
@@ -689,10 +734,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 </div>
                 <button
                   disabled={togglingFwd}
-                  onClick={() => handleToggle('forwarding_enabled', !details.forwarding_enabled)}
-                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.forwarding_enabled ? 'bg-primary' : 'bg-slate-300'} ${togglingFwd ? 'opacity-50' : ''}`}
+                  onClick={() => handleIngestionToggle('receive_cv_via_forwarding_email', !details.receive_cv_via_forwarding_email)}
+                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_forwarding_email ? 'bg-primary' : 'bg-slate-300'} ${togglingFwd ? 'opacity-50' : ''}`}
                 >
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.forwarding_enabled ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.receive_cv_via_forwarding_email ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
                 </button>
               </div>
               <div>
@@ -721,13 +766,28 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   {copiedJobRef ? t.copied : t.copyBtn}
                 </button>
               </div>
-              <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.forwarding_enabled ? 'text-success' : 'text-textMuted'}`}>
-                {details.forwarding_enabled ? `● ${t.enabled}` : `○ ${t.disabled}`}
+              {/* Restrict sender domain — only shown when forwarding is enabled */}
+              {details.receive_cv_via_forwarding_email && (
+                <div className="mt-3 flex items-center justify-between bg-white/70 border border-blue-100 rounded-xl px-3 py-2">
+                  <div>
+                    <p className="text-[10px] font-black text-textMain">{t.restrictSender}</p>
+                    <p className="text-[9px] text-textMuted">{t.restrictSenderHint}</p>
+                  </div>
+                  <button
+                    onClick={() => handleIngestionToggle('restrict_forwarding_sender_to_tenant_email', !details.restrict_forwarding_sender_to_tenant_email)}
+                    className={`shrink-0 relative w-9 h-4.5 rounded-full transition-colors focus:outline-none ${details.restrict_forwarding_sender_to_tenant_email ? 'bg-primary' : 'bg-slate-300'}`}
+                  >
+                    <span className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-transform ${details.restrict_forwarding_sender_to_tenant_email ? (isAr ? '-translate-x-4.5' : 'translate-x-4.5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                  </button>
+                </div>
+              )}
+              <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.receive_cv_via_forwarding_email ? 'text-success' : 'text-textMuted'}`}>
+                {details.receive_cv_via_forwarding_email ? `● ${t.enabled}` : `○ ${t.disabled}`}
               </p>
             </div>
 
             {/* Option 2 — Dedicated alias */}
-            <div className={`rounded-2xl border-2 p-5 transition-all ${details.alias_enabled ? 'border-success/30 bg-green-50/40' : 'border-slate-200 bg-slate-50/60 opacity-60'}`}>
+            <div className={`rounded-2xl border-2 p-5 transition-all ${details.receive_cv_via_platform_email ? 'border-success/30 bg-green-50/40' : 'border-slate-200 bg-slate-50/60 opacity-60'}`}>
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -738,10 +798,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 </div>
                 <button
                   disabled={togglingAlias}
-                  onClick={() => handleToggle('alias_enabled', !details.alias_enabled)}
-                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.alias_enabled ? 'bg-success' : 'bg-slate-300'} ${togglingAlias ? 'opacity-50' : ''}`}
+                  onClick={() => handleIngestionToggle('receive_cv_via_platform_email', !details.receive_cv_via_platform_email)}
+                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_platform_email ? 'bg-success' : 'bg-slate-300'} ${togglingAlias ? 'opacity-50' : ''}`}
                 >
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.alias_enabled ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.receive_cv_via_platform_email ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
                 </button>
               </div>
               <div>
@@ -758,9 +818,46 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   )}
                 </div>
               </div>
-              <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.alias_enabled ? 'text-success' : 'text-textMuted'}`}>
-                {details.alias_enabled ? `● ${t.enabled}` : `○ ${t.disabled}`}
+              <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.receive_cv_via_platform_email ? 'text-success' : 'text-textMuted'}`}>
+                {details.receive_cv_via_platform_email ? `● ${t.enabled}` : `○ ${t.disabled}`}
               </p>
+            </div>
+          </div>
+
+          {/* ── Confirmation Email & AI Comparison Settings ──────────────────── */}
+          <div className="mt-4 bg-slate-50 rounded-2xl border border-border p-5 space-y-3">
+            <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.confirmationSettings}</p>
+
+            {/* Confirmation toggles */}
+            {([
+              ['send_confirmation_to_cv_email_for_upload',         t.confirmUpload,          'send_confirmation_to_cv_email_for_upload'],
+              ['send_confirmation_to_cv_email_for_forwarding',     t.confirmFwdCvEmail,      'send_confirmation_to_cv_email_for_forwarding'],
+              ['send_confirmation_to_sender_for_forwarding',       t.confirmFwdSenderEmail,  'send_confirmation_to_sender_for_forwarding'],
+              ['send_confirmation_to_cv_email_for_platform_email', t.confirmPlatformEmail,   'send_confirmation_to_cv_email_for_platform_email'],
+            ] as [keyof typeof details, string, 'send_confirmation_to_cv_email_for_upload' | 'send_confirmation_to_cv_email_for_forwarding' | 'send_confirmation_to_sender_for_forwarding' | 'send_confirmation_to_cv_email_for_platform_email'][]).map(([key, label, field]) => (
+              <div key={field} className="flex items-center justify-between gap-3 py-1.5 border-b border-slate-200 last:border-0">
+                <p className="text-xs text-textMain">{label}</p>
+                <button
+                  onClick={() => handleSettingsToggle(field, !details[key])}
+                  className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details[key] ? 'bg-primary' : 'bg-slate-300'}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details[key] ? (isAr ? '-translate-x-4' : 'translate-x-4') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                </button>
+              </div>
+            ))}
+
+            {/* AI Comparison */}
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <div>
+                <p className="text-xs font-black text-textMain">{t.aiComparisonToggle}</p>
+                <p className="text-[10px] text-textMuted">{t.aiComparisonHint}</p>
+              </div>
+              <button
+                onClick={() => handleSettingsToggle('enable_ai_comparison', !details.enable_ai_comparison)}
+                className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details.enable_ai_comparison ? 'bg-violet-500' : 'bg-slate-300'}`}
+              >
+                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.enable_ai_comparison ? (isAr ? '-translate-x-4' : 'translate-x-4') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+              </button>
             </div>
           </div>
 
