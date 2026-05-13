@@ -47,8 +47,20 @@ class UpdateCriteriaRequest(BaseModel):
 
 
 class UpdateIngestionRequest(BaseModel):
+    receive_cv_via_forwarding_email: bool | None = None
+    receive_cv_via_platform_email: bool | None = None
+    restrict_forwarding_sender_to_tenant_email: bool | None = None
+    # Legacy field names kept for backward compat
     forwarding_enabled: bool | None = None
     alias_enabled: bool | None = None
+
+
+class UpdateJobSettingsRequest(BaseModel):
+    send_confirmation_on_receipt: bool | None = None
+    send_confirmation_on_qualified: bool | None = None
+    send_confirmation_on_rejected: bool | None = None
+    send_confirmation_on_partial: bool | None = None
+    enable_ai_comparison: bool | None = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -91,13 +103,13 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
                 j.department      AS job_client,
                 INITCAP(j.status) AS job_status,
                 j.platform_email,
-                j.forwarding_enabled,
-                j.alias_enabled,
+                j.receive_cv_via_forwarding_email,
+                j.receive_cv_via_platform_email,
                 j.created_at,
-                COUNT(a.application_id)                                                                  AS applications_total,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')                         AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')                           AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.decision IN ('rejected', 'low_match'))          AS applications_rejected
+                COUNT(a.application_id)                                             AS applications_total,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
             WHERE j.tenant_id = :tid
@@ -116,8 +128,8 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
             "job_client":         r["job_client"] or "",
             "job_status":         r["job_status"],
             "platform_email":     r["platform_email"],
-            "forwarding_enabled": r["forwarding_enabled"],
-            "alias_enabled":      r["alias_enabled"],
+            "receive_cv_via_forwarding_email": r["receive_cv_via_forwarding_email"],
+            "receive_cv_via_platform_email":   r["receive_cv_via_platform_email"],
             "posted_date":        r["created_at"].date().isoformat() if r["created_at"] else None,
             "applications_total":     r["applications_total"],
             "applications_qualified": r["applications_qualified"],
@@ -217,15 +229,21 @@ async def get_job_details(
             SELECT
                 j.job_id, j.job_code, j.title, j.department, j.description,
                 j.status, j.platform_email,
-                j.forwarding_enabled, j.alias_enabled,
+                j.receive_cv_via_forwarding_email,
+                j.receive_cv_via_platform_email,
+                j.restrict_forwarding_sender_to_tenant_email,
+                j.send_confirmation_on_receipt,
+                j.send_confirmation_on_qualified,
+                j.send_confirmation_on_rejected,
+                j.send_confirmation_on_partial,
+                j.enable_ai_comparison,
                 j.qualified_threshold, j.partial_threshold,
                 j.created_at,
-                COUNT(a.application_id)                                                                  AS applications_total,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')                         AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')                           AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.decision IN ('rejected', 'low_match'))          AS applications_rejected,
-                t.cv_ingestion_mode AS tenant_ingestion_mode,
-                t.forwarding_email  AS tenant_forwarding_email
+                COUNT(a.application_id)                                             AS applications_total,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected,
+                t.forwarding_email AS tenant_forwarding_email
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
             JOIN tenants t ON t.tenant_id = j.tenant_id
@@ -254,16 +272,16 @@ async def get_job_details(
     )
     criteria = criteria_row.mappings().first()
 
-    # Load FORWARDING_EMAIL from system_config
     forwarding_email = await _get_forwarding_email(db)
 
     job_code = job["job_code"] or str(job["job_id"])[:8].upper()
 
     extraction_status = criteria["criteria_extraction_status"] if criteria else "pending"
     extraction_error  = criteria["criteria_extraction_error"]  if criteria else None
+    analysis_json     = criteria["analysis_json"] if criteria else None
 
-    # analysis_json is the nested AnalysisJson structure; fall back to None when pending
-    analysis_json = criteria["analysis_json"] if criteria else None
+    via_forwarding = job["receive_cv_via_forwarding_email"]
+    via_platform   = job["receive_cv_via_platform_email"]
 
     return {
         "details": {
@@ -275,8 +293,14 @@ async def get_job_details(
             "description":        job["description"],
             "platform_email":     job["platform_email"],
             "forwarding_email":   forwarding_email,
-            "forwarding_enabled": job["forwarding_enabled"],
-            "alias_enabled":      job["alias_enabled"],
+            "receive_cv_via_forwarding_email":            via_forwarding,
+            "receive_cv_via_platform_email":              via_platform,
+            "restrict_forwarding_sender_to_tenant_email": job["restrict_forwarding_sender_to_tenant_email"],
+            "send_confirmation_on_receipt":   job["send_confirmation_on_receipt"],
+            "send_confirmation_on_qualified": job["send_confirmation_on_qualified"],
+            "send_confirmation_on_rejected":  job["send_confirmation_on_rejected"],
+            "send_confirmation_on_partial":   job["send_confirmation_on_partial"],
+            "enable_ai_comparison":           job["enable_ai_comparison"],
             "created_at":         job["created_at"].isoformat() if job["created_at"] else None,
             "applications_total":     job["applications_total"],
             "applications_qualified": job["applications_qualified"],
@@ -286,10 +310,9 @@ async def get_job_details(
             "partial_threshold":      job["partial_threshold"],
             "criteria_extraction_status": extraction_status,
             "criteria_extraction_error":  extraction_error,
-            # Legacy field — kept for backward compat
             "ingestion_note": (
                 f"Send CVs directly to: {job['platform_email']}"
-                if job["alias_enabled"]
+                if via_platform
                 else f"Forward CVs to: {forwarding_email} — include {job_code} in subject"
             ),
         },
@@ -304,7 +327,7 @@ async def update_ingestion_settings(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Toggle forwarding_enabled / alias_enabled for a job."""
+    """Update per-job CV ingestion channel settings."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     job_row = await db.execute(
@@ -315,10 +338,19 @@ async def update_ingestion_settings(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     updates: dict = {}
-    if body.forwarding_enabled is not None:
-        updates["forwarding_enabled"] = body.forwarding_enabled
-    if body.alias_enabled is not None:
-        updates["alias_enabled"] = body.alias_enabled
+    # New semantic names take precedence; legacy names are accepted as aliases
+    if body.receive_cv_via_forwarding_email is not None:
+        updates["receive_cv_via_forwarding_email"] = body.receive_cv_via_forwarding_email
+    elif body.forwarding_enabled is not None:
+        updates["receive_cv_via_forwarding_email"] = body.forwarding_enabled
+
+    if body.receive_cv_via_platform_email is not None:
+        updates["receive_cv_via_platform_email"] = body.receive_cv_via_platform_email
+    elif body.alias_enabled is not None:
+        updates["receive_cv_via_platform_email"] = body.alias_enabled
+
+    if body.restrict_forwarding_sender_to_tenant_email is not None:
+        updates["restrict_forwarding_sender_to_tenant_email"] = body.restrict_forwarding_sender_to_tenant_email
 
     if not updates:
         return {"success": True, "message": "No changes"}
@@ -331,6 +363,48 @@ async def update_ingestion_settings(
     )
     await db.commit()
     return {"success": True, "message": "Ingestion settings updated"}
+
+
+@router.put("/{job_id}/settings")
+async def update_job_settings(
+    job_id: str,
+    body: UpdateJobSettingsRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update per-job confirmation email toggles and AI comparison mode."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    job_row = await db.execute(
+        text("SELECT job_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
+        {"jid": job_id, "tid": current_user.tenant_id},
+    )
+    if not job_row.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    updates: dict = {}
+    for field in (
+        "send_confirmation_on_receipt",
+        "send_confirmation_on_qualified",
+        "send_confirmation_on_rejected",
+        "send_confirmation_on_partial",
+        "enable_ai_comparison",
+    ):
+        val = getattr(body, field, None)
+        if val is not None:
+            updates[field] = val
+
+    if not updates:
+        return {"success": True, "message": "No changes"}
+
+    set_sql = ", ".join(f"{k} = :{k}" for k in updates)
+    updates["jid"] = job_id
+    await db.execute(
+        text(f"UPDATE jobs SET {set_sql} WHERE job_id = :jid"),
+        updates,
+    )
+    await db.commit()
+    return {"success": True, "message": "Job settings updated"}
 
 
 @router.put("/{job_id}/criteria")

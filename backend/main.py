@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import get_settings
 from database import engine
 from routers import (
-    admin, ai_prompts, applications, auth, jobs,
+    admin, ai_prompts, applications, audit_logs, auth, jobs,
     platform_config, platform_secrets, subscription_plans, tenant,
 )
 
@@ -44,6 +44,7 @@ app.include_router(subscription_plans.router)
 app.include_router(tenant.router)
 app.include_router(platform_secrets.router)
 app.include_router(ai_prompts.router)
+app.include_router(audit_logs.router)
 
 
 @app.get("/health")

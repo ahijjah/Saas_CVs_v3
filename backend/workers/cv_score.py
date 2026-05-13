@@ -5,17 +5,17 @@ Pipeline:
   1. File read + DOCX→PDF conversion
   2. PDF text extraction (PyMuPDF)
   3. Level 1 — Local Gatekeeper (semantic similarity + bilingual skill matching)
-     → Below threshold: mark 'low_match', evaluation_stage=1, skip LLM (cost saving)
+     → Below threshold: mark scored/rejected, evaluation_stage=1, skip LLM (cost saving)
   4. Level 2 — Lightweight LLM binary screen (PASS/REJECT, ~10x cheaper than full)
-     → REJECT: mark 'rejected', evaluation_stage=2, skip full scoring
-  5. Level 3 — Full LLM scoring (GPT-4o-mini bilingual)
-     → Produces final score, decision, strengths, gaps, candidate name
-  6. Write application_scores + update applications table
-  7. Send confirmation email to candidate
+     → REJECT: mark scored/rejected, evaluation_stage=2, skip full scoring
+  5. Level 3 — Full LLM scoring (GPT-4o bilingual, output in English)
+     → Produces final score (ceiling integer), decision, score_details, candidate contacts
+  6. Optional — AI comparison run (DeepSeek secondary scorer, if job toggle enabled)
+  7. Write application_scores + update applications table
+  8. Send confirmation email per job toggle settings
 
 evaluation_stage in the applications table is updated after each level so the
-frontend can show live progress during polling (Level 1→2→3 transitions visible
-within the 3-second polling interval).
+frontend can show live progress during polling.
 """
 import asyncio
 import json
@@ -70,6 +70,7 @@ async def _score_cv_async(
     )
     from services.docx_service import convert_docx_to_pdf
     from services.email_service import send_cv_received_email
+    from services.llm_provider import get_comparison_client
     from services.local_processor import run_gatekeeper
     from services.pdf_service import extract_text_from_pdf
     from services.prompt_config import load_prompt_config
@@ -110,7 +111,12 @@ async def _score_cv_async(
         # ── Step 3: Fetch job criteria + config ───────────────────────────────
         criteria_row = await db.execute(
             text("""
-                SELECT jc.*, j.title AS job_title, j.description AS job_description
+                SELECT jc.*, j.title AS job_title, j.description AS job_description,
+                       j.enable_ai_comparison,
+                       j.send_confirmation_on_receipt,
+                       j.send_confirmation_on_qualified,
+                       j.send_confirmation_on_rejected,
+                       j.send_confirmation_on_partial
                 FROM job_criteria jc
                 JOIN jobs j ON j.job_id = jc.job_id
                 WHERE jc.job_id = :jid
@@ -123,7 +129,7 @@ async def _score_cv_async(
 
         prompt_cfg = await load_prompt_config(db, tenant_id, job_id, overrides=scoring_overrides)
 
-        # Load active DB prompts; each falls back to hardcoded default if no active version
+        # Load active DB prompts; each returns code+version for audit references
         level2_prompt = await load_active_prompt(db, "level2_screening")
         scoring_prompt = await load_active_prompt(db, "cv_scoring")
 
@@ -161,12 +167,12 @@ async def _score_cv_async(
             await db.execute(
                 text("""
                     UPDATE applications SET
-                        gatekeeper_passed    = false,
-                        evaluation_stage     = 1,
+                        gatekeeper_passed      = false,
+                        evaluation_stage       = 1,
                         evaluation_exit_reason = :reason,
-                        processing_status   = 'low_match',
-                        decision            = 'low_match',
-                        scored_at           = now()
+                        processing_status      = 'scored',
+                        decision               = 'rejected',
+                        scored_at              = now()
                     WHERE application_id = :aid
                 """),
                 {"reason": gatekeeper_result.rejection_reason, "aid": application_id},
@@ -182,7 +188,8 @@ async def _score_cv_async(
                         local_similarity_score, skill_match_ratio,
                         matched_skills, missing_skills,
                         cv_language, gatekeeper_passed,
-                        evaluation_notes, reasoning
+                        evaluation_notes, reasoning,
+                        scoring_provider
                     ) VALUES (
                         :aid,
                         0, 0, 0, 0, 0, 0, 0,
@@ -190,7 +197,8 @@ async def _score_cv_async(
                         :sim, :skill_ratio,
                         :matched, :missing,
                         :cv_lang, false,
-                        :notes, :reasoning
+                        :notes, :reasoning,
+                        'local'
                     )
                 """),
                 {
@@ -208,7 +216,7 @@ async def _score_cv_async(
             await db.commit()
             return
 
-        # Level 1 passed — persist gatekeeper data + stage so frontend shows progress
+        # Level 1 passed — persist gatekeeper data + stage
         await db.execute(
             text("""
                 UPDATE applications SET
@@ -218,7 +226,7 @@ async def _score_cv_async(
             """),
             {"aid": application_id},
         )
-        await db.commit()  # also commits extracted_text update from Step 2
+        await db.commit()
 
         # ════════════════════════════════════════════════════════════════════════
         # LEVEL 2 — Lightweight LLM binary screen (cheap: short prompt, 120 tokens)
@@ -259,7 +267,9 @@ async def _score_cv_async(
                         local_similarity_score, skill_match_ratio,
                         matched_skills, missing_skills,
                         cv_language, gatekeeper_passed,
-                        evaluation_notes, reasoning
+                        evaluation_notes, reasoning,
+                        level2_prompt_code, level2_prompt_version,
+                        scoring_provider
                     ) VALUES (
                         :aid,
                         0, 0, 0, 0, 0, 0, 0,
@@ -267,7 +277,9 @@ async def _score_cv_async(
                         :sim, :skill_ratio,
                         :matched, :missing,
                         :cv_lang, true,
-                        :notes, :reasoning
+                        :notes, :reasoning,
+                        :l2_code, :l2_ver,
+                        'openai'
                     )
                 """),
                 {
@@ -280,12 +292,14 @@ async def _score_cv_async(
                     "cv_lang":    gatekeeper_result.cv_language,
                     "notes":      level2["reason"],
                     "reasoning":  json.dumps({"level2_screen": level2["reason"]}),
+                    "l2_code":    (level2_prompt or {}).get("prompt_code"),
+                    "l2_ver":     (level2_prompt or {}).get("version"),
                 },
             )
             await db.commit()
             return
 
-        # Level 2 passed — update stage so frontend shows "Level 3: Full scoring..."
+        # Level 2 passed — update stage
         await db.execute(
             text("UPDATE applications SET evaluation_stage = 2 WHERE application_id = :aid"),
             {"aid": application_id},
@@ -293,7 +307,7 @@ async def _score_cv_async(
         await db.commit()
 
         # ════════════════════════════════════════════════════════════════════════
-        # LEVEL 3 — Full LLM scoring (complete evaluation)
+        # LEVEL 3 — Full LLM scoring
         # ════════════════════════════════════════════════════════════════════════
         criteria_dict = {
             "skills":             criteria["skills"],
@@ -325,12 +339,31 @@ async def _score_cv_async(
         q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
         decision = determine_decision(final_score, q_thresh, p_thresh)
 
-        extracted_name = (ai_result.get("candidate_name") or "").strip()
+        # Update candidate info from AI extraction
+        extracted_name  = (ai_result.get("candidate_name")  or "").strip()
+        extracted_email = (ai_result.get("candidate_email") or "").strip()
+        extracted_phone = (ai_result.get("candidate_phone") or "").strip()
+
+        update_parts: list[str] = []
+        update_params: dict = {"aid": application_id}
+
         if extracted_name:
+            update_parts.append("candidate_name = :cname")
+            update_params["cname"] = extracted_name
+        if extracted_email:
+            update_parts.append("candidate_email_from_cv = :cv_email")
+            update_params["cv_email"] = extracted_email
+        if extracted_phone:
+            update_parts.append("candidate_phone_from_cv = :cv_phone")
+            update_params["cv_phone"] = extracted_phone
+
+        if update_parts:
             await db.execute(
-                text("UPDATE applications SET candidate_name = :name WHERE application_id = :aid"),
-                {"name": extracted_name, "aid": application_id},
+                text(f"UPDATE applications SET {', '.join(update_parts)} WHERE application_id = :aid"),
+                update_params,
             )
+
+        score_details = ai_result.get("score_details") or {}
 
         await db.execute(
             text("""
@@ -345,7 +378,11 @@ async def _score_cv_async(
                     reasoning, raw_ai_response,
                     local_similarity_score, skill_match_ratio,
                     matched_skills, missing_skills,
-                    cv_language, gatekeeper_passed
+                    cv_language, gatekeeper_passed,
+                    score_details,
+                    level2_prompt_code, level2_prompt_version,
+                    scoring_prompt_code, scoring_prompt_version,
+                    scoring_provider
                 ) VALUES (
                     :aid,
                     :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
@@ -355,46 +392,55 @@ async def _score_cv_async(
                     :reasoning, :raw,
                     :sim, :skill_ratio,
                     :matched, :missing,
-                    :cv_lang, :gk_passed
+                    :cv_lang, :gk_passed,
+                    :score_details,
+                    :l2_code, :l2_ver,
+                    :sc_code, :sc_ver,
+                    'openai'
                 )
             """),
             {
-                "aid":       application_id,
-                "s_skills":  ai_result.get("score_skills", 0),
-                "s_exp":     ai_result.get("score_experience", 0),
-                "s_edu":     ai_result.get("score_education", 0),
-                "s_cert":    ai_result.get("score_certifications", 0),
-                "s_soft":    ai_result.get("score_soft_skills", 0),
-                "s_domain":  ai_result.get("score_domain_knowledge", 0),
-                "s_other":   ai_result.get("score_other", 0),
-                "final":     final_score,
-                "weights":   json.dumps(weights),
-                "model":     cfg.openai_model,
-                "strengths": ai_result.get("strengths", []),
-                "gaps":      ai_result.get("gaps_identified", []),
-                "red_flags": ai_result.get("red_flags", []),
-                "notes":     ai_result.get("evaluation_notes"),
-                "questions": ai_result.get("interview_questions", []),
-                "reasoning": json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
-                "raw":       json.dumps(ai_result, ensure_ascii=False),
-                "sim":       gatekeeper_result.semantic_similarity_pct,
+                "aid":        application_id,
+                "s_skills":   ai_result.get("score_skills", 0),
+                "s_exp":      ai_result.get("score_experience", 0),
+                "s_edu":      ai_result.get("score_education", 0),
+                "s_cert":     ai_result.get("score_certifications", 0),
+                "s_soft":     ai_result.get("score_soft_skills", 0),
+                "s_domain":   ai_result.get("score_domain_knowledge", 0),
+                "s_other":    ai_result.get("score_other", 0),
+                "final":      final_score,
+                "weights":    json.dumps(weights),
+                "model":      (scoring_prompt or {}).get("model") or cfg.openai_model,
+                "strengths":  ai_result.get("strengths", []),
+                "gaps":       ai_result.get("gaps_identified", []),
+                "red_flags":  ai_result.get("red_flags", []),
+                "notes":      ai_result.get("evaluation_notes"),
+                "questions":  ai_result.get("interview_questions", []),
+                "reasoning":  json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
+                "raw":        json.dumps(ai_result, ensure_ascii=False),
+                "sim":        gatekeeper_result.semantic_similarity_pct,
                 "skill_ratio": gatekeeper_result.skill_match_ratio,
-                "matched":   gatekeeper_result.matched_skills,
-                "missing":   gatekeeper_result.missing_skills,
-                "cv_lang":   gatekeeper_result.cv_language,
-                "gk_passed": gatekeeper_result.gatekeeper_passed,
+                "matched":    gatekeeper_result.matched_skills,
+                "missing":    gatekeeper_result.missing_skills,
+                "cv_lang":    gatekeeper_result.cv_language,
+                "gk_passed":  gatekeeper_result.gatekeeper_passed,
+                "score_details": json.dumps(score_details, ensure_ascii=False),
+                "l2_code":    (level2_prompt or {}).get("prompt_code"),
+                "l2_ver":     (level2_prompt or {}).get("version"),
+                "sc_code":    (scoring_prompt or {}).get("prompt_code"),
+                "sc_ver":     (scoring_prompt or {}).get("version"),
             },
         )
 
         await db.execute(
             text("""
                 UPDATE applications SET
-                    decision                = :decision,
-                    processing_status       = 'scored',
-                    evaluation_stage        = 3,
+                    decision                 = :decision,
+                    processing_status        = 'scored',
+                    evaluation_stage         = 3,
                     qualified_threshold_used = :qt,
-                    partial_threshold_used  = :pt,
-                    scored_at               = now()
+                    partial_threshold_used   = :pt,
+                    scored_at                = now()
                 WHERE application_id = :aid
             """),
             {"decision": decision, "qt": q_thresh, "pt": p_thresh, "aid": application_id},
@@ -402,7 +448,7 @@ async def _score_cv_async(
         await db.commit()
 
         logger.info(
-            "Level 3 SCORED application %s | lang=%s | sim=%.1f%% | final=%.2f | decision=%s",
+            "Level 3 SCORED application %s | lang=%s | sim=%.1f%% | final=%d | decision=%s",
             application_id,
             gatekeeper_result.cv_language,
             gatekeeper_result.semantic_similarity_pct,
@@ -410,18 +456,113 @@ async def _score_cv_async(
             decision,
         )
 
+        # ════════════════════════════════════════════════════════════════════════
+        # OPTIONAL — AI comparison (secondary LLM provider)
+        # ════════════════════════════════════════════════════════════════════════
+        if criteria.get("enable_ai_comparison"):
+            try:
+                comparison_client = get_comparison_client()
+                if comparison_client is not None:
+                    comp_result = await score_cv(
+                        cv_text=gatekeeper_result.cleaned_cv_text,
+                        criteria=criteria_dict,
+                        job_title=criteria["job_title"],
+                        cv_language=gatekeeper_result.cv_language,
+                        gatekeeper_context=gatekeeper_context,
+                        prompt_override=scoring_prompt,
+                        openai_client=comparison_client.client,
+                    )
+                    comp_final = compute_final_score(comp_result, weights)
+                    comp_score_details = comp_result.get("score_details") or {}
+
+                    await db.execute(
+                        text("""
+                            INSERT INTO application_score_comparisons (
+                                application_id, provider, model, final_score,
+                                score_skills, score_experience, score_education,
+                                score_certifications, score_soft_skills,
+                                score_domain_knowledge, score_other,
+                                score_details, weights_snapshot,
+                                evaluation_notes, strengths, gaps_identified,
+                                scoring_prompt_code, scoring_prompt_version,
+                                raw_response
+                            ) VALUES (
+                                :aid, :provider, :model, :final,
+                                :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
+                                :score_details, :weights,
+                                :notes, :strengths, :gaps,
+                                :sc_code, :sc_ver,
+                                :raw
+                            )
+                        """),
+                        {
+                            "aid":          application_id,
+                            "provider":     comparison_client.provider,
+                            "model":        comparison_client.model,
+                            "final":        comp_final,
+                            "s_skills":     comp_result.get("score_skills", 0),
+                            "s_exp":        comp_result.get("score_experience", 0),
+                            "s_edu":        comp_result.get("score_education", 0),
+                            "s_cert":       comp_result.get("score_certifications", 0),
+                            "s_soft":       comp_result.get("score_soft_skills", 0),
+                            "s_domain":     comp_result.get("score_domain_knowledge", 0),
+                            "s_other":      comp_result.get("score_other", 0),
+                            "score_details": json.dumps(comp_score_details, ensure_ascii=False),
+                            "weights":      json.dumps(weights),
+                            "notes":        comp_result.get("evaluation_notes"),
+                            "strengths":    comp_result.get("strengths", []),
+                            "gaps":         comp_result.get("gaps_identified", []),
+                            "sc_code":      (scoring_prompt or {}).get("prompt_code"),
+                            "sc_ver":       (scoring_prompt or {}).get("version"),
+                            "raw":          json.dumps(comp_result, ensure_ascii=False),
+                        },
+                    )
+                    await db.commit()
+                    logger.info(
+                        "Comparison score for application %s: provider=%s final=%d",
+                        application_id, comparison_client.provider, comp_final,
+                    )
+            except Exception as exc:
+                logger.warning("AI comparison scoring failed for %s: %s", application_id, exc)
+
         # ── Confirmation email ─────────────────────────────────────────────────
-        app_row = await db.execute(
-            text("SELECT candidate_email, candidate_name FROM applications WHERE application_id = :aid"),
-            {"aid": application_id},
-        )
-        app_data = app_row.mappings().first()
-        if app_data and app_data["candidate_email"]:
-            await send_cv_received_email(
-                to_email=app_data["candidate_email"],
-                candidate_name=app_data["candidate_name"],
-                job_title=criteria["job_title"],
+        try:
+            app_row = await db.execute(
+                text("""
+                    SELECT candidate_email, candidate_email_from_cv,
+                           candidate_name, confirmation_email_recipient
+                    FROM applications WHERE application_id = :aid
+                """),
+                {"aid": application_id},
             )
+            app_data = app_row.mappings().first()
+            if app_data:
+                # Resolve recipient: explicit override → CV-extracted → submitted
+                recipient = (
+                    app_data["confirmation_email_recipient"]
+                    or app_data["candidate_email_from_cv"]
+                    or app_data["candidate_email"]
+                )
+
+                send_receipt   = criteria.get("send_confirmation_on_receipt",   True)
+                send_qualified = criteria.get("send_confirmation_on_qualified", False)
+                send_rejected  = criteria.get("send_confirmation_on_rejected",  False)
+                send_partial   = criteria.get("send_confirmation_on_partial",   False)
+
+                should_send = send_receipt or (
+                    (decision == "qualified" and send_qualified)
+                    or (decision == "rejected" and send_rejected)
+                    or (decision == "partial"  and send_partial)
+                )
+
+                if recipient and should_send:
+                    await send_cv_received_email(
+                        to_email=recipient,
+                        candidate_name=app_data["candidate_name"],
+                        job_title=criteria["job_title"],
+                    )
+        except Exception as exc:
+            logger.warning("Confirmation email failed for application %s: %s", application_id, exc)
 
 
 async def _mark_failed(application_id: str, error: str) -> None:

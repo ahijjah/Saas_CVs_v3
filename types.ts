@@ -18,7 +18,6 @@ export interface UserProfile {
   role: string;
   intake_method: 'IMAP' | 'FORWARD';
   forwarding_email: string | null;
-  // Extended tenant detail fields
   email_domain?: string;
   plan?: string;
   max_users?: number;
@@ -79,8 +78,8 @@ export interface AdminUser {
 }
 
 export interface Job {
-  job_id: string;   // The UUID (e.g., JOB-2026-00074) - MUST be used for all API calls
-  job_code: string; // The human-readable code (e.g., IT-2026-002) - Used for UI display only
+  job_id: string;
+  job_code: string;
   job_title: string;
   job_client: string;
   job_status: 'Active' | 'Closed' | 'Draft';
@@ -91,13 +90,14 @@ export interface Job {
   closing_date?: string;
   salary_range?: string;
   ingestion_note?: string;
-  ingestion_mode?: 'forwarding' | 'platform_email';
-  ingestion_email?: string | null;
+  platform_email?: string;
+  receive_cv_via_forwarding_email?: boolean;
+  receive_cv_via_platform_email?: boolean;
+  restrict_forwarding_sender_to_tenant_email?: boolean;
   applications_total: number;
   applications_qualified: number;
   applications_partial: number;
   applications_rejected: number;
-  // KPI fields
   applications_evaluated?: number;
   applications_pending?: number;
   applications_above_threshold?: number;
@@ -136,20 +136,31 @@ export interface AnalysisJson {
 export interface JobDetails extends Job {
   description: string;
   analysis_json: AnalysisJson | null;
-  platform_email?: string;
   forwarding_email?: string;
-  forwarding_enabled?: boolean;
-  alias_enabled?: boolean;
+  // Ingestion booleans (replaces forwarding_enabled/alias_enabled)
+  receive_cv_via_forwarding_email?: boolean;
+  receive_cv_via_platform_email?: boolean;
+  restrict_forwarding_sender_to_tenant_email?: boolean;
+  // Confirmation email toggles
+  send_confirmation_on_receipt?: boolean;
+  send_confirmation_on_qualified?: boolean;
+  send_confirmation_on_rejected?: boolean;
+  send_confirmation_on_partial?: boolean;
+  // AI comparison toggle
+  enable_ai_comparison?: boolean;
   criteria_extraction_status?: 'pending' | 'processing' | 'completed' | 'failed';
   criteria_extraction_error?: string | null;
 }
 
+// decision='low_match' is a frontend-only display alias for evaluation_stage=1 + gatekeeper_passed=false + decision='rejected'
+export type ApplicationDecision = 'qualified' | 'partial' | 'rejected' | 'low_match';
+
 export interface Application {
   id: string;
-  application_id: string; // Required for details lookup
+  application_id: string;
   candidate_name: string;
   score: number;
-  status: 'qualified' | 'partial' | 'rejected' | 'low_match';
+  status: ApplicationDecision;
   applied_date: string;
   summary: string;
 }
@@ -157,14 +168,49 @@ export interface Application {
 export interface ScoreDimension {
   achieved: number;
   max: number;
+  weight?: number;
   reasoning?: string;
+}
+
+export interface ScoreDetail {
+  positive: string[];
+  negative: string[];
+  summary: string;
+}
+
+export interface AIComparison {
+  provider: string;
+  model: string;
+  final_score: number;
+  score_skills?: number;
+  score_experience?: number;
+  score_education?: number;
+  score_certifications?: number;
+  score_soft_skills?: number;
+  score_domain_knowledge?: number;
+  score_other?: number;
+  score_details?: Record<string, ScoreDetail>;
+  evaluation_notes?: string;
+  strengths?: string[];
+  gaps_identified?: string[];
+  scoring_prompt_code?: string;
+  scoring_prompt_version?: number;
+  created_at?: string;
 }
 
 export interface ApplicationDetailedAnalysis {
   application_id: string;
   candidate_name: string;
-  decision: 'qualified' | 'partial' | 'rejected' | 'low_match';
+  candidate_email?: string;
+  candidate_email_from_cv?: string;
+  candidate_phone_from_cv?: string;
+  email_sender_address?: string;
+  decision: ApplicationDecision;
   overall_score: number;
+  submission_source?: 'manual_upload' | 'email_forwarding' | 'platform_email';
+  processing_status?: string;
+  evaluation_stage?: 1 | 2 | 3 | null;
+  evaluation_exit_reason?: string | null;
   scores: {
     skills?: ScoreDimension;
     experience?: ScoreDimension;
@@ -174,6 +220,7 @@ export interface ApplicationDetailedAnalysis {
     domain_knowledge?: ScoreDimension;
     other_requirements?: ScoreDimension;
   };
+  score_details?: Record<string, ScoreDetail>;
   analysis: {
     summary: string;
     cv_skills_matched?: string;
@@ -187,7 +234,6 @@ export interface ApplicationDetailedAnalysis {
     strengths?: string[];
     risks?: string[];
   };
-  // Intelligence pipeline fields
   cv_language?: string;
   local_similarity_score?: number;
   skill_match_ratio?: number;
@@ -197,6 +243,13 @@ export interface ApplicationDetailedAnalysis {
   red_flags?: string[];
   reasoning?: Record<string, string>;
   raw_ai_response?: any;
+  ai_model?: string;
+  scoring_provider?: string;
+  scoring_prompt_code?: string;
+  scoring_prompt_version?: number;
+  level2_prompt_code?: string;
+  level2_prompt_version?: number;
+  ai_comparisons?: AIComparison[];
 }
 
 export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all';
@@ -204,8 +257,8 @@ export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_matc
 export interface UploadedCV {
   application_id: string;
   candidate_name: string;
-  processing_status: 'pending' | 'queued' | 'processing' | 'scored' | 'low_match' | 'failed';
-  decision: string | null;
+  processing_status: 'pending' | 'queued' | 'processing' | 'scored' | 'failed';
+  decision: ApplicationDecision | null;
   evaluation_stage: 1 | 2 | 3 | null;
   evaluation_stage_label: string | null;
   evaluation_exit_reason: string | null;
@@ -346,4 +399,20 @@ export interface AIPrompt {
   created_at: string | null;
   updated_at: string | null;
   updated_by_email: string;
+}
+
+// ─── Audit Logs ───────────────────────────────────────────────────────────────
+
+export interface AuditLog {
+  log_id: string;
+  tenant_id: string | null;
+  tenant_name: string;
+  user_id: string | null;
+  user_email: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  details: Record<string, any> | null;
+  ip_address: string;
+  created_at: string | null;
 }

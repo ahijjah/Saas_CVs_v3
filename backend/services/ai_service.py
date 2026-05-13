@@ -32,12 +32,15 @@ async def load_active_prompt(db: AsyncSession, prompt_code: str) -> dict | None:
     """Load the active DB prompt for a given code. Returns None if none is active.
 
     Falls back to None so callers can use their hardcoded defaults.
+    Returns prompt_code and version so callers can store them as audit references.
     This function is safe to call from Celery workers — it never raises.
     """
     try:
         result = await db.execute(
             text("""
-                SELECT system_prompt, user_prompt_template, model, temperature, max_tokens, output_language
+                SELECT prompt_id, prompt_code, version,
+                       system_prompt, user_prompt_template, model,
+                       temperature, max_tokens, output_language
                 FROM ai_prompts
                 WHERE prompt_code = :code AND is_active = TRUE
                 LIMIT 1
@@ -47,6 +50,8 @@ async def load_active_prompt(db: AsyncSession, prompt_code: str) -> dict | None:
         row = result.mappings().first()
         if row:
             return {
+                "prompt_code":          row["prompt_code"],
+                "version":              row["version"],
                 "system_prompt":        row["system_prompt"],
                 "user_prompt_template": row["user_prompt_template"],
                 "model":                row["model"],
@@ -113,13 +118,12 @@ RULES:
 # ── Bilingual CV scoring ──────────────────────────────────────────────────────
 
 SCORING_SYSTEM_PROMPT = """\
-أنت محلل بيانات موارد بشرية خبير في تقييم السير الذاتية ثنائية اللغة.
 You are an expert HR analyst evaluating bilingual resumes (Arabic/English/mixed).
 
 CRITICAL RULES:
 1. The CV may be in Arabic, English, or a mix — analyze it regardless of language.
 2. Cross-lingual matching IS valid: an Arabic CV demonstrating Python skills satisfies an English "Python" requirement and vice versa.
-3. Output ALL human-readable text fields (strengths, gaps, notes, questions, reasoning) in Arabic (العربية).
+3. Output ALL human-readable text fields in English.
 4. Scores must reflect actual evidence found in the CV — do not penalize for language choice.
 
 OUTPUT: Valid JSON only — no markdown, no explanation, no code blocks.
@@ -127,6 +131,8 @@ OUTPUT: Valid JSON only — no markdown, no explanation, no code blocks.
 Return exactly this structure:
 {
   "candidate_name": "<full name as it appears in the CV header/contact section, or empty string if not found>",
+  "candidate_email": "<email address found in CV contact section, or empty string>",
+  "candidate_phone": "<phone number found in CV contact section, or empty string>",
   "score_skills": <integer 0-100>,
   "score_experience": <integer 0-100>,
   "score_education": <integer 0-100>,
@@ -134,19 +140,28 @@ Return exactly this structure:
   "score_soft_skills": <integer 0-100>,
   "score_domain_knowledge": <integer 0-100>,
   "score_other": <integer 0-100>,
-  "strengths": ["نقطة قوة 1", "نقطة قوة 2", ...],
-  "gaps_identified": ["ثغرة 1", "ثغرة 2", ...],
-  "red_flags": ["علامة تحذير 1", ...],
-  "evaluation_notes": "ملخص تنفيذي بالعربية (2-3 جمل)",
-  "interview_questions": ["سؤال مقابلة 1", "سؤال مقابلة 2", ...],
+  "score_details": {
+    "skills":           {"positive": ["evidence 1", ...], "negative": ["gap 1", ...], "summary": "one sentence"},
+    "experience":       {"positive": [...], "negative": [...], "summary": "..."},
+    "education":        {"positive": [...], "negative": [...], "summary": "..."},
+    "certifications":   {"positive": [...], "negative": [...], "summary": "..."},
+    "soft_skills":      {"positive": [...], "negative": [...], "summary": "..."},
+    "domain_knowledge": {"positive": [...], "negative": [...], "summary": "..."},
+    "other":            {"positive": [...], "negative": [...], "summary": "..."}
+  },
+  "strengths": ["strength 1", "strength 2", ...],
+  "gaps_identified": ["gap 1", "gap 2", ...],
+  "red_flags": ["red flag 1", ...],
+  "evaluation_notes": "Executive summary in English (2-3 sentences)",
+  "interview_questions": ["Interview question 1", "Interview question 2", ...],
   "reasoning": {
-    "skills": "تبرير درجة المهارات بالعربية",
-    "experience": "تبرير درجة الخبرة بالعربية",
-    "education": "تبرير درجة التعليم بالعربية",
-    "certifications": "تبرير درجة الشهادات بالعربية",
-    "soft_skills": "تبرير درجة المهارات الشخصية بالعربية",
-    "domain_knowledge": "تبرير درجة المعرفة المجالية بالعربية",
-    "other": "تبرير درجة المتطلبات الأخرى بالعربية"
+    "skills": "One sentence explaining the skills score",
+    "experience": "One sentence explaining the experience score",
+    "education": "One sentence explaining the education score",
+    "certifications": "One sentence explaining the certifications score",
+    "soft_skills": "One sentence explaining the soft skills score",
+    "domain_knowledge": "One sentence explaining the domain knowledge score",
+    "other": "One sentence explaining the other requirements score"
   }
 }
 
@@ -158,10 +173,14 @@ SCORING GUIDE (for each dimension):
   0-29:   Does not meet — no meaningful evidence found
 
 REQUIRED FIELD RULES:
+- candidate_name/email/phone: extract from CV contact section, use empty string if not found
+- score_details.positive: specific evidence from the CV supporting the score (2-4 items)
+- score_details.negative: specific gaps or missing requirements (1-3 items, [] if none)
+- score_details.summary: one sentence justifying the score
 - strengths: 3-5 specific strengths with evidence from the CV
 - gaps_identified: missing or weak areas relative to the role
 - red_flags: concerns (employment gaps, contradictions, unverifiable claims) — use [] if none
-- evaluation_notes: executive summary in Arabic
+- evaluation_notes: executive summary in English
 - interview_questions: 3-5 targeted questions to probe identified gaps or verify claims
 - reasoning: one sentence per dimension explaining EXACTLY why that score was given
 """
@@ -327,9 +346,10 @@ async def score_cv(
     cv_language: str = "unknown",
     gatekeeper_context: dict | None = None,
     prompt_override: dict | None = None,
+    openai_client: Any | None = None,
 ) -> dict[str, Any]:
     """
-    Call OpenAI to score a CV against extracted criteria.
+    Score a CV against extracted criteria.
 
     Args:
         cv_text:            Cleaned CV text (from local_processor)
@@ -338,8 +358,9 @@ async def score_cv(
         cv_language:        Detected language ('ar', 'en', 'mixed') — passed to prompt for context
         gatekeeper_context: Optional pre-filter results to include in prompt for context
         prompt_override:    Active DB prompt dict from load_active_prompt(), or None for hardcoded default.
+        openai_client:      Optional pre-built AsyncOpenAI-compatible client (e.g. DeepSeek). Uses default if None.
     """
-    client = _get_client()
+    client = openai_client or _get_client()
     criteria_text = json.dumps(criteria, indent=2, ensure_ascii=False)
 
     system_prompt = (prompt_override or {}).get("system_prompt") or SCORING_SYSTEM_PROMPT
@@ -347,9 +368,8 @@ async def score_cv(
     temperature   = (prompt_override or {}).get("temperature",  0.2)
     max_tokens    = (prompt_override or {}).get("max_tokens",   3000)
 
-    # Build context paragraph for the AI
     lang_hint = {
-        "ar": "ملاحظة: السيرة الذاتية مكتوبة باللغة العربية.",
+        "ar": "Note: The CV is written in Arabic.",
         "en": "Note: The CV is written in English.",
         "mixed": "Note: The CV is written in a mix of Arabic and English.",
     }.get(cv_language, "")
@@ -389,13 +409,15 @@ async def score_cv(
         raw = response.choices[0].message.content
         result = json.loads(raw)
 
-        # Ensure new required fields exist (backwards compatibility)
         result.setdefault("candidate_name", "")
+        result.setdefault("candidate_email", "")
+        result.setdefault("candidate_phone", "")
+        result.setdefault("score_details", {})
         result.setdefault("red_flags", [])
         result.setdefault("reasoning", {})
         return result
     except Exception as exc:
-        logger.error("OpenAI CV scoring failed: %s", exc)
+        logger.error("LLM CV scoring failed: %s", exc)
         raise
 
 
@@ -425,8 +447,9 @@ def _validate_criteria(data: dict[str, Any]) -> None:
     data.setdefault("other_requirements", [])
 
 
-def compute_final_score(scores: dict[str, int], weights: dict[str, int]) -> float:
-    """Compute weighted final score (0-100)."""
+def compute_final_score(scores: dict[str, int], weights: dict[str, int]) -> int:
+    """Compute weighted final score (0-100) as integer with ceiling rounding."""
+    import math
     pairs = [
         ("score_skills",          "weight_skills"),
         ("score_experience",      "weight_experience"),
@@ -438,9 +461,9 @@ def compute_final_score(scores: dict[str, int], weights: dict[str, int]) -> floa
     ]
     total_weight = sum(weights.get(wk, 0) for _, wk in pairs)
     if total_weight == 0:
-        return 0.0
+        return 0
     weighted_sum = sum(scores.get(sk, 0) * weights.get(wk, 0) for sk, wk in pairs)
-    return round(weighted_sum / total_weight, 2)
+    return math.ceil(weighted_sum / total_weight)
 
 
 def determine_decision(final_score: float, qualified_threshold: int, partial_threshold: int) -> str:

@@ -19,6 +19,7 @@ import { SubscriptionPlansPage } from './pages/SubscriptionPlans';
 import { TenantSubscriptionsPage } from './pages/TenantSubscriptions';
 import { PlatformSecretsPage } from './pages/PlatformSecrets';
 import { AIPromptsPage } from './pages/AIPrompts';
+import AuditLogs from './pages/AuditLogs';
 import { ToastContainer, ToastType } from './components/Toast';
 
 /**
@@ -197,7 +198,7 @@ const AppInner: React.FC = () => {
     const superAdminPages = [
       'admin-dashboard', 'admin-users',
       'admin-platform-config', 'admin-subscription-plans', 'admin-tenant-subscriptions',
-      'admin-platform-secrets', 'admin-ai-prompts',
+      'admin-platform-secrets', 'admin-ai-prompts', 'admin-audit-logs',
     ];
     if (role !== 'super_admin' && superAdminPages.includes(currentPage)) {
       setCurrentPage('jobs');
@@ -219,6 +220,8 @@ const AppInner: React.FC = () => {
         return <PlatformSecretsPage auth={auth} addToast={addToast} />;
       case 'admin-ai-prompts':
         return <AIPromptsPage auth={auth} addToast={addToast} />;
+      case 'admin-audit-logs':
+        return <AuditLogs />;
       case 'jobs':
         return (
           <JobsDashboard 

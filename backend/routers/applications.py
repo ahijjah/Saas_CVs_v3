@@ -80,7 +80,11 @@ async def get_application_details(
         text("""
             SELECT
                 a.application_id, a.candidate_name, a.candidate_email,
+                a.candidate_email_from_cv, a.candidate_phone_from_cv,
+                a.email_sender_address,
                 a.decision, a.submission_source, a.processing_status,
+                a.evaluation_stage, a.evaluation_exit_reason,
+                a.gatekeeper_passed,
                 a.applied_at, a.scored_at,
                 a.qualified_threshold_used, a.partial_threshold_used,
                 j.title AS job_title, j.job_id,
@@ -94,8 +98,12 @@ async def get_application_details(
                 s.reasoning, s.raw_ai_response,
                 s.local_similarity_score, s.skill_match_ratio,
                 s.matched_skills, s.missing_skills,
-                s.cv_language, s.gatekeeper_passed,
-                s.ai_model
+                s.cv_language, s.gatekeeper_passed AS score_gatekeeper_passed,
+                s.ai_model,
+                s.score_details,
+                s.scoring_prompt_code, s.scoring_prompt_version,
+                s.level2_prompt_code,  s.level2_prompt_version,
+                s.scoring_provider
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             LEFT JOIN application_scores s ON s.application_id = a.application_id
@@ -107,6 +115,27 @@ async def get_application_details(
     if not app:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
 
+    # Fetch AI comparison results if available
+    comp_rows = await db.execute(
+        text("""
+            SELECT provider, model, final_score,
+                   score_skills, score_experience, score_education,
+                   score_certifications, score_soft_skills,
+                   score_domain_knowledge, score_other,
+                   score_details, evaluation_notes, strengths,
+                   gaps_identified, scoring_prompt_code, scoring_prompt_version,
+                   created_at
+            FROM application_score_comparisons
+            WHERE application_id = :aid
+            ORDER BY created_at DESC
+        """),
+        {"aid": application_id},
+    )
+    comparisons = [dict(r) for r in comp_rows.mappings()]
+    for c in comparisons:
+        if c.get("created_at"):
+            c["created_at"] = c["created_at"].isoformat()
+
     weights = app["weights_snapshot"] or {}
 
     def build_dim(score_key: str, weight_key: str) -> dict:
@@ -116,14 +145,27 @@ async def get_application_details(
 
     reasoning = app["reasoning"] or {}
 
+    # Derive display decision label: evaluation_stage=1 gatekeeper-rejected rows
+    # now have decision='rejected' but are displayed as Level 1 Low Match
+    stage = app["evaluation_stage"]
+    gk_passed = app["gatekeeper_passed"]
+    display_decision = app["decision"]
+    if stage == 1 and gk_passed is False and display_decision == "rejected":
+        display_decision = "low_match"  # frontend display alias only
+
     return {
         "application_id": str(app["application_id"]),
         "candidate_name": app["candidate_name"],
         "candidate_email": app["candidate_email"],
-        "decision": app["decision"],
-        "overall_score": float(app["final_score"]) if app["final_score"] is not None else 0,
+        "candidate_email_from_cv": app["candidate_email_from_cv"],
+        "candidate_phone_from_cv": app["candidate_phone_from_cv"],
+        "email_sender_address": app["email_sender_address"],
+        "decision": display_decision,
+        "overall_score": int(app["final_score"]) if app["final_score"] is not None else 0,
         "submission_source": app["submission_source"],
         "processing_status": app["processing_status"],
+        "evaluation_stage": stage,
+        "evaluation_exit_reason": app["evaluation_exit_reason"],
         "applied_at": app["applied_at"].isoformat() if app["applied_at"] else None,
         "scored_at": app["scored_at"].isoformat() if app["scored_at"] else None,
         "job_id": str(app["job_id"]),
@@ -139,14 +181,15 @@ async def get_application_details(
             "domain_knowledge": build_dim("score_domain_knowledge", "weight_domain_knowledge"),
             "other_requirements": build_dim("score_other",          "weight_other"),
         },
+        "score_details": app["score_details"] or {},
         "analysis": {
-            "summary":                    app["evaluation_notes"] or "",
-            "strengths":                  app["strengths"] or [],
-            "risks":                      app["gaps_identified"] or [],
-            "gaps_identified":            app["gaps_identified"] or [],
-            "evaluation_notes":           app["evaluation_notes"],
+            "summary":                       app["evaluation_notes"] or "",
+            "strengths":                     app["strengths"] or [],
+            "risks":                         app["gaps_identified"] or [],
+            "gaps_identified":               app["gaps_identified"] or [],
+            "evaluation_notes":              app["evaluation_notes"],
             "interview_suggested_questions": app["interview_questions"] or [],
-            "interview_focus_points":     [],
+            "interview_focus_points":        [],
         },
         "red_flags":              app["red_flags"] or [],
         "reasoning":              reasoning,
@@ -157,7 +200,13 @@ async def get_application_details(
         "missing_skills":         app["missing_skills"] or [],
         "gatekeeper_passed":      app["gatekeeper_passed"],
         "ai_model":               app["ai_model"],
+        "scoring_provider":       app["scoring_provider"],
+        "scoring_prompt_code":    app["scoring_prompt_code"],
+        "scoring_prompt_version": app["scoring_prompt_version"],
+        "level2_prompt_code":     app["level2_prompt_code"],
+        "level2_prompt_version":  app["level2_prompt_version"],
         "raw_ai_response":        app["raw_ai_response"],
+        "ai_comparisons":         comparisons,
     }
 
 

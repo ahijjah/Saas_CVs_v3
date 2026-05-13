@@ -42,6 +42,10 @@ export const WEBHOOK_CONFIG = {
   PLATFORM_SECRETS_RESTART_URL: `${API_BASE}/admin/platform-secrets/restart-services`,
   // Platform Control — AI Prompts
   AI_PROMPTS_URL:               `${API_BASE}/admin/ai-prompts`,
+  // Platform Control — Audit Logs
+  AUDIT_LOGS_URL:               `${API_BASE}/admin/audit-logs`,
+  // Job settings
+  JOB_SETTINGS_BASE_URL:        `${API_BASE}/jobs`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';
