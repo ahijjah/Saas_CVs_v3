@@ -111,7 +111,7 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
                 j.receive_cv_via_forwarding_email,
                 j.receive_cv_via_platform_email,
                 j.created_at,
-                t.tenant_name,
+                t.name AS tenant_name,
                 COUNT(a.application_id)                                             AS applications_total,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
@@ -120,7 +120,7 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
             JOIN tenants t ON t.tenant_id = j.tenant_id
             LEFT JOIN applications a ON a.job_id = j.job_id
             {where_clause}
-            GROUP BY j.job_id, t.tenant_name
+            GROUP BY j.job_id, t.name
             ORDER BY j.created_at DESC
         """),
         {"tid": current_user.tenant_id},
