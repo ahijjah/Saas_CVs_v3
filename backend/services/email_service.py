@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 
 
 async def _send(to_email: str, subject: str, html_body: str, text_body: str) -> None:
-    smtp_host     = await get_secret("SMTP_HOST",     settings.smtp_host)
-    smtp_port     = await get_int_secret("SMTP_PORT", settings.smtp_port)
-    smtp_user     = await get_secret("SMTP_USER",     settings.smtp_user)
-    smtp_password = await get_secret("SMTP_PASSWORD", settings.smtp_password)
-    smtp_use_tls  = await get_bool_secret("SMTP_USE_TLS", settings.smtp_use_tls)
+    smtp_host     = get_secret("SMTP_HOST",     settings.smtp_host)
+    smtp_port     = get_int_secret("SMTP_PORT", settings.smtp_port)
+    smtp_user     = get_secret("SMTP_USER",     settings.smtp_user)
+    smtp_password = get_secret("SMTP_PASSWORD", settings.smtp_password)
+    smtp_use_tls  = get_bool_secret("SMTP_USE_TLS", settings.smtp_use_tls)
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject

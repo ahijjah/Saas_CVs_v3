@@ -33,9 +33,44 @@ ATTACHMENT_MIME_TYPES = {
 JOB_CODE_RE = re.compile(r'\bJOB[-_](\d{4})[-_](\d{1,4})\b', re.IGNORECASE)
 
 
+_IMAP_LOCK_KEY = "cv_intake:imap_poll_lock"
+_IMAP_LOCK_TTL = 300  # seconds — generous upper bound for a single poll run
+
+
+def _acquire_poll_lock() -> bool:
+    """Acquire a Redis-based distributed lock. Returns True if acquired."""
+    try:
+        import redis as redis_lib
+        from config import get_settings
+        client = redis_lib.Redis.from_url(get_settings().redis_url, socket_connect_timeout=2)
+        acquired = client.set(_IMAP_LOCK_KEY, "1", nx=True, ex=_IMAP_LOCK_TTL)
+        client.close()
+        return bool(acquired)
+    except Exception as exc:
+        logger.warning("IMAP lock acquire failed (proceeding without lock): %s", exc)
+        return True  # fail open — better to poll than to permanently skip
+
+
+def _release_poll_lock() -> None:
+    try:
+        import redis as redis_lib
+        from config import get_settings
+        client = redis_lib.Redis.from_url(get_settings().redis_url, socket_connect_timeout=2)
+        client.delete(_IMAP_LOCK_KEY)
+        client.close()
+    except Exception as exc:
+        logger.warning("IMAP lock release failed: %s", exc)
+
+
 @celery_app.task(name="workers.cv_intake.poll_imap_inbox")
 def poll_imap_inbox():
-    asyncio.run(_poll_async())
+    if not _acquire_poll_lock():
+        logger.info("IMAP poll skipped — previous poll still running")
+        return
+    try:
+        asyncio.run(_poll_async())
+    finally:
+        _release_poll_lock()
 
 
 async def _poll_async() -> None:
@@ -44,11 +79,11 @@ async def _poll_async() -> None:
     from services.runtime_config import get_bool_secret, get_int_secret, get_secret
     cfg = get_settings()
 
-    imap_host     = await get_secret("IMAP_HOST",     cfg.imap_host)
-    imap_port     = await get_int_secret("IMAP_PORT", cfg.imap_port)
-    imap_user     = await get_secret("IMAP_USER",     cfg.imap_user)
-    imap_password = await get_secret("IMAP_PASSWORD", cfg.imap_password)
-    imap_use_ssl  = await get_bool_secret("IMAP_USE_SSL", cfg.imap_use_ssl)
+    imap_host     = get_secret("IMAP_HOST",     cfg.imap_host)
+    imap_port     = get_int_secret("IMAP_PORT", cfg.imap_port)
+    imap_user     = get_secret("IMAP_USER",     cfg.imap_user)
+    imap_password = get_secret("IMAP_PASSWORD", cfg.imap_password)
+    imap_use_ssl  = get_bool_secret("IMAP_USE_SSL", cfg.imap_use_ssl)
 
     logger.info(
         "IMAP poll starting — host=%s port=%d user=%s ssl=%s",
