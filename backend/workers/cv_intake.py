@@ -273,41 +273,55 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     file_hash[:8], filename, job_id,
                 )
 
-                # Look up the original application that has this file hash
-                orig_row = await db.execute(
-                    text("""
-                        SELECT a.application_id FROM applications a
-                        JOIN application_files af ON af.application_id = a.application_id
-                        WHERE a.job_id = :job_id AND af.file_hash = :hash
-                        LIMIT 1
-                    """),
-                    {"job_id": str(job_id), "hash": file_hash},
-                )
-                orig_row = orig_row.mappings().first()
-                original_application_id = str(orig_row["application_id"]) if orig_row else None
+                # Find original application via email_ingest_log (application_files has no file_hash col)
+                try:
+                    orig_row = await db.execute(
+                        text("""
+                            SELECT application_id FROM email_ingest_log
+                            WHERE attachment_hash = :hash AND job_id = :jid
+                              AND application_id IS NOT NULL
+                            LIMIT 1
+                        """),
+                        {"hash": file_hash, "jid": str(job_id)},
+                    )
+                    orig_row = orig_row.mappings().first()
+                    original_application_id = str(orig_row["application_id"]) if orig_row else None
 
-                await db.execute(
-                    text("""
-                        INSERT INTO duplicate_application_logs
-                            (tenant_id, job_id, duplicate_email, duplicate_name, attachment_hash,
-                             received_at, original_application_id, email_message_id, raw_filename, notes)
-                        VALUES
-                            (:tenant_id, :job_id, :email, :name, :hash,
-                             NOW(), :orig_id, :msg_id, :filename, :notes)
-                    """),
-                    {
-                        "tenant_id": str(tenant_id),
-                        "job_id": str(job_id),
-                        "email": sender,
-                        "name": sender_name,
-                        "hash": file_hash,
-                        "orig_id": original_application_id,
-                        "msg_id": message_id,
-                        "filename": filename,
-                        "notes": "Duplicate detected: attachment hash matches existing submission",
-                    },
-                )
-                await db.commit()
+                    await db.execute(
+                        text("""
+                            INSERT INTO duplicate_application_logs
+                                (tenant_id, job_id, duplicate_email, duplicate_name, attachment_hash,
+                                 received_at, original_application_id, email_message_id, raw_filename, notes)
+                            VALUES
+                                (:tenant_id, :job_id, :email, :name, :hash,
+                                 NOW(), :orig_id, :msg_id, :filename, :notes)
+                        """),
+                        {
+                            "tenant_id": str(tenant_id),
+                            "job_id": str(job_id),
+                            "email": sender,
+                            "name": sender_name,
+                            "hash": file_hash,
+                            "orig_id": original_application_id,
+                            "msg_id": message_id,
+                            "filename": filename,
+                            "notes": "Duplicate CV file already exists for this job; skipped application creation.",
+                        },
+                    )
+                    await db.commit()
+                    logger.info(
+                        "Duplicate log inserted — hash=%s job=%s original_id=%s",
+                        file_hash[:8], job_id, original_application_id,
+                    )
+                except Exception as dup_log_exc:
+                    logger.error(
+                        "Failed to insert duplicate_application_logs for hash=%s job=%s: %s",
+                        file_hash[:8], job_id, dup_log_exc,
+                    )
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
 
                 await _log_ingest(db, message_id, sender, recipient, subject,
                                   tenant_id, job_id, None, "duplicate",
