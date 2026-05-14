@@ -204,6 +204,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [draftWeights, setDraftWeights] = useState<Record<string, number>>({});
   const [savingWeights, setSavingWeights] = useState(false);
 
+  const [duplicateLogs, setDuplicateLogs] = useState<any[]>([]);
+  const [loadingDupLogs, setLoadingDupLogs] = useState(false);
+
   // Criteria extraction polling tick — increments after each poll so the
   // effect always re-schedules even when status string stays unchanged.
   const [criteriaPolltick, setCriteriaPolltick] = useState(0);
@@ -359,8 +362,26 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     } catch { /* ignore */ }
   }, [jobId, auth.token]);
 
+  const fetchDuplicateLogs = useCallback(async () => {
+    if (!auth.token || !jobId) return;
+    setLoadingDupLogs(true);
+    try {
+      const data = await apiService.get(
+        `${WEBHOOK_CONFIG.DUPLICATE_LOGS_BASE_URL}/${jobId}/duplicate-logs`,
+        {},
+        auth.token
+      );
+      setDuplicateLogs(data.duplicate_logs || []);
+    } catch {
+      // non-critical
+    } finally {
+      setLoadingDupLogs(false);
+    }
+  }, [jobId, auth.token]);
+
   useEffect(() => { fetchUploadedCVs(); }, [fetchUploadedCVs]);
   useEffect(() => { fetchQueueStatus(); }, [fetchQueueStatus]);
+  useEffect(() => { fetchDuplicateLogs(); }, [fetchDuplicateLogs]);
 
   // ── Poll while a batch is in-flight ───────────────────────────────────────
   useEffect(() => {
@@ -1346,6 +1367,43 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           </div>
         )}
       </section>
+
+      {/* Duplicate submissions */}
+      {duplicateLogs.length > 0 && (
+        <div className="mt-8 border-t pt-6">
+          <h3 className="text-base font-semibold text-gray-700 mb-3">
+            Duplicate submissions ({duplicateLogs.length})
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">File</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Original</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {duplicateLogs.map((log) => (
+                  <tr key={log.log_id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 text-gray-800">{log.duplicate_email}</td>
+                    <td className="px-3 py-2 text-gray-600">{log.duplicate_name || '—'}</td>
+                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                      {new Date(log.received_at).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-gray-500 truncate max-w-[140px]">{log.raw_filename || '—'}</td>
+                    <td className="px-3 py-2 text-xs text-gray-400 font-mono">
+                      {log.original_application_id ? log.original_application_id.slice(0, 8) + '…' : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

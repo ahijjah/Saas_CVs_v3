@@ -540,6 +540,38 @@ async def update_criteria(
     return {"success": True, "message": "Criteria updated"}
 
 
+@router.get("/{job_id}/duplicate-logs")
+async def get_duplicate_logs(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    tenant_id = current_user["tenant_id"]
+    role = current_user.get("role", "viewer")
+    await set_rls_context(db, tenant_id, role)
+
+    rows = await db.execute(
+        text("""
+            SELECT
+                log_id,
+                duplicate_email,
+                duplicate_name,
+                attachment_hash,
+                received_at,
+                original_application_id,
+                email_message_id,
+                raw_filename,
+                notes
+            FROM duplicate_application_logs
+            WHERE job_id = :job_id AND tenant_id = :tenant_id
+            ORDER BY received_at DESC
+            LIMIT 200
+        """),
+        {"job_id": job_id, "tenant_id": tenant_id},
+    )
+    return {"duplicate_logs": [dict(r) for r in rows.mappings()]}
+
+
 @router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)
 async def retry_criteria_extraction(
     job_id: str,

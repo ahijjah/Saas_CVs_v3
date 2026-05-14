@@ -156,6 +156,22 @@ async def _score_cv_async(
             skill_threshold=cfg.gatekeeper_skill_fuzzy_threshold,
         )
 
+        # If gatekeeper is disabled but would have rejected, bypass it and note why
+        if not prompt_cfg.gatekeeper_enabled and not gatekeeper_result.gatekeeper_passed:
+            bypass_reason = (
+                "Level 1 gatekeeper disabled by system configuration; "
+                "candidate passed to AI scoring."
+            )
+            gatekeeper_result.gatekeeper_passed = True
+            logger.info(
+                "Level 1 gatekeeper DISABLED — bypassing rejection for application %s "
+                "(similarity=%.1f%%, would have been rejected)",
+                application_id,
+                gatekeeper_result.semantic_similarity_pct,
+            )
+        else:
+            bypass_reason = None
+
         if prompt_cfg.gatekeeper_enabled and not gatekeeper_result.gatekeeper_passed:
             logger.info(
                 "Level 1 REJECTED application %s — similarity=%.1f%% threshold=%.0f%%",
@@ -216,15 +232,20 @@ async def _score_cv_async(
             await db.commit()
             return
 
-        # Level 1 passed — persist gatekeeper data + stage
+        # Level 1 passed (or bypassed) — persist gatekeeper data + stage
+        level1_exit_reason = bypass_reason  # None if genuinely passed
         await db.execute(
             text("""
                 UPDATE applications SET
                     gatekeeper_passed = true,
                     evaluation_stage  = 1
+                    {bypass_clause}
                 WHERE application_id = :aid
-            """),
-            {"aid": application_id},
+            """.replace(
+                "{bypass_clause}",
+                ", evaluation_exit_reason = :exit_reason" if level1_exit_reason else "",
+            )),
+            {"aid": application_id, **({"exit_reason": level1_exit_reason} if level1_exit_reason else {})},
         )
         await db.commit()
 

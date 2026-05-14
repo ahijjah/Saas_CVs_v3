@@ -122,6 +122,7 @@ async def load_prompt_config(
             SELECT key, value FROM system_config
             WHERE key IN (
                 'gatekeeper_semantic_threshold', 'gatekeeper_enabled',
+                'level1_gatekeeper_enabled',
                 'output_language', 'default_weight_profile', 'default_strictness'
             )
         """)
@@ -129,7 +130,11 @@ async def load_prompt_config(
     sys_map: dict[str, str] = {r["key"]: r["value"] for r in sys_rows.mappings()}
 
     gatekeeper_threshold = float(sys_map.get("gatekeeper_semantic_threshold", cfg.gatekeeper_semantic_threshold))
-    gatekeeper_enabled = sys_map.get("gatekeeper_enabled", "true").lower() == "true"
+    # level1_gatekeeper_enabled takes precedence over legacy gatekeeper_enabled
+    if "level1_gatekeeper_enabled" in sys_map:
+        gatekeeper_enabled = sys_map["level1_gatekeeper_enabled"].lower() == "true"
+    else:
+        gatekeeper_enabled = sys_map.get("gatekeeper_enabled", "true").lower() == "true"
     output_language = sys_map.get("output_language", cfg.output_language)
     weight_profile_name = sys_map.get("default_weight_profile", "default")
     strictness = sys_map.get("default_strictness", "balanced")

@@ -272,6 +272,43 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     "Duplicate file hash=%s filename=%s job=%s — skipping",
                     file_hash[:8], filename, job_id,
                 )
+
+                # Look up the original application that has this file hash
+                orig_row = await db.execute(
+                    text("""
+                        SELECT a.application_id FROM applications a
+                        JOIN application_files af ON af.application_id = a.application_id
+                        WHERE a.job_id = :job_id AND af.file_hash = :hash
+                        LIMIT 1
+                    """),
+                    {"job_id": str(job_id), "hash": file_hash},
+                )
+                orig_row = orig_row.mappings().first()
+                original_application_id = str(orig_row["application_id"]) if orig_row else None
+
+                await db.execute(
+                    text("""
+                        INSERT INTO duplicate_application_logs
+                            (tenant_id, job_id, duplicate_email, duplicate_name, attachment_hash,
+                             received_at, original_application_id, email_message_id, raw_filename, notes)
+                        VALUES
+                            (:tenant_id, :job_id, :email, :name, :hash,
+                             NOW(), :orig_id, :msg_id, :filename, :notes)
+                    """),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "job_id": str(job_id),
+                        "email": sender,
+                        "name": sender_name,
+                        "hash": file_hash,
+                        "orig_id": original_application_id,
+                        "msg_id": message_id,
+                        "filename": filename,
+                        "notes": "Duplicate detected: attachment hash matches existing submission",
+                    },
+                )
+                await db.commit()
+
                 await _log_ingest(db, message_id, sender, recipient, subject,
                                   tenant_id, job_id, None, "duplicate",
                                   "Identical file already processed", ingestion_mode,
