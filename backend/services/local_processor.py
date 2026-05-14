@@ -181,20 +181,6 @@ for ar, en_list in _AR_EN_SKILL_MAP.items():
         _EN_AR_SKILL_MAP[en] = ar
 
 
-_EDUCATION_KEYWORDS = [
-    "bachelor", "master", "degree", "phd", "doctorate", "university",
-    "college", "b.sc", "m.sc", "b.eng", "bsc", "msc", "diploma",
-    "graduate", "postgraduate", "engineering", "computer science",
-    "information technology", "information systems",
-    "بكالوريوس", "ماجستير", "دكتوراه", "شهادة", "جامعة", "كلية", "مؤهل",
-]
-
-_EXPERIENCE_YEARS_RE = re.compile(
-    r'\b(\d+)\s*(?:\+)?\s*(?:years?|yrs?|سنوات?|عام|أعوام)\b',
-    re.IGNORECASE,
-)
-
-
 def _normalize_skill(skill: str) -> str:
     """Lowercase, strip, remove diacritics for comparison."""
     s = _AR_DIACRITICS.sub("", skill.lower().strip())
@@ -260,156 +246,21 @@ def match_skills_bilingual(
     }
 
 
-def build_criteria_comparison_text(
-    skills: list[str] | None = None,
-    experience: str | None = None,
-    education: str | None = None,
-    certifications: list[str] | None = None,
-    domain_knowledge: str | None = None,
-    other_requirements: str | None = None,
-) -> str:
-    """Build a concise criteria text for semantic similarity instead of the full JD."""
-    parts: list[str] = []
-    if skills:
-        valid = [s for s in skills if s]
-        if valid:
-            parts.append("Required skills: " + ", ".join(valid))
-    if certifications:
-        valid = [c for c in certifications if c]
-        if valid:
-            parts.append("Required certifications: " + ", ".join(valid))
-    if experience:
-        parts.append("Experience requirements: " + str(experience).strip())
-    if education:
-        parts.append("Education requirements: " + str(education).strip())
-    if domain_knowledge:
-        parts.append("Domain knowledge: " + str(domain_knowledge).strip())
-    if other_requirements:
-        parts.append("Other requirements: " + str(other_requirements).strip())
-    return "\n".join(parts)
-
-
-def _extract_text_keywords(text: str, max_kw: int = 12) -> list[str]:
-    """Extract meaningful keyword phrases from a free-text criteria field."""
-    if not text:
-        return []
-    parts = re.split(r'[,\n;•\-–/|]+', text)
-    out: list[str] = []
-    seen: set[str] = set()
-    for p in parts:
-        p = p.strip()
-        if 3 <= len(p) <= 80:
-            norm = p.lower()
-            if norm not in seen:
-                seen.add(norm)
-                out.append(p)
-                if len(out) >= max_kw:
-                    break
-    return out
-
-
-def _match_criteria_keywords(
-    cv_text: str,
-    skills: list[str] | None = None,
-    experience: str | None = None,
-    certifications: list[str] | None = None,
-    domain_knowledge: str | None = None,
-    other_requirements: str | None = None,
-    threshold: float = 75.0,
-) -> dict:
-    """Match CV text against all criteria keyword sources (skills, certs, extracted phrases)."""
-    required: list[str] = []
-    required += [s for s in (skills or []) if s]
-    required += [c for c in (certifications or []) if c]
-    required += _extract_text_keywords(experience or "", max_kw=8)
-    required += _extract_text_keywords(domain_knowledge or "", max_kw=8)
-    required += _extract_text_keywords(other_requirements or "", max_kw=6)
-
-    seen: set[str] = set()
-    deduped: list[str] = []
-    for kw in required:
-        norm = kw.lower()
-        if norm not in seen:
-            seen.add(norm)
-            deduped.append(kw)
-
-    if not deduped:
-        return {"matched_keywords": [], "missing_keywords": [], "matched_required_count": 0, "total_required_count": 0}
-
-    result = match_skills_bilingual(deduped, cv_text, threshold)
-    return {
-        "matched_keywords": result["matched"],
-        "missing_keywords": result["missing"],
-        "matched_required_count": len(result["matched"]),
-        "total_required_count": len(deduped),
-    }
-
-
-def _check_override_rules(
-    semantic_sim: float,
-    semantic_threshold: float,
-    matched_required_count: int,
-    total_required_count: int,
-    cv_text: str,
-    matched_skills: list[str],
-) -> tuple[bool, Optional[str]]:
-    """
-    Check if any override condition allows passing despite low semantic similarity.
-    Returns (should_pass, override_reason_or_None).
-
-    Rules:
-      1. matched_required_count >= 3 (strong keyword coverage)
-      2. >= 2 required skills/certifications matched (strong technical indicators)
-      3. CV has education signal + experience years + at least 1 required skill
-    """
-    reasons: list[str] = []
-
-    if matched_required_count >= 3:
-        reasons.append(
-            f"matched {matched_required_count}/{total_required_count} required criteria keywords"
-        )
-
-    if len(matched_skills) >= 2:
-        reasons.append(f"matched {len(matched_skills)} required skills/certifications")
-
-    cv_lower = cv_text.lower()
-    has_edu = any(kw in cv_lower for kw in _EDUCATION_KEYWORDS)
-    has_exp = bool(_EXPERIENCE_YEARS_RE.search(cv_text))
-    has_skill = len(matched_skills) >= 1
-    if has_edu and has_exp and has_skill:
-        reasons.append("CV demonstrates education background, work experience, and at least 1 required skill")
-
-    if reasons:
-        return True, (
-            "Passed by keyword override despite low semantic similarity "
-            f"({semantic_sim * 100:.1f}% vs {semantic_threshold * 100:.0f}% threshold) — "
-            + "; ".join(reasons)
-        )
-    return False, None
-
-
 # ── Gatekeeper result ─────────────────────────────────────────────────────────
 
 @dataclass
 class GatekeeperResult:
     """Complete output of the local pre-filtering stage."""
-    cv_language: str
+    cv_language: str                      # 'ar' | 'en' | 'mixed'
     jd_language: str
-    semantic_similarity: float
-    semantic_similarity_pct: float
-    skill_match_ratio: float
+    semantic_similarity: float            # 0.0 – 1.0
+    semantic_similarity_pct: float        # 0.0 – 100.0
+    skill_match_ratio: float              # 0.0 – 100.0
     matched_skills: list[str] = field(default_factory=list)
     missing_skills: list[str] = field(default_factory=list)
-    matched_keywords: list[str] = field(default_factory=list)
-    missing_keywords: list[str] = field(default_factory=list)
-    matched_required_count: int = 0
-    total_required_count: int = 0
-    gatekeeper_passed: bool = True
+    gatekeeper_passed: bool = True        # False → skip LLM, mark low_match
     rejection_reason: Optional[str] = None
-    override_applied: bool = False
-    override_reason: Optional[str] = None
     cleaned_cv_text: str = ""
-    gatekeeper_reason_json: dict = field(default_factory=dict)
 
 
 def run_gatekeeper(
@@ -417,30 +268,21 @@ def run_gatekeeper(
     job_description: str,
     required_skills: list[str],
     *,
-    semantic_threshold: float = 0.40,
-    skill_threshold: float = 80.0,
-    criteria_skills: list[str] | None = None,
-    criteria_experience: str | None = None,
-    criteria_education: str | None = None,
-    criteria_certifications: list[str] | None = None,
-    criteria_domain_knowledge: str | None = None,
-    criteria_other_requirements: str | None = None,
+    semantic_threshold: float = 0.40,    # below this → reject without LLM
+    skill_threshold: float = 80.0,       # rapidfuzz partial_ratio threshold
 ) -> GatekeeperResult:
     """
     Run the full local pre-filtering pipeline.
 
-    Semantic similarity is computed against a concise structured criteria text
-    (built from job_criteria fields) AND the full job description; the higher
-    of the two is used to reduce false negatives caused by long, noisy JDs.
-
     Decision logic:
-      1. If semantic_sim >= threshold → pass (proceed to LLM)
-      2. If semantic_sim < threshold → check three override rules:
-         a. matched_required_count >= 3
-         b. >= 2 required skills/certifications matched
-         c. education signal + experience years + >= 1 required skill
-      3. If any override fires → pass with reason logged
-      4. If no override fires → reject (mark low_match, skip LLM)
+      - semantic_similarity >= semantic_threshold  AND
+      - at least one required skill found (if skills list is non-empty)
+      → gatekeeper_passed = True  → proceed to LLM scoring
+
+      - semantic_similarity < semantic_threshold
+      → gatekeeper_passed = False → mark as 'low_match', skip LLM call
+
+    Cost impact: ~40-60% of CVs never reach the LLM in typical hiring funnels.
     """
     cleaned_cv = clean_text(cv_text)
     cleaned_jd = clean_text(job_description)
@@ -448,76 +290,20 @@ def run_gatekeeper(
     cv_lang = detect_language(cleaned_cv)
     jd_lang = detect_language(cleaned_jd)
 
-    # Semantic similarity: criteria text (primary) vs full JD (secondary)
-    criteria_text = build_criteria_comparison_text(
-        skills=criteria_skills,
-        experience=criteria_experience,
-        education=criteria_education,
-        certifications=criteria_certifications,
-        domain_knowledge=criteria_domain_knowledge,
-        other_requirements=criteria_other_requirements,
-    )
-    sim_jd = compute_semantic_similarity(cleaned_cv, cleaned_jd)
-    if criteria_text:
-        sim_criteria = compute_semantic_similarity(cleaned_cv, criteria_text)
-        semantic_sim = max(sim_jd, sim_criteria)
-    else:
-        semantic_sim = sim_jd
+    semantic_sim = compute_semantic_similarity(cleaned_cv, cleaned_jd)
     semantic_pct = round(semantic_sim * 100, 2)
 
-    # Skill matching (required_skills = skills + certs)
     skill_result = match_skills_bilingual(required_skills, cleaned_cv, skill_threshold)
 
-    # Keyword matching across all criteria fields (broader set)
-    kw_result = _match_criteria_keywords(
-        cv_text=cleaned_cv,
-        skills=criteria_skills,
-        experience=criteria_experience,
-        certifications=criteria_certifications,
-        domain_knowledge=criteria_domain_knowledge,
-        other_requirements=criteria_other_requirements,
-        threshold=skill_threshold,
-    )
-    matched_required_count = kw_result["matched_required_count"]
-    total_required_count   = kw_result["total_required_count"]
-    matched_keywords       = kw_result["matched_keywords"]
-    missing_keywords       = kw_result["missing_keywords"]
+    passed = semantic_sim >= semantic_threshold
+    reason: Optional[str] = None
 
-    sem_passed = semantic_sim >= semantic_threshold
-    override_applied = False
-    override_reason: Optional[str] = None
-    rejection_reason: Optional[str] = None
-
-    if sem_passed:
-        passed = True
-    else:
-        passed, override_reason = _check_override_rules(
-            semantic_sim=semantic_sim,
-            semantic_threshold=semantic_threshold,
-            matched_required_count=matched_required_count,
-            total_required_count=total_required_count,
-            cv_text=cleaned_cv,
-            matched_skills=skill_result["matched"],
+    if not passed:
+        reason = (
+            f"Semantic similarity {semantic_pct:.1f}% is below the "
+            f"threshold of {semantic_threshold * 100:.0f}%. "
+            "CV content is not sufficiently related to the job description."
         )
-        override_applied = passed
-        if not passed:
-            rejection_reason = (
-                f"Semantic similarity {semantic_pct:.1f}% is below threshold "
-                f"{semantic_threshold * 100:.0f}% and no override conditions met "
-                f"(matched {matched_required_count}/{total_required_count} required keywords)."
-            )
-
-    gk_reason_json = {
-        "semantic_similarity_pct":  semantic_pct,
-        "semantic_threshold_pct":   round(semantic_threshold * 100, 1),
-        "semantic_passed":          sem_passed,
-        "matched_required_count":   matched_required_count,
-        "total_required_count":     total_required_count,
-        "override_applied":         override_applied,
-        "override_reason":          override_reason,
-        "rejection_reason":         rejection_reason,
-        "final_decision":           "passed" if passed else "rejected",
-    }
 
     return GatekeeperResult(
         cv_language=cv_lang,
@@ -527,14 +313,7 @@ def run_gatekeeper(
         skill_match_ratio=skill_result["match_ratio"],
         matched_skills=skill_result["matched"],
         missing_skills=skill_result["missing"],
-        matched_keywords=matched_keywords,
-        missing_keywords=missing_keywords,
-        matched_required_count=matched_required_count,
-        total_required_count=total_required_count,
         gatekeeper_passed=passed,
-        rejection_reason=rejection_reason,
-        override_applied=override_applied,
-        override_reason=override_reason,
+        rejection_reason=reason,
         cleaned_cv_text=cleaned_cv,
-        gatekeeper_reason_json=gk_reason_json,
     )

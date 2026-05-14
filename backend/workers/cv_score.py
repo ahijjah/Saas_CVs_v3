@@ -154,53 +154,28 @@ async def _score_cv_async(
             required_skills=required_skills,
             semantic_threshold=prompt_cfg.gatekeeper_threshold,
             skill_threshold=cfg.gatekeeper_skill_fuzzy_threshold,
-            criteria_skills=list(criteria.get("skills") or []),
-            criteria_experience=criteria.get("experience"),
-            criteria_education=criteria.get("education"),
-            criteria_certifications=list(criteria.get("certifications") or []),
-            criteria_domain_knowledge=criteria.get("domain_knowledge"),
-            criteria_other_requirements=criteria.get("other_requirements"),
         )
 
         if prompt_cfg.gatekeeper_enabled and not gatekeeper_result.gatekeeper_passed:
             logger.info(
-                "Level 1 REJECTED application %s — sim=%.1f%% thresh=%.0f%% matched=%d/%d",
+                "Level 1 REJECTED application %s — similarity=%.1f%% threshold=%.0f%%",
                 application_id,
                 gatekeeper_result.semantic_similarity_pct,
                 prompt_cfg.gatekeeper_threshold * 100,
-                gatekeeper_result.matched_required_count,
-                gatekeeper_result.total_required_count,
             )
 
             await db.execute(
                 text("""
                     UPDATE applications SET
-                        gatekeeper_passed             = false,
-                        evaluation_stage              = 1,
-                        evaluation_exit_reason        = :reason,
-                        processing_status             = 'scored',
-                        decision                      = 'rejected',
-                        scored_at                     = now(),
-                        semantic_similarity_score     = :sim,
-                        semantic_threshold            = :thresh,
-                        matched_skills                = :matched_skills::jsonb,
-                        missing_skills                = :missing_skills::jsonb,
-                        matched_keywords              = :matched_keywords::jsonb,
-                        missing_keywords              = :missing_keywords::jsonb,
-                        gatekeeper_reason_json        = :gk_reason_json::jsonb
+                        gatekeeper_passed      = false,
+                        evaluation_stage       = 1,
+                        evaluation_exit_reason = :reason,
+                        processing_status      = 'scored',
+                        decision               = 'rejected',
+                        scored_at              = now()
                     WHERE application_id = :aid
                 """),
-                {
-                    "reason":           gatekeeper_result.rejection_reason,
-                    "aid":              application_id,
-                    "sim":              gatekeeper_result.semantic_similarity_pct,
-                    "thresh":           round(prompt_cfg.gatekeeper_threshold * 100, 1),
-                    "matched_skills":   json.dumps(gatekeeper_result.matched_skills),
-                    "missing_skills":   json.dumps(gatekeeper_result.missing_skills),
-                    "matched_keywords": json.dumps(gatekeeper_result.matched_keywords),
-                    "missing_keywords": json.dumps(gatekeeper_result.missing_keywords),
-                    "gk_reason_json":   json.dumps(gatekeeper_result.gatekeeper_reason_json),
-                },
+                {"reason": gatekeeper_result.rejection_reason, "aid": application_id},
             )
             await db.execute(
                 text("""
@@ -235,47 +210,21 @@ async def _score_cv_async(
                     "missing":    gatekeeper_result.missing_skills,
                     "cv_lang":    gatekeeper_result.cv_language,
                     "notes":      gatekeeper_result.rejection_reason,
-                    "reasoning":  json.dumps({"level1_gatekeeper": gatekeeper_result.gatekeeper_reason_json}),
+                    "reasoning":  json.dumps({"level1_gatekeeper": gatekeeper_result.rejection_reason}),
                 },
             )
             await db.commit()
             return
 
-        # Level 1 passed — persist gatekeeper diagnostics + stage
-        override_note = f" [OVERRIDE: {gatekeeper_result.override_reason}]" if gatekeeper_result.override_applied else ""
-        logger.info(
-            "Level 1 PASSED application %s — sim=%.1f%% thresh=%.0f%% matched=%d/%d%s",
-            application_id,
-            gatekeeper_result.semantic_similarity_pct,
-            prompt_cfg.gatekeeper_threshold * 100,
-            gatekeeper_result.matched_required_count,
-            gatekeeper_result.total_required_count,
-            override_note,
-        )
+        # Level 1 passed — persist gatekeeper data + stage
         await db.execute(
             text("""
                 UPDATE applications SET
-                    gatekeeper_passed             = true,
-                    evaluation_stage              = 1,
-                    semantic_similarity_score     = :sim,
-                    semantic_threshold            = :thresh,
-                    matched_skills                = :matched_skills::jsonb,
-                    missing_skills                = :missing_skills::jsonb,
-                    matched_keywords              = :matched_keywords::jsonb,
-                    missing_keywords              = :missing_keywords::jsonb,
-                    gatekeeper_reason_json        = :gk_reason_json::jsonb
+                    gatekeeper_passed = true,
+                    evaluation_stage  = 1
                 WHERE application_id = :aid
             """),
-            {
-                "aid":              application_id,
-                "sim":              gatekeeper_result.semantic_similarity_pct,
-                "thresh":           round(prompt_cfg.gatekeeper_threshold * 100, 1),
-                "matched_skills":   json.dumps(gatekeeper_result.matched_skills),
-                "missing_skills":   json.dumps(gatekeeper_result.missing_skills),
-                "matched_keywords": json.dumps(gatekeeper_result.matched_keywords),
-                "missing_keywords": json.dumps(gatekeeper_result.missing_keywords),
-                "gk_reason_json":   json.dumps(gatekeeper_result.gatekeeper_reason_json),
-            },
+            {"aid": application_id},
         )
         await db.commit()
 

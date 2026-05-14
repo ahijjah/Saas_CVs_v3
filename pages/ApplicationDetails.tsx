@@ -57,16 +57,6 @@ const T = {
     level2Prompt: 'Level 2 Prompt',
     promptVersion: 'v',
     rawPayload: 'Developer: Raw AI Payload',
-    gk1Title: 'Level 1 Gatekeeper Detail',
-    gk1Threshold: 'Threshold',
-    gk1MatchedKeywords: 'Matched Keywords',
-    gk1MissingKeywords: 'Missing Keywords',
-    gk1KeywordCoverage: 'Keyword Coverage',
-    gk1OverrideApplied: 'Override Applied',
-    gk1OverrideReason: 'Override Reason',
-    gk1RejectionReason: 'Rejection Reason',
-    gk1Of: 'of',
-    gk1Required: 'required',
   },
   ar: {
     back: 'العودة إلى الطلبات',
@@ -116,16 +106,6 @@ const T = {
     level2Prompt: 'نموذج المستوى 2',
     promptVersion: 'إ',
     rawPayload: 'المطور: البيانات الخام للذكاء الاصطناعي',
-    gk1Title: 'تفاصيل الحارس - المستوى الأول',
-    gk1Threshold: 'الحد الأدنى',
-    gk1MatchedKeywords: 'الكلمات المفتاحية المطابقة',
-    gk1MissingKeywords: 'الكلمات المفتاحية المفقودة',
-    gk1KeywordCoverage: 'تغطية الكلمات المفتاحية',
-    gk1OverrideApplied: 'تم التجاوز',
-    gk1OverrideReason: 'سبب التجاوز',
-    gk1RejectionReason: 'سبب الرفض',
-    gk1Of: 'من',
-    gk1Required: 'مطلوب',
   },
 };
 
@@ -227,7 +207,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
     [t.scoreBars[6], scores.other_requirements, data.reasoning?.other            || ''],
   ];
 
-  const hasIntelligence = data.local_similarity_score != null || data.cv_language || (data.matched_skills?.length ?? 0) > 0 || (data.missing_skills?.length ?? 0) > 0 || (data.matched_keywords?.length ?? 0) > 0 || data.gatekeeper_reason_json != null;
+  const hasIntelligence = data.local_similarity_score != null || data.cv_language || (data.matched_skills?.length ?? 0) > 0 || (data.missing_skills?.length ?? 0) > 0;
   const hasRedFlags = (data.red_flags?.length ?? 0) > 0;
   const cvLangKey = (data.cv_language || 'en') as keyof typeof LANG_LABELS;
   const cvLangLabel = (LANG_LABELS[cvLangKey] || LANG_LABELS['en'])[lang];
@@ -386,85 +366,6 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                   </div>
                 )}
               </div>
-
-              {/* Level 1 Gatekeeper Detail */}
-              {data.gatekeeper_reason_json && Object.keys(data.gatekeeper_reason_json).length > 0 && (
-                <div className="border-t border-slate-100 pt-6 space-y-4">
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
-                    <span className="w-2 h-3 bg-indigo-400 rounded-full"></span>
-                    {t.gk1Title}
-                  </p>
-
-                  {/* Threshold + keyword coverage + override badge */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {data.semantic_threshold != null && (
-                      <div className="bg-slate-50 rounded-xl p-3 text-center">
-                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.gk1Threshold}</p>
-                        <p className="text-xl font-black text-textMain">{data.semantic_threshold}%</p>
-                      </div>
-                    )}
-                    {data.gatekeeper_reason_json.total_required_count != null && (
-                      <div className="bg-slate-50 rounded-xl p-3 text-center">
-                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.gk1KeywordCoverage}</p>
-                        <p className="text-xl font-black text-textMain">
-                          {data.gatekeeper_reason_json.matched_required_count ?? 0}
-                          <span className="text-xs text-textMuted font-normal"> {t.gk1Of} {data.gatekeeper_reason_json.total_required_count} {t.gk1Required}</span>
-                        </p>
-                      </div>
-                    )}
-                    {data.gatekeeper_reason_json.override_applied && (
-                      <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex flex-col items-center justify-center gap-1">
-                        <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">{t.gk1OverrideApplied}</p>
-                        <svg className="w-5 h-5 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Override or rejection reason banner */}
-                  {data.gatekeeper_reason_json.override_reason && (
-                    <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
-                      <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1">{t.gk1OverrideReason}</p>
-                      <p className="text-xs text-indigo-800 leading-relaxed">{data.gatekeeper_reason_json.override_reason}</p>
-                    </div>
-                  )}
-                  {!data.gatekeeper_reason_json.override_reason && data.gatekeeper_reason_json.rejection_reason && (
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                      <p className="text-[9px] font-black text-red-600 uppercase tracking-widest mb-1">{t.gk1RejectionReason}</p>
-                      <p className="text-xs text-red-800 leading-relaxed">{data.gatekeeper_reason_json.rejection_reason}</p>
-                    </div>
-                  )}
-
-                  {/* Matched / Missing keywords */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {(data.matched_keywords?.length ?? 0) > 0 && (
-                      <div>
-                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">{t.gk1MatchedKeywords}</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {data.matched_keywords!.map((kw, i) => (
-                            <span key={i} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[10px] font-semibold">
-                              {kw}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {(data.missing_keywords?.length ?? 0) > 0 && (
-                      <div>
-                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">{t.gk1MissingKeywords}</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {data.missing_keywords!.map((kw, i) => (
-                            <span key={i} className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-full text-[10px] font-semibold">
-                              {kw}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
