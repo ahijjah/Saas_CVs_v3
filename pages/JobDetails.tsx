@@ -1107,6 +1107,43 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         ))}
       </section>
 
+      {/* Duplicate submissions */}
+      {duplicateLogs.length > 0 && (
+        <div className="mt-8 border-t pt-6">
+          <h3 className="text-base font-semibold text-gray-700 mb-3">
+            Duplicate submissions ({duplicateLogs.length})
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">File</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Original</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {duplicateLogs.map((log) => (
+                  <tr key={log.log_id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 text-gray-800">{log.duplicate_email}</td>
+                    <td className="px-3 py-2 text-gray-600">{log.duplicate_name || '—'}</td>
+                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                      {new Date(log.received_at).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-gray-500 truncate max-w-[140px]">{log.raw_filename || '—'}</td>
+                    <td className="px-3 py-2 text-xs text-gray-400 font-mono">
+                      {log.original_application_id ? log.original_application_id.slice(0, 8) + '…' : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* ── AI Criteria Extraction Status Banner ───────────────────────────── */}
       {details.criteria_extraction_status && details.criteria_extraction_status !== 'completed' && (
         <div className={`rounded-2xl border p-4 flex items-center justify-between gap-4 ${
@@ -1368,42 +1405,6 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         )}
       </section>
 
-      {/* Duplicate submissions */}
-      {duplicateLogs.length > 0 && (
-        <div className="mt-8 border-t pt-6">
-          <h3 className="text-base font-semibold text-gray-700 mb-3">
-            Duplicate submissions ({duplicateLogs.length})
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">File</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Original</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {duplicateLogs.map((log) => (
-                  <tr key={log.log_id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-gray-800">{log.duplicate_email}</td>
-                    <td className="px-3 py-2 text-gray-600">{log.duplicate_name || '—'}</td>
-                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
-                      {new Date(log.received_at).toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-gray-500 truncate max-w-[140px]">{log.raw_filename || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-gray-400 font-mono">
-                      {log.original_application_id ? log.original_application_id.slice(0, 8) + '…' : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
