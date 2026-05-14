@@ -7,11 +7,12 @@ SECURITY CONTRACT:
 - PUT replaces the value; the new masked form is computed and stored.
 - GET returns has_value=True only when a value has been set; never the value itself.
 
-IMPORTANT — Runtime Integration Note:
-The application currently reads secrets from environment variables at startup.
-Values stored here are an auditable management layer. After updating a secret here,
-the corresponding environment variable must also be updated and the service restarted
-for the new value to take effect at runtime.
+RUNTIME INTEGRATION:
+Keys marked restart_required=False are read at runtime from platform_secrets by
+services/runtime_config.py (60-second TTL cache). Updates take effect within 60 s
+without a service restart.
+Keys marked restart_required=True are still read from environment variables at
+startup and require a service restart after change.
 """
 import logging
 import os
@@ -41,22 +42,29 @@ _MANAGED_SERVICES = ["api", "worker", "beat"]
 # restart_required: whether a service restart is needed after update.
 # min_length: minimum accepted value length for the PUT endpoint.
 _SECRET_META: dict[str, dict] = {
-    "OPENAI_API_KEY":         {"source": "env", "restart_required": True, "min_length": 20},
-    "JWT_SECRET":             {"source": "env", "restart_required": True, "min_length": 32},
-    "SMTP_PASSWORD":          {"source": "env", "restart_required": True, "min_length": 1},
-    "IMAP_PASSWORD":          {"source": "env", "restart_required": True, "min_length": 1},
-    "REDIS_PASSWORD":         {"source": "env", "restart_required": True, "min_length": 1},
-    "DB_PASSWORD":            {"source": "env", "restart_required": True, "min_length": 1},
-    "SMTP_USER":              {"source": "env", "restart_required": True, "min_length": 3},
-    "IMAP_USER":              {"source": "env", "restart_required": True, "min_length": 3},
-    "EMAIL_FROM_ADDRESS":     {"source": "env", "restart_required": True, "min_length": 5},
-    "SMTP_HOST":              {"source": "env", "restart_required": True, "min_length": 3},
-    "IMAP_HOST":              {"source": "env", "restart_required": True, "min_length": 3},
-    "REDIS_URL":              {"source": "env", "restart_required": True, "min_length": 8},
-    "CELERY_BROKER_URL":      {"source": "env", "restart_required": True, "min_length": 8},
-    "CELERY_RESULT_BACKEND":  {"source": "env", "restart_required": True, "min_length": 8},
+    "OPENAI_API_KEY":         {"source": "env", "restart_required": True,  "min_length": 20},
+    "JWT_SECRET":             {"source": "env", "restart_required": True,  "min_length": 32},
+    "SMTP_PASSWORD":          {"source": "db",  "restart_required": False, "min_length": 1},
+    "IMAP_PASSWORD":          {"source": "db",  "restart_required": False, "min_length": 1},
+    "REDIS_PASSWORD":         {"source": "env", "restart_required": True,  "min_length": 1},
+    "DB_PASSWORD":            {"source": "env", "restart_required": True,  "min_length": 1},
+    "SMTP_USER":              {"source": "db",  "restart_required": False, "min_length": 3},
+    "IMAP_USER":              {"source": "db",  "restart_required": False, "min_length": 3},
+    "EMAIL_FROM_ADDRESS":     {"source": "env", "restart_required": True,  "min_length": 5},
+    "SMTP_HOST":              {"source": "db",  "restart_required": False, "min_length": 3},
+    "IMAP_HOST":              {"source": "db",  "restart_required": False, "min_length": 3},
+    "SMTP_PORT":              {"source": "db",  "restart_required": False, "min_length": 1},
+    "IMAP_PORT":              {"source": "db",  "restart_required": False, "min_length": 1},
+    "SMTP_USE_TLS":           {"source": "db",  "restart_required": False, "min_length": 1},
+    "REDIS_URL":              {"source": "env", "restart_required": True,  "min_length": 8},
+    "CELERY_BROKER_URL":      {"source": "env", "restart_required": True,  "min_length": 8},
+    "CELERY_RESULT_BACKEND":  {"source": "env", "restart_required": True,  "min_length": 8},
 }
 _DEFAULT_META: dict = {"source": "env", "restart_required": True, "min_length": 1}
+
+# Keys that runtime_config.py reads at runtime (no restart needed after update).
+_RUNTIME_IMAP_KEYS  = {"IMAP_HOST", "IMAP_PORT", "IMAP_USER", "IMAP_PASSWORD"}
+_RUNTIME_SMTP_KEYS  = {"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_USE_TLS"}
 
 # Per-key warning messages shown in the confirmation modal.
 _CRITICAL_WARNINGS: dict[str, str] = {
@@ -292,3 +300,49 @@ async def restart_services(
             "success": False,
             "message": "Restart must be performed manually from the server — docker command not found.",
         }
+
+
+# ── GET /admin/platform-secrets/runtime-status ───────────────────────────────
+
+@router.get("/runtime-status", dependencies=[RequireSuperAdmin])
+async def runtime_status(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Diagnostic: report whether each runtime-managed secret has a DB value.
+
+    Never exposes actual values — only boolean has_value flags.
+    Reads directly from the DB (bypasses cache) to show current stored state.
+    """
+    await set_rls_context(db, current_user.tenant_id, "super_admin")
+
+    all_runtime_keys = _RUNTIME_IMAP_KEYS | _RUNTIME_SMTP_KEYS
+    rows = await db.execute(
+        text("""
+            SELECT key, has_value
+            FROM platform_secrets
+            WHERE key = ANY(:keys)
+        """),
+        {"keys": list(all_runtime_keys)},
+    )
+    db_state: dict[str, bool] = {r["key"]: r["has_value"] for r in rows.mappings()}
+
+    imap_status = {k: db_state.get(k, False) for k in sorted(_RUNTIME_IMAP_KEYS)}
+    smtp_status = {k: db_state.get(k, False) for k in sorted(_RUNTIME_SMTP_KEYS)}
+
+    return {
+        "success": True,
+        "imap": {
+            "all_configured": all(imap_status.values()),
+            "keys": imap_status,
+        },
+        "smtp": {
+            "all_configured": all(smtp_status.values()),
+            "keys": smtp_status,
+        },
+        "note": (
+            "DB values take effect within 60 s (cache TTL) without a service restart. "
+            "env-sourced secrets still require restart."
+        ),
+    }

@@ -6,12 +6,19 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from config import get_settings
+from services.runtime_config import get_bool_secret, get_int_secret, get_secret
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
 async def _send(to_email: str, subject: str, html_body: str, text_body: str) -> None:
+    smtp_host     = await get_secret("SMTP_HOST",     settings.smtp_host)
+    smtp_port     = await get_int_secret("SMTP_PORT", settings.smtp_port)
+    smtp_user     = await get_secret("SMTP_USER",     settings.smtp_user)
+    smtp_password = await get_secret("SMTP_PASSWORD", settings.smtp_password)
+    smtp_use_tls  = await get_bool_secret("SMTP_USE_TLS", settings.smtp_use_tls)
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = f"{settings.email_from_name} <{settings.email_from_address}>"
@@ -22,11 +29,11 @@ async def _send(to_email: str, subject: str, html_body: str, text_body: str) -> 
     try:
         await aiosmtplib.send(
             msg,
-            hostname=settings.smtp_host,
-            port=settings.smtp_port,
-            username=settings.smtp_user,
-            password=settings.smtp_password,
-            use_tls=settings.smtp_use_tls,
+            hostname=smtp_host,
+            port=smtp_port,
+            username=smtp_user,
+            password=smtp_password,
+            use_tls=smtp_use_tls,
         )
     except Exception as exc:
         logger.error("Failed to send email to %s: %s", to_email, exc)

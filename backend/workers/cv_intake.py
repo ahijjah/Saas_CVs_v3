@@ -41,15 +41,27 @@ def poll_imap_inbox():
 async def _poll_async() -> None:
     import imaplib
     from config import get_settings
+    from services.runtime_config import get_bool_secret, get_int_secret, get_secret
     cfg = get_settings()
 
-    try:
-        if cfg.imap_use_ssl:
-            imap = imaplib.IMAP4_SSL(cfg.imap_host, cfg.imap_port)
-        else:
-            imap = imaplib.IMAP4(cfg.imap_host, cfg.imap_port)
+    imap_host     = await get_secret("IMAP_HOST",     cfg.imap_host)
+    imap_port     = await get_int_secret("IMAP_PORT", cfg.imap_port)
+    imap_user     = await get_secret("IMAP_USER",     cfg.imap_user)
+    imap_password = await get_secret("IMAP_PASSWORD", cfg.imap_password)
+    imap_use_ssl  = await get_bool_secret("IMAP_USE_SSL", cfg.imap_use_ssl)
 
-        imap.login(cfg.imap_user, cfg.imap_password)
+    logger.info(
+        "IMAP poll starting — host=%s port=%d user=%s ssl=%s",
+        imap_host, imap_port, imap_user, imap_use_ssl,
+    )
+
+    try:
+        if imap_use_ssl:
+            imap = imaplib.IMAP4_SSL(imap_host, imap_port)
+        else:
+            imap = imaplib.IMAP4(imap_host, imap_port)
+
+        imap.login(imap_user, imap_password)
         imap.select("INBOX")
 
         _, msg_ids = imap.search(None, "UNSEEN")
