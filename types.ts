@@ -241,6 +241,20 @@ export interface ApplicationDetailedAnalysis {
   gatekeeper_passed?: boolean;
   matched_skills?: string[];
   missing_skills?: string[];
+  matched_keywords?: string[];
+  missing_keywords?: string[];
+  semantic_threshold?: number | null;
+  gatekeeper_reason_json?: {
+    semantic_similarity_pct?: number;
+    semantic_threshold_pct?: number;
+    semantic_passed?: boolean;
+    matched_required_count?: number;
+    total_required_count?: number;
+    override_applied?: boolean;
+    override_reason?: string | null;
+    rejection_reason?: string | null;
+    final_decision?: string;
+  } | null;
   red_flags?: string[];
   reasoning?: Record<string, string>;
   raw_ai_response?: any;
