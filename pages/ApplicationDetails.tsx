@@ -316,7 +316,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         <div className="lg:col-span-2 bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
           <div className="p-8 bg-slate-50 border-b border-border flex items-center gap-8">
             <div className={`w-24 h-24 rounded-3xl flex flex-col items-center justify-center font-black text-white shadow-xl rotate-3 transform hover:rotate-0 transition-transform ${
-              isLowMatch ? 'bg-slate-400' : score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning' : 'bg-error'
+              isLowMatch ? 'bg-slate-400'
+                : data.decision === 'qualified' ? 'bg-success'
+                : data.decision === 'partial'   ? 'bg-warning'
+                : data.decision === 'rejected'  ? 'bg-error'
+                : score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning' : 'bg-error'
             }`}>
               <span className="text-3xl">{isLowMatch ? '—' : score}</span>
               <span className="text-[10px] opacity-80 uppercase leading-none tracking-tighter">{t.points}</span>

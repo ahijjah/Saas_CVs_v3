@@ -1149,7 +1149,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Score</th>
                   <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Received</th>
                   <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Original</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Actions</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Duplicate CV</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Original CV</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -1201,7 +1202,19 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                         ) : <span className="text-textMuted">—</span>}
                       </td>
                       <td className="px-4 py-3">
-                        {log.original_application_id && log.original_cv_filename && (
+                        {/* Duplicate CV: not saved to disk (IMAP hash-match discards the file) */}
+                        <span
+                          title="Duplicate file is not stored — only the file hash is recorded"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-50 text-slate-400 text-xs font-semibold rounded-lg cursor-not-allowed border border-slate-200"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                          </svg>
+                          Not available
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {log.original_application_id && log.original_cv_filename ? (
                           <button
                             onClick={() => handleViewCV(log.original_application_id, log.original_cv_filename)}
                             className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-primary hover:text-white text-textMain text-xs font-semibold rounded-lg transition-colors"
@@ -1211,6 +1224,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                             </svg>
                             View Original CV
                           </button>
+                        ) : (
+                          <span className="text-textMuted text-xs">—</span>
                         )}
                       </td>
                     </tr>
