@@ -394,16 +394,17 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     return () => clearTimeout(timer);
   }, [queueStatus, scoring, fetchQueueStatus, fetchUploadedCVs]);
 
-  // ── Detect batch completion → refresh job stats + CV list (once) ──────────
+  // ── Detect batch completion → refresh job stats + CV list + dup logs ────────
   useEffect(() => {
     const isNowProcessing = queueStatus?.is_processing ?? false;
     if (prevIsProcessingRef.current && !isNowProcessing) {
-      // Batch just finished: pull fresh KPI counters and clear the queue list
+      // Batch just finished: pull fresh KPI counters, clear queue list, refresh dup logs
       fetchJobDetails();
       fetchUploadedCVs();
+      fetchDuplicateLogs();
     }
     prevIsProcessingRef.current = isNowProcessing;
-  }, [queueStatus?.is_processing, fetchJobDetails, fetchUploadedCVs]);
+  }, [queueStatus?.is_processing, fetchJobDetails, fetchUploadedCVs, fetchDuplicateLogs]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -568,22 +569,15 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     if (!files.length) return;
     setUploading(true);
     let successCount = 0;
-    let dupCount = 0;
     let failCount = 0;
-    let needDupRefresh = false;
     for (const file of Array.from(files)) {
       const fd = new FormData();
       fd.append('job_id', jobId);
       fd.append('candidate_name', file.name.replace(/\.[^.]+$/, ''));
       fd.append('file', file);
       try {
-        const result = await apiService.postForm(WEBHOOK_CONFIG.CV_UPLOAD_URL, fd, auth.token!);
-        if (result?.duplicate) {
-          dupCount++;
-          needDupRefresh = true;
-        } else {
-          successCount++;
-        }
+        await apiService.postForm(WEBHOOK_CONFIG.CV_UPLOAD_URL, fd, auth.token!);
+        successCount++;
       } catch {
         failCount++;
       }
@@ -591,11 +585,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (successCount > 0) addToast(`${successCount} CV(s) uploaded successfully.`, 'success');
-    if (dupCount > 0) addToast(`${dupCount} CV(s) detected as duplicate — added to Duplicate submissions, not sent for scoring.`, 'info');
     if (failCount > 0) addToast(`${failCount} CV(s) failed to upload.`, 'error');
-    if (needDupRefresh) await fetchDuplicateLogs();
     await fetchUploadedCVs();
-  }, [jobId, auth.token, addToast, fetchUploadedCVs, fetchDuplicateLogs]);
+  }, [jobId, auth.token, addToast, fetchUploadedCVs]);
 
   const handleScorePending = useCallback(async () => {
     setScoring(true);

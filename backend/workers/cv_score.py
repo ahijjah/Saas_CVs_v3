@@ -112,7 +112,12 @@ async def _score_cv_async(
         # ── Step 2b: Duplicate detection (local, no LLM) ──────────────────────
         # Fetch candidate fields to compare against siblings in the same job.
         app_id_row = await db.execute(
-            text("SELECT candidate_name, candidate_email FROM applications WHERE application_id = :aid"),
+            text("""
+                SELECT candidate_name, candidate_email,
+                       submission_source,
+                       submitted_by_user_id, submitted_by_name, submitted_by_email
+                FROM applications WHERE application_id = :aid
+            """),
             {"aid": application_id},
         )
         app_id_data = app_id_row.mappings().first()
@@ -128,6 +133,25 @@ async def _score_cv_async(
                 extracted_text=raw_cv_text,
             )
             await db.commit()
+
+            # Manual uploads with high content similarity → convert to dup log and stop
+            if app_id_data["submission_source"] == "manual_upload":
+                dup_check = await db.execute(
+                    text("""
+                        SELECT duplicate_reason,
+                               duplicate_reference_application_id,
+                               duplicate_similarity_score
+                        FROM applications WHERE application_id = :aid
+                    """),
+                    {"aid": application_id},
+                )
+                dup_info = dup_check.mappings().first()
+                if dup_info and dup_info["duplicate_reason"] == "high_content_similarity":
+                    await _convert_manual_dup_to_log(
+                        db, application_id, job_id, tenant_id,
+                        mime_type, file_path, app_id_data, dup_info,
+                    )
+                    return
 
         # ── Step 3: Fetch job criteria + config ───────────────────────────────
         criteria_row = await db.execute(
@@ -638,6 +662,135 @@ async def _score_cv_async(
 
         except Exception as exc:
             logger.warning("Confirmation email failed for application %s: %s", application_id, exc)
+
+
+async def _convert_manual_dup_to_log(
+    db,
+    application_id: str,
+    job_id: str,
+    tenant_id: str,
+    mime_type: str,
+    file_path: str,
+    app_data: dict,
+    dup_info: dict,
+) -> None:
+    """
+    Move a manual-upload application that scored high_content_similarity into
+    duplicate_application_logs and delete the transient application record.
+    Called from Step 2b of the scoring worker; db is already open with RLS set.
+    Commits before returning.
+    """
+    import uuid as _uuid
+    from pathlib import Path as _Path
+    from config import get_settings as _get_settings
+    from sqlalchemy import text
+
+    cfg = _get_settings()
+
+    try:
+        # Read file metadata from application_files
+        file_row = await db.execute(
+            text("""
+                SELECT file_path, original_name, mime_type, file_size_bytes
+                FROM application_files WHERE application_id = :aid LIMIT 1
+            """),
+            {"aid": application_id},
+        )
+        file_meta = file_row.mappings().first()
+
+        # Move the file to the duplicates/ directory
+        dup_file_path: str | None = None
+        dup_orig_name: str | None = None
+        dup_content_type: str | None = None
+        dup_file_size: int | None = None
+
+        if file_meta and file_meta["file_path"]:
+            src = _Path(cfg.files_base_path) / file_meta["file_path"]
+            ext = _Path(file_meta["file_path"]).suffix.lstrip(".")
+            log_id_for_file = str(_uuid.uuid4())
+            dup_dir = (
+                _Path(cfg.files_base_path)
+                / "tenants" / tenant_id / "jobs" / job_id / "duplicates"
+            )
+            dup_dir.mkdir(parents=True, exist_ok=True)
+            dst = dup_dir / f"{log_id_for_file}.{ext}"
+            if src.exists():
+                import shutil
+                shutil.move(str(src), str(dst))
+                dup_file_path = str(dst.relative_to(cfg.files_base_path))
+            dup_orig_name = file_meta["original_name"]
+            dup_content_type = file_meta["mime_type"]
+            dup_file_size = file_meta["file_size_bytes"]
+        else:
+            log_id_for_file = str(_uuid.uuid4())
+
+        ref_id = str(dup_info["duplicate_reference_application_id"]) if dup_info["duplicate_reference_application_id"] else None
+        sim_score = float(dup_info["duplicate_similarity_score"]) if dup_info["duplicate_similarity_score"] is not None else None
+
+        await db.execute(
+            text("""
+                INSERT INTO duplicate_application_logs
+                    (log_id, tenant_id, job_id,
+                     duplicate_email, duplicate_name,
+                     attachment_hash, received_at,
+                     original_application_id,
+                     raw_filename, notes, source,
+                     submitted_by_user_id, submitted_by_name, submitted_by_email,
+                     duplicate_file_path, duplicate_original_filename,
+                     duplicate_content_type, duplicate_file_size_bytes,
+                     duplicate_reason, duplicate_similarity_score)
+                VALUES
+                    (:log_id, :tenant_id, :job_id,
+                     :email, :name,
+                     NULL, NOW(),
+                     :orig_id,
+                     :filename, :notes, 'manual_upload',
+                     :uploader_id, :uploader_name, :uploader_email,
+                     :dup_file_path, :dup_orig_name,
+                     :dup_content_type, :dup_file_size,
+                     'high_content_similarity', :similarity_score)
+            """),
+            {
+                "log_id":          log_id_for_file,
+                "tenant_id":       tenant_id,
+                "job_id":          job_id,
+                "email":           app_data["candidate_email"],
+                "name":            app_data["candidate_name"],
+                "orig_id":         ref_id,
+                "filename":        dup_orig_name,
+                "notes":           f"Manual upload duplicate detected during scoring — content similarity {sim_score:.1f}% ≥ 90% threshold." if sim_score else "Manual upload duplicate detected during scoring.",
+                "uploader_id":     str(app_data["submitted_by_user_id"]) if app_data["submitted_by_user_id"] else None,
+                "uploader_name":   app_data["submitted_by_name"],
+                "uploader_email":  app_data["submitted_by_email"],
+                "dup_file_path":   dup_file_path,
+                "dup_orig_name":   dup_orig_name,
+                "dup_content_type": dup_content_type,
+                "dup_file_size":   dup_file_size,
+                "similarity_score": sim_score,
+            },
+        )
+
+        # Delete application_files first (no ON DELETE CASCADE), then application
+        await db.execute(
+            text("DELETE FROM application_files WHERE application_id = :aid"),
+            {"aid": application_id},
+        )
+        await db.execute(
+            text("DELETE FROM applications WHERE application_id = :aid"),
+            {"aid": application_id},
+        )
+        await db.commit()
+
+        logger.info(
+            "Manual upload duplicate converted to log: application=%s ref=%s score=%.1f",
+            application_id, ref_id, sim_score or 0,
+        )
+
+    except Exception as exc:
+        logger.error(
+            "_convert_manual_dup_to_log failed for application %s: %s",
+            application_id, exc, exc_info=True,
+        )
 
 
 async def _mark_failed(application_id: str, error: str) -> None:
