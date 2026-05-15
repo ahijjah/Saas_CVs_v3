@@ -310,6 +310,18 @@ export interface PlatformConfig {
   updated_by_email: string | null;
 }
 
+export interface PlanFeature {
+  feature_id: string;
+  feature_key: string;
+  feature_name: string;
+  description: string | null;
+  value_type: 'boolean' | 'number' | 'text';
+  value_boolean: boolean | null;
+  value_number: number | null;
+  value_text: string | null;
+  display_order: number;
+}
+
 export interface SubscriptionPlan {
   plan_id: string;
   plan_code: string;
@@ -322,15 +334,12 @@ export interface SubscriptionPlan {
   max_campaigns: number;
   max_processed_cvs_per_month: number;
   max_users: number;
-  api_access: boolean;
-  advanced_analytics: boolean;
-  priority_support: boolean;
-  custom_ai_prompts: boolean;
   status: 'active' | 'inactive';
   display_order: number;
   created_at: string | null;
   updated_at: string | null;
   updated_by_email: string | null;
+  features: PlanFeature[];
 }
 
 export interface TenantSubscriptionRow {

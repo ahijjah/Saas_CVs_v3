@@ -36,6 +36,8 @@ export const WEBHOOK_CONFIG = {
   // Platform Control (super_admin)
   PLATFORM_CONFIG_URL:          `${API_BASE}/admin/platform-config`,
   SUBSCRIPTION_PLANS_URL:       `${API_BASE}/admin/subscription-plans`,
+  SUBSCRIPTION_PUBLIC_URL:      `${API_BASE}/subscription/plans`,
+  SUBSCRIPTION_SUBSCRIBE_URL:   `${API_BASE}/subscription/subscribe`,
   TENANT_SUBSCRIPTION_BASE_URL: `${API_BASE}/admin/tenants`,
   // Platform Control — Secrets & Credentials
   PLATFORM_SECRETS_URL:         `${API_BASE}/admin/platform-secrets`,
