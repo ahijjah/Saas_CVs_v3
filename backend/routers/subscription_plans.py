@@ -62,6 +62,10 @@ class FeaturePatchRequest(BaseModel):
     value_text: str | None = None
 
 
+class SubscribeRequest(BaseModel):
+    plan_code: str
+
+
 def _row_to_plan(r: Any, features: list[dict]) -> dict[str, Any]:
     return {
         "plan_id": str(r["plan_id"]),
@@ -369,7 +373,7 @@ async def list_public_plans(
 
 @router.post("/subscription/subscribe")
 async def subscribe_to_plan(
-    body: dict,
+    body: SubscribeRequest,
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, Any]:
@@ -377,9 +381,7 @@ async def subscribe_to_plan(
     if current_user.role not in ("admin", "super_admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only tenant admins can change subscription plans")
 
-    plan_code: str = body.get("plan_code", "")
-    if not plan_code:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="plan_code is required")
+    plan_code: str = body.plan_code
 
     await set_rls_context(db, current_user.tenant_id, "super_admin")
 

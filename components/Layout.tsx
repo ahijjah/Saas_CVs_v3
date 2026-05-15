@@ -13,7 +13,7 @@ interface LayoutProps {
 
 const T = {
   en: {
-    campaigns: 'Campaigns', settings: 'Settings',
+    campaigns: 'Campaigns', settings: 'Settings', planUsage: 'Plan & Usage',
     sysAdmin: 'System Admin', tenantMgmt: 'Tenant Management',
     platformControl: 'Platform Control',
     logout: 'Logout', superAdmin: 'Super Admin', usersGlobal: 'Users Global',
@@ -23,7 +23,8 @@ const T = {
     organization: 'Organization', langBtn: 'عربي',
     pageNames: {
       jobs: 'Campaigns', 'job-details': 'Job Details', applications: 'Applications',
-      settings: 'Settings', 'admin-dashboard': 'Super Admin', 'admin-users': 'Users Global',
+      settings: 'Settings', 'plan-usage': 'Plan & Usage',
+      'admin-dashboard': 'Super Admin', 'admin-users': 'Users Global',
       'admin-platform-config': 'Platform Config',
       'admin-subscription-plans': 'Subscription Plans',
       'admin-tenant-subscriptions': 'Tenant Subscriptions',
@@ -32,7 +33,7 @@ const T = {
     } as Record<string, string>,
   },
   ar: {
-    campaigns: 'الحملات', settings: 'الإعدادات',
+    campaigns: 'الحملات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
     sysAdmin: 'مشرف النظام', tenantMgmt: 'إدارة المستأجر',
     platformControl: 'التحكم بالمنصة',
     logout: 'تسجيل الخروج', superAdmin: 'المشرف العام', usersGlobal: 'المستخدمون',
@@ -42,7 +43,8 @@ const T = {
     organization: 'المنظمة', langBtn: 'English',
     pageNames: {
       jobs: 'الحملات', 'job-details': 'تفاصيل الوظيفة', applications: 'الطلبات',
-      settings: 'الإعدادات', 'admin-dashboard': 'المشرف العام', 'admin-users': 'المستخدمون',
+      settings: 'الإعدادات', 'plan-usage': 'الخطة والاستخدام',
+      'admin-dashboard': 'المشرف العام', 'admin-users': 'المستخدمون',
       'admin-platform-config': 'إعدادات المنصة',
       'admin-subscription-plans': 'خطط الاشتراك',
       'admin-tenant-subscriptions': 'اشتراكات المستأجرين',
@@ -69,6 +71,11 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
     { id: 'jobs', label: t.campaigns, icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+    )},
+    { id: 'plan-usage', label: t.planUsage, icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
       </svg>
     )},
     { id: 'settings', label: t.settings, icon: (

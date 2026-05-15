@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 interface LandingPageProps {
   onGetStarted: () => void;
@@ -150,13 +150,16 @@ const T = {
       { title: 'Interview Intelligence',    tag: 'Decision Support', desc: 'Go beyond scores. Each candidate analysis includes a structured interview guide: gap analysis, suggested focus areas, and tailored interview questions generated from the CV and job description.', bullets: ['Auto-generated interview questions', 'Identified skill gaps per candidate', 'Evaluation notes for hiring managers'] },
     ],
 
-    stepsTag:   'Simple Process',
-    stepsTitle: 'Live in 3 steps',
+    stepsTag:   'How It Works',
+    stepsTitle: 'From job post to hire in 6 steps',
     stepsSub:   "No complex integrations, no training your team on new tools. You're analyzing CVs the same day you sign up.",
     steps: [
-      { num: '01', title: 'Post Your Job',                  desc: 'Create a campaign in minutes. Paste or write your job description and the AI automatically extracts scoring criteria — no manual configuration needed.', mockBtn: 'Create Campaign', colorText: 'text-violet-600', colorBg: 'bg-violet-100' },
-      { num: '02', title: 'Candidates Apply via Email',     desc: 'Share the dedicated email address with candidates. Every CV that arrives is instantly picked up, parsed, and sent through the analysis pipeline.', mockAuto: '→ Auto-captured & queued', colorText: 'text-blue-600',   colorBg: 'bg-blue-100',   mockEmails: [{ from: 'ahmed@gmail.com', sub: 'Application – Senior Dev', time: '09:14' }, { from: 'maria.s@outlook.com', sub: 'CV attached – Full Stack', time: '09:31' }, { from: 'liam.o@yahoo.com', sub: 'CV for Frontend Role', time: '10:02' }] },
-      { num: '03', title: 'Review AI-Scored Shortlists',   desc: 'Open your dashboard to ranked, scored, and decision-ready candidates. Dive into any application for a full breakdown, then schedule interviews armed with AI-generated questions.', colorText: 'text-emerald-600', colorBg: 'bg-emerald-100', mockCands: [{ name: 'Ahmed Al-Rashidi', score: 91, status: 'Qualified', cls: 'bg-emerald-100 text-emerald-700' }, { name: 'Maria Santos', score: 78, status: 'Qualified', cls: 'bg-emerald-100 text-emerald-700' }, { name: "Liam O'Brien", score: 52, status: 'Partial', cls: 'bg-amber-100 text-amber-700' }] },
+      { num: '01', icon: '📋', title: 'Create Job Campaign',             desc: 'Create a campaign with your job description. AI automatically extracts evaluation criteria — skills, experience, education, and custom requirements.', color: 'bg-violet-100 text-violet-700' },
+      { num: '02', icon: '🔗', title: 'Share Apply Link or Job Email',   desc: 'Distribute a unique job email alias or public application link. Candidates apply by simply emailing their CV or filling the form.',               color: 'bg-blue-100 text-blue-700' },
+      { num: '03', icon: '📨', title: 'Receive CVs Automatically',       desc: 'Every CV sent to the job email is instantly captured, parsed, and queued for analysis. No manual uploads, no missed applications.',                   color: 'bg-sky-100 text-sky-700' },
+      { num: '04', icon: '🤖', title: 'AI Analyzes & Scores Candidates', desc: 'The AI engine reads each CV, extracts structured data, and scores candidates across 7 dimensions aligned to your job requirements.',               color: 'bg-indigo-100 text-indigo-700' },
+      { num: '05', icon: '🏆', title: 'Review Ranked Applicants',        desc: 'Open your dashboard to a ranked, scored shortlist. Drill into any candidate for a full breakdown, gap analysis, and AI-generated interview questions.', color: 'bg-emerald-100 text-emerald-700' },
+      { num: '06', icon: '📤', title: 'Export & Manage Hiring Process',  desc: 'Export ranked candidates to CSV, track your hiring pipeline, and close campaigns when the right candidate is found.',                             color: 'bg-teal-100 text-teal-700' },
     ],
 
     testimonialsTag:   'Social Proof',
@@ -169,12 +172,8 @@ const T = {
 
     pricingTag:   'Pricing',
     pricingTitle: 'Simple, transparent pricing',
-    pricingSub:   'All plans include a 14-day free trial. No credit card required.',
-    plans: [
-      { name: 'Starter',      price: '49',  period: '/mo', badge: '',             highlight: false, desc: 'For small teams starting their AI hiring journey.',      cta: 'Start Free Trial', features: ['Up to 3 active job campaigns', '150 CVs analyzed / month', 'Platform email ingestion', '7-dimension scoring', 'Email support'] },
-      { name: 'Professional', price: '149', period: '/mo', badge: 'Most Popular', highlight: true,  desc: 'For growing teams with higher hiring volume.',           cta: 'Get Started',      features: ['Unlimited active campaigns', '1,000 CVs analyzed / month', 'Platform email + forwarding', 'Custom scoring weights', 'Interview intelligence reports', 'Priority support'] },
-      { name: 'Enterprise',   price: '399', period: '/mo', badge: '',             highlight: false, desc: 'For agencies and multi-unit organizations.',            cta: 'Contact Sales',    features: ['Everything in Professional', 'Unlimited CVs', 'Multi-tenant management', 'Super-admin console', 'Dedicated onboarding', 'SLA & custom integrations'] },
-    ],
+    pricingSub:   'Start free. No credit card required.',
+    pricingEnterprise: { name: 'Enterprise', price: 'Custom', badge: '', desc: 'For agencies and multi-unit organizations.', cta: 'Contact Us', features: ['Everything in Professional', 'Unlimited CVs & campaigns', 'Multi-tenant management', 'Dedicated onboarding', 'SLA & custom integrations'] },
 
     faqTag:   'FAQ',
     faqTitle: 'Common questions',
@@ -240,13 +239,16 @@ const T = {
       { title: 'ذكاء المقابلات',                          tag: 'دعم القرار',        desc: 'تجاوز الدرجات. يتضمن كل تحليل مرشح دليلاً منظماً للمقابلة: تحليل الفجوات، مناطق التركيز المقترحة، وأسئلة مقابلة مخصصة مولّدة من السيرة الذاتية والوصف الوظيفي.', bullets: ['أسئلة مقابلة مولّدة تلقائياً', 'فجوات المهارات المحددة لكل مرشح', 'ملاحظات تقييم لمديري التوظيف'] },
     ],
 
-    stepsTag:   'العملية البسيطة',
-    stepsTitle: 'انطلق في 3 خطوات',
+    stepsTag:   'كيف يعمل',
+    stepsTitle: 'من نشر الوظيفة إلى التوظيف في 6 خطوات',
     stepsSub:   'لا تكاملات معقدة، لا تدريب على أدوات جديدة. ستحلل السير الذاتية في نفس يوم التسجيل.',
     steps: [
-      { num: '٠١', title: 'انشر وظيفتك',                           desc: 'أنشئ حملة في دقائق. الصق وصف الوظيفة وسيستخرج الذكاء الاصطناعي معايير التقييم تلقائياً — بلا إعداد يدوي.', mockBtn: 'إنشاء حملة', colorText: 'text-violet-600', colorBg: 'bg-violet-100' },
-      { num: '٠٢', title: 'المرشحون يتقدمون بالبريد الإلكتروني',  desc: 'شارك عنوان البريد الإلكتروني المخصص مع المرشحين. كل سيرة ذاتية ترد تُلتقط فوراً وتُرسل عبر خط التحليل.', mockAuto: '← تُلتقط تلقائياً وتُضاف للقائمة', colorText: 'text-blue-600', colorBg: 'bg-blue-100', mockEmails: [{ from: 'ahmed@gmail.com', sub: 'طلب تقديم – مطور أول', time: '09:14' }, { from: 'maria.s@outlook.com', sub: 'سيرة ذاتية – مهندس برمجيات', time: '09:31' }, { from: 'liam.o@yahoo.com', sub: 'تقديم لوظيفة Frontend', time: '10:02' }] },
-      { num: '٠٣', title: 'راجع القوائم المقيّمة بالذكاء الاصطناعي', desc: 'افتح لوحة التحكم لتجد مرشحين مرتبين ومقيّمين وجاهزين للقرار. انقر على أي طلب للاطلاع على تفاصيل كاملة، ثم حدد مواعيد المقابلات مزوداً بأسئلة مولّدة بالذكاء الاصطناعي.', colorText: 'text-emerald-600', colorBg: 'bg-emerald-100', mockCands: [{ name: 'Ahmed Al-Rashidi', score: 91, status: 'مؤهل', cls: 'bg-emerald-100 text-emerald-700' }, { name: 'Maria Santos', score: 78, status: 'مؤهل', cls: 'bg-emerald-100 text-emerald-700' }, { name: "Liam O'Brien", score: 52, status: 'جزئي', cls: 'bg-amber-100 text-amber-700' }] },
+      { num: '٠١', icon: '📋', title: 'إنشاء حملة وظيفية',                          desc: 'أنشئ حملة بوصف وظيفتك. يستخرج الذكاء الاصطناعي معايير التقييم تلقائياً — المهارات، الخبرة، التعليم، والمتطلبات المخصصة.',                          color: 'bg-violet-100 text-violet-700' },
+      { num: '٠٢', icon: '🔗', title: 'شارك رابط التقديم أو البريد الوظيفي',       desc: 'وزّع رابط بريد إلكتروني مخصص للوظيفة أو صفحة تقديم عامة. يتقدم المرشحون ببساطة بإرسال سيرتهم بالبريد أو ملء النموذج.',                         color: 'bg-blue-100 text-blue-700' },
+      { num: '٠٣', icon: '📨', title: 'استقبال السير الذاتية تلقائياً',             desc: 'كل سيرة ذاتية ترد على البريد الوظيفي تُلتقط فوراً وتُحلَّل وتُضاف للقائمة. بلا رفع يدوي ولا طلبات مفقودة.',                                       color: 'bg-sky-100 text-sky-700' },
+      { num: '٠٤', icon: '🤖', title: 'الذكاء الاصطناعي يحلل ويقيّم المرشحين',     desc: 'يقرأ محرك الذكاء الاصطناعي كل سيرة ذاتية ويستخرج البيانات ويقيّم المرشحين عبر 7 محاور وفقاً لمتطلبات وظيفتك.',                                 color: 'bg-indigo-100 text-indigo-700' },
+      { num: '٠٥', icon: '🏆', title: 'مراجعة المرشحين المرتبين',                  desc: 'افتح لوحة التحكم لتجد قائمة مختصرة مرتبة ومقيّمة. انقر على أي مرشح لتحليل كامل وتحديد الفجوات وأسئلة مقابلة مولّدة بالذكاء الاصطناعي.',          color: 'bg-emerald-100 text-emerald-700' },
+      { num: '٠٦', icon: '📤', title: 'تصدير وإدارة عملية التوظيف',                 desc: 'صدّر المرشحين المرتبين إلى CSV، تتبع خط أنابيب التوظيف، وأغلق الحملة عند إيجاد المرشح المناسب.',                                                color: 'bg-teal-100 text-teal-700' },
     ],
 
     testimonialsTag:   'آراء العملاء',
@@ -259,12 +261,8 @@ const T = {
 
     pricingTag:   'الأسعار',
     pricingTitle: 'أسعار بسيطة وشفافة',
-    pricingSub:   'جميع الخطط تشمل تجربة مجانية 14 يوماً. لا بطاقة ائتمانية مطلوبة.',
-    plans: [
-      { name: 'للمبتدئين',  price: '49',  period: '/شهر', badge: '',              highlight: false, desc: 'للفرق الصغيرة في بداية رحلة التوظيف بالذكاء الاصطناعي.', cta: 'ابدأ التجربة المجانية',   features: ['حتى 3 حملات وظيفية نشطة', '150 سيرة ذاتية محللة / شهر', 'استقبال بريد إلكتروني للمنصة', 'تقييم 7 محاور', 'دعم بالبريد الإلكتروني'] },
-      { name: 'احترافي',    price: '149', period: '/شهر', badge: 'الأكثر شيوعاً', highlight: true,  desc: 'للفرق المتنامية ذات حجم التوظيف الأعلى.',                   cta: 'ابدأ الآن',               features: ['حملات نشطة غير محدودة', '1,000 سيرة ذاتية محللة / شهر', 'بريد المنصة + إعادة التوجيه', 'أوزان تقييم مخصصة', 'تقارير ذكاء المقابلات', 'دعم ذو أولوية'] },
-      { name: 'للمؤسسات',  price: '399', period: '/شهر', badge: '',              highlight: false, desc: 'للوكالات والمنظمات متعددة الوحدات.',                          cta: 'تواصل مع المبيعات',      features: ['كل ما في الخطة الاحترافية', 'سير ذاتية غير محدودة', 'إدارة متعددة المستأجرين', 'لوحة تحكم المشرف العام', 'تأهيل مخصص', 'اتفاقية مستوى الخدمة وتكاملات مخصصة'] },
-    ],
+    pricingSub:   'ابدأ مجاناً. لا بطاقة ائتمانية مطلوبة.',
+    pricingEnterprise: { name: 'مؤسسات', price: 'مخصص', badge: '', desc: 'للوكالات والمنظمات متعددة الوحدات.', cta: 'تواصل معنا', features: ['كل ما في الخطة الاحترافية', 'سير ذاتية وحملات غير محدودة', 'إدارة متعددة المستأجرين', 'تأهيل مخصص', 'اتفاقية مستوى الخدمة وتكاملات مخصصة'] },
 
     faqTag:   'الأسئلة الشائعة',
     faqTitle: 'أسئلة شائعة',
@@ -288,13 +286,32 @@ const T = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+interface ApiPlan {
+  plan_id: string; plan_code: string; plan_name: string;
+  description: string | null; monthly_price: number;
+  trial_days: number; max_campaigns: number;
+  max_processed_cvs_per_month: number; max_users: number;
+  features: { feature_key: string; feature_name: string; value_type: string; value_boolean: boolean | null; value_number: number | null; value_text: string | null }[];
+}
+
+const PLAN_GRADIENTS = ['from-slate-500 to-slate-600', 'from-sky-500 to-blue-600', 'from-violet-500 to-purple-600'];
+
 export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn }) => {
   const [lang, setLang] = useState<'en' | 'ar'>('en');
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [apiPlans, setApiPlans] = useState<ApiPlan[]>([]);
   const t = T[lang];
   const isAr = lang === 'ar';
   const statsRef = useInView(0.3);
+
+  const SUBSCRIPTION_PUBLIC_URL = 'http://72.62.31.221:8000/subscription/plans';
+  useEffect(() => {
+    fetch(SUBSCRIPTION_PUBLIC_URL)
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((d) => { if (d.plans?.length) setApiPlans(d.plans); })
+      .catch(() => {});
+  }, []);
 
   const cv      = useCounter(50000, 2000, statsRef.inView);
   const time    = useCounter(85,    1600, statsRef.inView);
@@ -492,74 +509,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
 
       {/* ── How It Works ── */}
       <section id="how-it-works" className="py-24 px-6 bg-white">
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <span className="inline-block text-xs font-bold uppercase tracking-widest text-indigo-600 mb-3">{t.stepsTag}</span>
             <h2 className="text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">{t.stepsTitle}</h2>
             <p className="text-lg text-gray-500 max-w-xl mx-auto">{t.stepsSub}</p>
           </div>
-
-          <div className="relative">
-            <div className="absolute left-1/2 top-12 bottom-12 w-px bg-gradient-to-b from-violet-200 via-blue-200 to-emerald-200 hidden md:block -translate-x-1/2" />
-            <div className="space-y-12">
-              {t.steps.map((step, i) => (
-                <div key={step.num} className={`flex flex-col ${i % 2 === 1 ? 'md:flex-row-reverse' : 'md:flex-row'} items-center gap-8 md:gap-12`}>
-                  <div className="flex-1 text-center md:text-start">
-                    <div className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl ${step.colorBg} mb-4`}>
-                      <span className={`text-2xl font-extrabold ${step.colorText}`}>{step.num}</span>
-                    </div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-3">{step.title}</h3>
-                    <p className="text-gray-500 leading-relaxed max-w-md">{step.desc}</p>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {t.steps.map((step) => (
+              <div key={step.num} className="group bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`w-10 h-10 rounded-xl ${step.color} flex items-center justify-center text-lg font-extrabold`}>
+                    {step.icon}
                   </div>
-                  <div className="flex-1">
-                    <div className="rounded-2xl border border-gray-100 p-6 bg-gray-50 shadow-sm">
-                      {i === 0 && (
-                        <div className="space-y-3">
-                          <div className="h-8 bg-indigo-100 rounded-lg w-3/4" />
-                          <div className="h-4 bg-gray-200 rounded w-full" />
-                          <div className="h-4 bg-gray-200 rounded w-5/6" />
-                          <div className="h-4 bg-gray-200 rounded w-4/6" />
-                          <div className="mt-4">
-                            <div className="h-9 bg-indigo-500 rounded-lg flex items-center justify-center">
-                              <span className="text-white text-xs font-semibold">{step.mockBtn}</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      {i === 1 && step.mockEmails && (
-                        <div className="space-y-2">
-                          {step.mockEmails.map(m => (
-                            <div key={m.from} className="flex items-start gap-3 p-3 bg-white rounded-xl border border-gray-100">
-                              <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600 flex-shrink-0">{m.from[0].toUpperCase()}</div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-xs text-gray-500 truncate">{m.from}</div>
-                                <div className="text-xs font-semibold text-gray-800 truncate">{m.sub}</div>
-                              </div>
-                              <div className="text-xs text-gray-400 flex-shrink-0">{m.time}</div>
-                            </div>
-                          ))}
-                          <div className="text-center text-xs text-emerald-600 font-semibold pt-1">{step.mockAuto}</div>
-                        </div>
-                      )}
-                      {i === 2 && step.mockCands && (
-                        <div className="space-y-2">
-                          {step.mockCands.map(c => (
-                            <div key={c.name} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-xs font-semibold text-gray-800">{c.name}</div>
-                                <div className="h-1.5 bg-gray-100 rounded-full mt-1 w-24"><div className="h-full bg-indigo-500 rounded-full" style={{ width: `${c.score}%` }} /></div>
-                              </div>
-                              <div className="text-sm font-bold text-gray-900">{c.score}%</div>
-                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${c.cls}`}>{c.status}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  <span className="text-xs font-black text-gray-400 tracking-widest">{step.num}</span>
                 </div>
-              ))}
-            </div>
+                <h3 className="text-base font-bold text-gray-900 mb-2">{step.title}</h3>
+                <p className="text-gray-500 text-sm leading-relaxed">{step.desc}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -597,32 +565,117 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
             <h2 className="text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">{t.pricingTitle}</h2>
             <p className="text-gray-500 text-lg">{t.pricingSub}</p>
           </div>
-          <div className="grid md:grid-cols-3 gap-6 items-start">
-            {t.plans.map(plan => (
-              <div key={plan.name} className={`relative rounded-2xl p-8 border transition-all ${plan.highlight ? 'border-indigo-500 shadow-2xl shadow-indigo-100 scale-105' : 'border-gray-200 hover:border-gray-300 hover:shadow-md'}`}
-                style={plan.highlight ? { background: 'linear-gradient(135deg,#6366f1 0%,#4f46e5 100%)' } : { background: '#fff' }}>
-                {plan.badge && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-900 text-xs font-black uppercase tracking-widest px-4 py-1 rounded-full whitespace-nowrap">{plan.badge}</div>
-                )}
-                <div className={`text-sm font-bold uppercase tracking-widest mb-1 ${plan.highlight ? 'text-indigo-200' : 'text-gray-500'}`}>{plan.name}</div>
-                <div className="flex items-end gap-1 mb-1">
-                  <span className={`text-5xl font-extrabold ${plan.highlight ? 'text-white' : 'text-gray-900'}`}>${plan.price}</span>
-                  <span className={`text-sm mb-2 ${plan.highlight ? 'text-indigo-200' : 'text-gray-400'}`}>{plan.period}</span>
+          <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-6 items-start">
+            {/* Dynamic plans from API (Trial, Starter, Professional) */}
+            {apiPlans.map((plan, idx) => {
+              const isHighlight = plan.plan_code === 'professional';
+              const isTrial = plan.plan_code === 'trial';
+              const gradient = PLAN_GRADIENTS[idx % PLAN_GRADIENTS.length];
+              const cta = isTrial
+                ? (lang === 'ar' ? 'ابدأ التجربة المجانية' : 'Start Free Trial')
+                : (lang === 'ar' ? 'اشترك الآن' : 'Subscribe');
+              const priceDisplay = plan.monthly_price === 0
+                ? (lang === 'ar' ? 'مجاني' : 'Free')
+                : `$${plan.monthly_price}`;
+              return (
+                <div key={plan.plan_id} className={`relative rounded-2xl border overflow-hidden transition-all flex flex-col ${isHighlight ? 'border-indigo-500 shadow-2xl shadow-indigo-100' : 'border-gray-200 hover:border-gray-300 hover:shadow-md'}`}>
+                  {isHighlight && (
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-900 text-xs font-black uppercase tracking-widest px-4 py-1 rounded-full whitespace-nowrap z-10">
+                      {lang === 'ar' ? 'الأكثر شيوعاً' : 'Most Popular'}
+                    </div>
+                  )}
+                  <div className={`bg-gradient-to-br ${gradient} p-6 text-white`}>
+                    <div className="text-sm font-black uppercase tracking-widest opacity-80 mb-1">{plan.plan_name}</div>
+                    <div className="flex items-end gap-1">
+                      <span className="text-4xl font-extrabold">{priceDisplay}</span>
+                      {plan.monthly_price > 0 && <span className="text-sm opacity-70 mb-1">{lang === 'ar' ? '/شهر' : '/mo'}</span>}
+                    </div>
+                    {isTrial && <div className="text-xs mt-1 opacity-80">{plan.trial_days} {lang === 'ar' ? 'يوم تجريبي' : 'day trial'}</div>}
+                  </div>
+                  <div className="p-6 flex-1 flex flex-col bg-white">
+                    {plan.description && <p className="text-sm text-gray-500 mb-4">{plan.description}</p>}
+                    <ul className="space-y-2 flex-1 mb-6">
+                      {[
+                        { k: 'monthly_cv_processing', suffix: lang === 'ar' ? ' سيرة/شهر' : ' CVs/mo' },
+                        { k: 'active_job_campaigns',  suffix: lang === 'ar' ? ' حملة' : ' campaigns' },
+                        { k: 'number_of_users',       suffix: lang === 'ar' ? ' مستخدم' : ' users' },
+                      ].map(({ k, suffix }) => {
+                        const feat = plan.features.find((f) => f.feature_key === k);
+                        if (!feat) return null;
+                        return (
+                          <li key={k} className="flex items-center gap-2 text-sm text-gray-600">
+                            <span className="text-emerald-500 flex-shrink-0"><CheckIcon /></span>
+                            <strong>{feat.value_number?.toLocaleString()}</strong>{suffix}
+                          </li>
+                        );
+                      })}
+                      {plan.features.filter((f) => f.value_type === 'boolean' && f.value_boolean).slice(0, 3).map((f) => (
+                        <li key={f.feature_key} className="flex items-center gap-2 text-sm text-gray-600">
+                          <span className="text-emerald-500 flex-shrink-0"><CheckIcon /></span>{f.feature_name}
+                        </li>
+                      ))}
+                    </ul>
+                    <button onClick={onGetStarted}
+                      className={`w-full py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90 hover:shadow-lg text-white`}
+                      style={{ background: 'linear-gradient(135deg,#6366f1,#2563eb)' }}>
+                      {cta}
+                    </button>
+                  </div>
                 </div>
-                <p className={`text-sm mb-6 ${plan.highlight ? 'text-indigo-200' : 'text-gray-500'}`}>{plan.desc}</p>
-                <button onClick={onGetStarted} className={`w-full py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90 mb-6 ${plan.highlight ? 'bg-white text-indigo-700 hover:shadow-lg' : 'text-white hover:shadow-lg'}`}
-                  style={plan.highlight ? {} : { background: 'linear-gradient(135deg,#6366f1,#2563eb)' }}>
-                  {plan.cta}
-                </button>
-                <ul className="space-y-3">
-                  {plan.features.map(f => (
-                    <li key={f} className={`flex items-start gap-2.5 text-sm ${plan.highlight ? 'text-indigo-100' : 'text-gray-600'}`}>
-                      <span className={`flex-shrink-0 mt-0.5 ${plan.highlight ? 'text-emerald-300' : 'text-emerald-500'}`}><CheckIcon /></span>{f}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+              );
+            })}
+
+            {/* Enterprise — always static "Contact Us" */}
+            {(() => {
+              const ep = t.pricingEnterprise;
+              return (
+                <div className="relative rounded-2xl border border-gray-200 hover:border-gray-300 hover:shadow-md overflow-hidden flex flex-col transition-all">
+                  <div className="bg-gradient-to-br from-amber-500 to-orange-600 p-6 text-white">
+                    <div className="text-sm font-black uppercase tracking-widest opacity-80 mb-1">{ep.name}</div>
+                    <div className="text-4xl font-extrabold">{ep.price}</div>
+                  </div>
+                  <div className="p-6 flex-1 flex flex-col bg-white">
+                    <p className="text-sm text-gray-500 mb-4">{ep.desc}</p>
+                    <ul className="space-y-2 flex-1 mb-6">
+                      {ep.features.map((f) => (
+                        <li key={f} className="flex items-center gap-2 text-sm text-gray-600">
+                          <span className="text-emerald-500 flex-shrink-0"><CheckIcon /></span>{f}
+                        </li>
+                      ))}
+                    </ul>
+                    <a href="mailto:sales@cvanalyzer.ai"
+                      className="w-full py-3 rounded-xl font-bold text-sm text-white text-center block transition-all hover:opacity-90 hover:shadow-lg"
+                      style={{ background: 'linear-gradient(135deg,#f59e0b,#ea580c)' }}>
+                      {ep.cta}
+                    </a>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Fallback if API hasn't loaded yet */}
+            {apiPlans.length === 0 && (
+              <>
+                {[
+                  { name: 'Trial', price: 'Free', cta: lang === 'ar' ? 'ابدأ التجربة' : 'Start Free Trial', g: PLAN_GRADIENTS[0] },
+                  { name: 'Starter', price: '$49', cta: lang === 'ar' ? 'اشترك' : 'Subscribe', g: PLAN_GRADIENTS[1] },
+                  { name: 'Professional', price: '$149', cta: lang === 'ar' ? 'اشترك' : 'Subscribe', g: PLAN_GRADIENTS[2] },
+                ].map((fp) => (
+                  <div key={fp.name} className="rounded-2xl border border-gray-200 overflow-hidden flex flex-col animate-pulse">
+                    <div className={`bg-gradient-to-br ${fp.g} p-6 text-white`}>
+                      <div className="text-sm font-black uppercase tracking-widest opacity-80">{fp.name}</div>
+                      <div className="text-4xl font-extrabold mt-1">{fp.price}</div>
+                    </div>
+                    <div className="p-6 flex-1 flex flex-col bg-white">
+                      <div className="space-y-2 flex-1 mb-6">
+                        {[...Array(4)].map((_, i) => <div key={i} className="h-4 bg-gray-100 rounded" />)}
+                      </div>
+                      <button onClick={onGetStarted} className="w-full py-3 rounded-xl font-bold text-sm text-white" style={{ background: 'linear-gradient(135deg,#6366f1,#2563eb)' }}>{fp.cta}</button>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
       </section>

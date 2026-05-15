@@ -233,3 +233,118 @@ async def update_tenant_user_status(
 
     action = "activated" if body.status == "active" else "deactivated"
     return {"success": True, "message": f"User {action} successfully."}
+
+
+# ── Tenant self-service: usage & plan info ────────────────────────────────────
+
+@router.get("/usage")
+async def get_tenant_usage(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Return current tenant's usage vs plan limits + plan features. All roles can read."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    tenant_row = await db.execute(
+        text("""
+            SELECT t.tenant_id, t.name, t.plan, t.max_users, t.max_jobs,
+                   t.subscription_status, t.trial_end_at,
+                   t.subscription_started_at, t.subscription_ends_at
+            FROM tenants t
+            WHERE t.tenant_id = CAST(:tid AS uuid)
+        """),
+        {"tid": current_user.tenant_id},
+    )
+    tenant = tenant_row.mappings().first()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    plan_row = await db.execute(
+        text("""
+            SELECT plan_id, plan_name, max_campaigns, max_processed_cvs_per_month, max_users
+            FROM subscription_plans WHERE plan_code = :code
+        """),
+        {"code": tenant["plan"]},
+    )
+    plan = plan_row.mappings().first()
+
+    limits = {
+        "max_campaigns": plan["max_campaigns"] if plan else (tenant["max_jobs"] or 5),
+        "max_users": plan["max_users"] if plan else (tenant["max_users"] or 3),
+        "max_processed_cvs_per_month": plan["max_processed_cvs_per_month"] if plan else 500,
+    }
+
+    usage_row = await db.execute(
+        text("""
+            SELECT
+                (SELECT COUNT(*) FROM jobs
+                 WHERE tenant_id = CAST(:tid AS uuid) AND status = 'Active') AS active_campaigns,
+                (SELECT COUNT(*) FROM users
+                 WHERE tenant_id = CAST(:tid AS uuid) AND status = 'active') AS active_users,
+                (SELECT COUNT(*) FROM applications a
+                 JOIN jobs j ON j.job_id = a.job_id
+                 WHERE j.tenant_id = CAST(:tid AS uuid)
+                   AND a.processing_status = 'scored'
+                   AND date_trunc('month', a.scored_at) = date_trunc('month', now())) AS cvs_processed_this_month
+        """),
+        {"tid": current_user.tenant_id},
+    )
+    usage_data = usage_row.mappings().first()
+    usage = {
+        "active_campaigns": int(usage_data["active_campaigns"]),
+        "active_users":     int(usage_data["active_users"]),
+        "processed_cvs_this_month": int(usage_data["cvs_processed_this_month"]),
+    }
+
+    def pct(used: int, limit: int) -> float:
+        return round(min(used / limit * 100, 100), 1) if limit > 0 else 0.0
+
+    # Plan features from plan_features table (empty list if no seed yet)
+    features: list[dict] = []
+    if plan and plan["plan_id"]:
+        feat_rows = await db.execute(
+            text("""
+                SELECT feature_key, feature_name, description, value_type,
+                       value_boolean, value_number, value_text, display_order
+                FROM plan_features
+                WHERE plan_id = CAST(:pid AS uuid)
+                ORDER BY display_order, feature_key
+            """),
+            {"pid": str(plan["plan_id"])},
+        )
+        features = [
+            {
+                "feature_key":  r["feature_key"],
+                "feature_name": r["feature_name"],
+                "description":  r["description"],
+                "value_type":   r["value_type"],
+                "value_boolean": r["value_boolean"],
+                "value_number": float(r["value_number"]) if r["value_number"] is not None else None,
+                "value_text":   r["value_text"],
+                "display_order": r["display_order"],
+            }
+            for r in feat_rows.mappings()
+        ]
+
+    return {
+        "plan_code":   tenant["plan"],
+        "plan_name":   plan["plan_name"] if plan else tenant["plan"],
+        "subscription_status": tenant["subscription_status"] or "trial",
+        "trial_end_at": tenant["trial_end_at"].isoformat() if tenant["trial_end_at"] else None,
+        "subscription_started_at": (
+            tenant["subscription_started_at"].isoformat()
+            if tenant["subscription_started_at"] else None
+        ),
+        "subscription_ends_at": (
+            tenant["subscription_ends_at"].isoformat()
+            if tenant["subscription_ends_at"] else None
+        ),
+        "limits": limits,
+        "usage": usage,
+        "percentage_used": {
+            "campaigns": pct(usage["active_campaigns"], limits["max_campaigns"]),
+            "users":     pct(usage["active_users"],     limits["max_users"]),
+            "cvs":       pct(usage["processed_cvs_this_month"], limits["max_processed_cvs_per_month"]),
+        },
+        "features": features,
+    }

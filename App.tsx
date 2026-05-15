@@ -17,6 +17,7 @@ import { AdminUsers } from './pages/AdminUsers';
 import { PlatformConfigPage } from './pages/PlatformConfig';
 import { SubscriptionPlansPage } from './pages/SubscriptionPlans';
 import { TenantSubscriptionsPage } from './pages/TenantSubscriptions';
+import { PlanUsagePage } from './pages/PlanUsage';
 import { PlatformSecretsPage } from './pages/PlatformSecrets';
 import { AIPromptsPage } from './pages/AIPrompts';
 import AuditLogs from './pages/AuditLogs';
@@ -276,11 +277,13 @@ const AppInner: React.FC = () => {
         );
       case 'settings':
         return (
-          <Settings 
+          <Settings
             auth={auth}
             addToast={addToast}
           />
         );
+      case 'plan-usage':
+        return <PlanUsagePage auth={auth} addToast={addToast} />;
       default:
         // Default redirect based on role
         return (
