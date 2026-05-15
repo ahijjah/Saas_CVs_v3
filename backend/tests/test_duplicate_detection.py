@@ -92,15 +92,27 @@ LONG_CV = (
 ) * 30  # ~2700 chars, representative length
 
 
-def _make_mock_db(existing_rows: list[dict]):
-    """Return an AsyncMock DB session that yields existing_rows from execute."""
+def _make_mock_db(existing_rows: list[dict], current_reason: str | None = None):
+    """
+    Return an AsyncMock DB session.
+
+    execute() call order:
+      1. SELECT duplicate_reason FROM applications  → current_reason
+      2. SELECT existing sibling apps               → existing_rows
+      3. UPDATE applications SET duplicate_*        → MagicMock
+    """
     db = AsyncMock()
-    # First execute call (SELECT existing apps) returns existing_rows
-    # Subsequent calls (UPDATE) return MagicMock
-    mock_result = MagicMock()
-    mock_result.mappings.return_value.all.return_value = existing_rows
+
+    cur_result = MagicMock()
+    cur_result.mappings.return_value.first.return_value = (
+        {"duplicate_reason": current_reason} if current_reason is not None else None
+    )
+
+    sibling_result = MagicMock()
+    sibling_result.mappings.return_value.all.return_value = existing_rows
+
     update_result = MagicMock()
-    db.execute = AsyncMock(side_effect=[mock_result, update_result])
+    db.execute = AsyncMock(side_effect=[cur_result, sibling_result, update_result])
     return db
 
 
@@ -325,3 +337,71 @@ async def test_template_cv_below_threshold_not_duplicate():
         )
         args = mock_mark.call_args[0]
         assert args[2] == "not_duplicate"
+
+
+@pytest.mark.asyncio
+async def test_high_content_not_overwritten_by_identity_match():
+    """
+    Priority: if application already has high_content_similarity, a later run
+    that only finds identity_match must NOT overwrite it.
+    """
+    # Simulate second run: no extracted text available (already done), but
+    # phone is now known. current_reason = high_content_similarity from first run.
+    existing = [{
+        "application_id": "aaaaaaaa-0000-0000-0000-000000000001",
+        "candidate_name": "John Smith",
+        "candidate_email": "john@example.com",
+        "candidate_phone_from_cv": "050-111-2222",
+        "extracted_text": None,  # text not available in this run
+    }]
+    db = _make_mock_db(existing, current_reason="high_content_similarity")
+
+    with patch("services.duplicate_detection._mark_checked", new_callable=AsyncMock) as mock_mark:
+        await detect_possible_duplicate(
+            db=db,
+            application_id="app-under-test",
+            job_id="job-1",
+            tenant_id="tenant-1",
+            candidate_name="John Smith",
+            candidate_email="john@example.com",
+            candidate_phone="0501112222",  # same number — would trigger identity_match
+            extracted_text="",
+        )
+        # _mark_checked must NOT have been called — function returns early
+        mock_mark.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_identity_match_upgraded_to_content_similarity():
+    """
+    Priority: if application has identity_match from first run, a later run
+    that finds high_content_similarity must upgrade it.
+    """
+    cv_a = LONG_CV
+    cv_b = LONG_CV.replace("python", "Python")  # trivial formatting diff
+
+    existing = [{
+        "application_id": "aaaaaaaa-0000-0000-0000-000000000001",
+        "candidate_name": "John Smith",
+        "candidate_email": "other@example.com",
+        "candidate_phone_from_cv": None,
+        "extracted_text": cv_b,
+    }]
+    # current_reason = identity_match (set by first run, which had no text)
+    db = _make_mock_db(existing, current_reason="identity_match")
+
+    with patch("services.duplicate_detection._mark_checked", new_callable=AsyncMock) as mock_mark:
+        await detect_possible_duplicate(
+            db=db,
+            application_id="app-under-test",
+            job_id="job-1",
+            tenant_id="tenant-1",
+            candidate_name="John Smith",
+            candidate_email="john@example.com",
+            candidate_phone=None,
+            extracted_text=cv_a,
+        )
+        mock_mark.assert_called_once()
+        args = mock_mark.call_args[0]
+        assert args[2] == "possible_duplicate"
+        assert args[5] == "high_content_similarity"

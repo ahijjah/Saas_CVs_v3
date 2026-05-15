@@ -68,6 +68,15 @@ def _normalise_phone(phone: Optional[str]) -> str:
     return digits
 
 
+# ── Priority ordering (higher = stronger, must not be overwritten by weaker) ──
+_PRIORITY: dict[str | None, int] = {
+    "high_content_similarity": 2,
+    "identity_match":          1,
+    "not_duplicate":           0,
+    None:                      0,
+}
+
+
 # ── Main detection function ───────────────────────────────────────────────────
 
 async def detect_possible_duplicate(
@@ -84,6 +93,10 @@ async def detect_possible_duplicate(
     Compare the new application against all scored/pending siblings in the same job.
     Updates applications.duplicate_* columns in-place; never raises (errors are logged).
 
+    Priority is preserved across multiple runs:
+      high_content_similarity (strongest) > identity_match > not_duplicate
+    A weaker result from a later run never overwrites a stronger earlier result.
+
     Must be called with an already-open AsyncSession that has RLS context set.
     The session is NOT committed here — caller is responsible for the commit.
     """
@@ -91,6 +104,22 @@ async def detect_possible_duplicate(
     from sqlalchemy import text
 
     try:
+        # ── Fetch current duplicate state (to enforce priority on re-runs) ────
+        cur = await db.execute(
+            text("SELECT duplicate_reason FROM applications WHERE application_id = :aid"),
+            {"aid": application_id},
+        )
+        cur_row = cur.mappings().first()
+        current_reason: str | None = cur_row["duplicate_reason"] if cur_row else None
+
+        # Already at maximum priority — nothing can improve it
+        if current_reason == "high_content_similarity":
+            logger.debug(
+                "Skipping duplicate re-check for %s — already high_content_similarity",
+                application_id,
+            )
+            return
+
         # ── Load existing applications for this job ───────────────────────────
         rows = await db.execute(
             text("""
@@ -181,6 +210,19 @@ async def detect_possible_duplicate(
                         best_ref_id = ref_id
                         best_score = identity_score
                         best_reason = "identity_match"
+
+        new_reason = best_reason if best_ref_id else "not_duplicate"
+
+        # Enforce priority: never overwrite a stronger result with a weaker one.
+        # e.g. second run finds identity_match but first run found high_content_similarity
+        # → the early-return above handles the identity→high case already, but this
+        #   guards identity_match → not_duplicate downgrades too.
+        if _PRIORITY.get(new_reason, 0) < _PRIORITY.get(current_reason, 0):
+            logger.debug(
+                "Skipping duplicate update for %s — new reason '%s' weaker than current '%s'",
+                application_id, new_reason, current_reason,
+            )
+            return
 
         if best_ref_id:
             await _mark_checked(db, application_id, "possible_duplicate",
