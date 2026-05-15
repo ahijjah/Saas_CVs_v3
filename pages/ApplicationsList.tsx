@@ -136,6 +136,14 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         duplicate_reason:                   detailsObj?.duplicate_reason,
         duplicate_checked_at:               detailsObj?.duplicate_checked_at,
         duplicate_reference:                detailsObj?.duplicate_reference,
+        // Intake metadata
+        submission_source:   detailsObj?.submission_source,
+        applied_at:          detailsObj?.applied_at,
+        email_sender_address: detailsObj?.email_sender_address,
+        submitted_by_user_id: detailsObj?.submitted_by_user_id,
+        submitted_by_name:   detailsObj?.submitted_by_name,
+        submitted_by_email:  detailsObj?.submitted_by_email,
+        original_filename:   detailsObj?.original_filename,
       };
 
       setSelectedDetails(normalized);

@@ -207,6 +207,11 @@ export interface ApplicationDetailedAnalysis {
   candidate_email_from_cv?: string;
   candidate_phone_from_cv?: string;
   email_sender_address?: string;
+  submitted_by_user_id?: string | null;
+  submitted_by_name?: string | null;
+  submitted_by_email?: string | null;
+  applied_at?: string | null;
+  original_filename?: string | null;
   decision: ApplicationDecision;
   overall_score: number;
   submission_source?: 'manual_upload' | 'email_forwarding' | 'platform_email';

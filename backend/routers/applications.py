@@ -85,6 +85,7 @@ async def get_application_details(
                 a.application_id, a.candidate_name, a.candidate_email,
                 a.candidate_email_from_cv, a.candidate_phone_from_cv,
                 a.email_sender_address,
+                a.submitted_by_user_id, a.submitted_by_name, a.submitted_by_email,
                 a.decision, a.submission_source, a.processing_status,
                 a.evaluation_stage, a.evaluation_exit_reason,
                 a.gatekeeper_passed,
@@ -96,6 +97,8 @@ async def get_application_details(
                 a.duplicate_reason,
                 a.duplicate_checked_at,
                 j.title AS job_title, j.job_id,
+                (SELECT af2.original_name FROM application_files af2
+                 WHERE af2.application_id = a.application_id LIMIT 1) AS original_filename,
                 s.final_score,
                 s.score_skills, s.score_experience, s.score_education,
                 s.score_certifications, s.score_soft_skills,
@@ -188,6 +191,10 @@ async def get_application_details(
         "candidate_email_from_cv": app["candidate_email_from_cv"],
         "candidate_phone_from_cv": app["candidate_phone_from_cv"],
         "email_sender_address": app["email_sender_address"],
+        "submitted_by_user_id": str(app["submitted_by_user_id"]) if app["submitted_by_user_id"] else None,
+        "submitted_by_name":  app["submitted_by_name"],
+        "submitted_by_email": app["submitted_by_email"],
+        "original_filename":  app["original_filename"],
         "decision": display_decision,
         "overall_score": int(app["final_score"]) if app["final_score"] is not None else 0,
         "submission_source": app["submission_source"],
@@ -280,8 +287,11 @@ async def upload_cv(
     app_result = await db.execute(
         text("""
             INSERT INTO applications
-                (job_id, tenant_id, candidate_name, candidate_email, submission_source, processing_status)
-            VALUES (:jid, :tid, :name, :email, 'manual_upload', 'pending')
+                (job_id, tenant_id, candidate_name, candidate_email,
+                 submission_source, processing_status,
+                 submitted_by_user_id, submitted_by_name, submitted_by_email)
+            VALUES (:jid, :tid, :name, :email, 'manual_upload', 'pending',
+                    :uploader_id, :uploader_name, :uploader_email)
             RETURNING application_id
         """),
         {
@@ -289,6 +299,9 @@ async def upload_cv(
             "tid": current_user.tenant_id,
             "name": candidate_name,
             "email": candidate_email,
+            "uploader_id": current_user.user_id,
+            "uploader_name": current_user.full_name or current_user.email,
+            "uploader_email": current_user.email,
         },
     )
     application_id = str(app_result.scalar_one())

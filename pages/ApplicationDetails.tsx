@@ -68,6 +68,16 @@ const T = {
     dupSimilarityScore: 'Similarity score',
     dupReason: 'Reason',
     dupCheckedAt: 'Checked at',
+    intakeTitle: 'Application Intake',
+    intakeSource: 'Source',
+    intakeReceived: 'Received',
+    intakeSender: 'Sender / Uploader',
+    intakeFile: 'Original File',
+    intakeSourceLabels: {
+      manual_upload:    'Manual Upload',
+      email_forwarding: 'Email Intake',
+      platform_email:   'Dedicated Email',
+    } as Record<string, string>,
   },
   ar: {
     back: 'العودة إلى الطلبات',
@@ -128,6 +138,16 @@ const T = {
     dupSimilarityScore: 'درجة التشابه',
     dupReason: 'السبب',
     dupCheckedAt: 'وقت الفحص',
+    intakeTitle: 'مصدر الطلب',
+    intakeSource: 'المصدر',
+    intakeReceived: 'تاريخ الاستلام',
+    intakeSender: 'المُرسِل / الرافع',
+    intakeFile: 'الملف الأصلي',
+    intakeSourceLabels: {
+      manual_upload:    'رفع يدوي',
+      email_forwarding: 'بريد إلكتروني',
+      platform_email:   'بريد مخصص',
+    } as Record<string, string>,
   },
 };
 
@@ -310,6 +330,42 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           )}
         </div>
       )}
+
+      {/* ── Application Intake Metadata ─────────────────────────────────────── */}
+      {(data.submission_source || data.applied_at || data.email_sender_address ||
+        data.submitted_by_name || data.submitted_by_email || data.original_filename) && (() => {
+        const sourceLabel = data.submission_source
+          ? (t.intakeSourceLabels[data.submission_source] || data.submission_source)
+          : null;
+        const senderDisplay = data.submission_source === 'manual_upload'
+          ? (data.submitted_by_name || data.submitted_by_email)
+          : (data.email_sender_address || data.submitted_by_email);
+        const rows: [string, string | null | undefined][] = [
+          [t.intakeSource,   sourceLabel],
+          [t.intakeReceived, data.applied_at ? new Date(data.applied_at).toLocaleString() : null],
+          [t.intakeSender,   senderDisplay],
+          [t.intakeFile,     data.original_filename],
+        ].filter(([, v]) => v) as [string, string][];
+        if (rows.length === 0) return null;
+        return (
+          <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+            <div className="px-6 py-3 border-b border-border flex items-center gap-2 bg-slate-50">
+              <svg className="w-3.5 h-3.5 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.intakeTitle}</h4>
+            </div>
+            <div className="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-3">
+              {rows.map(([label, value]) => (
+                <div key={label}>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{label}</p>
+                  <p className="text-sm font-medium text-textMain break-all">{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Profile & Scoring */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

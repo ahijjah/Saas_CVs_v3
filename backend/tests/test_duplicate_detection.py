@@ -405,3 +405,135 @@ async def test_identity_match_upgraded_to_content_similarity():
         args = mock_mark.call_args[0]
         assert args[2] == "possible_duplicate"
         assert args[5] == "high_content_similarity"
+
+
+# ── Manual upload duplicate detection ─────────────────────────────────────────
+# These tests verify the same detect_possible_duplicate() function works
+# correctly when called from the scoring worker for manually uploaded CVs.
+# The scoring worker (cv_score.py Step 2b) calls the same function regardless
+# of submission_source, so no code path change is needed — these tests confirm
+# the expected behaviour for the manual upload context.
+
+
+@pytest.mark.asyncio
+async def test_manual_upload_same_content_detected_as_duplicate():
+    """
+    Manual upload: same CV content as an existing application in the same job
+    → possible_duplicate with high_content_similarity.
+    Mirrors the email-intake scenario but documents the manual upload path.
+    """
+    cv_a = LONG_CV
+    cv_b = LONG_CV.replace("john smith", "john  smith")  # trivial extraction diff
+
+    existing = [{
+        "application_id": "aaaaaaaa-0000-0000-0000-000000000001",
+        "candidate_name": "John Smith",
+        "candidate_email": "other@example.com",
+        "candidate_phone_from_cv": None,
+        "extracted_text": cv_b,
+    }]
+    db = _make_mock_db(existing)
+
+    with patch("services.duplicate_detection._mark_checked", new_callable=AsyncMock) as mock_mark:
+        # submission_source='manual_upload' is not passed to detect_possible_duplicate;
+        # the caller (cv_score.py) handles that — the detection logic is source-agnostic.
+        await detect_possible_duplicate(
+            db=db,
+            application_id="bbbbbbbb-0000-0000-0000-000000000002",
+            job_id="job-1",
+            tenant_id="tenant-1",
+            candidate_name="John Smith",
+            candidate_email="john@manual.com",
+            candidate_phone=None,
+            extracted_text=cv_a,
+        )
+        mock_mark.assert_called_once()
+        args = mock_mark.call_args[0]
+        assert args[2] == "possible_duplicate"
+        assert args[5] == "high_content_similarity"
+
+
+@pytest.mark.asyncio
+async def test_manual_upload_same_email_same_phone_detected():
+    """
+    Manual upload: same candidate email + phone as existing application (identity match).
+    CV text not available — only identity fields match.
+    """
+    existing = [{
+        "application_id": "aaaaaaaa-0000-0000-0000-000000000001",
+        "candidate_name": "Alice Johnson",
+        "candidate_email": "alice@example.com",
+        "candidate_phone_from_cv": "050-111-2222",
+        "extracted_text": None,
+    }]
+    db = _make_mock_db(existing)
+
+    with patch("services.duplicate_detection._mark_checked", new_callable=AsyncMock) as mock_mark:
+        await detect_possible_duplicate(
+            db=db,
+            application_id="new-manual-upload-id",
+            job_id="job-1",
+            tenant_id="tenant-1",
+            candidate_name="Alice Johnson",
+            candidate_email="alice@example.com",
+            candidate_phone="0501112222",
+            extracted_text="",
+        )
+        mock_mark.assert_called_once()
+        args = mock_mark.call_args[0]
+        assert args[2] == "possible_duplicate"
+        assert args[5] == "identity_match"
+
+
+@pytest.mark.asyncio
+async def test_manual_upload_different_job_not_flagged():
+    """
+    Manual upload: same CV content but for a different job → not_duplicate.
+    Duplicate detection is scoped to same job_id only.
+    """
+    db = _make_mock_db([])  # no siblings for this job
+
+    with patch("services.duplicate_detection._mark_checked", new_callable=AsyncMock) as mock_mark:
+        await detect_possible_duplicate(
+            db=db,
+            application_id="new-manual-upload-id",
+            job_id="job-999",  # different job — no siblings returned by SQL
+            tenant_id="tenant-1",
+            candidate_name="John Smith",
+            candidate_email="john@example.com",
+            candidate_phone=None,
+            extracted_text=LONG_CV,
+        )
+        args = mock_mark.call_args[0]
+        assert args[2] == "not_duplicate"
+
+
+@pytest.mark.asyncio
+async def test_manual_upload_priority_content_over_identity():
+    """
+    Manual upload: application already flagged high_content_similarity from
+    initial scoring; a second scoring pass (after phone resolved) must NOT
+    downgrade it to identity_match.
+    """
+    existing = [{
+        "application_id": "aaaaaaaa-0000-0000-0000-000000000001",
+        "candidate_name": "John Smith",
+        "candidate_email": "john@example.com",
+        "candidate_phone_from_cv": "050-111-2222",
+        "extracted_text": None,
+    }]
+    db = _make_mock_db(existing, current_reason="high_content_similarity")
+
+    with patch("services.duplicate_detection._mark_checked", new_callable=AsyncMock) as mock_mark:
+        await detect_possible_duplicate(
+            db=db,
+            application_id="app-under-test",
+            job_id="job-1",
+            tenant_id="tenant-1",
+            candidate_name="John Smith",
+            candidate_email="john@example.com",
+            candidate_phone="0501112222",
+            extracted_text="",
+        )
+        # Must NOT overwrite the stronger reason
+        mock_mark.assert_not_called()
