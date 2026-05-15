@@ -467,13 +467,30 @@ async def queue_recruiter_unmatched_alert(
 ) -> None:
     """
     Check the count of unidentified inbound emails against the configured
-    threshold. If reached, queue a recruiter alert to the address in
-    system_config.unmatched_alert_email.
+    threshold and queue a recruiter alert when it is reached.
 
-    Threshold logic:
-    - Count email_ingest_log rows with status='unassigned' since the last
-      RECRUITER_UNMATCHED_ALERT that was successfully sent.
-    - If the last alert is recent (< 1 h), suppress to avoid alert storms.
+    Threshold logic (spec-compliant):
+    ─────────────────────────────────
+    First alert
+        Count unassigned emails from the earliest active job's creation date
+        (approximates "job publish/start date") until now.
+        Send when count ≥ threshold.
+
+    Subsequent alerts
+        Count unassigned emails received AFTER the sent_at timestamp of the
+        last successfully delivered alert.
+        Send again when that count ≥ threshold.
+
+    Concurrency guard (secondary, not primary)
+        If a notification_log row for this alert is already in 'pending' state
+        (i.e. the Celery worker has it in-flight), skip creation to avoid
+        duplicates.  This is NOT a time-based window — it only blocks while
+        the previous notification is actually being sent.
+        A short safety window (5 min) is applied only to prevent burst
+        re-creation from very fast email storms between two worker poll cycles.
+
+    Note: a 'sent' row NEVER suppresses the next alert; the threshold count
+    anchored to last_sent_at already provides the correct re-trigger boundary.
     """
     from sqlalchemy import text
 
@@ -499,7 +516,8 @@ async def queue_recruiter_unmatched_alert(
     except (ValueError, TypeError):
         threshold = 50
 
-    # Timestamp of last successfully sent alert
+    # ── Determine the count window ────────────────────────────────────────────
+    # Primary anchor: sent_at of the last successfully delivered alert.
     last_row = await db.execute(
         text("""
             SELECT MAX(sent_at)
@@ -510,39 +528,72 @@ async def queue_recruiter_unmatched_alert(
     )
     last_sent_at = last_row.scalar_one_or_none()
 
-    # Count unassigned emails since last alert (or all-time if none sent yet)
     if last_sent_at:
+        # Subsequent alert: count unassigned emails SINCE the last alert was sent.
+        # This resets the counter each time an alert fires, matching the spec:
+        # "after the first alert, count unmatched emails after last recruiter
+        #  alert timestamp".
         count_row = await db.execute(
             text("""
-                SELECT COUNT(*) FROM email_ingest_log
-                WHERE status = 'unassigned' AND received_at > :since
+                SELECT COUNT(*)
+                FROM email_ingest_log
+                WHERE status = 'unassigned'
+                  AND received_at > :since
             """),
             {"since": last_sent_at},
         )
     else:
+        # First alert: count from the earliest active job's creation date
+        # (approximates "from job publish/start date").
+        # Falls back to all-time if no active jobs exist yet.
         count_row = await db.execute(
-            text("SELECT COUNT(*) FROM email_ingest_log WHERE status = 'unassigned'")
+            text("""
+                SELECT COUNT(*)
+                FROM email_ingest_log
+                WHERE status = 'unassigned'
+                  AND received_at >= COALESCE(
+                      (SELECT MIN(created_at) FROM jobs WHERE status = 'active'),
+                      '1970-01-01'::timestamptz
+                  )
+            """)
         )
     count = count_row.scalar_one() or 0
+
+    logger.debug(
+        "Unmatched alert check: count=%d threshold=%d last_sent_at=%s",
+        count, threshold, last_sent_at,
+    )
 
     if count < threshold:
         return
 
-    # Suppress if a pending/recent alert exists (avoid duplicates during a storm)
-    recent = await db.execute(
+    # ── Concurrency guard: block only while a notification is in-flight ───────
+    # A 'pending' row means the Celery worker has already picked up this alert
+    # and is sending it.  Once sent, its sent_at becomes the new baseline and
+    # the threshold count resets — no time-window suppression needed.
+    # We add a narrow 5-minute safety window to handle bursts where the worker
+    # hasn't acknowledged the task yet.
+    in_flight = await db.execute(
         text("""
             SELECT 1 FROM notification_log
             WHERE notification_type = 'RECRUITER_UNMATCHED_ALERT'
-              AND status IN ('pending', 'sent')
-              AND created_at > NOW() - INTERVAL '1 hour'
+              AND status = 'pending'
+              AND created_at > NOW() - INTERVAL '5 minutes'
             LIMIT 1
         """)
     )
-    if recent.first():
-        logger.debug("Unmatched recruiter alert suppressed — recent alert exists")
+    if in_flight.first():
+        logger.debug(
+            "Unmatched recruiter alert suppressed — notification in-flight (pending, <5 min old)"
+        )
         return
 
-    details = {"unmatched_count": count, "threshold": threshold}
+    # ── Queue the alert ───────────────────────────────────────────────────────
+    details = {
+        "unmatched_count": count,
+        "threshold":       threshold,
+        "count_since":     last_sent_at.isoformat() if last_sent_at else "beginning",
+    }
     notification_id = await _insert_notification(
         db,
         notification_type="RECRUITER_UNMATCHED_ALERT",
