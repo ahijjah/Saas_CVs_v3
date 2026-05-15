@@ -25,6 +25,7 @@ import email
 import email.utils
 import hashlib
 import logging
+import uuid
 import re
 from email.header import decode_header
 from pathlib import Path
@@ -287,16 +288,44 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     orig_row = orig_row.mappings().first()
                     original_application_id = str(orig_row["application_id"]) if orig_row else None
 
+                    # Save duplicate CV file so recruiters can compare it with the original.
+                    # Files land in a dedicated 'duplicates' sub-directory to separate them
+                    # from full application files.
+                    log_id = str(uuid.uuid4())
+                    dup_file_path_rel: str | None = None
+                    dup_file_size: int | None = None
+                    try:
+                        ext = ATTACHMENT_MIME_TYPES.get(content_type, "pdf")
+                        dup_dir = (
+                            Path(cfg.files_base_path)
+                            / "tenants" / str(tenant_id) / "jobs" / str(job_id) / "duplicates"
+                        )
+                        dup_dir.mkdir(parents=True, exist_ok=True)
+                        dup_path = dup_dir / f"{log_id}.{ext}"
+                        dup_path.write_bytes(attachment_bytes)
+                        dup_file_path_rel = str(dup_path.relative_to(cfg.files_base_path))
+                        dup_file_size = len(attachment_bytes)
+                        logger.debug("Duplicate CV saved: %s (%d bytes)", dup_path, dup_file_size)
+                    except Exception as save_exc:
+                        logger.warning("Could not save duplicate CV file: %s", save_exc)
+
                     await db.execute(
                         text("""
                             INSERT INTO duplicate_application_logs
-                                (tenant_id, job_id, duplicate_email, duplicate_name, attachment_hash,
-                                 received_at, original_application_id, email_message_id, raw_filename, notes)
+                                (log_id, tenant_id, job_id, duplicate_email, duplicate_name,
+                                 attachment_hash, received_at, original_application_id,
+                                 email_message_id, raw_filename, notes,
+                                 duplicate_file_path, duplicate_original_filename,
+                                 duplicate_content_type, duplicate_file_size_bytes)
                             VALUES
-                                (:tenant_id, :job_id, :email, :name, :hash,
-                                 NOW(), :orig_id, :msg_id, :filename, :notes)
+                                (:log_id, :tenant_id, :job_id, :email, :name,
+                                 :hash, NOW(), :orig_id,
+                                 :msg_id, :filename, :notes,
+                                 :dup_file_path, :dup_orig_name,
+                                 :dup_content_type, :dup_file_size)
                         """),
                         {
+                            "log_id": log_id,
                             "tenant_id": str(tenant_id),
                             "job_id": str(job_id),
                             "email": sender,
@@ -306,12 +335,16 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                             "msg_id": message_id,
                             "filename": filename,
                             "notes": "Duplicate CV file already exists for this job; skipped application creation.",
+                            "dup_file_path": dup_file_path_rel,
+                            "dup_orig_name": filename,
+                            "dup_content_type": content_type,
+                            "dup_file_size": dup_file_size,
                         },
                     )
                     await db.commit()
                     logger.info(
-                        "Duplicate log inserted — hash=%s job=%s original_id=%s",
-                        file_hash[:8], job_id, original_application_id,
+                        "Duplicate log inserted — hash=%s job=%s original_id=%s has_file=%s",
+                        file_hash[:8], job_id, original_application_id, dup_file_path_rel is not None,
                     )
                 except Exception as dup_log_exc:
                     logger.error(

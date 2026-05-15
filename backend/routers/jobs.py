@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -562,6 +563,11 @@ async def get_duplicate_logs(
                 dl.email_message_id,
                 dl.raw_filename,
                 dl.notes,
+                -- Duplicate CV file availability
+                (dl.duplicate_file_path IS NOT NULL) AS has_duplicate_cv,
+                dl.duplicate_original_filename,
+                dl.duplicate_content_type,
+                dl.duplicate_file_size_bytes,
                 -- Reason and score: IMAP hash-based logs are exact file matches
                 'file_hash_match'               AS duplicate_reason,
                 100.0                           AS duplicate_similarity_score,
@@ -599,6 +605,47 @@ async def get_duplicate_logs(
         logs.append(entry)
 
     return {"duplicate_logs": logs}
+
+
+@router.get("/{job_id}/duplicate-logs/{log_id}/cv")
+async def download_duplicate_cv(
+    job_id: str,
+    log_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUserDep,
+):
+    """Serve the stored duplicate CV file for a specific duplicate log entry."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT duplicate_file_path, duplicate_original_filename, duplicate_content_type
+            FROM duplicate_application_logs
+            WHERE log_id = :log_id
+              AND job_id = :job_id
+              AND tenant_id = :tenant_id
+        """),
+        {
+            "log_id": log_id,
+            "job_id": job_id,
+            "tenant_id": current_user.tenant_id,
+        },
+    )
+    rec = row.mappings().first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Duplicate log entry not found")
+    if not rec["duplicate_file_path"]:
+        raise HTTPException(status_code=404, detail="Duplicate CV file was not stored for this entry")
+
+    full_path = Path(settings.files_base_path) / rec["duplicate_file_path"]
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Duplicate CV file not found on disk")
+
+    return FileResponse(
+        path=str(full_path),
+        filename=rec["duplicate_original_filename"] or full_path.name,
+        media_type=rec["duplicate_content_type"] or "application/octet-stream",
+    )
 
 
 @router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)

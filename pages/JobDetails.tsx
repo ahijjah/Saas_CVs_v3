@@ -442,12 +442,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     navigator.clipboard ? navigator.clipboard.writeText(text).then(confirm).catch(fallback) : fallback();
   }, [addToast]);
 
-  const handleViewCV = useCallback(async (applicationId: string, filename: string) => {
+  const handleViewCV = useCallback(async (downloadUrl: string, filename: string) => {
     try {
-      const resp = await fetch(
-        `${WEBHOOK_CONFIG.CV_DOWNLOAD_BASE_URL}/${applicationId}/cv`,
-        { headers: { Authorization: `Bearer ${auth.token!}` } }
-      );
+      const resp = await fetch(downloadUrl, { headers: { Authorization: `Bearer ${auth.token!}` } });
       if (!resp.ok) throw new Error('CV not available');
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
@@ -1202,21 +1199,35 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                         ) : <span className="text-textMuted">—</span>}
                       </td>
                       <td className="px-4 py-3">
-                        {/* Duplicate CV: not saved to disk (IMAP hash-match discards the file) */}
-                        <span
-                          title="Duplicate file is not stored — only the file hash is recorded"
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-50 text-slate-400 text-xs font-semibold rounded-lg cursor-not-allowed border border-slate-200"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                          </svg>
-                          Not available
-                        </span>
+                        {log.has_duplicate_cv ? (
+                          <button
+                            onClick={() => handleViewCV(
+                              `${WEBHOOK_CONFIG.DUPLICATE_CV_BASE_URL}/${jobId}/duplicate-logs/${log.log_id}/cv`,
+                              log.duplicate_original_filename || log.raw_filename || 'duplicate-cv'
+                            )}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-primary hover:text-white text-textMain text-xs font-semibold rounded-lg transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            View Duplicate CV
+                          </button>
+                        ) : (
+                          <span
+                            title="File not stored — only the hash was recorded for this entry"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-50 text-slate-400 text-xs font-semibold rounded-lg cursor-not-allowed border border-slate-200"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                            </svg>
+                            Not available
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         {log.original_application_id && log.original_cv_filename ? (
                           <button
-                            onClick={() => handleViewCV(log.original_application_id, log.original_cv_filename)}
+                            onClick={() => handleViewCV(`${WEBHOOK_CONFIG.CV_DOWNLOAD_BASE_URL}/${log.original_application_id}/cv`, log.original_cv_filename)}
                             className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-primary hover:text-white text-textMain text-xs font-semibold rounded-lg transition-colors"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
