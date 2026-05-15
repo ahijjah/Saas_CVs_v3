@@ -10,6 +10,7 @@ interface JobDetailsProps {
   auth: AuthState;
   onBack: () => void;
   onViewApplications: (jobId: string, filter: string) => void;
+  onOpenApplication: (jobId: string, applicationId: string) => void;
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
@@ -186,7 +187,7 @@ const T = {
   },
 };
 
-export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onViewApplications, addToast }) => {
+export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onViewApplications, onOpenApplication, addToast }) => {
   const { lang, isAr } = useLanguage();
   const t = T[lang];
   const isSuperAdmin = (auth.user?.role || '').toLowerCase() === 'super_admin';
@@ -440,6 +441,27 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     };
     navigator.clipboard ? navigator.clipboard.writeText(text).then(confirm).catch(fallback) : fallback();
   }, [addToast]);
+
+  const handleViewCV = useCallback(async (applicationId: string, filename: string) => {
+    try {
+      const resp = await fetch(
+        `${WEBHOOK_CONFIG.CV_DOWNLOAD_BASE_URL}/${applicationId}/cv`,
+        { headers: { Authorization: `Bearer ${auth.token!}` } }
+      );
+      if (!resp.ok) throw new Error('CV not available');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'cv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch {
+      addToast('Could not download CV file.', 'error');
+    }
+  }, [auth.token, addToast]);
 
   const handleIngestionToggle = useCallback(async (
     field: 'receive_cv_via_forwarding_email' | 'receive_cv_via_platform_email' | 'restrict_forwarding_sender_to_tenant_email',
@@ -1109,35 +1131,91 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
       {/* Duplicate submissions */}
       {duplicateLogs.length > 0 && (
-        <div className="mt-8 border-t pt-6">
-          <h3 className="text-base font-semibold text-gray-700 mb-3">
-            Duplicate submissions ({duplicateLogs.length})
-          </h3>
+        <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+            <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <h3 className="text-sm font-bold text-textMain uppercase tracking-widest">
+              Duplicate Submissions <span className="ml-1 px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-black">{duplicateLogs.length}</span>
+            </h3>
+          </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full text-sm divide-y divide-gray-100">
+              <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">File</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Original</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Applicant</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Detection</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Score</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Received</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Original</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {duplicateLogs.map((log) => (
-                  <tr key={log.log_id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-gray-800">{log.duplicate_email}</td>
-                    <td className="px-3 py-2 text-gray-600">{log.duplicate_name || '—'}</td>
-                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
-                      {new Date(log.received_at).toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-gray-500 truncate max-w-[140px]">{log.raw_filename || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-gray-400 font-mono">
-                      {log.original_application_id ? log.original_application_id.slice(0, 8) + '…' : '—'}
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-gray-50">
+                {duplicateLogs.map((log) => {
+                  const reasonLabel = log.duplicate_reason === 'high_content_similarity' ? 'Content Similarity'
+                    : log.duplicate_reason === 'identity_match' ? 'Identity Match'
+                    : 'Exact Match';
+                  const reasonStyle = log.duplicate_reason === 'high_content_similarity'
+                    ? 'bg-orange-100 text-orange-700'
+                    : log.duplicate_reason === 'identity_match'
+                    ? 'bg-yellow-100 text-yellow-700'
+                    : 'bg-teal-100 text-teal-700';
+                  const score = log.duplicate_similarity_score != null
+                    ? `${Number(log.duplicate_similarity_score).toFixed(1)}%`
+                    : '100%';
+                  return (
+                    <tr key={log.log_id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-textMain text-sm">{log.duplicate_name || '—'}</p>
+                        <p className="text-xs text-textMuted">{log.duplicate_email}</p>
+                        {log.raw_filename && <p className="text-xs text-textMuted truncate max-w-[180px]">{log.raw_filename}</p>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${reasonStyle}`}>
+                          {reasonLabel}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-sm font-bold text-textMain">{score}</span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-textMuted whitespace-nowrap">
+                        {log.received_at ? new Date(log.received_at).toLocaleString() : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {log.original_application_id ? (
+                          <button
+                            onClick={() => onOpenApplication(jobId, log.original_application_id)}
+                            className="text-left group"
+                          >
+                            <p className="text-sm font-semibold text-primary group-hover:underline">
+                              {log.original_candidate_name || log.original_application_id.slice(0, 8) + '…'}
+                            </p>
+                            {log.original_applied_at && (
+                              <p className="text-xs text-textMuted">
+                                {new Date(log.original_applied_at).toLocaleDateString()}
+                              </p>
+                            )}
+                          </button>
+                        ) : <span className="text-textMuted">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {log.original_application_id && log.original_cv_filename && (
+                          <button
+                            onClick={() => handleViewCV(log.original_application_id, log.original_cv_filename)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-primary hover:text-white text-textMain text-xs font-semibold rounded-lg transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            View Original CV
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

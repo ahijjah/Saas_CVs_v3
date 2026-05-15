@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -596,6 +597,40 @@ async def delete_uploaded_cv(
                 full_path.unlink()
         except OSError:
             pass
+
+
+@router.get("/{application_id}/cv")
+async def download_cv(
+    application_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Serve the CV file for an application. Tenant-isolated."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT af.file_path, af.original_name, af.mime_type
+            FROM application_files af
+            JOIN applications a ON a.application_id = af.application_id
+            WHERE af.application_id = :aid AND a.tenant_id = :tid
+            LIMIT 1
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    rec = row.mappings().first()
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="CV file not found")
+
+    full_path = Path(settings.files_base_path) / rec["file_path"]
+    if not full_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="CV file not found on disk")
+
+    return FileResponse(
+        path=str(full_path),
+        filename=rec["original_name"] or full_path.name,
+        media_type=rec["mime_type"] or "application/octet-stream",
+    )
 
 
 # Import here to avoid circular import

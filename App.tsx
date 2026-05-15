@@ -81,6 +81,7 @@ const AppInner: React.FC = () => {
 
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [appFilter, setAppFilter] = useState<ApplicationFilter>('all');
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
 
@@ -148,6 +149,14 @@ const AppInner: React.FC = () => {
   const handleViewApplications = (id: string, filter: string) => {
     setSelectedJobId(id);
     setAppFilter(filter as ApplicationFilter);
+    setSelectedAppId(null);
+    setCurrentPage('applications');
+  };
+
+  const handleOpenApplication = (jobId: string, applicationId: string) => {
+    setSelectedJobId(jobId);
+    setAppFilter('all');
+    setSelectedAppId(applicationId);
     setCurrentPage('applications');
   };
 
@@ -241,11 +250,12 @@ const AppInner: React.FC = () => {
           return null;
         }
         return (
-          <JobDetails 
-            jobId={selectedJobId!} 
-            auth={auth} 
+          <JobDetails
+            jobId={selectedJobId!}
+            auth={auth}
             onBack={() => setCurrentPage('jobs')}
             onViewApplications={handleViewApplications}
+            onOpenApplication={handleOpenApplication}
             addToast={addToast}
           />
         );
@@ -255,11 +265,12 @@ const AppInner: React.FC = () => {
           return null;
         }
         return (
-          <ApplicationsList 
-            jobId={selectedJobId!} 
+          <ApplicationsList
+            jobId={selectedJobId!}
             initialFilter={appFilter}
-            auth={auth} 
-            onBack={() => setCurrentPage('jobs')}
+            initialApplicationId={selectedAppId}
+            auth={auth}
+            onBack={() => { setSelectedAppId(null); setCurrentPage('jobs'); }}
             addToast={addToast}
           />
         );

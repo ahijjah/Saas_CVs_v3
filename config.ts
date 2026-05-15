@@ -48,6 +48,8 @@ export const WEBHOOK_CONFIG = {
   JOB_SETTINGS_BASE_URL:        `${API_BASE}/jobs`,
   // Duplicate submission logs (append /{job_id}/duplicate-logs)
   DUPLICATE_LOGS_BASE_URL:      `${API_BASE}/jobs`,
+  // CV file download (append /{application_id}/cv)
+  CV_DOWNLOAD_BASE_URL:         `${API_BASE}/applications`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

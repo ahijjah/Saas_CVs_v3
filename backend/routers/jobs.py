@@ -553,23 +553,52 @@ async def get_duplicate_logs(
     rows = await db.execute(
         text("""
             SELECT
-                log_id,
-                duplicate_email,
-                duplicate_name,
-                attachment_hash,
-                received_at,
-                original_application_id,
-                email_message_id,
-                raw_filename,
-                notes
-            FROM duplicate_application_logs
-            WHERE job_id = :job_id AND tenant_id = :tenant_id
-            ORDER BY received_at DESC
+                dl.log_id,
+                dl.duplicate_email,
+                dl.duplicate_name,
+                dl.attachment_hash,
+                dl.received_at,
+                dl.original_application_id,
+                dl.email_message_id,
+                dl.raw_filename,
+                dl.notes,
+                -- Reason and score: IMAP hash-based logs are exact file matches
+                'file_hash_match'               AS duplicate_reason,
+                100.0                           AS duplicate_similarity_score,
+                -- Original application context
+                a.candidate_name                AS original_candidate_name,
+                a.applied_at                    AS original_applied_at,
+                af.original_name                AS original_cv_filename,
+                af.file_path                    AS original_cv_file_path
+            FROM duplicate_application_logs dl
+            LEFT JOIN applications a
+                ON a.application_id = dl.original_application_id
+            LEFT JOIN application_files af
+                ON af.application_id = dl.original_application_id
+            WHERE dl.job_id = :job_id AND dl.tenant_id = :tenant_id
+            ORDER BY dl.received_at DESC
             LIMIT 200
         """),
         {"job_id": job_id, "tenant_id": tenant_id},
     )
-    return {"duplicate_logs": [dict(r) for r in rows.mappings()]}
+
+    logs = []
+    for r in rows.mappings():
+        entry = dict(r)
+        # Serialise timestamps
+        if entry.get("received_at"):
+            entry["received_at"] = entry["received_at"].isoformat()
+        if entry.get("original_applied_at"):
+            entry["original_applied_at"] = entry["original_applied_at"].isoformat()
+        # Strip internal file_path from response (clients use the API endpoint)
+        entry.pop("original_cv_file_path", None)
+        # Cast UUIDs to strings
+        for key in ("log_id", "original_application_id"):
+            if entry.get(key):
+                entry[key] = str(entry[key])
+        logs.append(entry)
+
+    return {"duplicate_logs": logs}
 
 
 @router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)

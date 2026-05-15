@@ -9,6 +9,7 @@ import { useLanguage } from '../context/LanguageContext';
 interface ApplicationsListProps {
   jobId: string;
   initialFilter: ApplicationFilter;
+  initialApplicationId?: string | null;
   auth: AuthState;
   onBack: () => void;
   addToast: (msg: string, type: 'success' | 'error') => void;
@@ -53,7 +54,7 @@ const T = {
 const FILTER_KEYS: ApplicationFilter[] = ['all', 'qualified', 'partial', 'rejected', 'possible_duplicate'];
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({
-  jobId, initialFilter, auth, onBack, addToast
+  jobId, initialFilter, initialApplicationId, auth, onBack, addToast
 }) => {
   const { lang } = useLanguage();
   const t = T[lang];
@@ -150,6 +151,15 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   useEffect(() => {
     fetchApplications();
   }, [jobId]);
+
+  // Auto-open a specific application when navigated from JobDetails duplicate section
+  useEffect(() => {
+    if (!initialApplicationId || loading || applicationsAll.length === 0) return;
+    const target = applicationsAll.find(
+      (a) => (a.application_id || a.id) === initialApplicationId
+    );
+    if (target) handleViewAnalysis(target);
+  }, [initialApplicationId, loading, applicationsAll]);
 
   // low_match is treated as rejected for all display/filter purposes
   const normaliseStatus = (s: string) => s === 'low_match' ? 'rejected' : s;
