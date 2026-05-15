@@ -626,7 +626,6 @@ async def _score_cv_async(
                     or app_data["candidate_email_from_cv"]
                     or app_data["candidate_email"]
                 )
-                sender_email = app_data["email_sender_address"]
 
                 if source == "manual_upload":
                     # Only send to CV email if the toggle is on for uploads
@@ -637,28 +636,10 @@ async def _score_cv_async(
                             job_title=criteria["job_title"],
                         )
 
-                elif source == "email_forwarding":
-                    # Two independent sends: to CV owner and/or to the forwarding sender
-                    if cv_email and criteria.get("send_confirmation_to_cv_email_for_forwarding", False):
-                        await send_cv_received_email(
-                            to_email=cv_email,
-                            candidate_name=app_data["candidate_name"],
-                            job_title=criteria["job_title"],
-                        )
-                    if sender_email and criteria.get("send_confirmation_to_sender_for_forwarding", True):
-                        await send_cv_received_email(
-                            to_email=sender_email,
-                            candidate_name=app_data["candidate_name"],
-                            job_title=criteria["job_title"],
-                        )
-
-                elif source == "platform_email":
-                    if cv_email and criteria.get("send_confirmation_to_cv_email_for_platform_email", True):
-                        await send_cv_received_email(
-                            to_email=cv_email,
-                            candidate_name=app_data["candidate_name"],
-                            job_title=criteria["job_title"],
-                        )
+                # email_forwarding and platform_email: candidate receipt is sent
+                # at intake time by intake_notification_service (RECEIVED_SUCCESSFULLY).
+                # Sending again here would duplicate the email to the same recipient,
+                # so both email-intake paths are intentionally skipped.
 
         except Exception as exc:
             logger.warning("Confirmation email failed for application %s: %s", application_id, exc)
