@@ -71,6 +71,7 @@ async def _score_cv_async(
     from services.docx_service import convert_docx_to_pdf
     from services.email_service import send_cv_received_email
     from services.llm_provider import get_comparison_client_async
+    from services.duplicate_detection import detect_possible_duplicate
     from services.local_processor import run_gatekeeper
     from services.pdf_service import extract_text_from_pdf
     from services.prompt_config import load_prompt_config
@@ -107,6 +108,26 @@ async def _score_cv_async(
             """),
             {"text": raw_cv_text, "aid": application_id},
         )
+
+        # ── Step 2b: Duplicate detection (local, no LLM) ──────────────────────
+        # Fetch candidate fields to compare against siblings in the same job.
+        app_id_row = await db.execute(
+            text("SELECT candidate_name, candidate_email FROM applications WHERE application_id = :aid"),
+            {"aid": application_id},
+        )
+        app_id_data = app_id_row.mappings().first()
+        if app_id_data:
+            await detect_possible_duplicate(
+                db=db,
+                application_id=application_id,
+                job_id=job_id,
+                tenant_id=tenant_id,
+                candidate_name=app_id_data["candidate_name"] or "",
+                candidate_email=app_id_data["candidate_email"],
+                candidate_phone=None,  # not yet available; re-checked after Level 3
+                extracted_text=raw_cv_text,
+            )
+            await db.commit()
 
         # ── Step 3: Fetch job criteria + config ───────────────────────────────
         criteria_row = await db.execute(
@@ -476,6 +497,20 @@ async def _score_cv_async(
             final_score,
             decision,
         )
+
+        # Re-run duplicate detection now that phone is available from AI extraction
+        if extracted_phone:
+            await detect_possible_duplicate(
+                db=db,
+                application_id=application_id,
+                job_id=job_id,
+                tenant_id=tenant_id,
+                candidate_name=extracted_name or (app_id_data["candidate_name"] if app_id_data else ""),
+                candidate_email=extracted_email or (app_id_data["candidate_email"] if app_id_data else None),
+                candidate_phone=extracted_phone,
+                extracted_text=raw_cv_text,
+            )
+            await db.commit()
 
         # ════════════════════════════════════════════════════════════════════════
         # OPTIONAL — AI comparison (secondary LLM provider)

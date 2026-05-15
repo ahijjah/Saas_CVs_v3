@@ -22,12 +22,14 @@ const T = {
     filterPartial: 'Partial',
     filterRejected: 'Rejected',
     filterLowMatch: 'Low Match',
+    filterPossibleDuplicate: 'Possible Duplicates',
     loading: 'Loading applications...',
     noApps: 'No applications found matching this criteria.',
     appliedOn: 'Applied on',
     viewAnalysis: 'View full analysis →',
     loadingAnalysis: 'Loading analysis...',
     pts: 'PTS',
+    possibleDuplicate: 'Possible Duplicate',
   },
   ar: {
     backToCampaigns: 'العودة إلى الحملات',
@@ -36,17 +38,19 @@ const T = {
     filterPartial: 'جزئيون',
     filterRejected: 'مرفوضون',
     filterLowMatch: 'تطابق منخفض',
+    filterPossibleDuplicate: 'مكررات محتملة',
     loading: 'جارٍ تحميل الطلبات...',
     noApps: 'لا توجد طلبات مطابقة لهذه المعايير.',
     appliedOn: 'تاريخ التقديم',
     viewAnalysis: '← عرض التحليل الكامل',
     loadingAnalysis: 'جارٍ تحميل التحليل...',
     pts: 'نقطة',
+    possibleDuplicate: 'مكرر محتمل',
   },
 };
 
 // low_match is an internal status; it maps to 'rejected' for display purposes
-const FILTER_KEYS: ApplicationFilter[] = ['all', 'qualified', 'partial', 'rejected'];
+const FILTER_KEYS: ApplicationFilter[] = ['all', 'qualified', 'partial', 'rejected', 'possible_duplicate'];
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   jobId, initialFilter, auth, onBack, addToast
@@ -67,6 +71,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     partial: t.filterPartial,
     rejected: t.filterRejected,
     low_match: t.filterLowMatch,
+    possible_duplicate: t.filterPossibleDuplicate,
   };
 
   const fetchApplications = async () => {
@@ -123,6 +128,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         missing_skills:        detailsObj?.missing_skills || [],
         red_flags:             detailsObj?.red_flags || detailsObj?.analysis?.red_flags || [],
         reasoning:             detailsObj?.reasoning || {},
+        // Duplicate detection fields
+        duplicate_status:                   detailsObj?.duplicate_status,
+        duplicate_reference_application_id: detailsObj?.duplicate_reference_application_id,
+        duplicate_similarity_score:         detailsObj?.duplicate_similarity_score,
+        duplicate_reason:                   detailsObj?.duplicate_reason,
+        duplicate_checked_at:               detailsObj?.duplicate_checked_at,
+        duplicate_reference:                detailsObj?.duplicate_reference,
       };
 
       setSelectedDetails(normalized);
@@ -141,9 +153,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   // low_match is treated as rejected for all display/filter purposes
   const normaliseStatus = (s: string) => s === 'low_match' ? 'rejected' : s;
-  const filteredApplications = filter === 'all'
-    ? applicationsAll
-    : applicationsAll.filter(a => normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
+  const filteredApplications = (() => {
+    if (filter === 'all') return applicationsAll;
+    if (filter === 'possible_duplicate') {
+      return applicationsAll.filter(a => a.duplicate_status === 'possible_duplicate');
+    }
+    return applicationsAll.filter(a => normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
+  })();
 
   if (view === 'details' && selectedDetails) {
     return (
@@ -217,6 +233,11 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${styles.pill}`}>
                     {styles.label}
                   </span>
+                  {app.duplicate_status === 'possible_duplicate' && (
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700">
+                      {t.possibleDuplicate}
+                    </span>
+                  )}
                   <button
                     disabled={detailsLoading}
                     onClick={() => handleViewAnalysis(app)}

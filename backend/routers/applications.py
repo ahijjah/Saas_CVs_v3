@@ -44,10 +44,11 @@ async def list_applications(
             SELECT
                 a.application_id,
                 a.candidate_name,
-                a.decision        AS status,
-                s.final_score     AS score,
-                a.applied_at::date AS applied_date,
-                s.evaluation_notes AS summary
+                a.decision          AS status,
+                a.duplicate_status,
+                s.final_score       AS score,
+                a.applied_at::date  AS applied_date,
+                s.evaluation_notes  AS summary
             FROM applications a
             LEFT JOIN application_scores s ON s.application_id = a.application_id
             WHERE a.job_id = :jid AND a.tenant_id = :tid
@@ -58,12 +59,13 @@ async def list_applications(
     apps = []
     for r in rows.mappings():
         apps.append({
-            "application_id": str(r["application_id"]),
-            "candidate_name": r["candidate_name"],
-            "status": r["status"],
-            "score": float(r["score"]) if r["score"] is not None else None,
-            "applied_date": r["applied_date"].isoformat() if r["applied_date"] else None,
-            "summary": r["summary"],
+            "application_id":  str(r["application_id"]),
+            "candidate_name":  r["candidate_name"],
+            "status":          r["status"],
+            "duplicate_status": r["duplicate_status"] or "not_duplicate",
+            "score":           float(r["score"]) if r["score"] is not None else None,
+            "applied_date":    r["applied_date"].isoformat() if r["applied_date"] else None,
+            "summary":         r["summary"],
         })
     return apps
 
@@ -87,6 +89,11 @@ async def get_application_details(
                 a.gatekeeper_passed,
                 a.applied_at, a.scored_at,
                 a.qualified_threshold_used, a.partial_threshold_used,
+                a.duplicate_status,
+                a.duplicate_reference_application_id,
+                a.duplicate_similarity_score,
+                a.duplicate_reason,
+                a.duplicate_checked_at,
                 j.title AS job_title, j.job_id,
                 s.final_score,
                 s.score_skills, s.score_experience, s.score_education,
@@ -114,6 +121,26 @@ async def get_application_details(
     app = row.mappings().first()
     if not app:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    # Fetch duplicate reference candidate info if present
+    dup_ref_info = None
+    dup_ref_id = app["duplicate_reference_application_id"]
+    if dup_ref_id:
+        ref_row = await db.execute(
+            text("""
+                SELECT candidate_name, applied_at
+                FROM applications
+                WHERE application_id = :rid AND tenant_id = :tid
+            """),
+            {"rid": str(dup_ref_id), "tid": current_user.tenant_id},
+        )
+        ref = ref_row.mappings().first()
+        if ref:
+            dup_ref_info = {
+                "application_id": str(dup_ref_id),
+                "candidate_name": ref["candidate_name"],
+                "applied_at":     ref["applied_at"].isoformat() if ref["applied_at"] else None,
+            }
 
     # Fetch AI comparison results if available
     comp_rows = await db.execute(
@@ -207,6 +234,12 @@ async def get_application_details(
         "level2_prompt_version":  app["level2_prompt_version"],
         "raw_ai_response":        app["raw_ai_response"],
         "ai_comparisons":         comparisons,
+        "duplicate_status":                   app["duplicate_status"] or "not_duplicate",
+        "duplicate_reference_application_id": str(dup_ref_id) if dup_ref_id else None,
+        "duplicate_similarity_score":         float(app["duplicate_similarity_score"]) if app["duplicate_similarity_score"] is not None else None,
+        "duplicate_reason":                   app["duplicate_reason"],
+        "duplicate_checked_at":               app["duplicate_checked_at"].isoformat() if app["duplicate_checked_at"] else None,
+        "duplicate_reference":                dup_ref_info,
     }
 
 

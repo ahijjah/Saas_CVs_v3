@@ -162,6 +162,7 @@ export interface Application {
   candidate_name: string;
   score: number;
   status: ApplicationDecision;
+  duplicate_status?: 'not_duplicate' | 'possible_duplicate';
   applied_date: string;
   summary: string;
 }
@@ -251,9 +252,19 @@ export interface ApplicationDetailedAnalysis {
   level2_prompt_code?: string;
   level2_prompt_version?: number;
   ai_comparisons?: AIComparison[];
+  duplicate_status?: 'not_duplicate' | 'possible_duplicate';
+  duplicate_reference_application_id?: string | null;
+  duplicate_similarity_score?: number | null;
+  duplicate_reason?: string | null;
+  duplicate_checked_at?: string | null;
+  duplicate_reference?: {
+    application_id: string;
+    candidate_name: string;
+    applied_at: string | null;
+  } | null;
 }
 
-export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all';
+export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate';
 
 export interface UploadedCV {
   application_id: string;

@@ -57,6 +57,17 @@ const T = {
     level2Prompt: 'Level 2 Prompt',
     promptVersion: 'v',
     rawPayload: 'Developer: Raw AI Payload',
+    possibleDuplicate: 'Possible Duplicate',
+    dupBannerTitle: 'This application may be a duplicate',
+    dupContentSimilarity: 'High content similarity',
+    dupIdentityMatch: 'Identity match',
+    dupRefLabel: 'Earlier matching application',
+    dupCandidateName: 'Candidate',
+    dupSubmittedOn: 'Submitted on',
+    dupRefId: 'Reference ID',
+    dupSimilarityScore: 'Similarity score',
+    dupReason: 'Reason',
+    dupCheckedAt: 'Checked at',
   },
   ar: {
     back: 'العودة إلى الطلبات',
@@ -106,6 +117,17 @@ const T = {
     level2Prompt: 'نموذج المستوى 2',
     promptVersion: 'إ',
     rawPayload: 'المطور: البيانات الخام للذكاء الاصطناعي',
+    possibleDuplicate: 'مكرر محتمل',
+    dupBannerTitle: 'قد يكون هذا الطلب مكرراً',
+    dupContentSimilarity: 'تشابه محتوى عالي',
+    dupIdentityMatch: 'تطابق هوية',
+    dupRefLabel: 'الطلب المرجعي السابق',
+    dupCandidateName: 'المرشح',
+    dupSubmittedOn: 'تاريخ التقديم',
+    dupRefId: 'رقم المرجع',
+    dupSimilarityScore: 'درجة التشابه',
+    dupReason: 'السبب',
+    dupCheckedAt: 'وقت الفحص',
   },
 };
 
@@ -247,6 +269,48 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         </div>
       )}
 
+      {/* Possible Duplicate Banner */}
+      {data.duplicate_status === 'possible_duplicate' && (
+        <div className={`bg-orange-50 border ${isAr ? 'border-r-4' : 'border-l-4'} border-orange-400 rounded-2xl p-5`}>
+          <div className="flex items-start gap-3 mb-3">
+            <svg className="w-5 h-5 text-orange-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-orange-800">{t.dupBannerTitle}</p>
+              {data.duplicate_reason && (
+                <p className="text-xs text-orange-600 mt-0.5">
+                  {data.duplicate_reason === 'high_content_similarity' ? t.dupContentSimilarity : t.dupIdentityMatch}
+                  {data.duplicate_similarity_score != null && ` — ${data.duplicate_similarity_score.toFixed(1)}%`}
+                </p>
+              )}
+            </div>
+            <span className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700">
+              {t.possibleDuplicate}
+            </span>
+          </div>
+          {data.duplicate_reference && (
+            <div className="mt-3 bg-white rounded-xl border border-orange-200 px-4 py-3">
+              <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-2">{t.dupRefLabel}</p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                <span className="text-textMuted">{t.dupCandidateName}</span>
+                <span className="font-semibold text-textMain">{data.duplicate_reference.candidate_name}</span>
+                {data.duplicate_reference.applied_at && (
+                  <>
+                    <span className="text-textMuted">{t.dupSubmittedOn}</span>
+                    <span className="font-semibold text-textMain">
+                      {new Date(data.duplicate_reference.applied_at).toLocaleDateString()}
+                    </span>
+                  </>
+                )}
+                <span className="text-textMuted">{t.dupRefId}</span>
+                <span className="font-mono text-[10px] text-textMuted">{data.duplicate_reference.application_id.slice(0, 8)}…</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Profile & Scoring */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
@@ -262,6 +326,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${decisionStyles[data.decision] || 'bg-slate-100 text-slate-600'}`}>
                   {decisionLabel[data.decision] || data.decision || t.noDecision}
                 </span>
+                {data.duplicate_status === 'possible_duplicate' && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-orange-100 text-orange-700">
+                    {t.possibleDuplicate}
+                  </span>
+                )}
                 <span className="text-[10px] font-black text-textMuted uppercase tracking-widest">• REF: {data.application_id}</span>
               </div>
               <h1 className="text-3xl font-black text-textMain tracking-tight">{candidateName}</h1>
