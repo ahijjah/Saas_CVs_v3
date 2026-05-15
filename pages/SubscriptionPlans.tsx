@@ -294,10 +294,14 @@ export const SubscriptionPlansPage: React.FC<Props> = ({ auth, addToast }) => {
   const setField = <K extends keyof typeof form>(key: K, val: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
 
-  // Collect all unique feature keys in display order
+  // Plans that participate in the feature matrix (have at least one feature seeded).
+  // Enterprise and any other plans without features are excluded automatically.
+  const matrixPlans = plans.filter((p) => p.features.length > 0);
+
+  // Collect all unique feature keys in display order (from matrix plans only)
   const allFeatureKeys = (() => {
     const seen = new Map<string, { name: string; order: number; vtype: string }>();
-    for (const plan of plans) {
+    for (const plan of matrixPlans) {
       for (const f of plan.features) {
         if (!seen.has(f.feature_key)) {
           seen.set(f.feature_key, { name: f.feature_name, order: f.display_order, vtype: f.value_type });
@@ -464,7 +468,7 @@ export const SubscriptionPlansPage: React.FC<Props> = ({ auth, addToast }) => {
                   <th className="text-left px-5 py-4 text-xs font-black text-textMuted uppercase tracking-widest w-64 bg-slate-50">
                     {t.features}
                   </th>
-                  {plans.map((plan, idx) => {
+                  {matrixPlans.map((plan, idx) => {
                     const gradient = PLAN_HEADER_COLORS[idx % PLAN_HEADER_COLORS.length];
                     return (
                       <th key={plan.plan_id} className="px-4 py-4 text-center min-w-[160px]">
@@ -503,7 +507,7 @@ export const SubscriptionPlansPage: React.FC<Props> = ({ auth, addToast }) => {
                       <div className="font-semibold text-textMain text-xs">{meta.name}</div>
                       <div className="text-[10px] text-textMuted capitalize">{meta.vtype}</div>
                     </td>
-                    {plans.map((plan) => {
+                    {matrixPlans.map((plan) => {
                       const feat = plan.features.find((f) => f.feature_key === key);
                       if (!feat) {
                         return (
@@ -528,8 +532,8 @@ export const SubscriptionPlansPage: React.FC<Props> = ({ auth, addToast }) => {
                 ))}
                 {allFeatureKeys.length === 0 && (
                   <tr>
-                    <td colSpan={plans.length + 1} className="text-center py-12 text-textMuted text-sm">
-                      No features found. Run migration 023 to seed the feature matrix.
+                    <td colSpan={matrixPlans.length + 1} className="text-center py-12 text-textMuted text-sm">
+                      No features found. Run migration 024 to seed the feature matrix.
                     </td>
                   </tr>
                 )}
