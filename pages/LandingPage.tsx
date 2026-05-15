@@ -262,7 +262,7 @@ const T = {
     pricingTag:   'الأسعار',
     pricingTitle: 'أسعار بسيطة وشفافة',
     pricingSub:   'ابدأ مجاناً. لا بطاقة ائتمانية مطلوبة.',
-    pricingEnterprise: { name: 'مؤسسات', price: 'مخصص', badge: '', desc: 'للوكالات والمنظمات متعددة الوحدات.', cta: 'تواصل معنا', features: ['كل ما في الخطة الاحترافية', 'سير ذاتية وحملات غير محدودة', 'إدارة متعددة المستأجرين', 'تأهيل مخصص', 'اتفاقية مستوى الخدمة وتكاملات مخصصة'] },
+    pricingEnterprise: { name: 'المؤسسات / خطة مخصصة', price: 'مخصص', badge: '', desc: 'للوكالات والمنظمات متعددة الوحدات. حدود مخصصة وتأهيل مخصص واتفاقية مستوى الخدمة.', cta: 'تواصل معنا', features: ['كل ما في الخطة الاحترافية', 'سير ذاتية وحملات غير محدودة', 'إدارة متعددة المستأجرين', 'تأهيل مخصص', 'اتفاقية مستوى الخدمة وتكاملات مخصصة'] },
 
     faqTag:   'الأسئلة الشائعة',
     faqTitle: 'أسئلة شائعة',
@@ -295,6 +295,16 @@ interface ApiPlan {
 }
 
 const PLAN_GRADIENTS = ['from-slate-500 to-slate-600', 'from-sky-500 to-blue-600', 'from-violet-500 to-purple-600'];
+
+const PLAN_NAME_AR: Record<string, string> = {
+  trial:        'التجربة المجانية',
+  starter:      'البداية',
+  professional: 'الاحترافي',
+  enterprise:   'المؤسسات',
+};
+function localPlanName(code: string, name: string, lang: 'en' | 'ar'): string {
+  return lang === 'ar' ? (PLAN_NAME_AR[code] ?? name) : name;
+}
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn }) => {
   const [lang, setLang] = useState<'en' | 'ar'>('en');
@@ -566,8 +576,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
             <p className="text-gray-500 text-lg">{t.pricingSub}</p>
           </div>
           <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-6 items-start">
-            {/* Dynamic plans from API (Trial, Starter, Professional) */}
-            {apiPlans.map((plan, idx) => {
+            {/* Dynamic plans from API (Trial, Starter, Professional) — enterprise excluded */}
+            {apiPlans.filter(p => p.plan_code !== 'enterprise').map((plan, idx) => {
               const isHighlight = plan.plan_code === 'professional';
               const isTrial = plan.plan_code === 'trial';
               const gradient = PLAN_GRADIENTS[idx % PLAN_GRADIENTS.length];
@@ -585,7 +595,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
                     </div>
                   )}
                   <div className={`bg-gradient-to-br ${gradient} p-6 text-white`}>
-                    <div className="text-sm font-black uppercase tracking-widest opacity-80 mb-1">{plan.plan_name}</div>
+                    <div className="text-sm font-black uppercase tracking-widest opacity-80 mb-1">{localPlanName(plan.plan_code, plan.plan_name, lang)}</div>
                     <div className="flex items-end gap-1">
                       <span className="text-4xl font-extrabold">{priceDisplay}</span>
                       {plan.monthly_price > 0 && <span className="text-sm opacity-70 mb-1">{lang === 'ar' ? '/شهر' : '/mo'}</span>}

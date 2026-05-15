@@ -65,7 +65,28 @@ const T = {
     email: 'Email',
     password: 'Password',
     role: 'Role',
-    roles: { admin: 'Admin', recruiter: 'Recruiter', viewer: 'Viewer' },
+    roles: { admin: 'Admin', hr_manager: 'HR Manager', recruiter: 'Recruiter', viewer: 'Viewer' },
+    rolePermissionsTitle: 'Role Permissions',
+    rolePermissions: {
+      admin: [
+        'Manage account settings and subscription',
+        'Manage users and roles',
+        'Manage all jobs and applications',
+        'Access audit logs and exports',
+      ],
+      hr_manager: [
+        'Create and manage job campaigns',
+        'Configure job parameters and criteria',
+        'Upload CVs and manage applications',
+        'View candidate results',
+      ],
+      recruiter: [
+        'View applications and candidate results',
+        'Export applications',
+        'Cannot create or edit jobs',
+        'Cannot manage users or subscription',
+      ],
+    } as Record<string, string[]>,
     addUserSave: 'Add User',
     addUserSaving: 'Adding...',
     cancelAdd: 'Cancel',
@@ -125,7 +146,28 @@ const T = {
     email: 'البريد الإلكتروني',
     password: 'كلمة المرور',
     role: 'الدور',
-    roles: { admin: 'مسؤول', recruiter: 'موظف توظيف', viewer: 'مشاهد' },
+    roles: { admin: 'مدير الحساب', hr_manager: 'مدير الموارد البشرية', recruiter: 'مسؤول التوظيف', viewer: 'مشاهد' },
+    rolePermissionsTitle: 'صلاحيات الأدوار',
+    rolePermissions: {
+      admin: [
+        'إدارة إعدادات الحساب والاشتراك',
+        'إدارة المستخدمين والأدوار',
+        'إدارة جميع الوظائف والطلبات',
+        'الوصول إلى سجلات التدقيق والتصدير',
+      ],
+      hr_manager: [
+        'إنشاء وإدارة حملات الوظائف',
+        'ضبط معايير ومتطلبات الوظائف',
+        'رفع السير الذاتية وإدارة الطلبات',
+        'عرض نتائج المرشحين',
+      ],
+      recruiter: [
+        'عرض الطلبات ونتائج المرشحين',
+        'تصدير الطلبات',
+        'لا يمكن إنشاء أو تعديل الوظائف',
+        'لا يمكن إدارة المستخدمين أو الاشتراك',
+      ],
+    } as Record<string, string[]>,
     addUserSave: 'إضافة مستخدم',
     addUserSaving: 'جارٍ الإضافة...',
     cancelAdd: 'إلغاء',
@@ -171,7 +213,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersAccessDenied, setUsersAccessDenied] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [addUserForm, setAddUserForm] = useState({ email: '', full_name: '', password: '', role: 'recruiter' });
+  const [addUserForm, setAddUserForm] = useState({ email: '', full_name: '', password: '', role: 'hr_manager' });
   const [savingUser, setSavingUser] = useState(false);
   const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
 
@@ -328,7 +370,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         setTenantUsers(prev => [...prev, response.user]);
         setUsersActiveCount(prev => prev + 1);
         setShowAddUser(false);
-        setAddUserForm({ email: '', full_name: '', password: '', role: 'recruiter' });
+        setAddUserForm({ email: '', full_name: '', password: '', role: 'hr_manager' });
         addToast('User added successfully.', 'success');
       }
     } catch (err: any) {
@@ -758,14 +800,41 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                     value={addUserForm.role}
                     onChange={e => setAddUserForm(prev => ({ ...prev, role: e.target.value }))}
                   >
-                    {Object.entries(t.roles).map(([val, label]) => (
-                      <option key={val} value={val}>{label}</option>
-                    ))}
+                    {Object.entries(t.roles)
+                      .filter(([val]) => val !== 'viewer')
+                      .map(([val, label]) => (
+                        <option key={val} value={val}>{label}</option>
+                      ))}
                   </select>
                 </div>
               </div>
+              {/* Role Permissions panel */}
+              {addUserForm.role && t.rolePermissions[addUserForm.role] && (
+                <div className="mt-4 rounded-xl border border-border bg-slate-50 p-4">
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.rolePermissionsTitle}</p>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${
+                      addUserForm.role === 'admin' ? 'bg-indigo-100 text-indigo-700' :
+                      addUserForm.role === 'hr_manager' ? 'bg-sky-100 text-sky-700' :
+                      'bg-emerald-100 text-emerald-700'
+                    }`}>
+                      {(t.roles as any)[addUserForm.role]}
+                    </span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {t.rolePermissions[addUserForm.role].map((perm, i) => (
+                      <li key={i} className={`flex items-start gap-2 text-xs ${perm.startsWith('Cannot') || perm.startsWith('لا ') ? 'text-slate-400' : 'text-textSecondary'}`}>
+                        <span className={`mt-0.5 shrink-0 ${perm.startsWith('Cannot') || perm.startsWith('لا ') ? 'text-slate-300' : 'text-emerald-500'}`}>
+                          {perm.startsWith('Cannot') || perm.startsWith('لا ') ? '✗' : '✓'}
+                        </span>
+                        {perm}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="flex justify-end gap-3 mt-4">
-                <button type="button" onClick={() => { setShowAddUser(false); setAddUserForm({ email: '', full_name: '', password: '', role: 'recruiter' }); }}
+                <button type="button" onClick={() => { setShowAddUser(false); setAddUserForm({ email: '', full_name: '', password: '', role: 'hr_manager' }); }}
                   disabled={savingUser}
                   className="px-5 py-2 text-sm font-bold text-textMuted hover:text-textMain transition-colors disabled:opacity-50">
                   {t.cancelAdd}

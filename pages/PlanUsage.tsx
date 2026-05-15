@@ -69,8 +69,8 @@ const T = {
     hideFeatures: 'Hide Feature Comparison',
     month: '/mo',
     free: 'Free',
-    enterprise: 'Enterprise',
-    enterpriseDesc: 'For agencies and multi-unit enterprises. Custom limits, dedicated onboarding, and SLA.',
+    enterprise: 'Enterprise / Custom Plan',
+    enterpriseDesc: 'For agencies and multi-unit organizations. Custom limits, dedicated onboarding, and SLA.',
     everythingInPro: 'Everything in Professional',
     customLimits: 'Custom limits & integrations',
     dedicatedSupport: 'Dedicated onboarding & SLA',
@@ -111,13 +111,23 @@ const T = {
     hideFeatures: 'إخفاء مقارنة الميزات',
     month: '/شهر',
     free: 'مجاني',
-    enterprise: 'مؤسسات',
-    enterpriseDesc: 'للوكالات والمؤسسات متعددة الوحدات. حدود مخصصة وتأهيل مخصص واتفاقية مستوى خدمة.',
+    enterprise: 'المؤسسات / خطة مخصصة',
+    enterpriseDesc: 'للوكالات والمنظمات متعددة الوحدات. حدود مخصصة وتأهيل مخصص واتفاقية مستوى الخدمة.',
     everythingInPro: 'كل ما في الخطة الاحترافية',
     customLimits: 'حدود وتكاملات مخصصة',
     dedicatedSupport: 'تأهيل مخصص واتفاقية مستوى خدمة',
   },
 };
+
+const PLAN_NAME_AR: Record<string, string> = {
+  trial:        'التجربة المجانية',
+  starter:      'البداية',
+  professional: 'الاحترافي',
+  enterprise:   'المؤسسات',
+};
+function localPlanName(code: string, name: string, lang: string): string {
+  return lang === 'ar' ? (PLAN_NAME_AR[code] ?? name) : name;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   trial:     'bg-amber-100 text-amber-700',
@@ -280,7 +290,7 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
                 {t.statusLabels[usage.subscription_status] || usage.subscription_status}
               </span>
             </div>
-            <h3 className="text-2xl font-black text-textMain mt-1 capitalize">{usage.plan_name || usage.plan_code}</h3>
+            <h3 className="text-2xl font-black text-textMain mt-1 capitalize">{localPlanName(usage.plan_code, usage.plan_name || usage.plan_code, lang)}</h3>
             <div className="flex flex-wrap gap-4 mt-2 text-xs text-textMuted">
               {usage.subscription_status === 'trial' && usage.trial_end_at && (
                 <span>{t.trialEnds}: <strong className="text-amber-600">{new Date(usage.trial_end_at).toLocaleDateString()}</strong></span>
@@ -337,7 +347,7 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
         <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-4">{t.availablePlans}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {/* Dynamic plans from API (Trial / Starter / Professional) */}
-          {publicPlans.map((plan, idx) => {
+          {publicPlans.filter(p => p.plan_code !== 'enterprise').map((plan, idx) => {
             const isCurrent = usage?.plan_code === plan.plan_code;
             const gradient = PLAN_COLORS[idx % (PLAN_COLORS.length - 1) + 0];
             const isHighlight = plan.plan_code === 'professional';
@@ -356,7 +366,7 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
                   </div>
                 )}
                 <div className={`bg-gradient-to-br ${gradient} p-5 text-white`}>
-                  <div className="font-black text-sm uppercase tracking-widest opacity-80">{plan.plan_name}</div>
+                  <div className="font-black text-sm uppercase tracking-widest opacity-80">{localPlanName(plan.plan_code, plan.plan_name, lang)}</div>
                   <div className="text-3xl font-black mt-1">
                     {plan.monthly_price === 0 ? t.free : `$${plan.monthly_price}`}
                     {plan.monthly_price > 0 && <span className="text-sm font-normal opacity-70">{t.month}</span>}
@@ -442,10 +452,10 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
                       <th className="text-left px-5 py-3 text-xs font-black text-textMuted uppercase tracking-widest w-52">
                         {t.featureComparison}
                       </th>
-                      {publicPlans.map((plan, idx) => (
+                      {publicPlans.filter(p => p.plan_code !== 'enterprise').map((plan, idx) => (
                         <th key={plan.plan_id} className="px-4 py-3 text-center min-w-[120px]">
                           <div className={`inline-block px-3 py-1 rounded-lg text-xs font-black text-white bg-gradient-to-br ${PLAN_COLORS[idx % (PLAN_COLORS.length - 1)]}`}>
-                            {plan.plan_name}
+                            {localPlanName(plan.plan_code, plan.plan_name, lang)}
                           </div>
                           {usage?.plan_code === plan.plan_code && (
                             <div className="text-[9px] text-violet-600 font-black mt-0.5">{t.currentPlanLabel}</div>
@@ -460,7 +470,7 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
                         <td className="px-5 py-2.5">
                           <span className="text-xs font-semibold text-textMain">{meta.name}</span>
                         </td>
-                        {publicPlans.map((plan) => {
+                        {publicPlans.filter(p => p.plan_code !== 'enterprise').map((plan) => {
                           const feat = plan.features.find((f) => f.feature_key === key);
                           return (
                             <td key={plan.plan_id} className={`px-4 py-2.5 text-center text-xs ${feat ? featureValClass(feat) : 'text-textMuted'}`}>
