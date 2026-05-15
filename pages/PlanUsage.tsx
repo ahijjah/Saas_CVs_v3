@@ -176,7 +176,10 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
   const lang = (document.documentElement.lang as 'en' | 'ar') === 'ar' ? 'ar' : 'en';
   const t = T[lang];
 
-  const isAdmin = auth.user?.role?.toLowerCase() === 'admin';
+  const role = auth.user?.role?.toLowerCase() ?? '';
+  const isAdmin = role === 'admin';
+
+  // All hooks must run unconditionally — access guard renders after them
   const [usage, setUsage]             = useState<UsageData | null>(null);
   const [publicPlans, setPublicPlans] = useState<PublicPlan[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -184,6 +187,7 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
   const [showFeatures, setShowFeatures] = useState(false);
 
   const loadAll = useCallback(async () => {
+    if (!isAdmin) return;
     setLoading(true);
     try {
       const [usageData, plansData] = await Promise.all([
@@ -197,9 +201,28 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
     } finally {
       setLoading(false);
     }
-  }, [auth.token, t.errorLoad]);
+  }, [isAdmin, auth.token, t.errorLoad]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Hard block: only tenant admin may access this page
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
+        <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+          <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold text-textMain">{lang === 'ar' ? 'غير مصرح' : 'Access Denied'}</h2>
+        <p className="text-textSecondary max-w-sm">
+          {lang === 'ar'
+            ? 'هذه الصفحة مخصصة لمسؤولي المستأجرين فقط.'
+            : 'This page is accessible to tenant administrators only.'}
+        </p>
+      </div>
+    );
+  }
 
   const handleSubscribe = async (planCode: string, planName: string) => {
     if (!isAdmin) return;

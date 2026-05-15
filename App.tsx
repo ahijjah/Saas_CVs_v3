@@ -215,6 +215,12 @@ const AppInner: React.FC = () => {
       return null;
     }
 
+    // Plan & Usage is tenant admin only — not recruiter/hr/super_admin
+    if (currentPage === 'plan-usage' && role !== 'admin') {
+      setCurrentPage(role === 'super_admin' ? 'admin-dashboard' : 'jobs');
+      return null;
+    }
+
     switch (currentPage) {
       case 'admin-dashboard':
         return <AdminDashboard auth={auth} addToast={addToast} />;

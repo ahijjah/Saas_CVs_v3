@@ -378,7 +378,7 @@ async def subscribe_to_plan(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, Any]:
     """Allow a tenant admin to select / change their subscription plan."""
-    if current_user.role not in ("admin", "super_admin"):
+    if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only tenant admins can change subscription plans")
 
     plan_code: str = body.plan_code

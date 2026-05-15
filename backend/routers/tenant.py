@@ -242,7 +242,12 @@ async def get_tenant_usage(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Return current tenant's usage vs plan limits + plan features. All roles can read."""
+    """Return current tenant's usage vs plan limits + plan features. Tenant admin only."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only tenant admins can access plan usage",
+        )
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     tenant_row = await db.execute(
