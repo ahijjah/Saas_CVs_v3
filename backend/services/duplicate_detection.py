@@ -24,7 +24,8 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
-_CONTENT_THRESHOLD: float = 95.0   # token_sort_ratio out of 100
+_CONTENT_THRESHOLD: float = 95.0   # token_sort_ratio — marks possible_duplicate during scoring
+_CONTENT_STOP_THRESHOLD: float = 90.0  # token_sort_ratio — reject at upload, do not score
 _NAME_FUZZY_THRESHOLD: float = 90.0
 
 
@@ -235,6 +236,71 @@ async def detect_possible_duplicate(
             "duplicate_detection failed for application %s: %s",
             application_id, exc, exc_info=True,
         )
+
+
+async def find_content_duplicate(
+    db,
+    job_id: str,
+    tenant_id: str,
+    extracted_text: str,
+) -> Optional[dict]:
+    """
+    Synchronous-style content check run at upload time (before an application record
+    is created).  Uses a lower threshold (_CONTENT_STOP_THRESHOLD = 90%) than the
+    scoring-path check so that near-identical CVs are caught early and excluded from
+    the scoring queue entirely.
+
+    Returns a dict with keys:
+        application_id, candidate_name, candidate_email, similarity_score
+    or None if no match found.
+
+    Must be called with an open AsyncSession that has RLS context set.
+    """
+    from rapidfuzz import fuzz
+    from sqlalchemy import text
+
+    if not extracted_text:
+        return None
+    norm_text = _normalise_cv_text(extracted_text)
+    if len(norm_text) < 200:  # guard against near-empty extractions producing false positives
+        return None
+
+    rows = await db.execute(
+        text("""
+            SELECT
+                a.application_id,
+                a.candidate_name,
+                a.candidate_email,
+                af.extracted_text
+            FROM applications a
+            JOIN application_files af
+                ON af.application_id = a.application_id
+               AND af.extraction_status = 'done'
+            WHERE a.job_id    = :jid
+              AND a.tenant_id = :tid
+              AND af.extracted_text IS NOT NULL
+        """),
+        {"jid": job_id, "tid": tenant_id},
+    )
+
+    best_score = 0.0
+    best_match: Optional[dict] = None
+
+    for row in rows.mappings():
+        existing_norm = _normalise_cv_text(row["extracted_text"] or "")
+        if not existing_norm:
+            continue
+        score = fuzz.token_sort_ratio(norm_text, existing_norm)
+        if score >= _CONTENT_STOP_THRESHOLD and score > best_score:
+            best_score = score
+            best_match = {
+                "application_id": str(row["application_id"]),
+                "candidate_name":  row["candidate_name"],
+                "candidate_email": row["candidate_email"],
+                "similarity_score": float(score),
+            }
+
+    return best_match
 
 
 async def _mark_checked(

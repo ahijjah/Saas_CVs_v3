@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -284,6 +284,110 @@ async def upload_cv(
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active job not found")
 
+    # ── Pre-upload content duplicate check ────────────────────────────────────
+    # Extract text from the uploaded bytes synchronously so we can compare
+    # against existing applications before creating an application record.
+    # High content similarity (>= 90%) → route to duplicate_application_logs,
+    # skip scoring entirely.  Lower similarity or identity-only matches proceed
+    # as normal applications and are handled by the scoring worker.
+    from services.pdf_service import extract_text_from_pdf
+    from services.docx_service import convert_docx_to_pdf
+    from services.duplicate_detection import find_content_duplicate
+
+    DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    extract_bytes = content
+    if file.content_type == DOCX_MIME:
+        try:
+            extract_bytes = await convert_docx_to_pdf(content)
+        except Exception:
+            extract_bytes = content  # fall back to raw bytes; extraction may be partial
+
+    raw_text = ""
+    try:
+        raw_text = extract_text_from_pdf(extract_bytes)
+    except Exception:
+        pass  # empty text → find_content_duplicate will return None (no match)
+
+    dup_match = await find_content_duplicate(
+        db=db,
+        job_id=job_id,
+        tenant_id=current_user.tenant_id,
+        extracted_text=raw_text,
+    )
+
+    if dup_match:
+        # ── Save file to duplicates/ path (so recruiter can download it) ──────
+        log_id = str(uuid.uuid4())
+        ext = ALLOWED_MIME_TYPES[file.content_type]
+        dup_dir = (
+            Path(settings.files_base_path)
+            / "tenants" / current_user.tenant_id / "jobs" / job_id / "duplicates"
+        )
+        dup_dir.mkdir(parents=True, exist_ok=True)
+        dup_path = dup_dir / f"{log_id}.{ext}"
+        dup_path.write_bytes(content)
+
+        # ── Insert duplicate log (no application record created) ──────────────
+        await db.execute(
+            text("""
+                INSERT INTO duplicate_application_logs
+                    (log_id, tenant_id, job_id,
+                     duplicate_email, duplicate_name,
+                     attachment_hash, received_at,
+                     original_application_id,
+                     raw_filename, notes, source,
+                     submitted_by_user_id, submitted_by_name, submitted_by_email,
+                     duplicate_file_path, duplicate_original_filename,
+                     duplicate_content_type, duplicate_file_size_bytes,
+                     duplicate_reason, duplicate_similarity_score)
+                VALUES
+                    (:log_id, :tenant_id, :job_id,
+                     :email, :name,
+                     NULL, NOW(),
+                     :orig_id,
+                     :filename, :notes, 'manual_upload',
+                     :uploader_id, :uploader_name, :uploader_email,
+                     :dup_file_path, :dup_orig_name,
+                     :dup_content_type, :dup_file_size,
+                     'high_content_similarity', :similarity_score)
+            """),
+            {
+                "log_id":          log_id,
+                "tenant_id":       current_user.tenant_id,
+                "job_id":          job_id,
+                "email":           candidate_email,
+                "name":            candidate_name,
+                "orig_id":         dup_match["application_id"],
+                "filename":        file.filename,
+                "notes":           f"Manual upload rejected — content similarity {dup_match['similarity_score']:.1f}% ≥ 90% threshold.",
+                "uploader_id":     current_user.user_id,
+                "uploader_name":   current_user.full_name or current_user.email,
+                "uploader_email":  current_user.email,
+                "dup_file_path":   str(dup_path.relative_to(settings.files_base_path)),
+                "dup_orig_name":   file.filename,
+                "dup_content_type": file.content_type,
+                "dup_file_size":   len(content),
+                "similarity_score": dup_match["similarity_score"],
+            },
+        )
+        await db.commit()
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "duplicate": True,
+                "log_id": log_id,
+                "original_application_id": dup_match["application_id"],
+                "original_candidate_name": dup_match["candidate_name"],
+                "similarity_score": dup_match["similarity_score"],
+                "message": (
+                    f"Duplicate CV detected (similarity {dup_match['similarity_score']:.1f}%). "
+                    "Added to Duplicate submissions. Not sent for scoring."
+                ),
+            },
+        )
+
+    # ── Normal flow: create application, save file, queue scoring ─────────────
     app_result = await db.execute(
         text("""
             INSERT INTO applications
@@ -307,10 +411,9 @@ async def upload_cv(
     application_id = str(app_result.scalar_one())
 
     ext = ALLOWED_MIME_TYPES[file.content_type]
-    file_name = f"{application_id}.{ext}"
     file_dir = Path(settings.files_base_path) / "tenants" / current_user.tenant_id / "jobs" / job_id
     file_dir.mkdir(parents=True, exist_ok=True)
-    file_path = file_dir / file_name
+    file_path = file_dir / f"{application_id}.{ext}"
     file_path.write_bytes(content)
 
     relative_path = str(file_path.relative_to(settings.files_base_path))

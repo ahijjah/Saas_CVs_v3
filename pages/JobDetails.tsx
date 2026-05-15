@@ -11,7 +11,7 @@ interface JobDetailsProps {
   onBack: () => void;
   onViewApplications: (jobId: string, filter: string) => void;
   onOpenApplication: (jobId: string, applicationId: string) => void;
-  addToast: (msg: string, type: 'success' | 'error') => void;
+  addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
 }
 
 const T = {
@@ -568,15 +568,22 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     if (!files.length) return;
     setUploading(true);
     let successCount = 0;
+    let dupCount = 0;
     let failCount = 0;
+    let needDupRefresh = false;
     for (const file of Array.from(files)) {
       const fd = new FormData();
       fd.append('job_id', jobId);
       fd.append('candidate_name', file.name.replace(/\.[^.]+$/, ''));
       fd.append('file', file);
       try {
-        await apiService.postForm(WEBHOOK_CONFIG.CV_UPLOAD_URL, fd, auth.token!);
-        successCount++;
+        const result = await apiService.postForm(WEBHOOK_CONFIG.CV_UPLOAD_URL, fd, auth.token!);
+        if (result?.duplicate) {
+          dupCount++;
+          needDupRefresh = true;
+        } else {
+          successCount++;
+        }
       } catch {
         failCount++;
       }
@@ -584,9 +591,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (successCount > 0) addToast(`${successCount} CV(s) uploaded successfully.`, 'success');
+    if (dupCount > 0) addToast(`${dupCount} CV(s) detected as duplicate — added to Duplicate submissions, not sent for scoring.`, 'info');
     if (failCount > 0) addToast(`${failCount} CV(s) failed to upload.`, 'error');
+    if (needDupRefresh) await fetchDuplicateLogs();
     await fetchUploadedCVs();
-  }, [jobId, auth.token, addToast, fetchUploadedCVs]);
+  }, [jobId, auth.token, addToast, fetchUploadedCVs, fetchDuplicateLogs]);
 
   const handleScorePending = useCallback(async () => {
     setScoring(true);
@@ -1166,8 +1175,13 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   return (
                     <tr key={log.log_id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3">
-                        <p className="font-semibold text-textMain text-sm">{log.duplicate_name || '—'}</p>
-                        <p className="text-xs text-textMuted">{log.duplicate_email}</p>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <p className="font-semibold text-textMain text-sm">{log.duplicate_name || '—'}</p>
+                          {log.source === 'manual_upload' && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-blue-100 text-blue-700">Manual</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-textMuted">{log.duplicate_email || (log.submitted_by_email ? `Uploaded by: ${log.submitted_by_name || log.submitted_by_email}` : '—')}</p>
                         {log.raw_filename && <p className="text-xs text-textMuted truncate max-w-[180px]">{log.raw_filename}</p>}
                       </td>
                       <td className="px-4 py-3">

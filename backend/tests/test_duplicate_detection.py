@@ -21,6 +21,7 @@ from services.duplicate_detection import (  # noqa: E402
     _normalise_email,
     _normalise_phone,
     detect_possible_duplicate,
+    find_content_duplicate,
 )
 
 
@@ -537,3 +538,127 @@ async def test_manual_upload_priority_content_over_identity():
         )
         # Must NOT overwrite the stronger reason
         mock_mark.assert_not_called()
+
+
+# ── find_content_duplicate tests ──────────────────────────────────────────────
+# find_content_duplicate is called at upload time (before an application record
+# exists). It issues a single SELECT to fetch existing applications with text.
+
+def _make_find_mock_db(existing_rows: list[dict]):
+    """Return an AsyncMock DB for find_content_duplicate (single execute call)."""
+    db = AsyncMock()
+    result = MagicMock()
+    result.mappings.return_value = existing_rows
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+@pytest.mark.asyncio
+async def test_find_content_duplicate_match_above_threshold():
+    """Same CV content ≥ 90% → returns match dict."""
+    existing = [{
+        "application_id": "aaaaaaaa-0000-0000-0000-000000000001",
+        "candidate_name":  "John Smith",
+        "candidate_email": "john@example.com",
+        "extracted_text":  LONG_CV,
+    }]
+    db = _make_find_mock_db(existing)
+    result = await find_content_duplicate(
+        db=db,
+        job_id="job-1",
+        tenant_id="tenant-1",
+        extracted_text=LONG_CV,
+    )
+    assert result is not None
+    assert result["application_id"] == "aaaaaaaa-0000-0000-0000-000000000001"
+    assert result["similarity_score"] >= 90.0
+
+
+@pytest.mark.asyncio
+async def test_find_content_duplicate_no_existing_apps():
+    """No siblings → returns None (first upload for this job)."""
+    db = _make_find_mock_db([])
+    result = await find_content_duplicate(
+        db=db,
+        job_id="job-1",
+        tenant_id="tenant-1",
+        extracted_text=LONG_CV,
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_find_content_duplicate_different_cv_no_match():
+    """Clearly different CV content → returns None."""
+    different_cv = (
+        "maria garcia accountant cpa certified financial reporting audit compliance "
+        "tax planning ifrs gaap consolidated statements external audit big four "
+        "reduced tax liability banking real estate excel power bi "
+    ) * 30
+
+    existing = [{
+        "application_id": "aaaaaaaa-0000-0000-0000-000000000001",
+        "candidate_name":  "John Smith",
+        "candidate_email": "john@example.com",
+        "extracted_text":  LONG_CV,
+    }]
+    db = _make_find_mock_db(existing)
+    result = await find_content_duplicate(
+        db=db,
+        job_id="job-1",
+        tenant_id="tenant-1",
+        extracted_text=different_cv,
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_find_content_duplicate_short_text_ignored():
+    """Text shorter than 200 chars after normalisation → returns None (guard against empty CVs)."""
+    db = _make_find_mock_db([{
+        "application_id": "aaaaaaaa-0000-0000-0000-000000000001",
+        "candidate_name":  "John Smith",
+        "candidate_email": "john@example.com",
+        "extracted_text":  LONG_CV,
+    }])
+    result = await find_content_duplicate(
+        db=db,
+        job_id="job-1",
+        tenant_id="tenant-1",
+        extracted_text="short",  # < 200 chars after normalisation
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_find_content_duplicate_returns_best_match():
+    """Multiple existing apps — returns the one with the highest similarity score."""
+    cv_a = LONG_CV
+    cv_b = LONG_CV.replace("python", "Python").replace("john smith", "jane doe")
+    cv_c = LONG_CV  # identical to uploaded
+
+    existing = [
+        {
+            "application_id": "aaaaaaaa-0000-0000-0000-000000000001",
+            "candidate_name":  "Jane Doe",
+            "candidate_email": "jane@example.com",
+            "extracted_text":  cv_b,
+        },
+        {
+            "application_id": "bbbbbbbb-0000-0000-0000-000000000002",
+            "candidate_name":  "John Smith",
+            "candidate_email": "john@example.com",
+            "extracted_text":  cv_c,  # 100% match
+        },
+    ]
+    db = _make_find_mock_db(existing)
+    result = await find_content_duplicate(
+        db=db,
+        job_id="job-1",
+        tenant_id="tenant-1",
+        extracted_text=cv_a,
+    )
+    assert result is not None
+    # Should return the best (highest score) match
+    assert result["application_id"] == "bbbbbbbb-0000-0000-0000-000000000002"
+    assert result["similarity_score"] >= 99.0

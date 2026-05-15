@@ -563,14 +563,17 @@ async def get_duplicate_logs(
                 dl.email_message_id,
                 dl.raw_filename,
                 dl.notes,
+                dl.source,
+                dl.submitted_by_name,
+                dl.submitted_by_email,
                 -- Duplicate CV file availability
                 (dl.duplicate_file_path IS NOT NULL) AS has_duplicate_cv,
                 dl.duplicate_original_filename,
                 dl.duplicate_content_type,
                 dl.duplicate_file_size_bytes,
-                -- Reason and score: IMAP hash-based logs are exact file matches
-                'file_hash_match'               AS duplicate_reason,
-                100.0                           AS duplicate_similarity_score,
+                -- Use stored columns; fall back to 'file_hash_match'/100 for old email records
+                COALESCE(dl.duplicate_reason, 'file_hash_match')   AS duplicate_reason,
+                COALESCE(dl.duplicate_similarity_score, 100.0)     AS duplicate_similarity_score,
                 -- Original application context
                 a.candidate_name                AS original_candidate_name,
                 a.applied_at                    AS original_applied_at,
