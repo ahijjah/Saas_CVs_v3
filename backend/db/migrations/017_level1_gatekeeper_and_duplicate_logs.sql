@@ -28,15 +28,14 @@ CREATE POLICY dup_logs_tenant_isolation ON duplicate_application_logs
     USING (tenant_id::text = current_setting('app.current_tenant_id', true));
 
 -- ── Level 1 gatekeeper system parameter ──────────────────────────────────────
-INSERT INTO system_config (key, value, value_type, category, label, description, is_public)
+INSERT INTO system_config (key, value, type, category, description, editable)
 VALUES (
     'level1_gatekeeper_enabled',
     'true',
     'boolean',
     'scoring',
-    'Level 1 Local Gatekeeper',
     'When enabled, CVs below the semantic similarity threshold are rejected locally before reaching the AI scorer. Disable to pass all CVs to AI scoring (higher cost, higher recall).',
-    false
+    true
 )
 ON CONFLICT (key) DO NOTHING;
 

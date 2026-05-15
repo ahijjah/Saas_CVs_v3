@@ -546,8 +546,8 @@ async def get_duplicate_logs(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    tenant_id = current_user["tenant_id"]
-    role = current_user.get("role", "viewer")
+    tenant_id = current_user.tenant_id
+    role = current_user.role
     await set_rls_context(db, tenant_id, role)
 
     rows = await db.execute(
