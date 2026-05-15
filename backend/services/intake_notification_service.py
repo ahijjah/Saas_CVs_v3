@@ -301,7 +301,7 @@ async def _insert_notification(
                      :email, :rtype,
                      :tid, :jid, :aid,
                      :lid, :dlid,
-                     :details::jsonb, 'pending')
+                     CAST(:details AS jsonb), 'pending')
                 ON CONFLICT (intake_log_id, intake_status, recipient_email)
                     WHERE intake_log_id IS NOT NULL AND recipient_type = 'candidate'
                 DO NOTHING
