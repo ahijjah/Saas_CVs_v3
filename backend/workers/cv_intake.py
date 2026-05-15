@@ -213,19 +213,61 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
         forwarding_email = (fwd_row.scalar_one_or_none() or cfg.imap_user).lower()
 
         # ── Resolve routing ───────────────────────────────────────────────
-        job_id, tenant_id, ingestion_mode, reject_reason = await _resolve_routing(
-            db, recipient, subject, forwarding_email, sender=sender
+        from services.intake_notification_service import (
+            AttachmentResult,
+            IntakeStatus,
+            queue_candidate_notification,
+            queue_recruiter_inactive_alert,
+            queue_recruiter_unmatched_alert,
+        )
+
+        job_id, tenant_id, ingestion_mode, reject_reason, inactive_job_id = (
+            await _resolve_routing(db, recipient, subject, forwarding_email, sender=sender)
         )
 
         if not job_id:
             logger.warning("Unroutable email from=%s — %s", sender, reject_reason)
-            await _log_ingest(db, message_id, sender, recipient, subject,
-                              None, None, None, "unassigned", reject_reason, "unknown")
+            intake_log_id = await _log_ingest(
+                db, message_id, sender, recipient, subject,
+                None, None, None, "unassigned", reject_reason, "unknown",
+            )
+
+            # Candidate notification for identifiable unrouted cases
+            if inactive_job_id:
+                await queue_candidate_notification(
+                    db,
+                    sender_email=sender,
+                    sender_name=sender_name,
+                    tenant_id=None,
+                    job_id=inactive_job_id,
+                    ingestion_mode=ingestion_mode,
+                    attachment_results=[AttachmentResult(filename=None, status=IntakeStatus.JOB_INACTIVE)],
+                    intake_log_id=intake_log_id,
+                )
+                await queue_recruiter_inactive_alert(
+                    db, job_id=inactive_job_id, intake_log_id=intake_log_id,
+                )
+            elif ingestion_mode == "forwarding":
+                # Forwarding inbox: no job code or unknown job code — tell candidate
+                await queue_candidate_notification(
+                    db,
+                    sender_email=sender,
+                    sender_name=sender_name,
+                    tenant_id=None,
+                    job_id=None,
+                    ingestion_mode=ingestion_mode,
+                    attachment_results=[AttachmentResult(filename=None, status=IntakeStatus.JOB_NOT_IDENTIFIED)],
+                    intake_log_id=intake_log_id,
+                )
+                await queue_recruiter_unmatched_alert(db, intake_log_id=intake_log_id)
+
             imap.store(msg_id_bytes, "+FLAGS", "\\Seen")
             return
 
         # ── Attachment processing ─────────────────────────────────────────
-        processed_any = False
+        processed_any    = False
+        attachment_results: list[AttachmentResult] = []
+        last_intake_log_id: str | None = None
 
         for part in msg.walk():
             content_type = part.get_content_type().lower()
@@ -246,15 +288,39 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     elif ext == "doc":
                         content_type = "application/msword"
                     else:
-                        await _log_ingest(db, message_id, sender, recipient, subject,
-                                          tenant_id, job_id, None, "rejected",
-                                          f"Unsupported file type: {filename}", ingestion_mode)
+                        last_intake_log_id = await _log_ingest(
+                            db, message_id, sender, recipient, subject,
+                            tenant_id, job_id, None, "rejected",
+                            f"Unsupported file type: {filename}", ingestion_mode,
+                        )
+                        attachment_results.append(AttachmentResult(
+                            filename=filename,
+                            status=IntakeStatus.UNSUPPORTED_FILE_TYPE,
+                            error_detail=f"Unsupported extension: {ext}",
+                        ))
                         continue
                 else:
                     continue
 
             attachment_bytes = part.get_payload(decode=True)
             if not attachment_bytes:
+                continue
+
+            # File size check
+            max_bytes = cfg.max_file_size_mb * 1024 * 1024
+            if len(attachment_bytes) > max_bytes:
+                fname_for_log = filename or f"cv.{ATTACHMENT_MIME_TYPES.get(content_type, 'pdf')}"
+                last_intake_log_id = await _log_ingest(
+                    db, message_id, sender, recipient, subject,
+                    tenant_id, job_id, None, "rejected",
+                    f"File size {len(attachment_bytes)} bytes exceeds limit {max_bytes}",
+                    ingestion_mode,
+                )
+                attachment_results.append(AttachmentResult(
+                    filename=fname_for_log,
+                    status=IntakeStatus.FILE_SIZE_EXCEEDED,
+                    error_detail=f"Size {len(attachment_bytes)} > limit {max_bytes}",
+                ))
                 continue
 
             filename  = filename or f"cv.{ATTACHMENT_MIME_TYPES[content_type]}"
@@ -356,10 +422,17 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     except Exception:
                         pass
 
-                await _log_ingest(db, message_id, sender, recipient, subject,
-                                  tenant_id, job_id, None, "duplicate",
-                                  "Identical file already processed", ingestion_mode,
-                                  file_hash, filename)
+                last_intake_log_id = await _log_ingest(
+                    db, message_id, sender, recipient, subject,
+                    tenant_id, job_id, None, "duplicate",
+                    "Identical file already processed", ingestion_mode,
+                    file_hash, filename,
+                )
+                attachment_results.append(AttachmentResult(
+                    filename=filename,
+                    status=IntakeStatus.DUPLICATE_APPLICATION,
+                    duplicate_log_id=log_id,
+                ))
                 processed_any = True  # already in system, safe to mark seen
                 continue
 
@@ -373,9 +446,16 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     "Application inserted: id=%s file=%s job=%s tenant=%s uid=%s",
                     application_id, filename, job_id, tenant_id, msg_id_bytes,
                 )
-                await _log_ingest(db, message_id, sender, recipient, subject,
-                                  tenant_id, job_id, application_id, "scored",
-                                  None, ingestion_mode, file_hash, filename)
+                last_intake_log_id = await _log_ingest(
+                    db, message_id, sender, recipient, subject,
+                    tenant_id, job_id, application_id, "scored",
+                    None, ingestion_mode, file_hash, filename,
+                )
+                attachment_results.append(AttachmentResult(
+                    filename=filename,
+                    status=IntakeStatus.RECEIVED_SUCCESSFULLY,
+                    application_id=application_id,
+                ))
                 logger.info(
                     "Ingest logged — application_id=%s uid=%s", application_id, msg_id_bytes
                 )
@@ -393,16 +473,54 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                 except Exception as rb_exc:
                     logger.warning("Rollback after processing error failed: %s", rb_exc)
                 try:
-                    await _log_ingest(db, message_id, sender, recipient, subject,
-                                      tenant_id, job_id, None, "failed",
-                                      str(exc), ingestion_mode, file_hash, filename)
+                    exc_str = str(exc).lower()
+                    if "password" in exc_str or "encrypted" in exc_str:
+                        err_status = IntakeStatus.FILE_PASSWORD_PROTECTED
+                    elif "empty" in exc_str or "no text" in exc_str:
+                        err_status = IntakeStatus.EMPTY_CV_CONTENT
+                    else:
+                        err_status = IntakeStatus.FILE_CORRUPTED
+                    last_intake_log_id = await _log_ingest(
+                        db, message_id, sender, recipient, subject,
+                        tenant_id, job_id, None, "failed",
+                        str(exc), ingestion_mode, file_hash, filename,
+                    )
+                    attachment_results.append(AttachmentResult(
+                        filename=filename,
+                        status=err_status,
+                        error_detail=str(exc),
+                    ))
                 except Exception as log_exc:
                     logger.error("Could not write failure log: %s", log_exc)
 
         if not processed_any and not had_processing_error:
-            await _log_ingest(db, message_id, sender, recipient, subject,
-                              tenant_id, job_id, None, "skipped",
-                              "No valid attachments found", ingestion_mode)
+            last_intake_log_id = await _log_ingest(
+                db, message_id, sender, recipient, subject,
+                tenant_id, job_id, None, "skipped",
+                "No valid attachments found", ingestion_mode,
+            )
+            attachment_results.append(AttachmentResult(
+                filename=None,
+                status=IntakeStatus.NO_ATTACHMENT,
+            ))
+
+        # ── Consolidated candidate notification ───────────────────────────
+        if attachment_results:
+            try:
+                await queue_candidate_notification(
+                    db,
+                    sender_email=sender,
+                    sender_name=sender_name,
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    ingestion_mode=ingestion_mode,
+                    attachment_results=attachment_results,
+                    intake_log_id=last_intake_log_id,
+                )
+            except Exception as notif_exc:
+                logger.warning(
+                    "Notification queue failed for uid=%s: %s", msg_id_bytes, notif_exc,
+                )
 
     # ── Mark as seen ONLY after session closes cleanly ────────────────────────
     # If any attachment processing raised an exception we keep the email UNSEEN
@@ -421,60 +539,79 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
 
 async def _resolve_routing(
     db, recipient: str, subject: str, forwarding_email: str, sender: str = ""
-) -> tuple[str | None, str | None, str, str | None]:
-    """Return (job_id, tenant_id, ingestion_mode, reject_reason)."""
+) -> tuple[str | None, str | None, str, str | None, str | None]:
+    """
+    Return (job_id, tenant_id, ingestion_mode, reject_reason, inactive_job_id).
+
+    inactive_job_id is populated when a job WAS found by address/code but its
+    status is not 'active'.  Callers use this to trigger per-job recruiter alerts
+    and send candidates a JOB_INACTIVE notification.
+    """
     from sqlalchemy import text
 
     # Option 2: platform_email alias — TO matches a job's dedicated address
     job_row = await db.execute(
         text("""
-            SELECT j.job_id, j.tenant_id, j.receive_cv_via_platform_email
+            SELECT j.job_id, j.tenant_id, j.status, j.receive_cv_via_platform_email
             FROM jobs j
-            WHERE LOWER(j.platform_email) = :email AND j.status = 'active'
+            WHERE LOWER(j.platform_email) = :email
         """),
         {"email": recipient},
     )
     job = job_row.mappings().first()
     if job:
+        if job["status"] != "active":
+            return (
+                None, None, "platform_email",
+                f"Job is not active (status: {job['status']})",
+                str(job["job_id"]),  # inactive_job_id for recruiter alert
+            )
         if not job["receive_cv_via_platform_email"]:
-            return None, None, "platform_email", "Platform email receiving disabled for this job"
-        return str(job["job_id"]), str(job["tenant_id"]), "platform_email", None
+            # Active job but email intake disabled — no inactive_job_id (not a status issue)
+            return None, None, "platform_email", "Platform email receiving disabled for this job", None
+        return str(job["job_id"]), str(job["tenant_id"]), "platform_email", None, None
 
     # Option 1: forwarding — recipient is the central inbox, job from subject
     if recipient == forwarding_email or recipient.split("@")[0] == forwarding_email.split("@")[0]:
         match = JOB_CODE_RE.search(subject)
         if not match:
-            return None, None, "forwarding", f"No job code found in subject: '{subject}'"
+            return None, None, "forwarding", f"No job code found in subject: '{subject}'", None
 
         job_code = f"JOB-{match.group(1)}-{int(match.group(2)):04d}"
 
         fwd_row = await db.execute(
             text("""
-                SELECT j.job_id, j.tenant_id,
+                SELECT j.job_id, j.tenant_id, j.status,
                        j.receive_cv_via_forwarding_email,
                        j.restrict_forwarding_sender_to_tenant_email,
                        t.email_domain
                 FROM jobs j
                 JOIN tenants t ON t.tenant_id = j.tenant_id
-                WHERE UPPER(j.job_code) = UPPER(:code) AND j.status = 'active'
+                WHERE UPPER(j.job_code) = UPPER(:code)
             """),
             {"code": job_code},
         )
         fwd_job = fwd_row.mappings().first()
         if not fwd_job:
-            return None, None, "forwarding", f"Job code '{job_code}' not found or not active"
+            return None, None, "forwarding", f"Job code '{job_code}' not found", None
+        if fwd_job["status"] != "active":
+            return (
+                None, None, "forwarding",
+                f"Job '{job_code}' is not active (status: {fwd_job['status']})",
+                str(fwd_job["job_id"]),
+            )
         if not fwd_job["receive_cv_via_forwarding_email"]:
-            return None, None, "forwarding", f"Forwarding receiving disabled for job '{job_code}'"
+            return None, None, "forwarding", f"Forwarding receiving disabled for job '{job_code}'", None
         if fwd_job["restrict_forwarding_sender_to_tenant_email"] and fwd_job["email_domain"]:
             sender_domain = sender.split("@")[-1].lower() if "@" in sender else ""
             if sender_domain != fwd_job["email_domain"].lower():
                 return None, None, "forwarding", (
                     f"Sender domain '{sender_domain}' not allowed for job '{job_code}' "
                     f"(tenant domain: {fwd_job['email_domain']})"
-                )
-        return str(fwd_job["job_id"]), str(fwd_job["tenant_id"]), "forwarding", None
+                ), None
+        return str(fwd_job["job_id"]), str(fwd_job["tenant_id"]), "forwarding", None, None
 
-    return None, None, "unknown", f"Recipient '{recipient}' not recognised"
+    return None, None, "unknown", f"Recipient '{recipient}' not recognised", None
 
 
 # ── Application creation + score enqueue ─────────────────────────────────────
@@ -579,10 +716,11 @@ async def _log_ingest(
     ingestion_mode: str = "unknown",
     attachment_hash: str | None = None,
     attachment_name: str | None = None,
-) -> None:
+) -> str | None:
+    """Insert / update an email_ingest_log row and return its log_id."""
     from sqlalchemy import text
 
-    await db.execute(
+    result = await db.execute(
         text("""
             INSERT INTO email_ingest_log (
                 message_id, sender_email, recipient_email, subject,
@@ -598,6 +736,7 @@ async def _log_ingest(
             ON CONFLICT (message_id) DO UPDATE SET
                 status        = EXCLUDED.status,
                 error_message = EXCLUDED.error_message
+            RETURNING log_id
         """),
         {
             "mid":      message_id,
@@ -614,7 +753,9 @@ async def _log_ingest(
             "att_name": attachment_name,
         },
     )
+    row = result.fetchone()
     await db.commit()
+    return str(row[0]) if row else None
 
 
 # ── Header decoding ───────────────────────────────────────────────────────────

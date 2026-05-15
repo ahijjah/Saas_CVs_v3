@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = ["https://app.ai970.cloud", "http://localhost:5173"]
 
+    # Intake notifications
+    # Default threshold for JOB_NOT_IDENTIFIED recruiter alerts.
+    # Overridden at runtime by system_config.unmatched_alert_threshold.
+    unmatched_alert_threshold: int = 50
+
     # Misc
     debug: bool = False
     environment: str = "production"
