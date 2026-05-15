@@ -185,21 +185,26 @@ async def _update_status(
     error_message: str | None = None,
     increment_retry: bool = False,
 ) -> None:
+    from datetime import datetime, timezone
     from sqlalchemy import text
+
+    sent_at = datetime.now(timezone.utc) if status == "sent" else None
+
     await db.execute(
         text("""
             UPDATE notification_log
             SET status        = :status,
                 error_message = :err,
-                sent_at       = CASE WHEN :status = 'sent' THEN NOW() ELSE NULL END,
+                sent_at       = :sent_at,
                 retry_count   = retry_count + :inc
             WHERE notification_id = :nid
         """),
         {
-            "nid":    notification_id,
-            "status": status,
-            "err":    error_message,
-            "inc":    1 if increment_retry else 0,
+            "nid":     notification_id,
+            "status":  status,
+            "err":     error_message,
+            "sent_at": sent_at,
+            "inc":     1 if increment_retry else 0,
         },
     )
 
