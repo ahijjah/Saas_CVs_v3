@@ -14,6 +14,7 @@ celery_app = Celery(
         "workers.cv_intake",
         "workers.criteria_worker",
         "workers.notification_worker",
+        "workers.watchdog",
     ],
 )
 
@@ -32,5 +33,9 @@ celery_app.conf.beat_schedule = {
     "poll-imap-inbox": {
         "task": "workers.cv_intake.poll_imap_inbox",
         "schedule": settings.imap_poll_interval,  # seconds
+    },
+    "reset-stuck-scoring-tasks": {
+        "task": "workers.watchdog.reset_stuck_scoring_tasks",
+        "schedule": 300,  # every 5 minutes
     },
 }
