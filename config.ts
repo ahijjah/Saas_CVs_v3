@@ -57,6 +57,9 @@ export const WEBHOOK_CONFIG = {
   DUPLICATE_CV_BASE_URL:        `${API_BASE}/jobs`,
   // CV file download (append /{application_id}/cv)
   CV_DOWNLOAD_BASE_URL:         `${API_BASE}/applications`,
+  // Public (no-auth) endpoints
+  PUBLIC_JOB_BASE_URL:          `${API_BASE}/jobs/public`,   // append /{job_code}
+  PUBLIC_APPLY_URL:             `${API_BASE}/applications/public`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

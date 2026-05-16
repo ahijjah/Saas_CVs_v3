@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-
-const API_BASE = 'http://72.62.31.221:8000';
+import { WEBHOOK_CONFIG } from '../config';
 
 interface PublicJobApplyProps {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -18,28 +17,32 @@ interface PublicJobInfo {
   experience_level?: string;
   description?: string;
   application_deadline?: string;
+  intake_open: boolean;
+  deadline_passed?: boolean;
+  max_applications?: number | null;
+  applications_count?: number | null;
 }
 
 export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
   const { jobCode } = useParams<{ jobCode: string }>();
   const [job, setJob] = useState<PublicJobInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [form, setForm] = useState({
-    candidate_name: '',
-    email: '',
-    phone: '',
-    cover_letter: '',
-  });
+  const [form, setForm] = useState({ candidate_name: '', email: '', phone: '', cover_letter: '' });
   const [file, setFile] = useState<File | null>(null);
 
   useEffect(() => {
-    if (!jobCode) return;
-    fetch(`${API_BASE}/jobs/public/${jobCode}`)
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(data => setJob(data))
-      .catch(() => setJob(null))
+    if (!jobCode) { setLoading(false); setNotFound(true); return; }
+    fetch(`${WEBHOOK_CONFIG.PUBLIC_JOB_BASE_URL}/${encodeURIComponent(jobCode)}`)
+      .then(r => {
+        if (r.status === 404) { setNotFound(true); return null; }
+        if (!r.ok) throw new Error('fetch failed');
+        return r.json();
+      })
+      .then(data => { if (data) setJob(data); })
+      .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [jobCode]);
 
@@ -47,7 +50,7 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
     e.preventDefault();
     if (!file) { addToast('Please attach your CV.', 'error'); return; }
     if (!form.candidate_name.trim() || !form.email.trim()) {
-      addToast('Name and email are required.', 'error'); return;
+      addToast('Full name and email address are required.', 'error'); return;
     }
     setSubmitting(true);
     try {
@@ -58,13 +61,17 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
       if (form.phone.trim()) fd.append('phone', form.phone.trim());
       if (form.cover_letter.trim()) fd.append('cover_letter', form.cover_letter.trim());
       fd.append('file', file);
-      const resp = await fetch(`${API_BASE}/applications/public`, { method: 'POST', body: fd });
+      const resp = await fetch(WEBHOOK_CONFIG.PUBLIC_APPLY_URL, { method: 'POST', body: fd });
+      if (resp.status === 409) {
+        addToast('This position is no longer accepting applications.', 'info');
+        setJob(prev => prev ? { ...prev, intake_open: false } : prev);
+        return;
+      }
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
-        throw new Error(err.detail || 'Submission failed.');
+        throw new Error((err as any).detail || 'Submission failed.');
       }
       setSubmitted(true);
-      addToast('Application submitted successfully!', 'success');
     } catch (err: any) {
       addToast(err.message || 'Failed to submit application.', 'error');
     } finally {
@@ -72,6 +79,7 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
     }
   };
 
+  // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -80,7 +88,8 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
     );
   }
 
-  if (!job) {
+  // ── Not found ──────────────────────────────────────────────────────────────
+  if (notFound || !job) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-8 text-center">
         <div className="bg-white rounded-3xl shadow-sm border border-border p-10 max-w-md w-full">
@@ -91,11 +100,13 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
           </div>
           <h2 className="text-lg font-black text-textMain mb-2">Position Not Found</h2>
           <p className="text-sm text-textMuted">This job posting may have closed or the link is incorrect.</p>
+          <p className="text-xs text-textMuted mt-4 font-mono opacity-60">Ref: {jobCode}</p>
         </div>
       </div>
     );
   }
 
+  // ── Submitted ──────────────────────────────────────────────────────────────
   if (submitted) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-8 text-center">
@@ -114,10 +125,14 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
     );
   }
 
+  const intakeOpen = job.intake_open !== false;
+
+  // ── Apply form ─────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4">
       <div className="max-w-2xl mx-auto">
-        {/* Header */}
+
+        {/* Job header card */}
         <div className="bg-white rounded-3xl shadow-sm border border-border p-8 mb-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white font-black text-lg">C</div>
@@ -129,7 +144,7 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
               {[job.job_client, job.location].filter(Boolean).join(' · ')}
             </p>
           )}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mb-3">
             {job.job_type && (
               <span className="px-3 py-1 bg-slate-100 text-textMuted text-[11px] font-bold rounded-lg">{job.job_type}</span>
             )}
@@ -146,15 +161,36 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
             )}
           </div>
           {job.description && (
-            <details className="mt-4">
+            <details className="mt-2">
               <summary className="text-xs font-black text-primary cursor-pointer hover:text-primaryDark uppercase tracking-widest">View Job Description</summary>
               <p className="mt-3 text-sm text-textMain leading-relaxed opacity-80 whitespace-pre-wrap">{job.description}</p>
             </details>
           )}
         </div>
 
-        {/* Application Form */}
-        <div className="bg-white rounded-3xl shadow-sm border border-border p-8">
+        {/* Intake closed banner */}
+        {!intakeOpen && (
+          <div className="bg-slate-100 rounded-2xl border border-slate-200 p-6 text-center mb-6">
+            <div className="w-10 h-10 bg-slate-200 rounded-xl flex items-center justify-center mx-auto mb-3">
+              <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
+            </div>
+            <p className="text-sm font-black text-slate-700 mb-1">
+              {job.deadline_passed
+                ? 'Application deadline has passed'
+                : 'This position is no longer accepting applications.'}
+            </p>
+            <p className="text-xs text-slate-500 mt-1" dir="rtl">
+              {job.deadline_passed
+                ? 'انتهت مدة التقديم لهذا الشاغر.'
+                : 'لم يعد هذا الشاغر يستقبل طلبات جديدة.'}
+            </p>
+          </div>
+        )}
+
+        {/* Application form */}
+        <div className={`bg-white rounded-3xl shadow-sm border border-border p-8 ${!intakeOpen ? 'opacity-50 pointer-events-none select-none' : ''}`}>
           <h2 className="text-sm font-black text-textMain uppercase tracking-widest mb-6 flex items-center">
             <span className="w-2 h-4 bg-primary rounded-full mr-3" />
             Your Application
@@ -166,9 +202,10 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
                 <input
                   type="text"
                   required
+                  disabled={!intakeOpen}
                   value={form.candidate_name}
                   onChange={e => setForm(p => ({ ...p, candidate_name: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:bg-slate-50"
                   placeholder="Your full name"
                 />
               </div>
@@ -177,9 +214,10 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
                 <input
                   type="email"
                   required
+                  disabled={!intakeOpen}
                   value={form.email}
                   onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:bg-slate-50"
                   placeholder="you@example.com"
                 />
               </div>
@@ -188,15 +226,16 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
               <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Phone (optional)</label>
               <input
                 type="tel"
+                disabled={!intakeOpen}
                 value={form.phone}
                 onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
-                className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:bg-slate-50"
                 placeholder="+1 555 000 0000"
               />
             </div>
             <div className="space-y-1">
               <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">CV / Resume *</label>
-              <label className="flex items-center gap-3 px-4 py-3 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 hover:bg-slate-50 transition-colors">
+              <label className={`flex items-center gap-3 px-4 py-3 border-2 border-dashed border-border rounded-xl transition-colors ${intakeOpen ? 'cursor-pointer hover:border-primary/50 hover:bg-slate-50' : 'cursor-not-allowed bg-slate-50'}`}>
                 <svg className="w-5 h-5 text-textMuted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                 </svg>
@@ -205,8 +244,9 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
                 </span>
                 <input
                   type="file"
-                  accept=".pdf,.doc,.docx"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                   className="hidden"
+                  disabled={!intakeOpen}
                   onChange={e => setFile(e.target.files?.[0] || null)}
                 />
               </label>
@@ -215,16 +255,17 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
               <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Cover Letter (optional)</label>
               <textarea
                 rows={4}
+                disabled={!intakeOpen}
                 value={form.cover_letter}
                 onChange={e => setForm(p => ({ ...p, cover_letter: e.target.value }))}
-                className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none"
+                className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none disabled:bg-slate-50"
                 placeholder="Tell us why you're a great fit..."
               />
             </div>
             <button
               type="submit"
-              disabled={submitting}
-              className="w-full py-3 bg-primary text-white font-black rounded-xl hover:bg-primaryDark transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              disabled={submitting || !intakeOpen}
+              className="w-full py-3 bg-primary text-white font-black rounded-xl hover:bg-primaryDark transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {submitting && (
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">

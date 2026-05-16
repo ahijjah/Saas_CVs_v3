@@ -87,6 +87,8 @@ class UpdateJobMetadataRequest(BaseModel):
     application_deadline: str | None = None  # ISO date string YYYY-MM-DD
     vacancies_count: int | None = None
     status: str | None = None  # active / inactive / closed
+    max_applications: int | None = None  # 0 = clear limit (set to NULL)
+    auto_close_when_limit_reached: bool | None = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -282,6 +284,7 @@ async def get_job_details(
                 j.send_confirmation_to_cv_email_for_platform_email,
                 j.enable_ai_comparison,
                 j.qualified_threshold, j.partial_threshold,
+                j.max_applications, j.auto_close_when_limit_reached,
                 j.created_at, j.updated_at,
                 cu.full_name AS created_by_name,
                 uu.full_name AS updated_by_name,
@@ -289,6 +292,10 @@ async def get_job_details(
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected,
+                COUNT(a.application_id) FILTER (
+                    WHERE (a.duplicate_status IS NULL OR a.duplicate_status = 'not_duplicate')
+                      AND a.processing_status != 'failed'
+                ) AS applications_valid_count,
                 t.forwarding_email AS tenant_forwarding_email
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
@@ -362,12 +369,15 @@ async def get_job_details(
             "updated_at":           job["updated_at"].isoformat() if job["updated_at"] else None,
             "created_by_name":      job["created_by_name"] or "",
             "updated_by_name":      job["updated_by_name"] or "",
-            "applications_total":     job["applications_total"],
-            "applications_qualified": job["applications_qualified"],
-            "applications_partial":   job["applications_partial"],
-            "applications_rejected":  job["applications_rejected"],
-            "qualified_threshold":    job["qualified_threshold"],
-            "partial_threshold":      job["partial_threshold"],
+            "applications_total":       job["applications_total"],
+            "applications_qualified":   job["applications_qualified"],
+            "applications_partial":     job["applications_partial"],
+            "applications_rejected":    job["applications_rejected"],
+            "applications_valid_count": job["applications_valid_count"],
+            "qualified_threshold":      job["qualified_threshold"],
+            "partial_threshold":        job["partial_threshold"],
+            "max_applications":               job["max_applications"],
+            "auto_close_when_limit_reached":  job["auto_close_when_limit_reached"],
             "criteria_extraction_status": extraction_status,
             "criteria_extraction_error":  extraction_error,
             "ingestion_note": (
@@ -874,6 +884,11 @@ async def update_job_metadata(
         updates["application_deadline"] = body.application_deadline or None
     if body.vacancies_count is not None:
         updates["vacancies_count"] = max(1, body.vacancies_count)
+    if body.max_applications is not None:
+        # 0 means "clear the limit" → store as NULL
+        updates["max_applications"] = body.max_applications if body.max_applications > 0 else None
+    if body.auto_close_when_limit_reached is not None:
+        updates["auto_close_when_limit_reached"] = body.auto_close_when_limit_reached
     if body.status is not None:
         s = body.status.lower()
         if s not in ALLOWED_STATUS:

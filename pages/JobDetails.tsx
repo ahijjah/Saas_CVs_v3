@@ -138,6 +138,19 @@ const T = {
     intakeChannels: 'Intake Channels',
     appSummary: 'Applications Summary',
     notSet: 'Not set',
+    appControls: 'Application Controls',
+    maxApplications: 'Maximum Applications',
+    maxApplicationsHint: 'Limit the number of valid submissions accepted. Leave empty for unlimited.',
+    autoClose: 'Auto-close when limit reached',
+    autoCloseHint: 'Automatically set job to Closed when the limit is hit.',
+    validCount: 'Valid received',
+    unlimited: 'Unlimited',
+    intakeOpen: 'Intake Open',
+    intakeClosed: 'Intake Closed',
+    editControls: 'Edit',
+    saveControls: 'Save',
+    savingControls: 'Saving...',
+    controlsSaved: 'Application controls updated',
   },
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
@@ -258,6 +271,19 @@ const T = {
     intakeChannels: 'قنوات الاستقبال',
     appSummary: 'ملخص الطلبات',
     notSet: 'غير محدد',
+    appControls: 'ضوابط الاستقبال',
+    maxApplications: 'الحد الأقصى للطلبات',
+    maxApplicationsHint: 'تحديد عدد الطلبات المقبولة. اتركه فارغاً لعدم التحديد.',
+    autoClose: 'الإغلاق التلقائي عند بلوغ الحد',
+    autoCloseHint: 'تغيير حالة الوظيفة إلى مغلقة تلقائياً عند الوصول للحد.',
+    validCount: 'المستلمة الصالحة',
+    unlimited: 'غير محدود',
+    intakeOpen: 'الاستقبال مفتوح',
+    intakeClosed: 'الاستقبال مغلق',
+    editControls: 'تعديل',
+    saveControls: 'حفظ',
+    savingControls: 'جارٍ الحفظ...',
+    controlsSaved: 'تم تحديث ضوابط الاستقبال',
   },
 };
 
@@ -302,6 +328,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [draftMeta, setDraftMeta] = useState<Record<string, string>>({});
   const [savingMeta, setSavingMeta] = useState(false);
   const [copiedApplyLink, setCopiedApplyLink] = useState(false);
+
+  // Application controls (max_applications, auto_close)
+  const [editingControls, setEditingControls] = useState(false);
+  const [draftControls, setDraftControls] = useState<{ max_applications: string; auto_close: boolean }>({ max_applications: '', auto_close: true });
+  const [savingControls, setSavingControls] = useState(false);
 
   // Criteria content editing
   const [editingCriteria, setEditingCriteria] = useState(false);
@@ -791,6 +822,42 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     }
   }, [details, draftMeta, auth.token, addToast, t.metaSaved]);
 
+  const handleControlsEdit = useCallback(() => {
+    if (!details) return;
+    setDraftControls({
+      max_applications: (details as any).max_applications != null ? String((details as any).max_applications) : '',
+      auto_close: (details as any).auto_close_when_limit_reached ?? true,
+    });
+    setEditingControls(true);
+  }, [details]);
+
+  const handleControlsSave = useCallback(async () => {
+    if (!details) return;
+    setSavingControls(true);
+    try {
+      const maxVal = draftControls.max_applications.trim();
+      await apiService.put(
+        `${WEBHOOK_CONFIG.UPDATE_JOB_URL}/${(details as any).job_id}`,
+        {
+          max_applications: maxVal === '' ? 0 : Math.max(1, parseInt(maxVal) || 1),
+          auto_close_when_limit_reached: draftControls.auto_close,
+        },
+        auth.token!
+      );
+      const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
+      if (data) {
+        const p = Array.isArray(data) ? data[0] : data;
+        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis });
+      }
+      setEditingControls(false);
+      addToast(t.controlsSaved, 'success');
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to update application controls.', 'error');
+    } finally {
+      setSavingControls(false);
+    }
+  }, [details, draftControls, auth.token, addToast, t.controlsSaved]);
+
   const handleCriteriaEdit = useCallback(() => {
     if (!details) return;
     const a = details.analysis_json ?? {};
@@ -892,11 +959,6 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     try { return JSON.stringify(getter(analysis)) !== JSON.stringify(getter(orig)); } catch { return false; }
   };
   const modifiedBadge = <span className="ml-2 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">{t.modifiedBadge}</span>;
-  const otherCats = [
-    { label: t.certifications, items: analysis?.certifications },
-    { label: t.domainKnowledge, items: analysis?.domain_knowledge },
-    { label: t.otherRequirements, items: analysis?.other_requirements },
-  ];
   const weightTotal = editingWeights ? Object.values(draftWeights).reduce((s, v) => s + v, 0) : 0;
 
   const jobCode = details.job_code || details.job_id;
@@ -1075,6 +1137,92 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaUpdated}</p><p className="text-sm font-bold text-textMain">{(details as any).updated_at ? new Date((details as any).updated_at).toLocaleDateString() : t.notSet}</p></div>
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaCreatedBy}</p><p className="text-sm font-bold text-textMain">{(details as any).created_by_name || t.notSet}</p></div>
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaUpdatedBy}</p><p className="text-sm font-bold text-textMain">{(details as any).updated_by_name || t.notSet}</p></div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Application Controls ────────────────────────────────────────────── */}
+        <div className="border-b border-border px-8 py-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+              </svg>
+              {t.appControls}
+            </h3>
+            {canEdit && !editingControls && (
+              <button onClick={handleControlsEdit} className="flex items-center gap-1.5 text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                {t.editControls}
+              </button>
+            )}
+          </div>
+          {editingControls ? (
+            <div className="space-y-4 animate-fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.maxApplications}</label>
+                  <p className="text-[10px] text-textMuted mb-1">{t.maxApplicationsHint}</p>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder={t.unlimited}
+                    value={draftControls.max_applications}
+                    onChange={e => setDraftControls(p => ({ ...p, max_applications: e.target.value }))}
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  />
+                </div>
+                <div className="space-y-1 flex flex-col justify-end">
+                  <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 border border-border">
+                    <div>
+                      <p className="text-xs font-black text-textMain">{t.autoClose}</p>
+                      <p className="text-[10px] text-textMuted">{t.autoCloseHint}</p>
+                    </div>
+                    <button
+                      onClick={() => setDraftControls(p => ({ ...p, auto_close: !p.auto_close }))}
+                      className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${draftControls.auto_close ? 'bg-primary' : 'bg-slate-300'}`}
+                    >
+                      <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${draftControls.auto_close ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-1">
+                <button onClick={() => setEditingControls(false)} disabled={savingControls} className="px-5 py-2 text-sm font-bold text-textMuted hover:text-textMain transition-colors disabled:opacity-50">{t.cancelMeta}</button>
+                <button onClick={handleControlsSave} disabled={savingControls} className="flex items-center gap-2 px-6 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primaryDark transition-colors disabled:opacity-50">
+                  {savingControls && <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
+                  {savingControls ? t.savingControls : t.saveControls}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-6 items-center">
+              {(() => {
+                const maxApps = (details as any).max_applications as number | null;
+                const validCount = (details as any).applications_valid_count as number ?? 0;
+                const limitReached = maxApps != null && validCount >= maxApps;
+                const intakeOpenStatus = details.job_status?.toLowerCase() === 'active' && !limitReached;
+                return (
+                  <>
+                    <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider ${intakeOpenStatus ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${intakeOpenStatus ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                      {intakeOpenStatus ? t.intakeOpen : t.intakeClosed}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{t.maxApplications}</p>
+                      <p className="text-sm font-bold text-textMain">
+                        {maxApps != null ? `${validCount} / ${maxApps}` : <span className="text-textMuted">{t.unlimited}</span>}
+                      </p>
+                    </div>
+                    {maxApps != null && (
+                      <div>
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{t.autoClose}</p>
+                        <p className="text-sm font-bold text-textMain">{(details as any).auto_close_when_limit_reached ? 'Yes' : 'No'}</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
