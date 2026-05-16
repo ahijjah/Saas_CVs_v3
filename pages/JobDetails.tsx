@@ -99,6 +99,36 @@ const T = {
     confirmPlatformEmail: 'Send confirmation to candidate email on platform email',
     aiComparisonToggle: 'Enable AI comparison scoring',
     aiComparisonHint: 'Run a secondary LLM to compare scoring results.',
+    viewApplications: 'View Applications',
+    jobMetadata: 'Job Details',
+    editMeta: 'Edit',
+    saveMeta: 'Save Changes',
+    cancelMeta: 'Cancel',
+    savingMeta: 'Saving...',
+    metaSaved: 'Job details updated',
+    metaStatusLabel: 'Status',
+    metaLocation: 'Location',
+    metaJobType: 'Job Type',
+    metaDepartment: 'Department',
+    metaExperienceLevel: 'Experience Level',
+    metaWorkMode: 'Work Mode',
+    metaDeadline: 'Application Deadline',
+    metaVacancies: 'Vacancies',
+    metaDuration: 'Duration',
+    metaCreated: 'Created',
+    metaUpdated: 'Last Updated',
+    metaCreatedBy: 'Created By',
+    metaUpdatedBy: 'Last Modified By',
+    metaJobCode: 'Job Code',
+    jobTypeOptions: ['Full-time', 'Part-time', 'Contract', 'Temporary', 'Internship'],
+    expLevelOptions: ['Entry', 'Mid', 'Senior', 'Managerial'],
+    workModeOptions: ['On-site', 'Remote', 'Hybrid'],
+    statusOptions: ['Active', 'Inactive', 'Closed'],
+    publicApplyLink: 'Public Apply Link',
+    publicApplyHint: 'Share this link with candidates to apply directly online.',
+    intakeChannels: 'Intake Channels',
+    appSummary: 'Applications Summary',
+    notSet: 'Not set',
   },
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
@@ -184,6 +214,32 @@ const T = {
     confirmPlatformEmail: 'إرسال تأكيد لبريد المرشح عبر البريد المخصص',
     aiComparisonToggle: 'تفعيل التقييم المقارن بالذكاء الاصطناعي',
     aiComparisonHint: 'تشغيل نموذج ذكاء اصطناعي ثانوي لمقارنة النتائج.',
+    viewApplications: 'عرض الطلبات',
+    jobMetadata: 'تفاصيل الوظيفة',
+    editMeta: 'تعديل',
+    saveMeta: 'حفظ التغييرات',
+    cancelMeta: 'إلغاء',
+    savingMeta: 'جارٍ الحفظ...',
+    metaSaved: 'تم تحديث تفاصيل الوظيفة',
+    metaStatusLabel: 'الحالة',
+    metaLocation: 'الموقع',
+    metaJobType: 'نوع الوظيفة',
+    metaDepartment: 'القسم',
+    metaExperienceLevel: 'مستوى الخبرة',
+    metaWorkMode: 'طريقة العمل',
+    metaDeadline: 'آخر موعد للتقديم',
+    metaVacancies: 'عدد الشواغر',
+    metaDuration: 'المدة',
+    metaCreated: 'تاريخ الإنشاء',
+    metaUpdated: 'آخر تحديث',
+    metaCreatedBy: 'أنشئ بواسطة',
+    metaUpdatedBy: 'عُدّل بواسطة',
+    metaJobCode: 'رمز الوظيفة',
+    publicApplyLink: 'رابط التقديم العام',
+    publicApplyHint: 'شارك هذا الرابط مع المرشحين للتقديم مباشرة عبر الإنترنت.',
+    intakeChannels: 'قنوات الاستقبال',
+    appSummary: 'ملخص الطلبات',
+    notSet: 'غير محدد',
   },
 };
 
@@ -191,6 +247,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const { lang, isAr } = useLanguage();
   const t = T[lang];
   const isSuperAdmin = (auth.user?.role || '').toLowerCase() === 'super_admin';
+  const role = (auth.user?.role || '').toLowerCase();
+  const canEdit = role === 'admin' || role === 'hr_manager';
 
   const [details, setDetails] = useState<JobDetailsType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -222,6 +280,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [resettingStuck, setResettingStuck] = useState(false);
   const prevIsProcessingRef = useRef<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [draftMeta, setDraftMeta] = useState<Record<string, string>>({});
+  const [savingMeta, setSavingMeta] = useState(false);
+  const [copiedApplyLink, setCopiedApplyLink] = useState(false);
 
   // ── Initial job details fetch ───────────────────────────────────────────────
   useEffect(() => {
@@ -640,6 +702,58 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     }
   }, [auth.token, addToast]);
 
+  const handleMetaEdit = useCallback(() => {
+    if (!details) return;
+    setDraftMeta({
+      title:                (details as any).job_title || '',
+      department:           (details as any).job_client || '',
+      location:             (details as any).location || '',
+      job_type:             (details as any).job_type || '',
+      duration:             (details as any).duration || '',
+      experience_level:     (details as any).experience_level || '',
+      work_mode:            (details as any).work_mode || '',
+      application_deadline: (details as any).application_deadline || '',
+      vacancies_count:      String((details as any).vacancies_count || ''),
+      status:               ((details as any).job_status || 'active').toLowerCase(),
+    });
+    setEditingMeta(true);
+  }, [details]);
+
+  const handleMetaSave = useCallback(async () => {
+    if (!details) return;
+    setSavingMeta(true);
+    try {
+      const payload: Record<string, string | number | null> = {
+        department:           draftMeta.department,
+        location:             draftMeta.location,
+        job_type:             draftMeta.job_type,
+        duration:             draftMeta.duration,
+        experience_level:     draftMeta.experience_level,
+        work_mode:            draftMeta.work_mode,
+        application_deadline: draftMeta.application_deadline || null,
+        vacancies_count:      parseInt(draftMeta.vacancies_count) || 1,
+        status:               draftMeta.status,
+      };
+      if (draftMeta.title) payload.title = draftMeta.title;
+      await apiService.put(
+        `${WEBHOOK_CONFIG.UPDATE_JOB_URL}/${(details as any).job_id}`,
+        payload,
+        auth.token!
+      );
+      const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
+      if (data) {
+        const p = Array.isArray(data) ? data[0] : data;
+        setDetails({ ...p.details, analysis_json: p.analysis });
+      }
+      setEditingMeta(false);
+      addToast(t.metaSaved, 'success');
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to update job.', 'error');
+    } finally {
+      setSavingMeta(false);
+    }
+  }, [details, draftMeta, auth.token, addToast, t.metaSaved]);
+
   // ── Derived values ─────────────────────────────────────────────────────────
 
   if (loading) {
@@ -667,6 +781,13 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   const analysis = details.analysis_json ?? undefined;
   const metaValues = [details.job_client, details.job_type || 'Full-time', details.location || 'Remote', details.posted_date || '-', details.closing_date || '-'];
+  const publicApplyUrl = `${window.location.origin}/apply/${details.job_code}`;
+  const statusColorMap: Record<string, string> = {
+    active: 'bg-emerald-100 text-emerald-700',
+    inactive: 'bg-amber-100 text-amber-700',
+    closed: 'bg-slate-100 text-slate-500',
+  };
+  const statusColor = statusColorMap[(details.job_status || '').toLowerCase()] || 'bg-slate-100 text-slate-500';
   const kpiValues = [
     { value: details.applications_total, filter: 'all', color: 'text-textMain' },
     { value: details.applications_qualified || 0, filter: 'qualified', color: 'text-success' },
@@ -753,15 +874,120 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button className="bg-primary text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-primary/20">{t.reviewPortal}</button>
+            <button
+              onClick={() => onViewApplications(details.job_id, 'all')}
+              className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primaryDark transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              {t.viewApplications}
+            </button>
           </div>
         </div>
 
-        {/* ── Ways to Receive Applications ─────────────────────────────────── */}
+        {/* ── B. Job Metadata ─────────────────────────────────────────────────── */}
+        <div className="border-b border-border px-8 py-6">
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {t.jobMetadata}
+            </h3>
+            {canEdit && !editingMeta && (
+              <button onClick={handleMetaEdit} className="flex items-center gap-1.5 text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                {t.editMeta}
+              </button>
+            )}
+          </div>
+          {editingMeta ? (
+            <div className="space-y-4 animate-fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaStatusLabel}</label>
+                  <select className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.status} onChange={e => setDraftMeta(p => ({ ...p, status: e.target.value }))}>
+                    {['active', 'inactive', 'closed'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaJobType}</label>
+                  <select className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.job_type} onChange={e => setDraftMeta(p => ({ ...p, job_type: e.target.value }))}>
+                    <option value="">{t.notSet}</option>
+                    {['Full-time', 'Part-time', 'Contract', 'Temporary', 'Internship'].map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaWorkMode}</label>
+                  <select className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.work_mode} onChange={e => setDraftMeta(p => ({ ...p, work_mode: e.target.value }))}>
+                    <option value="">{t.notSet}</option>
+                    {['On-site', 'Remote', 'Hybrid'].map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaExperienceLevel}</label>
+                  <select className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.experience_level} onChange={e => setDraftMeta(p => ({ ...p, experience_level: e.target.value }))}>
+                    <option value="">{t.notSet}</option>
+                    {['Entry', 'Mid', 'Senior', 'Managerial'].map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaLocation}</label>
+                  <input type="text" placeholder="e.g. Riyadh, SA" className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.location} onChange={e => setDraftMeta(p => ({ ...p, location: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaDepartment}</label>
+                  <input type="text" placeholder="Engineering" className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.department} onChange={e => setDraftMeta(p => ({ ...p, department: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaDeadline}</label>
+                  <input type="date" className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.application_deadline} onChange={e => setDraftMeta(p => ({ ...p, application_deadline: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaVacancies}</label>
+                  <input type="number" min={1} className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.vacancies_count} onChange={e => setDraftMeta(p => ({ ...p, vacancies_count: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaDuration}</label>
+                  <input type="text" placeholder="Permanent / 6 months" className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.duration} onChange={e => setDraftMeta(p => ({ ...p, duration: e.target.value }))} />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => setEditingMeta(false)} disabled={savingMeta} className="px-5 py-2 text-sm font-bold text-textMuted hover:text-textMain transition-colors disabled:opacity-50">{t.cancelMeta}</button>
+                <button onClick={handleMetaSave} disabled={savingMeta} className="flex items-center gap-2 px-6 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primaryDark transition-colors disabled:opacity-50">
+                  {savingMeta && <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
+                  {savingMeta ? t.savingMeta : t.saveMeta}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-4">
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaJobCode}</p><p className="text-sm font-bold text-textMain font-mono">{details.job_code}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaStatusLabel}</p><span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${statusColor}`}>{details.job_status}</span></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaJobType}</p><p className="text-sm font-bold text-textMain">{(details as any).job_type || t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaWorkMode}</p><p className="text-sm font-bold text-textMain">{(details as any).work_mode || t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaExperienceLevel}</p><p className="text-sm font-bold text-textMain">{(details as any).experience_level || t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaLocation}</p><p className="text-sm font-bold text-textMain">{(details as any).location || t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaDepartment}</p><p className="text-sm font-bold text-textMain">{details.job_client || t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaDuration}</p><p className="text-sm font-bold text-textMain">{(details as any).duration || t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaDeadline}</p><p className="text-sm font-bold text-textMain">{(details as any).application_deadline ? new Date((details as any).application_deadline).toLocaleDateString() : t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaVacancies}</p><p className="text-sm font-bold text-textMain">{(details as any).vacancies_count ?? t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaCreated}</p><p className="text-sm font-bold text-textMain">{details.posted_date || t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaUpdated}</p><p className="text-sm font-bold text-textMain">{(details as any).updated_at ? new Date((details as any).updated_at).toLocaleDateString() : t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaCreatedBy}</p><p className="text-sm font-bold text-textMain">{(details as any).created_by_name || t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaUpdatedBy}</p><p className="text-sm font-bold text-textMain">{(details as any).updated_by_name || t.notSet}</p></div>
+            </div>
+          )}
+        </div>
+
+        {/* ── C. Intake Channels ──────────────────────────────────────────────── */}
         <div className="border-b border-border px-8 py-6">
           <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-5 flex items-center gap-2">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-            {t.waysToReceive}
+            {t.intakeChannels}
           </h3>
 
           {/* Top row: Option 1 + Option 2 */}
@@ -863,6 +1089,32 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.receive_cv_via_platform_email ? 'text-success' : 'text-textMuted'}`}>
                 {details.receive_cv_via_platform_email ? `● ${t.enabled}` : `○ ${t.disabled}`}
               </p>
+            </div>
+          </div>
+
+          {/* Public Apply Link */}
+          <div className="mb-4 rounded-2xl border border-violet-200 bg-violet-50/30 p-4">
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 w-7 h-7 bg-violet-100 rounded-lg flex items-center justify-center mt-0.5">
+                <svg className="w-3.5 h-3.5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-black text-violet-900 mb-0.5">{t.publicApplyLink}</p>
+                <p className="text-[10px] text-violet-600/80 mb-2">{t.publicApplyHint}</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-[11px] font-mono bg-white border border-violet-200 rounded-lg px-3 py-1.5 text-violet-700 truncate">
+                    {publicApplyUrl}
+                  </code>
+                  <button
+                    onClick={() => handleCopy(publicApplyUrl, setCopiedApplyLink)}
+                    className="shrink-0 px-3 py-1.5 bg-violet-600 text-white text-[10px] font-black rounded-lg hover:bg-violet-700 transition-colors"
+                  >
+                    {copiedApplyLink ? t.copied : t.copyBtn}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1102,29 +1354,39 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           </div>
         </div>
 
-        {/* Meta labels */}
-        <div className="p-8 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
-          {t.metaLabels.map((label, idx) => (
-            <div key={idx}>
-              <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{label}</p>
-              <p className="text-sm font-bold text-textMain truncate">{metaValues[idx]}</p>
-            </div>
-          ))}
-        </div>
       </section>
 
-      {/* ── KPIs ───────────────────────────────────────────────────────────── */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ── F. Applications Summary ─────────────────────────────────────── */}
+      <section className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
+        <div className="px-8 py-5 border-b border-border flex items-center justify-between">
+          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            {t.appSummary}
+          </h3>
+          <button
+            onClick={() => onViewApplications(details.job_id, 'all')}
+            className="flex items-center gap-1.5 text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors"
+          >
+            {t.viewApplications}
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpiValues.map((kpi, idx) => (
           <button
             key={idx}
             onClick={() => onViewApplications(details.job_id, kpi.filter)}
-            className="bg-white p-5 rounded-2xl border border-border shadow-sm flex flex-col items-center justify-center text-center cursor-pointer hover:border-primary/50 hover:shadow-md transition-all group"
+            className="bg-slate-50 p-5 rounded-2xl border border-border flex flex-col items-center justify-center text-center cursor-pointer hover:border-primary/50 hover:bg-white hover:shadow-md transition-all group"
           >
             <span className={`text-2xl font-black ${kpi.color} group-hover:scale-110 transition-transform`}>{kpi.value}</span>
             <span className="text-[10px] font-black text-textMuted uppercase tracking-widest mt-1 group-hover:text-primary transition-colors">{t.kpiLabels[idx]}</span>
           </button>
         ))}
+        </div>
       </section>
 
       {/* Duplicate submissions */}
@@ -1389,7 +1651,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               <h3 className="text-sm font-black text-textMain uppercase tracking-widest flex items-center">
                 <span className="w-2 h-4 bg-indigo-600 rounded-full mr-3"></span> {t.evalLogic}
               </h3>
-              {!editingWeights && analysis?.scoring_weights && (
+              {canEdit && !editingWeights && analysis?.scoring_weights && (
                 <button onClick={handleEditWeights} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest transition-colors">
                   {t.editWeights}
                 </button>

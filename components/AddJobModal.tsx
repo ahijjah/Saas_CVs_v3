@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { apiService } from '../services/api';
-import { WEBHOOK_CONFIG, GLOBAL_FORWARDING_EMAIL } from '../config';
+import { WEBHOOK_CONFIG } from '../config';
 import { User } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -121,7 +121,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   };
 
   const isFormValid = formData.job_title.trim().length > 0 && formData.job_description.trim().length > 0;
-  const normalizedMode = user?.cv_ingestion_mode?.toLowerCase();
 
   return (
     <div className="fixed inset-0 bg-textMain/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -140,34 +139,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
           </div>
 
           <div className="p-8 space-y-5 max-h-[70vh] overflow-y-auto bg-white">
-
-            {normalizedMode === 'platform_email' && (
-              <div className={`bg-blue-50 ${isAr ? 'border-r-4' : 'border-l-4'} border-blue-500 rounded-xl p-4 flex items-start gap-4`}>
-                <div className="text-blue-500 shrink-0 mt-0.5">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-blue-900 uppercase tracking-tight">{t.inboxNote}</h4>
-                  <p className="text-sm text-blue-800 leading-relaxed mt-1">{t.inboxDesc}</p>
-                </div>
-              </div>
-            )}
-
-            {normalizedMode === 'forwarding' && (
-              <div className={`bg-amber-50 ${isAr ? 'border-r-4' : 'border-l-4'} border-amber-500 rounded-xl p-4 flex items-start gap-4`}>
-                <div className="text-amber-500 shrink-0 mt-0.5">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-amber-900 uppercase tracking-tight">{t.fwdNote}</h4>
-                  <p className="text-sm text-amber-800 leading-relaxed mt-1">{t.fwdDesc(GLOBAL_FORWARDING_EMAIL)}</p>
-                </div>
-              </div>
-            )}
 
             {/* Title + Department */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

@@ -64,6 +64,19 @@ class UpdateJobSettingsRequest(BaseModel):
     enable_ai_comparison:                             bool | None = None
 
 
+class UpdateJobMetadataRequest(BaseModel):
+    title: str | None = None
+    department: str | None = None
+    location: str | None = None
+    job_type: str | None = None
+    duration: str | None = None
+    experience_level: str | None = None
+    work_mode: str | None = None
+    application_deadline: str | None = None  # ISO date string YYYY-MM-DD
+    vacancies_count: int | None = None
+    status: str | None = None  # active / inactive / closed
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _get_forwarding_email(db) -> str:
@@ -244,6 +257,9 @@ async def get_job_details(
         text("""
             SELECT
                 j.job_id, j.job_code, j.title, j.department, j.description,
+                j.location, j.job_type, j.duration,
+                j.experience_level, j.work_mode,
+                j.application_deadline, j.vacancies_count,
                 j.status, j.platform_email,
                 j.receive_cv_via_forwarding_email,
                 j.receive_cv_via_platform_email,
@@ -254,7 +270,9 @@ async def get_job_details(
                 j.send_confirmation_to_cv_email_for_platform_email,
                 j.enable_ai_comparison,
                 j.qualified_threshold, j.partial_threshold,
-                j.created_at,
+                j.created_at, j.updated_at,
+                cu.full_name AS created_by_name,
+                uu.full_name AS updated_by_name,
                 COUNT(a.application_id)                                             AS applications_total,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
@@ -263,8 +281,10 @@ async def get_job_details(
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
             JOIN tenants t ON t.tenant_id = j.tenant_id
+            LEFT JOIN users cu ON cu.user_id = j.created_by
+            LEFT JOIN users uu ON uu.user_id = j.updated_by
             WHERE j.job_id = :jid AND j.tenant_id = :tid
-            GROUP BY j.job_id, t.tenant_id
+            GROUP BY j.job_id, t.tenant_id, cu.full_name, uu.full_name
         """),
         {"jid": job_id, "tid": current_user.tenant_id},
     )
@@ -318,6 +338,16 @@ async def get_job_details(
             "send_confirmation_to_cv_email_for_platform_email": job["send_confirmation_to_cv_email_for_platform_email"],
             "enable_ai_comparison":           job["enable_ai_comparison"],
             "created_at":         job["created_at"].isoformat() if job["created_at"] else None,
+            "location":             job["location"] or "",
+            "job_type":             job["job_type"] or "",
+            "duration":             job["duration"] or "",
+            "experience_level":     job["experience_level"] or "",
+            "work_mode":            job["work_mode"] or "",
+            "application_deadline": job["application_deadline"].isoformat() if job["application_deadline"] else None,
+            "vacancies_count":      job["vacancies_count"],
+            "updated_at":           job["updated_at"].isoformat() if job["updated_at"] else None,
+            "created_by_name":      job["created_by_name"] or "",
+            "updated_by_name":      job["updated_by_name"] or "",
             "applications_total":     job["applications_total"],
             "applications_qualified": job["applications_qualified"],
             "applications_partial":   job["applications_partial"],
@@ -683,3 +713,71 @@ async def retry_criteria_extraction(
     extract_criteria_task.delay(job_id, job["description"])
 
     return {"success": True, "message": "Criteria extraction re-queued."}
+
+
+@router.put("/{job_id}")
+async def update_job_metadata(
+    job_id: str,
+    body: UpdateJobMetadataRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update job metadata and/or status. Admin and HR Manager only."""
+    role = (current_user.role or "").lower()
+    if role not in ("admin", "hr_manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only tenant admins and HR managers can edit job metadata",
+        )
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    job_row = await db.execute(
+        text("SELECT job_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
+        {"jid": job_id, "tid": current_user.tenant_id},
+    )
+    if not job_row.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    ALLOWED_STATUS = {"active", "inactive", "closed"}
+    updates: dict = {}
+
+    if body.title is not None:
+        updates["title"] = body.title.strip()
+    if body.department is not None:
+        updates["department"] = body.department.strip() or None
+    if body.location is not None:
+        updates["location"] = body.location.strip() or None
+    if body.job_type is not None:
+        updates["job_type"] = body.job_type.strip() or None
+    if body.duration is not None:
+        updates["duration"] = body.duration.strip() or None
+    if body.experience_level is not None:
+        updates["experience_level"] = body.experience_level.strip() or None
+    if body.work_mode is not None:
+        updates["work_mode"] = body.work_mode.strip() or None
+    if body.application_deadline is not None:
+        updates["application_deadline"] = body.application_deadline or None
+    if body.vacancies_count is not None:
+        updates["vacancies_count"] = max(1, body.vacancies_count)
+    if body.status is not None:
+        s = body.status.lower()
+        if s not in ALLOWED_STATUS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Status must be one of: {', '.join(ALLOWED_STATUS)}",
+            )
+        updates["status"] = s
+
+    if not updates:
+        return {"success": True, "message": "No changes"}
+
+    updates["updated_by"] = current_user.user_id
+    set_sql = ", ".join(f"{k} = :{k}" for k in updates)
+    updates["jid"] = job_id
+    await db.execute(
+        text(f"UPDATE jobs SET {set_sql} WHERE job_id = :jid"),
+        updates,
+    )
+    await db.commit()
+    return {"success": True, "message": "Job updated"}
