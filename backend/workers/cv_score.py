@@ -134,8 +134,8 @@ async def _score_cv_async(
             )
             await db.commit()
 
-            # Manual uploads with high content similarity → convert to dup log and stop
-            if app_id_data["submission_source"] == "manual_upload":
+            # Manual uploads and public applies with high content similarity → convert to dup log and stop
+            if app_id_data["submission_source"] in ("manual_upload", "public_apply"):
                 dup_check = await db.execute(
                     text("""
                         SELECT duplicate_reason,
@@ -630,6 +630,16 @@ async def _score_cv_async(
                 if source == "manual_upload":
                     # Only send to CV email if the toggle is on for uploads
                     if cv_email and criteria.get("send_confirmation_to_cv_email_for_upload", False):
+                        await send_cv_received_email(
+                            to_email=cv_email,
+                            candidate_name=app_data["candidate_name"],
+                            job_title=criteria["job_title"],
+                        )
+
+                elif source == "public_apply":
+                    # Candidate provided their email directly on the apply form —
+                    # always send a confirmation receipt (no toggle guard needed).
+                    if cv_email:
                         await send_cv_received_email(
                             to_email=cv_email,
                             candidate_name=app_data["candidate_name"],

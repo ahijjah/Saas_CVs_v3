@@ -1,9 +1,10 @@
 """
 Public (unauthenticated) endpoints for the candidate-facing apply flow.
 
-GET  /jobs/public/{job_code}  — returns active job info, intake status
-POST /applications/public      — candidate submits CV + metadata
+GET  /jobs/public/{job_code}  — active job info + intake status, no auth
+POST /applications/public      — candidate submits CV + metadata, no auth
 """
+import logging
 from datetime import date
 from pathlib import Path
 from typing import Annotated
@@ -11,10 +12,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi import status as http_status
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from database import get_db, set_rls_context
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["public"])
 settings = get_settings()
@@ -26,9 +30,10 @@ ALLOWED_MIME_TYPES = {
 }
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 async def _get_active_public_job(job_code: str, db: AsyncSession) -> dict:
-    """Return the job row (as mapping) for an active job by job_code.
-    Raises 404 if not found or not active. Caller must have set RLS context."""
+    """Return active job row by job_code. Caller must have set RLS context."""
     row = await db.execute(
         text("""
             SELECT
@@ -53,7 +58,7 @@ async def _get_active_public_job(job_code: str, db: AsyncSession) -> dict:
 
 
 async def _count_valid_applications(job_id: str, db: AsyncSession) -> int:
-    """Count non-duplicate, non-failed applications for a job."""
+    """Count non-duplicate, non-failed applications for intake limit enforcement."""
     result = await db.execute(
         text("""
             SELECT COUNT(*) FROM applications
@@ -66,6 +71,8 @@ async def _count_valid_applications(job_id: str, db: AsyncSession) -> int:
     return int(result.scalar_one())
 
 
+# ── Routes ────────────────────────────────────────────────────────────────────
+
 @router.get("/jobs/public/{job_code}")
 async def get_public_job(
     job_code: str,
@@ -75,11 +82,9 @@ async def get_public_job(
     await set_rls_context(db, "", "super_admin")
     job = await _get_active_public_job(job_code, db)
 
-    # Check application deadline
     deadline = job["application_deadline"]
     deadline_passed = bool(deadline and deadline < date.today())
 
-    # Determine intake open/closed state
     intake_open = True
     if deadline_passed:
         intake_open = False
@@ -118,8 +123,45 @@ async def submit_public_application(
     file: UploadFile = File(...),
 ):
     """Accept a public CV submission. No auth required."""
+    try:
+        return await _handle_public_submission(
+            db=db,
+            job_code=job_code,
+            candidate_name=candidate_name,
+            email=email,
+            phone=phone,
+            cover_letter=cover_letter,
+            file=file,
+        )
+    except HTTPException:
+        raise  # re-raise our own validation errors as-is
+    except IntegrityError as exc:
+        logger.error("DB constraint violation on public apply for job %s: %s", job_code, exc)
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Submission could not be saved — please try again or contact support.",
+        ) from exc
+    except Exception as exc:
+        logger.exception("Unexpected error on public apply for job %s: %s", job_code, exc)
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again.",
+        ) from exc
 
-    # ── Validate file ──────────────────────────────────────────────────────
+
+async def _handle_public_submission(
+    *,
+    db: AsyncSession,
+    job_code: str,
+    candidate_name: str,
+    email: str,
+    phone: str | None,
+    cover_letter: str | None,
+    file: UploadFile,
+) -> dict:
+    """Core logic — separated so the outer handler can wrap all exceptions."""
+
+    # ── Validate file type and size ───────────────────────────────────────────
     if file.content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=http_status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -135,7 +177,7 @@ async def submit_public_application(
 
     await set_rls_context(db, "", "super_admin")
 
-    # ── Validate job and intake state ──────────────────────────────────────
+    # ── Validate job and intake state ─────────────────────────────────────────
     job = await _get_active_public_job(job_code, db)
     job_id = str(job["job_id"])
     tenant_id = str(job["tenant_id"])
@@ -155,7 +197,7 @@ async def submit_public_application(
                 detail="This position is no longer accepting applications",
             )
 
-    # ── Insert application record ─────────────────────────────────────────
+    # ── Insert application record ─────────────────────────────────────────────
     app_result = await db.execute(
         text("""
             INSERT INTO applications
@@ -177,14 +219,15 @@ async def submit_public_application(
     )
     application_id = str(app_result.scalar_one())
 
-    # ── Save file ─────────────────────────────────────────────────────────
+    # ── Save file to disk ─────────────────────────────────────────────────────
     ext = ALLOWED_MIME_TYPES[file.content_type]
     file_dir = Path(settings.files_base_path) / "tenants" / tenant_id / "jobs" / job_id
     file_dir.mkdir(parents=True, exist_ok=True)
-    file_path = file_dir / f"{application_id}.{ext}"
-    file_path.write_bytes(content)
-    relative_path = str(file_path.relative_to(settings.files_base_path))
+    abs_file_path = file_dir / f"{application_id}.{ext}"
+    abs_file_path.write_bytes(content)
+    relative_path = str(abs_file_path.relative_to(settings.files_base_path))
 
+    # ── Insert application_files record ───────────────────────────────────────
     await db.execute(
         text("""
             INSERT INTO application_files
@@ -201,17 +244,44 @@ async def submit_public_application(
             "size": len(content),
         },
     )
+
+    # ── Commit all DB writes before queuing Celery task ───────────────────────
     await db.commit()
 
-    # ── Auto-close if limit now reached ──────────────────────────────────
+    # ── Queue scoring (same as email intake — auto-scores after submission) ────
+    try:
+        from workers.cv_score import score_cv_task
+        score_cv_task.delay(
+            application_id=application_id,
+            job_id=job_id,
+            tenant_id=tenant_id,
+            file_path=str(abs_file_path),
+            mime_type=file.content_type,
+        )
+        logger.info("Public apply: scoring queued for application %s", application_id)
+    except Exception as exc:
+        # Celery enqueue failure is non-fatal — application is saved, can be re-scored
+        logger.error(
+            "Public apply: failed to queue scoring for application %s: %s",
+            application_id, exc,
+        )
+
+    # ── Auto-close job if intake limit now reached ────────────────────────────
     if job["max_applications"] is not None and job["auto_close_when_limit_reached"]:
-        new_count = await _count_valid_applications(job_id, db)
-        if new_count >= job["max_applications"]:
-            await db.execute(
-                text("UPDATE jobs SET status = 'closed' WHERE job_id = :jid"),
-                {"jid": job_id},
-            )
-            await db.commit()
+        try:
+            new_count = await _count_valid_applications(job_id, db)
+            if new_count >= job["max_applications"]:
+                await db.execute(
+                    text("UPDATE jobs SET status = 'closed' WHERE job_id = :jid"),
+                    {"jid": job_id},
+                )
+                await db.commit()
+                logger.info(
+                    "Job %s auto-closed: %d/%d applications reached",
+                    job_id, new_count, job["max_applications"],
+                )
+        except Exception as exc:
+            logger.error("Auto-close check failed for job %s: %s", job_id, exc)
 
     return {
         "application_id": application_id,
