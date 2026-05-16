@@ -86,11 +86,14 @@ class PromptConfig:
     strictness: str = "balanced"
     strictness_instruction: str = ""
     output_language: str = "ar"
-    gatekeeper_threshold: float = 0.40
+    # ── Level 1 Gatekeeper parameters (all DB-controlled by Super Admin) ──────
     gatekeeper_enabled: bool = True
+    gatekeeper_threshold: float = 0.40    # semantic similarity floor (0.0–1.0)
+    skill_fuzzy_threshold: float = 80.0   # rapidfuzz partial_ratio threshold (0–100)
+    min_skill_ratio: float = 0.0          # min % of required skills found (0–100); 0 = disabled
     # Per-job mandatory skills (if non-empty, missing any = automatic penalty)
     mandatory_skills: list[str] = field(default_factory=list)
-    mandatory_skills_weight: float = 0.0  # extra weight for mandatory skills check
+    mandatory_skills_weight: float = 0.0
 
 
 async def load_prompt_config(
@@ -116,13 +119,15 @@ async def load_prompt_config(
 
     cfg = get_settings()
 
-    # Load system_config
+    # Load system_config — all gatekeeper + scoring parameters
     sys_rows = await db.execute(
         text("""
             SELECT key, value FROM system_config
             WHERE key IN (
-                'gatekeeper_semantic_threshold', 'gatekeeper_enabled',
-                'level1_gatekeeper_enabled',
+                'gatekeeper_semantic_threshold',
+                'gatekeeper_skill_fuzzy_threshold', 'skill_fuzzy_threshold',
+                'gatekeeper_min_skill_ratio',
+                'gatekeeper_enabled', 'level1_gatekeeper_enabled',
                 'output_language', 'default_weight_profile', 'default_strictness'
             )
         """)
@@ -130,11 +135,22 @@ async def load_prompt_config(
     sys_map: dict[str, str] = {r["key"]: r["value"] for r in sys_rows.mappings()}
 
     gatekeeper_threshold = float(sys_map.get("gatekeeper_semantic_threshold", cfg.gatekeeper_semantic_threshold))
+
     # level1_gatekeeper_enabled takes precedence over legacy gatekeeper_enabled
     if "level1_gatekeeper_enabled" in sys_map:
         gatekeeper_enabled = sys_map["level1_gatekeeper_enabled"].lower() == "true"
     else:
         gatekeeper_enabled = sys_map.get("gatekeeper_enabled", "true").lower() == "true"
+
+    # gatekeeper_skill_fuzzy_threshold is the canonical key; fall back to legacy skill_fuzzy_threshold
+    raw_skill_fuzzy = (
+        sys_map.get("gatekeeper_skill_fuzzy_threshold")
+        or sys_map.get("skill_fuzzy_threshold")
+    )
+    skill_fuzzy_threshold = float(raw_skill_fuzzy) if raw_skill_fuzzy else cfg.gatekeeper_skill_fuzzy_threshold
+
+    min_skill_ratio = float(sys_map.get("gatekeeper_min_skill_ratio", "0"))
+
     output_language = sys_map.get("output_language", cfg.output_language)
     weight_profile_name = sys_map.get("default_weight_profile", "default")
     strictness = sys_map.get("default_strictness", "balanced")
@@ -160,6 +176,12 @@ async def load_prompt_config(
             strictness = overrides["strictness"]
         if "gatekeeper_threshold" in overrides:
             gatekeeper_threshold = float(overrides["gatekeeper_threshold"])
+        if "skill_fuzzy_threshold" in overrides:
+            skill_fuzzy_threshold = float(overrides["skill_fuzzy_threshold"])
+        if "min_skill_ratio" in overrides:
+            min_skill_ratio = float(overrides["min_skill_ratio"])
+        if "gatekeeper_enabled" in overrides:
+            gatekeeper_enabled = bool(overrides["gatekeeper_enabled"])
         if "output_language" in overrides:
             output_language = overrides["output_language"]
 
@@ -175,8 +197,10 @@ async def load_prompt_config(
         strictness=strictness,
         strictness_instruction=STRICTNESS_PROMPTS.get(strictness, STRICTNESS_PROMPTS["balanced"]),
         output_language=output_language,
-        gatekeeper_threshold=gatekeeper_threshold,
         gatekeeper_enabled=gatekeeper_enabled,
+        gatekeeper_threshold=gatekeeper_threshold,
+        skill_fuzzy_threshold=skill_fuzzy_threshold,
+        min_skill_ratio=min_skill_ratio,
         mandatory_skills=overrides.get("mandatory_skills", []) if overrides else [],
         mandatory_skills_weight=float(overrides.get("mandatory_skills_weight", 0)) if overrides else 0.0,
     )

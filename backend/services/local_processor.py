@@ -269,19 +269,19 @@ def run_gatekeeper(
     required_skills: list[str],
     *,
     semantic_threshold: float = 0.40,    # below this → reject without LLM
-    skill_threshold: float = 80.0,       # rapidfuzz partial_ratio threshold
+    skill_threshold: float = 80.0,       # rapidfuzz partial_ratio threshold (0–100)
+    min_skill_ratio: float = 0.0,        # min % of required skills that must match (0–100); 0 = disabled
 ) -> GatekeeperResult:
     """
     Run the full local pre-filtering pipeline.
 
-    Decision logic:
-      - semantic_similarity >= semantic_threshold  AND
-      - at least one required skill found (if skills list is non-empty)
+    Decision logic (all conditions must be satisfied to pass):
+      1. semantic_similarity >= semantic_threshold
+      2. skill_match_ratio >= min_skill_ratio  (only checked when min_skill_ratio > 0
+         AND required_skills is non-empty)
       → gatekeeper_passed = True  → proceed to LLM scoring
 
-      - semantic_similarity < semantic_threshold
-      → gatekeeper_passed = False → mark as 'low_match', skip LLM call
-
+    All three parameters are runtime-configurable via system_config (Super Admin).
     Cost impact: ~40-60% of CVs never reach the LLM in typical hiring funnels.
     """
     cleaned_cv = clean_text(cv_text)
@@ -294,23 +294,40 @@ def run_gatekeeper(
     semantic_pct = round(semantic_sim * 100, 2)
 
     skill_result = match_skills_bilingual(required_skills, cleaned_cv, skill_threshold)
+    skill_ratio = skill_result["match_ratio"]
 
-    passed = semantic_sim >= semantic_threshold
-    reason: Optional[str] = None
+    reasons: list[str] = []
 
-    if not passed:
-        reason = (
+    sim_passed = semantic_sim >= semantic_threshold
+    if not sim_passed:
+        reasons.append(
             f"Semantic similarity {semantic_pct:.1f}% is below the "
-            f"threshold of {semantic_threshold * 100:.0f}%. "
-            "CV content is not sufficiently related to the job description."
+            f"threshold of {semantic_threshold * 100:.0f}%."
         )
+
+    # Skill ratio gate: active only when min_skill_ratio > 0 and skills exist
+    skill_ratio_passed = True
+    if min_skill_ratio > 0 and required_skills:
+        skill_ratio_passed = skill_ratio >= min_skill_ratio
+        if not skill_ratio_passed:
+            reasons.append(
+                f"Skill match ratio {skill_ratio:.1f}% is below the "
+                f"minimum of {min_skill_ratio:.0f}% "
+                f"({len(skill_result['matched'])}/{len(required_skills)} skills found)."
+            )
+
+    passed = sim_passed and skill_ratio_passed
+    reason: Optional[str] = (
+        " ".join(reasons) + " CV content is not sufficiently related to the job description."
+        if reasons else None
+    )
 
     return GatekeeperResult(
         cv_language=cv_lang,
         jd_language=jd_lang,
         semantic_similarity=semantic_sim,
         semantic_similarity_pct=semantic_pct,
-        skill_match_ratio=skill_result["match_ratio"],
+        skill_match_ratio=skill_ratio,
         matched_skills=skill_result["matched"],
         missing_skills=skill_result["missing"],
         gatekeeper_passed=passed,

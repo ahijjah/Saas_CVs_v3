@@ -188,13 +188,31 @@ async def _score_cv_async(
 
         # ════════════════════════════════════════════════════════════════════════
         # LEVEL 1 — Local Gatekeeper (free, no LLM call)
+        # All parameters sourced from system_config via prompt_cfg (Super Admin).
+        # Priority: scoring_overrides > system_config > env/hardcoded defaults.
         # ════════════════════════════════════════════════════════════════════════
+        gk_params = {
+            "semantic_threshold":  prompt_cfg.gatekeeper_threshold,
+            "skill_fuzzy_threshold": prompt_cfg.skill_fuzzy_threshold,
+            "min_skill_ratio":     prompt_cfg.min_skill_ratio,
+        }
+        logger.info(
+            "Level 1 gatekeeper params for application %s — "
+            "enabled=%s semantic_threshold=%.2f skill_fuzzy_threshold=%.0f min_skill_ratio=%.0f",
+            application_id,
+            prompt_cfg.gatekeeper_enabled,
+            gk_params["semantic_threshold"],
+            gk_params["skill_fuzzy_threshold"],
+            gk_params["min_skill_ratio"],
+        )
+
         gatekeeper_result = run_gatekeeper(
             cv_text=raw_cv_text,
             job_description=criteria["job_description"],
             required_skills=required_skills,
-            semantic_threshold=prompt_cfg.gatekeeper_threshold,
-            skill_threshold=cfg.gatekeeper_skill_fuzzy_threshold,
+            semantic_threshold=gk_params["semantic_threshold"],
+            skill_threshold=gk_params["skill_fuzzy_threshold"],
+            min_skill_ratio=gk_params["min_skill_ratio"],
         )
 
         # If gatekeeper is disabled but would have rejected, bypass it and note why
@@ -206,19 +224,23 @@ async def _score_cv_async(
             gatekeeper_result.gatekeeper_passed = True
             logger.info(
                 "Level 1 gatekeeper DISABLED — bypassing rejection for application %s "
-                "(similarity=%.1f%%, would have been rejected)",
+                "(similarity=%.1f%%, skill_ratio=%.1f%%, would have been rejected)",
                 application_id,
                 gatekeeper_result.semantic_similarity_pct,
+                gatekeeper_result.skill_match_ratio,
             )
         else:
             bypass_reason = None
 
         if prompt_cfg.gatekeeper_enabled and not gatekeeper_result.gatekeeper_passed:
             logger.info(
-                "Level 1 REJECTED application %s — similarity=%.1f%% threshold=%.0f%%",
+                "Level 1 REJECTED application %s — similarity=%.1f%% (threshold=%.0f%%) "
+                "skill_ratio=%.1f%% (min=%.0f%%)",
                 application_id,
                 gatekeeper_result.semantic_similarity_pct,
                 prompt_cfg.gatekeeper_threshold * 100,
+                gatekeeper_result.skill_match_ratio,
+                prompt_cfg.min_skill_ratio,
             )
 
             await db.execute(
@@ -289,6 +311,15 @@ async def _score_cv_async(
             {"aid": application_id, **({"exit_reason": level1_exit_reason} if level1_exit_reason else {})},
         )
         await db.commit()
+        logger.info(
+            "Level 1 PASSED application %s — similarity=%.1f%% skill_ratio=%.1f%% "
+            "matched=%s missing=%s",
+            application_id,
+            gatekeeper_result.semantic_similarity_pct,
+            gatekeeper_result.skill_match_ratio,
+            gatekeeper_result.matched_skills,
+            gatekeeper_result.missing_skills,
+        )
 
         # ════════════════════════════════════════════════════════════════════════
         # LEVEL 3 — Full LLM scoring
