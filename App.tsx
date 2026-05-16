@@ -75,8 +75,7 @@ const ApplicationsRoute: React.FC<{
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const jobId = searchParams.get('job_id');
-  const rawFilter = searchParams.get('filter') || 'all';
-  const filter = (rawFilter === 'duplicates' ? 'possible_duplicate' : rawFilter) as ApplicationFilter;
+  const filter = (searchParams.get('filter') || 'all') as ApplicationFilter;
   const appId = searchParams.get('app_id') || null;
   if (!jobId) return <Navigate to="/jobs" replace />;
   return (

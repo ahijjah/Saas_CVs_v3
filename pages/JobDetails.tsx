@@ -151,9 +151,18 @@ const T = {
     saveControls: 'Save',
     savingControls: 'Saving...',
     controlsSaved: 'Application controls updated',
-    duplicateCount: 'Duplicates',
-    viewDuplicates: 'View Duplicates',
-    noDuplicates: 'No duplicates',
+    duplicateCount: 'Duplicate Submissions',
+    viewDuplicates: 'View Duplicate Submissions',
+    noDuplicates: 'No duplicate submissions',
+    dupSubmissionsTitle: 'Duplicate Submissions',
+    dupSubmissionsHint: 'These CVs were rejected before scoring because they matched an existing submission for this job (same file hash or near-identical content). They are not scored applications.',
+    dupColName: 'Name',
+    dupColEmail: 'Email',
+    dupColFile: 'File',
+    dupColReceived: 'Received',
+    dupColReason: 'Reason',
+    dupShowAll: 'Show all',
+    dupShowLess: 'Show less',
     tabPublicLink: 'Public Link',
     tabEmailAlias: 'Email Alias',
     tabEmailFwd: 'Email Forwarding',
@@ -294,9 +303,18 @@ const T = {
     saveControls: 'حفظ',
     savingControls: 'جارٍ الحفظ...',
     controlsSaved: 'تم تحديث ضوابط الاستقبال',
-    duplicateCount: 'تكرارات',
-    viewDuplicates: 'عرض التكرارات',
-    noDuplicates: 'لا تكرارات',
+    duplicateCount: 'طلبات مكررة',
+    viewDuplicates: 'عرض الطلبات المكررة',
+    noDuplicates: 'لا توجد طلبات مكررة',
+    dupSubmissionsTitle: 'الطلبات المكررة',
+    dupSubmissionsHint: 'هذه السير الذاتية رُفضت قبل التقييم لأنها تطابقت مع طلب موجود لهذه الوظيفة (نفس الملف أو محتوى متطابق تقريبًا). لم يتم تقييمها.',
+    dupColName: 'الاسم',
+    dupColEmail: 'البريد الإلكتروني',
+    dupColFile: 'الملف',
+    dupColReceived: 'وُصل في',
+    dupColReason: 'السبب',
+    dupShowAll: 'عرض الكل',
+    dupShowLess: 'عرض أقل',
     tabPublicLink: 'الرابط العام',
     tabEmailAlias: 'بريد مخصص',
     tabEmailFwd: 'إعادة توجيه',
@@ -362,8 +380,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [showOriginalCriteria, setShowOriginalCriteria] = useState(false);
   const originalAiCriteriaRef = useRef<any>(null);
 
-  // Duplicate log display limit
+  // Duplicate submissions section ref + display state
+  const duplicateSubmissionsRef = useRef<HTMLDivElement>(null);
   const [showAllDuplicates, setShowAllDuplicates] = useState(false);
+  const [dupSectionExpanded, setDupSectionExpanded] = useState(false);
 
   // Intake channel tabs (Public Link default)
   const [activeIntakeTab, setActiveIntakeTab] = useState<'public-link' | 'email-alias' | 'email-forwarding' | 'manual-upload'>('public-link');
@@ -1137,7 +1157,13 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             ))}
           </div>
           {dupCount > 0 ? (
-            <button onClick={() => onViewApplications(details.job_id, 'possible_duplicate')}
+            <button
+              onClick={() => {
+                setDupSectionExpanded(true);
+                setTimeout(() => {
+                  duplicateSubmissionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 50);
+              }}
               className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors group">
               <svg className="w-4 h-4 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
               <div className="text-left">
@@ -1820,6 +1846,66 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       </div>
 
       </div>
+
+      {/* F2. Duplicate Submissions ───────────────────────────────────────────── */}
+      {dupCount > 0 && (
+        <div ref={duplicateSubmissionsRef} className="mt-6 bg-white rounded-2xl border border-orange-200 overflow-hidden shadow-sm scroll-mt-20">
+          <button
+            onClick={() => setDupSectionExpanded(p => !p)}
+            className="w-full px-5 py-3.5 flex items-center justify-between hover:bg-orange-50 transition-colors"
+          >
+            <span className="text-[10px] font-black text-orange-700 uppercase tracking-widest flex items-center gap-2">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+              {t.dupSubmissionsTitle}
+              <span className="ml-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 text-[9px] font-black">{dupCount}</span>
+            </span>
+            <svg className={`w-4 h-4 text-orange-400 transition-transform ${dupSectionExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+          </button>
+          {dupSectionExpanded && (
+            <div className="border-t border-orange-100 animate-fade-in">
+              <p className="px-5 py-3 text-[10px] text-orange-600 bg-orange-50 border-b border-orange-100 leading-relaxed">
+                {t.dupSubmissionsHint}
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px]">
+                  <thead>
+                    <tr className="border-b border-border bg-slate-50">
+                      <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColName}</th>
+                      <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColEmail}</th>
+                      <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColFile}</th>
+                      <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColReceived}</th>
+                      <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColReason}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {(showAllDuplicates ? duplicateLogs : duplicateLogs.slice(0, 5)).map((log: any) => (
+                      <tr key={log.log_id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-2.5 font-medium text-textMain truncate max-w-[140px]">{log.duplicate_name || '—'}</td>
+                        <td className="px-4 py-2.5 text-textMuted truncate max-w-[160px]">{log.duplicate_email || '—'}</td>
+                        <td className="px-4 py-2.5 text-textMuted truncate max-w-[140px]">{log.raw_filename || '—'}</td>
+                        <td className="px-4 py-2.5 text-textMuted whitespace-nowrap">
+                          {log.received_at ? new Date(log.received_at).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-textMuted truncate max-w-[180px]">{log.notes || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {duplicateLogs.length > 5 && (
+                <div className="px-5 py-3 border-t border-border text-center">
+                  <button
+                    onClick={() => setShowAllDuplicates(p => !p)}
+                    className="text-[10px] font-black text-orange-600 hover:text-orange-800 uppercase tracking-widest transition-colors"
+                  >
+                    {showAllDuplicates ? t.dupShowLess : `${t.dupShowAll} (${duplicateLogs.length})`}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* G. Reference Content ────────────────────────────────────────────────── */}
       <div className="mt-6 space-y-3">
