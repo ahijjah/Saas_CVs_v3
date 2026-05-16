@@ -76,12 +76,12 @@ const T = {
     deletingCV: 'Deleting...',
     statusPending: 'Pending',
     statusQueued: 'In Queue',
-    statusL1Screen: 'L1: Pre-screening...',
-    statusL2Screen: 'L2: AI screening...',
-    statusL3Score: 'L3: Full scoring...',
+    statusL1Screen: 'Pre-screening...',
+    statusL2Screen: 'AI scoring...',
+    statusL3Score: 'AI scoring...',
     statusScored: 'Scored',
     statusLowMatch: 'Rejected — L1',
-    statusRejectedL2: 'Rejected — L2',
+    statusRejectedL2: 'Rejected — L1',
     statusFailed: 'Failed',
     exitReason: 'Reason:',
     resetStuck: 'Reset stuck CVs',
@@ -223,12 +223,12 @@ const T = {
     deletingCV: 'جارٍ الحذف...',
     statusPending: 'في الانتظار',
     statusQueued: 'في الطابور',
-    statusL1Screen: 'م1: الفرز الأولي...',
-    statusL2Screen: 'م2: الفرز بالذكاء...',
-    statusL3Score: 'م3: التقييم الكامل...',
+    statusL1Screen: 'الفرز الأولي...',
+    statusL2Screen: 'التقييم بالذكاء...',
+    statusL3Score: 'التقييم بالذكاء...',
     statusScored: 'تم التقييم',
     statusLowMatch: 'مرفوض — م1',
-    statusRejectedL2: 'مرفوض — م2',
+    statusRejectedL2: 'مرفوض — م1',
     statusFailed: 'فشل',
     exitReason: 'السبب:',
     resetStuck: 'إعادة تعيين المعلّقة',
@@ -1033,10 +1033,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       case 'pending':  return { label: t.statusPending, color: 'text-amber-600 bg-amber-50 border-amber-200',   spin: false };
       case 'queued':   return { label: t.statusQueued,  color: 'text-indigo-600 bg-indigo-50 border-indigo-200', spin: true  };
       case 'processing': {
-        // Show live level based on evaluation_stage committed after each level passes
-        if (cv.evaluation_stage === 2) return { label: t.statusL3Score,  color: 'text-violet-600 bg-violet-50 border-violet-200', spin: true };
-        if (cv.evaluation_stage === 1) return { label: t.statusL2Screen, color: 'text-blue-600 bg-blue-50 border-blue-200',       spin: true };
-        return                                { label: t.statusL1Screen, color: 'text-sky-600 bg-sky-50 border-sky-200',           spin: true };
+        // stage=1: gatekeeper passed, L3 LLM running; stage=0/null: gatekeeper running
+        if (cv.evaluation_stage === 1) return { label: t.statusL3Score, color: 'text-violet-600 bg-violet-50 border-violet-200', spin: true };
+        return                                { label: t.statusL1Screen, color: 'text-sky-600 bg-sky-50 border-sky-200',          spin: true };
       }
       case 'scored':
         if (cv.evaluation_stage != null && cv.evaluation_stage < 3)

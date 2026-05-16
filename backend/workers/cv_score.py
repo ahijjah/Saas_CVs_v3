@@ -1,18 +1,16 @@
 """
-Celery task: score a CV through the 3-level evaluation pipeline.
+Celery task: score a CV through the 2-level evaluation pipeline.
 
 Pipeline:
   1. File read + DOCX→PDF conversion
   2. PDF text extraction (PyMuPDF)
   3. Level 1 — Local Gatekeeper (semantic similarity + bilingual skill matching)
      → Below threshold: mark scored/rejected, evaluation_stage=1, skip LLM (cost saving)
-  4. Level 2 — Lightweight LLM binary screen (PASS/REJECT, ~10x cheaper than full)
-     → REJECT: mark scored/rejected, evaluation_stage=2, skip full scoring
-  5. Level 3 — Full LLM scoring (GPT-4o bilingual, output in English)
+  4. Level 3 — Full LLM scoring (GPT-4o bilingual, output in English)
      → Produces final score (ceiling integer), decision, score_details, candidate contacts
-  6. Optional — AI comparison run (DeepSeek secondary scorer, if job toggle enabled)
-  7. Write application_scores + update applications table
-  8. Send confirmation email per job toggle settings
+  5. Optional — AI comparison run (DeepSeek secondary scorer, if job toggle enabled)
+  6. Write application_scores + update applications table
+  7. Send confirmation email per job toggle settings
 
 evaluation_stage in the applications table is updated after each level so the
 frontend can show live progress during polling.
@@ -64,7 +62,6 @@ async def _score_cv_async(
     from services.ai_service import (
         compute_final_score,
         determine_decision,
-        lightweight_screen_cv,
         load_active_prompt,
         score_cv,
     )
@@ -174,8 +171,7 @@ async def _score_cv_async(
 
         prompt_cfg = await load_prompt_config(db, tenant_id, job_id, overrides=scoring_overrides)
 
-        # Load active DB prompts; each returns code+version for audit references
-        level2_prompt = await load_active_prompt(db, "level2_screening")
+        # Load active DB prompt for full scoring; code+version stored for audit
         scoring_prompt = await load_active_prompt(db, "cv_scoring")
 
         weights = {
@@ -295,84 +291,6 @@ async def _score_cv_async(
         await db.commit()
 
         # ════════════════════════════════════════════════════════════════════════
-        # LEVEL 2 — Lightweight LLM binary screen (cheap: short prompt, 120 tokens)
-        # ════════════════════════════════════════════════════════════════════════
-        level2 = await lightweight_screen_cv(
-            cv_text=gatekeeper_result.cleaned_cv_text,
-            job_title=criteria["job_title"],
-            required_skills=required_skills,
-            prompt_override=level2_prompt,
-        )
-
-        if level2["decision"] == "REJECT":
-            logger.info(
-                "Level 2 REJECTED application %s — %s",
-                application_id, level2["reason"],
-            )
-
-            await db.execute(
-                text("""
-                    UPDATE applications SET
-                        evaluation_stage       = 2,
-                        evaluation_exit_reason = :reason,
-                        processing_status      = 'scored',
-                        decision               = 'rejected',
-                        scored_at              = now()
-                    WHERE application_id = :aid
-                """),
-                {"reason": level2["reason"], "aid": application_id},
-            )
-            await db.execute(
-                text("""
-                    INSERT INTO application_scores (
-                        application_id,
-                        score_skills, score_experience, score_education,
-                        score_certifications, score_soft_skills,
-                        score_domain_knowledge, score_other,
-                        final_score, weights_snapshot, ai_model,
-                        local_similarity_score, skill_match_ratio,
-                        matched_skills, missing_skills,
-                        cv_language, gatekeeper_passed,
-                        evaluation_notes, reasoning,
-                        level2_prompt_code, level2_prompt_version,
-                        scoring_provider
-                    ) VALUES (
-                        :aid,
-                        0, 0, 0, 0, 0, 0, 0,
-                        0, :weights, 'lightweight_screener',
-                        :sim, :skill_ratio,
-                        :matched, :missing,
-                        :cv_lang, true,
-                        :notes, :reasoning,
-                        :l2_code, :l2_ver,
-                        'openai'
-                    )
-                """),
-                {
-                    "aid":        application_id,
-                    "weights":    json.dumps(weights),
-                    "sim":        gatekeeper_result.semantic_similarity_pct,
-                    "skill_ratio": gatekeeper_result.skill_match_ratio,
-                    "matched":    gatekeeper_result.matched_skills,
-                    "missing":    gatekeeper_result.missing_skills,
-                    "cv_lang":    gatekeeper_result.cv_language,
-                    "notes":      level2["reason"],
-                    "reasoning":  json.dumps({"level2_screen": level2["reason"]}),
-                    "l2_code":    (level2_prompt or {}).get("prompt_code"),
-                    "l2_ver":     (level2_prompt or {}).get("version"),
-                },
-            )
-            await db.commit()
-            return
-
-        # Level 2 passed — update stage
-        await db.execute(
-            text("UPDATE applications SET evaluation_stage = 2 WHERE application_id = :aid"),
-            {"aid": application_id},
-        )
-        await db.commit()
-
-        # ════════════════════════════════════════════════════════════════════════
         # LEVEL 3 — Full LLM scoring
         # ════════════════════════════════════════════════════════════════════════
         criteria_dict = {
@@ -446,7 +364,6 @@ async def _score_cv_async(
                     matched_skills, missing_skills,
                     cv_language, gatekeeper_passed,
                     score_details,
-                    level2_prompt_code, level2_prompt_version,
                     scoring_prompt_code, scoring_prompt_version,
                     scoring_provider
                 ) VALUES (
@@ -460,7 +377,6 @@ async def _score_cv_async(
                     :matched, :missing,
                     :cv_lang, :gk_passed,
                     :score_details,
-                    :l2_code, :l2_ver,
                     :sc_code, :sc_ver,
                     'openai'
                 )
@@ -491,8 +407,6 @@ async def _score_cv_async(
                 "cv_lang":    gatekeeper_result.cv_language,
                 "gk_passed":  gatekeeper_result.gatekeeper_passed,
                 "score_details": json.dumps(score_details, ensure_ascii=False),
-                "l2_code":    (level2_prompt or {}).get("prompt_code"),
-                "l2_ver":     (level2_prompt or {}).get("version"),
                 "sc_code":    (scoring_prompt or {}).get("prompt_code"),
                 "sc_ver":     (scoring_prompt or {}).get("version"),
             },
