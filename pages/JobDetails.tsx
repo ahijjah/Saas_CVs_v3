@@ -151,6 +151,9 @@ const T = {
     saveControls: 'Save',
     savingControls: 'Saving...',
     controlsSaved: 'Application controls updated',
+    duplicateCount: 'Duplicates',
+    viewDuplicates: 'View Duplicates',
+    noDuplicates: 'No duplicates',
   },
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
@@ -284,6 +287,9 @@ const T = {
     saveControls: 'حفظ',
     savingControls: 'جارٍ الحفظ...',
     controlsSaved: 'تم تحديث ضوابط الاستقبال',
+    duplicateCount: 'تكرارات',
+    viewDuplicates: 'عرض التكرارات',
+    noDuplicates: 'لا تكرارات',
   },
 };
 
@@ -1010,58 +1016,138 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     return <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${map[cv.decision] || 'bg-slate-100 text-textMuted'}`}>{cv.decision}</span>;
   };
 
+  // ── Mini donut chart ───────────────────────────────────────────────────────
+  const qualifiedCount = details.applications_qualified || 0;
+  const partialCount   = details.applications_partial   || 0;
+  const rejectedCount  = details.applications_rejected  || 0;
+  const chartTotal     = qualifiedCount + partialCount + rejectedCount;
+  const dupCount       = duplicateLogs.length;
+
+  const renderDonut = () => {
+    const r = 32; const circ = 2 * Math.PI * r;
+    if (chartTotal === 0) return (
+      <svg width="80" height="80" viewBox="0 0 80 80">
+        <circle cx="40" cy="40" r={r} fill="none" stroke="#e2e8f0" strokeWidth="12" />
+        <text x="40" y="45" textAnchor="middle" fill="#94a3b8" fontSize="10" fontWeight="700">—</text>
+      </svg>
+    );
+    const segs = [
+      { count: qualifiedCount, color: '#16a34a' },
+      { count: partialCount,   color: '#d97706' },
+      { count: rejectedCount,  color: '#dc2626' },
+    ];
+    let cum = 0;
+    return (
+      <svg width="80" height="80" viewBox="0 0 80 80">
+        <g transform="rotate(-90 40 40)">
+          {segs.map((seg, i) => {
+            const len = (seg.count / chartTotal) * circ;
+            const off = -cum;
+            cum += len;
+            return <circle key={i} cx="40" cy="40" r={r} fill="none" stroke={seg.color} strokeWidth="12" strokeDasharray={`${len} ${circ}`} strokeDashoffset={off} />;
+          })}
+        </g>
+        <text x="40" y="45" textAnchor="middle" fill="#1e293b" fontSize="14" fontWeight="800">{chartTotal}</text>
+      </svg>
+    );
+  };
+
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-12 animate-fade-in">
+    <div className="max-w-7xl mx-auto pb-16 animate-fade-in">
 
-      {/* ── Job Metadata Card ───────────────────────────────────────────────── */}
-      <section className="bg-white rounded-3xl shadow-sm border border-border overflow-hidden">
-
-        {/* Header */}
-        <div className="px-8 py-6 bg-slate-50 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-white rounded-lg transition-colors text-textMuted hover:text-primary">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
-            </button>
-            <div>
-              <div className="flex items-center gap-2 text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">
-                <span>{details.job_id}</span>
-                <span className="w-1 h-1 rounded-full bg-border"></span>
-                <span className={details.job_status === 'Active' ? 'text-success' : 'text-warning'}>{details.job_status}</span>
-              </div>
-              <h1 className="text-2xl font-black text-textMain tracking-tight">{details.job_title}</h1>
+      {/* A. Sticky compact header ──────────────────────────────────────────── */}
+      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-border mb-6 px-6 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm -mx-6 md:-mx-8 px-6 md:px-8">
+        <div className="flex items-center gap-3 min-w-0">
+          <button onClick={onBack} className="shrink-0 p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-textMuted hover:text-primary">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-base font-black text-textMain truncate">{details.job_title}</h1>
+              <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${statusColor}`}>{details.job_status}</span>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => onViewApplications(details.job_id, 'all')}
-              className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primaryDark transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              {t.viewApplications}
-            </button>
+            <p className="text-[10px] text-textMuted font-mono mt-0.5">{details.job_code}</p>
           </div>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => handleCopy(publicApplyUrl, setCopiedApplyLink)} className="flex items-center gap-1.5 px-3 py-1.5 border border-violet-200 bg-violet-50 text-violet-700 text-[10px] font-black rounded-lg hover:bg-violet-100 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+            {copiedApplyLink ? t.copied : t.copyBtn}
+          </button>
+          <button onClick={() => onViewApplications(details.job_id, 'all')} className="flex items-center gap-1.5 px-4 py-1.5 bg-primary text-white text-[10px] font-black rounded-lg hover:bg-primaryDark transition-colors shadow-sm">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            {t.viewApplications}
+          </button>
+        </div>
+      </div>
 
-        {/* ── B. Job Metadata ─────────────────────────────────────────────────── */}
-        <div className="border-b border-border px-8 py-6">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              {t.jobMetadata}
-            </h3>
-            {canEdit && !editingMeta && (
-              <button onClick={handleMetaEdit} className="flex items-center gap-1.5 text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                {t.editMeta}
+      {/* B. Applications insight strip ─────────────────────────────────────── */}
+      <div className="mb-6 bg-white rounded-2xl border border-border shadow-sm">
+        <div className="px-5 py-4 flex flex-wrap items-center gap-4">
+          <div className="shrink-0">{renderDonut()}</div>
+          <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 min-w-0">
+            {kpiValues.map((kpi, idx) => (
+              <button key={idx} onClick={() => onViewApplications(details.job_id, kpi.filter)}
+                className="flex flex-col items-center py-3 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-transparent hover:border-border transition-all group cursor-pointer">
+                <span className={`text-xl font-black ${kpi.color} group-hover:scale-105 transition-transform`}>{kpi.value ?? 0}</span>
+                <span className="text-[9px] font-black text-textMuted uppercase tracking-wider mt-0.5 group-hover:text-primary transition-colors">{t.kpiLabels[idx]}</span>
               </button>
-            )}
+            ))}
           </div>
+          {dupCount > 0 ? (
+            <button onClick={() => onViewApplications(details.job_id, 'duplicates')}
+              className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors group">
+              <svg className="w-4 h-4 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+              <div className="text-left">
+                <p className="text-[11px] font-black text-orange-800">{dupCount} {t.duplicateCount}</p>
+                <p className="text-[9px] text-orange-600 group-hover:underline">{t.viewDuplicates}</p>
+              </div>
+            </button>
+          ) : !loadingDupLogs ? (
+            <div className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+              <p className="text-[10px] text-textMuted font-bold">{t.noDuplicates}</p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* AI extraction status banner ───────────────────────────────────────── */}
+      {details.criteria_extraction_status && details.criteria_extraction_status !== 'completed' && (
+        <div className={`mb-6 rounded-2xl border p-4 flex items-center justify-between gap-4 ${details.criteria_extraction_status === 'failed' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+          <div className="flex items-center gap-3">
+            {details.criteria_extraction_status === 'failed'
+              ? <svg className="w-5 h-5 text-error shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+              : <svg className="animate-spin w-5 h-5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>}
+            <div>
+              <p className="text-sm font-bold text-textMain">
+                {details.criteria_extraction_status === 'failed' ? t.criteriaFailed : details.criteria_extraction_status === 'processing' ? t.criteriaProcessing : t.criteriaPending}
+              </p>
+              {details.criteria_extraction_status === 'failed' && details.criteria_extraction_error && <p className="text-xs text-error/80 mt-0.5">{details.criteria_extraction_error}</p>}
+            </div>
+          </div>
+          {details.criteria_extraction_status === 'failed' && (
+            <button onClick={handleRetryExtraction} className="shrink-0 px-4 py-1.5 bg-error text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">{t.retryExtraction}</button>
+          )}
+        </div>
+      )}
+
+      {/* Main grid ─────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 space-y-6">
+
+      {/* C. Job Metadata ──────────────────────────────────────────────────── */}
+      <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            {t.jobMetadata}
+          </h3>
+          {canEdit && !editingMeta && (
+            <button onClick={handleMetaEdit} className="text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">{t.editMeta}</button>
+          )}
+        </div>
+        <div className="px-6 py-5">
           {editingMeta ? (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1141,22 +1227,20 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           )}
         </div>
 
-        {/* ── Application Controls ────────────────────────────────────────────── */}
-        <div className="border-b border-border px-8 py-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
-              {t.appControls}
-            </h3>
-            {canEdit && !editingControls && (
-              <button onClick={handleControlsEdit} className="flex items-center gap-1.5 text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                {t.editControls}
-              </button>
-            )}
-          </div>
+      </section>
+
+      {/* D. Application Controls ──────────────────────────────────────────── */}
+      <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+            {t.appControls}
+          </h3>
+          {canEdit && !editingControls && (
+            <button onClick={handleControlsEdit} className="text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">{t.editControls}</button>
+          )}
+        </div>
+        <div className="px-6 py-5">
           {editingControls ? (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1227,12 +1311,20 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           )}
         </div>
 
-        {/* ── C. Intake Channels ──────────────────────────────────────────────── */}
-        <div className="border-b border-border px-8 py-6">
-          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-5 flex items-center gap-2">
+      </section>
+
+      {/* E. Intake Channels ────────────────────────────────────────────────── */}
+      <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
             {t.intakeChannels}
           </h3>
+          {!canEdit && (
+            <span className="text-[10px] text-textMuted font-bold px-2 py-0.5 bg-slate-100 rounded-full">{isAr ? 'للعرض فقط' : 'View only'}</span>
+          )}
+        </div>
+        <div className="px-6 py-5">
 
           {/* Top row: Option 1 + Option 2 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -1245,9 +1337,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <p className="text-[11px] text-textMuted mt-0.5 leading-relaxed">{t.option1Desc}</p>
                 </div>
                 <button
-                  disabled={togglingFwd}
-                  onClick={() => handleIngestionToggle('receive_cv_via_forwarding_email', !details.receive_cv_via_forwarding_email)}
-                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_forwarding_email ? 'bg-primary' : 'bg-slate-300'} ${togglingFwd ? 'opacity-50' : ''}`}
+                  disabled={togglingFwd || !canEdit}
+                  onClick={() => canEdit && handleIngestionToggle('receive_cv_via_forwarding_email', !details.receive_cv_via_forwarding_email)}
+                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_forwarding_email ? 'bg-primary' : 'bg-slate-300'} ${togglingFwd || !canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.receive_cv_via_forwarding_email ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
                 </button>
@@ -1286,8 +1378,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                     <p className="text-[9px] text-textMuted">{t.restrictSenderHint}</p>
                   </div>
                   <button
-                    onClick={() => handleIngestionToggle('restrict_forwarding_sender_to_tenant_email', !details.restrict_forwarding_sender_to_tenant_email)}
-                    className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details.restrict_forwarding_sender_to_tenant_email ? 'bg-primary' : 'bg-slate-300'}`}
+                    disabled={!canEdit}
+                    onClick={() => canEdit && handleIngestionToggle('restrict_forwarding_sender_to_tenant_email', !details.restrict_forwarding_sender_to_tenant_email)}
+                    className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details.restrict_forwarding_sender_to_tenant_email ? 'bg-primary' : 'bg-slate-300'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.restrict_forwarding_sender_to_tenant_email ? (isAr ? '-translate-x-4' : 'translate-x-4') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
                   </button>
@@ -1309,9 +1402,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <p className="text-[11px] text-textMuted mt-0.5 leading-relaxed">{t.option2Desc}</p>
                 </div>
                 <button
-                  disabled={togglingAlias}
-                  onClick={() => handleIngestionToggle('receive_cv_via_platform_email', !details.receive_cv_via_platform_email)}
-                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_platform_email ? 'bg-success' : 'bg-slate-300'} ${togglingAlias ? 'opacity-50' : ''}`}
+                  disabled={togglingAlias || !canEdit}
+                  onClick={() => canEdit && handleIngestionToggle('receive_cv_via_platform_email', !details.receive_cv_via_platform_email)}
+                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_platform_email ? 'bg-success' : 'bg-slate-300'} ${togglingAlias || !canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.receive_cv_via_platform_email ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
                 </button>
@@ -1540,229 +1633,20 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
       </section>
 
-      {/* ── F. Applications Summary ─────────────────────────────────────── */}
-      <section className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
-        <div className="px-8 py-5 border-b border-border flex items-center justify-between">
+      {/* F. AI Criteria ──────────────────────────────────────────────────── */}
+      <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            {t.appSummary}
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+            {t.skillsAnalysis}
           </h3>
-          <button
-            onClick={() => onViewApplications(details.job_id, 'all')}
-            className="flex items-center gap-1.5 text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors"
-          >
-            {t.viewApplications}
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-        <div className="p-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiValues.map((kpi, idx) => (
-          <button
-            key={idx}
-            onClick={() => onViewApplications(details.job_id, kpi.filter)}
-            className="bg-slate-50 p-5 rounded-2xl border border-border flex flex-col items-center justify-center text-center cursor-pointer hover:border-primary/50 hover:bg-white hover:shadow-md transition-all group"
-          >
-            <span className={`text-2xl font-black ${kpi.color} group-hover:scale-110 transition-transform`}>{kpi.value}</span>
-            <span className="text-[10px] font-black text-textMuted uppercase tracking-widest mt-1 group-hover:text-primary transition-colors">{t.kpiLabels[idx]}</span>
-          </button>
-        ))}
-        </div>
-      </section>
-
-      {/* Duplicate submissions */}
-      {duplicateLogs.length > 0 && (
-        <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-border flex items-center gap-2">
-            <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <h3 className="text-sm font-bold text-textMain uppercase tracking-widest">
-              Duplicate Submissions <span className="ml-1 px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-black">{duplicateLogs.length}</span>
-            </h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm divide-y divide-gray-100">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Applicant</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Detection</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Score</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Received</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Original</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Duplicate CV</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-black text-textMuted uppercase tracking-widest">Original CV</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {(showAllDuplicates ? duplicateLogs : duplicateLogs.slice(0, 5)).map((log) => {
-                  const reasonLabel = log.duplicate_reason === 'high_content_similarity' ? 'Content Similarity'
-                    : log.duplicate_reason === 'identity_match' ? 'Identity Match'
-                    : 'Exact Match';
-                  const reasonStyle = log.duplicate_reason === 'high_content_similarity'
-                    ? 'bg-orange-100 text-orange-700'
-                    : log.duplicate_reason === 'identity_match'
-                    ? 'bg-yellow-100 text-yellow-700'
-                    : 'bg-teal-100 text-teal-700';
-                  const score = log.duplicate_similarity_score != null
-                    ? `${Number(log.duplicate_similarity_score).toFixed(1)}%`
-                    : '100%';
-                  return (
-                    <tr key={log.log_id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <p className="font-semibold text-textMain text-sm">{log.duplicate_name || '—'}</p>
-                          {log.source === 'manual_upload' && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-blue-100 text-blue-700">Upload</span>
-                          )}
-                          {log.source === 'public_apply' && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-violet-100 text-violet-700">Link</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-textMuted">{log.duplicate_email || (log.submitted_by_email ? `Uploaded by: ${log.submitted_by_name || log.submitted_by_email}` : '—')}</p>
-                        {log.raw_filename && <p className="text-xs text-textMuted truncate max-w-[180px]">{log.raw_filename}</p>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${reasonStyle}`}>
-                          {reasonLabel}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-sm font-bold text-textMain">{score}</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-textMuted whitespace-nowrap">
-                        {log.received_at ? new Date(log.received_at).toLocaleString() : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {log.original_application_id ? (
-                          <button
-                            onClick={() => onOpenApplication(jobId, log.original_application_id)}
-                            className="text-left group"
-                          >
-                            <p className="text-sm font-semibold text-primary group-hover:underline">
-                              {log.original_candidate_name || log.original_application_id.slice(0, 8) + '…'}
-                            </p>
-                            {log.original_applied_at && (
-                              <p className="text-xs text-textMuted">
-                                {new Date(log.original_applied_at).toLocaleDateString()}
-                              </p>
-                            )}
-                          </button>
-                        ) : <span className="text-textMuted">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        {log.has_duplicate_cv ? (
-                          <button
-                            onClick={() => handleViewCV(
-                              `${WEBHOOK_CONFIG.DUPLICATE_CV_BASE_URL}/${jobId}/duplicate-logs/${log.log_id}/cv`,
-                              log.duplicate_original_filename || log.raw_filename || 'duplicate-cv'
-                            )}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-primary hover:text-white text-textMain text-xs font-semibold rounded-lg transition-colors"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            View Duplicate CV
-                          </button>
-                        ) : (
-                          <span
-                            title="File not stored — only the hash was recorded for this entry"
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-50 text-slate-400 text-xs font-semibold rounded-lg cursor-not-allowed border border-slate-200"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                            </svg>
-                            Not available
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {log.original_application_id && log.original_cv_filename ? (
-                          <button
-                            onClick={() => handleViewCV(`${WEBHOOK_CONFIG.CV_DOWNLOAD_BASE_URL}/${log.original_application_id}/cv`, log.original_cv_filename)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-primary hover:text-white text-textMain text-xs font-semibold rounded-lg transition-colors"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            View Original CV
-                          </button>
-                        ) : (
-                          <span className="text-textMuted text-xs">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {duplicateLogs.length > 5 && (
-            <div className="px-6 py-3 border-t border-border flex items-center justify-center">
-              <button
-                onClick={() => setShowAllDuplicates(p => !p)}
-                className="flex items-center gap-1.5 text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors"
-              >
-                <svg className={`w-3.5 h-3.5 transition-transform ${showAllDuplicates ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                {showAllDuplicates ? 'Show Less' : `View All ${duplicateLogs.length} Duplicates`}
-              </button>
-            </div>
+          {canEdit && details.criteria_extraction_status === 'completed' && !editingCriteria && (
+            <button onClick={handleCriteriaEdit} className="text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">{t.editCriteria}</button>
           )}
         </div>
-      )}
-
-      {/* ── AI Criteria Extraction Status Banner ───────────────────────────── */}
-      {details.criteria_extraction_status && details.criteria_extraction_status !== 'completed' && (
-        <div className={`rounded-2xl border p-4 flex items-center justify-between gap-4 ${
-          details.criteria_extraction_status === 'failed' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'
-        }`}>
-          <div className="flex items-center gap-3">
-            {details.criteria_extraction_status === 'failed' ? (
-              <svg className="w-5 h-5 text-error shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            ) : (
-              <svg className="animate-spin w-5 h-5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            )}
-            <div>
-              <p className="text-sm font-bold text-textMain">
-                {details.criteria_extraction_status === 'failed'
-                  ? t.criteriaFailed
-                  : details.criteria_extraction_status === 'processing'
-                  ? t.criteriaProcessing
-                  : t.criteriaPending}
-              </p>
-              {details.criteria_extraction_status === 'failed' && details.criteria_extraction_error && (
-                <p className="text-xs text-error/80 mt-0.5">{details.criteria_extraction_error}</p>
-              )}
-            </div>
-          </div>
-          {details.criteria_extraction_status === 'failed' && (
-            <button onClick={handleRetryExtraction} className="shrink-0 px-4 py-1.5 bg-error text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">
-              {t.retryExtraction}
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* ── Main Grid: Criteria + Eval Logic ───────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
+        <div className="px-6 py-5">
           {editingCriteria ? (
-            /* ── Criteria edit form ────────────────────────────────────────── */
-            <div className="bg-white rounded-3xl border border-border p-8 shadow-sm animate-fade-in">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-sm font-black text-textMain uppercase tracking-widest flex items-center">
-                  <span className="w-2 h-4 bg-amber-500 rounded-full mr-3"></span> {t.editCriteria}
-                </h3>
-                <button onClick={() => setEditingCriteria(false)} className="text-[10px] font-black text-textMuted hover:text-textMain uppercase tracking-widest transition-colors">{t.cancelEdit}</button>
-              </div>
+            <div className="animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.requiredSkills} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
@@ -1803,312 +1687,215 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               </div>
               <div className="flex justify-end gap-3 pt-5 mt-3 border-t border-border">
                 <button onClick={() => setEditingCriteria(false)} className="px-5 py-2.5 text-sm font-bold text-textMuted hover:text-textMain transition-colors">{t.cancelEdit}</button>
-                <button
-                  onClick={() => setShowCriteriaWarning(true)}
-                  disabled={savingCriteria}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white text-sm font-bold rounded-xl hover:bg-primaryDark transition-colors disabled:opacity-50"
-                >
+                <button onClick={() => setShowCriteriaWarning(true)} disabled={savingCriteria} className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white text-sm font-bold rounded-xl hover:bg-primaryDark transition-colors disabled:opacity-50">
                   {savingCriteria && <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
                   {savingCriteria ? t.savingCriteria : t.saveCriteria}
                 </button>
               </div>
             </div>
           ) : (
-            <>
+            <div className="space-y-6">
               {/* Skills */}
-              <div className="bg-white rounded-3xl border border-border p-8 shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-sm font-black text-textMain uppercase tracking-widest flex items-center">
-                    <span className="w-2 h-4 bg-primary rounded-full mr-3"></span> {t.skillsAnalysis}
-                  </h3>
-                  {canEdit && details.criteria_extraction_status === 'completed' && (
-                    <button onClick={handleCriteriaEdit} className="text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">
-                      {t.editCriteria}
-                    </button>
-                  )}
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.requiredSkills}{isModified(a => a?.skills?.required) && modifiedBadge}</p>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {(analysis?.skills?.required || []).map((s, i) => (
+                    <span key={i} className="px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-textMain">{s}</span>
+                  ))}
                 </div>
-                <div className="space-y-6">
-                  <div>
-                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">
-                      {t.requiredSkills}{isModified(a => a?.skills?.required) && modifiedBadge}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {(analysis?.skills?.required || []).map((s, i) => (
-                        <span key={i} className="px-4 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-textMain">{s}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">
-                      {t.preferredSkills}{isModified(a => a?.skills?.preferred) && modifiedBadge}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {(analysis?.skills?.preferred || []).map((s, i) => (
-                        <span key={i} className="px-4 py-1.5 bg-blue-50 text-primary border border-blue-100 rounded-lg text-xs font-bold">{s}</span>
-                      ))}
-                    </div>
-                  </div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.preferredSkills}{isModified(a => a?.skills?.preferred) && modifiedBadge}</p>
+                <div className="flex flex-wrap gap-2">
+                  {(analysis?.skills?.preferred || []).map((s, i) => (
+                    <span key={i} className="px-3 py-1.5 bg-blue-50 text-primary border border-blue-100 rounded-lg text-xs font-bold">{s}</span>
+                  ))}
                 </div>
               </div>
-
               {/* Experience & Education */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white rounded-3xl border border-border p-8 shadow-sm">
-                  <h3 className="text-sm font-black text-textMain uppercase tracking-widest mb-6 flex items-center">
-                    <span className="w-2 h-4 bg-primary rounded-full mr-3"></span> {t.experience}
-                  </h3>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">
-                        {t.minYears}{isModified(a => a?.experience?.minimum_years) && modifiedBadge}
-                      </p>
-                      <p className="text-lg font-black text-primary">{analysis?.experience?.minimum_years || 0}{t.years}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">
-                        {t.relevantRoles}{isModified(a => a?.experience?.relevant_roles) && modifiedBadge}
-                      </p>
-                      <ul className="space-y-1">
-                        {(analysis?.experience?.relevant_roles || []).map((r, i) => (
-                          <li key={i} className="text-xs font-bold text-textMain flex items-center">
-                            <span className="w-1 h-1 rounded-full bg-border mr-2"></span> {r}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-50 rounded-xl p-4 border border-border">
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.experience}</p>
+                  <p className="text-lg font-black text-primary mb-2">{analysis?.experience?.minimum_years || 0}{t.years}</p>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.relevantRoles}{isModified(a => a?.experience?.relevant_roles) && modifiedBadge}</p>
+                  <ul className="space-y-0.5">
+                    {(analysis?.experience?.relevant_roles || []).map((r, i) => <li key={i} className="text-xs font-bold text-textMain">• {r}</li>)}
+                  </ul>
                 </div>
-
-                <div className="bg-white rounded-3xl border border-border p-8 shadow-sm">
-                  <h3 className="text-sm font-black text-textMain uppercase tracking-widest mb-6 flex items-center">
-                    <span className="w-2 h-4 bg-primary rounded-full mr-3"></span> {t.education}
-                  </h3>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">
-                        {t.minLevel}{isModified(a => a?.education?.minimum_level) && modifiedBadge}
-                      </p>
-                      <p className="text-sm font-black text-textMain">{analysis?.education?.minimum_level || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">
-                        {t.fieldsOfStudy}{isModified(a => a?.education?.fields_of_study) && modifiedBadge}
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {(analysis?.education?.fields_of_study || []).map((f, i) => (
-                          <span key={i} className="px-3 py-1 bg-slate-50 border border-border rounded-lg text-[10px] font-bold text-textMuted">{f}</span>
-                        ))}
-                      </div>
-                    </div>
+                <div className="bg-slate-50 rounded-xl p-4 border border-border">
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.education}</p>
+                  <p className="text-sm font-black text-textMain mb-2">{analysis?.education?.minimum_level || 'N/A'}</p>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.fieldsOfStudy}{isModified(a => a?.education?.fields_of_study) && modifiedBadge}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(analysis?.education?.fields_of_study || []).map((f, i) => <span key={i} className="px-2 py-0.5 bg-white border border-border rounded text-[10px] font-bold text-textMuted">{f}</span>)}
                   </div>
                 </div>
               </div>
-
-              {/* Other Categories */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Other categories */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   { label: t.certifications,    items: analysis?.certifications,    modKey: (a: any) => a?.certifications },
                   { label: t.domainKnowledge,   items: analysis?.domain_knowledge,  modKey: (a: any) => a?.domain_knowledge },
                   { label: t.otherRequirements, items: analysis?.other_requirements, modKey: (a: any) => a?.other_requirements },
                 ].map((cat, idx) => (
-                  <div key={idx} className="bg-white rounded-3xl border border-border p-6 shadow-sm">
-                    <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-4">
-                      {cat.label}{isModified(cat.modKey) && modifiedBadge}
-                    </h4>
-                    <ul className="space-y-2">
+                  <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-border">
+                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{cat.label}{isModified(cat.modKey) && modifiedBadge}</p>
+                    <ul className="space-y-1">
                       {(cat.items || []).length > 0
-                        ? (cat.items || []).map((item, i) => (
-                            <li key={i} className="text-[11px] font-bold text-textMain leading-snug">• {item}</li>
-                          ))
+                        ? (cat.items || []).map((item, i) => <li key={i} className="text-[11px] font-bold text-textMain leading-snug">• {item}</li>)
                         : <li className="text-[10px] text-textMuted italic">{t.noData}</li>}
                     </ul>
                   </div>
                 ))}
               </div>
-
-              {/* View Original AI Criteria */}
-              {originalAiCriteriaRef.current && (
-                <div className="bg-slate-50 rounded-2xl border border-border p-4">
-                  <button
-                    onClick={() => setShowOriginalCriteria(p => !p)}
-                    className="flex items-center gap-2 w-full text-left text-[10px] font-black text-textMuted uppercase tracking-widest hover:text-textMain transition-colors"
-                  >
-                    <svg className={`w-3.5 h-3.5 transition-transform ${showOriginalCriteria ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                    {showOriginalCriteria ? t.hideOriginalCriteria : t.viewOriginalCriteria}
-                  </button>
-                  {showOriginalCriteria && (() => {
-                    const orig = originalAiCriteriaRef.current;
-                    return (
-                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] text-textMuted animate-fade-in">
-                        {[
-                          { label: t.requiredSkills,   items: orig?.skills?.required },
-                          { label: t.preferredSkills,  items: orig?.skills?.preferred },
-                          { label: t.relevantRoles,    items: orig?.experience?.relevant_roles },
-                          { label: t.fieldsOfStudy,    items: orig?.education?.fields_of_study },
-                          { label: t.certifications,   items: orig?.certifications },
-                          { label: t.domainKnowledge,  items: orig?.domain_knowledge },
-                          { label: t.otherRequirements,items: orig?.other_requirements },
-                        ].map((sec, i) => (sec.items?.length ? (
-                          <div key={i}>
-                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{sec.label}</p>
-                            <p className="leading-relaxed">{sec.items.join(', ')}</p>
-                          </div>
-                        ) : null))}
-                        {orig?.experience?.minimum_years != null && (
-                          <div>
-                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.minYears}</p>
-                            <p>{orig.experience.minimum_years}{t.years}</p>
-                          </div>
-                        )}
-                        {orig?.education?.minimum_level && (
-                          <div>
-                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.minLevel}</p>
-                            <p>{orig.education.minimum_level}</p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-            </>
+            </div>
           )}
         </div>
+      </section>
 
-        {/* Evaluation Logic */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-3xl border border-border p-8 shadow-sm sticky top-8">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-sm font-black text-textMain uppercase tracking-widest flex items-center">
-                <span className="w-2 h-4 bg-indigo-600 rounded-full mr-3"></span> {t.evalLogic}
-              </h3>
-              {canEdit && !editingWeights && analysis?.scoring_weights && (
-                <button onClick={handleEditWeights} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest transition-colors">
-                  {t.editWeights}
-                </button>
-              )}
-            </div>
-
-            {editingWeights ? (
-              <>
-                <div className="space-y-4">
-                  {weightKeys.map((key, i) => {
-                    const val = draftWeights[key] ?? 0;
-                    const isOver = weightTotal > 100 && val > 0;
-                    return (
-                      <div key={i}>
-                        <div className="flex justify-between text-[10px] font-black uppercase mb-1.5">
-                          <span className="text-textMuted">{weightLabels[i]}</span>
-                          <span className={isOver ? 'text-error' : 'text-textMuted'}>{val}%</span>
-                        </div>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={val}
-                          onChange={e => {
-                            const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
-                            setDraftWeights(prev => ({ ...prev, [key]: v }));
-                          }}
-                          className={`w-full px-3 py-2 text-sm font-bold rounded-xl border-2 focus:outline-none transition-colors ${
-                            isOver
-                              ? 'border-error bg-red-50 text-error'
-                              : 'border-border bg-slate-50 text-textMain focus:border-indigo-400'
-                          }`}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className={`mt-4 px-3 py-2.5 rounded-xl text-[11px] font-bold flex items-center justify-between ${
-                  weightTotal === 100
-                    ? 'bg-green-50 text-success border border-green-200'
-                    : weightTotal > 100
-                    ? 'bg-red-50 text-error border border-red-200'
-                    : 'bg-amber-50 text-warning border border-amber-200'
-                }`}>
-                  <span>
-                    {weightTotal === 100
-                      ? t.weightSuccess
-                      : weightTotal > 100
-                      ? t.weightOver.replace('{e}', String(weightTotal - 100))
-                      : t.weightUnder.replace('{r}', String(100 - weightTotal))}
-                  </span>
-                  <span className="font-black shrink-0 ml-2">{t.weightTotal}: {weightTotal}%</span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button onClick={handleNormalizeWeights} className="px-2 py-2 text-[10px] font-black text-indigo-600 border border-indigo-200 rounded-xl hover:bg-indigo-50 uppercase tracking-widest transition-colors leading-tight">
-                    {t.normalizeWeights}
-                  </button>
-                  <button onClick={handleResetWeights} className="px-2 py-2 text-[10px] font-black text-textMuted border border-border rounded-xl hover:bg-slate-50 uppercase tracking-widest transition-colors leading-tight">
-                    {t.resetAiWeights}
-                  </button>
-                </div>
-
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <button onClick={() => setEditingWeights(false)} className="px-3 py-2.5 text-xs font-bold text-textMuted border border-border rounded-xl hover:bg-slate-50 transition-colors">
-                    {t.cancelEdit}
-                  </button>
-                  <button
-                    onClick={handleSaveWeights}
-                    disabled={weightTotal !== 100 || savingWeights}
-                    className={`px-3 py-2.5 text-xs font-bold rounded-xl transition-colors ${
-                      weightTotal === 100 && !savingWeights
-                        ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                        : 'bg-slate-200 text-textMuted cursor-not-allowed'
-                    }`}
-                  >
-                    {savingWeights ? '…' : t.saveWeights}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="space-y-6">
-                {weightKeys.map((key, i) => {
-                  const weight = analysis?.scoring_weights?.[key];
-                  return weight ? (
-                    <div key={i}>
-                      <div className="flex justify-between text-[10px] font-black uppercase mb-2">
-                        <span className="text-textMuted">{weightLabels[i]}</span>
-                        <span className="text-textMain">{weight}%</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${weight}%` }}></div>
-                      </div>
-                    </div>
-                  ) : null;
-                })}
-              </div>
+      </div>
+      {/* Right column — Evaluation Weights ────────────────────────────────── */}
+      <div className="space-y-6">
+        <div className="bg-white rounded-2xl border border-border shadow-sm p-6 sticky top-20">
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+              {t.evalLogic}
+            </h3>
+            {canEdit && !editingWeights && analysis?.scoring_weights && (
+              <button onClick={handleEditWeights} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest transition-colors">{t.editWeights}</button>
             )}
           </div>
+          {editingWeights ? (
+            <>
+              <div className="space-y-3">
+                {weightKeys.map((key, i) => {
+                  const val = draftWeights[key] ?? 0;
+                  const isOver = weightTotal > 100 && val > 0;
+                  return (
+                    <div key={i}>
+                      <div className="flex justify-between text-[10px] font-black uppercase mb-1">
+                        <span className="text-textMuted">{weightLabels[i]}</span>
+                        <span className={isOver ? 'text-error' : 'text-textMuted'}>{val}%</span>
+                      </div>
+                      <input
+                        type="number" min={0} max={100} value={val}
+                        onChange={e => { const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0)); setDraftWeights(prev => ({ ...prev, [key]: v })); }}
+                        className={`w-full px-3 py-1.5 text-sm font-bold rounded-lg border-2 focus:outline-none transition-colors ${isOver ? 'border-error bg-red-50 text-error' : 'border-border bg-slate-50 text-textMain focus:border-indigo-400'}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className={`mt-3 px-3 py-2 rounded-lg text-[10px] font-bold flex items-center justify-between ${weightTotal === 100 ? 'bg-green-50 text-success border border-green-200' : weightTotal > 100 ? 'bg-red-50 text-error border border-red-200' : 'bg-amber-50 text-warning border border-amber-200'}`}>
+                <span>{weightTotal === 100 ? t.weightSuccess : weightTotal > 100 ? t.weightOver.replace('{e}', String(weightTotal - 100)) : t.weightUnder.replace('{r}', String(100 - weightTotal))}</span>
+                <span className="font-black shrink-0 ml-2">{t.weightTotal}: {weightTotal}%</span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button onClick={handleNormalizeWeights} className="px-2 py-1.5 text-[10px] font-black text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 uppercase tracking-widest transition-colors leading-tight">{t.normalizeWeights}</button>
+                <button onClick={handleResetWeights} className="px-2 py-1.5 text-[10px] font-black text-textMuted border border-border rounded-lg hover:bg-slate-50 uppercase tracking-widest transition-colors leading-tight">{t.resetAiWeights}</button>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button onClick={() => setEditingWeights(false)} className="px-3 py-2 text-xs font-bold text-textMuted border border-border rounded-lg hover:bg-slate-50 transition-colors">{t.cancelEdit}</button>
+                <button onClick={handleSaveWeights} disabled={weightTotal !== 100 || savingWeights} className={`px-3 py-2 text-xs font-bold rounded-lg transition-colors ${weightTotal === 100 && !savingWeights ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 text-textMuted cursor-not-allowed'}`}>
+                  {savingWeights ? '…' : t.saveWeights}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-4">
+              {weightKeys.map((key, i) => {
+                const weight = analysis?.scoring_weights?.[key];
+                return weight ? (
+                  <div key={i}>
+                    <div className="flex justify-between text-[10px] font-black uppercase mb-1.5">
+                      <span className="text-textMuted">{weightLabels[i]}</span>
+                      <span className="text-textMain">{weight}%</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                      <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${weight}%` }} />
+                    </div>
+                  </div>
+                ) : null;
+              })}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── Job Description ────────────────────────────────────────────────── */}
-      <section className="bg-white rounded-3xl border border-border overflow-hidden">
-        <button
-          onClick={() => setDescExpanded(!descExpanded)}
-          className="w-full px-8 py-5 flex items-center justify-between hover:bg-slate-50 transition-colors"
-        >
-          <h3 className="text-sm font-black text-textMain uppercase tracking-widest flex items-center">
-            <span className="w-2 h-4 bg-slate-400 rounded-full mr-3"></span> {t.jobDesc}
-          </h3>
-          <svg className={`w-6 h-6 transform transition-transform ${descExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        {descExpanded && (
-          <div className="px-10 pb-10 pt-4 animate-fade-in">
-            <div className="prose prose-slate max-w-none text-textMain text-sm leading-relaxed opacity-80 whitespace-pre-wrap">
-              {details.description}
-            </div>
+      </div>
+
+      {/* G. Reference Content ────────────────────────────────────────────────── */}
+      <div className="mt-6 space-y-3">
+        {originalAiCriteriaRef.current && (
+          <div className="bg-white rounded-2xl border border-border overflow-hidden shadow-sm">
+            <button
+              onClick={() => setShowOriginalCriteria(p => !p)}
+              className="w-full px-5 py-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors"
+            >
+              <span className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                {showOriginalCriteria ? t.hideOriginalCriteria : t.viewOriginalCriteria}
+              </span>
+              <svg className={`w-4 h-4 text-textMuted transition-transform ${showOriginalCriteria ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+            </button>
+            {showOriginalCriteria && (() => {
+              const orig = originalAiCriteriaRef.current;
+              return (
+                <div className="px-5 py-4 border-t border-border animate-fade-in">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] text-textMuted">
+                    {[
+                      { label: t.requiredSkills,   items: orig?.skills?.required },
+                      { label: t.preferredSkills,  items: orig?.skills?.preferred },
+                      { label: t.relevantRoles,    items: orig?.experience?.relevant_roles },
+                      { label: t.fieldsOfStudy,    items: orig?.education?.fields_of_study },
+                      { label: t.certifications,   items: orig?.certifications },
+                      { label: t.domainKnowledge,  items: orig?.domain_knowledge },
+                      { label: t.otherRequirements,items: orig?.other_requirements },
+                    ].map((sec, i) => (sec.items?.length ? (
+                      <div key={i}>
+                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{sec.label}</p>
+                        <p className="leading-relaxed">{sec.items.join(', ')}</p>
+                      </div>
+                    ) : null))}
+                    {orig?.experience?.minimum_years != null && (
+                      <div>
+                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.minYears}</p>
+                        <p>{orig.experience.minimum_years}{t.years}</p>
+                      </div>
+                    )}
+                    {orig?.education?.minimum_level && (
+                      <div>
+                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.minLevel}</p>
+                        <p>{orig.education.minimum_level}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
-      </section>
+        <div className="bg-white rounded-2xl border border-border overflow-hidden shadow-sm">
+          <button
+            onClick={() => setDescExpanded(!descExpanded)}
+            className="w-full px-5 py-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors"
+          >
+            <span className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              {t.jobDesc}
+            </span>
+            <svg className={`w-4 h-4 text-textMuted transition-transform ${descExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+          </button>
+          {descExpanded && (
+            <div className="px-5 pb-5 pt-3 border-t border-border animate-fade-in">
+              <div className="prose prose-slate max-w-none text-textMain text-sm leading-relaxed opacity-80 whitespace-pre-wrap">
+                {details.description}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
-      {/* ── Criteria save confirmation modal ──────────────────────────────── */}
+      {/* Criteria save confirmation modal */}
       {showCriteriaWarning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 p-8 animate-fade-in">
