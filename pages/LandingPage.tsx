@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface LandingPageProps {
   onGetStarted: () => void;
@@ -89,17 +89,34 @@ const GlobeIcon = () => (
     <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
   </svg>
 );
+const MenuIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+    <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+);
+const XIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+);
 
 // ── Shared visual config ───────────────────────────────────────────────────────
 
 const featureIcons = [<BrainIcon />, <ChartIcon />, <MailIcon />, <ZapIcon />, <UsersIcon />, <ShieldIcon />];
 const featureColors = [
-  { bg: 'bg-violet-50', border: 'border-violet-100', cs: '#7c3aed', ce: '#6d28d9' },
-  { bg: 'bg-blue-50',   border: 'border-blue-100',   cs: '#2563eb', ce: '#0891b2' },
-  { bg: 'bg-emerald-50',border: 'border-emerald-100',cs: '#059669', ce: '#0d9488' },
-  { bg: 'bg-orange-50', border: 'border-orange-100', cs: '#ea580c', ce: '#d97706' },
-  { bg: 'bg-rose-50',   border: 'border-rose-100',   cs: '#e11d48', ce: '#db2777' },
-  { bg: 'bg-indigo-50', border: 'border-indigo-100', cs: '#4f46e5', ce: '#2563eb' },
+  { bg: 'bg-violet-50', border: 'border-violet-100', cs: '#7c3aed', ce: '#6d28d9', impact: 'bg-violet-100 text-violet-700' },
+  { bg: 'bg-blue-50',   border: 'border-blue-100',   cs: '#2563eb', ce: '#0891b2', impact: 'bg-blue-100 text-blue-700'   },
+  { bg: 'bg-emerald-50',border: 'border-emerald-100',cs: '#059669', ce: '#0d9488', impact: 'bg-emerald-100 text-emerald-700' },
+  { bg: 'bg-orange-50', border: 'border-orange-100', cs: '#ea580c', ce: '#d97706', impact: 'bg-orange-100 text-orange-700' },
+  { bg: 'bg-rose-50',   border: 'border-rose-100',   cs: '#e11d48', ce: '#db2777', impact: 'bg-rose-100 text-rose-700'   },
+  { bg: 'bg-indigo-50', border: 'border-indigo-100', cs: '#4f46e5', ce: '#2563eb', impact: 'bg-indigo-100 text-indigo-700' },
+];
+
+const stepColors = [
+  { bg: '#7c3aed', tag: 'bg-violet-100 text-violet-700' },
+  { bg: '#2563eb', tag: 'bg-blue-100 text-blue-700'     },
+  { bg: '#4f46e5', tag: 'bg-indigo-100 text-indigo-700' },
+  { bg: '#059669', tag: 'bg-emerald-100 text-emerald-700' },
 ];
 
 // ── Translations ───────────────────────────────────────────────────────────────
@@ -112,13 +129,19 @@ const T = {
 
     navLinks: ['Features', 'How It Works', 'Pricing', 'FAQ'],
     navIds:   ['features', 'how-it-works', 'pricing', 'faq'],
-    signIn:     'Sign In',
-    getStarted: 'Get Started Free',
+    signIn:       'Sign In',
+    getStarted:   'Get Started Free',
+    startFreeTrial: 'Start Free Trial',
 
     badge:    'AI-Powered Hiring Platform',
     heroH1:   'Hire Smarter.',
     heroH2:   '10× Faster.',
     heroSub:  'Stop reading CVs manually. Our AI analyzes, scores, and ranks every applicant in seconds — so your team focuses on interviewing the best, not sorting the pile.',
+    heroMetrics: [
+      { icon: '⚡', text: 'Screening: days → hours' },
+      { icon: '🌍', text: 'AI analysis in 40+ languages' },
+      { icon: '🏆', text: 'Ranked shortlist in minutes' },
+    ],
     cta1:     'Start Free — No Card Needed',
     cta2:     'See How It Works',
 
@@ -142,24 +165,41 @@ const T = {
     featuresTitle: 'Everything your hiring team needs',
     featuresSub:   'From the moment a CV lands in an inbox to the moment you schedule an interview — fully automated and AI-driven.',
     features: [
-      { title: 'AI-Powered CV Analysis',    tag: 'Core Engine',     desc: 'Our Google Gemini-powered engine reads every CV the way a senior recruiter would — understanding context, not just keywords. It extracts skills, measures experience depth, validates education, and surfaces certifications automatically.', bullets: ['Natural language understanding', 'Multi-format CV support (PDF, DOC, email)', 'Structured data extraction in seconds'] },
-      { title: 'Smart Candidate Scoring',   tag: 'Intelligence',    desc: "Every applicant receives a weighted score across 7 dimensions: Skills, Experience, Education, Certifications, Soft Skills, Domain Knowledge, and Custom Requirements — all tuned to your job's unique needs.", bullets: ['7-dimension scoring framework', 'Configurable scoring weights per job', 'Qualified / Partial / Rejected auto-decisions'] },
-      { title: 'Frictionless CV Ingestion', tag: 'Automation',      desc: 'No portals to log into, no uploads to manage. Candidates email their CVs and the platform handles the rest. Choose a dedicated platform inbox or forward from your existing HR email — both routes feed straight into analysis.', bullets: ['Dedicated inbox per job posting', 'Email forwarding from any address', 'Zero manual upload required'] },
-      { title: 'Campaign Management',       tag: 'Workflow',        desc: 'Manage every open role as a structured campaign. Define the job, set closing dates, track live application counts, and flip a posting from Active to Closed in one click — all from a single dashboard.', bullets: ['Centralized jobs dashboard', 'Real-time application counters', 'Draft → Active → Closed lifecycle'] },
-      { title: 'Team & Tenant Control',     tag: 'Multi-Tenant',    desc: 'Built for agencies and enterprises that run multiple hiring units. Each tenant gets an isolated workspace, their own jobs and candidates, and a dedicated admin — all managed under a single super-admin roof.', bullets: ['Isolated tenant workspaces', 'Role-based access (Admin / Member)', 'Suspend or activate tenants instantly'] },
-      { title: 'Interview Intelligence',    tag: 'Decision Support', desc: 'Go beyond scores. Each candidate analysis includes a structured interview guide: gap analysis, suggested focus areas, and tailored interview questions generated from the CV and job description.', bullets: ['Auto-generated interview questions', 'Identified skill gaps per candidate', 'Evaluation notes for hiring managers'] },
+      { title: 'AI-Powered CV Analysis',    tag: 'Core Engine',     impact: 'Cut review time by 90%',      desc: 'Our Google Gemini-powered engine reads every CV the way a senior recruiter would — understanding context, not just keywords. It extracts skills, measures experience depth, validates education, and surfaces certifications automatically.', bullets: ['Natural language understanding', 'Multi-format CV support (PDF, DOC, email)', 'Structured data extraction in seconds'] },
+      { title: 'Smart Candidate Scoring',   tag: 'Intelligence',    impact: 'Rank 100 CVs in under 2 min', desc: 'Every applicant receives a weighted score across 7 dimensions: Skills, Experience, Education, Certifications, Soft Skills, Domain Knowledge, and Custom Requirements. All weights are tuned to your job\'s unique needs.', bullets: ['7-dimension scoring framework', 'Configurable weights per job', 'Qualified / Partial / Rejected auto-decisions'] },
+      { title: 'Frictionless CV Ingestion', tag: 'Automation',      impact: 'Zero setup required',         desc: 'No portals to log into, no uploads to manage. Candidates email their CVs and the platform handles the rest — choose a dedicated inbox or forward from your existing HR email.', bullets: ['Dedicated inbox per job posting', 'Email forwarding from any address', 'Zero manual upload required'] },
+      { title: 'Campaign Management',       tag: 'Workflow',        impact: 'All roles, one dashboard',    desc: 'Manage every open role as a structured campaign. Define the job, set closing dates, track live application counts, and flip a posting from Active to Closed in one click.', bullets: ['Centralized jobs dashboard', 'Real-time application counters', 'Draft → Active → Closed lifecycle'] },
+      { title: 'Team & Tenant Control',     tag: 'Multi-Tenant',    impact: 'Built for agencies',          desc: 'Built for agencies and enterprises that run multiple hiring units. Each tenant gets an isolated workspace, their own jobs and candidates, and a dedicated admin — all under one roof.', bullets: ['Isolated tenant workspaces', 'Role-based access (Admin / Member)', 'Suspend or activate tenants instantly'] },
+      { title: 'Interview Intelligence',    tag: 'Decision Support', impact: 'Ready-made interview guide', desc: 'Go beyond scores. Each candidate analysis includes a structured interview guide: gap analysis, suggested focus areas, and tailored interview questions generated from the CV and job description.', bullets: ['Auto-generated interview questions', 'Identified skill gaps per candidate', 'Evaluation notes for hiring managers'] },
     ],
 
     stepsTag:   'How It Works',
-    stepsTitle: 'From job post to hire in 6 steps',
+    stepsTitle: 'From job post to hire in 4 steps',
     stepsSub:   "No complex integrations, no training your team on new tools. You're analyzing CVs the same day you sign up.",
     steps: [
-      { num: '01', icon: '📋', title: 'Create Job Campaign',             desc: 'Create a campaign with your job description. AI automatically extracts evaluation criteria — skills, experience, education, and custom requirements.', color: 'bg-violet-100 text-violet-700' },
-      { num: '02', icon: '🔗', title: 'Share Apply Link or Job Email',   desc: 'Distribute a unique job email alias or public application link. Candidates apply by simply emailing their CV or filling the form.',               color: 'bg-blue-100 text-blue-700' },
-      { num: '03', icon: '📨', title: 'Receive CVs Automatically',       desc: 'Every CV sent to the job email is instantly captured, parsed, and queued for analysis. No manual uploads, no missed applications.',                   color: 'bg-sky-100 text-sky-700' },
-      { num: '04', icon: '🤖', title: 'AI Analyzes & Scores Candidates', desc: 'The AI engine reads each CV, extracts structured data, and scores candidates across 7 dimensions aligned to your job requirements.',               color: 'bg-indigo-100 text-indigo-700' },
-      { num: '05', icon: '🏆', title: 'Review Ranked Applicants',        desc: 'Open your dashboard to a ranked, scored shortlist. Drill into any candidate for a full breakdown, gap analysis, and AI-generated interview questions.', color: 'bg-emerald-100 text-emerald-700' },
-      { num: '06', icon: '📤', title: 'Export & Manage Hiring Process',  desc: 'Export ranked candidates to CSV, track your hiring pipeline, and close campaigns when the right candidate is found.',                             color: 'bg-teal-100 text-teal-700' },
+      { icon: '📋', title: 'Post Your Job',           desc: 'Paste your job description and AI automatically extracts scoring criteria — skills, experience, education, and custom requirements. Setup takes minutes.', tags: ['AI Criteria', 'Custom Weights'] },
+      { icon: '🔗', title: 'Share & Collect',         desc: 'Distribute a job email alias or public apply link. Candidates apply by emailing their CV or filling a short form — zero friction on their end.', tags: ['Email Alias', 'Apply Link'] },
+      { icon: '🤖', title: 'AI Scores Everyone',      desc: 'Every CV is automatically captured, parsed, and ranked across 7 dimensions in seconds. No manual uploads, no missed applications.', tags: ['Gemini AI', '7-Dim Score', 'Auto-Rank'] },
+      { icon: '🏆', title: 'Hire the Best',           desc: 'Open your dashboard to a ranked shortlist with full breakdowns, gap analysis, and AI-generated interview questions ready to use.', tags: ['Ranked Shortlist', 'Interview Guide'] },
+    ],
+
+    midCtaTag:   'Get Started Today',
+    midCtaTitle: 'Start analyzing CVs in minutes',
+    midCtaSub:   'No integrations to configure. No training required. Paste your job description and you\'re live.',
+    midCtaBtn1:  'Start Free Trial',
+    midCtaBtn2:  'See How It Works',
+    midCtaFine:  '14-day free trial · No credit card · Cancel anytime',
+
+    whoTag:   'Built For',
+    whoTitle: 'Who is this for?',
+    whoSub:   'From boutique agencies to enterprise HR departments — CV Analyzer fits any hiring operation.',
+    personas: [
+      { icon: '👥', title: 'In-House HR Teams',          desc: 'Slash screening time and let your recruiters focus on conversations, not CV piles.' },
+      { icon: '🏢', title: 'Staffing Agencies',           desc: 'Manage unlimited client pipelines from one platform with full tenant isolation.' },
+      { icon: '🏛️', title: 'Enterprise Organizations',    desc: 'RBAC roles, multi-team control, and audit-ready hiring workflows at scale.' },
+      { icon: '⚖️', title: 'Government & Public Sector',  desc: 'Structured, criteria-driven evaluation for transparent and compliant hiring.' },
+      { icon: '🎓', title: 'University & Graduate Programs', desc: 'Handle high application volumes for competitive graduate programs with ease.' },
+      { icon: '⚡', title: 'High-Volume Recruiters',      desc: 'Process thousands of CVs per month without adding headcount or complexity.' },
     ],
 
     testimonialsTag:   'Social Proof',
@@ -201,13 +241,19 @@ const T = {
 
     navLinks: ['الميزات', 'كيف يعمل', 'الأسعار', 'الأسئلة الشائعة'],
     navIds:   ['features', 'how-it-works', 'pricing', 'faq'],
-    signIn:     'تسجيل الدخول',
-    getStarted: 'ابدأ مجاناً',
+    signIn:       'تسجيل الدخول',
+    getStarted:   'ابدأ مجاناً',
+    startFreeTrial: 'ابدأ التجربة المجانية',
 
     badge:   'منصة التوظيف بالذكاء الاصطناعي',
     heroH1:  'وظّف بذكاء.',
     heroH2:  'أسرع 10 أضعاف.',
     heroSub: 'توقف عن قراءة السير الذاتية يدوياً. يحلل ذكاؤنا الاصطناعي ويصنّف كل مرشح في ثوانٍ — حتى يتركز فريقك على مقابلة الأفضل، لا على فرز الملفات.',
+    heroMetrics: [
+      { icon: '⚡', text: 'الفرز: من أيام إلى ساعات' },
+      { icon: '🌍', text: 'تحليل بالذكاء الاصطناعي بـ 40+ لغة' },
+      { icon: '🏆', text: 'قائمة مختصرة مرتبة في دقائق' },
+    ],
     cta1:    'ابدأ مجاناً — بلا بطاقة ائتمان',
     cta2:    'شاهد كيف يعمل',
 
@@ -231,24 +277,41 @@ const T = {
     featuresTitle: 'كل ما يحتاجه فريق التوظيف لديك',
     featuresSub:   'من لحظة وصول السيرة الذاتية حتى موعد المقابلة — أتمتة كاملة بالذكاء الاصطناعي.',
     features: [
-      { title: 'تحليل السيرة الذاتية بالذكاء الاصطناعي', tag: 'المحرك الأساسي',   desc: 'يقرأ محركنا المدعوم بـ Google Gemini كل سيرة ذاتية كما يفعل المجنّد الخبير — يفهم السياق لا الكلمات فقط. يستخرج المهارات، ويقيس عمق الخبرة، ويتحقق من التعليم، ويرصد الشهادات تلقائياً.', bullets: ['فهم اللغة الطبيعية', 'دعم صيغ متعددة (PDF, DOC, بريد)', 'استخراج البيانات في ثوانٍ'] },
-      { title: 'تقييم المرشحين الذكي',                   tag: 'الذكاء',            desc: 'يحصل كل مرشح على درجة موزونة عبر 7 محاور: المهارات، الخبرة، التعليم، الشهادات، المهارات الشخصية، المعرفة المجالية، والمتطلبات المخصصة — مُعدّلة لاحتياجات وظيفتك.', bullets: ['إطار تقييم 7 محاور', 'أوزان تقييم قابلة للتخصيص لكل وظيفة', 'قرارات تلقائية: مؤهل / جزئي / مرفوض'] },
-      { title: 'استقبال السيرة الذاتية بسلاسة',          tag: 'الأتمتة',           desc: 'لا بوابات للدخول، لا رفع يدوي. يرسل المرشحون سيرهم الذاتية بالبريد الإلكتروني وتتولى المنصة الباقي. اختر صندوق بريد مخصص أو أعد توجيه بريدك الحالي — كلا المسارين يصبان في التحليل مباشرة.', bullets: ['صندوق بريد مخصص لكل وظيفة', 'إعادة توجيه من أي عنوان', 'صفر رفع يدوي'] },
-      { title: 'إدارة الحملات الوظيفية',                 tag: 'سير العمل',         desc: 'أدِر كل وظيفة مفتوحة كحملة منظمة. حدد الوظيفة، ضع تاريخ الإغلاق، تتبع عدد الطلبات، وحوّل الإعلان من نشط إلى مغلق بنقرة واحدة — كل ذلك من لوحة تحكم واحدة.', bullets: ['لوحة تحكم مركزية للوظائف', 'عدادات طلبات فورية', 'دورة حياة: مسودة ← نشط ← مغلق'] },
-      { title: 'إدارة الفريق والمستأجرين',               tag: 'متعدد المستأجرين',  desc: 'مصمم للوكالات والمؤسسات التي تدير وحدات توظيف متعددة. يحصل كل مستأجر على مساحة عمل معزولة، وظائفه ومرشحيه الخاصة، ومسؤول مخصص — كل ذلك تحت سقف مشرف عام واحد.', bullets: ['مساحات عمل معزولة لكل مستأجر', 'صلاحيات الوصول (مشرف / عضو)', 'تعليق أو تفعيل المستأجرين فوراً'] },
-      { title: 'ذكاء المقابلات',                          tag: 'دعم القرار',        desc: 'تجاوز الدرجات. يتضمن كل تحليل مرشح دليلاً منظماً للمقابلة: تحليل الفجوات، مناطق التركيز المقترحة، وأسئلة مقابلة مخصصة مولّدة من السيرة الذاتية والوصف الوظيفي.', bullets: ['أسئلة مقابلة مولّدة تلقائياً', 'فجوات المهارات المحددة لكل مرشح', 'ملاحظات تقييم لمديري التوظيف'] },
+      { title: 'تحليل السيرة الذاتية بالذكاء الاصطناعي', tag: 'المحرك الأساسي',   impact: 'وفّر 90% من وقت المراجعة',    desc: 'يقرأ محركنا المدعوم بـ Google Gemini كل سيرة ذاتية كما يفعل المجنّد الخبير — يفهم السياق لا الكلمات فقط. يستخرج المهارات، ويقيس عمق الخبرة، ويتحقق من التعليم، ويرصد الشهادات تلقائياً.', bullets: ['فهم اللغة الطبيعية', 'دعم صيغ متعددة (PDF, DOC, بريد)', 'استخراج البيانات في ثوانٍ'] },
+      { title: 'تقييم المرشحين الذكي',                   tag: 'الذكاء',            impact: 'رتّب 100 سيرة في دقيقتين',   desc: 'يحصل كل مرشح على درجة موزونة عبر 7 محاور: المهارات، الخبرة، التعليم، الشهادات، المهارات الشخصية، المعرفة المجالية، والمتطلبات المخصصة. الأوزان مُعدّلة لاحتياجات وظيفتك.', bullets: ['إطار تقييم 7 محاور', 'أوزان تقييم قابلة للتخصيص', 'قرارات تلقائية: مؤهل / جزئي / مرفوض'] },
+      { title: 'استقبال السيرة الذاتية بسلاسة',          tag: 'الأتمتة',           impact: 'لا إعداد مطلوب',              desc: 'لا بوابات للدخول، لا رفع يدوي. يرسل المرشحون سيرهم الذاتية بالبريد الإلكتروني وتتولى المنصة الباقي — اختر صندوق بريد مخصص أو أعد توجيه بريدك الحالي.', bullets: ['صندوق بريد مخصص لكل وظيفة', 'إعادة توجيه من أي عنوان', 'صفر رفع يدوي'] },
+      { title: 'إدارة الحملات الوظيفية',                 tag: 'سير العمل',         impact: 'كل الوظائف، لوحة واحدة',    desc: 'أدِر كل وظيفة مفتوحة كحملة منظمة. حدد الوظيفة، ضع تاريخ الإغلاق، تتبع عدد الطلبات، وحوّل الإعلان من نشط إلى مغلق بنقرة واحدة.', bullets: ['لوحة تحكم مركزية للوظائف', 'عدادات طلبات فورية', 'دورة حياة: مسودة ← نشط ← مغلق'] },
+      { title: 'إدارة الفريق والمستأجرين',               tag: 'متعدد المستأجرين',  impact: 'مصمم للوكالات',              desc: 'مصمم للوكالات والمؤسسات التي تدير وحدات توظيف متعددة. يحصل كل مستأجر على مساحة عمل معزولة، وظائفه ومرشحيه الخاصة، ومسؤول مخصص — كل ذلك تحت سقف واحد.', bullets: ['مساحات عمل معزولة لكل مستأجر', 'صلاحيات الوصول (مشرف / عضو)', 'تعليق أو تفعيل المستأجرين فوراً'] },
+      { title: 'ذكاء المقابلات',                          tag: 'دعم القرار',        impact: 'دليل مقابلة جاهز فوراً',     desc: 'تجاوز الدرجات. يتضمن كل تحليل مرشح دليلاً منظماً للمقابلة: تحليل الفجوات، مناطق التركيز المقترحة، وأسئلة مقابلة مخصصة مولّدة من السيرة الذاتية والوصف الوظيفي.', bullets: ['أسئلة مقابلة مولّدة تلقائياً', 'فجوات المهارات المحددة لكل مرشح', 'ملاحظات تقييم لمديري التوظيف'] },
     ],
 
     stepsTag:   'كيف يعمل',
-    stepsTitle: 'من نشر الوظيفة إلى التوظيف في 6 خطوات',
+    stepsTitle: 'من نشر الوظيفة إلى التوظيف في 4 خطوات',
     stepsSub:   'لا تكاملات معقدة، لا تدريب على أدوات جديدة. ستحلل السير الذاتية في نفس يوم التسجيل.',
     steps: [
-      { num: '٠١', icon: '📋', title: 'إنشاء حملة وظيفية',                          desc: 'أنشئ حملة بوصف وظيفتك. يستخرج الذكاء الاصطناعي معايير التقييم تلقائياً — المهارات، الخبرة، التعليم، والمتطلبات المخصصة.',                          color: 'bg-violet-100 text-violet-700' },
-      { num: '٠٢', icon: '🔗', title: 'شارك رابط التقديم أو البريد الوظيفي',       desc: 'وزّع رابط بريد إلكتروني مخصص للوظيفة أو صفحة تقديم عامة. يتقدم المرشحون ببساطة بإرسال سيرتهم بالبريد أو ملء النموذج.',                         color: 'bg-blue-100 text-blue-700' },
-      { num: '٠٣', icon: '📨', title: 'استقبال السير الذاتية تلقائياً',             desc: 'كل سيرة ذاتية ترد على البريد الوظيفي تُلتقط فوراً وتُحلَّل وتُضاف للقائمة. بلا رفع يدوي ولا طلبات مفقودة.',                                       color: 'bg-sky-100 text-sky-700' },
-      { num: '٠٤', icon: '🤖', title: 'الذكاء الاصطناعي يحلل ويقيّم المرشحين',     desc: 'يقرأ محرك الذكاء الاصطناعي كل سيرة ذاتية ويستخرج البيانات ويقيّم المرشحين عبر 7 محاور وفقاً لمتطلبات وظيفتك.',                                 color: 'bg-indigo-100 text-indigo-700' },
-      { num: '٠٥', icon: '🏆', title: 'مراجعة المرشحين المرتبين',                  desc: 'افتح لوحة التحكم لتجد قائمة مختصرة مرتبة ومقيّمة. انقر على أي مرشح لتحليل كامل وتحديد الفجوات وأسئلة مقابلة مولّدة بالذكاء الاصطناعي.',          color: 'bg-emerald-100 text-emerald-700' },
-      { num: '٠٦', icon: '📤', title: 'تصدير وإدارة عملية التوظيف',                 desc: 'صدّر المرشحين المرتبين إلى CSV، تتبع خط أنابيب التوظيف، وأغلق الحملة عند إيجاد المرشح المناسب.',                                                color: 'bg-teal-100 text-teal-700' },
+      { icon: '📋', title: 'انشر وظيفتك',               desc: 'الصق وصف وظيفتك ويستخرج الذكاء الاصطناعي معايير التقييم تلقائياً — المهارات، الخبرة، التعليم، والمتطلبات المخصصة. الإعداد يستغرق دقائق.', tags: ['معايير AI', 'أوزان مخصصة'] },
+      { icon: '🔗', title: 'شارك واجمع الطلبات',        desc: 'وزّع بريد الوظيفة المخصص أو رابط التقديم العام. يتقدم المرشحون ببساطة بإرسال سيرتهم بالبريد أو ملء نموذج قصير — بلا أي احتكاك من جهتهم.', tags: ['بريد مخصص', 'رابط تقديم'] },
+      { icon: '🤖', title: 'الذكاء الاصطناعي يقيّم الجميع', desc: 'كل سيرة ذاتية تُلتقط تلقائياً وتُحلَّل وتُرتَّب عبر 7 محاور في ثوانٍ. بلا رفع يدوي ولا طلبات مفقودة.', tags: ['Gemini AI', 'تقييم 7 محاور', 'ترتيب تلقائي'] },
+      { icon: '🏆', title: 'وظّف الأفضل',               desc: 'افتح لوحة التحكم لتجد قائمة مختصرة مرتبة مع تحليل كامل وتحديد للفجوات وأسئلة مقابلة مولّدة بالذكاء الاصطناعي جاهزة للاستخدام.', tags: ['قائمة مرتبة', 'دليل المقابلة'] },
+    ],
+
+    midCtaTag:   'ابدأ اليوم',
+    midCtaTitle: 'ابدأ تحليل السير الذاتية في دقائق',
+    midCtaSub:   'لا تكاملات للإعداد، لا تدريب مطلوب. الصق وصف وظيفتك وأنت جاهز.',
+    midCtaBtn1:  'ابدأ التجربة المجانية',
+    midCtaBtn2:  'شاهد كيف يعمل',
+    midCtaFine:  '14 يوم تجريبي · بلا بطاقة ائتمانية · إلغاء في أي وقت',
+
+    whoTag:   'مصمم لـ',
+    whoTitle: 'من يستفيد من المنصة؟',
+    whoSub:   'من الوكالات الصغيرة إلى أقسام الموارد البشرية في الشركات الكبرى — CV Analyzer يتناسب مع أي عملية توظيف.',
+    personas: [
+      { icon: '👥', title: 'فرق الموارد البشرية',           desc: 'قلّص وقت الفرز وامنح فريقك وقتاً للمحادثات لا لقراءة السير الذاتية.' },
+      { icon: '🏢', title: 'وكالات التوظيف',                desc: 'أدِر مسارات عملاء غير محدودة من منصة واحدة مع عزل كامل لكل عميل.' },
+      { icon: '🏛️', title: 'المؤسسات الكبرى',               desc: 'صلاحيات وصول متعددة وتحكم في الفرق وسير عمل توظيف قابلة للتدقيق.' },
+      { icon: '⚖️', title: 'الجهات الحكومية',               desc: 'تقييم منظم قائم على المعايير لعملية توظيف شفافة ومتوافقة مع اللوائح.' },
+      { icon: '🎓', title: 'الجامعات والبرامج الأكاديمية',  desc: 'تعامل مع أعداد كبيرة من طلبات البرامج التنافسية بكل سهولة.' },
+      { icon: '⚡', title: 'التوظيف بحجم كبير',             desc: 'عالج آلاف السير الذاتية شهرياً دون الحاجة لزيادة عدد الموظفين.' },
     ],
 
     testimonialsTag:   'آراء العملاء',
@@ -310,6 +373,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
   const [lang, setLang] = useState<'en' | 'ar'>('en');
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [apiPlans, setApiPlans] = useState<ApiPlan[]>([]);
   const t = T[lang];
   const isAr = lang === 'ar';
@@ -335,7 +399,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
     return () => window.removeEventListener('scroll', h);
   }, []);
 
-  // Keep document-level lang + dir in sync so screen readers and browsers respond correctly
   useEffect(() => {
     document.documentElement.lang = lang === 'ar' ? 'ar' : 'en';
     document.documentElement.dir  = lang === 'ar' ? 'rtl' : 'ltr';
@@ -345,7 +408,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
     };
   }, [lang]);
 
-  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  // Close mobile menu on scroll
+  useEffect(() => {
+    if (mobileMenuOpen) setMobileMenuOpen(false);
+  }, [scrolled]);
+
+  const scrollTo = (id: string) => {
+    setMobileMenuOpen(false);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   const Arrow = () => (
     <span className={`inline-flex transition-transform group-hover:translate-x-1 ${isAr ? 'rotate-180' : ''}`}>
@@ -359,26 +430,26 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
       {/* ── Navbar ── */}
       <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-white/95 backdrop-blur shadow-sm border-b border-gray-100' : 'bg-transparent'}`}>
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+
           {/* Logo */}
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg,#6366f1,#2563eb)' }}>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#6366f1,#2563eb)' }}>
               <svg viewBox="0 0 24 24" fill="white" className="w-5 h-5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/></svg>
             </div>
             <span className="font-bold text-gray-900 text-lg tracking-tight">CV Analyzer</span>
           </div>
 
-          {/* Nav links */}
+          {/* Desktop nav links */}
           <div className="hidden md:flex items-center gap-7">
-            {t.navLinks.map((label, i) => (
-              <button key={label} onClick={() => scrollTo(t.navIds[i])} className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors capitalize">
+            {t.navLinks.slice(0, 3).map((label, i) => (
+              <button key={label} onClick={() => scrollTo(t.navIds[i])} className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
                 {label}
               </button>
             ))}
           </div>
 
-          {/* CTA + lang toggle */}
-          <div className="flex items-center gap-2">
-            {/* Language toggle */}
+          {/* Desktop CTAs + lang toggle */}
+          <div className="hidden md:flex items-center gap-2">
             <button
               onClick={() => setLang(isAr ? 'en' : 'ar')}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg border border-gray-200 hover:border-indigo-400 text-gray-600 hover:text-indigo-600 transition-all"
@@ -386,14 +457,53 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
               <GlobeIcon />
               {t.langBtn}
             </button>
-            <button onClick={onSignIn} className="text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors px-3 py-2 hidden sm:block">
+            <button onClick={onSignIn} className="text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors px-3 py-2">
               {t.signIn}
             </button>
             <button onClick={onGetStarted} className="text-sm font-semibold text-white px-5 py-2 rounded-xl transition-all hover:opacity-90 hover:shadow-lg" style={{ background: 'linear-gradient(135deg,#6366f1,#2563eb)' }}>
-              {t.getStarted}
+              {t.startFreeTrial}
+            </button>
+          </div>
+
+          {/* Mobile: lang + hamburger */}
+          <div className="flex md:hidden items-center gap-2">
+            <button
+              onClick={() => setLang(isAr ? 'en' : 'ar')}
+              className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-indigo-400 hover:text-indigo-600 transition-all"
+            >
+              <GlobeIcon />
+              {t.langBtn}
+            </button>
+            <button
+              onClick={() => setMobileMenuOpen(o => !o)}
+              className={`p-2 rounded-lg transition-colors ${scrolled ? 'text-gray-700 hover:bg-gray-100' : 'text-white hover:bg-white/10'}`}
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? <XIcon /> : <MenuIcon />}
             </button>
           </div>
         </div>
+
+        {/* Mobile menu drawer */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-white border-t border-gray-100 shadow-lg">
+            <div className="px-6 py-4 space-y-1">
+              {t.navLinks.map((label, i) => (
+                <button key={label} onClick={() => scrollTo(t.navIds[i])} className="w-full text-start px-3 py-2.5 text-sm font-medium text-gray-700 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                  {label}
+                </button>
+              ))}
+              <div className="pt-3 pb-1 border-t border-gray-100 flex flex-col gap-2">
+                <button onClick={() => { setMobileMenuOpen(false); onSignIn(); }} className="w-full text-center px-4 py-2.5 text-sm font-semibold text-gray-700 border border-gray-200 rounded-xl hover:border-gray-300 transition-colors">
+                  {t.signIn}
+                </button>
+                <button onClick={() => { setMobileMenuOpen(false); onGetStarted(); }} className="w-full text-center px-4 py-2.5 text-sm font-bold text-white rounded-xl transition-all hover:opacity-90" style={{ background: 'linear-gradient(135deg,#6366f1,#2563eb)' }}>
+                  {t.startFreeTrial}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* ── Hero ── */}
@@ -415,7 +525,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
             </span>
           </h1>
 
-          <p className="text-lg md:text-xl text-white/70 max-w-2xl mx-auto mb-10 leading-relaxed">{t.heroSub}</p>
+          <p className="text-lg md:text-xl text-white/70 max-w-2xl mx-auto mb-8 leading-relaxed">{t.heroSub}</p>
+
+          {/* Impact metric badges */}
+          <div className="flex flex-wrap items-center justify-center gap-3 mb-10">
+            {t.heroMetrics.map((m, i) => (
+              <div key={i} className="flex items-center gap-2 bg-white/10 backdrop-blur border border-white/15 rounded-full px-4 py-2">
+                <span className="text-base">{m.icon}</span>
+                <span className="text-white/85 text-sm font-medium">{m.text}</span>
+              </div>
+            ))}
+          </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
             <button onClick={onGetStarted} className="group flex items-center gap-2 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all hover:scale-105 hover:shadow-2xl" style={{ background: 'linear-gradient(135deg,#6366f1,#2563eb)', boxShadow: '0 8px 32px rgba(99,102,241,0.4)' }}>
@@ -495,10 +615,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
               const c = featureColors[i];
               return (
                 <div key={f.title} className={`group rounded-2xl border p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-white ${c.border}`}>
-                  <div className={`w-12 h-12 rounded-xl ${c.bg} flex items-center justify-center mb-4`}>
-                    <div style={{ color: c.cs }}>
-                      {featureIcons[i]}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={`w-13 h-13 w-12 h-12 rounded-xl ${c.bg} flex items-center justify-center flex-shrink-0`}>
+                      <div style={{ color: c.cs }}>{featureIcons[i]}</div>
                     </div>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${c.impact}`}>{f.impact}</span>
                   </div>
                   <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">{f.tag}</span>
                   <h3 className="text-lg font-bold text-gray-900 mt-1 mb-2">{f.title}</h3>
@@ -525,17 +646,76 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
             <h2 className="text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">{t.stepsTitle}</h2>
             <p className="text-lg text-gray-500 max-w-xl mx-auto">{t.stepsSub}</p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {t.steps.map((step) => (
-              <div key={step.num} className="group bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className={`w-10 h-10 rounded-xl ${step.color} flex items-center justify-center text-lg font-extrabold`}>
-                    {step.icon}
+
+          <div className="relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-6">
+            {/* Gradient connector line — desktop only */}
+            <div className="hidden lg:block absolute top-8 left-[12.5%] right-[12.5%] h-0.5 bg-gradient-to-r from-violet-300 via-blue-300 via-indigo-300 to-emerald-300 z-0" />
+
+            {t.steps.map((step, i) => {
+              const sc = stepColors[i];
+              return (
+                <div key={i} className="relative z-10 flex flex-col items-center">
+                  {/* Numbered circle */}
+                  <div
+                    className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-black shadow-lg ring-4 ring-white mb-6 flex-shrink-0"
+                    style={{ background: sc.bg }}
+                  >
+                    {i + 1}
                   </div>
-                  <span className="text-xs font-black text-gray-400 tracking-widest">{step.num}</span>
+                  {/* Card */}
+                  <div className="w-full text-center bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition-shadow">
+                    <div className="text-3xl mb-3">{step.icon}</div>
+                    <h3 className="font-bold text-gray-900 mb-2 text-base">{step.title}</h3>
+                    <p className="text-gray-500 text-sm leading-relaxed mb-4">{step.desc}</p>
+                    <div className="flex flex-wrap gap-1.5 justify-center">
+                      {step.tags.map(tag => (
+                        <span key={tag} className={`text-xs font-semibold px-2.5 py-1 rounded-full ${sc.tag}`}>{tag}</span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <h3 className="text-base font-bold text-gray-900 mb-2">{step.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{step.desc}</p>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Mid-page CTA ── */}
+      <section className="py-20 px-6" style={{ background: 'linear-gradient(135deg,#f5f3ff,#eff6ff,#ecfdf5)' }}>
+        <div className="max-w-3xl mx-auto text-center">
+          <span className="inline-block text-xs font-bold uppercase tracking-widest text-indigo-600 mb-4">{t.midCtaTag}</span>
+          <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">{t.midCtaTitle}</h2>
+          <p className="text-gray-500 text-lg mb-8 max-w-xl mx-auto">{t.midCtaSub}</p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-4">
+            <button onClick={onGetStarted} className="group flex items-center gap-2 text-white font-bold px-8 py-3.5 rounded-2xl text-sm transition-all hover:scale-105 hover:shadow-xl" style={{ background: 'linear-gradient(135deg,#6366f1,#2563eb)', boxShadow: '0 6px 24px rgba(99,102,241,0.35)' }}>
+              {t.midCtaBtn1}<Arrow />
+            </button>
+            <button onClick={() => scrollTo('how-it-works')} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-semibold px-8 py-3.5 rounded-2xl border border-gray-200 hover:border-gray-300 transition-all text-sm bg-white">
+              {t.midCtaBtn2}
+            </button>
+          </div>
+          <p className="text-gray-400 text-xs">{t.midCtaFine}</p>
+        </div>
+      </section>
+
+      {/* ── Who Is This For ── */}
+      <section className="py-24 px-6 bg-white">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14">
+            <span className="inline-block text-xs font-bold uppercase tracking-widest text-indigo-600 mb-3">{t.whoTag}</span>
+            <h2 className="text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">{t.whoTitle}</h2>
+            <p className="text-lg text-gray-500 max-w-2xl mx-auto">{t.whoSub}</p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {t.personas.map((p, i) => (
+              <div key={i} className="group flex items-start gap-4 p-6 rounded-2xl border border-gray-100 hover:border-indigo-100 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 bg-white">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-100 flex items-center justify-center text-2xl flex-shrink-0">
+                  {p.icon}
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-1 text-sm">{p.title}</h3>
+                  <p className="text-gray-500 text-sm leading-relaxed">{p.desc}</p>
+                </div>
               </div>
             ))}
           </div>
@@ -626,7 +806,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted, onSignIn
                       ))}
                     </ul>
                     <button onClick={onGetStarted}
-                      className={`w-full py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90 hover:shadow-lg text-white`}
+                      className="w-full py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90 hover:shadow-lg text-white"
                       style={{ background: 'linear-gradient(135deg,#6366f1,#2563eb)' }}>
                       {cta}
                     </button>
