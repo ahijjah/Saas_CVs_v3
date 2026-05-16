@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -881,7 +881,17 @@ async def update_job_metadata(
     if body.work_mode is not None:
         updates["work_mode"] = body.work_mode.strip() or None
     if "application_deadline" in body.model_fields_set:
-        updates["application_deadline"] = body.application_deadline or None
+        raw_dl = body.application_deadline
+        if raw_dl:
+            try:
+                updates["application_deadline"] = date.fromisoformat(raw_dl)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid date format for application_deadline: '{raw_dl}'. Expected YYYY-MM-DD.",
+                )
+        else:
+            updates["application_deadline"] = None
     if body.vacancies_count is not None:
         updates["vacancies_count"] = max(1, body.vacancies_count)
     if body.max_applications is not None:
