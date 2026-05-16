@@ -1616,7 +1616,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                         <div className="flex items-center gap-1.5 mb-0.5">
                           <p className="font-semibold text-textMain text-sm">{log.duplicate_name || '—'}</p>
                           {log.source === 'manual_upload' && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-blue-100 text-blue-700">Manual</span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-blue-100 text-blue-700">Upload</span>
+                          )}
+                          {log.source === 'public_apply' && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-violet-100 text-violet-700">Link</span>
                           )}
                         </div>
                         <p className="text-xs text-textMuted">{log.duplicate_email || (log.submitted_by_email ? `Uploaded by: ${log.submitted_by_name || log.submitted_by_email}` : '—')}</p>

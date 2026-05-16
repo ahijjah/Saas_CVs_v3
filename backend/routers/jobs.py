@@ -880,7 +880,7 @@ async def update_job_metadata(
         updates["experience_level"] = body.experience_level.strip() or None
     if body.work_mode is not None:
         updates["work_mode"] = body.work_mode.strip() or None
-    if body.application_deadline is not None:
+    if "application_deadline" in body.model_fields_set:
         updates["application_deadline"] = body.application_deadline or None
     if body.vacancies_count is not None:
         updates["vacancies_count"] = max(1, body.vacancies_count)
@@ -904,9 +904,16 @@ async def update_job_metadata(
     updates["updated_by"] = current_user.user_id
     set_sql = ", ".join(f"{k} = :{k}" for k in updates)
     updates["jid"] = job_id
-    await db.execute(
-        text(f"UPDATE jobs SET {set_sql} WHERE job_id = :jid"),
-        updates,
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            text(f"UPDATE jobs SET {set_sql} WHERE job_id = :jid"),
+            updates,
+        )
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update job: {exc}",
+        ) from exc
     return {"success": True, "message": "Job updated"}

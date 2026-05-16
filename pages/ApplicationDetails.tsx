@@ -74,9 +74,10 @@ const T = {
     intakeSender: 'Sender / Uploader',
     intakeFile: 'Original File',
     intakeSourceLabels: {
-      manual_upload:    'Manual Upload',
+      manual_upload:    'Upload',
       email_forwarding: 'Email Intake',
       platform_email:   'Dedicated Email',
+      public_apply:     'Link',
     } as Record<string, string>,
   },
   ar: {
@@ -144,9 +145,10 @@ const T = {
     intakeSender: 'المُرسِل / الرافع',
     intakeFile: 'الملف الأصلي',
     intakeSourceLabels: {
-      manual_upload:    'رفع يدوي',
+      manual_upload:    'رفع',
       email_forwarding: 'بريد إلكتروني',
       platform_email:   'بريد مخصص',
+      public_apply:     'الرابط',
     } as Record<string, string>,
   },
 };
@@ -337,9 +339,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const sourceLabel = data.submission_source
           ? (t.intakeSourceLabels[data.submission_source] || data.submission_source)
           : null;
-        const senderDisplay = data.submission_source === 'manual_upload'
+        const senderDisplay = (data.submission_source === 'manual_upload')
           ? (data.submitted_by_name || data.submitted_by_email)
-          : (data.email_sender_address || data.submitted_by_email);
+          : (data.submission_source === 'public_apply')
+            ? null
+            : (data.email_sender_address || data.submitted_by_email);
         const rows: [string, string | null | undefined][] = [
           [t.intakeSource,   sourceLabel],
           [t.intakeReceived, data.applied_at ? new Date(data.applied_at).toLocaleString() : null],
