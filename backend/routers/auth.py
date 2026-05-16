@@ -124,7 +124,8 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
                    t.tenant_id, t.name AS tenant_name, t.email_domain,
                    t.cv_ingestion_mode, t.forwarding_email,
                    t.plan, t.max_users, t.max_jobs,
-                   t.status AS tenant_status, t.created_at AS tenant_created_at
+                   t.status AS tenant_status, t.created_at AS tenant_created_at,
+                   t.subscription_status, t.trial_end_at
             FROM users u
             JOIN tenants t ON t.tenant_id = u.tenant_id
             WHERE u.user_id = :uid
@@ -136,13 +137,13 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
         return None
 
     count_row = await db.execute(
-    text("""
-        SELECT COUNT(*)
-        FROM users
-        WHERE tenant_id = :tenant_id
-          AND status = 'active'
-    """),
-    {"tenant_id": p["tenant_id"]},
+        text("""
+            SELECT COUNT(*)
+            FROM users
+            WHERE tenant_id = :tenant_id
+              AND status = 'active'
+        """),
+        {"tenant_id": p["tenant_id"]},
     )
     active_count = int(count_row.scalar_one())
 
@@ -162,6 +163,8 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
         "max_users": p["max_users"],
         "max_jobs": p["max_jobs"],
         "tenant_status": p["tenant_status"],
+        "subscription_status": p["subscription_status"] or "active",
+        "trial_end_at": p["trial_end_at"].isoformat() if p["trial_end_at"] else None,
         "tenant_created_at": p["tenant_created_at"].isoformat() if p["tenant_created_at"] else None,
         "active_users_count": active_count,
     }
@@ -177,7 +180,8 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
     row = await db.execute(
         text("""
             SELECT u.user_id, u.tenant_id, u.email, u.full_name, u.role, u.status,
-                   u.password_hash, t.cv_ingestion_mode, t.status AS tenant_status
+                   u.password_hash, t.cv_ingestion_mode, t.status AS tenant_status,
+                   t.subscription_status, t.name AS tenant_name
             FROM users u
             JOIN tenants t ON t.tenant_id = u.tenant_id
             WHERE u.email = :email
@@ -217,6 +221,8 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
             "tenant_id": str(user["tenant_id"]),
             "email": user["email"],
             "role": user["role"],
+            "tenant_name": user["tenant_name"],
+            "subscription_status": user["subscription_status"] or "active",
         },
         "cv_ingestion_mode": user["cv_ingestion_mode"],
         "message": "Login successful",
@@ -237,11 +243,20 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
 
     password_hash = hash_password(body.password)
 
-    # Create tenant
+    # Create tenant — subscription_status defaults to 'trial' (schema default),
+    # plan = 'trial', trial window = 14 days from now.
     tenant_result = await db.execute(
         text("""
-            INSERT INTO tenants (name, email_domain, plan, max_users, max_jobs, cv_ingestion_mode, status)
-            VALUES (:name, :domain, 'starter', 3, 10, 'platform_email', 'active')
+            INSERT INTO tenants (
+                name, email_domain, plan, max_users, max_jobs,
+                cv_ingestion_mode, status,
+                subscription_status, trial_start_at, trial_end_at
+            )
+            VALUES (
+                :name, :domain, 'trial', 3, 10,
+                'platform_email', 'active',
+                'trial', now(), now() + INTERVAL '14 days'
+            )
             RETURNING tenant_id
         """),
         {"name": body.tenant_name, "domain": body.email_domain},
@@ -264,6 +279,22 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
     )
     user_id = str(user_result.scalar_one())
     await db.commit()
+
+    # Send welcome email — fire-and-forget (non-blocking, never fails the registration)
+    try:
+        from services.email_service import send_welcome_email
+        from config import get_settings as _cfg
+        _settings = _cfg()
+        login_url = getattr(_settings, "app_base_url", "https://app.ai970.cloud")
+        import asyncio as _asyncio
+        _asyncio.create_task(send_welcome_email(
+            to_email=body.email,
+            admin_name=body.admin_name,
+            company_name=body.tenant_name,
+            login_url=login_url,
+        ))
+    except Exception:
+        pass  # email failure must never block registration
 
     token = create_access_token({
         "sub": user_id,

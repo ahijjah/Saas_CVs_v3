@@ -314,11 +314,18 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4">
+            {!isSuperAdmin && user?.subscription_status === 'trial' && (
+              <span className="hidden sm:inline-block px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-[9px] font-black uppercase tracking-widest shrink-0">
+                Trial
+              </span>
+            )}
             <div className={`text-right hidden sm:block ${isAr ? 'text-left' : 'text-right'}`}>
-              <p className="text-sm font-bold text-textMain max-w-[150px] truncate">{user?.email}</p>
-              <p className="text-[10px] text-textMuted uppercase tracking-widest font-black flex items-center justify-end gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${isSuperAdmin ? 'bg-indigo-500' : 'bg-primary'}`}></span>
-                {isSuperAdmin ? t.sysAdmin : user?.tenant_name || t.organization}
+              <p className="text-sm font-bold text-textMain max-w-[180px] truncate">
+                {isSuperAdmin ? t.sysAdmin : (user?.tenant_name || t.organization)}
+              </p>
+              <p className="text-[10px] text-textMuted uppercase tracking-widest font-black flex items-center justify-end gap-1 max-w-[180px] truncate">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSuperAdmin ? 'bg-indigo-500' : 'bg-primary'}`}></span>
+                {user?.email}
               </p>
             </div>
             <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-white font-black border transition-colors ${isSuperAdmin ? 'bg-indigo-600 border-indigo-700' : 'bg-primary border-primaryDark'}`}>

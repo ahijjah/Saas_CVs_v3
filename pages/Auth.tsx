@@ -31,6 +31,13 @@ const T = {
     emailDomainPlaceholder: 'company.com',
     adminFullName: 'Admin Full Name',
     adminEmail: 'Admin Email',
+    confirmPassword: 'Confirm Password',
+    pwMismatch: 'Passwords do not match.',
+    pwTooShort: 'Password must be at least 8 characters.',
+    pwNeedsUpper: 'Password must contain at least one uppercase letter.',
+    pwNeedsLower: 'Password must contain at least one lowercase letter.',
+    pwNeedsDigit: 'Password must contain at least one number.',
+    pwHint: 'Min 8 characters, uppercase, lowercase, and a number.',
     creating: 'Creating account…',
     createAccount: 'Create account',
     haveAccount: 'Already have an account?',
@@ -64,6 +71,13 @@ const T = {
     emailDomainPlaceholder: 'company.com',
     adminFullName: 'الاسم الكامل للمسؤول',
     adminEmail: 'البريد الإلكتروني للمسؤول',
+    confirmPassword: 'تأكيد كلمة المرور',
+    pwMismatch: 'كلمتا المرور غير متطابقتين.',
+    pwTooShort: 'يجب أن تكون كلمة المرور 8 أحرف على الأقل.',
+    pwNeedsUpper: 'يجب أن تحتوي على حرف كبير واحد على الأقل.',
+    pwNeedsLower: 'يجب أن تحتوي على حرف صغير واحد على الأقل.',
+    pwNeedsDigit: 'يجب أن تحتوي على رقم واحد على الأقل.',
+    pwHint: 'الحد الأدنى 8 أحرف، حرف كبير، حرف صغير، ورقم.',
     creating: 'جارٍ إنشاء الحساب…',
     createAccount: 'إنشاء الحساب',
     haveAccount: 'هل لديك حساب بالفعل؟',
@@ -115,11 +129,31 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
   const [error, setError] = useState<string | null>(null);
   const [showLoginPw, setShowLoginPw] = useState(false);
   const [showRegPw, setShowRegPw] = useState(false);
+  const [showRegConfirmPw, setShowRegConfirmPw] = useState(false);
 
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({
-    company_name: '', email_domain: '', admin_name: '', admin_email: '', password: '',
+    company_name: '', email_domain: '', admin_name: '', admin_email: '', password: '', confirm_password: '',
   });
+
+  const validatePassword = (pw: string): string | null => {
+    if (pw.length < 8) return t.pwTooShort;
+    if (!/[A-Z]/.test(pw)) return t.pwNeedsUpper;
+    if (!/[a-z]/.test(pw)) return t.pwNeedsLower;
+    if (!/[0-9]/.test(pw)) return t.pwNeedsDigit;
+    return null;
+  };
+
+  const pwStrength = (pw: string): { pct: number; color: string } => {
+    let score = 0;
+    if (pw.length >= 8) score++;
+    if (/[A-Z]/.test(pw)) score++;
+    if (/[a-z]/.test(pw)) score++;
+    if (/[0-9]/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    const colors = ['bg-red-400', 'bg-orange-400', 'bg-amber-400', 'bg-yellow-400', 'bg-green-500'];
+    return { pct: score * 20, color: colors[score - 1] || 'bg-slate-200' };
+  };
 
   const switchView = (v: 'login' | 'register') => { setView(v); setError(null); };
 
@@ -146,6 +180,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault(); setError(null);
+    const pwErr = validatePassword(registerForm.password);
+    if (pwErr) { setError(pwErr); return; }
+    if (registerForm.password !== registerForm.confirm_password) { setError(t.pwMismatch); return; }
     setLoading(true);
     try {
       await apiService.post(WEBHOOK_CONFIG.REGISTER_WEBHOOK_URL, {
@@ -375,6 +412,35 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
                   />
                   <PasswordToggle visible={showRegPw} onToggle={() => setShowRegPw(!showRegPw)} />
                 </div>
+                {/* Strength bar */}
+                {registerForm.password.length > 0 && (() => {
+                  const { pct, color } = pwStrength(registerForm.password);
+                  return (
+                    <div className="mt-1.5 space-y-1">
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="text-[10px] text-textMuted">{t.pwHint}</p>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.confirmPassword}</label>
+                <div className="relative">
+                  <input
+                    required type={showRegConfirmPw ? 'text' : 'password'} disabled={loading}
+                    placeholder="••••••••"
+                    className={`w-full py-2.5 border rounded-xl outline-none focus:border-primary transition-all text-sm ${isAr ? 'pr-4 pl-12' : 'pl-4 pr-12'} ${registerForm.confirm_password && registerForm.password !== registerForm.confirm_password ? 'border-error bg-red-50' : 'border-border'}`}
+                    value={registerForm.confirm_password}
+                    onChange={(e) => setRegisterForm({ ...registerForm, confirm_password: e.target.value })}
+                  />
+                  <PasswordToggle visible={showRegConfirmPw} onToggle={() => setShowRegConfirmPw(!showRegConfirmPw)} />
+                </div>
+                {registerForm.confirm_password && registerForm.password !== registerForm.confirm_password && (
+                  <p className="text-[10px] text-error">{t.pwMismatch}</p>
+                )}
               </div>
 
               <button type="submit" disabled={loading}

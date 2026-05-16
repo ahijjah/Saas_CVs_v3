@@ -21,6 +21,7 @@ const T = {
     title: 'Active Recruitment Campaigns',
     sub: 'Overview of your open roles and candidate pipeline',
     addJob: 'Add New Job',
+    refresh: 'Refresh',
     loading: 'Loading jobs...',
     noJobs: 'No jobs found. Create your first campaign.',
     noJobsTable: 'No jobs found. Create your first job campaign to get started.',
@@ -41,11 +42,16 @@ const T = {
     viewDetailsLink: 'View Details',
     filterByTenant: 'Filter by tenant',
     allTenants: 'All tenants',
+    campaignsUsage: 'Active campaigns',
+    cvsUsage: 'CVs this month',
+    planLimitReached: 'Limit reached',
+    trialBadge: 'Trial',
   },
   ar: {
     title: 'حملات التوظيف النشطة',
     sub: 'نظرة عامة على وظائفك المفتوحة وخط أنابيب المرشحين',
     addJob: 'إضافة وظيفة جديدة',
+    refresh: 'تحديث',
     loading: 'جارٍ تحميل الوظائف...',
     noJobs: 'لا توجد وظائف. أنشئ حملتك الأولى.',
     noJobsTable: 'لا توجد وظائف. أنشئ حملة التوظيف الأولى للبدء.',
@@ -66,6 +72,10 @@ const T = {
     viewDetailsLink: 'عرض التفاصيل',
     filterByTenant: 'تصفية حسب المستأجر',
     allTenants: 'جميع المستأجرين',
+    campaignsUsage: 'الحملات النشطة',
+    cvsUsage: 'سير ذاتية هذا الشهر',
+    planLimitReached: 'الحد الأقصى',
+    trialBadge: 'تجريبي',
   },
 };
 
@@ -81,34 +91,61 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [tenantFilter, setTenantFilter] = useState('');
   const superAdmin = isSuperAdmin(auth);
 
-  useEffect(() => {
-    const fetchJobs = async () => {
-      setLoading(true);
-      try {
-        const data = await apiService.get(
-          WEBHOOK_CONFIG.GET_JOBS_WEBHOOK_URL,
-          {},
-          auth.token!
-        );
-        setJobs(Array.isArray(data) ? data : []);
-      } catch (err: any) {
-        console.error(err);
-        addToast("Failed to fetch jobs. Using placeholder data for demonstration.", "error");
+  // Plan usage (tenant users only — not shown for super admin)
+  const [planUsage, setPlanUsage] = useState<{
+    active_campaigns: number; max_campaigns: number;
+    processed_cvs: number; max_cvs: number;
+    subscription_status: string; plan_name: string;
+  } | null>(null);
+
+  const fetchJobs = async (silent = false) => {
+    if (!silent) setLoading(true);
+    else setRefreshing(true);
+    try {
+      const data = await apiService.get(WEBHOOK_CONFIG.GET_JOBS_WEBHOOK_URL, {}, auth.token!);
+      setJobs(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.error(err);
+      if (!silent) {
+        addToast("Failed to fetch jobs.", "error");
         setJobs([
           { job_id: 'JOB-2026-00074', job_code: 'JB001', job_title: 'Senior Frontend Engineer', job_client: 'Tech Corp', job_status: 'Active', applications_total: 45, applications_qualified: 12, applications_partial: 20, applications_rejected: 13 },
           { job_id: 'JOB-2026-00075', job_code: 'JB002', job_title: 'Backend Developer', job_client: 'Data Systems', job_status: 'Active', applications_total: 30, applications_qualified: 5, applications_partial: 10, applications_rejected: 15 },
           { job_id: 'JOB-2026-00076', job_code: 'JB003', job_title: 'UX Designer', job_client: 'Creative Lab', job_status: 'Closed', applications_total: 15, applications_qualified: 8, applications_partial: 4, applications_rejected: 3 },
         ]);
-      } finally {
-        setLoading(false);
       }
-    };
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
+  const fetchUsage = async () => {
+    if (superAdmin) return;
+    try {
+      const data = await apiService.get(WEBHOOK_CONFIG.TENANT_USAGE_URL, {}, auth.token!);
+      if (data?.usage && data?.limits) {
+        setPlanUsage({
+          active_campaigns: data.usage.active_campaigns,
+          max_campaigns: data.limits.max_campaigns,
+          processed_cvs: data.usage.processed_cvs_this_month,
+          max_cvs: data.limits.max_processed_cvs_per_month,
+          subscription_status: data.subscription_status || 'active',
+          plan_name: data.plan_name || data.plan_code || '',
+        });
+      }
+    } catch { /* silently ignore */ }
+  };
+
+  useEffect(() => {
     fetchJobs();
-  }, [auth.token, addToast]);
+    fetchUsage();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.token]);
 
   const handleViewApplicationsClick = (job: Job, filter: string) => {
     onViewApplications(job.job_id, filter);
@@ -133,28 +170,90 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
           <h3 className="text-lg font-medium text-textMain">{t.title}</h3>
           <p className="text-sm text-textMuted">{t.sub}</p>
         </div>
-        {superAdmin && tenantOptions.length > 0 && (
-          <select
-            value={tenantFilter}
-            onChange={e => setTenantFilter(e.target.value)}
-            className="w-full sm:w-48 border border-border rounded-xl px-3 py-2 text-sm text-textMain bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {superAdmin && tenantOptions.length > 0 && (
+            <select
+              value={tenantFilter}
+              onChange={e => setTenantFilter(e.target.value)}
+              className="w-full sm:w-48 border border-border rounded-xl px-3 py-2 text-sm text-textMain bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">{t.allTenants}</option>
+              {tenantOptions.map(tn => (
+                <option key={tn} value={tn}>{tn}</option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={() => { fetchJobs(true); fetchUsage(); }}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-xl text-sm font-bold text-textMuted hover:text-textMain hover:bg-slate-50 transition-colors"
           >
-            <option value="">{t.allTenants}</option>
-            {tenantOptions.map(tn => (
-              <option key={tn} value={tn}>{tn}</option>
-            ))}
-          </select>
-        )}
-        <button
-          onClick={onAddJob}
-          className="w-full sm:w-auto bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-xl font-bold flex items-center justify-center transition-all shadow-lg shadow-primary/20 gap-2"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-          </svg>
-          {t.addJob}
-        </button>
+            <svg className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {t.refresh}
+          </button>
+          <button
+            onClick={onAddJob}
+            className="sm:w-auto bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-xl font-bold flex items-center justify-center transition-all shadow-lg shadow-primary/20 gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            {t.addJob}
+          </button>
+        </div>
       </div>
+
+      {/* Plan usage strip — tenant users only */}
+      {!superAdmin && planUsage && (
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white rounded-xl border border-border shadow-sm">
+          {planUsage.subscription_status === 'trial' && (
+            <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest shrink-0">
+              {t.trialBadge} — {planUsage.plan_name}
+            </span>
+          )}
+          {planUsage.subscription_status !== 'trial' && (
+            <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase tracking-widest shrink-0">
+              {planUsage.plan_name}
+            </span>
+          )}
+          {/* Campaigns */}
+          <div className="flex items-center gap-2 flex-1 min-w-[160px]">
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[9px] font-black text-textMuted uppercase tracking-widest">{t.campaignsUsage}</span>
+                <span className={`text-[10px] font-black ${planUsage.active_campaigns >= planUsage.max_campaigns ? 'text-error' : 'text-textMain'}`}>
+                  {planUsage.active_campaigns} / {planUsage.max_campaigns}
+                </span>
+              </div>
+              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${planUsage.active_campaigns >= planUsage.max_campaigns ? 'bg-error' : 'bg-primary'}`}
+                  style={{ width: `${Math.min((planUsage.active_campaigns / planUsage.max_campaigns) * 100, 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          {/* CVs this month */}
+          <div className="flex items-center gap-2 flex-1 min-w-[160px]">
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[9px] font-black text-textMuted uppercase tracking-widest">{t.cvsUsage}</span>
+                <span className={`text-[10px] font-black ${planUsage.processed_cvs >= planUsage.max_cvs ? 'text-error' : 'text-textMain'}`}>
+                  {planUsage.processed_cvs.toLocaleString()} / {planUsage.max_cvs.toLocaleString()}
+                </span>
+              </div>
+              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${planUsage.processed_cvs >= planUsage.max_cvs ? 'bg-error' : 'bg-indigo-500'}`}
+                  style={{ width: `${Math.min((planUsage.processed_cvs / planUsage.max_cvs) * 100, 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
         {loading ? (

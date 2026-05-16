@@ -21,7 +21,7 @@ router = APIRouter(prefix="/tenant", tags=["tenant"])
 
 # Roles a tenant admin is permitted to assign to new users.
 # super_admin is intentionally excluded — only /admin/users can create those.
-ALLOWED_ROLES = {"admin", "recruiter", "viewer"}
+ALLOWED_ROLES = {"admin", "hr_manager", "recruiter", "viewer"}
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -48,6 +48,19 @@ class UpdateUserStatusRequest(BaseModel):
     def valid_status(cls, v: str) -> str:
         if v not in ("active", "disabled"):
             raise ValueError("Status must be 'active' or 'disabled'")
+        return v
+
+
+class UpdateUserProfileRequest(BaseModel):
+    """Admin can update a team member's display name and role. Email/password are excluded."""
+    full_name: str | None = None
+    role: str | None = None
+
+    @field_validator("role")
+    @classmethod
+    def valid_role(cls, v: str | None) -> str | None:
+        if v is not None and v not in ALLOWED_ROLES:
+            raise ValueError(f"Role must be one of: {', '.join(sorted(ALLOWED_ROLES))}")
         return v
 
 
@@ -235,6 +248,56 @@ async def update_tenant_user_status(
     return {"success": True, "message": f"User {action} successfully."}
 
 
+@router.patch("/users/{user_id}")
+async def update_tenant_user_profile(
+    user_id: str,
+    body: UpdateUserProfileRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Admin can update a team member's name and/or role. Email and password are immutable here."""
+    _require_tenant_admin(current_user)
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    user_row = await db.execute(
+        text("SELECT user_id, role FROM users WHERE user_id = :uid AND tenant_id = :tid"),
+        {"uid": user_id, "tid": current_user.tenant_id},
+    )
+    user = user_row.mappings().first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    updates: dict = {}
+    if body.full_name is not None:
+        updates["full_name"] = body.full_name
+    if body.role is not None:
+        # Prevent demoting the only remaining admin to a non-admin role
+        if user["role"] == "admin" and body.role != "admin":
+            admin_count = await db.execute(
+                text("SELECT COUNT(*) FROM users WHERE tenant_id = :tid AND role = 'admin' AND status = 'active'"),
+                {"tid": current_user.tenant_id},
+            )
+            if int(admin_count.scalar_one()) <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot change the role of the last active admin.",
+                )
+        updates["role"] = body.role
+
+    if not updates:
+        return {"success": True, "message": "No changes to apply."}
+
+    set_clauses = ", ".join(f"{k} = :{k}" for k in updates)
+    updates["uid"] = user_id
+    updates["tid"] = current_user.tenant_id
+    await db.execute(
+        text(f"UPDATE users SET {set_clauses} WHERE user_id = :uid AND tenant_id = :tid"),
+        updates,
+    )
+    await db.commit()
+    return {"success": True, "message": "User updated successfully."}
+
+
 # ── Tenant self-service: usage & plan info ────────────────────────────────────
 
 @router.get("/usage")
@@ -242,11 +305,11 @@ async def get_tenant_usage(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Return current tenant's usage vs plan limits + plan features. Tenant admin only."""
-    if current_user.role != "admin":
+    """Return current tenant's usage vs plan limits + plan features. Admin and HR Manager."""
+    if current_user.role not in ("admin", "hr_manager"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only tenant admins can access plan usage",
+            detail="Tenant admin or HR Manager access required",
         )
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 

@@ -93,6 +93,11 @@ const T = {
     lastLogin: 'Last login',
     never: 'Never',
     joined: 'Joined',
+    trialBadge: 'Trial',
+    editUser: 'Edit',
+    saveUser: 'Save',
+    cancelEdit: 'Cancel',
+    editUserTitle: 'Edit User',
   },
   ar: {
     loading: 'جارٍ تحميل الملف الشخصي...',
@@ -174,6 +179,11 @@ const T = {
     lastLogin: 'آخر تسجيل دخول',
     never: 'لم يسجّل بعد',
     joined: 'انضم في',
+    trialBadge: 'تجريبي',
+    editUser: 'تعديل',
+    saveUser: 'حفظ',
+    cancelEdit: 'إلغاء',
+    editUserTitle: 'تعديل المستخدم',
   },
 };
 
@@ -192,8 +202,6 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     tenant_name: '',
     email_domain: '',
     admin_name: '',
-    cv_ingestion_mode: 'platform_email' as 'platform_email' | 'FORWARD',
-    forwarding_email: '',
   });
 
   const [passwordForm, setPasswordForm] = useState({
@@ -216,6 +224,10 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [addUserForm, setAddUserForm] = useState({ email: '', full_name: '', password: '', role: 'hr_manager' });
   const [savingUser, setSavingUser] = useState(false);
   const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
+  // Inline user edit state
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editUserForm, setEditUserForm] = useState({ full_name: '', role: '' });
+  const [savingEditUser, setSavingEditUser] = useState(false);
 
   const role = (auth.user?.role || '').toLowerCase();
   const isSuperAdmin = role === 'super_admin';
@@ -229,13 +241,10 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
       if (response?.success && response.profile) {
         const p: UserProfile = response.profile;
         setProfile(p);
-        const mappedMode = p.intake_method === 'IMAP' ? 'platform_email' : 'FORWARD' as 'platform_email' | 'FORWARD';
         setEditForm({
           tenant_name: p.tenant_name || '',
           email_domain: p.email_domain || '',
           admin_name: p.admin_name || '',
-          cv_ingestion_mode: mappedMode,
-          forwarding_email: p.forwarding_email || '',
         });
       }
     } catch (err: any) {
@@ -278,13 +287,10 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
 
   const handleCancelEdit = () => {
     if (profile) {
-      const mappedMode = profile.intake_method === 'IMAP' ? 'platform_email' : 'FORWARD' as 'platform_email' | 'FORWARD';
       setEditForm({
         tenant_name: profile.tenant_name || '',
         email_domain: profile.email_domain || '',
         admin_name: profile.admin_name || '',
-        cv_ingestion_mode: mappedMode,
-        forwarding_email: profile.forwarding_email || '',
       });
     }
     setIsEditing(false);
@@ -297,21 +303,13 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editForm.cv_ingestion_mode === 'FORWARD' && (!editForm.forwarding_email || !/^\S+@\S+\.\S+$/.test(editForm.forwarding_email))) {
-      addToast('Please provide a valid forwarding email.', 'error');
-      return;
-    }
     setSavingProfile(true);
     try {
-      const payload: any = {
+      const payload = {
         tenant_name: editForm.tenant_name,
         email_domain: editForm.email_domain,
         admin_name: editForm.admin_name,
-        cv_ingestion_mode: editForm.cv_ingestion_mode,
       };
-      if (editForm.cv_ingestion_mode === 'FORWARD') {
-        payload.forwarding_email = editForm.forwarding_email;
-      }
       const response = await apiService.put(WEBHOOK_CONFIG.UPDATE_PROFILE_WEBHOOK_URL, payload, auth.token!);
       if (response?.success) {
         setProfile(response.profile);
@@ -398,6 +396,33 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
       addToast(err.message || 'Failed to update user status.', 'error');
     } finally {
       setTogglingUserId(null);
+    }
+  };
+
+  const handleStartEditUser = (user: TenantUser) => {
+    setEditingUserId(user.user_id);
+    setEditUserForm({ full_name: user.full_name, role: user.role });
+  };
+
+  const handleSaveEditUser = async (userId: string) => {
+    setSavingEditUser(true);
+    try {
+      const response = await apiService.patch(
+        `${WEBHOOK_CONFIG.TENANT_USERS_URL}/${userId}`,
+        editUserForm,
+        auth.token!
+      );
+      if (response?.success) {
+        setTenantUsers(prev => prev.map(u =>
+          u.user_id === userId ? { ...u, full_name: editUserForm.full_name, role: editUserForm.role } : u
+        ));
+        setEditingUserId(null);
+        addToast('User updated successfully.', 'success');
+      }
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update user.', 'error');
+    } finally {
+      setSavingEditUser(false);
     }
   };
 
@@ -497,26 +522,23 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                 <p className="text-sm font-bold text-textMain">{profile?.admin_name || 'N/A'}</p>
               </div>
               <div className="space-y-1">
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.cvIngestionMode}</p>
-                <p className="text-sm font-bold text-textMain">{formatIngestionMode(profile?.intake_method || '')}</p>
-              </div>
-              <div className="space-y-1">
                 <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.userRole}</p>
                 <p className="text-sm font-bold text-textMain">{profile?.role || 'N/A'}</p>
               </div>
-              {(profile?.intake_method === 'FORWARD') && (
-                <div className="space-y-1 md:col-span-2">
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.forwardingEmail}</p>
-                  <p className="text-sm font-bold text-textMain">{profile?.forwarding_email || 'N/A'}</p>
-                </div>
-              )}
             </div>
 
             {/* Plan / limits strip */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 border-t border-border">
-              <div className="bg-slate-50 rounded-xl p-4 text-center">
+              <div className={`rounded-xl p-4 text-center ${(profile as any)?.subscription_status === 'trial' ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50'}`}>
                 <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.plan}</p>
-                <p className="text-sm font-black text-primary">{planLabel(profile?.plan)}</p>
+                <p className={`text-sm font-black ${(profile as any)?.subscription_status === 'trial' ? 'text-amber-700' : 'text-primary'}`}>
+                  {planLabel(profile?.plan)}
+                </p>
+                {(profile as any)?.subscription_status === 'trial' && (
+                  <span className="mt-1 inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-black uppercase tracking-widest">
+                    {t.trialBadge}
+                  </span>
+                )}
               </div>
               <div className="bg-slate-50 rounded-xl p-4 text-center">
                 <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.tenantStatus}</p>
@@ -586,44 +608,6 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                     onChange={handleInputChange}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-textMuted uppercase tracking-widest">{t.cvIngestionMode}</label>
-                  <div className="flex gap-4 pt-1">
-                    {[
-                      { value: 'platform_email', label: t.platformEmail },
-                      { value: 'FORWARD', label: t.forwarding },
-                    ].map((mode) => (
-                      <label key={mode.value} className="flex items-center gap-2 cursor-pointer group">
-                        <div className="relative flex items-center justify-center">
-                          <input
-                            type="radio"
-                            className="peer appearance-none w-4 h-4 border border-border rounded-full checked:border-primary transition-all"
-                            checked={editForm.cv_ingestion_mode === mode.value}
-                            onChange={() => setEditForm(prev => ({ ...prev, cv_ingestion_mode: mode.value as any }))}
-                          />
-                          <div className="absolute w-2 h-2 rounded-full bg-primary scale-0 peer-checked:scale-100 transition-transform"></div>
-                        </div>
-                        <span className={`text-xs font-bold uppercase tracking-wider ${editForm.cv_ingestion_mode === mode.value ? 'text-primary' : 'text-textMuted group-hover:text-textMain'}`}>
-                          {mode.label}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                {editForm.cv_ingestion_mode === 'FORWARD' && (
-                  <div className="space-y-1.5 animate-fade-in">
-                    <label className="text-xs font-black text-textMuted uppercase tracking-widest">{t.forwardingEmail}</label>
-                    <input
-                      required
-                      name="forwarding_email"
-                      type="email"
-                      placeholder="cv@company.com"
-                      className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm font-medium bg-white"
-                      value={editForm.forwarding_email}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-textMuted uppercase tracking-widest">{t.roleROLabel}</label>
                   <input
@@ -866,34 +850,81 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
               <div className="px-8 py-10 text-center text-sm text-textMuted">{t.noUsers}</div>
             ) : (
               tenantUsers.map(user => (
-                <div key={user.user_id} className="px-8 py-4 flex items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${user.status === 'active' ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-textMuted'}`}>
-                      {user.full_name.charAt(0).toUpperCase()}
+                <div key={user.user_id} className="border-b border-border last:border-b-0">
+                  {editingUserId === user.user_id ? (
+                    <div className="px-8 py-4 bg-slate-50/60 animate-fade-in space-y-3">
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.editUserTitle}</p>
+                      <div className="flex flex-wrap gap-3">
+                        <input
+                          type="text"
+                          className="flex-1 min-w-[160px] px-3 py-1.5 border border-border rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                          value={editUserForm.full_name}
+                          onChange={e => setEditUserForm(p => ({ ...p, full_name: e.target.value }))}
+                          placeholder={t.fullName}
+                        />
+                        <select
+                          className="px-3 py-1.5 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                          value={editUserForm.role}
+                          onChange={e => setEditUserForm(p => ({ ...p, role: e.target.value }))}
+                        >
+                          {Object.entries(t.roles).map(([v, l]) => (
+                            <option key={v} value={v}>{l as string}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleSaveEditUser(user.user_id)}
+                          disabled={savingEditUser}
+                          className="px-4 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primaryDark transition-colors disabled:opacity-50"
+                        >
+                          {savingEditUser ? '…' : t.saveUser}
+                        </button>
+                        <button
+                          onClick={() => setEditingUserId(null)}
+                          className="px-4 py-1.5 border border-border text-xs font-bold rounded-lg text-textMuted hover:bg-slate-100 transition-colors"
+                        >
+                          {t.cancelEdit}
+                        </button>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-textMain truncate">{user.full_name}</p>
-                      <p className="text-[11px] text-textMuted truncate">{user.email}</p>
+                  ) : (
+                    <div className="px-8 py-4 flex items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${user.status === 'active' ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-textMuted'}`}>
+                          {user.full_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-textMain truncate">{user.full_name}</p>
+                          <p className="text-[11px] text-textMuted truncate">{user.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="hidden sm:block text-[10px] font-black uppercase tracking-widest text-textMuted px-2 py-1 bg-slate-100 rounded-md">
+                          {(t.roles as any)[user.role] || user.role}
+                        </span>
+                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-textMuted'}`}>
+                          {user.status === 'active' ? t.active : t.disabled}
+                        </span>
+                        {user.user_id !== auth.user?.user_id && (
+                          <button
+                            onClick={() => handleStartEditUser(user)}
+                            className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border border-border text-textMuted hover:bg-slate-100 transition-colors"
+                          >
+                            {t.editUser}
+                          </button>
+                        )}
+                        {user.user_id !== auth.user?.user_id && (
+                          <button
+                            onClick={() => handleToggleUserStatus(user.user_id, user.status)}
+                            disabled={togglingUserId === user.user_id || (user.status === 'disabled' && atLimit)}
+                            title={user.status === 'disabled' && atLimit ? t.userLimitReached : undefined}
+                            className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${user.status === 'active' ? 'border-red-200 text-error hover:bg-red-50' : 'border-green-200 text-success hover:bg-green-50'}`}
+                          >
+                            {togglingUserId === user.user_id ? '…' : user.status === 'active' ? t.deactivate : t.activate}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="hidden sm:block text-[10px] font-black uppercase tracking-widest text-textMuted px-2 py-1 bg-slate-100 rounded-md">
-                      {(t.roles as any)[user.role] || user.role}
-                    </span>
-                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-textMuted'}`}>
-                      {user.status === 'active' ? t.active : t.disabled}
-                    </span>
-                    {user.user_id !== auth.user?.user_id && (
-                      <button
-                        onClick={() => handleToggleUserStatus(user.user_id, user.status)}
-                        disabled={togglingUserId === user.user_id || (user.status === 'disabled' && atLimit)}
-                        title={user.status === 'disabled' && atLimit ? t.userLimitReached : undefined}
-                        className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${user.status === 'active' ? 'border-red-200 text-error hover:bg-red-50' : 'border-green-200 text-success hover:bg-green-50'}`}
-                      >
-                        {togglingUserId === user.user_id ? '…' : user.status === 'active' ? t.deactivate : t.activate}
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
               ))
             )}

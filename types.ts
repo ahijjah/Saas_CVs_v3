@@ -7,6 +7,7 @@ export interface User {
   role: string;
   tenant_name?: string;
   cv_ingestion_mode?: 'platform_email' | 'forwarding';
+  subscription_status?: 'trial' | 'active' | 'suspended' | 'expired';
 }
 
 export interface UserProfile {
@@ -23,6 +24,8 @@ export interface UserProfile {
   max_users?: number;
   max_jobs?: number;
   tenant_status?: string;
+  subscription_status?: 'trial' | 'active' | 'suspended' | 'expired';
+  trial_end_at?: string | null;
   tenant_created_at?: string | null;
   active_users_count?: number;
 }

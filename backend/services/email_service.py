@@ -77,6 +77,43 @@ async def send_cv_received_email(to_email: str, candidate_name: str, job_title: 
     await _send(to_email, subject, html_body, text_body)
 
 
+async def send_welcome_email(to_email: str, admin_name: str, company_name: str, login_url: str) -> None:
+    subject = f"Welcome to CV Analyzer — {company_name} is ready"
+    text_body = (
+        f"Hi {admin_name},\n\n"
+        f"Your {company_name} workspace has been created on CV Analyzer.\n\n"
+        f"You're on the 14-day free trial. No credit card required.\n\n"
+        f"Log in and create your first job campaign:\n{login_url}\n\n"
+        "If you have any questions, reply to this email.\n\n"
+        "The CV Analyzer Team"
+    )
+    html_body = f"""
+    <html><body style="font-family:sans-serif;color:#1e293b;max-width:560px;margin:0 auto;">
+    <div style="background:linear-gradient(135deg,#6366f1,#2563eb);padding:32px 24px;border-radius:12px 12px 0 0;">
+      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">Welcome to CV Analyzer 🎉</h1>
+    </div>
+    <div style="background:#fff;padding:32px 24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
+      <p style="margin:0 0 16px;">Hi <strong>{admin_name}</strong>,</p>
+      <p style="margin:0 0 16px;">Your <strong>{company_name}</strong> workspace is live on CV Analyzer.</p>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:0 0 24px;">
+        <p style="margin:0;font-size:13px;color:#64748b;">
+          ✅ <strong>14-day free trial</strong> — no credit card required<br/>
+          ✅ Create unlimited job campaigns during your trial<br/>
+          ✅ AI scoring, bilingual support, team collaboration
+        </p>
+      </div>
+      <p style="text-align:center;margin:0 0 24px;">
+        <a href="{login_url}" style="background:linear-gradient(135deg,#6366f1,#2563eb);color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
+          Go to Dashboard →
+        </a>
+      </p>
+      <p style="margin:0;font-size:12px;color:#94a3b8;">If you did not create this account, you can safely ignore this email.</p>
+    </div>
+    </body></html>
+    """
+    await _send(to_email, subject, html_body, text_body)
+
+
 async def send_invite_email(to_email: str, inviter_name: str, tenant_name: str, invite_link: str) -> None:
     subject = f"You've been invited to {tenant_name} on CV Analyzer"
     text_body = (
