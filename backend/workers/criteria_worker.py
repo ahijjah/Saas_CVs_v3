@@ -67,6 +67,7 @@ async def _extract_async(job_id: str, description: str) -> None:
             text("""
                 UPDATE job_criteria SET
                     analysis_json              = CAST(:aj AS jsonb),
+                    original_analysis_json     = COALESCE(original_analysis_json, CAST(:aj AS jsonb)),
                     skills                     = :skills,
                     experience                 = :experience,
                     education                  = :education,

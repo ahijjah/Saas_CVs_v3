@@ -97,9 +97,18 @@ const T = {
     confirmFwdCvEmail: 'Send confirmation to candidate email on forwarding',
     confirmFwdSenderEmail: 'Send confirmation to forwarding sender',
     confirmPlatformEmail: 'Send confirmation to candidate email on platform email',
-    aiComparisonToggle: 'Enable AI comparison scoring',
-    aiComparisonHint: 'Run a secondary LLM to compare scoring results.',
     viewApplications: 'View Applications',
+    editCriteria: 'Edit Criteria',
+    saveCriteria: 'Save Criteria',
+    savingCriteria: 'Saving...',
+    criteriaSaved: 'Evaluation criteria updated',
+    criteriaWarningTitle: 'Update Evaluation Logic?',
+    criteriaWarningBody: 'Some applications may have already been evaluated using the previous evaluation logic. Updating will not automatically re-evaluate existing applications.',
+    criteriaConfirm: 'Confirm Update',
+    criteriaListHint: '(one per line)',
+    viewOriginalCriteria: 'View Original AI Criteria',
+    hideOriginalCriteria: 'Hide Original',
+    modifiedBadge: 'Modified',
     jobMetadata: 'Job Details',
     editMeta: 'Edit',
     saveMeta: 'Save Changes',
@@ -212,9 +221,18 @@ const T = {
     confirmFwdCvEmail: 'إرسال تأكيد لبريد المرشح عند إعادة التوجيه',
     confirmFwdSenderEmail: 'إرسال تأكيد لمُرسل الإعادة',
     confirmPlatformEmail: 'إرسال تأكيد لبريد المرشح عبر البريد المخصص',
-    aiComparisonToggle: 'تفعيل التقييم المقارن بالذكاء الاصطناعي',
-    aiComparisonHint: 'تشغيل نموذج ذكاء اصطناعي ثانوي لمقارنة النتائج.',
     viewApplications: 'عرض الطلبات',
+    editCriteria: 'تعديل المعايير',
+    saveCriteria: 'حفظ المعايير',
+    savingCriteria: 'جارٍ الحفظ...',
+    criteriaSaved: 'تم تحديث معايير التقييم',
+    criteriaWarningTitle: 'تحديث منطق التقييم؟',
+    criteriaWarningBody: 'قد تكون بعض الطلبات قد تم تقييمها بناءً على منطق التقييم السابق. لن يؤدي التحديث إلى إعادة تقييم الطلبات الموجودة تلقائياً.',
+    criteriaConfirm: 'تأكيد التحديث',
+    criteriaListHint: '(سطر لكل عنصر)',
+    viewOriginalCriteria: 'عرض المعايير الأصلية',
+    hideOriginalCriteria: 'إخفاء الأصلية',
+    modifiedBadge: 'معدَّل',
     jobMetadata: 'تفاصيل الوظيفة',
     editMeta: 'تعديل',
     saveMeta: 'حفظ التغييرات',
@@ -285,6 +303,17 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [savingMeta, setSavingMeta] = useState(false);
   const [copiedApplyLink, setCopiedApplyLink] = useState(false);
 
+  // Criteria content editing
+  const [editingCriteria, setEditingCriteria] = useState(false);
+  const [draftCriteria, setDraftCriteria] = useState<Record<string, string>>({});
+  const [savingCriteria, setSavingCriteria] = useState(false);
+  const [showCriteriaWarning, setShowCriteriaWarning] = useState(false);
+  const [showOriginalCriteria, setShowOriginalCriteria] = useState(false);
+  const originalAiCriteriaRef = useRef<any>(null);
+
+  // Duplicate log display limit
+  const [showAllDuplicates, setShowAllDuplicates] = useState(false);
+
   // ── Initial job details fetch ───────────────────────────────────────────────
   useEffect(() => {
     const fetchDetails = async () => {
@@ -299,7 +328,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         );
         if (data) {
           const payload = Array.isArray(data) ? data[0] : data;
-          setDetails({ ...payload.details, analysis_json: payload.analysis });
+          setDetails({ ...payload.details, analysis_json: payload.analysis, original_analysis_json: payload.original_analysis });
         } else {
           throw new Error('No data received for this job ID.');
         }
@@ -359,6 +388,14 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     fetchDetails();
   }, [jobId, auth.token]);
 
+  // Capture original AI criteria once (first load)
+  useEffect(() => {
+    if (details && !originalAiCriteriaRef.current) {
+      const orig = (details as any).original_analysis_json;
+      originalAiCriteriaRef.current = orig ?? details.analysis_json ?? null;
+    }
+  }, [details]);
+
   // ── Poll job analysis status every 5 s while pending/processing ────────────
   useEffect(() => {
     const status = details?.criteria_extraction_status;
@@ -372,7 +409,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         );
         if (data) {
           const payload = Array.isArray(data) ? data[0] : data;
-          setDetails({ ...payload.details, analysis_json: payload.analysis });
+          setDetails({ ...payload.details, analysis_json: payload.analysis, original_analysis_json: payload.original_analysis });
         }
       } catch { /* ignore transient polling errors */ }
       setCriteriaPolltick(t => t + 1); // always re-trigger effect
@@ -754,6 +791,59 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     }
   }, [details, draftMeta, auth.token, addToast, t.metaSaved]);
 
+  const handleCriteriaEdit = useCallback(() => {
+    if (!details) return;
+    const a = details.analysis_json ?? {};
+    setDraftCriteria({
+      required_skills:    (a.skills?.required    || []).join('\n'),
+      preferred_skills:   (a.skills?.preferred   || []).join('\n'),
+      minimum_years:      String(a.experience?.minimum_years ?? ''),
+      relevant_roles:     (a.experience?.relevant_roles || []).join('\n'),
+      minimum_education:  a.education?.minimum_level || '',
+      fields_of_study:    (a.education?.fields_of_study || []).join('\n'),
+      certifications:     (a.certifications      || []).join('\n'),
+      domain_knowledge:   (a.domain_knowledge    || []).join('\n'),
+      other_requirements: (a.other_requirements  || []).join('\n'),
+    });
+    setEditingCriteria(true);
+    setShowCriteriaWarning(false);
+  }, [details]);
+
+  const handleCriteriaSaveConfirmed = useCallback(async () => {
+    if (!details) return;
+    setSavingCriteria(true);
+    setShowCriteriaWarning(false);
+    const splitLines = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean);
+    try {
+      await apiService.put(
+        `${WEBHOOK_CONFIG.UPDATE_CRITERIA_CONTENT_URL}/${(details as any).job_id}/criteria/content`,
+        {
+          required_skills:    splitLines(draftCriteria.required_skills),
+          preferred_skills:   splitLines(draftCriteria.preferred_skills),
+          minimum_years:      parseInt(draftCriteria.minimum_years) || 0,
+          relevant_roles:     splitLines(draftCriteria.relevant_roles),
+          minimum_education:  draftCriteria.minimum_education.trim(),
+          fields_of_study:    splitLines(draftCriteria.fields_of_study),
+          certifications:     splitLines(draftCriteria.certifications),
+          domain_knowledge:   splitLines(draftCriteria.domain_knowledge),
+          other_requirements: splitLines(draftCriteria.other_requirements),
+        },
+        auth.token!
+      );
+      const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
+      if (data) {
+        const p = Array.isArray(data) ? data[0] : data;
+        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis });
+      }
+      setEditingCriteria(false);
+      addToast(t.criteriaSaved, 'success');
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to update criteria.', 'error');
+    } finally {
+      setSavingCriteria(false);
+    }
+  }, [details, draftCriteria, auth.token, addToast, t.criteriaSaved]);
+
   // ── Derived values ─────────────────────────────────────────────────────────
 
   if (loading) {
@@ -796,6 +886,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   ];
   const weightLabels = t.evalWeightLabels;
   const weightKeys: ('skills' | 'experience' | 'education' | 'certifications' | 'soft_skills' | 'domain_knowledge' | 'other_requirements')[] = ['skills', 'experience', 'education', 'certifications', 'soft_skills', 'domain_knowledge', 'other_requirements'];
+  const isModified = (getter: (a: any) => any): boolean => {
+    const orig = originalAiCriteriaRef.current;
+    if (!orig || !analysis) return false;
+    try { return JSON.stringify(getter(analysis)) !== JSON.stringify(getter(orig)); } catch { return false; }
+  };
+  const modifiedBadge = <span className="ml-2 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">{t.modifiedBadge}</span>;
   const otherCats = [
     { label: t.certifications, items: analysis?.certifications },
     { label: t.domainKnowledge, items: analysis?.domain_knowledge },
@@ -1118,49 +1214,6 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             </div>
           </div>
 
-          {/* ── Confirmation Email & AI Comparison Settings ──────────────────── */}
-          <div className="mt-4 bg-slate-50 rounded-2xl border border-border p-5 space-y-3">
-            <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.confirmationSettings}</p>
-
-            {/* Confirmation toggles */}
-            {([
-              ['send_confirmation_to_cv_email_for_upload',         t.confirmUpload,          'send_confirmation_to_cv_email_for_upload'],
-              ['send_confirmation_to_cv_email_for_forwarding',     t.confirmFwdCvEmail,      'send_confirmation_to_cv_email_for_forwarding'],
-              ['send_confirmation_to_sender_for_forwarding',       t.confirmFwdSenderEmail,  'send_confirmation_to_sender_for_forwarding'],
-              ['send_confirmation_to_cv_email_for_platform_email', t.confirmPlatformEmail,   'send_confirmation_to_cv_email_for_platform_email'],
-            ] as [keyof typeof details, string, 'send_confirmation_to_cv_email_for_upload' | 'send_confirmation_to_cv_email_for_forwarding' | 'send_confirmation_to_sender_for_forwarding' | 'send_confirmation_to_cv_email_for_platform_email'][]).map(([key, label, field]) => (
-              <div key={field} className="flex items-center justify-between gap-3 py-1.5 border-b border-slate-200 last:border-0">
-                <p className="text-xs text-textMain">{label}</p>
-                <button
-                  onClick={() => handleSettingsToggle(field, !details[key])}
-                  className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details[key] ? 'bg-primary' : 'bg-slate-300'}`}
-                >
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details[key] ? (isAr ? '-translate-x-4' : 'translate-x-4') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
-                </button>
-              </div>
-            ))}
-
-            {/* AI Comparison — super_admin can toggle; tenant admin sees read-only badge */}
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <div>
-                <p className="text-xs font-black text-textMain">{t.aiComparisonToggle}</p>
-                <p className="text-[10px] text-textMuted">{t.aiComparisonHint}</p>
-              </div>
-              {isSuperAdmin ? (
-                <button
-                  onClick={() => handleSettingsToggle('enable_ai_comparison', !details.enable_ai_comparison)}
-                  className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details.enable_ai_comparison ? 'bg-violet-500' : 'bg-slate-300'}`}
-                >
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.enable_ai_comparison ? (isAr ? '-translate-x-4' : 'translate-x-4') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
-                </button>
-              ) : (
-                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${details.enable_ai_comparison ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>
-                  {details.enable_ai_comparison ? t.enabled : t.disabled}
-                </span>
-              )}
-            </div>
-          </div>
-
           {/* Divider */}
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
@@ -1205,23 +1258,6 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                 {t.chooseFiles}
               </label>
-              <button
-                disabled={uploading || cvsScoringInProgress || !!deletingCVId}
-                onClick={() => fileInputRef.current?.click()}
-                className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${uploading || cvsScoringInProgress || !!deletingCVId ? 'bg-indigo-300 text-white cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
-              >
-                {uploading ? (
-                  <>
-                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                    {t.uploadingBtn}
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                    {t.uploadBtn}
-                  </>
-                )}
-              </button>
             </div>
 
             {/* Uploaded CVs — all uploads shown; in-flight show live stage, completed show result */}
@@ -1414,7 +1450,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {duplicateLogs.map((log) => {
+                {(showAllDuplicates ? duplicateLogs : duplicateLogs.slice(0, 5)).map((log) => {
                   const reasonLabel = log.duplicate_reason === 'high_content_similarity' ? 'Content Similarity'
                     : log.duplicate_reason === 'identity_match' ? 'Identity Match'
                     : 'Exact Match';
@@ -1513,6 +1549,17 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               </tbody>
             </table>
           </div>
+          {duplicateLogs.length > 5 && (
+            <div className="px-6 py-3 border-t border-border flex items-center justify-center">
+              <button
+                onClick={() => setShowAllDuplicates(p => !p)}
+                className="flex items-center gap-1.5 text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors"
+              >
+                <svg className={`w-3.5 h-3.5 transition-transform ${showAllDuplicates ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                {showAllDuplicates ? 'Show Less' : `View All ${duplicateLogs.length} Duplicates`}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1556,92 +1603,225 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       {/* ── Main Grid: Criteria + Eval Logic ───────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-
-          {/* Skills */}
-          <div className="bg-white rounded-3xl border border-border p-8 shadow-sm">
-            <h3 className="text-sm font-black text-textMain uppercase tracking-widest mb-6 flex items-center">
-              <span className="w-2 h-4 bg-primary rounded-full mr-3"></span> {t.skillsAnalysis}
-            </h3>
-            <div className="space-y-6">
-              <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.requiredSkills}</p>
-                <div className="flex flex-wrap gap-2">
-                  {(analysis?.skills?.required || []).map((s, i) => (
-                    <span key={i} className="px-4 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-textMain">{s}</span>
-                  ))}
+          {editingCriteria ? (
+            /* ── Criteria edit form ────────────────────────────────────────── */
+            <div className="bg-white rounded-3xl border border-border p-8 shadow-sm animate-fade-in">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-sm font-black text-textMain uppercase tracking-widest flex items-center">
+                  <span className="w-2 h-4 bg-amber-500 rounded-full mr-3"></span> {t.editCriteria}
+                </h3>
+                <button onClick={() => setEditingCriteria(false)} className="text-[10px] font-black text-textMuted hover:text-textMain uppercase tracking-widest transition-colors">{t.cancelEdit}</button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.requiredSkills} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
+                  <textarea rows={4} value={draftCriteria.required_skills} onChange={e => setDraftCriteria(p => ({ ...p, required_skills: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.preferredSkills} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
+                  <textarea rows={4} value={draftCriteria.preferred_skills} onChange={e => setDraftCriteria(p => ({ ...p, preferred_skills: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.minYears}</label>
+                  <input type="number" min={0} value={draftCriteria.minimum_years} onChange={e => setDraftCriteria(p => ({ ...p, minimum_years: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.minLevel}</label>
+                  <input type="text" value={draftCriteria.minimum_education} onChange={e => setDraftCriteria(p => ({ ...p, minimum_education: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.relevantRoles} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
+                  <textarea rows={3} value={draftCriteria.relevant_roles} onChange={e => setDraftCriteria(p => ({ ...p, relevant_roles: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.fieldsOfStudy} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
+                  <textarea rows={3} value={draftCriteria.fields_of_study} onChange={e => setDraftCriteria(p => ({ ...p, fields_of_study: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.certifications} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
+                  <textarea rows={3} value={draftCriteria.certifications} onChange={e => setDraftCriteria(p => ({ ...p, certifications: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.domainKnowledge} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
+                  <textarea rows={3} value={draftCriteria.domain_knowledge} onChange={e => setDraftCriteria(p => ({ ...p, domain_knowledge: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+                </div>
+                <div className="md:col-span-2 space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.otherRequirements} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
+                  <textarea rows={3} value={draftCriteria.other_requirements} onChange={e => setDraftCriteria(p => ({ ...p, other_requirements: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
                 </div>
               </div>
-              <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.preferredSkills}</p>
-                <div className="flex flex-wrap gap-2">
-                  {(analysis?.skills?.preferred || []).map((s, i) => (
-                    <span key={i} className="px-4 py-1.5 bg-blue-50 text-primary border border-blue-100 rounded-lg text-xs font-bold">{s}</span>
-                  ))}
-                </div>
+              <div className="flex justify-end gap-3 pt-5 mt-3 border-t border-border">
+                <button onClick={() => setEditingCriteria(false)} className="px-5 py-2.5 text-sm font-bold text-textMuted hover:text-textMain transition-colors">{t.cancelEdit}</button>
+                <button
+                  onClick={() => setShowCriteriaWarning(true)}
+                  disabled={savingCriteria}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white text-sm font-bold rounded-xl hover:bg-primaryDark transition-colors disabled:opacity-50"
+                >
+                  {savingCriteria && <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
+                  {savingCriteria ? t.savingCriteria : t.saveCriteria}
+                </button>
               </div>
             </div>
-          </div>
-
-          {/* Experience & Education */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-3xl border border-border p-8 shadow-sm">
-              <h3 className="text-sm font-black text-textMain uppercase tracking-widest mb-6 flex items-center">
-                <span className="w-2 h-4 bg-primary rounded-full mr-3"></span> {t.experience}
-              </h3>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.minYears}</p>
-                  <p className="text-lg font-black text-primary">{analysis?.experience?.minimum_years || 0}{t.years}</p>
+          ) : (
+            <>
+              {/* Skills */}
+              <div className="bg-white rounded-3xl border border-border p-8 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-sm font-black text-textMain uppercase tracking-widest flex items-center">
+                    <span className="w-2 h-4 bg-primary rounded-full mr-3"></span> {t.skillsAnalysis}
+                  </h3>
+                  {canEdit && details.criteria_extraction_status === 'completed' && (
+                    <button onClick={handleCriteriaEdit} className="text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">
+                      {t.editCriteria}
+                    </button>
+                  )}
                 </div>
-                <div>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.relevantRoles}</p>
-                  <ul className="space-y-1">
-                    {(analysis?.experience?.relevant_roles || []).map((r, i) => (
-                      <li key={i} className="text-xs font-bold text-textMain flex items-center">
-                        <span className="w-1 h-1 rounded-full bg-border mr-2"></span> {r}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-3xl border border-border p-8 shadow-sm">
-              <h3 className="text-sm font-black text-textMain uppercase tracking-widest mb-6 flex items-center">
-                <span className="w-2 h-4 bg-primary rounded-full mr-3"></span> {t.education}
-              </h3>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.minLevel}</p>
-                  <p className="text-sm font-black text-textMain">{analysis?.education?.minimum_level || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.fieldsOfStudy}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {(analysis?.education?.fields_of_study || []).map((f, i) => (
-                      <span key={i} className="px-3 py-1 bg-slate-50 border border-border rounded-lg text-[10px] font-bold text-textMuted">{f}</span>
-                    ))}
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">
+                      {t.requiredSkills}{isModified(a => a?.skills?.required) && modifiedBadge}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(analysis?.skills?.required || []).map((s, i) => (
+                        <span key={i} className="px-4 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-textMain">{s}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">
+                      {t.preferredSkills}{isModified(a => a?.skills?.preferred) && modifiedBadge}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(analysis?.skills?.preferred || []).map((s, i) => (
+                        <span key={i} className="px-4 py-1.5 bg-blue-50 text-primary border border-blue-100 rounded-lg text-xs font-bold">{s}</span>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Other Categories */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {otherCats.map((cat, idx) => (
-              <div key={idx} className="bg-white rounded-3xl border border-border p-6 shadow-sm">
-                <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-4">{cat.label}</h4>
-                <ul className="space-y-2">
-                  {(cat.items || []).length > 0
-                    ? (cat.items || []).map((item, i) => (
-                        <li key={i} className="text-[11px] font-bold text-textMain leading-snug">• {item}</li>
-                      ))
-                    : <li className="text-[10px] text-textMuted italic">{t.noData}</li>}
-                </ul>
+              {/* Experience & Education */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-3xl border border-border p-8 shadow-sm">
+                  <h3 className="text-sm font-black text-textMain uppercase tracking-widest mb-6 flex items-center">
+                    <span className="w-2 h-4 bg-primary rounded-full mr-3"></span> {t.experience}
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">
+                        {t.minYears}{isModified(a => a?.experience?.minimum_years) && modifiedBadge}
+                      </p>
+                      <p className="text-lg font-black text-primary">{analysis?.experience?.minimum_years || 0}{t.years}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">
+                        {t.relevantRoles}{isModified(a => a?.experience?.relevant_roles) && modifiedBadge}
+                      </p>
+                      <ul className="space-y-1">
+                        {(analysis?.experience?.relevant_roles || []).map((r, i) => (
+                          <li key={i} className="text-xs font-bold text-textMain flex items-center">
+                            <span className="w-1 h-1 rounded-full bg-border mr-2"></span> {r}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-3xl border border-border p-8 shadow-sm">
+                  <h3 className="text-sm font-black text-textMain uppercase tracking-widest mb-6 flex items-center">
+                    <span className="w-2 h-4 bg-primary rounded-full mr-3"></span> {t.education}
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">
+                        {t.minLevel}{isModified(a => a?.education?.minimum_level) && modifiedBadge}
+                      </p>
+                      <p className="text-sm font-black text-textMain">{analysis?.education?.minimum_level || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">
+                        {t.fieldsOfStudy}{isModified(a => a?.education?.fields_of_study) && modifiedBadge}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {(analysis?.education?.fields_of_study || []).map((f, i) => (
+                          <span key={i} className="px-3 py-1 bg-slate-50 border border-border rounded-lg text-[10px] font-bold text-textMuted">{f}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
+
+              {/* Other Categories */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[
+                  { label: t.certifications,    items: analysis?.certifications,    modKey: (a: any) => a?.certifications },
+                  { label: t.domainKnowledge,   items: analysis?.domain_knowledge,  modKey: (a: any) => a?.domain_knowledge },
+                  { label: t.otherRequirements, items: analysis?.other_requirements, modKey: (a: any) => a?.other_requirements },
+                ].map((cat, idx) => (
+                  <div key={idx} className="bg-white rounded-3xl border border-border p-6 shadow-sm">
+                    <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-4">
+                      {cat.label}{isModified(cat.modKey) && modifiedBadge}
+                    </h4>
+                    <ul className="space-y-2">
+                      {(cat.items || []).length > 0
+                        ? (cat.items || []).map((item, i) => (
+                            <li key={i} className="text-[11px] font-bold text-textMain leading-snug">• {item}</li>
+                          ))
+                        : <li className="text-[10px] text-textMuted italic">{t.noData}</li>}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
+              {/* View Original AI Criteria */}
+              {originalAiCriteriaRef.current && (
+                <div className="bg-slate-50 rounded-2xl border border-border p-4">
+                  <button
+                    onClick={() => setShowOriginalCriteria(p => !p)}
+                    className="flex items-center gap-2 w-full text-left text-[10px] font-black text-textMuted uppercase tracking-widest hover:text-textMain transition-colors"
+                  >
+                    <svg className={`w-3.5 h-3.5 transition-transform ${showOriginalCriteria ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                    {showOriginalCriteria ? t.hideOriginalCriteria : t.viewOriginalCriteria}
+                  </button>
+                  {showOriginalCriteria && (() => {
+                    const orig = originalAiCriteriaRef.current;
+                    return (
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] text-textMuted animate-fade-in">
+                        {[
+                          { label: t.requiredSkills,   items: orig?.skills?.required },
+                          { label: t.preferredSkills,  items: orig?.skills?.preferred },
+                          { label: t.relevantRoles,    items: orig?.experience?.relevant_roles },
+                          { label: t.fieldsOfStudy,    items: orig?.education?.fields_of_study },
+                          { label: t.certifications,   items: orig?.certifications },
+                          { label: t.domainKnowledge,  items: orig?.domain_knowledge },
+                          { label: t.otherRequirements,items: orig?.other_requirements },
+                        ].map((sec, i) => (sec.items?.length ? (
+                          <div key={i}>
+                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{sec.label}</p>
+                            <p className="leading-relaxed">{sec.items.join(', ')}</p>
+                          </div>
+                        ) : null))}
+                        {orig?.experience?.minimum_years != null && (
+                          <div>
+                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.minYears}</p>
+                            <p>{orig.experience.minimum_years}{t.years}</p>
+                          </div>
+                        )}
+                        {orig?.education?.minimum_level && (
+                          <div>
+                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.minLevel}</p>
+                            <p>{orig.education.minimum_level}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Evaluation Logic */}
@@ -1776,6 +1956,27 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           </div>
         )}
       </section>
+
+      {/* ── Criteria save confirmation modal ──────────────────────────────── */}
+      {showCriteriaWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 p-8 animate-fade-in">
+            <h3 className="text-base font-black text-textMain mb-3">{t.criteriaWarningTitle}</h3>
+            <p className="text-sm text-textMuted leading-relaxed mb-6">{t.criteriaWarningBody}</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowCriteriaWarning(false)} className="px-5 py-2.5 text-sm font-bold text-textMuted hover:text-textMain transition-colors">{t.cancelEdit}</button>
+              <button
+                onClick={handleCriteriaSaveConfirmed}
+                disabled={savingCriteria}
+                className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white text-sm font-bold rounded-xl hover:bg-primaryDark transition-colors disabled:opacity-50"
+              >
+                {savingCriteria && <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
+                {t.criteriaConfirm}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

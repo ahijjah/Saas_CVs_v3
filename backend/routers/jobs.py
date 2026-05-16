@@ -64,6 +64,18 @@ class UpdateJobSettingsRequest(BaseModel):
     enable_ai_comparison:                             bool | None = None
 
 
+class UpdateCriteriaContentRequest(BaseModel):
+    required_skills:    list[str] | None = None
+    preferred_skills:   list[str] | None = None
+    minimum_years:      int | None = None
+    relevant_roles:     list[str] | None = None
+    minimum_education:  str | None = None
+    fields_of_study:    list[str] | None = None
+    certifications:     list[str] | None = None
+    domain_knowledge:   list[str] | None = None
+    other_requirements: list[str] | None = None
+
+
 class UpdateJobMetadataRequest(BaseModel):
     title: str | None = None
     department: str | None = None
@@ -295,6 +307,7 @@ async def get_job_details(
     criteria_row = await db.execute(
         text("""
             SELECT analysis_json,
+                   original_analysis_json,
                    criteria_extraction_status,
                    criteria_extraction_error,
                    criteria_extracted_at,
@@ -312,9 +325,10 @@ async def get_job_details(
 
     job_code = job["job_code"] or str(job["job_id"])[:8].upper()
 
-    extraction_status = criteria["criteria_extraction_status"] if criteria else "pending"
-    extraction_error  = criteria["criteria_extraction_error"]  if criteria else None
-    analysis_json     = criteria["analysis_json"] if criteria else None
+    extraction_status    = criteria["criteria_extraction_status"] if criteria else "pending"
+    extraction_error     = criteria["criteria_extraction_error"]  if criteria else None
+    analysis_json        = criteria["analysis_json"]          if criteria else None
+    original_analysis_json = criteria["original_analysis_json"] if criteria else None
 
     via_forwarding = job["receive_cv_via_forwarding_email"]
     via_platform   = job["receive_cv_via_platform_email"]
@@ -363,6 +377,7 @@ async def get_job_details(
             ),
         },
         "analysis": analysis_json,
+        "original_analysis": original_analysis_json,
     }
 
 
@@ -679,6 +694,105 @@ async def download_duplicate_cv(
         filename=rec["duplicate_original_filename"] or full_path.name,
         media_type=rec["duplicate_content_type"] or "application/octet-stream",
     )
+
+
+@router.put("/{job_id}/criteria/content")
+async def update_criteria_content(
+    job_id: str,
+    body: UpdateCriteriaContentRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update AI criteria content (skills, experience, education, etc.) for a job.
+    Admin and HR Manager only. Does NOT touch original_analysis_json so the AI baseline is preserved."""
+    role = (current_user.role or "").lower()
+    if role not in ("admin", "hr_manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only tenant admins and HR managers can edit evaluation criteria",
+        )
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    job_row = await db.execute(
+        text("SELECT job_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
+        {"jid": job_id, "tid": current_user.tenant_id},
+    )
+    if not job_row.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    criteria_row = await db.execute(
+        text("SELECT analysis_json FROM job_criteria WHERE job_id = :jid"),
+        {"jid": job_id},
+    )
+    existing = criteria_row.mappings().first()
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Criteria not found for this job")
+
+    current = dict(existing["analysis_json"] or {})
+
+    # Merge provided fields into the existing analysis_json
+    if body.required_skills is not None or body.preferred_skills is not None:
+        skills = dict(current.get("skills", {}))
+        if body.required_skills is not None:
+            skills["required"] = [s.strip() for s in body.required_skills if s.strip()]
+        if body.preferred_skills is not None:
+            skills["preferred"] = [s.strip() for s in body.preferred_skills if s.strip()]
+        current["skills"] = skills
+
+    if body.minimum_years is not None or body.relevant_roles is not None:
+        exp = dict(current.get("experience", {}))
+        if body.minimum_years is not None:
+            exp["minimum_years"] = max(0, body.minimum_years)
+        if body.relevant_roles is not None:
+            exp["relevant_roles"] = [r.strip() for r in body.relevant_roles if r.strip()]
+        current["experience"] = exp
+
+    if body.minimum_education is not None or body.fields_of_study is not None:
+        edu = dict(current.get("education", {}))
+        if body.minimum_education is not None:
+            edu["minimum_level"] = body.minimum_education.strip()
+        if body.fields_of_study is not None:
+            edu["fields_of_study"] = [f.strip() for f in body.fields_of_study if f.strip()]
+        current["education"] = edu
+
+    if body.certifications is not None:
+        current["certifications"] = [c.strip() for c in body.certifications if c.strip()]
+    if body.domain_knowledge is not None:
+        current["domain_knowledge"] = [d.strip() for d in body.domain_knowledge if d.strip()]
+    if body.other_requirements is not None:
+        current["other_requirements"] = [o.strip() for o in body.other_requirements if o.strip()]
+
+    # Rebuild flat scoring arrays (preserving existing weights)
+    from services.ai_service import flatten_criteria_for_scoring
+    flat = flatten_criteria_for_scoring(current)
+
+    await db.execute(
+        text("""
+            UPDATE job_criteria SET
+                analysis_json     = CAST(:aj AS jsonb),
+                skills            = :skills,
+                experience        = :experience,
+                education         = :education,
+                certifications    = :certifications,
+                soft_skills       = :soft_skills,
+                domain_knowledge  = :domain_knowledge,
+                other_requirements= :other_requirements
+            WHERE job_id = :jid
+        """),
+        {
+            "aj":                json.dumps(current, ensure_ascii=False),
+            "skills":            flat["skills"],
+            "experience":        flat["experience"],
+            "education":         flat["education"],
+            "certifications":    flat["certifications"],
+            "soft_skills":       flat.get("soft_skills", []),
+            "domain_knowledge":  flat["domain_knowledge"],
+            "other_requirements":flat["other_requirements"],
+            "jid":               job_id,
+        },
+    )
+    await db.commit()
+    return {"success": True, "message": "Criteria content updated"}
 
 
 @router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)
