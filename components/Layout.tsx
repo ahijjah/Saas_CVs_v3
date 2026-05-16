@@ -1,14 +1,14 @@
 
 import React, { useState } from 'react';
+import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { User } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface LayoutProps {
   user: User | null;
   onLogout: () => void;
-  children: React.ReactNode;
-  currentPage: string;
-  onNavigate: (page: string) => void;
+  /** Optional children; if omitted, <Outlet /> is used (React Router layout route). */
+  children?: React.ReactNode;
 }
 
 const T = {
@@ -21,15 +21,20 @@ const T = {
     tenantSubscriptions: 'Tenant Subscriptions',
     secrets: 'Secrets & Credentials', aiPrompts: 'AI Prompts', auditLogs: 'Audit Logs',
     organization: 'Organization', langBtn: 'عربي',
-    pageNames: {
-      jobs: 'Campaigns', 'job-details': 'Job Details', applications: 'Applications',
-      settings: 'Settings', 'plan-usage': 'Plan & Usage',
-      'admin-dashboard': 'Super Admin', 'admin-users': 'Users Global',
-      'admin-platform-config': 'Platform Config',
-      'admin-subscription-plans': 'Subscription Plans',
-      'admin-tenant-subscriptions': 'Tenant Subscriptions',
-      'admin-platform-secrets': 'Secrets & Credentials', 'admin-ai-prompts': 'AI Prompts',
-      'admin-audit-logs': 'Audit Logs',
+    pageTitles: {
+      '/jobs':                        'Campaigns',
+      '/jobs/:id':                    'Job Details',
+      '/applications':                'Applications',
+      '/settings':                    'Settings',
+      '/plan-usage':                  'Plan & Usage',
+      '/admin/dashboard':             'Super Admin',
+      '/admin/users':                 'Users Global',
+      '/admin/platform-config':       'Platform Config',
+      '/admin/subscription-plans':    'Subscription Plans',
+      '/admin/tenants':               'Tenant Subscriptions',
+      '/admin/platform-secrets':      'Secrets & Credentials',
+      '/admin/ai-prompts':            'AI Prompts',
+      '/admin/audit-logs':            'Audit Logs',
     } as Record<string, string>,
   },
   ar: {
@@ -41,18 +46,76 @@ const T = {
     tenantSubscriptions: 'اشتراكات المستأجرين',
     secrets: 'المفاتيح والبيانات السرية', aiPrompts: 'موجهات الذكاء الاصطناعي', auditLogs: 'سجل التدقيق',
     organization: 'المنظمة', langBtn: 'English',
-    pageNames: {
-      jobs: 'الحملات', 'job-details': 'تفاصيل الوظيفة', applications: 'الطلبات',
-      settings: 'الإعدادات', 'plan-usage': 'الخطة والاستخدام',
-      'admin-dashboard': 'المشرف العام', 'admin-users': 'المستخدمون',
-      'admin-platform-config': 'إعدادات المنصة',
-      'admin-subscription-plans': 'خطط الاشتراك',
-      'admin-tenant-subscriptions': 'اشتراكات المستأجرين',
-      'admin-platform-secrets': 'المفاتيح السرية', 'admin-ai-prompts': 'موجهات الذكاء الاصطناعي',
-      'admin-audit-logs': 'سجل التدقيق',
+    pageTitles: {
+      '/jobs':                        'الحملات',
+      '/jobs/:id':                    'تفاصيل الوظيفة',
+      '/applications':                'الطلبات',
+      '/settings':                    'الإعدادات',
+      '/plan-usage':                  'الخطة والاستخدام',
+      '/admin/dashboard':             'المشرف العام',
+      '/admin/users':                 'المستخدمون',
+      '/admin/platform-config':       'إعدادات المنصة',
+      '/admin/subscription-plans':    'خطط الاشتراك',
+      '/admin/tenants':               'اشتراكات المستأجرين',
+      '/admin/platform-secrets':      'المفاتيح السرية',
+      '/admin/ai-prompts':            'موجهات الذكاء الاصطناعي',
+      '/admin/audit-logs':            'سجل التدقيق',
     } as Record<string, string>,
   },
 };
+
+/** Map current URL pathname → sidebar menu item ID (for active highlighting). */
+function pathnameToMenuId(pathname: string): string {
+  if (pathname.startsWith('/admin/dashboard')) return 'admin-dashboard';
+  if (pathname.startsWith('/admin/users'))     return 'admin-users';
+  if (pathname.startsWith('/admin/platform-config'))    return 'admin-platform-config';
+  if (pathname.startsWith('/admin/subscription-plans')) return 'admin-subscription-plans';
+  if (pathname.startsWith('/admin/tenants'))            return 'admin-tenant-subscriptions';
+  if (pathname.startsWith('/admin/platform-secrets'))   return 'admin-platform-secrets';
+  if (pathname.startsWith('/admin/ai-prompts'))         return 'admin-ai-prompts';
+  if (pathname.startsWith('/admin/audit-logs'))         return 'admin-audit-logs';
+  if (pathname === '/plan-usage')   return 'plan-usage';
+  if (pathname === '/settings')     return 'settings';
+  // /jobs, /jobs/:id, /applications all highlight the Campaigns menu item
+  return 'jobs';
+}
+
+/** Map sidebar menu item ID → route URL. */
+function menuIdToRoute(id: string): string {
+  const map: Record<string, string> = {
+    'jobs':                       '/jobs',
+    'plan-usage':                 '/plan-usage',
+    'settings':                   '/settings',
+    'admin-dashboard':            '/admin/dashboard',
+    'admin-users':                '/admin/users',
+    'admin-platform-config':      '/admin/platform-config',
+    'admin-subscription-plans':   '/admin/subscription-plans',
+    'admin-tenant-subscriptions': '/admin/tenants',
+    'admin-platform-secrets':     '/admin/platform-secrets',
+    'admin-ai-prompts':           '/admin/ai-prompts',
+    'admin-audit-logs':           '/admin/audit-logs',
+  };
+  return map[id] || '/jobs';
+}
+
+/** Derive a human-readable page title from the current pathname. */
+function pathnameToTitle(pathname: string, titles: Record<string, string>): string {
+  // Exact and prefix matches
+  if (titles[pathname]) return titles[pathname];
+  // /jobs/:jobId → "Job Details"
+  if (/^\/jobs\/[^/]+$/.test(pathname)) return titles['/jobs/:id'] || 'Job Details';
+  if (pathname.startsWith('/admin/dashboard'))            return titles['/admin/dashboard'] || '';
+  if (pathname.startsWith('/admin/users'))                return titles['/admin/users'] || '';
+  if (pathname.startsWith('/admin/platform-config'))      return titles['/admin/platform-config'] || '';
+  if (pathname.startsWith('/admin/subscription-plans'))   return titles['/admin/subscription-plans'] || '';
+  if (pathname.startsWith('/admin/tenants'))              return titles['/admin/tenants'] || '';
+  if (pathname.startsWith('/admin/platform-secrets'))     return titles['/admin/platform-secrets'] || '';
+  if (pathname.startsWith('/admin/ai-prompts'))           return titles['/admin/ai-prompts'] || '';
+  if (pathname.startsWith('/admin/audit-logs'))           return titles['/admin/audit-logs'] || '';
+  if (pathname.startsWith('/applications'))               return titles['/applications'] || '';
+  if (pathname.startsWith('/jobs'))                       return titles['/jobs'] || '';
+  return pathname.split('/').filter(Boolean).pop()?.replace(/-/g, ' ') || '';
+}
 
 const GlobeIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -60,13 +123,25 @@ const GlobeIcon = () => (
   </svg>
 );
 
-export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, currentPage, onNavigate }) => {
+export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { lang, setLang, isAr } = useLanguage();
+  const location = useLocation();
+  const navigate = useNavigate();
   const t = T[lang];
 
   const isSuperAdmin = user?.role?.toLowerCase() === 'super_admin';
   const isTenantAdmin = user?.role?.toLowerCase() === 'admin';
+
+  const currentMenuId = pathnameToMenuId(location.pathname);
+  const pageTitle = pathnameToTitle(location.pathname, t.pageTitles);
+
+  const handleNavigate = (id: string) => {
+    navigate(menuIdToRoute(id));
+    setIsSidebarOpen(false);
+  };
+
+  const isActive = (id: string) => currentMenuId === id;
 
   const tenantMenuItems = [
     { id: 'jobs', label: t.campaigns, icon: (
@@ -133,14 +208,13 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
     )},
   ];
 
-  const handleNavigate = (id: string) => { onNavigate(id); setIsSidebarOpen(false); };
-
-  const pageTitle = t.pageNames[currentPage] || currentPage.replace(/-/g, ' ');
-
   return (
     <div className="flex min-h-screen relative lg:flex-row flex-col bg-background h-screen overflow-hidden">
       {isSidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-sm transition-opacity"
+          onClick={() => setIsSidebarOpen(false)}
+        />
       )}
 
       <aside className={`
@@ -166,9 +240,12 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
               <div>
                 <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.sysAdmin}</p>
                 <div className="space-y-1">
-                  {adminMenuItems.map((item) => (
-                    <button key={item.id} onClick={() => handleNavigate(item.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${currentPage === item.id ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}>
+                  {adminMenuItems.map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleNavigate(item.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
+                    >
                       {item.icon}<span>{item.label}</span>
                     </button>
                   ))}
@@ -177,9 +254,12 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
               <div>
                 <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.platformControl}</p>
                 <div className="space-y-1">
-                  {platformControlItems.map((item) => (
-                    <button key={item.id} onClick={() => handleNavigate(item.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${currentPage === item.id ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}>
+                  {platformControlItems.map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleNavigate(item.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
+                    >
                       {item.icon}<span>{item.label}</span>
                     </button>
                   ))}
@@ -190,9 +270,12 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
           <div>
             <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.tenantMgmt}</p>
             <div className="space-y-1">
-              {tenantMenuItems.map((item) => (
-                <button key={item.id} onClick={() => handleNavigate(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${currentPage === item.id ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}>
+              {tenantMenuItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleNavigate(item.id)}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
+                >
                   {item.icon}<span>{item.label}</span>
                 </button>
               ))}
@@ -201,12 +284,16 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
         </nav>
 
         <div className="p-4 border-t border-border bg-white space-y-2">
-          <button onClick={() => setLang(isAr ? 'en' : 'ar')}
-            className="w-full flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-textMuted hover:text-primary hover:bg-slate-50 transition-all border border-border">
+          <button
+            onClick={() => setLang(isAr ? 'en' : 'ar')}
+            className="w-full flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-textMuted hover:text-primary hover:bg-slate-50 transition-all border border-border"
+          >
             <GlobeIcon /><span>{t.langBtn}</span>
           </button>
-          <button onClick={onLogout}
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold text-error hover:bg-red-50 transition-all">
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold text-error hover:bg-red-50 transition-all"
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
@@ -241,7 +328,8 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, curren
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 animate-fade-in">
-          {children}
+          {/* Render children (e.g. <Outlet />) passed from the layout route in App.tsx */}
+          {children ?? <Outlet />}
         </main>
       </div>
     </div>
