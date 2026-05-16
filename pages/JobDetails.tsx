@@ -154,6 +154,13 @@ const T = {
     duplicateCount: 'Duplicates',
     viewDuplicates: 'View Duplicates',
     noDuplicates: 'No duplicates',
+    tabPublicLink: 'Public Link',
+    tabEmailAlias: 'Email Alias',
+    tabEmailFwd: 'Email Forwarding',
+    tabManualUpload: 'Manual Upload',
+    badgeExternal: 'External',
+    badgeInternal: 'Internal',
+    batchComplete: 'Batch complete — {count} CVs analyzed and added to applications.',
   },
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
@@ -290,6 +297,13 @@ const T = {
     duplicateCount: 'تكرارات',
     viewDuplicates: 'عرض التكرارات',
     noDuplicates: 'لا تكرارات',
+    tabPublicLink: 'الرابط العام',
+    tabEmailAlias: 'بريد مخصص',
+    tabEmailFwd: 'إعادة توجيه',
+    tabManualUpload: 'رفع يدوي',
+    badgeExternal: 'خارجي',
+    badgeInternal: 'داخلي',
+    batchComplete: 'اكتملت الدفعة — تم تحليل {count} سيرة ذاتية وإضافتها للطلبات.',
   },
 };
 
@@ -350,6 +364,18 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   // Duplicate log display limit
   const [showAllDuplicates, setShowAllDuplicates] = useState(false);
+
+  // Intake channel tabs (Public Link default)
+  const [activeIntakeTab, setActiveIntakeTab] = useState<'public-link' | 'email-alias' | 'email-forwarding' | 'manual-upload'>('public-link');
+
+  // Session-scoped upload tracking — starts empty each page load
+  const sessionIdsRef = useRef<Set<string>>(new Set());
+  const [sessionUploadIds, _setSessionUploadIds] = useState<Set<string>>(new Set());
+  const setSessionUploadIds = useCallback((s: Set<string>) => {
+    sessionIdsRef.current = s;
+    _setSessionUploadIds(s);
+  }, []);
+  const [batchCompleteCount, setBatchCompleteCount] = useState<number | null>(null);
 
   // ── Initial job details fetch ───────────────────────────────────────────────
   useEffect(() => {
@@ -455,8 +481,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   }, [criteriaPolltick, details?.criteria_extraction_status, jobId, auth.token]);
 
   // ── Fetch uploaded CVs ──────────────────────────────────────────────────────
-  const fetchUploadedCVs = useCallback(async () => {
-    if (!jobId) return;
+  const fetchUploadedCVs = useCallback(async (): Promise<UploadedCV[]> => {
+    if (!jobId) return [];
     setLoadingUploads(true);
     try {
       const data = await apiService.get(
@@ -464,8 +490,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         { job_id: jobId },
         auth.token!
       );
-      setUploadedCVs(Array.isArray(data) ? data : []);
-    } catch { /* ignore */ } finally {
+      const cvs: UploadedCV[] = Array.isArray(data) ? data : [];
+      setUploadedCVs(cvs);
+      return cvs;
+    } catch { return []; } finally {
       setLoadingUploads(false);
     }
   }, [jobId, auth.token]);
@@ -534,13 +562,21 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   useEffect(() => {
     const isNowProcessing = queueStatus?.is_processing ?? false;
     if (prevIsProcessingRef.current && !isNowProcessing) {
-      // Batch just finished: pull fresh KPI counters, clear queue list, refresh dup logs
       fetchJobDetails();
       fetchUploadedCVs();
       fetchDuplicateLogs();
+      // Show success banner if this session had uploads
+      if (sessionIdsRef.current.size > 0) {
+        const count = queueStatus?.completed ?? sessionIdsRef.current.size;
+        setBatchCompleteCount(count);
+        setTimeout(() => {
+          setSessionUploadIds(new Set());
+          setBatchCompleteCount(null);
+        }, 4000);
+      }
     }
     prevIsProcessingRef.current = isNowProcessing;
-  }, [queueStatus?.is_processing, fetchJobDetails, fetchUploadedCVs, fetchDuplicateLogs]);
+  }, [queueStatus?.is_processing, fetchJobDetails, fetchUploadedCVs, fetchDuplicateLogs, setSessionUploadIds]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -703,6 +739,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   const handleUpload = useCallback(async (files: FileList) => {
     if (!files.length) return;
+    const beforeIds = new Set(uploadedCVs.map(cv => cv.application_id));
     setUploading(true);
     let successCount = 0;
     let failCount = 0;
@@ -722,8 +759,14 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (successCount > 0) addToast(`${successCount} CV(s) uploaded successfully.`, 'success');
     if (failCount > 0) addToast(`${failCount} CV(s) failed to upload.`, 'error');
-    await fetchUploadedCVs();
-  }, [jobId, auth.token, addToast, fetchUploadedCVs]);
+    const newCVs = await fetchUploadedCVs();
+    const newIds = newCVs
+      .filter(cv => !beforeIds.has(cv.application_id))
+      .map(cv => cv.application_id);
+    if (newIds.length > 0) {
+      setSessionUploadIds(new Set([...sessionIdsRef.current, ...newIds]));
+    }
+  }, [jobId, auth.token, addToast, fetchUploadedCVs, uploadedCVs, setSessionUploadIds]);
 
   const handleScorePending = useCallback(async () => {
     setScoring(true);
@@ -968,16 +1011,16 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const weightTotal = editingWeights ? Object.values(draftWeights).reduce((s, v) => s + v, 0) : 0;
 
   const jobCode = details.job_code || details.job_id;
-  // Active queue: CVs still in flight (for button/progress logic)
-  const cvsInQueue = uploadedCVs.filter(cv =>
+  // Session-only display: only CVs uploaded in this browser session
+  const cvsDisplay = uploadedCVs.filter(cv => sessionUploadIds.has(cv.application_id));
+  // Active queue scoped to session CVs
+  const cvsInQueue = cvsDisplay.filter(cv =>
     cv.processing_status === 'pending' ||
     cv.processing_status === 'queued' ||
     cv.processing_status === 'processing'
   );
-  // All CVs are shown in the display list — completed ones show their stage/exit reason
-  const cvsDisplay = uploadedCVs;
-  const cvsScoredCount = queueStatus?.completed ?? uploadedCVs.filter(cv => cv.processing_status === 'scored' || cv.processing_status === 'low_match').length;
-  const cvsTotal = queueStatus?.total ?? uploadedCVs.length;
+  const cvsScoredCount = queueStatus?.completed ?? cvsDisplay.filter(cv => cv.processing_status === 'scored' || cv.processing_status === 'low_match').length;
+  const cvsTotal = queueStatus?.total ?? cvsDisplay.length;
   const cvsActivelyProcessing = queueStatus?.is_processing ?? cvsInQueue.some(cv => cv.processing_status === 'queued' || cv.processing_status === 'processing');
   const cvsHasPending = cvsInQueue.some(cv => cv.processing_status === 'pending');
   const cvsScoringInProgress = scoring || cvsActivelyProcessing;
@@ -1133,7 +1176,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       )}
 
       {/* Main grid ─────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:items-start">
       <div className="lg:col-span-2 space-y-6">
 
       {/* C. Job Metadata ──────────────────────────────────────────────────── */}
@@ -1324,82 +1367,63 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             <span className="text-[10px] text-textMuted font-bold px-2 py-0.5 bg-slate-100 rounded-full">{isAr ? 'للعرض فقط' : 'View only'}</span>
           )}
         </div>
+
+        {/* ── Tab strip ── */}
+        <div className="flex border-b border-border overflow-x-auto">
+          {([
+            { key: 'public-link'     as const, label: t.tabPublicLink,    badge: t.badgeExternal,                                                          badgeColor: 'bg-violet-100 text-violet-700'                                           },
+            { key: 'email-alias'     as const, label: t.tabEmailAlias,    badge: details.receive_cv_via_platform_email   ? t.enabled : t.disabled,          badgeColor: details.receive_cv_via_platform_email   ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' },
+            { key: 'email-forwarding'as const, label: t.tabEmailFwd,      badge: details.receive_cv_via_forwarding_email ? t.enabled : t.disabled,          badgeColor: details.receive_cv_via_forwarding_email ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' },
+            { key: 'manual-upload'   as const, label: t.tabManualUpload,  badge: t.badgeInternal,                                                          badgeColor: 'bg-indigo-100 text-indigo-700'                                           },
+          ]).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveIntakeTab(tab.key)}
+              className={`flex-1 min-w-[90px] px-3 py-3 flex flex-col items-center gap-1 transition-all border-b-2 ${activeIntakeTab === tab.key ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-textMuted hover:text-textMain hover:bg-slate-50'}`}
+            >
+              <span className="text-[9px] font-black uppercase tracking-wider whitespace-nowrap">{tab.label}</span>
+              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${tab.badgeColor}`}>{tab.badge}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* ── Tab content ── */}
         <div className="px-6 py-5">
 
-          {/* Top row: Option 1 + Option 2 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-
-            {/* Option 1 — Forward to central email */}
-            <div className={`rounded-2xl border-2 p-5 transition-all ${details.receive_cv_via_forwarding_email ? 'border-primary/20 bg-blue-50/40' : 'border-slate-200 bg-slate-50/60 opacity-60'}`}>
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div>
-                  <p className="text-xs font-black text-textMain">{t.option1Title}</p>
-                  <p className="text-[11px] text-textMuted mt-0.5 leading-relaxed">{t.option1Desc}</p>
+          {/* Public Link tab */}
+          {activeIntakeTab === 'public-link' && (
+            <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+              <div className="flex items-start gap-3">
+                <div className="shrink-0 w-7 h-7 bg-violet-100 rounded-lg flex items-center justify-center mt-0.5">
+                  <svg className="w-3.5 h-3.5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
                 </div>
-                <button
-                  disabled={togglingFwd || !canEdit}
-                  onClick={() => canEdit && handleIngestionToggle('receive_cv_via_forwarding_email', !details.receive_cv_via_forwarding_email)}
-                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_forwarding_email ? 'bg-primary' : 'bg-slate-300'} ${togglingFwd || !canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.receive_cv_via_forwarding_email ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
-                </button>
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option1ForwardTo}</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 text-primary truncate">{details.forwarding_email || 'jobs@ai970.cloud'}</code>
-                  <button
-                    onClick={() => handleCopy(details.forwarding_email || 'jobs@ai970.cloud', setCopiedFwdEmail)}
-                    className="shrink-0 px-3 py-1.5 bg-primary text-white text-[10px] font-black rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    {copiedFwdEmail ? t.copied : t.copyBtn}
-                  </button>
-                </div>
-              </div>
-              {/* Job reference — nested inside Option 1 */}
-              <div className="mt-3 bg-white/60 border border-blue-100 rounded-xl px-3 py-2.5 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-[9px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.jobRef}</p>
-                  <code className="text-xs font-mono font-black text-textMain">{jobCode}</code>
-                  <p className="text-[10px] text-textMuted mt-0.5 leading-tight">{t.jobRefHint}</p>
-                </div>
-                <button
-                  onClick={() => handleCopy(jobCode, setCopiedJobRef)}
-                  className="shrink-0 px-3 py-1.5 bg-white border border-border text-[10px] font-black text-textMain rounded-lg hover:bg-slate-50 transition-colors"
-                >
-                  {copiedJobRef ? t.copied : t.copyBtn}
-                </button>
-              </div>
-              {/* Restrict sender domain — only shown when forwarding is enabled */}
-              {details.receive_cv_via_forwarding_email && (
-                <div className="mt-3 flex items-center justify-between bg-white/70 border border-blue-100 rounded-xl px-3 py-2">
-                  <div>
-                    <p className="text-[10px] font-black text-textMain">{t.restrictSender}</p>
-                    <p className="text-[9px] text-textMuted">{t.restrictSenderHint}</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-xs font-black text-violet-900">{t.publicApplyLink}</p>
+                    <span className="text-[9px] font-bold bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded-full">{t.badgeExternal}</span>
                   </div>
-                  <button
-                    disabled={!canEdit}
-                    onClick={() => canEdit && handleIngestionToggle('restrict_forwarding_sender_to_tenant_email', !details.restrict_forwarding_sender_to_tenant_email)}
-                    className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details.restrict_forwarding_sender_to_tenant_email ? 'bg-primary' : 'bg-slate-300'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.restrict_forwarding_sender_to_tenant_email ? (isAr ? '-translate-x-4' : 'translate-x-4') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
-                  </button>
-                </div>
-              )}
-              <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.receive_cv_via_forwarding_email ? 'text-success' : 'text-textMuted'}`}>
-                {details.receive_cv_via_forwarding_email ? `● ${t.enabled}` : `○ ${t.disabled}`}
-              </p>
-            </div>
-
-            {/* Option 2 — Dedicated alias */}
-            <div className={`rounded-2xl border-2 p-5 transition-all ${details.receive_cv_via_platform_email ? 'border-success/30 bg-green-50/40' : 'border-slate-200 bg-slate-50/60 opacity-60'}`}>
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div>
+                  <p className="text-[10px] text-violet-600/80 mb-3">{t.publicApplyHint}</p>
                   <div className="flex items-center gap-2">
+                    <code className="flex-1 text-[11px] font-mono bg-white border border-violet-200 rounded-lg px-3 py-1.5 text-violet-700 truncate">{publicApplyUrl}</code>
+                    <button onClick={() => handleCopy(publicApplyUrl, setCopiedApplyLink)} className="shrink-0 px-3 py-1.5 bg-violet-600 text-white text-[10px] font-black rounded-lg hover:bg-violet-700 transition-colors">
+                      {copiedApplyLink ? t.copied : t.copyBtn}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Email Alias tab */}
+          {activeIntakeTab === 'email-alias' && (
+            <div>
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
                     <p className="text-xs font-black text-textMain">{t.option2Title}</p>
                     <span className="text-[9px] font-black bg-success text-white px-1.5 py-0.5 rounded-full uppercase">{t.recommended}</span>
                   </div>
-                  <p className="text-[11px] text-textMuted mt-0.5 leading-relaxed">{t.option2Desc}</p>
+                  <p className="text-[11px] text-textMuted leading-relaxed max-w-sm">{t.option2Desc}</p>
                 </div>
                 <button
                   disabled={togglingAlias || !canEdit}
@@ -1409,228 +1433,203 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.receive_cv_via_platform_email ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
                 </button>
               </div>
-              <div>
+              <div className={`rounded-xl border p-4 ${details.receive_cv_via_platform_email ? 'border-success/20 bg-green-50/40' : 'border-slate-200 bg-slate-50'}`}>
                 <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option2AliasLabel}</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 text-success truncate">{details.platform_email || '—'}</code>
                   {details.platform_email && (
-                    <button
-                      onClick={() => handleCopy(details.platform_email!, setCopiedAlias)}
-                      className="shrink-0 px-3 py-1.5 bg-success text-white text-[10px] font-black rounded-lg hover:bg-green-700 transition-colors"
-                    >
+                    <button onClick={() => handleCopy(details.platform_email!, setCopiedAlias)} className="shrink-0 px-3 py-1.5 bg-success text-white text-[10px] font-black rounded-lg hover:bg-green-700 transition-colors">
                       {copiedAlias ? t.copied : t.copyBtn}
                     </button>
                   )}
                 </div>
               </div>
-              <p className={`text-[10px] font-black uppercase tracking-wider mt-3 ${details.receive_cv_via_platform_email ? 'text-success' : 'text-textMuted'}`}>
-                {details.receive_cv_via_platform_email ? `● ${t.enabled}` : `○ ${t.disabled}`}
-              </p>
             </div>
-          </div>
+          )}
 
-          {/* Public Apply Link */}
-          <div className="mb-4 rounded-2xl border border-violet-200 bg-violet-50/30 p-4">
-            <div className="flex items-start gap-3">
-              <div className="shrink-0 w-7 h-7 bg-violet-100 rounded-lg flex items-center justify-center mt-0.5">
-                <svg className="w-3.5 h-3.5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                </svg>
+          {/* Email Forwarding tab */}
+          {activeIntakeTab === 'email-forwarding' && (
+            <div>
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <p className="text-xs font-black text-textMain mb-0.5">{t.option1Title}</p>
+                  <p className="text-[11px] text-textMuted leading-relaxed max-w-sm">{t.option1Desc}</p>
+                </div>
+                <button
+                  disabled={togglingFwd || !canEdit}
+                  onClick={() => canEdit && handleIngestionToggle('receive_cv_via_forwarding_email', !details.receive_cv_via_forwarding_email)}
+                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_forwarding_email ? 'bg-primary' : 'bg-slate-300'} ${togglingFwd || !canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.receive_cv_via_forwarding_email ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                </button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-black text-violet-900 mb-0.5">{t.publicApplyLink}</p>
-                <p className="text-[10px] text-violet-600/80 mb-2">{t.publicApplyHint}</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 text-[11px] font-mono bg-white border border-violet-200 rounded-lg px-3 py-1.5 text-violet-700 truncate">
-                    {publicApplyUrl}
-                  </code>
-                  <button
-                    onClick={() => handleCopy(publicApplyUrl, setCopiedApplyLink)}
-                    className="shrink-0 px-3 py-1.5 bg-violet-600 text-white text-[10px] font-black rounded-lg hover:bg-violet-700 transition-colors"
-                  >
-                    {copiedApplyLink ? t.copied : t.copyBtn}
+              <div className={`rounded-xl border p-4 space-y-3 ${details.receive_cv_via_forwarding_email ? 'border-primary/20 bg-blue-50/40' : 'border-slate-200 bg-slate-50'}`}>
+                <div>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-1">{t.option1ForwardTo}</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs font-mono bg-white border border-border rounded-lg px-3 py-1.5 text-primary truncate">{details.forwarding_email || 'jobs@ai970.cloud'}</code>
+                    <button onClick={() => handleCopy(details.forwarding_email || 'jobs@ai970.cloud', setCopiedFwdEmail)} className="shrink-0 px-3 py-1.5 bg-primary text-white text-[10px] font-black rounded-lg hover:bg-blue-700 transition-colors">
+                      {copiedFwdEmail ? t.copied : t.copyBtn}
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-white/60 border border-blue-100 rounded-xl px-3 py-2.5 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[9px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.jobRef}</p>
+                    <code className="text-xs font-mono font-black text-textMain">{jobCode}</code>
+                    <p className="text-[10px] text-textMuted mt-0.5 leading-tight">{t.jobRefHint}</p>
+                  </div>
+                  <button onClick={() => handleCopy(jobCode, setCopiedJobRef)} className="shrink-0 px-3 py-1.5 bg-white border border-border text-[10px] font-black text-textMain rounded-lg hover:bg-slate-50 transition-colors">
+                    {copiedJobRef ? t.copied : t.copyBtn}
                   </button>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Divider */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="px-3 bg-white text-[10px] font-black text-textMuted uppercase tracking-widest">
-                {isAr ? 'أو ارفع يدوياً' : 'or upload manually'}
-              </span>
-            </div>
-          </div>
-
-          {/* ── Option 3: Manual CV Upload (internal/recruiter) ─────────────── */}
-          <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/30 p-5">
-            <div className="flex items-start gap-3 mb-4">
-              <div className="shrink-0 w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center">
-                <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-xs font-black text-indigo-900">{t.manualUploadTitle}</p>
-                <p className="text-[11px] text-indigo-600/80 mt-0.5 leading-relaxed">{t.manualUploadDesc}</p>
-              </div>
-            </div>
-
-            {/* File input + upload button */}
-            <div className="flex flex-wrap items-center gap-3 mb-4">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                className="hidden"
-                id="cv-file-input"
-                onChange={e => { if (e.target.files?.length) handleUpload(e.target.files); }}
-              />
-              <label
-                htmlFor="cv-file-input"
-                className={`inline-flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-[11px] font-black text-indigo-700 rounded-xl transition-colors ${uploading || cvsScoringInProgress || !!deletingCVId ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer hover:bg-indigo-50'}`}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                {t.chooseFiles}
-              </label>
-            </div>
-
-            {/* Uploaded CVs — all uploads shown; in-flight show live stage, completed show result */}
-            {loadingUploads && uploadedCVs.length === 0 ? (
-              <div className="flex items-center gap-2 text-[11px] text-textMuted py-2">
-                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                Loading...
-              </div>
-            ) : cvsDisplay.length > 0 ? (
-              <div className="mt-2">
-                {/* Header row */}
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[10px] font-black text-indigo-800 uppercase tracking-wider">
-                    {t.uploadedCVsTitle} ({cvsDisplay.length})
-                  </p>
-                  {/* Progress label — only while scoring is running */}
-                  {cvsScoringInProgress && cvsTotal > 0 && (
-                    <p className="text-[10px] font-bold text-indigo-600">
-                      {t.progressLabel
-                        .replace('{scored}', String(cvsScoredCount))
-                        .replace('{total}', String(cvsTotal))
-                        .replace('{pct}', String(progressPct))}
-                    </p>
-                  )}
-                </div>
-
-                {/* Progress bar — only while scoring is running */}
-                {cvsScoringInProgress && cvsTotal > 0 && (
-                  <div className="w-full bg-indigo-100 h-1.5 rounded-full mb-3 overflow-hidden">
-                    <div
-                      className="bg-indigo-500 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${progressPct}%` }}
-                    />
+                {details.receive_cv_via_forwarding_email && (
+                  <div className="flex items-center justify-between bg-white/70 border border-blue-100 rounded-xl px-3 py-2">
+                    <div>
+                      <p className="text-[10px] font-black text-textMain">{t.restrictSender}</p>
+                      <p className="text-[9px] text-textMuted">{t.restrictSenderHint}</p>
+                    </div>
+                    <button
+                      disabled={!canEdit}
+                      onClick={() => canEdit && handleIngestionToggle('restrict_forwarding_sender_to_tenant_email', !details.restrict_forwarding_sender_to_tenant_email)}
+                      className={`shrink-0 relative w-9 h-5 rounded-full transition-colors focus:outline-none ${details.restrict_forwarding_sender_to_tenant_email ? 'bg-primary' : 'bg-slate-300'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.restrict_forwarding_sender_to_tenant_email ? (isAr ? '-translate-x-4' : 'translate-x-4') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+                    </button>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
 
-                {/* CV rows — all uploaded CVs with stage-aware status badges */}
-                <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                  {cvsDisplay.map(cv => {
-                    const st = cvStatusDisplay(cv);
-                    const isDeleting = deletingCVId === cv.application_id;
-                    const canDelete = cv.processing_status === 'pending' && !cvsScoringInProgress;
-                    const isDone = cv.processing_status === 'scored' || cv.processing_status === 'low_match';
-                    const hasExitReason = cv.evaluation_exit_reason && (
-                      cv.processing_status === 'low_match' ||
-                      (cv.processing_status === 'scored' && cv.evaluation_stage != null && cv.evaluation_stage < 3)
-                    );
-                    return (
-                      <div key={cv.application_id} className={`flex flex-col gap-1 rounded-xl border px-3 py-2 transition-colors ${isDone ? 'bg-slate-50/60 border-slate-100' : 'bg-white border-indigo-100'}`}>
-                        <div className="flex items-center gap-3">
-                          <svg className={`w-3.5 h-3.5 shrink-0 ${isDone ? 'text-slate-300' : 'text-indigo-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                          <p className={`flex-1 text-[11px] font-bold truncate min-w-0 ${isDone ? 'text-textMuted' : 'text-textMain'}`}>
-                            {cv.original_filename || cv.candidate_name}
-                          </p>
-                          <span className={`shrink-0 inline-flex items-center gap-1 text-[9px] font-black border rounded-full px-2 py-0.5 ${st.color}`}>
-                            {st.spin && <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>}
-                            {st.label}
-                          </span>
-                          {canDelete && (
-                            <button
-                              disabled={!!deletingCVId}
-                              onClick={() => handleDeleteCV(cv.application_id)}
-                              title={isDeleting ? t.deletingCV : t.deleteCV}
-                              className={`shrink-0 p-1 rounded-lg transition-colors ${deletingCVId ? 'opacity-40 cursor-not-allowed' : 'text-red-400 hover:text-red-600 hover:bg-red-50'}`}
-                            >
-                              {isDeleting
-                                ? <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                                : <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>}
-                            </button>
-                          )}
-                        </div>
-                        {/* Exit reason for early-rejected CVs */}
-                        {hasExitReason && (
-                          <p className="text-[9px] text-slate-400 leading-tight pl-6 truncate" title={cv.evaluation_exit_reason!}>
-                            <span className="font-black uppercase">{t.exitReason}</span> {cv.evaluation_exit_reason}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
+          {/* Manual Upload tab */}
+          {activeIntakeTab === 'manual-upload' && (
+            <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/30 p-5">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="shrink-0 w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center">
+                  <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
                 </div>
-
-                {/* Score button row — reset-stuck appears when there are stuck CVs */}
-                <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
-                  {queueStatus?.has_stuck && (
-                    <button
-                      disabled={resettingStuck}
-                      onClick={handleResetStuck}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black rounded-lg border transition-colors ${
-                        resettingStuck
-                          ? 'border-red-200 bg-red-50 text-red-400 cursor-not-allowed'
-                          : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
-                      }`}
-                    >
-                      {resettingStuck ? (
-                        <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                      ) : (
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      )}
-                      {resettingStuck ? t.resettingStuck : t.resetStuck}
-                    </button>
-                  )}
-                  <div className="flex-1" />
-                  <button
-                    disabled={!cvsHasPending || cvsScoringInProgress || !!deletingCVId}
-                    onClick={handleScorePending}
-                    className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${
-                      !cvsHasPending || cvsScoringInProgress || !!deletingCVId
-                        ? 'bg-slate-200 text-textMuted cursor-not-allowed'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                    }`}
-                  >
-                    {cvsScoringInProgress ? (
-                      <>
-                        <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                        {t.scoringBtnLabel}
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                        {t.scoreBtnLabel}
-                      </>
-                    )}
-                  </button>
+                <div>
+                  <p className="text-xs font-black text-indigo-900">{t.manualUploadTitle}</p>
+                  <p className="text-[11px] text-indigo-600/80 mt-0.5 leading-relaxed">{t.manualUploadDesc}</p>
                 </div>
               </div>
-            ) : (
-              <p className="text-[11px] text-indigo-400 italic">{t.noUploads}</p>
-            )}
-          </div>
-        </div>
 
+              {/* Batch success banner */}
+              {batchCompleteCount !== null && (
+                <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 flex items-center gap-2.5">
+                  <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <p className="text-sm font-bold text-emerald-700">{t.batchComplete.replace('{count}', String(batchCompleteCount))}</p>
+                </div>
+              )}
+
+              {/* File input */}
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  className="hidden"
+                  id="cv-file-input"
+                  onChange={e => { if (e.target.files?.length) handleUpload(e.target.files); }}
+                />
+                <label
+                  htmlFor="cv-file-input"
+                  className={`inline-flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-[11px] font-black text-indigo-700 rounded-xl transition-colors ${uploading || cvsScoringInProgress || !!deletingCVId ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer hover:bg-indigo-50'}`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                  {uploading ? t.uploadingBtn : t.chooseFiles}
+                </label>
+              </div>
+
+              {/* Session CV list */}
+              {loadingUploads && cvsDisplay.length === 0 ? (
+                <div className="flex items-center gap-2 text-[11px] text-textMuted py-2">
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                  Loading...
+                </div>
+              ) : cvsDisplay.length > 0 ? (
+                <div className="mt-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-black text-indigo-800 uppercase tracking-wider">{t.uploadedCVsTitle} ({cvsDisplay.length})</p>
+                    {cvsScoringInProgress && cvsTotal > 0 && (
+                      <p className="text-[10px] font-bold text-indigo-600">
+                        {t.progressLabel.replace('{scored}', String(cvsScoredCount)).replace('{total}', String(cvsTotal)).replace('{pct}', String(progressPct))}
+                      </p>
+                    )}
+                  </div>
+                  {cvsScoringInProgress && cvsTotal > 0 && (
+                    <div className="w-full bg-indigo-100 h-1.5 rounded-full mb-3 overflow-hidden">
+                      <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${progressPct}%` }} />
+                    </div>
+                  )}
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                    {cvsDisplay.map(cv => {
+                      const st = cvStatusDisplay(cv);
+                      const isDeleting = deletingCVId === cv.application_id;
+                      const canDelete = cv.processing_status === 'pending' && !cvsScoringInProgress;
+                      const isDone = cv.processing_status === 'scored' || cv.processing_status === 'low_match';
+                      const hasExitReason = cv.evaluation_exit_reason && (
+                        cv.processing_status === 'low_match' ||
+                        (cv.processing_status === 'scored' && cv.evaluation_stage != null && cv.evaluation_stage < 3)
+                      );
+                      return (
+                        <div key={cv.application_id} className={`flex flex-col gap-1 rounded-xl border px-3 py-2 transition-colors ${isDone ? 'bg-slate-50/60 border-slate-100' : 'bg-white border-indigo-100'}`}>
+                          <div className="flex items-center gap-3">
+                            <svg className={`w-3.5 h-3.5 shrink-0 ${isDone ? 'text-slate-300' : 'text-indigo-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                            <p className={`flex-1 text-[11px] font-bold truncate min-w-0 ${isDone ? 'text-textMuted' : 'text-textMain'}`}>{cv.original_filename || cv.candidate_name}</p>
+                            <span className={`shrink-0 inline-flex items-center gap-1 text-[9px] font-black border rounded-full px-2 py-0.5 ${st.color}`}>
+                              {st.spin && <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>}
+                              {st.label}
+                            </span>
+                            {canDelete && (
+                              <button disabled={!!deletingCVId} onClick={() => handleDeleteCV(cv.application_id)} title={isDeleting ? t.deletingCV : t.deleteCV}
+                                className={`shrink-0 p-1 rounded-lg transition-colors ${deletingCVId ? 'opacity-40 cursor-not-allowed' : 'text-red-400 hover:text-red-600 hover:bg-red-50'}`}>
+                                {isDeleting
+                                  ? <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                                  : <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>}
+                              </button>
+                            )}
+                          </div>
+                          {hasExitReason && (
+                            <p className="text-[9px] text-slate-400 leading-tight pl-6 truncate" title={cv.evaluation_exit_reason!}>
+                              <span className="font-black uppercase">{t.exitReason}</span> {cv.evaluation_exit_reason}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
+                    {queueStatus?.has_stuck && (
+                      <button disabled={resettingStuck} onClick={handleResetStuck}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black rounded-lg border transition-colors ${resettingStuck ? 'border-red-200 bg-red-50 text-red-400 cursor-not-allowed' : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'}`}>
+                        {resettingStuck
+                          ? <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                          : <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>}
+                        {resettingStuck ? t.resettingStuck : t.resetStuck}
+                      </button>
+                    )}
+                    <div className="flex-1" />
+                    <button
+                      disabled={!cvsHasPending || cvsScoringInProgress || !!deletingCVId}
+                      onClick={handleScorePending}
+                      className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${!cvsHasPending || cvsScoringInProgress || !!deletingCVId ? 'bg-slate-200 text-textMuted cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                    >
+                      {cvsScoringInProgress
+                        ? <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>{t.scoringBtnLabel}</>
+                        : <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>{t.scoreBtnLabel}</>}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                batchCompleteCount === null && <p className="text-[11px] text-indigo-400 italic">{t.noUploads}</p>
+              )}
+            </div>
+          )}
+
+        </div>
       </section>
 
       {/* F. AI Criteria ──────────────────────────────────────────────────── */}
@@ -1754,7 +1753,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       </div>
       {/* Right column — Evaluation Weights ────────────────────────────────── */}
       <div className="space-y-6">
-        <div className="bg-white rounded-2xl border border-border shadow-sm p-6 sticky top-20">
+        <div className="bg-white rounded-2xl border border-border shadow-sm p-6 lg:sticky lg:top-20">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
               <svg className="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
