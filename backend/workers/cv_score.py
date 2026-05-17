@@ -22,13 +22,15 @@ two classic errors:
   * "Event loop is closed"
 
 Fixes applied here:
-  * Each task invocation creates and owns its own event loop via
-    `asyncio.new_event_loop()`.  The loop is explicitly closed in `finally`.
-  * `engine.dispose()` is called at the start of every async entry-point so
-    that any connections inherited from another loop are released and fresh
-    ones are created on the current loop.
+  * Each task invocation creates its own NullPool engine + sessionmaker and
+    passes them into ``_score_cv_async``.  NullPool never pools connections,
+    so there are no cross-loop Future references between tasks or the FastAPI
+    process.  The engine is disposed in the outer ``finally`` after the loop
+    closes.
+  * Each task invocation owns its own event loop via ``asyncio.new_event_loop()``.
+    The loop is explicitly closed in ``finally``.
   * `_mark_failed()` uses an *isolated* NullPool engine so it never touches
-    the shared pool, making it safe to call from any loop context.
+    another task's engine, making it safe to call from any loop context.
   * The outer try/except in `_score_cv_async` calls `_mark_failed()` only
     *after* the SQLAlchemy session context-manager has fully exited (rollback
     + close already done), so there is no interference between sessions.
@@ -85,6 +87,20 @@ def score_cv_task(
     scoring_overrides: dict | None = None,
 ):
     """Score a CV file through the evaluation pipeline."""
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.pool import NullPool
+    from config import get_settings
+
+    cfg = get_settings()
+    # Task-local NullPool engine: never shares connections with other tasks or
+    # the FastAPI process pool, so there are no cross-loop Future references.
+    task_engine = create_async_engine(
+        cfg.database_url,
+        poolclass=NullPool,
+        connect_args={"server_settings": {"search_path": cfg.db_schema}},
+    )
+    TaskSession = async_sessionmaker(task_engine, class_=AsyncSession, expire_on_commit=False)
+
     # Create an isolated event loop for this task invocation.  Celery fork
     # workers inherit the parent's loop state; a fresh loop prevents
     # "Future attached to different loop" / "Event loop is closed" errors.
@@ -95,6 +111,7 @@ def score_cv_task(
             _score_cv_async(
                 application_id, job_id, tenant_id, file_path, mime_type,
                 scoring_overrides or {},
+                TaskSession,
             )
         )
     except Exception as exc:
@@ -124,6 +141,7 @@ def score_cv_task(
         except Exception:
             pass
         asyncio.set_event_loop(None)
+        task_engine.dispose()
 
 
 # ── Gatekeeper decision helper ────────────────────────────────────────────────
@@ -177,9 +195,10 @@ async def _score_cv_async(
     file_path: str,
     mime_type: str,
     scoring_overrides: dict,
+    Session,
 ) -> None:
     from config import get_settings
-    from database import engine, AsyncSessionLocal, set_rls_context
+    from database import set_rls_context
     from services.ai_service import (
         compute_final_score,
         determine_decision,
@@ -198,10 +217,6 @@ async def _score_cv_async(
 
     cfg = get_settings()
 
-    # Dispose the module-level connection pool before use.  This releases any
-    # connections that were established on a different (parent/prior) event
-    # loop, ensuring fresh connections are created on the current loop.
-    engine.dispose()
     logger.info("[%s] START scoring pipeline", application_id)
 
     # _scoring_committed is set True only after the final application_scores
@@ -210,7 +225,7 @@ async def _score_cv_async(
     _scoring_committed = False
 
     try:
-        async with AsyncSessionLocal() as db:
+        async with Session() as db:
             await set_rls_context(db, tenant_id, "super_admin")
 
             # ── Mark processing ───────────────────────────────────────────────

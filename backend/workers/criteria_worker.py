@@ -10,9 +10,9 @@ Flow:
 
 Event-loop safety
 -----------------
-Same pattern as cv_score.py — each task invocation owns its own event loop,
-`engine.dispose()` clears any stale pool connections inherited from the parent
-process, and `_mark_failed` uses an isolated NullPool engine.
+Same pattern as cv_score.py — each task invocation creates its own NullPool
+engine + sessionmaker (no shared pool, no cross-loop Future references), owns
+its own event loop, and uses an isolated NullPool engine in `_mark_failed`.
 """
 import asyncio
 import json
@@ -44,10 +44,22 @@ def _run_in_fresh_loop(coro):
 )
 def extract_criteria_task(self, job_id: str, description: str) -> None:
     """Background task: extract AI criteria and update job_criteria row."""
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.pool import NullPool
+    from config import get_settings
+
+    cfg = get_settings()
+    task_engine = create_async_engine(
+        cfg.database_url,
+        poolclass=NullPool,
+        connect_args={"server_settings": {"search_path": cfg.db_schema}},
+    )
+    TaskSession = async_sessionmaker(task_engine, class_=AsyncSession, expire_on_commit=False)
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(_extract_async(job_id, description))
+        loop.run_until_complete(_extract_async(job_id, description, TaskSession))
     except Exception as exc:
         logger.error("extract_criteria_task failed for job %s (attempt %d/%d): %s",
                      job_id, self.request.retries + 1, self.max_retries + 1, exc)
@@ -62,19 +74,18 @@ def extract_criteria_task(self, job_id: str, description: str) -> None:
         except Exception:
             pass
         asyncio.set_event_loop(None)
+        task_engine.dispose()
 
 
-async def _extract_async(job_id: str, description: str) -> None:
-    from database import engine, AsyncSessionLocal, set_rls_context
+async def _extract_async(job_id: str, description: str, Session) -> None:
+    from database import set_rls_context
     from services.ai_service import extract_job_criteria, flatten_criteria_for_scoring, load_active_prompt
     from config import get_settings
     from sqlalchemy import text
 
-    engine.dispose()  # release any stale pool connections from parent/prior loop
-
     settings = get_settings()
 
-    async with AsyncSessionLocal() as db:
+    async with Session() as db:
         await set_rls_context(db, "", "super_admin")
         await db.execute(
             text("""
@@ -93,7 +104,7 @@ async def _extract_async(job_id: str, description: str) -> None:
     analysis = await extract_job_criteria(description, prompt_override=criteria_prompt)
     flat = flatten_criteria_for_scoring(analysis)
 
-    async with AsyncSessionLocal() as db:
+    async with Session() as db:
         await set_rls_context(db, "", "super_admin")
         await db.execute(
             text("""
