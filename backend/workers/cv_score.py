@@ -126,6 +126,48 @@ def score_cv_task(
         asyncio.set_event_loop(None)
 
 
+# ── Gatekeeper decision helper ────────────────────────────────────────────────
+
+def _evaluate_gatekeeper_decision(gatekeeper_result, prompt_cfg) -> str:
+    """
+    Evaluate the gatekeeper result against the configurable bilingual
+    dual-threshold auto-reject policy.
+
+    Returns one of:
+      'auto_reject_disabled'   — master switch or gatekeeper_enabled is off
+      'clear_mismatch_rejected' — BOTH similarity AND skill_ratio below their
+                                  language-specific floors → reject locally
+      'uncertain_sent_to_ai'   — original gatekeeper would reject but only ONE
+                                  threshold breached → forward to AI
+      'passed_to_ai'           — gatekeeper passed normally (no rejection)
+
+    Does NOT mutate gatekeeper_result; callers handle state changes.
+    """
+    if not prompt_cfg.gatekeeper_enabled or not prompt_cfg.gatekeeper_auto_reject_enabled:
+        return "auto_reject_disabled"
+
+    sim        = gatekeeper_result.semantic_similarity   # 0.0–1.0
+    skill_pct  = gatekeeper_result.skill_match_ratio     # 0–100
+    lang       = gatekeeper_result.cv_language           # 'en' | 'ar' | 'mixed' | other
+
+    if lang == "en":
+        sim_floor   = prompt_cfg.gatekeeper_english_similarity_reject_below
+        skill_floor = prompt_cfg.gatekeeper_english_skill_ratio_reject_below
+    else:
+        sim_floor   = prompt_cfg.gatekeeper_non_english_similarity_reject_below
+        skill_floor = prompt_cfg.gatekeeper_non_english_skill_ratio_reject_below
+
+    if sim < sim_floor and skill_pct < skill_floor:
+        return "clear_mismatch_rejected"
+
+    # Original gatekeeper would have rejected but the stricter dual-threshold
+    # didn't fire → uncertain case, let AI decide.
+    if not gatekeeper_result.gatekeeper_passed:
+        return "uncertain_sent_to_ai"
+
+    return "passed_to_ai"
+
+
 # ── Main async pipeline ───────────────────────────────────────────────────────
 
 async def _score_cv_async(
@@ -206,6 +248,40 @@ async def _score_cv_async(
                 {"text": raw_cv_text, "aid": application_id},
             )
 
+            # ── Load scoring config early — needed for quality gate + gatekeeper
+            prompt_cfg = await load_prompt_config(db, tenant_id, job_id, overrides=scoring_overrides)
+            scoring_prompt = await load_active_prompt(db, "cv_scoring")
+
+            # ── Step 2a: Extraction quality gate ──────────────────────────────
+            _text_len = len((raw_cv_text or "").strip())
+            if _text_len < prompt_cfg.min_extracted_text_chars:
+                _exit_reason = (
+                    f"Extracted CV text is too short or unreadable "
+                    f"({_text_len} chars extracted, minimum required: "
+                    f"{prompt_cfg.min_extracted_text_chars})"
+                )
+                logger.warning("[%s] Text quality gate FAILED: %s", application_id, _exit_reason)
+                await db.execute(
+                    text("""
+                        UPDATE applications SET
+                            processing_status      = 'failed',
+                            evaluation_exit_reason = :reason,
+                            scored_at              = now()
+                        WHERE application_id = :aid
+                    """),
+                    {"reason": _exit_reason, "aid": application_id},
+                )
+                await db.execute(
+                    text("""
+                        UPDATE application_files SET extraction_status = 'failed'
+                        WHERE application_id = :aid
+                    """),
+                    {"aid": application_id},
+                )
+                await db.commit()
+                _scoring_committed = True
+                return
+
             # ── Step 2b: Duplicate detection (local, no LLM) ─────────────────
             logger.info("[%s] Running duplicate detection", application_id)
             app_id_row = await db.execute(
@@ -279,9 +355,6 @@ async def _score_cv_async(
             if not criteria:
                 raise RuntimeError(f"No criteria found for job {job_id}")
 
-            prompt_cfg = await load_prompt_config(db, tenant_id, job_id, overrides=scoring_overrides)
-            scoring_prompt = await load_active_prompt(db, "cv_scoring")
-
             weights = {
                 "weight_skills":           prompt_cfg.weights.get("weight_skills", criteria["weight_skills"]),
                 "weight_experience":       prompt_cfg.weights.get("weight_experience", criteria["weight_experience"]),
@@ -324,33 +397,58 @@ async def _score_cv_async(
                 min_skill_ratio=gk_params["min_skill_ratio"],
             )
 
-            if not prompt_cfg.gatekeeper_enabled and not gatekeeper_result.gatekeeper_passed:
-                bypass_reason = (
-                    "Level 1 gatekeeper disabled by system configuration; "
-                    "candidate passed to AI scoring."
-                )
+            # ── Bilingual dual-threshold auto-reject policy ───────────────────
+            # Decision zones:
+            #   clear_mismatch_rejected  — both sim AND skill_ratio below their floors → reject
+            #   uncertain_sent_to_ai     — gatekeeper would reject but only one threshold breached
+            #   passed_to_ai             — gatekeeper passed normally
+            #   auto_reject_disabled     — master switch or gatekeeper_enabled is off
+            decision_zone = _evaluate_gatekeeper_decision(gatekeeper_result, prompt_cfg)
+            logger.info(
+                "[%s] Gatekeeper zone=%s lang=%s sim=%.1f%% skill_ratio=%.1f%%",
+                application_id, decision_zone, gatekeeper_result.cv_language,
+                gatekeeper_result.semantic_similarity_pct, gatekeeper_result.skill_match_ratio,
+            )
+
+            bypass_reason: str | None = None
+
+            if decision_zone == "auto_reject_disabled":
                 gatekeeper_result.gatekeeper_passed = True
-                logger.info(
-                    "[%s] Gatekeeper DISABLED — bypassing rejection "
-                    "(sim=%.1f%% skill_ratio=%.1f%%)",
-                    application_id,
-                    gatekeeper_result.semantic_similarity_pct,
-                    gatekeeper_result.skill_match_ratio,
-                )
-            else:
-                bypass_reason = None
-
-            if prompt_cfg.gatekeeper_enabled and not gatekeeper_result.gatekeeper_passed:
-                logger.info(
-                    "[%s] Gatekeeper REJECTED sim=%.1f%% (threshold=%.0f%%) "
-                    "skill_ratio=%.1f%% (min=%.0f%%)",
-                    application_id,
-                    gatekeeper_result.semantic_similarity_pct,
-                    prompt_cfg.gatekeeper_threshold * 100,
-                    gatekeeper_result.skill_match_ratio,
-                    prompt_cfg.min_skill_ratio,
+                bypass_reason = (
+                    "Gatekeeper auto-reject disabled by system configuration; "
+                    "passed to AI scoring."
                 )
 
+            elif decision_zone == "uncertain_sent_to_ai":
+                gatekeeper_result.gatekeeper_passed = True
+                bypass_reason = (
+                    f"Gatekeeper uncertain zone (lang={gatekeeper_result.cv_language}): "
+                    f"sim={gatekeeper_result.semantic_similarity_pct:.1f}% "
+                    f"skill_ratio={gatekeeper_result.skill_match_ratio:.1f}%; "
+                    f"passing to AI scoring."
+                )
+
+            elif decision_zone == "clear_mismatch_rejected":
+                _exit_reason = (
+                    f"[{decision_zone}] "
+                    + (gatekeeper_result.rejection_reason or "CV does not match job requirements.")
+                )
+                _reasoning_payload = {
+                    "level1_gatekeeper": {
+                        "decision_zone":            decision_zone,
+                        "semantic_similarity_pct":  gatekeeper_result.semantic_similarity_pct,
+                        "skill_match_ratio":         gatekeeper_result.skill_match_ratio,
+                        "matched_skills":            gatekeeper_result.matched_skills,
+                        "missing_skills":            gatekeeper_result.missing_skills,
+                        "cv_language":               gatekeeper_result.cv_language,
+                        "rejection_reason":          gatekeeper_result.rejection_reason,
+                    }
+                }
+                logger.info(
+                    "[%s] Gatekeeper REJECTED [clear_mismatch] lang=%s sim=%.1f%% skill_ratio=%.1f%%",
+                    application_id, gatekeeper_result.cv_language,
+                    gatekeeper_result.semantic_similarity_pct, gatekeeper_result.skill_match_ratio,
+                )
                 await db.execute(
                     text("""
                         UPDATE applications SET
@@ -362,7 +460,7 @@ async def _score_cv_async(
                             scored_at              = now()
                         WHERE application_id = :aid
                     """),
-                    {"reason": gatekeeper_result.rejection_reason, "aid": application_id},
+                    {"reason": _exit_reason, "aid": application_id},
                 )
                 await db.execute(
                     text("""
@@ -396,8 +494,8 @@ async def _score_cv_async(
                         "matched":    gatekeeper_result.matched_skills,
                         "missing":    gatekeeper_result.missing_skills,
                         "cv_lang":    gatekeeper_result.cv_language,
-                        "notes":      gatekeeper_result.rejection_reason,
-                        "reasoning":  json.dumps({"level1_gatekeeper": gatekeeper_result.rejection_reason}),
+                        "notes":      _exit_reason,
+                        "reasoning":  json.dumps(_reasoning_payload, ensure_ascii=False),
                     },
                 )
                 await db.commit()
@@ -595,7 +693,14 @@ async def _score_cv_async(
                     )
 
             # ── Post-scoring: optional AI comparison ──────────────────────────
-            if criteria.get("enable_ai_comparison"):
+            # Job-level flag takes priority; falls back to system default.
+            _job_comparison_flag = criteria.get("enable_ai_comparison")
+            _run_comparison = (
+                _job_comparison_flag
+                if _job_comparison_flag is not None
+                else prompt_cfg.enable_ai_comparison_default
+            )
+            if _run_comparison:
                 try:
                     comparison_client = await get_comparison_client_async(db)
                     if comparison_client is not None:

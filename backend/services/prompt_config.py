@@ -91,6 +91,16 @@ class PromptConfig:
     gatekeeper_threshold: float = 0.40    # semantic similarity floor (0.0–1.0)
     skill_fuzzy_threshold: float = 80.0   # rapidfuzz partial_ratio threshold (0–100)
     min_skill_ratio: float = 0.0          # min % of required skills found (0–100); 0 = disabled
+    # ── New bilingual dual-threshold auto-reject policy ───────────────────────
+    gatekeeper_auto_reject_enabled: bool = True
+    gatekeeper_english_similarity_reject_below: float = 0.25   # 0.0–1.0
+    gatekeeper_english_skill_ratio_reject_below: float = 10.0  # 0–100
+    gatekeeper_non_english_similarity_reject_below: float = 0.15
+    gatekeeper_non_english_skill_ratio_reject_below: float = 5.0
+    # ── Extraction quality gate ───────────────────────────────────────────────
+    min_extracted_text_chars: int = 300
+    # ── AI comparison default ─────────────────────────────────────────────────
+    enable_ai_comparison_default: bool = False
     # Per-job mandatory skills (if non-empty, missing any = automatic penalty)
     mandatory_skills: list[str] = field(default_factory=list)
     mandatory_skills_weight: float = 0.0
@@ -128,7 +138,14 @@ async def load_prompt_config(
                 'gatekeeper_skill_fuzzy_threshold', 'skill_fuzzy_threshold',
                 'gatekeeper_min_skill_ratio',
                 'gatekeeper_enabled', 'level1_gatekeeper_enabled',
-                'output_language', 'default_weight_profile', 'default_strictness'
+                'output_language', 'default_weight_profile', 'default_strictness',
+                'gatekeeper_auto_reject_enabled',
+                'gatekeeper_english_similarity_reject_below',
+                'gatekeeper_english_skill_ratio_reject_below',
+                'gatekeeper_non_english_similarity_reject_below',
+                'gatekeeper_non_english_skill_ratio_reject_below',
+                'min_extracted_text_chars',
+                'enable_ai_comparison_default'
             )
         """)
     )
@@ -191,6 +208,19 @@ async def load_prompt_config(
         diff = 100 - total
         weights["weight_skills"] = weights.get("weight_skills", 0) + diff
 
+    # ── New scoring enhancement parameters ────────────────────────────────────
+    gatekeeper_auto_reject_enabled = (
+        sys_map.get("gatekeeper_auto_reject_enabled", "true").lower() == "true"
+    )
+    gk_en_sim = float(sys_map.get("gatekeeper_english_similarity_reject_below", "0.25"))
+    gk_en_skill = float(sys_map.get("gatekeeper_english_skill_ratio_reject_below", "10"))
+    gk_non_en_sim = float(sys_map.get("gatekeeper_non_english_similarity_reject_below", "0.15"))
+    gk_non_en_skill = float(sys_map.get("gatekeeper_non_english_skill_ratio_reject_below", "5"))
+    min_extracted_text_chars = int(float(sys_map.get("min_extracted_text_chars", "300")))
+    enable_ai_comparison_default = (
+        sys_map.get("enable_ai_comparison_default", "false").lower() == "true"
+    )
+
     return PromptConfig(
         weight_profile=weight_profile_name,
         weights=weights,
@@ -201,6 +231,13 @@ async def load_prompt_config(
         gatekeeper_threshold=gatekeeper_threshold,
         skill_fuzzy_threshold=skill_fuzzy_threshold,
         min_skill_ratio=min_skill_ratio,
+        gatekeeper_auto_reject_enabled=gatekeeper_auto_reject_enabled,
+        gatekeeper_english_similarity_reject_below=gk_en_sim,
+        gatekeeper_english_skill_ratio_reject_below=gk_en_skill,
+        gatekeeper_non_english_similarity_reject_below=gk_non_en_sim,
+        gatekeeper_non_english_skill_ratio_reject_below=gk_non_en_skill,
+        min_extracted_text_chars=min_extracted_text_chars,
+        enable_ai_comparison_default=enable_ai_comparison_default,
         mandatory_skills=overrides.get("mandatory_skills", []) if overrides else [],
         mandatory_skills_weight=float(overrides.get("mandatory_skills_weight", 0)) if overrides else 0.0,
     )
