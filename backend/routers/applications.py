@@ -17,7 +17,6 @@ from database import get_db, set_rls_context
 from services.application_intake_service import (
     IntakeValidationError,
     process_cv_intake,
-    update_intake_log_completion,
 )
 from workers.cv_score import score_cv_task
 
@@ -443,12 +442,14 @@ async def score_pending_uploads(
             )
             log_rec = log_row.mappings().first()
             if log_rec:
-                await update_intake_log_completion(
-                    db,
-                    str(log_rec["intake_log_id"]),
-                    processed_at=enqueued_at,
-                    duration_ms=0,
-                    scoring_enqueued_at=enqueued_at,
+                await db.execute(
+                    text("""
+                        UPDATE application_intake_log
+                        SET scoring_enqueued_at = COALESCE(scoring_enqueued_at, :enqueued),
+                            updated_at = now()
+                        WHERE intake_log_id = CAST(:lid AS uuid)
+                    """),
+                    {"enqueued": enqueued_at, "lid": str(log_rec["intake_log_id"])},
                 )
         except Exception as exc:
             logger.warning(

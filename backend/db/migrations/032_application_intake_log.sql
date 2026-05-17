@@ -77,10 +77,11 @@ CREATE TRIGGER trg_ail_updated_at
 -- Row-Level Security
 ALTER TABLE application_intake_log ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS ail_tenant_isolation ON application_intake_log;
 CREATE POLICY ail_tenant_isolation ON application_intake_log
     USING (
-        tenant_id = CAST(current_setting('app.current_tenant_id', true) AS uuid)
-        OR current_setting('app.current_role', true) = 'super_admin'
+        current_setting('app.current_role', true) = 'super_admin'
+        OR tenant_id::text = current_setting('app.current_tenant_id', true)
     );
 
 COMMENT ON TABLE application_intake_log IS 'Unified intake audit log covering all CV submission paths';

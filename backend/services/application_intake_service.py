@@ -417,7 +417,7 @@ async def process_cv_intake(
         status_code = (
             "FILE_SIZE_EXCEEDED" if exc.http_status == 413 else "UNSUPPORTED_FILE_TYPE"
         )
-        log_id = await _safe_log(
+        await _safe_log(
             db,
             tenant_id=tenant_id,
             job_id=job_id,
@@ -437,6 +437,7 @@ async def process_cv_intake(
             processing_started_at=started,
             received_at=received,
         )
+        await db.commit()  # persist log row before raising; no other writes pending
         raise  # let HTTP layer convert to 4xx
 
     # ── Step 2: hash ──────────────────────────────────────────────────────────
