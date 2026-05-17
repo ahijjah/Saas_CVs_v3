@@ -52,6 +52,7 @@ class IntakeStatus(str, Enum):
     JOB_NOT_IDENTIFIED      = "JOB_NOT_IDENTIFIED"
     JOB_INACTIVE            = "JOB_INACTIVE"
     MULTIPLE_ATTACHMENTS    = "MULTIPLE_ATTACHMENTS"
+    REJECTED                = "REJECTED"
 
 
 # ── Per-attachment result ──────────────────────────────────────────────────────

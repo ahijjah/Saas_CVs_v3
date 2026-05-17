@@ -805,81 +805,42 @@ async def _create_application_and_score(
     ingestion_mode: str = "forwarding",
 ) -> tuple[str, datetime]:
     """
-    Insert application + file records, commit, save file to disk, enqueue scoring.
+    Delegate to the shared intake service and return (application_id, scoring_enqueued_at).
 
-    Returns (application_id, scoring_enqueued_at).
-
-    Order ensures atomicity:
-      1. INSERT applications          → get application_id
-      2. Save file bytes to disk      → get file_path
-      3. INSERT application_files     → link file record
-      4. db.commit()                  → DB writes persisted
-      5. score_cv_task.delay()        → enqueue; exception here keeps email unseen for retry
+    application/octet-stream is remapped to application/pdf before the call
+    since email intake allows it as a fallback but the service only recognises
+    the three canonical MIME types.
     """
-    from sqlalchemy import text
-    from workers.cv_score import score_cv_task
+    from services.application_intake_service import process_cv_intake
 
     submission_source = "platform_email" if ingestion_mode == "platform_email" else "email_forwarding"
+    effective_mime = mime_type if mime_type != "application/octet-stream" else "application/pdf"
 
-    # Step 1: application record
-    app_result = await db.execute(
-        text("""
-            INSERT INTO applications
-                (job_id, tenant_id, candidate_name, candidate_email,
-                 submission_source, processing_status)
-            VALUES (:jid, :tid, :name, :email, :src, 'pending')
-            RETURNING application_id
-        """),
-        {"jid": job_id, "tid": tenant_id, "name": candidate_name,
-         "email": candidate_email, "src": submission_source},
-    )
-    application_id = str(app_result.scalar_one())
-
-    # Step 2: save attachment
-    ext      = ATTACHMENT_MIME_TYPES.get(mime_type, "pdf")
-    file_dir = Path(cfg.files_base_path) / "tenants" / tenant_id / "jobs" / job_id
-    file_dir.mkdir(parents=True, exist_ok=True)
-    file_path = file_dir / f"{application_id}.{ext}"
-    file_path.write_bytes(file_bytes)
-    logger.debug("Attachment saved: path=%s bytes=%d", file_path, len(file_bytes))
-
-    # Step 3: file record
-    await db.execute(
-        text("""
-            INSERT INTO application_files
-                (application_id, tenant_id, original_name, mime_type,
-                 file_path, file_size_bytes, extraction_status)
-            VALUES (:aid, :tid, :orig, :mime, :path, :size, 'pending')
-        """),
-        {
-            "aid":  application_id,
-            "tid":  tenant_id,
-            "orig": filename,
-            "mime": mime_type,
-            "path": str(file_path.relative_to(cfg.files_base_path)),
-            "size": len(file_bytes),
-        },
-    )
-
-    # Step 4: commit all DB writes
-    await db.commit()
-    logger.debug("DB commit OK — application_id=%s", application_id)
-
-    # Step 5: enqueue scoring (after commit so scorer can read the rows)
-    score_cv_task.delay(
-        application_id=application_id,
+    result = await process_cv_intake(
+        db,
+        intake_method=ingestion_mode,
         job_id=job_id,
         tenant_id=tenant_id,
-        file_path=str(file_path),
-        mime_type=mime_type,
-    )
-    scoring_enqueued_at = datetime.now(timezone.utc)
-    logger.info(
-        "Scoring enqueued — application_id=%s filename=%s enqueued_at=%s",
-        application_id, filename, scoring_enqueued_at.isoformat(),
+        candidate_name=candidate_name,
+        candidate_email=candidate_email,
+        content_type=effective_mime,
+        content=file_bytes,
+        original_filename=filename,
+        submission_source=submission_source,
+        auto_score=True,
+        files_base_path=cfg.files_base_path,
+        max_file_size_mb=cfg.max_file_size_mb,
+        email_sender_address=candidate_email,
     )
 
-    return application_id, scoring_enqueued_at
+    if not result.success:
+        raise RuntimeError(f"Intake service returned {result.status}: {result.error_message}")
+
+    logger.info(
+        "Application created via intake service — id=%s intake_log=%s",
+        result.application_id, result.intake_log_id,
+    )
+    return result.application_id, result.scoring_enqueued_at
 
 
 # ── Ingest audit log ──────────────────────────────────────────────────────────

@@ -1,6 +1,9 @@
+import logging
 import uuid
 from pathlib import Path
 from typing import Annotated
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
@@ -11,7 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import CurrentUserDep, get_current_user
 from config import get_settings
 from database import get_db, set_rls_context
-from services.subscription_service import can_process_cv
+from services.application_intake_service import (
+    IntakeValidationError,
+    process_cv_intake,
+    update_intake_log_completion,
+)
 from workers.cv_score import score_cv_task
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -24,13 +31,6 @@ class ScorePendingRequest(BaseModel):
 
 class ResetStuckRequest(BaseModel):
     job_id: str
-
-
-ALLOWED_MIME_TYPES = {
-    "application/pdf": "pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-    "application/msword": "doc",
-}
 
 
 @router.get("")
@@ -261,19 +261,7 @@ async def upload_cv(
     candidate_email: Annotated[str | None, Form()] = None,
     file: UploadFile = File(...),
 ):
-    if file.content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only PDF and DOCX files are accepted",
-        )
-
     content = await file.read()
-    max_bytes = settings.max_file_size_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds maximum size of {settings.max_file_size_mb}MB",
-        )
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
@@ -281,68 +269,44 @@ async def upload_cv(
         text("SELECT job_id, title FROM jobs WHERE job_id = :jid AND tenant_id = :tid AND status = 'active'"),
         {"jid": job_id, "tid": current_user.tenant_id},
     )
-    job = job_row.mappings().first()
-    if not job:
+    if not job_row.mappings().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active job not found")
 
-    # Enforce rolling 30-day CV processing quota
-    cv_check = await can_process_cv(current_user.tenant_id, db)
-    if not cv_check["allowed"]:
+    try:
+        result = await process_cv_intake(
+            db,
+            intake_method="manual_upload",
+            job_id=job_id,
+            tenant_id=current_user.tenant_id,
+            candidate_name=candidate_name,
+            candidate_email=candidate_email,
+            content_type=file.content_type,
+            content=content,
+            original_filename=file.filename,
+            submission_source="manual_upload",
+            auto_score=False,
+            files_base_path=settings.files_base_path,
+            max_file_size_mb=settings.max_file_size_mb,
+            submitted_by_user_id=current_user.user_id,
+            submitted_by_name=current_user.full_name or current_user.email,
+            submitted_by_email=current_user.email,
+        )
+    except IntakeValidationError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+
+    if result.status == "DUPLICATE_APPLICATION":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This CV file has already been uploaded for this position.",
+        )
+    if result.status == "REJECTED":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=cv_check["message"],
+            detail=result.error_message or "CV quota exceeded for this plan.",
         )
 
-    # ── Create application, save file, queue for scoring ─────────────────────
-    app_result = await db.execute(
-        text("""
-            INSERT INTO applications
-                (job_id, tenant_id, candidate_name, candidate_email,
-                 submission_source, processing_status,
-                 submitted_by_user_id, submitted_by_name, submitted_by_email)
-            VALUES (:jid, :tid, :name, :email, 'manual_upload', 'pending',
-                    :uploader_id, :uploader_name, :uploader_email)
-            RETURNING application_id
-        """),
-        {
-            "jid": job_id,
-            "tid": current_user.tenant_id,
-            "name": candidate_name,
-            "email": candidate_email,
-            "uploader_id": current_user.user_id,
-            "uploader_name": current_user.full_name or current_user.email,
-            "uploader_email": current_user.email,
-        },
-    )
-    application_id = str(app_result.scalar_one())
-
-    ext = ALLOWED_MIME_TYPES[file.content_type]
-    file_dir = Path(settings.files_base_path) / "tenants" / current_user.tenant_id / "jobs" / job_id
-    file_dir.mkdir(parents=True, exist_ok=True)
-    file_path = file_dir / f"{application_id}.{ext}"
-    file_path.write_bytes(content)
-
-    relative_path = str(file_path.relative_to(settings.files_base_path))
-
-    await db.execute(
-        text("""
-            INSERT INTO application_files
-                (application_id, tenant_id, original_name, mime_type, file_path, file_size_bytes, extraction_status)
-            VALUES (:aid, :tid, :orig, :mime, :path, :size, 'pending')
-        """),
-        {
-            "aid": application_id,
-            "tid": current_user.tenant_id,
-            "orig": file.filename,
-            "mime": file.content_type,
-            "path": relative_path,
-            "size": len(content),
-        },
-    )
-    await db.commit()
-
     return {
-        "application_id": application_id,
+        "application_id": result.application_id,
         "status": "pending",
         "message": "CV uploaded. Click 'Score uploaded CVs' to start scoring.",
     }
@@ -453,6 +417,8 @@ async def score_pending_uploads(
     if not claimed:
         return {"success": True, "queued": 0, "batch_id": None, "message": "No pending CVs to score."}
 
+    from datetime import datetime, timezone
+
     count = 0
     for row in claimed:
         full_path = str(Path(settings.files_base_path) / row["file_path"])
@@ -463,8 +429,35 @@ async def score_pending_uploads(
             file_path=full_path,
             mime_type=row["mime_type"],
         )
+        # Update intake log with scoring_enqueued_at if a log row exists
+        enqueued_at = datetime.now(timezone.utc)
+        try:
+            log_row = await db.execute(
+                text("""
+                    SELECT intake_log_id FROM application_intake_log
+                    WHERE application_id = CAST(:aid AS uuid)
+                      AND intake_method = 'manual_upload'
+                    ORDER BY created_at DESC LIMIT 1
+                """),
+                {"aid": str(row["application_id"])},
+            )
+            log_rec = log_row.mappings().first()
+            if log_rec:
+                await update_intake_log_completion(
+                    db,
+                    str(log_rec["intake_log_id"]),
+                    processed_at=enqueued_at,
+                    duration_ms=0,
+                    scoring_enqueued_at=enqueued_at,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Could not update intake_log for application %s: %s",
+                row["application_id"], exc,
+            )
         count += 1
 
+    await db.commit()
     return {"success": True, "queued": count, "batch_id": batch_id, "message": f"Queued scoring for {count} CV(s)"}
 
 

@@ -6,7 +6,6 @@ POST /applications/public      — candidate submits CV + metadata, no auth
 """
 import logging
 from datetime import date
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -17,18 +16,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from database import get_db, set_rls_context
-from services.subscription_service import can_process_cv
+from services.application_intake_service import (
+    IntakeValidationError,
+    process_cv_intake,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["public"])
 settings = get_settings()
-
-ALLOWED_MIME_TYPES = {
-    "application/pdf": "pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-    "application/msword": "doc",
-}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -135,7 +131,12 @@ async def submit_public_application(
             file=file,
         )
     except HTTPException:
-        raise  # re-raise our own validation errors as-is
+        raise
+    except IntakeValidationError as exc:
+        raise HTTPException(
+            status_code=exc.http_status,
+            detail=str(exc),
+        ) from exc
     except IntegrityError as exc:
         logger.error("DB constraint violation on public apply for job %s: %s", job_code, exc)
         raise HTTPException(
@@ -160,21 +161,7 @@ async def _handle_public_submission(
     cover_letter: str | None,
     file: UploadFile,
 ) -> dict:
-    """Core logic — separated so the outer handler can wrap all exceptions."""
-
-    # ── Validate file type and size ───────────────────────────────────────────
-    if file.content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=http_status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only PDF, DOC, and DOCX files are accepted",
-        )
     content = await file.read()
-    max_bytes = settings.max_file_size_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=http_status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds maximum size of {settings.max_file_size_mb} MB",
-        )
 
     await set_rls_context(db, "", "super_admin")
 
@@ -198,81 +185,34 @@ async def _handle_public_submission(
                 detail="This position is no longer accepting applications",
             )
 
-    # Enforce tenant-level rolling 30-day CV quota
-    cv_check = await can_process_cv(tenant_id, db)
-    if not cv_check["allowed"]:
+    # ── Delegate to unified intake service ────────────────────────────────────
+    result = await process_cv_intake(
+        db,
+        intake_method="public_apply",
+        job_id=job_id,
+        tenant_id=tenant_id,
+        candidate_name=candidate_name.strip(),
+        candidate_email=email.strip().lower(),
+        content_type=file.content_type,
+        content=content,
+        original_filename=file.filename,
+        submission_source="public_apply",
+        auto_score=True,
+        files_base_path=settings.files_base_path,
+        max_file_size_mb=settings.max_file_size_mb,
+        candidate_phone=phone.strip() if phone else None,
+        cover_letter=cover_letter.strip() if cover_letter else None,
+    )
+
+    if result.status == "DUPLICATE_APPLICATION":
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="This CV has already been submitted for this position.",
+        )
+    if result.status == "REJECTED":
         raise HTTPException(
             status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="This position is temporarily unable to accept applications. Please try again later.",
-        )
-
-    # ── Insert application record ─────────────────────────────────────────────
-    app_result = await db.execute(
-        text("""
-            INSERT INTO applications
-                (job_id, tenant_id, candidate_name, candidate_email,
-                 candidate_phone, cover_letter, submission_source, processing_status)
-            VALUES
-                (:jid, :tid, :name, :email,
-                 :phone, :cover_letter, 'public_apply', 'pending')
-            RETURNING application_id
-        """),
-        {
-            "jid":          job_id,
-            "tid":          tenant_id,
-            "name":         candidate_name.strip(),
-            "email":        email.strip().lower(),
-            "phone":        phone.strip() if phone else None,
-            "cover_letter": cover_letter.strip() if cover_letter else None,
-        },
-    )
-    application_id = str(app_result.scalar_one())
-
-    # ── Save file to disk ─────────────────────────────────────────────────────
-    ext = ALLOWED_MIME_TYPES[file.content_type]
-    file_dir = Path(settings.files_base_path) / "tenants" / tenant_id / "jobs" / job_id
-    file_dir.mkdir(parents=True, exist_ok=True)
-    abs_file_path = file_dir / f"{application_id}.{ext}"
-    abs_file_path.write_bytes(content)
-    relative_path = str(abs_file_path.relative_to(settings.files_base_path))
-
-    # ── Insert application_files record ───────────────────────────────────────
-    await db.execute(
-        text("""
-            INSERT INTO application_files
-                (application_id, tenant_id, original_name, mime_type,
-                 file_path, file_size_bytes, extraction_status)
-            VALUES (:aid, :tid, :orig, :mime, :path, :size, 'pending')
-        """),
-        {
-            "aid":  application_id,
-            "tid":  tenant_id,
-            "orig": file.filename,
-            "mime": file.content_type,
-            "path": relative_path,
-            "size": len(content),
-        },
-    )
-
-    # ── Commit all DB writes before queuing Celery task ───────────────────────
-    await db.commit()
-
-    # ── Queue scoring (same as email intake — auto-scores after submission) ────
-    try:
-        from workers.cv_score import score_cv_task
-        score_cv_task.delay(
-            application_id=application_id,
-            job_id=job_id,
-            tenant_id=tenant_id,
-            file_path=str(abs_file_path),
-            mime_type=file.content_type,
-        )
-        logger.info("Public apply: scoring queued for application %s", application_id)
-    except Exception as exc:
-        # Celery enqueue failure is non-fatal — application is saved, can be re-scored
-        logger.error(
-            "Public apply: failed to queue scoring for application %s: %s",
-            application_id, exc,
         )
 
     # ── Auto-close job if intake limit now reached ────────────────────────────
@@ -293,6 +233,6 @@ async def _handle_public_submission(
             logger.error("Auto-close check failed for job %s: %s", job_id, exc)
 
     return {
-        "application_id": application_id,
+        "application_id": result.application_id,
         "message": "Application received successfully",
     }
