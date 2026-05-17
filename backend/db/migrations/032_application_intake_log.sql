@@ -6,7 +6,7 @@
 
 CREATE TABLE IF NOT EXISTS application_intake_log (
     intake_log_id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id                         UUID NOT NULL,
+    tenant_id                         UUID,
     job_id                            UUID,
     application_id                    UUID,
 
