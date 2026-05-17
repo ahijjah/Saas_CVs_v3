@@ -3,9 +3,15 @@ Celery task: poll IMAP inbox for new CV emails.
 
 Supports two routing modes per job:
   Option 1 — Forwarding: email sent to FORWARDING_EMAIL (from system_config),
-             job identified by job_code in subject (e.g. JOB-2026-0001).
+             job identified by job_code extracted from subject then body.
   Option 2 — Alias: email sent directly to {job_id}@{domain},
              job resolved from TO address automatically.
+
+Job-code extraction order (forwarding mode):
+  1. Subject line
+  2. Plain-text body
+  3. HTML body (safe text stripping via stdlib html.parser)
+  First match wins; source is logged for diagnostics.
 
 Deduplication: message_id (email level) + SHA-256 hash (file level).
 
@@ -27,7 +33,9 @@ import hashlib
 import logging
 import uuid
 import re
+from datetime import datetime, timezone
 from email.header import decode_header
+from html.parser import HTMLParser
 from pathlib import Path
 
 from workers.celery_app import celery_app
@@ -46,6 +54,100 @@ JOB_CODE_RE = re.compile(r'\bJOB[-_](\d{4})[-_](\d{1,4})\b', re.IGNORECASE)
 
 _IMAP_LOCK_KEY = "cv_intake:imap_poll_lock"
 _IMAP_LOCK_TTL = 300  # seconds — generous upper bound for a single poll run
+
+
+# ── HTML safe-text extraction ─────────────────────────────────────────────────
+
+class _TextExtractor(HTMLParser):
+    """Strip HTML tags and collect visible text nodes."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._chunks: list[str] = []
+        self._skip_tags = {"script", "style", "head"}
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.lower() in self._skip_tags:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in self._skip_tags and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0 and data.strip():
+            self._chunks.append(data)
+
+    def get_text(self) -> str:
+        return " ".join(self._chunks)
+
+
+def _html_to_text(html_bytes: bytes, charset: str = "utf-8") -> str:
+    """Safely extract visible text from HTML bytes. Never raises."""
+    try:
+        raw = html_bytes.decode(charset, errors="replace")
+        extractor = _TextExtractor()
+        extractor.feed(raw)
+        return extractor.get_text()
+    except Exception as exc:
+        logger.debug("HTML text extraction failed: %s", exc)
+        return ""
+
+
+# ── Job-code extraction ───────────────────────────────────────────────────────
+
+def _extract_job_code_from_message(subject: str, msg) -> tuple[str | None, str]:
+    """
+    Extract and normalise a job code from the email, trying in priority order:
+      1. Subject line
+      2. Plain-text body part
+      3. HTML body part (safe text extraction)
+
+    Returns (normalised_code_or_None, source_label).
+    source_label is one of: 'subject' | 'text_body' | 'html_body' | 'none'
+    """
+    # 1. Subject
+    match = JOB_CODE_RE.search(subject)
+    if match:
+        return f"JOB-{match.group(1)}-{int(match.group(2)):04d}", "subject"
+
+    if msg is None:
+        return None, "none"
+
+    # Collect body parts in a single walk (avoid double walk)
+    plain_text: str | None = None
+    html_bytes: bytes | None = None
+    html_charset = "utf-8"
+
+    for part in msg.walk():
+        ct = part.get_content_type()
+        if ct == "text/plain" and plain_text is None:
+            payload = part.get_payload(decode=True)
+            if payload:
+                charset = part.get_content_charset() or "utf-8"
+                try:
+                    plain_text = payload.decode(charset, errors="replace")
+                except Exception:
+                    plain_text = payload.decode("utf-8", errors="replace")
+        elif ct == "text/html" and html_bytes is None:
+            html_bytes = part.get_payload(decode=True) or b""
+            html_charset = part.get_content_charset() or "utf-8"
+
+    # 2. Plain-text body
+    if plain_text:
+        match = JOB_CODE_RE.search(plain_text)
+        if match:
+            return f"JOB-{match.group(1)}-{int(match.group(2)):04d}", "text_body"
+
+    # 3. HTML body
+    if html_bytes:
+        html_text = _html_to_text(html_bytes, html_charset)
+        match = JOB_CODE_RE.search(html_text)
+        if match:
+            return f"JOB-{match.group(1)}-{int(match.group(2)):04d}", "html_body"
+
+    return None, "none"
 
 
 # ── Distributed lock ──────────────────────────────────────────────────────────
@@ -173,6 +275,9 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
     from database import set_rls_context
     from sqlalchemy import text
 
+    # Capture processing start time before any I/O — written to every log row.
+    msg_processing_started = datetime.now(timezone.utc)
+
     _, msg_data = imap.fetch(msg_id_bytes, "(RFC822)")
     raw = msg_data[0][1]
     msg = email.message_from_bytes(raw)
@@ -212,7 +317,7 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
         )
         forwarding_email = (fwd_row.scalar_one_or_none() or cfg.imap_user).lower()
 
-        # ── Resolve routing ───────────────────────────────────────────────
+        # ── Resolve routing (passes full msg for body fallback) ───────────
         from services.intake_notification_service import (
             AttachmentResult,
             IntakeStatus,
@@ -221,8 +326,8 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
             queue_recruiter_unmatched_alert,
         )
 
-        job_id, tenant_id, ingestion_mode, reject_reason, inactive_job_id = (
-            await _resolve_routing(db, recipient, subject, forwarding_email, sender=sender)
+        job_id, tenant_id, ingestion_mode, reject_reason, inactive_job_id, job_code_source = (
+            await _resolve_routing(db, recipient, subject, forwarding_email, sender=sender, msg=msg)
         )
 
         if not job_id:
@@ -230,6 +335,7 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
             intake_log_id = await _log_ingest(
                 db, message_id, sender, recipient, subject,
                 None, None, None, "unassigned", reject_reason, "unknown",
+                processing_started_at=msg_processing_started,
             )
 
             # Candidate notification for identifiable unrouted cases
@@ -261,6 +367,10 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                 )
                 await queue_recruiter_unmatched_alert(db, intake_log_id=intake_log_id)
 
+            processed_at = datetime.now(timezone.utc)
+            duration_ms = int((processed_at - msg_processing_started).total_seconds() * 1000)
+            if intake_log_id:
+                await _update_log_completion(db, intake_log_id, processed_at, duration_ms, None)
             imap.store(msg_id_bytes, "+FLAGS", "\\Seen")
             return
 
@@ -292,6 +402,8 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                             db, message_id, sender, recipient, subject,
                             tenant_id, job_id, None, "rejected",
                             f"Unsupported file type: {filename}", ingestion_mode,
+                            job_code_source=job_code_source,
+                            processing_started_at=msg_processing_started,
                         )
                         attachment_results.append(AttachmentResult(
                             filename=filename,
@@ -315,6 +427,8 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     tenant_id, job_id, None, "rejected",
                     f"File size {len(attachment_bytes)} bytes exceeds limit {max_bytes}",
                     ingestion_mode,
+                    job_code_source=job_code_source,
+                    processing_started_at=msg_processing_started,
                 )
                 attachment_results.append(AttachmentResult(
                     filename=fname_for_log,
@@ -355,8 +469,6 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     original_application_id = str(orig_row["application_id"]) if orig_row else None
 
                     # Save duplicate CV file so recruiters can compare it with the original.
-                    # Files land in a dedicated 'duplicates' sub-directory to separate them
-                    # from full application files.
                     log_id = str(uuid.uuid4())
                     dup_file_path_rel: str | None = None
                     dup_file_size: int | None = None
@@ -427,6 +539,8 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     tenant_id, job_id, None, "duplicate",
                     "Identical file already processed", ingestion_mode,
                     file_hash, filename,
+                    job_code_source=job_code_source,
+                    processing_started_at=msg_processing_started,
                 )
                 attachment_results.append(AttachmentResult(
                     filename=filename,
@@ -449,6 +563,8 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                         db, message_id, sender, recipient, subject,
                         tenant_id, job_id, None, "rejected",
                         "CV quota exceeded", ingestion_mode, file_hash, filename,
+                        job_code_source=job_code_source,
+                        processing_started_at=msg_processing_started,
                     )
                     attachment_results.append(AttachmentResult(
                         filename=filename,
@@ -457,19 +573,23 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     processed_any = True
                     continue
 
-                application_id = await _create_application_and_score(
+                application_id, scoring_enqueued_at = await _create_application_and_score(
                     db, job_id, tenant_id, sender_name, sender,
                     attachment_bytes, content_type, filename, cfg,
                     ingestion_mode=ingestion_mode,
                 )
                 logger.info(
-                    "Application inserted: id=%s file=%s job=%s tenant=%s uid=%s",
-                    application_id, filename, job_id, tenant_id, msg_id_bytes,
+                    "Application inserted — id=%s file=%s job=%s tenant=%s routing=%s uid=%s",
+                    application_id, filename, job_id, tenant_id,
+                    ingestion_mode, msg_id_bytes,
                 )
                 last_intake_log_id = await _log_ingest(
                     db, message_id, sender, recipient, subject,
                     tenant_id, job_id, application_id, "scored",
                     None, ingestion_mode, file_hash, filename,
+                    job_code_source=job_code_source,
+                    processing_started_at=msg_processing_started,
+                    scoring_enqueued_at=scoring_enqueued_at,
                 )
                 attachment_results.append(AttachmentResult(
                     filename=filename,
@@ -504,6 +624,8 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                         db, message_id, sender, recipient, subject,
                         tenant_id, job_id, None, "failed",
                         str(exc), ingestion_mode, file_hash, filename,
+                        job_code_source=job_code_source,
+                        processing_started_at=msg_processing_started,
                     )
                     attachment_results.append(AttachmentResult(
                         filename=filename,
@@ -518,6 +640,8 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                 db, message_id, sender, recipient, subject,
                 tenant_id, job_id, None, "skipped",
                 "No valid attachments found", ingestion_mode,
+                job_code_source=job_code_source,
+                processing_started_at=msg_processing_started,
             )
             attachment_results.append(AttachmentResult(
                 filename=None,
@@ -525,6 +649,7 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
             ))
 
         # ── Consolidated candidate notification ───────────────────────────
+        notification_queued_at: datetime | None = None
         if attachment_results:
             try:
                 await queue_candidate_notification(
@@ -537,10 +662,26 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     attachment_results=attachment_results,
                     intake_log_id=last_intake_log_id,
                 )
+                notification_queued_at = datetime.now(timezone.utc)
+                logger.info(
+                    "Candidate notification queued — uid=%s job=%s", msg_id_bytes, job_id
+                )
             except Exception as notif_exc:
                 logger.warning(
                     "Notification queue failed for uid=%s: %s", msg_id_bytes, notif_exc,
                 )
+
+        # ── Record completion timestamps ──────────────────────────────────
+        processed_at = datetime.now(timezone.utc)
+        duration_ms = int((processed_at - msg_processing_started).total_seconds() * 1000)
+        logger.info(
+            "Message processing complete — uid=%s duration=%dms job=%s routing=%s",
+            msg_id_bytes, duration_ms, job_id, ingestion_mode,
+        )
+        if last_intake_log_id:
+            await _update_log_completion(
+                db, last_intake_log_id, processed_at, duration_ms, notification_queued_at
+            )
 
     # ── Mark as seen ONLY after session closes cleanly ────────────────────────
     # If any attachment processing raised an exception we keep the email UNSEEN
@@ -558,13 +699,19 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
 # ── Routing resolution ────────────────────────────────────────────────────────
 
 async def _resolve_routing(
-    db, recipient: str, subject: str, forwarding_email: str, sender: str = ""
-) -> tuple[str | None, str | None, str, str | None, str | None]:
+    db,
+    recipient: str,
+    subject: str,
+    forwarding_email: str,
+    sender: str = "",
+    msg=None,
+) -> tuple[str | None, str | None, str, str | None, str | None, str | None]:
     """
-    Return (job_id, tenant_id, ingestion_mode, reject_reason, inactive_job_id).
+    Return (job_id, tenant_id, ingestion_mode, reject_reason, inactive_job_id, job_code_source).
 
+    job_code_source is 'subject' | 'text_body' | 'html_body' | None.
     inactive_job_id is populated when a job WAS found by address/code but its
-    status is not 'active'.  Callers use this to trigger per-job recruiter alerts
+    status is not 'active'. Callers use this to trigger per-job recruiter alerts
     and send candidates a JOB_INACTIVE notification.
     """
     from sqlalchemy import text
@@ -580,24 +727,32 @@ async def _resolve_routing(
     )
     job = job_row.mappings().first()
     if job:
+        logger.info("Routing: platform_email alias matched recipient=%s", recipient)
         if job["status"] != "active":
             return (
                 None, None, "platform_email",
                 f"Job is not active (status: {job['status']})",
-                str(job["job_id"]),  # inactive_job_id for recruiter alert
+                str(job["job_id"]),
+                None,
             )
         if not job["receive_cv_via_platform_email"]:
-            # Active job but email intake disabled — no inactive_job_id (not a status issue)
-            return None, None, "platform_email", "Platform email receiving disabled for this job", None
-        return str(job["job_id"]), str(job["tenant_id"]), "platform_email", None, None
+            return None, None, "platform_email", "Platform email receiving disabled for this job", None, None
+        return str(job["job_id"]), str(job["tenant_id"]), "platform_email", None, None, None
 
-    # Option 1: forwarding — recipient is the central inbox, job from subject
+    # Option 1: forwarding — recipient is the central inbox, job from subject/body
     if recipient == forwarding_email or recipient.split("@")[0] == forwarding_email.split("@")[0]:
-        match = JOB_CODE_RE.search(subject)
-        if not match:
-            return None, None, "forwarding", f"No job code found in subject: '{subject}'", None
+        job_code, job_code_source = _extract_job_code_from_message(subject, msg)
 
-        job_code = f"JOB-{match.group(1)}-{int(match.group(2)):04d}"
+        if not job_code:
+            logger.info(
+                "Routing: forwarding mode — no job code found in subject, text body, or HTML body"
+            )
+            return None, None, "forwarding", f"No job code found in subject: '{subject}'", None, None
+
+        logger.info(
+            "Routing: forwarding mode — job_code=%s extracted from %s",
+            job_code, job_code_source,
+        )
 
         fwd_row = await db.execute(
             text("""
@@ -613,25 +768,26 @@ async def _resolve_routing(
         )
         fwd_job = fwd_row.mappings().first()
         if not fwd_job:
-            return None, None, "forwarding", f"Job code '{job_code}' not found", None
+            return None, None, "forwarding", f"Job code '{job_code}' not found", None, job_code_source
         if fwd_job["status"] != "active":
             return (
                 None, None, "forwarding",
                 f"Job '{job_code}' is not active (status: {fwd_job['status']})",
                 str(fwd_job["job_id"]),
+                job_code_source,
             )
         if not fwd_job["receive_cv_via_forwarding_email"]:
-            return None, None, "forwarding", f"Forwarding receiving disabled for job '{job_code}'", None
+            return None, None, "forwarding", f"Forwarding receiving disabled for job '{job_code}'", None, job_code_source
         if fwd_job["restrict_forwarding_sender_to_tenant_email"] and fwd_job["email_domain"]:
             sender_domain = sender.split("@")[-1].lower() if "@" in sender else ""
             if sender_domain != fwd_job["email_domain"].lower():
                 return None, None, "forwarding", (
                     f"Sender domain '{sender_domain}' not allowed for job '{job_code}' "
                     f"(tenant domain: {fwd_job['email_domain']})"
-                ), None
-        return str(fwd_job["job_id"]), str(fwd_job["tenant_id"]), "forwarding", None, None
+                ), None, job_code_source
+        return str(fwd_job["job_id"]), str(fwd_job["tenant_id"]), "forwarding", None, None, job_code_source
 
-    return None, None, "unknown", f"Recipient '{recipient}' not recognised", None
+    return None, None, "unknown", f"Recipient '{recipient}' not recognised", None, None
 
 
 # ── Application creation + score enqueue ─────────────────────────────────────
@@ -647,9 +803,11 @@ async def _create_application_and_score(
     filename: str,
     cfg,
     ingestion_mode: str = "forwarding",
-) -> str:
+) -> tuple[str, datetime]:
     """
     Insert application + file records, commit, save file to disk, enqueue scoring.
+
+    Returns (application_id, scoring_enqueued_at).
 
     Order ensures atomicity:
       1. INSERT applications          → get application_id
@@ -715,9 +873,13 @@ async def _create_application_and_score(
         file_path=str(file_path),
         mime_type=mime_type,
     )
-    logger.info("Scoring enqueued — application_id=%s filename=%s", application_id, filename)
+    scoring_enqueued_at = datetime.now(timezone.utc)
+    logger.info(
+        "Scoring enqueued — application_id=%s filename=%s enqueued_at=%s",
+        application_id, filename, scoring_enqueued_at.isoformat(),
+    )
 
-    return application_id
+    return application_id, scoring_enqueued_at
 
 
 # ── Ingest audit log ──────────────────────────────────────────────────────────
@@ -736,8 +898,18 @@ async def _log_ingest(
     ingestion_mode: str = "unknown",
     attachment_hash: str | None = None,
     attachment_name: str | None = None,
+    *,
+    job_code_source: str | None = None,
+    processing_started_at: datetime | None = None,
+    scoring_enqueued_at: datetime | None = None,
 ) -> str | None:
-    """Insert / update an email_ingest_log row and return its log_id."""
+    """
+    Insert / upsert an email_ingest_log row and return its log_id.
+
+    ON CONFLICT (message_id): status and error_message are always refreshed.
+    processing_started_at and scoring_enqueued_at use COALESCE so the first
+    non-null value wins across multiple attachment-level calls for the same email.
+    """
     from sqlalchemy import text
 
     result = await db.execute(
@@ -746,36 +918,84 @@ async def _log_ingest(
                 message_id, sender_email, recipient_email, subject,
                 tenant_id, job_id, application_id,
                 ingestion_mode, status, error_message,
-                attachment_hash, attachment_name
+                attachment_hash, attachment_name,
+                job_code_source, processing_started_at, scoring_enqueued_at
             ) VALUES (
                 :mid, :sender, :recipient, :subject,
                 :tid, :jid, :aid,
                 :mode, :status, :err,
-                :hash, :att_name
+                :hash, :att_name,
+                :job_code_source, :processing_started_at, :scoring_enqueued_at
             )
             ON CONFLICT (message_id) DO UPDATE SET
-                status        = EXCLUDED.status,
-                error_message = EXCLUDED.error_message
+                status                = EXCLUDED.status,
+                error_message         = EXCLUDED.error_message,
+                processing_started_at = COALESCE(
+                    email_ingest_log.processing_started_at,
+                    EXCLUDED.processing_started_at
+                ),
+                scoring_enqueued_at   = COALESCE(
+                    email_ingest_log.scoring_enqueued_at,
+                    EXCLUDED.scoring_enqueued_at
+                ),
+                job_code_source       = COALESCE(
+                    email_ingest_log.job_code_source,
+                    EXCLUDED.job_code_source
+                )
             RETURNING log_id
         """),
         {
-            "mid":      message_id,
-            "sender":   sender,
-            "recipient": recipient,
-            "subject":  subject,
-            "tid":      tenant_id,
-            "jid":      job_id,
-            "aid":      application_id,
-            "mode":     ingestion_mode,
-            "status":   log_status,
-            "err":      error_msg,
-            "hash":     attachment_hash,
-            "att_name": attachment_name,
+            "mid":                   message_id,
+            "sender":                sender,
+            "recipient":             recipient,
+            "subject":               subject,
+            "tid":                   tenant_id,
+            "jid":                   job_id,
+            "aid":                   application_id,
+            "mode":                  ingestion_mode,
+            "status":                log_status,
+            "err":                   error_msg,
+            "hash":                  attachment_hash,
+            "att_name":              attachment_name,
+            "job_code_source":       job_code_source,
+            "processing_started_at": processing_started_at,
+            "scoring_enqueued_at":   scoring_enqueued_at,
         },
     )
     row = result.fetchone()
     await db.commit()
     return str(row[0]) if row else None
+
+
+async def _update_log_completion(
+    db,
+    log_id: str,
+    processed_at: datetime,
+    processing_duration_ms: int,
+    notification_queued_at: datetime | None,
+) -> None:
+    """Set final completion timestamps on an email_ingest_log row by log_id."""
+    from sqlalchemy import text
+
+    await db.execute(
+        text("""
+            UPDATE email_ingest_log
+            SET processed_at           = :processed_at,
+                processing_duration_ms = :duration_ms,
+                notification_queued_at = :notification_queued_at
+            WHERE log_id = CAST(:lid AS uuid)
+        """),
+        {
+            "processed_at":           processed_at,
+            "duration_ms":            processing_duration_ms,
+            "notification_queued_at": notification_queued_at,
+            "lid":                    log_id,
+        },
+    )
+    await db.commit()
+    logger.debug(
+        "Log completion recorded — log_id=%s duration=%dms", log_id, processing_duration_ms
+    )
 
 
 # ── Header decoding ───────────────────────────────────────────────────────────
