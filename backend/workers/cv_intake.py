@@ -437,6 +437,26 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                 continue
 
             try:
+                # Enforce rolling 30-day CV quota before creating application
+                from services.subscription_service import can_process_cv
+                cv_check = await can_process_cv(tenant_id, db)
+                if not cv_check["allowed"]:
+                    logger.warning(
+                        "CV quota exceeded for tenant=%s (%d/%d in last 30 days) — skipping file=%s",
+                        tenant_id, cv_check["used"], cv_check["limit"], filename,
+                    )
+                    last_intake_log_id = await _log_ingest(
+                        db, message_id, sender, recipient, subject,
+                        tenant_id, job_id, None, "rejected",
+                        "CV quota exceeded", ingestion_mode, file_hash, filename,
+                    )
+                    attachment_results.append(AttachmentResult(
+                        filename=filename,
+                        status=IntakeStatus.REJECTED,
+                    ))
+                    processed_any = True
+                    continue
+
                 application_id = await _create_application_and_score(
                     db, job_id, tenant_id, sender_name, sender,
                     attachment_bytes, content_type, filename, cfg,

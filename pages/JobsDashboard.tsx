@@ -43,7 +43,7 @@ const T = {
     filterByTenant: 'Filter by tenant',
     allTenants: 'All tenants',
     campaignsUsage: 'Active campaigns',
-    cvsUsage: 'CVs this month',
+    cvsUsage: 'CVs (last 30 days)',
     planLimitReached: 'Limit reached',
     trialBadge: 'Trial',
   },
@@ -73,7 +73,7 @@ const T = {
     filterByTenant: 'تصفية حسب المستأجر',
     allTenants: 'جميع المستأجرين',
     campaignsUsage: 'الحملات النشطة',
-    cvsUsage: 'سير ذاتية هذا الشهر',
+    cvsUsage: 'سير ذاتية (آخر 30 يوم)',
     planLimitReached: 'الحد الأقصى',
     trialBadge: 'تجريبي',
   },
@@ -100,6 +100,8 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
     active_campaigns: number; max_campaigns: number;
     processed_cvs: number; max_cvs: number;
     subscription_status: string; plan_name: string;
+    at_limit_campaigns: boolean; at_limit_cvs: boolean;
+    near_limit_campaigns: boolean; near_limit_cvs: boolean;
   } | null>(null);
 
   const fetchJobs = async (silent = false) => {
@@ -136,6 +138,10 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
           max_cvs: data.limits.max_processed_cvs_per_month,
           subscription_status: data.subscription_status || 'active',
           plan_name: data.plan_name || data.plan_code || '',
+          at_limit_campaigns: data.at_limit?.campaigns ?? false,
+          at_limit_cvs: data.at_limit?.cvs ?? false,
+          near_limit_campaigns: data.near_limit?.campaigns ?? false,
+          near_limit_cvs: data.near_limit?.cvs ?? false,
         });
       }
     } catch { /* silently ignore */ }
@@ -223,31 +229,33 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
             <div className="flex-1">
               <div className="flex items-center justify-between mb-0.5">
                 <span className="text-[9px] font-black text-textMuted uppercase tracking-widest">{t.campaignsUsage}</span>
-                <span className={`text-[10px] font-black ${planUsage.active_campaigns >= planUsage.max_campaigns ? 'text-error' : 'text-textMain'}`}>
-                  {planUsage.active_campaigns} / {planUsage.max_campaigns}
+                <span className={`text-[10px] font-black ${planUsage.at_limit_campaigns ? 'text-error' : planUsage.near_limit_campaigns ? 'text-amber-600' : 'text-textMain'}`}>
+                  {planUsage.active_campaigns} / {planUsage.max_campaigns > 0 ? planUsage.max_campaigns : '∞'}
+                  {planUsage.at_limit_campaigns && <span className="ml-1 text-[9px]">{t.planLimitReached}</span>}
                 </span>
               </div>
               <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all ${planUsage.active_campaigns >= planUsage.max_campaigns ? 'bg-error' : 'bg-primary'}`}
-                  style={{ width: `${Math.min((planUsage.active_campaigns / planUsage.max_campaigns) * 100, 100)}%` }}
+                  className={`h-full rounded-full transition-all ${planUsage.at_limit_campaigns ? 'bg-error' : planUsage.near_limit_campaigns ? 'bg-amber-500' : 'bg-primary'}`}
+                  style={{ width: planUsage.max_campaigns > 0 ? `${Math.min((planUsage.active_campaigns / planUsage.max_campaigns) * 100, 100)}%` : '0%' }}
                 />
               </div>
             </div>
           </div>
-          {/* CVs this month */}
+          {/* CVs last 30 days */}
           <div className="flex items-center gap-2 flex-1 min-w-[160px]">
             <div className="flex-1">
               <div className="flex items-center justify-between mb-0.5">
                 <span className="text-[9px] font-black text-textMuted uppercase tracking-widest">{t.cvsUsage}</span>
-                <span className={`text-[10px] font-black ${planUsage.processed_cvs >= planUsage.max_cvs ? 'text-error' : 'text-textMain'}`}>
-                  {planUsage.processed_cvs.toLocaleString()} / {planUsage.max_cvs.toLocaleString()}
+                <span className={`text-[10px] font-black ${planUsage.at_limit_cvs ? 'text-error' : planUsage.near_limit_cvs ? 'text-amber-600' : 'text-textMain'}`}>
+                  {planUsage.processed_cvs.toLocaleString()} / {planUsage.max_cvs > 0 ? planUsage.max_cvs.toLocaleString() : '∞'}
+                  {planUsage.at_limit_cvs && <span className="ml-1 text-[9px]">{t.planLimitReached}</span>}
                 </span>
               </div>
               <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all ${planUsage.processed_cvs >= planUsage.max_cvs ? 'bg-error' : 'bg-indigo-500'}`}
-                  style={{ width: `${Math.min((planUsage.processed_cvs / planUsage.max_cvs) * 100, 100)}%` }}
+                  className={`h-full rounded-full transition-all ${planUsage.at_limit_cvs ? 'bg-error' : planUsage.near_limit_cvs ? 'bg-amber-500' : 'bg-indigo-500'}`}
+                  style={{ width: planUsage.max_cvs > 0 ? `${Math.min((planUsage.processed_cvs / planUsage.max_cvs) * 100, 100)}%` : '0%' }}
                 />
               </div>
             </div>

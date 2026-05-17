@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import CurrentUserDep, get_current_user
 from config import get_settings
 from database import get_db, set_rls_context
+from services.subscription_service import can_process_cv
 from workers.cv_score import score_cv_task
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -283,6 +284,14 @@ async def upload_cv(
     job = job_row.mappings().first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active job not found")
+
+    # Enforce rolling 30-day CV processing quota
+    cv_check = await can_process_cv(current_user.tenant_id, db)
+    if not cv_check["allowed"]:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=cv_check["message"],
+        )
 
     # ── Create application, save file, queue for scoring ─────────────────────
     app_result = await db.execute(

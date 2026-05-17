@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from database import get_db, set_rls_context
+from services.subscription_service import can_process_cv
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,14 @@ async def _handle_public_submission(
                 status_code=http_status.HTTP_409_CONFLICT,
                 detail="This position is no longer accepting applications",
             )
+
+    # Enforce tenant-level rolling 30-day CV quota
+    cv_check = await can_process_cv(tenant_id, db)
+    if not cv_check["allowed"]:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="This position is temporarily unable to accept applications. Please try again later.",
+        )
 
     # ── Insert application record ─────────────────────────────────────────────
     app_result = await db.execute(

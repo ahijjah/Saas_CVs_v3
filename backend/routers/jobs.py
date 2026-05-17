@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import CurrentUserDep, get_current_user
 from config import get_settings
 from database import get_db, set_rls_context
+from services.subscription_service import can_create_campaign
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 settings = get_settings()
@@ -183,30 +184,22 @@ async def create_job(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Verify tenant and enforce campaign limit
+    # Verify tenant exists
     t_row = await db.execute(
-        text("SELECT tenant_id, max_jobs FROM tenants WHERE tenant_id = :tid"),
+        text("SELECT tenant_id FROM tenants WHERE tenant_id = :tid"),
         {"tid": current_user.tenant_id},
     )
     tenant = t_row.mappings().first()
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
-    max_jobs = int(tenant["max_jobs"] or 0)
-    if max_jobs > 0:
-        active_jobs_row = await db.execute(
-            text("SELECT COUNT(*) FROM jobs WHERE tenant_id = :tid AND status = 'Active'"),
-            {"tid": current_user.tenant_id},
+    # Enforce campaign limit via centralized subscription service
+    campaign_check = await can_create_campaign(current_user.tenant_id, db)
+    if not campaign_check["allowed"]:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=campaign_check["message"],
         )
-        active_jobs = int(active_jobs_row.scalar_one())
-        if active_jobs >= max_jobs:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    f"Campaign limit reached. Your plan allows {max_jobs} active campaign(s). "
-                    "Close an existing campaign or upgrade your plan to create more."
-                ),
-            )
 
     # Platform alias must use the platform domain, never the tenant domain.
     # Read from system_config so super admin can change it without a redeploy.

@@ -353,7 +353,7 @@ async def get_tenant_usage(
                  JOIN jobs j ON j.job_id = a.job_id
                  WHERE j.tenant_id = CAST(:tid AS uuid)
                    AND a.processing_status = 'scored'
-                   AND date_trunc('month', a.scored_at) = date_trunc('month', now())) AS cvs_processed_this_month
+                   AND COALESCE(a.scored_at, a.created_at) >= now() - INTERVAL '30 days') AS cvs_processed_rolling
         """),
         {"tid": current_user.tenant_id},
     )
@@ -361,7 +361,7 @@ async def get_tenant_usage(
     usage = {
         "active_campaigns": int(usage_data["active_campaigns"]),
         "active_users":     int(usage_data["active_users"]),
-        "processed_cvs_this_month": int(usage_data["cvs_processed_this_month"]),
+        "processed_cvs_this_month": int(usage_data["cvs_processed_rolling"]),
     }
 
     def pct(used: int, limit: int) -> float:
@@ -394,6 +394,9 @@ async def get_tenant_usage(
             for r in feat_rows.mappings()
         ]
 
+    cv_pct   = pct(usage["processed_cvs_this_month"], limits["max_processed_cvs_per_month"])
+    camp_pct = pct(usage["active_campaigns"],         limits["max_campaigns"])
+
     return {
         "plan_code":   tenant["plan"],
         "plan_name":   plan["plan_name"] if plan else tenant["plan"],
@@ -410,9 +413,17 @@ async def get_tenant_usage(
         "limits": limits,
         "usage": usage,
         "percentage_used": {
-            "campaigns": pct(usage["active_campaigns"], limits["max_campaigns"]),
-            "users":     pct(usage["active_users"],     limits["max_users"]),
-            "cvs":       pct(usage["processed_cvs_this_month"], limits["max_processed_cvs_per_month"]),
+            "campaigns": camp_pct,
+            "users":     pct(usage["active_users"], limits["max_users"]),
+            "cvs":       cv_pct,
+        },
+        "at_limit": {
+            "campaigns": limits["max_campaigns"] > 0 and usage["active_campaigns"] >= limits["max_campaigns"],
+            "cvs":       limits["max_processed_cvs_per_month"] > 0 and usage["processed_cvs_this_month"] >= limits["max_processed_cvs_per_month"],
+        },
+        "near_limit": {
+            "campaigns": camp_pct >= 80,
+            "cvs":       cv_pct >= 80,
         },
         "features": features,
     }
