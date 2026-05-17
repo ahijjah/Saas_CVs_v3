@@ -45,11 +45,15 @@ async def list_applications(
             SELECT
                 a.application_id,
                 a.candidate_name,
-                a.decision          AS status,
+                a.decision                           AS status,
+                a.processing_status,
                 a.duplicate_status,
-                s.final_score       AS score,
-                a.applied_at::date  AS applied_date,
-                s.evaluation_notes  AS summary
+                a.duplicate_reason,
+                a.duplicate_reference_application_id,
+                a.evaluation_exit_reason,
+                s.final_score                        AS score,
+                a.applied_at::date                   AS applied_date,
+                s.evaluation_notes                   AS summary
             FROM applications a
             LEFT JOIN application_scores s ON s.application_id = a.application_id
             WHERE a.job_id = :jid AND a.tenant_id = :tid
@@ -60,13 +64,17 @@ async def list_applications(
     apps = []
     for r in rows.mappings():
         apps.append({
-            "application_id":  str(r["application_id"]),
-            "candidate_name":  r["candidate_name"],
-            "status":          r["status"],
-            "duplicate_status": r["duplicate_status"] or "not_duplicate",
-            "score":           float(r["score"]) if r["score"] is not None else None,
-            "applied_date":    r["applied_date"].isoformat() if r["applied_date"] else None,
-            "summary":         r["summary"],
+            "application_id":                    str(r["application_id"]),
+            "candidate_name":                    r["candidate_name"],
+            "status":                            r["status"],
+            "processing_status":                 r["processing_status"],
+            "duplicate_status":                  r["duplicate_status"] or "not_duplicate",
+            "duplicate_reason":                  r["duplicate_reason"],
+            "duplicate_reference_application_id": str(r["duplicate_reference_application_id"]) if r["duplicate_reference_application_id"] else None,
+            "evaluation_exit_reason":            r["evaluation_exit_reason"],
+            "score":                             float(r["score"]) if r["score"] is not None else None,
+            "applied_date":                      r["applied_date"].isoformat() if r["applied_date"] else None,
+            "summary":                           r["summary"],
         })
     return apps
 

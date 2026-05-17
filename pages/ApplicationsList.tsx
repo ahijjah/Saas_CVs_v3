@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { Application, AuthState, ApplicationFilter } from '../types';
@@ -31,6 +31,11 @@ const T = {
     loadingAnalysis: 'Loading analysis...',
     pts: 'PTS',
     possibleDuplicate: 'Possible Duplicate',
+    statusFailed: 'Failed',
+    statusPending: 'Pending',
+    statusProcessing: 'Processing',
+    exitReason: 'Reason:',
+    duplicateOf: 'Duplicate of another submission',
   },
   ar: {
     backToCampaigns: 'العودة إلى الحملات',
@@ -47,6 +52,11 @@ const T = {
     loadingAnalysis: 'جارٍ تحميل التحليل...',
     pts: 'نقطة',
     possibleDuplicate: 'مكرر محتمل',
+    statusFailed: 'فشل',
+    statusPending: 'قيد الانتظار',
+    statusProcessing: 'قيد المعالجة',
+    exitReason: 'السبب:',
+    duplicateOf: 'مكرر لطلب آخر',
   },
 };
 
@@ -65,6 +75,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   const [filter, setFilter] = useState<ApplicationFilter>(initialFilter);
   const [loading, setLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const fetchInFlightRef = useRef<string | null>(null);
 
   const filterLabels: Record<ApplicationFilter, string> = {
     all: t.filterAll,
@@ -95,13 +106,18 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   };
 
   const handleViewAnalysis = async (app: Application) => {
+    const appId = app.application_id || app.id;
+    if (fetchInFlightRef.current === appId) return;
+    fetchInFlightRef.current = appId;
     setDetailsLoading(true);
     try {
       const detailsRaw = await apiService.get(
         WEBHOOK_CONFIG.APPLICATION_DETAILS_WEBHOOK_URL,
-        { application_id: app.application_id || app.id },
+        { application_id: appId },
         auth.token!
       );
+
+      if (fetchInFlightRef.current !== appId) return;
 
       const detailsObj = Array.isArray(detailsRaw) ? detailsRaw[0] : detailsRaw;
 
@@ -149,10 +165,15 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
       setSelectedDetails(normalized);
       setView("details");
     } catch (err: any) {
-      console.error("[ApplicationsList] Details fetch error:", err);
-      addToast(err.message || "Failed to load application analysis.", "error");
+      if (fetchInFlightRef.current === appId) {
+        console.error("[ApplicationsList] Details fetch error:", err);
+        addToast(err.message || "Failed to load application analysis.", "error");
+      }
     } finally {
-      setDetailsLoading(false);
+      if (fetchInFlightRef.current === appId) {
+        fetchInFlightRef.current = null;
+        setDetailsLoading(false);
+      }
     }
   };
 
@@ -188,11 +209,15 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     );
   }
 
-  const getStatusStyles = (status: string) => {
-    const s = normaliseStatus((status || '').toLowerCase().trim());
-    if (s === 'qualified')  return { pill: 'bg-green-100 text-green-800',  badge: 'bg-success',  label: t.filterQualified };
-    if (s === 'partial')    return { pill: 'bg-amber-100 text-amber-800',  badge: 'bg-warning',  label: t.filterPartial };
-    return                         { pill: 'bg-red-100 text-red-800',      badge: 'bg-error',    label: t.filterRejected };
+  const getStatusStyles = (app: Application) => {
+    const ps = app.processing_status ?? '';
+    if (ps === 'failed')     return { pill: 'bg-red-100 text-red-700',    badge: 'bg-slate-400', label: t.statusFailed,    scoreDisplay: '—' };
+    if (ps === 'pending' || ps === 'queued' || ps === 'processing')
+                             return { pill: 'bg-blue-100 text-blue-700',  badge: 'bg-blue-300',  label: t.statusProcessing, scoreDisplay: '…' };
+    const s = normaliseStatus((app.status ?? '').toLowerCase().trim());
+    if (s === 'qualified')   return { pill: 'bg-green-100 text-green-800', badge: 'bg-success',  label: t.filterQualified,  scoreDisplay: app.score != null ? String(app.score) : '—' };
+    if (s === 'partial')     return { pill: 'bg-amber-100 text-amber-800', badge: 'bg-warning',  label: t.filterPartial,    scoreDisplay: app.score != null ? String(app.score) : '—' };
+    return                          { pill: 'bg-red-100 text-red-800',     badge: 'bg-error',    label: t.filterRejected,   scoreDisplay: app.score != null ? String(app.score) : '—' };
   };
 
   return (
@@ -232,18 +257,25 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
           </div>
         ) : (
           filteredApplications.map((app) => {
-            const styles = getStatusStyles(app.status);
+            const styles = getStatusStyles(app);
+            const isTerminal = !app.processing_status || app.processing_status === 'scored' || app.processing_status === 'failed' || app.processing_status === 'low_match';
             return (
               <div key={app.id || app.application_id} className="bg-white p-6 rounded-xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between hover:border-primary/30 transition-all">
                 <div className="flex items-center gap-6">
                   <div className={`w-14 h-14 aspect-square shrink-0 flex-none rounded-full flex flex-col items-center justify-center font-bold text-white shadow-sm ${styles.badge}`}>
-                    <span className="text-lg leading-none">{app.score}</span>
-                    <span className="text-[10px] opacity-80 uppercase leading-none mt-0.5">{t.pts}</span>
+                    <span className="text-lg leading-none">{styles.scoreDisplay}</span>
+                    {app.score != null && isTerminal && <span className="text-[10px] opacity-80 uppercase leading-none mt-0.5">{t.pts}</span>}
                   </div>
                   <div>
                     <h4 className="text-lg font-bold text-textMain">{app.candidate_name}</h4>
                     <p className="text-xs text-textMuted">{t.appliedOn} {app.applied_date}</p>
-                    <p className="text-sm text-textMain mt-2 max-w-xl italic">"{app.summary}"</p>
+                    {app.summary && <p className="text-sm text-textMain mt-2 max-w-xl italic">"{app.summary}"</p>}
+                    {app.evaluation_exit_reason && (
+                      <p className="text-xs text-red-500 mt-1"><span className="font-bold">{t.exitReason}</span> {app.evaluation_exit_reason}</p>
+                    )}
+                    {app.duplicate_reason && (
+                      <p className="text-xs text-orange-500 mt-1"><span className="font-bold">{t.duplicateOf}:</span> {app.duplicate_reason}</p>
+                    )}
                   </div>
                 </div>
 
@@ -256,13 +288,15 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                       {t.possibleDuplicate}
                     </span>
                   )}
-                  <button
-                    disabled={detailsLoading}
-                    onClick={() => handleViewAnalysis(app)}
-                    className="text-primary hover:text-primaryDark text-sm font-semibold flex items-center disabled:opacity-50"
-                  >
-                    {detailsLoading ? t.loadingAnalysis : t.viewAnalysis}
-                  </button>
+                  {isTerminal && (
+                    <button
+                      disabled={detailsLoading}
+                      onClick={() => handleViewAnalysis(app)}
+                      className="text-primary hover:text-primaryDark text-sm font-semibold flex items-center disabled:opacity-50"
+                    >
+                      {detailsLoading ? t.loadingAnalysis : t.viewAnalysis}
+                    </button>
+                  )}
                 </div>
               </div>
             );

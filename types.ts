@@ -107,6 +107,7 @@ export interface Job {
   applications_above_threshold?: number;
   applications_below_threshold?: number;
   applications_recommended?: number;
+  applications_in_progress?: number;
 }
 
 export interface AnalysisJson {
@@ -163,9 +164,13 @@ export interface Application {
   id: string;
   application_id: string;
   candidate_name: string;
-  score: number;
-  status: ApplicationDecision;
+  score: number | null;
+  status: ApplicationDecision | null;
+  processing_status?: string;
   duplicate_status?: 'not_duplicate' | 'possible_duplicate';
+  duplicate_reason?: string | null;
+  duplicate_reference_application_id?: string | null;
+  evaluation_exit_reason?: string | null;
   applied_date: string;
   summary: string;
 }

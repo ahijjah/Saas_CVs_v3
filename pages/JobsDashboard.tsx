@@ -46,6 +46,7 @@ const T = {
     cvsUsage: 'CVs (last 30 days)',
     planLimitReached: 'Limit reached',
     trialBadge: 'Trial',
+    scoringInProgress: 'Scoring in progress',
   },
   ar: {
     title: 'حملات التوظيف النشطة',
@@ -76,6 +77,7 @@ const T = {
     cvsUsage: 'سير ذاتية (آخر 30 يوم)',
     planLimitReached: 'الحد الأقصى',
     trialBadge: 'تجريبي',
+    scoringInProgress: 'جاري التقييم',
   },
 };
 
@@ -296,13 +298,21 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                         </button>
                         <div className="text-xs text-textMuted truncate">{job.job_client}</div>
                       </div>
-                      <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tighter ${
-                        job.job_status === 'Active' ? 'bg-green-100 text-green-800' :
-                        job.job_status === 'Closed' ? 'bg-slate-100 text-slate-800' :
-                        'bg-amber-100 text-amber-800'
-                      }`}>
-                        {job.job_status}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tighter ${
+                          job.job_status === 'Active' ? 'bg-green-100 text-green-800' :
+                          job.job_status === 'Closed' ? 'bg-slate-100 text-slate-800' :
+                          'bg-amber-100 text-amber-800'
+                        }`}>
+                          {job.job_status}
+                        </span>
+                        {(job.applications_in_progress ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                            {t.scoringInProgress}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-4 gap-2 text-center bg-slate-50 p-3 rounded-xl border border-slate-100">
@@ -402,13 +412,21 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                           <td className="px-6 py-4 text-xs text-textMuted whitespace-nowrap">{job.tenant_name || '—'}</td>
                         )}
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            job.job_status === 'Active' ? 'bg-green-100 text-green-800' :
-                            job.job_status === 'Closed' ? 'bg-slate-100 text-slate-800' :
-                            'bg-amber-100 text-amber-800'
-                          }`}>
-                            {job.job_status}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              job.job_status === 'Active' ? 'bg-green-100 text-green-800' :
+                              job.job_status === 'Closed' ? 'bg-slate-100 text-slate-800' :
+                              'bg-amber-100 text-amber-800'
+                            }`}>
+                              {job.job_status}
+                            </span>
+                            {(job.applications_in_progress ?? 0) > 0 && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                                {t.scoringInProgress}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-center">
                           <button

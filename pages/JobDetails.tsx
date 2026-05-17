@@ -170,6 +170,12 @@ const T = {
     badgeExternal: 'External',
     badgeInternal: 'Internal',
     batchComplete: 'Batch complete — {count} CVs analyzed and added to applications.',
+    scoringInProgress: 'Scoring in progress',
+    scoringProgressDetail: '{count} CV(s) pending evaluation',
+    progressQueued: '{n} queued',
+    progressProcessing: '{n} processing',
+    progressScored: '{n} scored',
+    progressFailed: '{n} failed',
   },
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
@@ -322,6 +328,12 @@ const T = {
     badgeExternal: 'خارجي',
     badgeInternal: 'داخلي',
     batchComplete: 'اكتملت الدفعة — تم تحليل {count} سيرة ذاتية وإضافتها للطلبات.',
+    scoringInProgress: 'جاري التقييم',
+    scoringProgressDetail: '{count} سيرة ذاتية قيد التقييم',
+    progressQueued: '{n} في الطابور',
+    progressProcessing: '{n} قيد المعالجة',
+    progressScored: '{n} تم تقييمه',
+    progressFailed: '{n} فشل',
   },
 };
 
@@ -590,9 +602,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         const count = queueStatus?.completed ?? sessionIdsRef.current.size;
         setBatchCompleteCount(count);
         setTimeout(() => {
-          setSessionUploadIds(new Set());
           setBatchCompleteCount(null);
-        }, 4000);
+          // Keep sessionUploadIds so the batch panel stays visible
+        }, 6000);
       }
     }
     prevIsProcessingRef.current = isNowProcessing;
@@ -1177,6 +1189,15 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               <p className="text-[10px] text-textMuted font-bold">{t.noDuplicates}</p>
             </div>
           ) : null}
+          {((details as any).applications_in_progress ?? 0) > 0 && (
+            <div className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-200">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
+              <div>
+                <p className="text-[11px] font-black text-blue-800">{t.scoringInProgress}</p>
+                <p className="text-[9px] text-blue-600">{t.scoringProgressDetail.replace('{count}', String((details as any).applications_in_progress))}</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1585,17 +1606,28 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                     )}
                   </div>
                   {cvsScoringInProgress && cvsTotal > 0 && (
-                    <div className="w-full bg-indigo-100 h-1.5 rounded-full mb-3 overflow-hidden">
-                      <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${progressPct}%` }} />
-                    </div>
+                    <>
+                      <div className="w-full bg-indigo-100 h-1.5 rounded-full mb-2 overflow-hidden">
+                        <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${progressPct}%` }} />
+                      </div>
+                      {queueStatus && (
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mb-2">
+                          {queueStatus.queued > 0 && <span className="text-[9px] text-indigo-500 font-bold">{t.progressQueued.replace('{n}', String(queueStatus.queued))}</span>}
+                          {queueStatus.processing > 0 && <span className="text-[9px] text-blue-500 font-bold">{t.progressProcessing.replace('{n}', String(queueStatus.processing))}</span>}
+                          {queueStatus.completed > 0 && <span className="text-[9px] text-success font-bold">{t.progressScored.replace('{n}', String(queueStatus.completed))}</span>}
+                          {queueStatus.failed > 0 && <span className="text-[9px] text-error font-bold">{t.progressFailed.replace('{n}', String(queueStatus.failed))}</span>}
+                        </div>
+                      )}
+                    </>
                   )}
                   <div className="space-y-1.5 max-h-56 overflow-y-auto">
                     {cvsDisplay.map(cv => {
                       const st = cvStatusDisplay(cv);
                       const isDeleting = deletingCVId === cv.application_id;
                       const canDelete = cv.processing_status === 'pending' && !cvsScoringInProgress;
-                      const isDone = cv.processing_status === 'scored' || cv.processing_status === 'low_match';
+                      const isDone = cv.processing_status === 'scored' || cv.processing_status === 'low_match' || cv.processing_status === 'failed';
                       const hasExitReason = cv.evaluation_exit_reason && (
+                        cv.processing_status === 'failed' ||
                         cv.processing_status === 'low_match' ||
                         (cv.processing_status === 'scored' && cv.evaluation_stage != null && cv.evaluation_stage < 3)
                       );

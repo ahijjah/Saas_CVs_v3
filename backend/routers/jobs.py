@@ -144,7 +144,10 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
                 COUNT(a.application_id)                                             AS applications_total,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected,
+                COUNT(a.application_id) FILTER (
+                    WHERE a.processing_status IN ('pending', 'queued', 'processing')
+                ) AS applications_in_progress
             FROM jobs j
             JOIN tenants t ON t.tenant_id = j.tenant_id
             LEFT JOIN applications a ON a.job_id = j.job_id
@@ -168,10 +171,11 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
             "receive_cv_via_forwarding_email": r["receive_cv_via_forwarding_email"],
             "receive_cv_via_platform_email":   r["receive_cv_via_platform_email"],
             "posted_date":        r["created_at"].date().isoformat() if r["created_at"] else None,
-            "applications_total":     r["applications_total"],
-            "applications_qualified": r["applications_qualified"],
-            "applications_partial":   r["applications_partial"],
-            "applications_rejected":  r["applications_rejected"],
+            "applications_total":       r["applications_total"],
+            "applications_qualified":   r["applications_qualified"],
+            "applications_partial":     r["applications_partial"],
+            "applications_rejected":    r["applications_rejected"],
+            "applications_in_progress": int(r["applications_in_progress"]),
         })
     return jobs
 
@@ -303,6 +307,9 @@ async def get_job_details(
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected,
                 COUNT(a.application_id) FILTER (
+                    WHERE a.processing_status IN ('pending', 'queued', 'processing')
+                ) AS applications_in_progress,
+                COUNT(a.application_id) FILTER (
                     WHERE (a.duplicate_status IS NULL OR a.duplicate_status = 'not_duplicate')
                       AND a.processing_status != 'failed'
                 ) AS applications_valid_count,
@@ -383,7 +390,8 @@ async def get_job_details(
             "applications_qualified":   job["applications_qualified"],
             "applications_partial":     job["applications_partial"],
             "applications_rejected":    job["applications_rejected"],
-            "applications_valid_count": job["applications_valid_count"],
+            "applications_valid_count":  job["applications_valid_count"],
+            "applications_in_progress": int(job["applications_in_progress"]),
             "qualified_threshold":      job["qualified_threshold"],
             "partial_threshold":        job["partial_threshold"],
             "max_applications":               job["max_applications"],
