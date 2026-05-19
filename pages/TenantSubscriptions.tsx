@@ -12,8 +12,9 @@ const T = {
   en: {
     title: 'Tenant Subscriptions',
     subtitle: 'Assign plans, manage trials and monitor usage across all organizations',
+    addTenant: 'Add Tenant',
     search: 'Search tenants...', allPlans: 'All Plans', allStatuses: 'All Statuses',
-    tenant: 'Organization', plan: 'Plan', subscriptionStatus: 'Status',
+    tenant: 'Organization', plan: 'Plan', subscriptionStatus: 'Status', tenantType: 'Type',
     trialEnds: 'Trial Ends', subEnds: 'Sub. Ends', actions: 'Actions',
     usage: 'Usage', viewUsage: 'View Usage', manage: 'Manage',
     close: 'Close', save: 'Save Changes', saving: 'Saving...',
@@ -24,7 +25,9 @@ const T = {
     confirmSuspend: 'Suspend this tenant subscription?',
     confirmReactivate: 'Reactivate this tenant subscription?',
     successAction: 'Subscription updated',
+    successCreate: 'Tenant created successfully',
     errorLoad: 'Failed to load tenants', errorAction: 'Action failed',
+    errorCreate: 'Failed to create tenant',
     usageTitle: 'Usage & Limits',
     campaigns: 'Campaigns', cvs: 'CVs This Month', users: 'Active Users',
     used: 'used', limit: 'limit', pct: '%',
@@ -32,12 +35,29 @@ const T = {
     statusLabels: {
       trial: 'Trial', active: 'Active', suspended: 'Suspended', expired: 'Expired',
     } as Record<string, string>,
+    // Create Tenant modal
+    createTitle: 'Create New Tenant',
+    orgName: 'Organization Name',
+    emailDomain: 'Email Domain',
+    initialPlan: 'Initial Plan',
+    maxUsers: 'Max Users',
+    maxJobs: 'Max Campaigns',
+    tenantTypeLabel: 'Tenant Type',
+    tenantTypeOptions: {
+      organization: 'Organization / Employer',
+      agency: 'Recruitment Agency',
+      individual_recruiter: 'Independent Recruiter',
+    } as Record<string, string>,
+    creating: 'Creating...',
+    create: 'Create Tenant',
+    cancel: 'Cancel',
   },
   ar: {
     title: 'اشتراكات المستأجرين',
     subtitle: 'تعيين الخطط وإدارة الفترات التجريبية ومراقبة الاستخدام',
+    addTenant: 'إضافة مستأجر',
     search: 'بحث في المستأجرين...', allPlans: 'كل الخطط', allStatuses: 'كل الحالات',
-    tenant: 'المنظمة', plan: 'الخطة', subscriptionStatus: 'الحالة',
+    tenant: 'المنظمة', plan: 'الخطة', subscriptionStatus: 'الحالة', tenantType: 'النوع',
     trialEnds: 'نهاية التجربة', subEnds: 'نهاية الاشتراك', actions: 'إجراءات',
     usage: 'الاستخدام', viewUsage: 'عرض الاستخدام', manage: 'إدارة',
     close: 'إغلاق', save: 'حفظ التغييرات', saving: 'جاري الحفظ...',
@@ -48,7 +68,9 @@ const T = {
     confirmSuspend: 'هل تريد تعليق اشتراك هذا المستأجر؟',
     confirmReactivate: 'هل تريد إعادة تفعيل اشتراك هذا المستأجر؟',
     successAction: 'تم تحديث الاشتراك',
+    successCreate: 'تم إنشاء المستأجر بنجاح',
     errorLoad: 'فشل تحميل المستأجرين', errorAction: 'فشل الإجراء',
+    errorCreate: 'فشل إنشاء المستأجر',
     usageTitle: 'الاستخدام والحدود',
     campaigns: 'الحملات', cvs: 'السير هذا الشهر', users: 'المستخدمون النشطون',
     used: 'مستخدم', limit: 'الحد', pct: '%',
@@ -56,6 +78,22 @@ const T = {
     statusLabels: {
       trial: 'تجريبي', active: 'نشط', suspended: 'معلق', expired: 'منتهي',
     } as Record<string, string>,
+    // Create Tenant modal
+    createTitle: 'إنشاء مستأجر جديد',
+    orgName: 'اسم المنظمة',
+    emailDomain: 'نطاق البريد الإلكتروني',
+    initialPlan: 'الخطة الأولية',
+    maxUsers: 'الحد الأقصى للمستخدمين',
+    maxJobs: 'الحد الأقصى للحملات',
+    tenantTypeLabel: 'نوع المستأجر',
+    tenantTypeOptions: {
+      organization: 'منظمة / صاحب عمل',
+      agency: 'وكالة توظيف',
+      individual_recruiter: 'مسؤول توظيف مستقل',
+    } as Record<string, string>,
+    creating: 'جارٍ الإنشاء...',
+    create: 'إنشاء المستأجر',
+    cancel: 'إلغاء',
   },
 };
 
@@ -103,6 +141,18 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
   const [usageTarget, setUsageTarget] = useState<TenantSubscriptionRow | null>(null);
   const [usageData, setUsageData] = useState<TenantUsage | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
+
+  // Create Tenant modal
+  const [showCreate, setShowCreate] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    email_domain: '',
+    plan: 'starter',
+    max_users: '3',
+    max_jobs: '10',
+    tenant_type: 'organization' as 'organization' | 'agency' | 'individual_recruiter',
+  });
 
   const loadTenants = useCallback(async () => {
     setLoading(true);
@@ -174,6 +224,33 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
     }
   };
 
+  const handleCreateTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateLoading(true);
+    try {
+      await apiService.post(
+        WEBHOOK_CONFIG.ADMIN_CREATE_TENANT_URL,
+        {
+          name: createForm.name.trim(),
+          email_domain: createForm.email_domain.trim(),
+          plan: createForm.plan || 'starter',
+          max_users: parseInt(createForm.max_users, 10) || 3,
+          max_jobs: parseInt(createForm.max_jobs, 10) || 10,
+          tenant_type: createForm.tenant_type,
+        },
+        auth.token!,
+      );
+      addToast(t.successCreate, 'success');
+      setShowCreate(false);
+      setCreateForm({ name: '', email_domain: '', plan: 'starter', max_users: '3', max_jobs: '10', tenant_type: 'organization' });
+      await loadTenants();
+    } catch (err: any) {
+      addToast(err.message || t.errorCreate, 'error');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   const filtered = tenants.filter((t_) => {
     const q = search.toLowerCase();
     const matchSearch = !q || (t_.tenant_name || '').toLowerCase().includes(q);
@@ -196,9 +273,20 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h2 className="text-xl font-black text-textMain">{t.title}</h2>
-        <p className="text-xs text-textMuted mt-0.5">{t.subtitle}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-black text-textMain">{t.title}</h2>
+          <p className="text-xs text-textMuted mt-0.5">{t.subtitle}</p>
+        </div>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+          </svg>
+          {t.addTenant}
+        </button>
       </div>
 
       {/* Summary cards */}
@@ -247,7 +335,7 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
           <table className="w-full text-left min-w-[900px]">
             <thead className="bg-slate-50 border-b border-border">
               <tr>
-                {[t.tenant, t.plan, t.subscriptionStatus, t.trialEnds, t.subEnds, t.actions].map((h) => (
+                {[t.tenant, t.tenantType, t.plan, t.subscriptionStatus, t.trialEnds, t.subEnds, t.actions].map((h) => (
                   <th key={h} className="px-5 py-3.5 text-[10px] font-black text-textMuted uppercase tracking-widest">{h}</th>
                 ))}
               </tr>
@@ -255,7 +343,7 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
             <tbody className="divide-y divide-border">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-textMuted">{t.noData}</td>
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-textMuted">{t.noData}</td>
                 </tr>
               )}
               {filtered.map((row) => (
@@ -263,6 +351,21 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                   <td className="px-5 py-3.5">
                     <div className="font-bold text-sm text-textMain">{row.tenant_name}</div>
                     <div className="text-[10px] text-textMuted">{row.email_domain || ''}</div>
+                  </td>
+                  <td className="px-5 py-3.5 whitespace-nowrap">
+                    {row.tenant_type ? (
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tight ${
+                        row.tenant_type === 'agency'
+                          ? 'bg-purple-100 text-purple-700'
+                          : row.tenant_type === 'individual_recruiter'
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {row.tenant_type === 'organization' ? 'Org'
+                          : row.tenant_type === 'agency' ? 'Agency'
+                          : 'Recruiter'}
+                      </span>
+                    ) : <span className="text-textMuted text-xs">—</span>}
                   </td>
                   <td className="px-5 py-3.5">
                     <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg capitalize">
@@ -396,6 +499,164 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Tenant Modal */}
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+              <h3 className="font-black text-textMain text-sm uppercase tracking-widest">{t.createTitle}</h3>
+              <button onClick={() => setShowCreate(false)} className="text-textMuted hover:text-textMain p-1">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateTenant}>
+              <div className="p-6 space-y-4">
+
+                {/* Tenant Type — prominent, first field */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">
+                    {t.tenantTypeLabel} <span className="text-red-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {(['organization', 'agency', 'individual_recruiter'] as const).map((tt) => (
+                      <label
+                        key={tt}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all ${
+                          createForm.tenant_type === tt
+                            ? tt === 'organization'
+                              ? 'border-slate-400 bg-slate-50'
+                              : tt === 'agency'
+                              ? 'border-purple-400 bg-purple-50'
+                              : 'border-blue-400 bg-blue-50'
+                            : 'border-border hover:border-slate-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="tenant_type"
+                          value={tt}
+                          checked={createForm.tenant_type === tt}
+                          onChange={() => setCreateForm(f => ({ ...f, tenant_type: tt }))}
+                          className="sr-only"
+                        />
+                        <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                          createForm.tenant_type === tt
+                            ? tt === 'organization' ? 'border-slate-500 bg-slate-500'
+                            : tt === 'agency' ? 'border-purple-500 bg-purple-500'
+                            : 'border-blue-500 bg-blue-500'
+                            : 'border-slate-300'
+                        }`}>
+                          {createForm.tenant_type === tt && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </span>
+                        <div>
+                          <div className="text-sm font-bold text-textMain">{t.tenantTypeOptions[tt]}</div>
+                          <div className="text-[10px] text-textMuted">
+                            {tt === 'organization' && 'Direct employer managing internal recruitment'}
+                            {tt === 'agency' && 'Staffing/recruitment agency with multiple clients'}
+                            {tt === 'individual_recruiter' && 'Freelance recruiter working across clients'}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Name + Domain */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">
+                      {t.orgName} <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="Acme Recruiting Ltd"
+                      value={createForm.name}
+                      onChange={(e) => setCreateForm(f => ({ ...f, name: e.target.value }))}
+                      className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">
+                      {t.emailDomain} <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="acme.com"
+                      value={createForm.email_domain}
+                      onChange={(e) => setCreateForm(f => ({ ...f, email_domain: e.target.value }))}
+                      className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200"
+                    />
+                  </div>
+                </div>
+
+                {/* Plan + limits */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.initialPlan}</label>
+                    <select
+                      value={createForm.plan}
+                      onChange={(e) => setCreateForm(f => ({ ...f, plan: e.target.value }))}
+                      className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200 bg-white"
+                    >
+                      <option value="starter">starter</option>
+                      {plans.map((p) => (
+                        <option key={p.plan_id} value={p.plan_code}>{p.plan_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.maxUsers}</label>
+                    <input
+                      type="number" min="1" max="100"
+                      value={createForm.max_users}
+                      onChange={(e) => setCreateForm(f => ({ ...f, max_users: e.target.value }))}
+                      className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.maxJobs}</label>
+                    <input
+                      type="number" min="1" max="1000"
+                      value={createForm.max_jobs}
+                      onChange={(e) => setCreateForm(f => ({ ...f, max_jobs: e.target.value }))}
+                      className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-border flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCreate(false)}
+                  disabled={createLoading}
+                  className="px-5 py-2 text-sm font-bold text-textMuted hover:text-textMain transition-colors disabled:opacity-50"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="submit"
+                  disabled={createLoading || !createForm.name.trim() || !createForm.email_domain.trim()}
+                  className="flex items-center gap-2 px-6 py-2 text-sm font-bold bg-rose-600 text-white rounded-xl hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {createLoading && (
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  )}
+                  {createLoading ? t.creating : t.create}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

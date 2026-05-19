@@ -60,6 +60,7 @@ export interface Tenant {
   tenant_id: string;
   tenant_name: string;
   tenant_code: string;
+  tenant_type?: TenantType;
   status: 'active' | 'suspended';
   created_at: string;
   users_count: number;
@@ -389,6 +390,7 @@ export interface TenantSubscriptionRow {
   tenant_name: string;
   email_domain?: string;
   plan: string;
+  tenant_type?: TenantType;
   subscription_status: 'trial' | 'active' | 'suspended' | 'expired';
   trial_end_at: string | null;
   subscription_started_at: string | null;
