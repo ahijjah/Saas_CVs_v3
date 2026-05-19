@@ -48,6 +48,11 @@ const T = {
       agency: 'Recruitment Agency',
       individual_recruiter: 'Independent Recruiter',
     } as Record<string, string>,
+    adminSection: 'First Admin User',
+    adminFullName: 'Admin Full Name',
+    adminEmail: 'Admin Email',
+    adminPassword: 'Temporary Password',
+    adminPasswordHint: 'Min. 8 characters. Ask the admin to change it on first login.',
     creating: 'Creating...',
     create: 'Create Tenant',
     cancel: 'Cancel',
@@ -91,6 +96,11 @@ const T = {
       agency: 'وكالة توظيف',
       individual_recruiter: 'مسؤول توظيف مستقل',
     } as Record<string, string>,
+    adminSection: 'المسؤول الأول',
+    adminFullName: 'الاسم الكامل للمسؤول',
+    adminEmail: 'البريد الإلكتروني للمسؤول',
+    adminPassword: 'كلمة مرور مؤقتة',
+    adminPasswordHint: 'الحد الأدنى 8 أحرف. اطلب من المسؤول تغييرها عند أول تسجيل دخول.',
     creating: 'جارٍ الإنشاء...',
     create: 'إنشاء المستأجر',
     cancel: 'إلغاء',
@@ -152,7 +162,11 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
     max_users: '3',
     max_jobs: '10',
     tenant_type: 'organization' as 'organization' | 'agency' | 'individual_recruiter',
+    admin_full_name: '',
+    admin_email: '',
+    admin_password: '',
   });
+  const [showAdminPw, setShowAdminPw] = useState(false);
 
   const loadTenants = useCallback(async () => {
     setLoading(true);
@@ -224,25 +238,47 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
     }
   };
 
+  const resetCreateForm = () => setCreateForm({
+    name: '', email_domain: '', plan: 'starter', max_users: '3', max_jobs: '10',
+    tenant_type: 'organization', admin_full_name: '', admin_email: '', admin_password: '',
+  });
+
   const handleCreateTenant = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Validate admin fields are all-or-nothing
+    const adminName = createForm.admin_full_name.trim();
+    const adminEmail = createForm.admin_email.trim();
+    const adminPw = createForm.admin_password;
+    const hasAny = !!(adminName || adminEmail || adminPw);
+    const hasAll = !!(adminName && adminEmail && adminPw);
+    if (hasAny && !hasAll) {
+      addToast('Provide Admin Name, Email, and Password together — or leave all empty.', 'error');
+      return;
+    }
+    if (adminPw && adminPw.length < 8) {
+      addToast('Admin password must be at least 8 characters.', 'error');
+      return;
+    }
+
     setCreateLoading(true);
     try {
-      await apiService.post(
-        WEBHOOK_CONFIG.ADMIN_CREATE_TENANT_URL,
-        {
-          name: createForm.name.trim(),
-          email_domain: createForm.email_domain.trim(),
-          plan: createForm.plan || 'starter',
-          max_users: parseInt(createForm.max_users, 10) || 3,
-          max_jobs: parseInt(createForm.max_jobs, 10) || 10,
-          tenant_type: createForm.tenant_type,
-        },
-        auth.token!,
-      );
+      const payload: Record<string, string | number> = {
+        name: createForm.name.trim(),
+        email_domain: createForm.email_domain.trim(),
+        plan: createForm.plan || 'starter',
+        max_users: parseInt(createForm.max_users, 10) || 3,
+        max_jobs: parseInt(createForm.max_jobs, 10) || 10,
+        tenant_type: createForm.tenant_type,
+      };
+      if (hasAll) {
+        payload.admin_full_name = adminName;
+        payload.admin_email = adminEmail;
+        payload.admin_password = adminPw;
+      }
+      await apiService.post(WEBHOOK_CONFIG.ADMIN_CREATE_TENANT_URL, payload, auth.token!);
       addToast(t.successCreate, 'success');
       setShowCreate(false);
-      setCreateForm({ name: '', email_domain: '', plan: 'starter', max_users: '3', max_jobs: '10', tenant_type: 'organization' });
+      resetCreateForm();
       await loadTenants();
     } catch (err: any) {
       addToast(err.message || t.errorCreate, 'error');
@@ -634,12 +670,80 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                     />
                   </div>
                 </div>
+
+                {/* Admin User */}
+                <div className="space-y-3 pt-2 border-t border-border">
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0M12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    {t.adminSection}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">
+                        {t.adminFullName} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        required
+                        type="text"
+                        placeholder="Jane Smith"
+                        value={createForm.admin_full_name}
+                        onChange={(e) => setCreateForm(f => ({ ...f, admin_full_name: e.target.value }))}
+                        className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">
+                        {t.adminEmail} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        required
+                        type="email"
+                        placeholder="admin@company.com"
+                        value={createForm.admin_email}
+                        onChange={(e) => setCreateForm(f => ({ ...f, admin_email: e.target.value }))}
+                        className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">
+                      {t.adminPassword} <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        required
+                        type={showAdminPw ? 'text' : 'password'}
+                        placeholder="••••••••"
+                        minLength={8}
+                        value={createForm.admin_password}
+                        onChange={(e) => setCreateForm(f => ({ ...f, admin_password: e.target.value }))}
+                        className="w-full px-3 py-2.5 pr-10 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminPw(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-textMuted hover:text-textMain transition-colors"
+                        tabIndex={-1}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          {showAdminPw
+                            ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                            : <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></>
+                          }
+                        </svg>
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-textMuted">{t.adminPasswordHint}</p>
+                  </div>
+                </div>
               </div>
 
               <div className="px-6 py-4 border-t border-border flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowCreate(false)}
+                  onClick={() => { setShowCreate(false); resetCreateForm(); }}
                   disabled={createLoading}
                   className="px-5 py-2 text-sm font-bold text-textMuted hover:text-textMain transition-colors disabled:opacity-50"
                 >
@@ -647,7 +751,14 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                 </button>
                 <button
                   type="submit"
-                  disabled={createLoading || !createForm.name.trim() || !createForm.email_domain.trim()}
+                  disabled={
+                    createLoading ||
+                    !createForm.name.trim() ||
+                    !createForm.email_domain.trim() ||
+                    !createForm.admin_full_name.trim() ||
+                    !createForm.admin_email.trim() ||
+                    createForm.admin_password.length < 8
+                  }
                   className="flex items-center gap-2 px-6 py-2 text-sm font-bold bg-rose-600 text-white rounded-xl hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {createLoading && (

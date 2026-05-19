@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep, RequireSuperAdmin
+from auth.password import hash_password
 from config import get_settings
 from database import get_db, set_rls_context
 from services.email_service import send_invite_email
@@ -26,6 +27,10 @@ class CreateTenantRequest(BaseModel):
     tenant_type: str = "organization"  # organization | agency | individual_recruiter
     monthly_cv_processing_soft_limit: int | None = None
     monthly_cv_processing_hard_limit: int | None = None
+    # First admin user (all three required together or all omitted)
+    admin_full_name: str | None = None
+    admin_email: EmailStr | None = None
+    admin_password: str | None = None
 
 
 class UpdateUserStatusRequest(BaseModel):
@@ -185,31 +190,78 @@ async def create_tenant(
             detail=f"tenant_type must be one of: {', '.join(valid_types)}",
         )
 
-    result = await db.execute(
-        text("""
-            INSERT INTO tenants (name, email_domain, plan, max_users, max_jobs, status,
-                                 tenant_type, monthly_cv_processing_soft_limit,
-                                 monthly_cv_processing_hard_limit)
-            VALUES (:name, :domain, :plan, :max_users, :max_jobs, 'active',
-                    :tenant_type, :soft_limit, :hard_limit)
-            RETURNING tenant_id
-        """),
-        {
-            "name":       body.name,
-            "domain":     body.email_domain,
-            "plan":       body.plan,
-            "max_users":  body.max_users,
-            "max_jobs":   body.max_jobs,
-            "tenant_type": body.tenant_type,
-            "soft_limit": body.monthly_cv_processing_soft_limit,
-            "hard_limit": body.monthly_cv_processing_hard_limit,
-        },
-    )
+    # All three admin fields must be provided together or all omitted
+    admin_fields = (body.admin_full_name, body.admin_email, body.admin_password)
+    has_admin = any(f is not None for f in admin_fields)
+    if has_admin and not all(f for f in admin_fields):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="admin_full_name, admin_email, and admin_password must all be provided together.",
+        )
+    if body.admin_password and len(body.admin_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="admin_password must be at least 8 characters.",
+        )
 
-    tenant_id = str(result.scalar_one())
-    await db.commit()
+    try:
+        result = await db.execute(
+            text("""
+                INSERT INTO tenants (name, email_domain, plan, max_users, max_jobs, status,
+                                     tenant_type, monthly_cv_processing_soft_limit,
+                                     monthly_cv_processing_hard_limit)
+                VALUES (:name, :domain, :plan, :max_users, :max_jobs, 'active',
+                        :tenant_type, :soft_limit, :hard_limit)
+                RETURNING tenant_id
+            """),
+            {
+                "name":       body.name,
+                "domain":     body.email_domain,
+                "plan":       body.plan,
+                "max_users":  body.max_users,
+                "max_jobs":   body.max_jobs,
+                "tenant_type": body.tenant_type,
+                "soft_limit": body.monthly_cv_processing_soft_limit,
+                "hard_limit": body.monthly_cv_processing_hard_limit,
+            },
+        )
+        tenant_id = str(result.scalar_one())
 
-    return {"success": True, "tenant_id": tenant_id}
+        user_id: str | None = None
+        if has_admin:
+            pw_hash = hash_password(body.admin_password)  # type: ignore[arg-type]
+            user_result = await db.execute(
+                text("""
+                    INSERT INTO users (tenant_id, email, password_hash, full_name, role, status)
+                    VALUES (:tid, :email, :pw, :name, 'admin', 'active')
+                    RETURNING user_id
+                """),
+                {
+                    "tid":   tenant_id,
+                    "email": str(body.admin_email),
+                    "pw":    pw_hash,
+                    "name":  body.admin_full_name,
+                },
+            )
+            user_id = str(user_result.scalar_one())
+
+        await db.commit()
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as exc:
+        await db.rollback()
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A user with that email already exists.",
+            )
+        raise
+
+    response: dict = {"success": True, "tenant_id": tenant_id}
+    if user_id:
+        response["user_id"] = user_id
+    return response
 
 
 @router.patch("/tenants/status", dependencies=[RequireSuperAdmin])
