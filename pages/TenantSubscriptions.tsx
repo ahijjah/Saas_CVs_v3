@@ -541,19 +541,21 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
 
       {/* Create Tenant Modal */}
       {showCreate && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+        <div className="fixed inset-0 bg-black/50 z-50 overflow-y-auto p-4 backdrop-blur-sm flex items-start justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg my-auto flex flex-col max-h-[90vh]">
+            {/* Header — always visible */}
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
               <h3 className="font-black text-textMain text-sm uppercase tracking-widest">{t.createTitle}</h3>
-              <button onClick={() => setShowCreate(false)} className="text-textMuted hover:text-textMain p-1">
+              <button onClick={() => { setShowCreate(false); resetCreateForm(); }} className="text-textMuted hover:text-textMain p-1">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
-            <form onSubmit={handleCreateTenant}>
-              <div className="p-6 space-y-4">
+            <form onSubmit={handleCreateTenant} className="flex flex-col flex-1 min-h-0">
+              {/* Scrollable body */}
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
 
                 {/* Tenant Type — prominent, first field */}
                 <div className="space-y-1.5">
@@ -740,7 +742,8 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                 </div>
               </div>
 
-              <div className="px-6 py-4 border-t border-border flex justify-end gap-3">
+              {/* Footer — always visible */}
+              <div className="px-6 py-4 border-t border-border flex justify-end gap-3 shrink-0 bg-white">
                 <button
                   type="button"
                   onClick={() => { setShowCreate(false); resetCreateForm(); }}
