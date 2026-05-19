@@ -60,6 +60,11 @@ export const WEBHOOK_CONFIG = {
   // Public (no-auth) endpoints
   PUBLIC_JOB_BASE_URL:          `${API_BASE}/jobs/public`,   // append /{job_code}
   PUBLIC_APPLY_URL:             `${API_BASE}/applications/public`,
+  // Client organisations (agency/individual_recruiter tenants)
+  CLIENT_ORGANIZATIONS_URL:     `${API_BASE}/client-organizations`,
+  MY_CLIENT_ASSIGNMENTS_URL:    `${API_BASE}/client-organizations/my/assignments`,
+  // Admin fair-usage controls (append /{tenant_id}/fair-usage)
+  ADMIN_FAIR_USAGE_BASE_URL:    `${API_BASE}/admin/tenants`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

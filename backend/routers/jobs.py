@@ -29,6 +29,7 @@ class CreateJobRequest(BaseModel):
     description: str
     qualified_threshold: int | None = None
     partial_threshold: int | None = None
+    client_organization_id: str | None = None  # mandatory for agency/individual_recruiter tenants
 
 
 class UpdateCriteriaRequest(BaseModel):
@@ -94,6 +95,44 @@ class UpdateJobMetadataRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+async def _get_tenant_info(tenant_id: str, db) -> dict:
+    """Return tenant_type and any other fields needed for business logic."""
+    row = await db.execute(
+        text("SELECT tenant_type FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": tenant_id},
+    )
+    r = row.mappings().first()
+    return dict(r) if r else {"tenant_type": "organization"}
+
+
+async def _get_accessible_client_org_ids(
+    user_id: str,
+    tenant_id: str,
+    role: str,
+    tenant_type: str,
+    db,
+) -> list[str] | None:
+    """
+    Returns:
+    - None  → no client org filter should be applied (org tenant, or admin of agency tenant)
+    - []    → user has no assigned clients; they should see nothing
+    - [ids] → explicit list of client_organization_ids the user may access
+    """
+    if tenant_type == "organization":
+        return None  # standard org tenant: no agency filtering
+    if role in ("admin", "super_admin"):
+        return None  # agency admin sees all clients
+    rows = await db.execute(
+        text("""
+            SELECT client_organization_id::text
+            FROM agency_user_clients
+            WHERE user_id = CAST(:uid AS uuid) AND tenant_id = CAST(:tid AS uuid)
+        """),
+        {"uid": user_id, "tid": tenant_id},
+    )
+    return [r[0] for r in rows]
+
+
 async def _get_forwarding_email(db) -> str:
     """Load FORWARDING_EMAIL from system_config (falls back to env IMAP_USER)."""
     row = await db.execute(
@@ -120,13 +159,47 @@ async def _next_job_code(db) -> str:
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("")
-async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, Depends(get_db)]):
+async def list_jobs(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    client_organization_id: str | None = None,
+):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     is_super_admin = (current_user.role or "").lower() == "super_admin"
 
-    # super_admin sees all tenants; others see only their own
-    where_clause = "" if is_super_admin else "WHERE j.tenant_id = :tid"
+    params: dict = {"tid": current_user.tenant_id}
+    extra_filters: list[str] = []
+
+    if is_super_admin:
+        base_where = ""
+    else:
+        base_where = "WHERE j.tenant_id = :tid"
+
+        # Agency user scoping: non-admin users on agency/recruiter tenants see only
+        # jobs for their assigned client organisations.
+        tenant_info = await _get_tenant_info(current_user.tenant_id, db)
+        client_ids = await _get_accessible_client_org_ids(
+            current_user.user_id,
+            current_user.tenant_id,
+            current_user.role,
+            tenant_info["tenant_type"],
+            db,
+        )
+        if client_ids is not None:
+            if len(client_ids) == 0:
+                return []  # no assigned clients → empty result
+            placeholders = ", ".join(f"CAST(:cid{i} AS uuid)" for i in range(len(client_ids)))
+            extra_filters.append(f"j.client_organization_id IN ({placeholders})")
+            for i, cid in enumerate(client_ids):
+                params[f"cid{i}"] = cid
+
+    # Optional explicit client_org filter (for admin/super-admin filtering by client)
+    if client_organization_id:
+        extra_filters.append("j.client_organization_id = CAST(:filter_cid AS uuid)")
+        params["filter_cid"] = client_organization_id
+
+    extra_sql = (" AND " + " AND ".join(extra_filters)) if extra_filters else ""
 
     rows = await db.execute(
         text(f"""
@@ -140,6 +213,8 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
                 j.receive_cv_via_forwarding_email,
                 j.receive_cv_via_platform_email,
                 j.created_at,
+                j.client_organization_id,
+                co.organization_name AS client_org_name,
                 t.name AS tenant_name,
                 COUNT(a.application_id)                                             AS applications_total,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
@@ -150,12 +225,14 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
                 ) AS applications_in_progress
             FROM jobs j
             JOIN tenants t ON t.tenant_id = j.tenant_id
+            LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
             LEFT JOIN applications a ON a.job_id = j.job_id
-            {where_clause}
-            GROUP BY j.job_id, t.name
+            {base_where}
+            {extra_sql}
+            GROUP BY j.job_id, t.name, co.organization_name
             ORDER BY j.created_at DESC
         """),
-        {"tid": current_user.tenant_id},
+        params,
     )
     jobs = []
     for r in rows.mappings():
@@ -168,6 +245,8 @@ async def list_jobs(current_user: CurrentUserDep, db: Annotated[AsyncSession, De
             "job_status":         r["job_status"],
             "platform_email":     r["platform_email"],
             "tenant_name":        r["tenant_name"],
+            "client_organization_id": str(r["client_organization_id"]) if r["client_organization_id"] else None,
+            "client_org_name":    r["client_org_name"],
             "receive_cv_via_forwarding_email": r["receive_cv_via_forwarding_email"],
             "receive_cv_via_platform_email":   r["receive_cv_via_platform_email"],
             "posted_date":        r["created_at"].date().isoformat() if r["created_at"] else None,
@@ -188,14 +267,38 @@ async def create_job(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Verify tenant exists
+    # Verify tenant exists and get tenant_type
     t_row = await db.execute(
-        text("SELECT tenant_id FROM tenants WHERE tenant_id = :tid"),
+        text("SELECT tenant_id, tenant_type FROM tenants WHERE tenant_id = :tid"),
         {"tid": current_user.tenant_id},
     )
     tenant = t_row.mappings().first()
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    # Agency / individual_recruiter tenants: client_organization_id is mandatory
+    tenant_type = tenant["tenant_type"] or "organization"
+    if tenant_type in ("agency", "individual_recruiter"):
+        if not body.client_organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="client_organization_id is required for agency and individual recruiter accounts.",
+            )
+        # Verify client org belongs to this tenant
+        corg_row = await db.execute(
+            text("""
+                SELECT client_organization_id FROM client_organizations
+                WHERE client_organization_id = CAST(:cid AS uuid)
+                  AND tenant_id = CAST(:tid AS uuid)
+                  AND status = 'active'
+            """),
+            {"cid": body.client_organization_id, "tid": current_user.tenant_id},
+        )
+        if not corg_row.first():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Client organisation not found or inactive.",
+            )
 
     # Enforce campaign limit via centralized subscription service
     campaign_check = await can_create_campaign(current_user.tenant_id, db)
@@ -218,9 +321,11 @@ async def create_job(
         text("""
             INSERT INTO jobs (tenant_id, created_by, title, department, location,
                               job_type, duration, description,
-                              qualified_threshold, partial_threshold, job_code, status)
+                              qualified_threshold, partial_threshold, job_code, status,
+                              client_organization_id)
             VALUES (:tid, :uid, :title, :dept, :location, :job_type, :duration, :desc,
-                    :qt, :pt, :job_code, 'active')
+                    :qt, :pt, :job_code, 'active',
+                    CAST(:coid AS uuid))
             RETURNING job_id
         """),
         {
@@ -235,6 +340,7 @@ async def create_job(
             "qt":       body.qualified_threshold,
             "pt":       body.partial_threshold,
             "job_code": job_code,
+            "coid":     body.client_organization_id,
         },
     )
     job_id = str(job_result.scalar_one())
@@ -300,6 +406,8 @@ async def get_job_details(
                 j.qualified_threshold, j.partial_threshold,
                 j.max_applications, j.auto_close_when_limit_reached,
                 j.created_at, j.updated_at,
+                j.client_organization_id,
+                co.organization_name AS client_org_name,
                 cu.full_name AS created_by_name,
                 uu.full_name AS updated_by_name,
                 COUNT(a.application_id)                                             AS applications_total,
@@ -317,10 +425,11 @@ async def get_job_details(
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
             JOIN tenants t ON t.tenant_id = j.tenant_id
+            LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
             LEFT JOIN users cu ON cu.user_id = j.created_by
             LEFT JOIN users uu ON uu.user_id = j.updated_by
             WHERE j.job_id = :jid AND j.tenant_id = :tid
-            GROUP BY j.job_id, t.tenant_id, cu.full_name, uu.full_name
+            GROUP BY j.job_id, t.tenant_id, co.organization_name, cu.full_name, uu.full_name
         """),
         {"jid": job_id, "tid": current_user.tenant_id},
     )
@@ -392,6 +501,8 @@ async def get_job_details(
             "applications_rejected":    job["applications_rejected"],
             "applications_valid_count":  job["applications_valid_count"],
             "applications_in_progress": int(job["applications_in_progress"]),
+            "client_organization_id": str(job["client_organization_id"]) if job["client_organization_id"] else None,
+            "client_org_name":        job["client_org_name"],
             "qualified_threshold":      job["qualified_threshold"],
             "partial_threshold":        job["partial_threshold"],
             "max_applications":               job["max_applications"],

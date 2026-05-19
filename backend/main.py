@@ -6,8 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import get_settings
 from database import engine
 from routers import (
-    admin, ai_prompts, applications, audit_logs, auth, jobs,
-    platform_config, platform_secrets, public, subscription_plans, tenant,
+    admin, ai_prompts, applications, audit_logs, auth, client_organizations,
+    jobs, platform_config, platform_secrets, public, subscription_plans, tenant,
 )
 
 settings = get_settings()
@@ -35,10 +35,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(public.router)   # no auth — must be before jobs/applications
+app.include_router(public.router)           # no auth — must be before jobs/applications
 app.include_router(auth.router)
 app.include_router(jobs.router)
 app.include_router(applications.router)
+app.include_router(client_organizations.router)
 app.include_router(admin.router)
 app.include_router(platform_config.router)
 app.include_router(subscription_plans.router)

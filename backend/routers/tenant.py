@@ -317,7 +317,10 @@ async def get_tenant_usage(
         text("""
             SELECT t.tenant_id, t.name, t.plan, t.max_users, t.max_jobs,
                    t.subscription_status, t.trial_end_at,
-                   t.subscription_started_at, t.subscription_ends_at
+                   t.subscription_started_at, t.subscription_ends_at,
+                   t.tenant_type,
+                   t.monthly_cv_processing_soft_limit,
+                   t.monthly_cv_processing_hard_limit
             FROM tenants t
             WHERE t.tenant_id = CAST(:tid AS uuid)
         """),
@@ -400,6 +403,7 @@ async def get_tenant_usage(
     return {
         "plan_code":   tenant["plan"],
         "plan_name":   plan["plan_name"] if plan else tenant["plan"],
+        "tenant_type": tenant["tenant_type"] or "organization",
         "subscription_status": tenant["subscription_status"] or "trial",
         "trial_end_at": tenant["trial_end_at"].isoformat() if tenant["trial_end_at"] else None,
         "subscription_started_at": (

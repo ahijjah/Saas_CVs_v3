@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { User } from '../types';
+import { User, ClientOrganization } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface AddJobModalProps {
@@ -20,6 +20,7 @@ interface FormData {
   job_location: string;
   job_type: string;
   job_duration: string;
+  client_organization_id: string;
 }
 
 const T = {
@@ -40,6 +41,9 @@ const T = {
     cancel: 'Cancel',
     creating: 'Creating…',
     submit: 'Create Job',
+    clientOrg: 'Client Organization',
+    clientOrgPlaceholder: 'Select a client organization',
+    clientOrgRequired: 'Client organization is required for agency tenants.',
     errorTitle: 'Job title is required.',
     errorDesc: 'Job description is required.',
   },
@@ -60,6 +64,9 @@ const T = {
     cancel: 'إلغاء',
     creating: 'جارٍ الإنشاء…',
     submit: 'إنشاء الوظيفة',
+    clientOrg: 'منظمة العميل',
+    clientOrgPlaceholder: 'اختر منظمة العميل',
+    clientOrgRequired: 'منظمة العميل مطلوبة لمستأجري الوكالات.',
     errorTitle: 'المسمى الوظيفي مطلوب.',
     errorDesc: 'وصف الوظيفة مطلوب.',
   },
@@ -70,6 +77,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const t = T[lang];
 
   const [loading, setLoading] = useState(false);
+  const [clientOrgs, setClientOrgs] = useState<ClientOrganization[]>([]);
+  const [isAgencyTenant, setIsAgencyTenant] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     job_title: '',
     job_description: '',
@@ -77,7 +86,26 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     job_location: '',
     job_type: '',
     job_duration: '',
+    client_organization_id: '',
   });
+
+  useEffect(() => {
+    if (!token) return;
+    apiService.get(WEBHOOK_CONFIG.CLIENT_ORGANIZATIONS_URL, {}, token)
+      .then((data: any) => {
+        const orgs: ClientOrganization[] = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.items) ? data.items : [];
+        setClientOrgs(orgs.filter(o => o.status === 'active'));
+      })
+      .catch(() => { /* silently ignore — org tenants will get 403 */ });
+    apiService.get(WEBHOOK_CONFIG.TENANT_USAGE_URL, {}, token)
+      .then((data: any) => {
+        const tt = data?.tenant_type || 'organization';
+        setIsAgencyTenant(tt === 'agency' || tt === 'individual_recruiter');
+      })
+      .catch(() => { /* silently ignore */ });
+  }, [token]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -92,6 +120,9 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
     if (!title) { addToast(t.errorTitle, 'error'); return; }
     if (!description) { addToast(t.errorDesc, 'error'); return; }
+    if (isAgencyTenant && !formData.client_organization_id) {
+      addToast(t.clientOrgRequired, 'error'); return;
+    }
 
     setLoading(true);
     try {
@@ -101,6 +132,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       if (formData.job_location.trim()) payload.location = formData.job_location.trim();
       if (formData.job_type.trim()) payload.job_type = formData.job_type.trim();
       if (formData.job_duration.trim()) payload.duration = formData.job_duration.trim();
+      if (formData.client_organization_id) payload.client_organization_id = formData.client_organization_id;
 
       const responseData = await apiService.post(
         WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL,
@@ -120,7 +152,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     }
   };
 
-  const isFormValid = formData.job_title.trim().length > 0 && formData.job_description.trim().length > 0;
+  const isFormValid = formData.job_title.trim().length > 0 && formData.job_description.trim().length > 0
+    && (!isAgencyTenant || !!formData.client_organization_id);
 
   return (
     <div className="fixed inset-0 bg-textMain/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -168,6 +201,28 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 />
               </div>
             </div>
+
+            {/* Client Organization (agency/recruiter tenants) */}
+            {clientOrgs.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">
+                  {t.clientOrg} {isAgencyTenant && <span className="text-error">*</span>}
+                </label>
+                <select
+                  name="client_organization_id"
+                  value={formData.client_organization_id}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
+                >
+                  <option value="">{t.clientOrgPlaceholder}</option>
+                  {clientOrgs.map(org => (
+                    <option key={org.client_organization_id} value={org.client_organization_id}>
+                      {org.organization_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Location + Job Type + Duration */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">

@@ -28,7 +28,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.subscription_service import can_process_cv
+from services.subscription_service import can_process_cv, increment_monthly_usage
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,50 @@ def validate_file(content_type: str, content: bytes, max_file_size_mb: float) ->
 def compute_file_hash(content: bytes) -> str:
     """Return SHA-256 hex digest of raw file bytes."""
     return hashlib.sha256(content).hexdigest()
+
+
+# ── Per-job applicant limit ────────────────────────────────────────────────────
+
+async def check_job_applicant_limit(
+    db: AsyncSession,
+    job_id: str,
+) -> dict:
+    """
+    Check whether a job has reached its max_applications cap.
+    Returns {"allowed": bool, "used": int, "limit": int|None, "message": str}.
+    Counts valid (non-failed, non-duplicate) applications only.
+    """
+    row = await db.execute(
+        text("""
+            SELECT j.max_applications,
+                   COUNT(a.application_id) AS valid_count
+            FROM jobs j
+            LEFT JOIN applications a ON a.job_id = j.job_id
+                AND a.processing_status != 'failed'
+                AND (a.duplicate_status IS NULL OR a.duplicate_status = 'not_duplicate')
+            WHERE j.job_id = CAST(:jid AS uuid)
+            GROUP BY j.job_id
+        """),
+        {"jid": job_id},
+    )
+    r = row.mappings().first()
+    if not r:
+        return {"allowed": True, "used": 0, "limit": None, "message": ""}
+
+    limit = r["max_applications"]
+    if limit is None:
+        return {"allowed": True, "used": int(r["valid_count"]), "limit": None, "message": ""}
+
+    used = int(r["valid_count"])
+    limit = int(limit)
+    if used >= limit:
+        return {
+            "allowed": False,
+            "used": used,
+            "limit": limit,
+            "message": f"This position is no longer accepting applications (limit of {limit} reached).",
+        }
+    return {"allowed": True, "used": used, "limit": limit, "message": ""}
 
 
 # ── Duplicate detection ────────────────────────────────────────────────────────
@@ -476,7 +520,38 @@ async def process_cv_intake(
             error_message="Identical file already submitted for this position.",
         )
 
-    # ── Step 4: quota check ───────────────────────────────────────────────────
+    # ── Step 4a: per-job applicant cap ───────────────────────────────────────
+    job_limit_check = await check_job_applicant_limit(db, job_id)
+    if not job_limit_check["allowed"]:
+        log_id = await _safe_log(
+            db,
+            tenant_id=tenant_id,
+            job_id=job_id,
+            intake_method=intake_method,
+            status="REJECTED",
+            candidate_email=candidate_email,
+            candidate_name=candidate_name,
+            original_filename=original_filename,
+            file_hash=file_hash,
+            file_size_bytes=len(content),
+            mime_type=content_type,
+            error_message=job_limit_check.get("message", "Job applicant limit reached"),
+            source_identifier=source_identifier,
+            source_message_id=source_message_id,
+            sender_email=sender_email,
+            recipient_email=recipient_email,
+            subject=subject,
+            processing_started_at=started,
+            received_at=received,
+        )
+        await db.commit()
+        return IntakeResult(
+            status="REJECTED",
+            intake_log_id=log_id,
+            error_message=job_limit_check.get("message", "Job applicant limit reached"),
+        )
+
+    # ── Step 4b: tenant CV quota (plan + hard monthly limit) ──────────────────
     cv_check = await can_process_cv(tenant_id, db)
     if not cv_check["allowed"]:
         log_id = await _safe_log(
@@ -542,6 +617,13 @@ async def process_cv_intake(
 
     # ── Step 8: commit ────────────────────────────────────────────────────────
     await db.commit()
+
+    # ── Step 8b: increment monthly usage counter (non-fatal) ─────────────────
+    try:
+        await increment_monthly_usage(tenant_id, db)
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to increment monthly usage for tenant %s: %s", tenant_id, exc)
 
     # ── Step 9: enqueue scoring (non-fatal if Celery is down) ─────────────────
     scoring_enqueued_at: datetime | None = None

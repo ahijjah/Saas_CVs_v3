@@ -80,6 +80,38 @@ export interface AdminUser {
   tenant_code: string;
 }
 
+export type TenantType = 'organization' | 'agency' | 'individual_recruiter';
+
+export interface ClientOrganization {
+  client_organization_id: string;
+  tenant_id: string;
+  organization_name: string;
+  industry?: string | null;
+  contact_person?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  logo_url?: string | null;
+  notes?: string | null;
+  status: 'active' | 'inactive';
+  created_at?: string;
+  updated_at?: string;
+  active_jobs_count?: number;
+  assigned_users_count?: number;
+}
+
+export type ClientRole = 'account_manager' | 'recruiter' | 'viewer';
+
+export interface AgencyUserClient {
+  assignment_id: string;
+  user_id: string;
+  email: string;
+  full_name: string;
+  tenant_role: string;
+  user_status: string;
+  role_for_client: ClientRole;
+  assigned_at?: string;
+}
+
 export interface Job {
   job_id: string;
   job_code: string;
@@ -98,6 +130,8 @@ export interface Job {
   receive_cv_via_forwarding_email?: boolean;
   receive_cv_via_platform_email?: boolean;
   restrict_forwarding_sender_to_tenant_email?: boolean;
+  client_organization_id?: string | null;
+  client_org_name?: string | null;
   applications_total: number;
   applications_qualified: number;
   applications_partial: number;

@@ -23,6 +23,9 @@ class CreateTenantRequest(BaseModel):
     plan: str = "starter"
     max_users: int = 3
     max_jobs: int = 10
+    tenant_type: str = "organization"  # organization | agency | individual_recruiter
+    monthly_cv_processing_soft_limit: int | None = None
+    monthly_cv_processing_hard_limit: int | None = None
 
 
 class UpdateUserStatusRequest(BaseModel):
@@ -133,6 +136,9 @@ async def list_tenants(
         text(f"""
             SELECT t.tenant_id, t.name, t.email_domain, t.plan,
                    t.max_users, t.max_jobs, t.status, t.created_at,
+                   t.tenant_type,
+                   t.monthly_cv_processing_soft_limit,
+                   t.monthly_cv_processing_hard_limit,
                    COUNT(DISTINCT u.user_id) AS user_count
             FROM tenants t
             LEFT JOIN users u ON u.tenant_id = t.tenant_id
@@ -147,15 +153,18 @@ async def list_tenants(
     tenants = []
     for r in rows.mappings():
         tenants.append({
-            "tenant_id": str(r["tenant_id"]),
+            "tenant_id":   str(r["tenant_id"]),
             "tenant_name": r["name"],
             "email_domain": r["email_domain"],
-            "plan": r["plan"],
-            "max_users": r["max_users"],
-            "max_jobs": r["max_jobs"],
-            "status": r["status"],
-            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
-            "user_count": r["user_count"],
+            "plan":        r["plan"],
+            "max_users":   r["max_users"],
+            "max_jobs":    r["max_jobs"],
+            "status":      r["status"],
+            "tenant_type": r["tenant_type"] or "organization",
+            "monthly_cv_processing_soft_limit": r["monthly_cv_processing_soft_limit"],
+            "monthly_cv_processing_hard_limit": r["monthly_cv_processing_hard_limit"],
+            "created_at":  r["created_at"].isoformat() if r["created_at"] else None,
+            "user_count":  r["user_count"],
         })
 
     return {"tenants": tenants, "total": total, "page": page, "limit": limit}
@@ -169,18 +178,31 @@ async def create_tenant(
 ):
     await set_rls_context(db, current_user.tenant_id, "super_admin")
 
+    valid_types = ("organization", "agency", "individual_recruiter")
+    if body.tenant_type not in valid_types:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"tenant_type must be one of: {', '.join(valid_types)}",
+        )
+
     result = await db.execute(
         text("""
-            INSERT INTO tenants (name, email_domain, plan, max_users, max_jobs, status)
-            VALUES (:name, :domain, :plan, :max_users, :max_jobs, 'active')
+            INSERT INTO tenants (name, email_domain, plan, max_users, max_jobs, status,
+                                 tenant_type, monthly_cv_processing_soft_limit,
+                                 monthly_cv_processing_hard_limit)
+            VALUES (:name, :domain, :plan, :max_users, :max_jobs, 'active',
+                    :tenant_type, :soft_limit, :hard_limit)
             RETURNING tenant_id
         """),
         {
-            "name": body.name,
-            "domain": body.email_domain,
-            "plan": body.plan,
-            "max_users": body.max_users,
-            "max_jobs": body.max_jobs,
+            "name":       body.name,
+            "domain":     body.email_domain,
+            "plan":       body.plan,
+            "max_users":  body.max_users,
+            "max_jobs":   body.max_jobs,
+            "tenant_type": body.tenant_type,
+            "soft_limit": body.monthly_cv_processing_soft_limit,
+            "hard_limit": body.monthly_cv_processing_hard_limit,
         },
     )
 
@@ -530,6 +552,57 @@ async def update_tenant_subscription(
 
     await db.commit()
     return {"success": True, "action": body.action}
+
+
+class UpdateTenantFairUsageRequest(BaseModel):
+    tenant_type: str | None = None
+    monthly_cv_processing_soft_limit: int | None = None  # -1 to clear
+    monthly_cv_processing_hard_limit: int | None = None  # -1 to clear
+
+
+@router.patch("/tenants/{tenant_id}/fair-usage", dependencies=[RequireSuperAdmin])
+async def update_tenant_fair_usage(
+    tenant_id: str,
+    body: UpdateTenantFairUsageRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update internal Fair Usage Policy limits and tenant type for a tenant."""
+    await set_rls_context(db, current_user.tenant_id, "super_admin")
+
+    existing = await db.execute(
+        text("SELECT tenant_id FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": tenant_id},
+    )
+    if not existing.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    updates: dict = {}
+    if body.tenant_type is not None:
+        valid = ("organization", "agency", "individual_recruiter")
+        if body.tenant_type not in valid:
+            raise HTTPException(status_code=422, detail=f"tenant_type must be one of: {', '.join(valid)}")
+        updates["tenant_type"] = body.tenant_type
+    if body.monthly_cv_processing_soft_limit is not None:
+        updates["monthly_cv_processing_soft_limit"] = (
+            None if body.monthly_cv_processing_soft_limit < 0 else body.monthly_cv_processing_soft_limit
+        )
+    if body.monthly_cv_processing_hard_limit is not None:
+        updates["monthly_cv_processing_hard_limit"] = (
+            None if body.monthly_cv_processing_hard_limit < 0 else body.monthly_cv_processing_hard_limit
+        )
+
+    if not updates:
+        return {"success": True, "message": "No changes to apply."}
+
+    set_parts = ", ".join(f"{k} = :{k}" for k in updates)
+    updates["tid"] = tenant_id
+    await db.execute(
+        text(f"UPDATE tenants SET {set_parts} WHERE tenant_id = CAST(:tid AS uuid)"),
+        updates,
+    )
+    await db.commit()
+    return {"success": True, "message": "Tenant fair usage settings updated."}
 
 
 @router.patch("/users/status")

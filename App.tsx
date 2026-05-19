@@ -32,6 +32,7 @@ import { PlatformSecretsPage } from './pages/PlatformSecrets';
 import { AIPromptsPage } from './pages/AIPrompts';
 import AuditLogs from './pages/AuditLogs';
 import { PublicJobApply } from './pages/PublicJobApply';
+import { ClientOrganizationsPage } from './pages/ClientOrganizations';
 import { ToastContainer, ToastType } from './components/Toast';
 
 // ── JWT helper ─────────────────────────────────────────────────────────────
@@ -296,6 +297,7 @@ const AppInner: React.FC = () => {
             element={<ApplicationsRoute auth={auth} addToast={addToast} />}
           />
           <Route path="/settings" element={<Settings {...sharedAuth} />} />
+          <Route path="/client-organizations" element={<ClientOrganizationsPage {...sharedAuth} />} />
           <Route
             path="/plan-usage"
             element={

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { AuthState, UserProfile, TenantUser } from '../types';
@@ -98,6 +99,9 @@ const T = {
     saveUser: 'Save',
     cancelEdit: 'Cancel',
     editUserTitle: 'Edit User',
+    clientOrgsTitle: 'Client Organizations',
+    clientOrgsSub: 'Manage client organizations and user assignments',
+    clientOrgsLink: 'Go to Client Organizations',
   },
   ar: {
     loading: 'جارٍ تحميل الملف الشخصي...',
@@ -184,11 +188,15 @@ const T = {
     saveUser: 'حفظ',
     cancelEdit: 'إلغاء',
     editUserTitle: 'تعديل المستخدم',
+    clientOrgsTitle: 'منظمات العملاء',
+    clientOrgsSub: 'إدارة منظمات العملاء وتعيينات المستخدمين',
+    clientOrgsLink: 'انتقل إلى منظمات العملاء',
   },
 };
 
 export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const { lang, isAr } = useLanguage();
+  const navigate = useNavigate();
   const t = T[lang];
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -928,6 +936,34 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                 </div>
               ))
             )}
+          </div>
+        </section>
+      )}
+
+      {/* ── Client Organizations shortcut (agency/recruiter tenants) ─────────── */}
+      {!isSuperAdmin && isTenantAdmin && (
+        <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="px-8 py-6 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-textMain">{t.clientOrgsTitle}</h3>
+                <p className="text-xs text-textMuted">{t.clientOrgsSub}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/client-organizations')}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+              </svg>
+              {t.clientOrgsLink}
+            </button>
           </div>
         </section>
       )}

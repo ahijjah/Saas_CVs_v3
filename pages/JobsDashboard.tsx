@@ -42,6 +42,8 @@ const T = {
     viewDetailsLink: 'View Details',
     filterByTenant: 'Filter by tenant',
     allTenants: 'All tenants',
+    filterByClient: 'Filter by client',
+    allClients: 'All clients',
     campaignsUsage: 'Active campaigns',
     cvsUsage: 'CVs (last 30 days)',
     planLimitReached: 'Limit reached',
@@ -78,6 +80,8 @@ const T = {
     planLimitReached: 'الحد الأقصى',
     trialBadge: 'تجريبي',
     scoringInProgress: 'جاري التقييم',
+    filterByClient: 'تصفية حسب العميل',
+    allClients: 'جميع العملاء',
   },
 };
 
@@ -95,6 +99,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tenantFilter, setTenantFilter] = useState('');
+  const [clientOrgFilter, setClientOrgFilter] = useState('');
   const superAdmin = isSuperAdmin(auth);
 
   // Plan usage (tenant users only — not shown for super admin)
@@ -102,6 +107,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
     active_campaigns: number; max_campaigns: number;
     processed_cvs: number; max_cvs: number;
     subscription_status: string; plan_name: string;
+    tenant_type: string;
     at_limit_campaigns: boolean; at_limit_cvs: boolean;
     near_limit_campaigns: boolean; near_limit_cvs: boolean;
   } | null>(null);
@@ -140,6 +146,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
           max_cvs: data.limits.max_processed_cvs_per_month,
           subscription_status: data.subscription_status || 'active',
           plan_name: data.plan_name || data.plan_code || '',
+          tenant_type: data.tenant_type || 'organization',
           at_limit_campaigns: data.at_limit?.campaigns ?? false,
           at_limit_cvs: data.at_limit?.cvs ?? false,
           near_limit_campaigns: data.near_limit?.campaigns ?? false,
@@ -167,9 +174,19 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
     ? Array.from(new Set(jobs.map(j => j.tenant_name).filter(Boolean))) as string[]
     : [];
 
-  const filteredJobs = tenantFilter
-    ? jobs.filter(j => j.tenant_name === tenantFilter)
-    : jobs;
+  const isAgencyTenant = !superAdmin && (
+    planUsage?.tenant_type === 'agency' || planUsage?.tenant_type === 'individual_recruiter'
+  );
+
+  const clientOrgOptions = isAgencyTenant
+    ? Array.from(new Set(jobs.map(j => j.client_org_name).filter(Boolean))) as string[]
+    : [];
+
+  const filteredJobs = jobs.filter(j => {
+    if (tenantFilter && j.tenant_name !== tenantFilter) return false;
+    if (clientOrgFilter && j.client_org_name !== clientOrgFilter) return false;
+    return true;
+  });
 
   return (
     <div className="space-y-6 p-1 sm:p-0">
@@ -188,6 +205,18 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
               <option value="">{t.allTenants}</option>
               {tenantOptions.map(tn => (
                 <option key={tn} value={tn}>{tn}</option>
+              ))}
+            </select>
+          )}
+          {isAgencyTenant && clientOrgOptions.length > 0 && (
+            <select
+              value={clientOrgFilter}
+              onChange={e => setClientOrgFilter(e.target.value)}
+              className="w-full sm:w-48 border border-border rounded-xl px-3 py-2 text-sm text-textMain bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">{t.allClients}</option>
+              {clientOrgOptions.map(co => (
+                <option key={co} value={co}>{co}</option>
               ))}
             </select>
           )}
@@ -296,7 +325,14 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                         >
                           {job.job_title}
                         </button>
-                        <div className="text-xs text-textMuted truncate">{job.job_client}</div>
+                        <div className="text-xs text-textMuted truncate">
+                          {job.job_client}
+                          {job.client_org_name && (
+                            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700">
+                              {job.client_org_name}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tighter ${
@@ -406,7 +442,14 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                           >
                             {job.job_title}
                           </button>
-                          <div className="text-xs text-textMuted whitespace-nowrap">{job.job_client}</div>
+                          <div className="text-xs text-textMuted whitespace-nowrap">
+                            {job.job_client}
+                            {job.client_org_name && (
+                              <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700">
+                                {job.client_org_name}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         {superAdmin && (
                           <td className="px-6 py-4 text-xs text-textMuted whitespace-nowrap">{job.tenant_name || '—'}</td>
