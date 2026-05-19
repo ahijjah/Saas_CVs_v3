@@ -40,12 +40,21 @@ class RegisterRequest(BaseModel):
     admin_name: str
     email: EmailStr
     password: str
+    tenant_type: str = "organization"
 
     @field_validator("password")
     @classmethod
     def password_length(cls, v: str) -> str:
         if len(v) < settings.password_min_length:
             raise ValueError(f"Password must be at least {settings.password_min_length} characters")
+        return v
+
+    @field_validator("tenant_type")
+    @classmethod
+    def valid_tenant_type(cls, v: str) -> str:
+        valid = {"organization", "agency", "individual_recruiter"}
+        if v not in valid:
+            raise ValueError(f"tenant_type must be one of: {', '.join(sorted(valid))}")
         return v
 
 
@@ -249,17 +258,17 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
         text("""
             INSERT INTO tenants (
                 name, email_domain, plan, max_users, max_jobs,
-                cv_ingestion_mode, status,
+                cv_ingestion_mode, status, tenant_type,
                 subscription_status, trial_start_at, trial_end_at
             )
             VALUES (
                 :name, :domain, 'trial', 3, 10,
-                'platform_email', 'active',
+                'platform_email', 'active', :tenant_type,
                 'trial', now(), now() + INTERVAL '14 days'
             )
             RETURNING tenant_id
         """),
-        {"name": body.tenant_name, "domain": body.email_domain},
+        {"name": body.tenant_name, "domain": body.email_domain, "tenant_type": body.tenant_type},
     )
     tenant_id = str(tenant_result.scalar_one())
 

@@ -24,9 +24,9 @@ const T = {
     noAccount: 'Create a new company account',
 
     // Registration
-    registerTitle: 'Create your company account',
+    registerTitle: 'Create your account',
     registerSubtitle: 'Start analyzing and managing CVs with AI',
-    companyName: 'Company Name',
+    companyName: 'Company / Account Name',
     emailDomain: 'Email Domain',
     emailDomainPlaceholder: 'company.com',
     adminFullName: 'Admin Full Name',
@@ -43,10 +43,18 @@ const T = {
     haveAccount: 'Already have an account?',
     loginLink: 'Login',
 
+    // Tenant type
+    tenantTypeLabel: 'Account Type',
+    tenantTypes: {
+      organization: { label: 'Organization / Employer', desc: 'A company managing its own hiring' },
+      agency: { label: 'Recruitment Agency', desc: 'A staffing firm recruiting for multiple clients' },
+      individual_recruiter: { label: 'Independent Recruiter', desc: 'A freelance recruiter working across clients' },
+    } as Record<string, { label: string; desc: string }>,
+
     // Explainer card
     explainerTitle: 'Everything you need to hire smarter',
-    feature1Title: 'Create your company workspace',
-    feature1Desc: 'Set up your organisation in seconds with a dedicated workspace.',
+    feature1Title: 'Create your workspace',
+    feature1Desc: 'Set up your account in seconds with a dedicated workspace.',
     feature2Title: 'Post jobs and manage pipelines',
     feature2Desc: 'Create job postings and let AI extract the hiring criteria for you.',
     feature3Title: 'Receive and score CVs automatically',
@@ -62,11 +70,11 @@ const T = {
     forgotPw: 'نسيت كلمة المرور؟',
     signingIn: 'جارٍ تسجيل الدخول…',
     signInBtn: 'تسجيل الدخول',
-    noAccount: 'إنشاء حساب شركة جديد',
+    noAccount: 'إنشاء حساب جديد',
 
-    registerTitle: 'إنشاء حساب شركتك',
+    registerTitle: 'إنشاء حسابك',
     registerSubtitle: 'ابدأ تحليل وإدارة السير الذاتية بالذكاء الاصطناعي',
-    companyName: 'اسم الشركة',
+    companyName: 'اسم الشركة / الحساب',
     emailDomain: 'نطاق البريد الإلكتروني',
     emailDomainPlaceholder: 'company.com',
     adminFullName: 'الاسم الكامل للمسؤول',
@@ -83,9 +91,17 @@ const T = {
     haveAccount: 'هل لديك حساب بالفعل؟',
     loginLink: 'تسجيل الدخول',
 
+    // Tenant type
+    tenantTypeLabel: 'نوع الحساب',
+    tenantTypes: {
+      organization: { label: 'منظمة / صاحب عمل', desc: 'شركة تدير عملية توظيفها الداخلي' },
+      agency: { label: 'وكالة توظيف', desc: 'شركة توظيف تعمل لصالح عدة عملاء' },
+      individual_recruiter: { label: 'مسؤول توظيف مستقل', desc: 'مسؤول توظيف حر يعمل مع عدة عملاء' },
+    } as Record<string, { label: string; desc: string }>,
+
     explainerTitle: 'كل ما تحتاجه للتوظيف الذكي',
-    feature1Title: 'أنشئ مساحة عمل شركتك',
-    feature1Desc: 'أعدّ مؤسستك في ثوانٍ مع مساحة عمل مخصصة.',
+    feature1Title: 'أنشئ مساحة عملك',
+    feature1Desc: 'أعدّ حسابك في ثوانٍ مع مساحة عمل مخصصة.',
     feature2Title: 'انشر وظائف وأدر خطوط التوظيف',
     feature2Desc: 'أنشئ إعلانات الوظائف ودع الذكاء الاصطناعي يستخرج معايير التوظيف.',
     feature3Title: 'استقبل وقيّم السير الذاتية تلقائياً',
@@ -134,6 +150,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({
     company_name: '', email_domain: '', admin_name: '', admin_email: '', password: '', confirm_password: '',
+    tenant_type: 'organization' as 'organization' | 'agency' | 'individual_recruiter',
   });
 
   const validatePassword = (pw: string): string | null => {
@@ -193,6 +210,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
         admin_email:  registerForm.admin_email,
         email:        registerForm.admin_email,
         password:     registerForm.password,
+        tenant_type:  registerForm.tenant_type,
       });
       addToast('Account created! Please sign in.', 'success');
       switchView('login');
@@ -355,6 +373,57 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
             <ErrorBanner />
 
             <form onSubmit={handleRegister} className="space-y-4">
+
+              {/* Tenant Type selector */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">
+                  {t.tenantTypeLabel} <span className="text-error">*</span>
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  {(['organization', 'agency', 'individual_recruiter'] as const).map((tt) => {
+                    const opt = t.tenantTypes[tt];
+                    const active = registerForm.tenant_type === tt;
+                    return (
+                      <label
+                        key={tt}
+                        className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl border-2 cursor-pointer transition-all select-none ${
+                          active
+                            ? tt === 'organization'
+                              ? 'border-primary bg-primary/5'
+                              : tt === 'agency'
+                              ? 'border-purple-500 bg-purple-50'
+                              : 'border-blue-500 bg-blue-50'
+                            : 'border-border hover:border-slate-300 bg-white'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="tenant_type"
+                          value={tt}
+                          checked={active}
+                          onChange={() => setRegisterForm(f => ({ ...f, tenant_type: tt }))}
+                          disabled={loading}
+                          className="sr-only"
+                        />
+                        <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                          active
+                            ? tt === 'organization' ? 'border-primary bg-primary'
+                            : tt === 'agency' ? 'border-purple-500 bg-purple-500'
+                            : 'border-blue-500 bg-blue-500'
+                            : 'border-slate-300'
+                        }`}>
+                          {active && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-textMain leading-tight">{opt.label}</p>
+                          <p className="text-[10px] text-textMuted leading-tight mt-0.5">{opt.desc}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.companyName}</label>
