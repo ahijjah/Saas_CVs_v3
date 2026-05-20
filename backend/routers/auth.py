@@ -252,19 +252,20 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
 
     password_hash = hash_password(body.password)
 
-    # Create tenant — subscription_status defaults to 'trial' (schema default),
-    # plan = 'trial', trial window = 14 days from now.
+    # Create tenant — subscription_status = 'pending_plan_selection' until the
+    # tenant explicitly picks a plan from PlanSelection.  Trial dates are set
+    # only when they activate the free-trial via POST /tenant/subscription/activate-trial.
     tenant_result = await db.execute(
         text("""
             INSERT INTO tenants (
-                name, email_domain, plan, max_users, max_jobs,
+                name, email_domain, max_users, max_jobs,
                 cv_ingestion_mode, status, tenant_type,
-                subscription_status, trial_start_at, trial_end_at
+                subscription_status
             )
             VALUES (
-                :name, :domain, 'trial', 3, 10,
+                :name, :domain, 3, 10,
                 'platform_email', 'active', :tenant_type,
-                'trial', now(), now() + INTERVAL '14 days'
+                'pending_plan_selection'
             )
             RETURNING tenant_id
         """),

@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { User } from '../types';
@@ -139,8 +140,11 @@ const EyeClosedIcon = () => (
 export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) => {
   const { lang, setLang, isAr } = useLanguage();
   const t = T[lang];
+  const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'login' | 'register'>('login');
+  const [view, setView] = useState<'login' | 'register'>(
+    searchParams.get('mode') === 'register' ? 'register' : 'login'
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showLoginPw, setShowLoginPw] = useState(false);

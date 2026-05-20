@@ -33,6 +33,7 @@ import { AIPromptsPage } from './pages/AIPrompts';
 import AuditLogs from './pages/AuditLogs';
 import { PublicJobApply } from './pages/PublicJobApply';
 import { ClientOrganizationsPage } from './pages/ClientOrganizations';
+import { PlanSelectionPage } from './pages/PlanSelection';
 import { ToastContainer, ToastType } from './components/Toast';
 
 // ── JWT helper ─────────────────────────────────────────────────────────────
@@ -108,6 +109,12 @@ const AuthedLayout: React.FC<{
 const SuperAdminGuard: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) =>
   isSuperAdmin ? <Outlet /> : <Navigate to="/jobs" replace />;
 
+// ── Tenant access guard: pending_plan_selection tenants may only visit /plan-selection ──
+const TenantAccessGuard: React.FC<{ subscriptionStatus: string | undefined }> = ({ subscriptionStatus }) =>
+  subscriptionStatus === 'pending_plan_selection'
+    ? <Navigate to="/plan-selection" replace />
+    : <Outlet />;
+
 // ── Not-found page inside layout ──────────────────────────────────────────
 const NotFoundPage: React.FC<{ defaultHome: string }> = ({ defaultHome }) => {
   const navigate = useNavigate();
@@ -172,6 +179,17 @@ const AppInner: React.FC = () => {
   const isSuperAdmin = role === 'super_admin';
   const defaultHome = isSuperAdmin ? '/admin/dashboard' : '/jobs';
 
+  const getPostLoginRoute = (userRole: string, subscriptionStatus?: string): string => {
+    if (userRole === 'super_admin') return '/admin/dashboard';
+    switch (subscriptionStatus) {
+      case 'pending_plan_selection': return '/plan-selection';
+      case 'trial':
+      case 'active':
+      case 'cancelled_pending_expiry': return '/jobs';
+      default: return '/plan-usage';
+    }
+  };
+
   const handleLoginSuccess = (token: string, user: User) => {
     const payload = decodeJwtPayload(token);
     const userRole = String(payload?.role ?? user.role ?? '').toLowerCase();
@@ -183,7 +201,14 @@ const AppInner: React.FC = () => {
     };
     setAuth({ token, user: updatedUser });
     addToast('Welcome back!', 'success');
-    navigate(userRole === 'super_admin' ? '/admin/dashboard' : '/jobs', { replace: true });
+    navigate(getPostLoginRoute(userRole, user.subscription_status), { replace: true });
+  };
+
+  const handleUserUpdate = (patch: Partial<User>) => {
+    setAuth(prev => ({
+      ...prev,
+      user: prev.user ? { ...prev.user, ...patch } : prev.user,
+    }));
   };
 
   const handleLogout = () => {
@@ -253,7 +278,7 @@ const AppInner: React.FC = () => {
               <Navigate to={defaultHome} replace />
             ) : (
               <LandingPage
-                onGetStarted={() => navigate('/login')}
+                onGetStarted={() => navigate('/login?mode=register')}
                 onSignIn={() => navigate('/login')}
               />
             )
@@ -268,7 +293,21 @@ const AppInner: React.FC = () => {
             element={<Navigate to={defaultHome} replace />}
           />
 
-          {/* Tenant routes */}
+          {/* Plan selection — accessible before a plan is chosen (no Layout wrapping needed) */}
+          <Route
+            path="/plan-selection"
+            element={
+              <PlanSelectionPage
+                auth={auth}
+                addToast={addToast}
+                onUserUpdate={handleUserUpdate}
+                onNavigate={navigate}
+              />
+            }
+          />
+
+          {/* Tenant routes — blocked for pending_plan_selection tenants */}
+          <Route element={<TenantAccessGuard subscriptionStatus={auth.user?.subscription_status} />}>
           <Route
             path="/jobs"
             element={
@@ -308,6 +347,7 @@ const AppInner: React.FC = () => {
               )
             }
           />
+          </Route>{/* end TenantAccessGuard */}
 
           {/* Super-admin only routes */}
           <Route element={<SuperAdminGuard isSuperAdmin={isSuperAdmin} />}>

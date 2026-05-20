@@ -7,7 +7,7 @@ export interface User {
   role: string;
   tenant_name?: string;
   cv_ingestion_mode?: 'platform_email' | 'forwarding';
-  subscription_status?: 'trial' | 'active' | 'suspended' | 'expired';
+  subscription_status?: 'pending_plan_selection' | 'trial' | 'active' | 'suspended' | 'expired';
 }
 
 export interface UserProfile {
@@ -391,7 +391,7 @@ export interface TenantSubscriptionRow {
   email_domain?: string;
   plan: string;
   tenant_type?: TenantType;
-  subscription_status: 'trial' | 'active' | 'suspended' | 'expired';
+  subscription_status: 'pending_plan_selection' | 'trial' | 'active' | 'suspended' | 'expired';
   trial_end_at: string | null;
   subscription_started_at: string | null;
   subscription_ends_at: string | null;

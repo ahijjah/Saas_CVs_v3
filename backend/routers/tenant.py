@@ -431,3 +431,67 @@ async def get_tenant_usage(
         },
         "features": features,
     }
+
+
+@router.post("/subscription/activate-trial")
+async def activate_trial(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Tenant admin activates their free 14-day trial.
+    Only allowed when subscription_status is 'pending_plan_selection'.
+    Anti-abuse: one trial per email domain.
+    """
+    _require_tenant_admin(current_user)
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    tenant_row = await db.execute(
+        text("SELECT subscription_status, email_domain FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": current_user.tenant_id},
+    )
+    tenant = tenant_row.mappings().first()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    if tenant["subscription_status"] != "pending_plan_selection":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Trial can only be activated for accounts pending plan selection.",
+        )
+
+    # Anti-abuse: check if another tenant with same email_domain already used a trial
+    if tenant["email_domain"]:
+        await set_rls_context(db, "", "super_admin")
+        abuse_row = await db.execute(
+            text("""
+                SELECT COUNT(*) FROM tenants
+                WHERE email_domain = :domain
+                  AND tenant_id != CAST(:tid AS uuid)
+                  AND subscription_status IN ('trial', 'active', 'expired', 'suspended')
+            """),
+            {"domain": tenant["email_domain"], "tid": current_user.tenant_id},
+        )
+        if int(abuse_row.scalar_one()) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A trial has already been used for this email domain.",
+            )
+        await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    await db.execute(
+        text("""
+            UPDATE tenants
+            SET plan = 'trial',
+                subscription_status = 'trial',
+                trial_start_at = now(),
+                trial_end_at   = now() + INTERVAL '14 days',
+                max_users      = 3,
+                max_jobs       = 10
+            WHERE tenant_id = CAST(:tid AS uuid)
+        """),
+        {"tid": current_user.tenant_id},
+    )
+    await db.commit()
+
+    return {"success": True, "message": "Free trial activated. Enjoy your 14-day trial!"}
