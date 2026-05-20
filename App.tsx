@@ -109,11 +109,21 @@ const AuthedLayout: React.FC<{
 const SuperAdminGuard: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) =>
   isSuperAdmin ? <Outlet /> : <Navigate to="/jobs" replace />;
 
-// ── Tenant access guard: pending_plan_selection tenants may only visit /plan-selection ──
-const TenantAccessGuard: React.FC<{ subscriptionStatus: string | undefined }> = ({ subscriptionStatus }) =>
-  subscriptionStatus === 'pending_plan_selection'
-    ? <Navigate to="/plan-selection" replace />
-    : <Outlet />;
+// Statuses that require plan selection / payment before accessing the product
+const PLAN_GATE_STATUSES = new Set([
+  'pending_plan_selection', 'pending_payment', 'pending_sales_contact',
+]);
+
+// Statuses that lock the tenant out entirely — send to billing/reactivation
+const BILLING_GATE_STATUSES = new Set([
+  'grace', 'trial_expired', 'suspended', 'cancelled', 'expired',
+]);
+
+const TenantAccessGuard: React.FC<{ subscriptionStatus: string | undefined }> = ({ subscriptionStatus }) => {
+  if (subscriptionStatus && PLAN_GATE_STATUSES.has(subscriptionStatus)) return <Navigate to="/plan-selection" replace />;
+  if (subscriptionStatus && BILLING_GATE_STATUSES.has(subscriptionStatus)) return <Navigate to="/plan-usage" replace />;
+  return <Outlet />;
+};
 
 // ── Not-found page inside layout ──────────────────────────────────────────
 const NotFoundPage: React.FC<{ defaultHome: string }> = ({ defaultHome }) => {
@@ -181,13 +191,9 @@ const AppInner: React.FC = () => {
 
   const getPostLoginRoute = (userRole: string, subscriptionStatus?: string): string => {
     if (userRole === 'super_admin') return '/admin/dashboard';
-    switch (subscriptionStatus) {
-      case 'pending_plan_selection': return '/plan-selection';
-      case 'trial':
-      case 'active':
-      case 'cancelled_pending_expiry': return '/jobs';
-      default: return '/plan-usage';
-    }
+    if (!subscriptionStatus || PLAN_GATE_STATUSES.has(subscriptionStatus)) return '/plan-selection';
+    if (subscriptionStatus === 'trial' || subscriptionStatus === 'active' || subscriptionStatus === 'cancelled_pending_expiry') return '/jobs';
+    return '/plan-usage';
   };
 
   const handleLoginSuccess = (token: string, user: User) => {
@@ -301,7 +307,6 @@ const AppInner: React.FC = () => {
                 auth={auth}
                 addToast={addToast}
                 onUserUpdate={handleUserUpdate}
-                onNavigate={navigate}
               />
             }
           />
@@ -347,7 +352,7 @@ const AppInner: React.FC = () => {
               )
             }
           />
-          </Route>{/* end TenantAccessGuard */}
+          </Route>
 
           {/* Super-admin only routes */}
           <Route element={<SuperAdminGuard isSuperAdmin={isSuperAdmin} />}>

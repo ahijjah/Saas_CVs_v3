@@ -65,8 +65,9 @@ export const WEBHOOK_CONFIG = {
   MY_CLIENT_ASSIGNMENTS_URL:    `${API_BASE}/client-organizations/my/assignments`,
   // Admin fair-usage controls (append /{tenant_id}/fair-usage)
   ADMIN_FAIR_USAGE_BASE_URL:    `${API_BASE}/admin/tenants`,
-  // Tenant self-service: activate free trial
+  // Tenant self-service: subscription
   ACTIVATE_TRIAL_URL:           `${API_BASE}/tenant/subscription/activate-trial`,
+  SELECT_PLAN_URL:              `${API_BASE}/tenant/subscription/select-plan`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

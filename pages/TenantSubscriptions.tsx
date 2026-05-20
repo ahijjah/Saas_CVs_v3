@@ -161,6 +161,9 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
     plan: 'starter',
     max_users: '3',
     max_jobs: '10',
+    max_clients: '1',
+    api_access_enabled: false,
+    branding_level: 'none' as 'none' | 'basic' | 'white_label',
     tenant_type: 'organization' as 'organization' | 'agency' | 'individual_recruiter',
     admin_full_name: '',
     admin_email: '',
@@ -240,6 +243,7 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
 
   const resetCreateForm = () => setCreateForm({
     name: '', email_domain: '', plan: 'starter', max_users: '3', max_jobs: '10',
+    max_clients: '1', api_access_enabled: false, branding_level: 'none',
     tenant_type: 'organization', admin_full_name: '', admin_email: '', admin_password: '',
   });
 
@@ -262,12 +266,15 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
 
     setCreateLoading(true);
     try {
-      const payload: Record<string, string | number> = {
+      const payload: Record<string, string | number | boolean | null> = {
         name: createForm.name.trim(),
         email_domain: createForm.email_domain.trim(),
         plan: createForm.plan || 'starter',
         max_users: parseInt(createForm.max_users, 10) || 3,
         max_jobs: parseInt(createForm.max_jobs, 10) || 10,
+        max_clients: createForm.max_clients === '' ? null : (parseInt(createForm.max_clients, 10) || 1),
+        api_access_enabled: createForm.api_access_enabled,
+        branding_level: createForm.branding_level,
         tenant_type: createForm.tenant_type,
       };
       if (hasAll) {
@@ -670,6 +677,40 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                       onChange={(e) => setCreateForm(f => ({ ...f, max_jobs: e.target.value }))}
                       className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200"
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Max Clients</label>
+                    <input
+                      type="number" min="0" max="1000"
+                      placeholder="Blank = unlimited"
+                      value={createForm.max_clients}
+                      onChange={(e) => setCreateForm(f => ({ ...f, max_clients: e.target.value }))}
+                      className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">Branding Level</label>
+                    <select
+                      value={createForm.branding_level}
+                      onChange={(e) => setCreateForm(f => ({ ...f, branding_level: e.target.value as 'none' | 'basic' | 'white_label' }))}
+                      className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200 bg-white"
+                    >
+                      <option value="none">None</option>
+                      <option value="basic">Basic</option>
+                      <option value="white_label">White Label</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">API Access</label>
+                    <label className="flex items-center gap-2 cursor-pointer mt-2">
+                      <input
+                        type="checkbox"
+                        checked={createForm.api_access_enabled}
+                        onChange={(e) => setCreateForm(f => ({ ...f, api_access_enabled: e.target.checked }))}
+                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-textMain">Enable API access</span>
+                    </label>
                   </div>
                 </div>
 

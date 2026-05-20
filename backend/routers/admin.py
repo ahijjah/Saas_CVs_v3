@@ -24,6 +24,9 @@ class CreateTenantRequest(BaseModel):
     plan: str = "starter"
     max_users: int = 3
     max_jobs: int = 10
+    max_clients: int | None = None          # NULL = unlimited
+    api_access_enabled: bool = False
+    branding_level: str = "none"
     tenant_type: str = "organization"  # organization | agency | individual_recruiter
     monthly_cv_processing_soft_limit: int | None = None
     monthly_cv_processing_hard_limit: int | None = None
@@ -207,22 +210,28 @@ async def create_tenant(
     try:
         result = await db.execute(
             text("""
-                INSERT INTO tenants (name, email_domain, plan, max_users, max_jobs, status,
-                                     tenant_type, monthly_cv_processing_soft_limit,
+                INSERT INTO tenants (name, email_domain, plan, max_users, max_jobs,
+                                     max_clients, api_access_enabled, branding_level,
+                                     status, tenant_type,
+                                     monthly_cv_processing_soft_limit,
                                      monthly_cv_processing_hard_limit)
-                VALUES (:name, :domain, :plan, :max_users, :max_jobs, 'active',
-                        :tenant_type, :soft_limit, :hard_limit)
+                VALUES (:name, :domain, :plan, :max_users, :max_jobs,
+                        :max_clients, :api_access, :branding,
+                        'active', :tenant_type, :soft_limit, :hard_limit)
                 RETURNING tenant_id
             """),
             {
-                "name":       body.name,
-                "domain":     body.email_domain,
-                "plan":       body.plan,
-                "max_users":  body.max_users,
-                "max_jobs":   body.max_jobs,
+                "name":        body.name,
+                "domain":      body.email_domain,
+                "plan":        body.plan,
+                "max_users":   body.max_users,
+                "max_jobs":    body.max_jobs,
+                "max_clients": body.max_clients,
+                "api_access":  body.api_access_enabled,
+                "branding":    body.branding_level,
                 "tenant_type": body.tenant_type,
-                "soft_limit": body.monthly_cv_processing_soft_limit,
-                "hard_limit": body.monthly_cv_processing_hard_limit,
+                "soft_limit":  body.monthly_cv_processing_soft_limit,
+                "hard_limit":  body.monthly_cv_processing_hard_limit,
             },
         )
         tenant_id = str(result.scalar_one())

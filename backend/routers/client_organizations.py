@@ -182,6 +182,23 @@ async def create_client_organization(
     await set_rls_context(db, current_user.tenant_id, current_user.role)
     await _require_agency_tenant(current_user.tenant_id, db)
 
+    # Enforce per-tenant client organisation limit (NULL max_clients = unlimited)
+    limit_row = await db.execute(
+        text("SELECT max_clients FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": current_user.tenant_id},
+    )
+    limit_data = limit_row.mappings().first()
+    if limit_data and limit_data["max_clients"] is not None:
+        count_row = await db.execute(
+            text("SELECT COUNT(*) FROM client_organizations WHERE tenant_id = CAST(:tid AS uuid) AND status = 'active'"),
+            {"tid": current_user.tenant_id},
+        )
+        if int(count_row.scalar_one()) >= limit_data["max_clients"]:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Client organisation limit reached ({limit_data['max_clients']}). Upgrade your plan to add more.",
+            )
+
     result = await db.execute(
         text("""
             INSERT INTO client_organizations

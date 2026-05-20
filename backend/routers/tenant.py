@@ -433,16 +433,33 @@ async def get_tenant_usage(
     }
 
 
+# ── Plan limits ───────────────────────────────────────────────────────────────
+
+_PLAN_LIMITS: dict[str, dict] = {
+    "trial": {
+        "max_users": 2, "max_jobs": 3, "max_clients": 1,
+        "api_access_enabled": False, "branding_level": "none",
+    },
+    "starter": {
+        "max_users": 3, "max_jobs": 10, "max_clients": 1,
+        "api_access_enabled": False, "branding_level": "none",
+    },
+    "professional": {
+        "max_users": 10, "max_jobs": 50, "max_clients": 20,
+        "api_access_enabled": False, "branding_level": "basic",
+    },
+    "enterprise": {
+        "max_users": 9999, "max_jobs": 9999, "max_clients": None,  # NULL = unlimited
+        "api_access_enabled": True, "branding_level": "white_label",
+    },
+}
+
+
 @router.post("/subscription/activate-trial")
 async def activate_trial(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """
-    Tenant admin activates their free 14-day trial.
-    Only allowed when subscription_status is 'pending_plan_selection'.
-    Anti-abuse: one trial per email domain.
-    """
     _require_tenant_admin(current_user)
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
@@ -460,7 +477,7 @@ async def activate_trial(
             detail="Trial can only be activated for accounts pending plan selection.",
         )
 
-    # Anti-abuse: check if another tenant with same email_domain already used a trial
+    # Anti-abuse: one trial per email domain
     if tenant["email_domain"]:
         await set_rls_context(db, "", "super_admin")
         abuse_row = await db.execute(
@@ -479,19 +496,93 @@ async def activate_trial(
             )
         await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    lim = _PLAN_LIMITS["trial"]
     await db.execute(
         text("""
             UPDATE tenants
-            SET plan = 'trial',
+            SET plan                = 'trial',
                 subscription_status = 'trial',
-                trial_start_at = now(),
-                trial_end_at   = now() + INTERVAL '14 days',
-                max_users      = 3,
-                max_jobs       = 10
+                trial_start_at      = now(),
+                trial_end_at        = now() + INTERVAL '14 days',
+                max_users           = :max_users,
+                max_jobs            = :max_jobs,
+                max_clients         = :max_clients,
+                api_access_enabled  = :api_access,
+                branding_level      = :branding
             WHERE tenant_id = CAST(:tid AS uuid)
         """),
-        {"tid": current_user.tenant_id},
+        {
+            "max_users": lim["max_users"],
+            "max_jobs":  lim["max_jobs"],
+            "max_clients": lim["max_clients"],
+            "api_access":  lim["api_access_enabled"],
+            "branding":    lim["branding_level"],
+            "tid":         current_user.tenant_id,
+        },
     )
     await db.commit()
-
     return {"success": True, "message": "Free trial activated. Enjoy your 14-day trial!"}
+
+
+class SelectPlanRequest(BaseModel):
+    plan: str
+
+    @field_validator("plan")
+    @classmethod
+    def valid_plan(cls, v: str) -> str:
+        if v not in ("starter", "professional", "enterprise"):
+            raise ValueError("plan must be one of: starter, professional, enterprise")
+        return v
+
+
+@router.post("/subscription/select-plan")
+async def select_plan(
+    body: SelectPlanRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    _require_tenant_admin(current_user)
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    tenant_row = await db.execute(
+        text("SELECT subscription_status FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": current_user.tenant_id},
+    )
+    tenant = tenant_row.mappings().first()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    lim = _PLAN_LIMITS[body.plan]
+
+    if body.plan == "enterprise":
+        new_status = "pending_sales_contact"
+        message = "Your enterprise enquiry has been received. Our sales team will contact you shortly."
+    else:
+        new_status = "pending_payment"
+        message = "Plan selected. Payment integration is pending — please contact sales@ai970.cloud to complete your subscription."
+
+    await db.execute(
+        text("""
+            UPDATE tenants
+            SET plan                = :plan,
+                subscription_status = :sub_status,
+                max_users           = :max_users,
+                max_jobs            = :max_jobs,
+                max_clients         = :max_clients,
+                api_access_enabled  = :api_access,
+                branding_level      = :branding
+            WHERE tenant_id = CAST(:tid AS uuid)
+        """),
+        {
+            "plan":       body.plan,
+            "sub_status": new_status,
+            "max_users":  lim["max_users"],
+            "max_jobs":   lim["max_jobs"],
+            "max_clients": lim["max_clients"],
+            "api_access":  lim["api_access_enabled"],
+            "branding":    lim["branding_level"],
+            "tid":         current_user.tenant_id,
+        },
+    )
+    await db.commit()
+    return {"success": True, "subscription_status": new_status, "message": message}

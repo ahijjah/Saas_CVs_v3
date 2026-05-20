@@ -7,8 +7,21 @@ export interface User {
   role: string;
   tenant_name?: string;
   cv_ingestion_mode?: 'platform_email' | 'forwarding';
-  subscription_status?: 'pending_plan_selection' | 'trial' | 'active' | 'suspended' | 'expired';
+  subscription_status?: SubscriptionStatus;
 }
+
+export type SubscriptionStatus =
+  | 'pending_plan_selection'
+  | 'pending_payment'
+  | 'pending_sales_contact'
+  | 'trial'
+  | 'active'
+  | 'grace'
+  | 'trial_expired'
+  | 'suspended'
+  | 'cancelled'
+  | 'cancelled_pending_expiry'
+  | 'expired';
 
 export interface UserProfile {
   user_id: string;
@@ -24,7 +37,7 @@ export interface UserProfile {
   max_users?: number;
   max_jobs?: number;
   tenant_status?: string;
-  subscription_status?: 'trial' | 'active' | 'suspended' | 'expired';
+  subscription_status?: SubscriptionStatus;
   trial_end_at?: string | null;
   tenant_created_at?: string | null;
   active_users_count?: number;
@@ -391,7 +404,7 @@ export interface TenantSubscriptionRow {
   email_domain?: string;
   plan: string;
   tenant_type?: TenantType;
-  subscription_status: 'pending_plan_selection' | 'trial' | 'active' | 'suspended' | 'expired';
+  subscription_status: SubscriptionStatus;
   trial_end_at: string | null;
   subscription_started_at: string | null;
   subscription_ends_at: string | null;
