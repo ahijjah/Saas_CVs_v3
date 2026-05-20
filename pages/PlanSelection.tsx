@@ -18,7 +18,9 @@ interface PlanCard {
   key: string;
   name: string;
   highlight: boolean;
+  badge: string | null;
   description: string;
+  bestFor: string;
   limits: { users: string; jobs: string; clients: string };
   features: string[];
   support: string;
@@ -37,45 +39,12 @@ interface PlanCard {
 
 const PLAN_CARDS: PlanCard[] = [
   {
-    key: 'trial',
-    name: 'Free Trial',
-    highlight: true,
-    description: 'Full access, no credit card required.',
-    limits: { users: '2 team members', jobs: '3 active campaigns', clients: '1 client org' },
-    features: ['AI-powered CV scoring', 'Email CV ingestion', 'All core features'],
-    support: 'Community',
-    apiAccess: false,
-    branding: 'None',
-    cta: 'Start free trial',
-    monthlyPrice: null,
-    yearlyPrice: null,
-    yearlyNote: null,
-    priceLabel: 'Free',
-    priceSuffix: '14 days',
-  },
-  {
-    key: 'starter',
-    name: 'Starter',
-    highlight: false,
-    description: 'For small teams ready to scale.',
-    limits: { users: '3 team members', jobs: '10 active campaigns', clients: '1 client org' },
-    features: ['Everything in Free Trial', 'Priority AI processing', 'Advanced analytics'],
-    support: 'Email',
-    apiAccess: false,
-    branding: 'None',
-    cta: 'Select Starter',
-    planCode: 'starter',
-    monthlyPrice: 29,
-    yearlyPrice: 290,
-    yearlyNote: 'Save 2 months',
-    priceLabel: '',
-    priceSuffix: '',
-  },
-  {
     key: 'professional',
     name: 'Professional',
-    highlight: false,
+    highlight: true,
+    badge: 'Most Popular',
     description: 'For growing agencies and HR teams.',
+    bestFor: 'Best for scaling recruitment teams',
     limits: { users: '10 team members', jobs: '50 active campaigns', clients: '20 client orgs' },
     features: ['Everything in Starter', 'Custom AI prompts', 'Basic branding'],
     support: 'Priority',
@@ -90,10 +59,32 @@ const PLAN_CARDS: PlanCard[] = [
     priceSuffix: '',
   },
   {
+    key: 'starter',
+    name: 'Starter',
+    highlight: false,
+    badge: 'Recommended for Small Teams',
+    description: 'For small teams ready to scale.',
+    bestFor: 'Best for small HR teams',
+    limits: { users: '3 team members', jobs: '10 active campaigns', clients: '1 client org' },
+    features: ['Everything in Free Trial', 'Priority AI processing', 'Advanced analytics'],
+    support: 'Email',
+    apiAccess: false,
+    branding: 'None',
+    cta: 'Select Starter',
+    planCode: 'starter',
+    monthlyPrice: 29,
+    yearlyPrice: 290,
+    yearlyNote: 'Save 2 months',
+    priceLabel: '',
+    priceSuffix: '',
+  },
+  {
     key: 'enterprise',
     name: 'Enterprise',
     highlight: false,
+    badge: 'Custom Solution',
     description: 'Custom solutions for large organisations.',
+    bestFor: 'Best for enterprises and agencies',
     limits: { users: 'Unlimited', jobs: 'Unlimited', clients: 'Unlimited' },
     features: ['Everything in Professional', 'API access', 'White-label branding', 'Custom integrations', 'SLA guarantee'],
     support: 'Dedicated',
@@ -106,6 +97,25 @@ const PLAN_CARDS: PlanCard[] = [
     yearlyNote: null,
     priceLabel: 'Custom',
     priceSuffix: '',
+  },
+  {
+    key: 'trial',
+    name: 'Free Trial',
+    highlight: false,
+    badge: 'Evaluation',
+    description: 'Evaluate the platform before subscribing.',
+    bestFor: 'Best for teams exploring the platform',
+    limits: { users: '2 team members', jobs: '3 active campaigns', clients: '1 client org' },
+    features: ['AI-powered CV scoring', 'Email CV ingestion', 'All core features'],
+    support: 'Community',
+    apiAccess: false,
+    branding: 'None',
+    cta: 'Start Evaluation',
+    monthlyPrice: null,
+    yearlyPrice: null,
+    yearlyNote: null,
+    priceLabel: 'Free',
+    priceSuffix: '14 days',
   },
 ];
 
@@ -135,7 +145,7 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
     setLoading('trial');
     try {
       await apiService.post(WEBHOOK_CONFIG.ACTIVATE_TRIAL_URL, {}, auth.token!);
-      addToast('Free trial activated! Welcome aboard.', 'success');
+      addToast('Your evaluation workspace is ready. Welcome!', 'success');
       onUserUpdate({ subscription_status: 'trial' });
       navigate('/jobs', { replace: true });
     } catch (err: any) {
@@ -252,19 +262,30 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
             return (
               <div
                 key={card.key}
-                className={`relative rounded-2xl border bg-white flex flex-col p-5 shadow-sm transition-shadow hover:shadow-md ${
-                  card.highlight ? 'border-primary ring-2 ring-primary/20' : 'border-slate-200'
+                className={`relative rounded-2xl border flex flex-col p-5 shadow-sm transition-shadow hover:shadow-md ${
+                  card.highlight
+                    ? 'bg-white border-primary ring-2 ring-primary/20'
+                    : card.key === 'trial'
+                    ? 'bg-slate-50 border-slate-200 opacity-90'
+                    : 'bg-white border-slate-200'
                 }`}
               >
-                {card.highlight && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="bg-primary text-white text-xs font-semibold px-3 py-1 rounded-full">Recommended</span>
+                {card.badge && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                    <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                      card.highlight
+                        ? 'bg-primary text-white'
+                        : card.key === 'trial'
+                        ? 'bg-slate-200 text-slate-600'
+                        : 'bg-slate-700 text-white'
+                    }`}>{card.badge}</span>
                   </div>
                 )}
 
                 <div className="mb-3">
-                  <h3 className="text-base font-semibold text-slate-800">{card.name}</h3>
+                  <h3 className={`text-base font-semibold ${card.key === 'trial' ? 'text-slate-600' : 'text-slate-800'}`}>{card.name}</h3>
                   <p className="text-xs text-textMuted mt-0.5">{card.description}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5 italic">{card.bestFor}</p>
                 </div>
 
                 {/* Price block */}
