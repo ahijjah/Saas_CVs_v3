@@ -131,9 +131,14 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
       const res = await apiService.post(WEBHOOK_CONFIG.SELECT_PLAN_URL, { plan: planCode }, auth.token!);
       const newStatus = res?.subscription_status as SubscriptionStatus;
       onUserUpdate({ subscription_status: newStatus });
-      setConfirmedStatus(newStatus);
-      setConfirmMessage(res?.message || 'Plan selected.');
-      addToast(res?.message || 'Plan selected.', 'success');
+      if (newStatus === 'pending_payment') {
+        navigate(`/payment-simulation?plan=${planCode}`, { replace: true });
+      } else {
+        // enterprise → pending_sales_contact: show inline confirmation
+        setConfirmedStatus(newStatus);
+        setConfirmMessage(res?.message || 'Plan selected.');
+        addToast(res?.message || 'Plan selected.', 'success');
+      }
     } catch (err: any) {
       addToast(err.message || 'Failed to select plan. Please try again.', 'error');
     } finally {

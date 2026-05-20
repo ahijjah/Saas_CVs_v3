@@ -34,6 +34,7 @@ import AuditLogs from './pages/AuditLogs';
 import { PublicJobApply } from './pages/PublicJobApply';
 import { ClientOrganizationsPage } from './pages/ClientOrganizations';
 import { PlanSelectionPage } from './pages/PlanSelection';
+import { PaymentSimulationPage } from './pages/PaymentSimulation';
 import { ToastContainer, ToastType } from './components/Toast';
 
 // ── JWT helper ─────────────────────────────────────────────────────────────
@@ -299,7 +300,7 @@ const AppInner: React.FC = () => {
             element={<Navigate to={defaultHome} replace />}
           />
 
-          {/* Plan selection — accessible before a plan is chosen (no Layout wrapping needed) */}
+          {/* Pre-subscription pages — accessible for pending_* tenants */}
           <Route
             path="/plan-selection"
             element={
@@ -310,8 +311,18 @@ const AppInner: React.FC = () => {
               />
             }
           />
+          <Route
+            path="/payment-simulation"
+            element={
+              <PaymentSimulationPage
+                auth={auth}
+                addToast={addToast}
+                onUserUpdate={handleUserUpdate}
+              />
+            }
+          />
 
-          {/* Tenant routes — blocked for pending_plan_selection tenants */}
+          {/* Tenant routes — blocked for pending_* and billing-lapsed tenants */}
           <Route element={<TenantAccessGuard subscriptionStatus={auth.user?.subscription_status} />}>
           <Route
             path="/jobs"

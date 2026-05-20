@@ -586,3 +586,86 @@ async def select_plan(
     )
     await db.commit()
     return {"success": True, "subscription_status": new_status, "message": message}
+
+
+class SimulatePaymentRequest(BaseModel):
+    plan: str
+    result: str
+
+    @field_validator("plan")
+    @classmethod
+    def valid_plan(cls, v: str) -> str:
+        if v not in ("starter", "professional"):
+            raise ValueError("plan must be starter or professional")
+        return v
+
+    @field_validator("result")
+    @classmethod
+    def valid_result(cls, v: str) -> str:
+        if v not in ("success", "failed"):
+            raise ValueError("result must be success or failed")
+        return v
+
+
+@router.post("/subscription/simulate-payment")
+async def simulate_payment(
+    body: SimulatePaymentRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    _require_tenant_admin(current_user)
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    tenant_row = await db.execute(
+        text("SELECT subscription_status FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": current_user.tenant_id},
+    )
+    tenant = tenant_row.mappings().first()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    if tenant["subscription_status"] != "pending_payment":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Simulated payment is only available when subscription_status is pending_payment.",
+        )
+
+    if body.result == "failed":
+        return {
+            "success": False,
+            "subscription_status": "pending_payment",
+            "message": "Payment failed or was cancelled. Please try again or choose a different plan.",
+        }
+
+    lim = _PLAN_LIMITS[body.plan]
+    await db.execute(
+        text("""
+            UPDATE tenants
+            SET plan                    = :plan,
+                subscription_status     = 'active',
+                subscription_started_at = now(),
+                subscription_ends_at    = now() + INTERVAL '1 month',
+                max_users               = :max_users,
+                max_jobs                = :max_jobs,
+                max_clients             = :max_clients,
+                api_access_enabled      = :api_access,
+                branding_level          = :branding
+            WHERE tenant_id = CAST(:tid AS uuid)
+        """),
+        {
+            "plan":        body.plan,
+            "max_users":   lim["max_users"],
+            "max_jobs":    lim["max_jobs"],
+            "max_clients": lim["max_clients"],
+            "api_access":  lim["api_access_enabled"],
+            "branding":    lim["branding_level"],
+            "tid":         current_user.tenant_id,
+        },
+    )
+    await db.commit()
+    return {
+        "success": True,
+        "subscription_status": "active",
+        "plan": body.plan,
+        "message": f"Payment successful! Your {body.plan.title()} plan is now active.",
+    }

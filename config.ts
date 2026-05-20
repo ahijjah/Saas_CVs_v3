@@ -68,6 +68,7 @@ export const WEBHOOK_CONFIG = {
   // Tenant self-service: subscription
   ACTIVATE_TRIAL_URL:           `${API_BASE}/tenant/subscription/activate-trial`,
   SELECT_PLAN_URL:              `${API_BASE}/tenant/subscription/select-plan`,
+  SIMULATE_PAYMENT_URL:         `${API_BASE}/tenant/subscription/simulate-payment`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';
