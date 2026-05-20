@@ -12,11 +12,11 @@ interface PlanSelectionProps {
   onUserUpdate: (patch: Partial<User>) => void;
 }
 
+type BillingCycle = 'monthly' | 'yearly';
+
 interface PlanCard {
   key: string;
   name: string;
-  price: string;
-  duration: string;
   highlight: boolean;
   description: string;
   limits: { users: string; jobs: string; clients: string };
@@ -25,15 +25,20 @@ interface PlanCard {
   apiAccess: boolean;
   branding: string;
   cta: string;
-  planCode?: string;  // set for paid plans that call select-plan
+  planCode?: string;
+  // null for trial/enterprise
+  monthlyPrice: number | null;
+  yearlyPrice: number | null;
+  yearlyNote: string | null;
+  // for trial/enterprise static label
+  priceLabel: string;
+  priceSuffix: string;
 }
 
 const PLAN_CARDS: PlanCard[] = [
   {
     key: 'trial',
     name: 'Free Trial',
-    price: 'Free',
-    duration: '14 days',
     highlight: true,
     description: 'Full access, no credit card required.',
     limits: { users: '2 team members', jobs: '3 active campaigns', clients: '1 client org' },
@@ -42,12 +47,15 @@ const PLAN_CARDS: PlanCard[] = [
     apiAccess: false,
     branding: 'None',
     cta: 'Start free trial',
+    monthlyPrice: null,
+    yearlyPrice: null,
+    yearlyNote: null,
+    priceLabel: 'Free',
+    priceSuffix: '14 days',
   },
   {
     key: 'starter',
     name: 'Starter',
-    price: 'Contact sales',
-    duration: '/month',
     highlight: false,
     description: 'For small teams ready to scale.',
     limits: { users: '3 team members', jobs: '10 active campaigns', clients: '1 client org' },
@@ -57,12 +65,15 @@ const PLAN_CARDS: PlanCard[] = [
     branding: 'None',
     cta: 'Select Starter',
     planCode: 'starter',
+    monthlyPrice: 29,
+    yearlyPrice: 290,
+    yearlyNote: 'Save 2 months',
+    priceLabel: '',
+    priceSuffix: '',
   },
   {
     key: 'professional',
     name: 'Professional',
-    price: 'Contact sales',
-    duration: '/month',
     highlight: false,
     description: 'For growing agencies and HR teams.',
     limits: { users: '10 team members', jobs: '50 active campaigns', clients: '20 client orgs' },
@@ -72,12 +83,15 @@ const PLAN_CARDS: PlanCard[] = [
     branding: 'Basic',
     cta: 'Select Professional',
     planCode: 'professional',
+    monthlyPrice: 99,
+    yearlyPrice: 990,
+    yearlyNote: 'Save 2 months',
+    priceLabel: '',
+    priceSuffix: '',
   },
   {
     key: 'enterprise',
     name: 'Enterprise',
-    price: 'Contact us',
-    duration: '',
     highlight: false,
     description: 'Custom solutions for large organisations.',
     limits: { users: 'Unlimited', jobs: 'Unlimited', clients: 'Unlimited' },
@@ -85,8 +99,13 @@ const PLAN_CARDS: PlanCard[] = [
     support: 'Dedicated',
     apiAccess: true,
     branding: 'White-label',
-    cta: 'Contact us',
+    cta: 'Contact Sales',
     planCode: 'enterprise',
+    monthlyPrice: null,
+    yearlyPrice: null,
+    yearlyNote: null,
+    priceLabel: 'Custom',
+    priceSuffix: '',
   },
 ];
 
@@ -107,7 +126,8 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
   auth, addToast, onUserUpdate,
 }) => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState<string | null>(null);  // key of card being actioned
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
+  const [loading, setLoading] = useState<string | null>(null);
   const [confirmedStatus, setConfirmedStatus] = useState<SubscriptionStatus | null>(null);
   const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
 
@@ -132,7 +152,7 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
       const newStatus = res?.subscription_status as SubscriptionStatus;
       onUserUpdate({ subscription_status: newStatus });
       if (newStatus === 'pending_payment') {
-        navigate(`/payment-simulation?plan=${planCode}`, { replace: true });
+        navigate(`/payment-simulation?plan=${planCode}&billing=${billingCycle}`, { replace: true });
       } else {
         // enterprise → pending_sales_contact: show inline confirmation
         setConfirmedStatus(newStatus);
@@ -153,21 +173,15 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
   };
 
   if (confirmedStatus && confirmMessage) {
-    const isPendingSales = confirmedStatus === 'pending_sales_contact';
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center px-4">
         <div className="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
-          <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-5 ${isPendingSales ? 'bg-purple-100' : 'bg-blue-100'}`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke={isPendingSales ? '#7c3aed' : '#2563eb'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
-              {isPendingSales
-                ? <><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.15 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.07 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21 16.92z"/></>
-                : <><path d="M20 6 9 17l-5-5" /></>
-              }
+          <div className="w-14 h-14 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-5">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.15 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.07 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21 16.92z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-3">
-            {isPendingSales ? 'Request received!' : 'Plan selected!'}
-          </h2>
+          <h2 className="text-xl font-bold text-slate-900 mb-3">Request received!</h2>
           <p className="text-slate-500 text-sm mb-6">{confirmMessage}</p>
           <a href="mailto:sales@ai970.cloud" className="inline-block px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all">
             Email sales@ai970.cloud
@@ -197,17 +211,44 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-12">
-        <div className="text-center mb-10">
+        <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-slate-900 mb-3">Choose your plan</h1>
           <p className="text-slate-500 text-base max-w-md mx-auto">
             Start with a free trial — no credit card required. Upgrade anytime to unlock more capacity.
           </p>
         </div>
 
+        {/* Billing cycle toggle */}
+        <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 mb-8">
+          <button
+            onClick={() => setBillingCycle('monthly')}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+              billingCycle === 'monthly' ? 'bg-white shadow-sm text-slate-800' : 'text-textMuted hover:text-slate-700'
+            }`}
+          >
+            Monthly
+          </button>
+          <button
+            onClick={() => setBillingCycle('yearly')}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+              billingCycle === 'yearly' ? 'bg-white shadow-sm text-slate-800' : 'text-textMuted hover:text-slate-700'
+            }`}
+          >
+            Yearly
+            <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
+              Save 17%
+            </span>
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 w-full max-w-5xl">
           {PLAN_CARDS.map(card => {
             const isActioning = loading === (card.key === 'trial' ? 'trial' : card.planCode);
             const action = getCardAction(card);
+            const displayPrice = card.monthlyPrice !== null
+              ? (billingCycle === 'yearly' ? card.yearlyPrice : card.monthlyPrice)
+              : null;
+
             return (
               <div
                 key={card.key}
@@ -226,9 +267,30 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
                   <p className="text-xs text-textMuted mt-0.5">{card.description}</p>
                 </div>
 
+                {/* Price block */}
                 <div className="mb-4">
-                  <span className="text-2xl font-bold text-slate-900">{card.price}</span>
-                  {card.duration && <span className="text-sm text-textMuted ml-1">{card.duration}</span>}
+                  {displayPrice !== null ? (
+                    <div className="flex flex-wrap items-baseline gap-1">
+                      <span className="text-2xl font-bold text-slate-900">${displayPrice}</span>
+                      <span className="text-sm text-textMuted">/ {billingCycle === 'yearly' ? 'year' : 'month'}</span>
+                      {billingCycle === 'yearly' && card.yearlyNote && (
+                        <span className="text-xs font-semibold text-green-600">{card.yearlyNote}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-bold text-slate-900">{card.priceLabel}</span>
+                      {card.priceSuffix && <span className="text-sm text-textMuted">{card.priceSuffix}</span>}
+                    </div>
+                  )}
+                  {/* Show both cadences as reference for paid plans */}
+                  {card.monthlyPrice !== null && (
+                    <p className="text-[11px] text-textMuted mt-0.5">
+                      {billingCycle === 'yearly'
+                        ? `$${card.monthlyPrice}/mo billed monthly`
+                        : `$${card.yearlyPrice}/yr billed yearly`}
+                    </p>
+                  )}
                 </div>
 
                 {/* Limits */}

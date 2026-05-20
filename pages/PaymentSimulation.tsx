@@ -13,12 +13,18 @@ interface PaymentSimulationProps {
   onUserUpdate: (patch: Partial<User>) => void;
 }
 
+type BillingCycle = 'monthly' | 'yearly';
+
 const T = {
   en: {
     title: 'Complete your payment',
     testingBadge: 'Testing Mode',
     testingWarning: 'No real payment will be processed.',
     planSummary: 'Plan Summary',
+    billing: 'Billing cycle',
+    monthly: 'Monthly',
+    yearly: 'Yearly',
+    amount: 'Amount',
     users: 'Team members',
     jobs: 'Active campaigns',
     clients: 'Client organisations',
@@ -37,6 +43,10 @@ const T = {
     testingBadge: 'وضع الاختبار',
     testingWarning: 'لن تُعالج أي مدفوعات حقيقية.',
     planSummary: 'ملخص الخطة',
+    billing: 'دورة الفوترة',
+    monthly: 'شهري',
+    yearly: 'سنوي',
+    amount: 'المبلغ',
     users: 'أعضاء الفريق',
     jobs: 'حملات التوظيف الفعالة',
     clients: 'منظمات العملاء',
@@ -57,6 +67,8 @@ interface PlanMeta {
   limits: { users: string; jobs: string; clients: string };
   branding: string;
   apiAccess: boolean;
+  monthlyPrice: number;
+  yearlyPrice: number;
 }
 
 const PLAN_META: Record<string, PlanMeta> = {
@@ -65,12 +77,16 @@ const PLAN_META: Record<string, PlanMeta> = {
     limits: { users: '3', jobs: '10', clients: '1' },
     branding: 'None',
     apiAccess: false,
+    monthlyPrice: 29,
+    yearlyPrice: 290,
   },
   professional: {
     name: 'Professional',
     limits: { users: '10', jobs: '50', clients: '20' },
     branding: 'Basic',
     apiAccess: false,
+    monthlyPrice: 99,
+    yearlyPrice: 990,
   },
 };
 
@@ -89,16 +105,19 @@ export const PaymentSimulationPage: React.FC<PaymentSimulationProps> = ({
   const t = T[lang];
 
   const [plan, setPlan] = useState<string | null>(searchParams.get('plan'));
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(
+    searchParams.get('billing') === 'yearly' ? 'yearly' : 'monthly'
+  );
   const [loadingAction, setLoadingAction] = useState<'success' | 'failed' | null>(null);
 
-  // If no plan in URL, fetch it from the profile
+  // If no plan in URL or plan is invalid, fetch from profile
   useEffect(() => {
     if (plan && PLAN_META[plan]) return;
     let cancelled = false;
     (async () => {
       try {
         const data = await apiService.get(WEBHOOK_CONFIG.GET_PROFILE_WEBHOOK_URL, {}, auth.token!);
-        const profilePlan: string = data?.profile?.plan ?? '';
+        const profilePlan: string = (data?.profile as UserProfile | undefined)?.plan ?? '';
         if (!cancelled) {
           if (PLAN_META[profilePlan]) {
             setPlan(profilePlan);
@@ -120,7 +139,7 @@ export const PaymentSimulationPage: React.FC<PaymentSimulationProps> = ({
     try {
       const res = await apiService.post(
         WEBHOOK_CONFIG.SIMULATE_PAYMENT_URL,
-        { plan, result },
+        { plan, billing_cycle: billingCycle, result },
         auth.token!,
       );
       if (result === 'success') {
@@ -139,9 +158,11 @@ export const PaymentSimulationPage: React.FC<PaymentSimulationProps> = ({
   };
 
   const meta = plan ? PLAN_META[plan] : null;
+  const price = meta ? (billingCycle === 'yearly' ? meta.yearlyPrice : meta.monthlyPrice) : null;
+  const pricePeriod = billingCycle === 'yearly' ? 'year' : 'month';
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col ${isAr ? 'direction-rtl' : ''}`}>
+    <div className={`min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col${isAr ? ' direction-rtl' : ''}`}>
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
         <div className="flex items-center gap-2.5">
@@ -188,14 +209,46 @@ export const PaymentSimulationPage: React.FC<PaymentSimulationProps> = ({
               <h1 className="text-lg font-bold text-slate-900 mb-1">{t.title}</h1>
               <p className="text-sm text-textMuted mb-5">{meta.name} plan</p>
 
-              {/* Plan limits */}
+              {/* Billing cycle toggle */}
+              <div className="mb-5">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.billing}</p>
+                <div className="flex gap-2">
+                  {(['monthly', 'yearly'] as BillingCycle[]).map(cycle => (
+                    <button
+                      key={cycle}
+                      onClick={() => setBillingCycle(cycle)}
+                      className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-all ${
+                        billingCycle === cycle
+                          ? 'border-primary bg-primary/5 text-primary'
+                          : 'border-slate-200 text-textMuted hover:border-slate-300'
+                      }`}
+                    >
+                      {cycle === 'monthly' ? t.monthly : t.yearly}
+                      {cycle === 'yearly' && (
+                        <span className="ml-1.5 text-[10px] font-bold text-green-600">–17%</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Amount */}
+              <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 mb-5 flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-700">{t.amount}</span>
+                <div className="text-right">
+                  <span className="text-xl font-bold text-slate-900">${price}</span>
+                  <span className="text-sm text-textMuted ml-1">USD / {pricePeriod}</span>
+                </div>
+              </div>
+
+              {/* Plan limits summary */}
               <div className="bg-slate-50 rounded-xl p-4 mb-6">
                 <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.planSummary}</p>
                 {[
-                  { label: t.users, value: meta.limits.users },
-                  { label: t.jobs, value: meta.limits.jobs },
-                  { label: t.clients, value: meta.limits.clients },
-                  { label: t.branding, value: meta.branding },
+                  { label: t.users,     value: meta.limits.users },
+                  { label: t.jobs,      value: meta.limits.jobs },
+                  { label: t.clients,   value: meta.limits.clients },
+                  { label: t.branding,  value: meta.branding },
                   { label: t.apiAccess, value: meta.apiAccess ? '✓' : '✗' },
                 ].map(row => (
                   <div key={row.label} className="flex justify-between py-1.5 text-sm border-b border-slate-100 last:border-0">

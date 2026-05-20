@@ -590,6 +590,7 @@ async def select_plan(
 
 class SimulatePaymentRequest(BaseModel):
     plan: str
+    billing_cycle: str = "monthly"
     result: str
 
     @field_validator("plan")
@@ -597,6 +598,13 @@ class SimulatePaymentRequest(BaseModel):
     def valid_plan(cls, v: str) -> str:
         if v not in ("starter", "professional"):
             raise ValueError("plan must be starter or professional")
+        return v
+
+    @field_validator("billing_cycle")
+    @classmethod
+    def valid_billing_cycle(cls, v: str) -> str:
+        if v not in ("monthly", "yearly"):
+            raise ValueError("billing_cycle must be monthly or yearly")
         return v
 
     @field_validator("result")
@@ -638,34 +646,42 @@ async def simulate_payment(
         }
 
     lim = _PLAN_LIMITS[body.plan]
-    await db.execute(
-        text("""
+    ends_interval = "1 year" if body.billing_cycle == "yearly" else "1 month"
+
+    result_row = await db.execute(
+        text(f"""
             UPDATE tenants
             SET plan                    = :plan,
                 subscription_status     = 'active',
+                billing_cycle           = :billing_cycle,
                 subscription_started_at = now(),
-                subscription_ends_at    = now() + INTERVAL '1 month',
+                subscription_ends_at    = now() + INTERVAL '{ends_interval}',
                 max_users               = :max_users,
                 max_jobs                = :max_jobs,
                 max_clients             = :max_clients,
                 api_access_enabled      = :api_access,
                 branding_level          = :branding
             WHERE tenant_id = CAST(:tid AS uuid)
+            RETURNING subscription_ends_at
         """),
         {
-            "plan":        body.plan,
-            "max_users":   lim["max_users"],
-            "max_jobs":    lim["max_jobs"],
-            "max_clients": lim["max_clients"],
-            "api_access":  lim["api_access_enabled"],
-            "branding":    lim["branding_level"],
-            "tid":         current_user.tenant_id,
+            "plan":          body.plan,
+            "billing_cycle": body.billing_cycle,
+            "max_users":     lim["max_users"],
+            "max_jobs":      lim["max_jobs"],
+            "max_clients":   lim["max_clients"],
+            "api_access":    lim["api_access_enabled"],
+            "branding":      lim["branding_level"],
+            "tid":           current_user.tenant_id,
         },
     )
+    row = result_row.mappings().first()
     await db.commit()
     return {
         "success": True,
         "subscription_status": "active",
         "plan": body.plan,
-        "message": f"Payment successful! Your {body.plan.title()} plan is now active.",
+        "billing_cycle": body.billing_cycle,
+        "subscription_ends_at": row["subscription_ends_at"].isoformat() if row and row["subscription_ends_at"] else None,
+        "message": f"Payment successful! Your {body.plan.title()} plan ({body.billing_cycle}) is now active.",
     }
