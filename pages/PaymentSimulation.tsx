@@ -117,7 +117,8 @@ export const PaymentSimulationPage: React.FC<PaymentSimulationProps> = ({
     (async () => {
       try {
         const data = await apiService.get(WEBHOOK_CONFIG.GET_PROFILE_WEBHOOK_URL, {}, auth.token!);
-        const profilePlan: string = (data?.profile as UserProfile | undefined)?.plan ?? '';
+        const prof = data?.profile as UserProfile | undefined;
+        const profilePlan: string = prof?.pending_plan ?? prof?.plan ?? '';
         if (!cancelled) {
           if (PLAN_META[profilePlan]) {
             setPlan(profilePlan);

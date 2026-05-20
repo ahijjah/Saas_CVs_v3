@@ -132,7 +132,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
             SELECT u.user_id, u.full_name, u.email, u.role,
                    t.tenant_id, t.name AS tenant_name, t.email_domain,
                    t.cv_ingestion_mode, t.forwarding_email,
-                   t.plan, t.max_users, t.max_jobs,
+                   t.plan, t.pending_plan, t.max_users, t.max_jobs,
                    t.status AS tenant_status, t.created_at AS tenant_created_at,
                    t.subscription_status, t.trial_end_at
             FROM users u
@@ -169,6 +169,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
         "forwarding_email": p["forwarding_email"],
         "email_domain": p["email_domain"],
         "plan": p["plan"],
+        "pending_plan": p["pending_plan"],
         "max_users": p["max_users"],
         "max_jobs": p["max_jobs"],
         "tenant_status": p["tenant_status"],

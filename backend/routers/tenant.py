@@ -501,6 +501,7 @@ async def activate_trial(
         text("""
             UPDATE tenants
             SET plan                = 'trial',
+                pending_plan        = NULL,
                 subscription_status = 'trial',
                 trial_start_at      = now(),
                 trial_end_at        = now() + INTERVAL '14 days',
@@ -552,36 +553,25 @@ async def select_plan(
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
-    lim = _PLAN_LIMITS[body.plan]
-
     if body.plan == "enterprise":
         new_status = "pending_sales_contact"
         message = "Your enterprise enquiry has been received. Our sales team will contact you shortly."
     else:
         new_status = "pending_payment"
-        message = "Plan selected. Payment integration is pending — please contact sales@ai970.cloud to complete your subscription."
+        message = "Plan selected. Complete payment to activate your subscription."
 
+    # Store the chosen plan as pending_plan only — plan and limits are set on payment success.
     await db.execute(
         text("""
             UPDATE tenants
-            SET plan                = :plan,
-                subscription_status = :sub_status,
-                max_users           = :max_users,
-                max_jobs            = :max_jobs,
-                max_clients         = :max_clients,
-                api_access_enabled  = :api_access,
-                branding_level      = :branding
+            SET pending_plan        = :pending_plan,
+                subscription_status = :sub_status
             WHERE tenant_id = CAST(:tid AS uuid)
         """),
         {
-            "plan":       body.plan,
-            "sub_status": new_status,
-            "max_users":  lim["max_users"],
-            "max_jobs":   lim["max_jobs"],
-            "max_clients": lim["max_clients"],
-            "api_access":  lim["api_access_enabled"],
-            "branding":    lim["branding_level"],
-            "tid":         current_user.tenant_id,
+            "pending_plan": body.plan,
+            "sub_status":   new_status,
+            "tid":          current_user.tenant_id,
         },
     )
     await db.commit()
@@ -625,7 +615,7 @@ async def simulate_payment(
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     tenant_row = await db.execute(
-        text("SELECT subscription_status FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+        text("SELECT subscription_status, pending_plan FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
         {"tid": current_user.tenant_id},
     )
     tenant = tenant_row.mappings().first()
@@ -636,6 +626,12 @@ async def simulate_payment(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Simulated payment is only available when subscription_status is pending_payment.",
+        )
+
+    if tenant["pending_plan"] and body.plan != tenant["pending_plan"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Requested plan '{body.plan}' does not match selected plan '{tenant['pending_plan']}'.",
         )
 
     if body.result == "failed":
@@ -652,6 +648,7 @@ async def simulate_payment(
         text(f"""
             UPDATE tenants
             SET plan                    = :plan,
+                pending_plan            = NULL,
                 subscription_status     = 'active',
                 billing_cycle           = :billing_cycle,
                 subscription_started_at = now(),

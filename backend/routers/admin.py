@@ -142,9 +142,10 @@ async def list_tenants(
 
     rows = await db.execute(
         text(f"""
-            SELECT t.tenant_id, t.name, t.email_domain, t.plan,
+            SELECT t.tenant_id, t.name, t.email_domain, t.plan, t.pending_plan,
                    t.max_users, t.max_jobs, t.status, t.created_at,
-                   t.tenant_type,
+                   t.tenant_type, t.subscription_status,
+                   t.trial_end_at, t.subscription_started_at, t.subscription_ends_at,
                    t.monthly_cv_processing_soft_limit,
                    t.monthly_cv_processing_hard_limit,
                    COUNT(DISTINCT u.user_id) AS user_count
@@ -165,10 +166,15 @@ async def list_tenants(
             "tenant_name": r["name"],
             "email_domain": r["email_domain"],
             "plan":        r["plan"],
+            "pending_plan": r["pending_plan"],
             "max_users":   r["max_users"],
             "max_jobs":    r["max_jobs"],
             "status":      r["status"],
             "tenant_type": r["tenant_type"] or "organization",
+            "subscription_status": r["subscription_status"],
+            "trial_end_at": r["trial_end_at"].isoformat() if r["trial_end_at"] else None,
+            "subscription_started_at": r["subscription_started_at"].isoformat() if r["subscription_started_at"] else None,
+            "subscription_ends_at": r["subscription_ends_at"].isoformat() if r["subscription_ends_at"] else None,
             "monthly_cv_processing_soft_limit": r["monthly_cv_processing_soft_limit"],
             "monthly_cv_processing_hard_limit": r["monthly_cv_processing_hard_limit"],
             "created_at":  r["created_at"].isoformat() if r["created_at"] else None,
@@ -446,7 +452,7 @@ async def get_tenant_usage(
 
     tenant_row = await db.execute(
         text("""
-            SELECT t.tenant_id, t.name, t.plan, t.max_users, t.max_jobs,
+            SELECT t.tenant_id, t.name, t.plan, t.pending_plan, t.max_users, t.max_jobs,
                    t.subscription_status, t.trial_end_at,
                    t.subscription_started_at, t.subscription_ends_at
             FROM tenants t
@@ -465,13 +471,13 @@ async def get_tenant_usage(
             FROM subscription_plans WHERE plan_code = :code
         """),
         {"code": tenant["plan"]},
-    )
-    plan = plan_row.mappings().first()
+    ) if tenant["plan"] else None
+    plan = plan_row.mappings().first() if plan_row else None
 
     limits = {
-        "max_campaigns": plan["max_campaigns"] if plan else tenant["max_jobs"],
-        "max_users": plan["max_users"] if plan else tenant["max_users"],
-        "max_processed_cvs_per_month": plan["max_processed_cvs_per_month"] if plan else 500,
+        "max_campaigns": plan["max_campaigns"] if plan else (tenant["max_jobs"] or 0),
+        "max_users": plan["max_users"] if plan else (tenant["max_users"] or 0),
+        "max_processed_cvs_per_month": plan["max_processed_cvs_per_month"] if plan else 0,
     }
 
     usage_row = await db.execute(
@@ -504,6 +510,7 @@ async def get_tenant_usage(
         "tenant_id": tenant_id,
         "tenant_name": tenant["name"],
         "plan": tenant["plan"],
+        "pending_plan": tenant["pending_plan"],
         "subscription_status": tenant["subscription_status"],
         "trial_end_at": tenant["trial_end_at"].isoformat() if tenant["trial_end_at"] else None,
         "subscription_started_at": (

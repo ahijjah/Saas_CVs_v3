@@ -33,7 +33,8 @@ export interface UserProfile {
   intake_method: 'IMAP' | 'FORWARD';
   forwarding_email: string | null;
   email_domain?: string;
-  plan?: string;
+  plan?: string | null;
+  pending_plan?: string | null;
   max_users?: number;
   max_jobs?: number;
   tenant_status?: string;
@@ -402,7 +403,8 @@ export interface TenantSubscriptionRow {
   tenant_id: string;
   tenant_name: string;
   email_domain?: string;
-  plan: string;
+  plan: string | null;
+  pending_plan?: string | null;
   tenant_type?: TenantType;
   subscription_status: SubscriptionStatus;
   trial_end_at: string | null;

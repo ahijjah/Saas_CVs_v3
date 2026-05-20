@@ -34,6 +34,9 @@ const T = {
     noData: 'No tenants found',
     statusLabels: {
       trial: 'Trial', active: 'Active', suspended: 'Suspended', expired: 'Expired',
+      pending_plan_selection: 'Pending Plan', pending_payment: 'Pending Payment',
+      pending_sales_contact: 'Pending Sales', grace: 'Grace', trial_expired: 'Trial Expired',
+      cancelled: 'Cancelled', cancelled_pending_expiry: 'Cancelling',
     } as Record<string, string>,
     // Create Tenant modal
     createTitle: 'Create New Tenant',
@@ -82,6 +85,9 @@ const T = {
     noData: 'لا توجد مستأجرون',
     statusLabels: {
       trial: 'تجريبي', active: 'نشط', suspended: 'معلق', expired: 'منتهي',
+      pending_plan_selection: 'في انتظار الخطة', pending_payment: 'في انتظار الدفع',
+      pending_sales_contact: 'في انتظار المبيعات', grace: 'فترة السماح',
+      trial_expired: 'انتهت التجربة', cancelled: 'ملغى', cancelled_pending_expiry: 'جاري الإلغاء',
     } as Record<string, string>,
     // Create Tenant modal
     createTitle: 'إنشاء مستأجر جديد',
@@ -108,10 +114,17 @@ const T = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  trial:     'bg-amber-100 text-amber-700',
-  active:    'bg-green-100 text-green-700',
-  suspended: 'bg-red-100 text-red-700',
-  expired:   'bg-slate-100 text-slate-500',
+  trial:                  'bg-amber-100 text-amber-700',
+  active:                 'bg-green-100 text-green-700',
+  suspended:              'bg-red-100 text-red-700',
+  expired:                'bg-slate-100 text-slate-500',
+  pending_plan_selection: 'bg-blue-100 text-blue-700',
+  pending_payment:        'bg-orange-100 text-orange-700',
+  pending_sales_contact:  'bg-purple-100 text-purple-700',
+  grace:                  'bg-rose-100 text-rose-700',
+  trial_expired:          'bg-slate-100 text-slate-500',
+  cancelled:              'bg-slate-100 text-slate-500',
+  cancelled_pending_expiry: 'bg-amber-50 text-amber-600',
 };
 
 function UsageBar({ label, used, limit, pct }: { label: string; used: number; limit: number; pct: number }) {
@@ -197,7 +210,7 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
 
   const openManage = (tenant: TenantSubscriptionRow) => {
     setManageTarget(tenant);
-    setSelectedPlan(tenant.plan || '');
+    setSelectedPlan(tenant.plan || tenant.pending_plan || '');
     setTrialEndAt(tenant.trial_end_at ? tenant.trial_end_at.slice(0, 10) : '');
   };
 
@@ -302,7 +315,7 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
     return matchSearch && matchPlan && matchStatus;
   });
 
-  const uniquePlans = [...new Set(tenants.map((t_) => t_.plan).filter(Boolean))];
+  const uniquePlans = [...new Set(tenants.flatMap((t_) => [t_.plan, t_.pending_plan]).filter(Boolean))] as string[];
 
   if (loading) {
     return (
@@ -333,15 +346,15 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {(['trial', 'active', 'suspended', 'expired'] as const).map((s) => {
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        {(['trial', 'active', 'pending_plan_selection', 'pending_payment', 'pending_sales_contact', 'suspended', 'expired'] as const).map((s) => {
           const count = tenants.filter((t_) => t_.subscription_status === s).length;
           return (
             <div key={s}
-              className="bg-white rounded-2xl border border-border p-4 cursor-pointer hover:border-rose-200 transition-all"
+              className="bg-white rounded-2xl border border-border p-3 cursor-pointer hover:border-rose-200 transition-all"
               onClick={() => setStatusFilter(statusFilter === s ? 'all' : s)}
             >
-              <div className={`text-2xl font-black ${count > 0 ? 'text-textMain' : 'text-textMuted'}`}>{count}</div>
+              <div className={`text-xl font-black ${count > 0 ? 'text-textMain' : 'text-textMuted'}`}>{count}</div>
               <span className={`mt-1 inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${STATUS_COLORS[s]}`}>
                 {t.statusLabels[s]}
               </span>
@@ -366,8 +379,8 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
           className="px-4 py-2.5 text-sm border border-border rounded-xl focus:outline-none bg-white">
           <option value="all">{t.allStatuses}</option>
-          {['trial', 'active', 'suspended', 'expired'].map((s) => (
-            <option key={s} value={s}>{t.statusLabels[s]}</option>
+          {['trial', 'active', 'pending_plan_selection', 'pending_payment', 'pending_sales_contact', 'grace', 'suspended', 'expired'].map((s) => (
+            <option key={s} value={s}>{t.statusLabels[s] || s}</option>
           ))}
         </select>
       </div>
@@ -411,9 +424,17 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                     ) : <span className="text-textMuted text-xs">—</span>}
                   </td>
                   <td className="px-5 py-3.5">
-                    <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg capitalize">
-                      {row.plan || '—'}
-                    </span>
+                    {row.plan ? (
+                      <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg capitalize">
+                        {row.plan}
+                      </span>
+                    ) : row.pending_plan ? (
+                      <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-lg capitalize">
+                        {row.pending_plan} ⏳
+                      </span>
+                    ) : (
+                      <span className="text-xs text-textMuted">No active plan</span>
+                    )}
                   </td>
                   <td className="px-5 py-3.5">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${STATUS_COLORS[row.subscription_status || 'trial']}`}>
@@ -467,14 +488,28 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
 
             <div className="p-6 space-y-5">
               {/* Current status */}
-              <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3">
-                <span className="text-xs font-bold text-textMuted uppercase tracking-widest">Current Plan</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-black text-textMain capitalize">{manageTarget.plan || '—'}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${STATUS_COLORS[manageTarget.subscription_status || 'trial']}`}>
-                    {t.statusLabels[manageTarget.subscription_status || 'trial']}
-                  </span>
+              <div className="bg-slate-50 rounded-xl px-4 py-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-textMuted uppercase tracking-widest">Current Plan</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-textMain capitalize">
+                      {manageTarget.plan || (manageTarget.subscription_status === 'pending_plan_selection' ? 'No active plan' : '—')}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${STATUS_COLORS[manageTarget.subscription_status] ?? 'bg-slate-100 text-slate-600'}`}>
+                      {t.statusLabels[manageTarget.subscription_status] || manageTarget.subscription_status}
+                    </span>
+                  </div>
                 </div>
+                {manageTarget.pending_plan && !manageTarget.plan && (
+                  <p className="text-[11px] text-orange-700 bg-orange-50 rounded-lg px-3 py-1.5">
+                    Pending plan: <strong className="capitalize">{manageTarget.pending_plan}</strong> — limits not applied until payment succeeds.
+                  </p>
+                )}
+                {manageTarget.pending_plan && !manageTarget.plan && manageTarget.subscription_status === 'pending_sales_contact' && (
+                  <p className="text-[11px] text-purple-700 bg-purple-50 rounded-lg px-3 py-1.5">
+                    Enterprise enquiry received. Sales team to contact tenant.
+                  </p>
+                )}
               </div>
 
               {/* Assign plan */}
