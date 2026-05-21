@@ -183,6 +183,27 @@ async def create_tenant_user(
             )
         raise
 
+    # Send welcome email to new user — fire-and-forget, never blocks creation
+    try:
+        from services.email_service import send_user_created_welcome_email as _send_user_email
+        from config import get_settings as _cfg
+        import asyncio as _asyncio
+        _login_url = getattr(_cfg(), "app_base_url", "https://app.ai970.cloud")
+        tenant_name_row = await db.execute(
+            text("SELECT name FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+            {"tid": current_user.tenant_id},
+        )
+        _tenant_name = (tenant_name_row.scalar_one_or_none() or "")
+        _asyncio.create_task(_send_user_email(
+            to_email=str(body.email),
+            user_name=body.full_name,
+            company_name=_tenant_name,
+            role=body.role,
+            login_url=_login_url,
+        ))
+    except Exception:
+        pass
+
     return {
         "success": True,
         "user": {
@@ -315,7 +336,7 @@ async def get_tenant_usage(
 
     tenant_row = await db.execute(
         text("""
-            SELECT t.tenant_id, t.name, t.plan, t.max_users, t.max_jobs,
+            SELECT t.tenant_id, t.name, t.plan, t.pending_plan, t.max_users, t.max_jobs,
                    t.subscription_status, t.trial_end_at,
                    t.subscription_started_at, t.subscription_ends_at,
                    t.tenant_type,
@@ -401,9 +422,10 @@ async def get_tenant_usage(
     camp_pct = pct(usage["active_campaigns"],         limits["max_campaigns"])
 
     return {
-        "plan_code":   tenant["plan"],
-        "plan_name":   plan["plan_name"] if plan else tenant["plan"],
-        "tenant_type": tenant["tenant_type"] or "organization",
+        "plan_code":    tenant["plan"],
+        "pending_plan": tenant["pending_plan"],
+        "plan_name":    plan["plan_name"] if plan else tenant["plan"],
+        "tenant_type":  tenant["tenant_type"] or "organization",
         "subscription_status": tenant["subscription_status"] or "trial",
         "trial_end_at": tenant["trial_end_at"].isoformat() if tenant["trial_end_at"] else None,
         "subscription_started_at": (

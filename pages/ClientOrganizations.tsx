@@ -113,9 +113,11 @@ export const ClientOrganizationsPage: React.FC<ClientOrganizationsProps> = ({ au
 
   const isAdmin = auth.user?.role === 'admin' || auth.user?.role === 'super_admin';
   const canWrite = isAdmin || auth.user?.role === 'hr_manager';
+  const isOrgTenant = auth.user?.tenant_type === 'organization';
 
   const [clients, setClients] = useState<ClientOrganization[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [tenantUsers, setTenantUsers] = useState<any[]>([]);
 
   // Modal state
@@ -134,16 +136,19 @@ export const ClientOrganizationsPage: React.FC<ClientOrganizationsProps> = ({ au
   const [assigning, setAssigning] = useState(false);
 
   const fetchClients = useCallback(async () => {
+    if (isOrgTenant) return;
     setLoading(true);
+    setLoadError(false);
     try {
       const data = await apiService.get(WEBHOOK_CONFIG.CLIENT_ORGANIZATIONS_URL, {}, auth.token!);
       setClients(data.client_organizations || []);
     } catch {
+      setLoadError(true);
       addToast(t.errorLoad, 'error');
     } finally {
       setLoading(false);
     }
-  }, [auth.token, t]);
+  }, [auth.token, t, isOrgTenant]);
 
   const fetchTenantUsers = useCallback(async () => {
     try {
@@ -156,6 +161,27 @@ export const ClientOrganizationsPage: React.FC<ClientOrganizationsProps> = ({ au
     fetchClients();
     if (isAdmin) fetchTenantUsers();
   }, [fetchClients, fetchTenantUsers, isAdmin]);
+
+  // Organization tenants don't use Client Organizations — guard after all hooks
+  if (isOrgTenant) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
+        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center">
+          <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold text-textMain">
+          {lang === 'ar' ? 'غير متاح' : 'Not Available'}
+        </h2>
+        <p className="text-textMuted max-w-sm text-sm">
+          {lang === 'ar'
+            ? 'منظمات العملاء متاحة فقط لوكالات التوظيف والمسؤولين المستقلين.'
+            : 'Client Organizations are available for recruitment agencies and independent recruiters only.'}
+        </p>
+      </div>
+    );
+  }
 
   const openAdd = () => {
     setEditTarget(null);
@@ -317,8 +343,21 @@ export const ClientOrganizationsPage: React.FC<ClientOrganizationsProps> = ({ au
           {t.loading}
         </div>
       ) : clients.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-border p-12 text-center text-textMuted">
-          {t.noClients}
+        <div className="bg-white rounded-2xl border border-border p-12 text-center">
+          <p className="text-textMuted mb-4">
+            {lang === 'ar' ? 'لا توجد منظمات عملاء بعد.' : 'No client organizations yet.'}
+          </p>
+          {isAdmin && (
+            <button
+              onClick={openAdd}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-bold rounded-xl hover:bg-primaryDark transition-colors shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              {lang === 'ar' ? 'إضافة منظمة عميل' : 'Add Client Organization'}
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

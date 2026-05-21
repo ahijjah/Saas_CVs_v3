@@ -273,6 +273,21 @@ async def create_tenant(
             )
         raise
 
+    # Send welcome email to the new admin — fire-and-forget, never blocks creation
+    if user_id and has_admin:
+        try:
+            from services.email_service import send_tenant_admin_created_email as _send_admin_email
+            import asyncio as _asyncio
+            login_url = getattr(settings, "app_base_url", "https://app.ai970.cloud")
+            _asyncio.create_task(_send_admin_email(
+                to_email=str(body.admin_email),
+                admin_name=body.admin_full_name or "",
+                company_name=body.name,
+                login_url=login_url,
+            ))
+        except Exception:
+            pass
+
     response: dict = {"success": True, "tenant_id": tenant_id}
     if user_id:
         response["user_id"] = user_id

@@ -139,3 +139,119 @@ async def send_invite_email(to_email: str, inviter_name: str, tenant_name: str, 
     </body></html>
     """
     await _send(to_email, subject, html_body, text_body)
+
+
+async def send_registration_welcome_email(
+    to_email: str, admin_name: str, company_name: str, login_url: str
+) -> None:
+    """Sent immediately after a tenant self-registers (pending_plan_selection state)."""
+    subject = "Welcome to CV Analyzer — your account is ready"
+    text_body = (
+        f"Hi {admin_name},\n\n"
+        f"Your CV Analyzer account for {company_name} has been created.\n\n"
+        "To start using the platform, log in and select a subscription plan to activate your workspace.\n\n"
+        f"Log in here:\n{login_url}\n\n"
+        "If you did not create this account, please ignore this email.\n\n"
+        "The CV Analyzer Team"
+    )
+    html_body = f"""
+    <html><body style="font-family:sans-serif;color:#1e293b;max-width:560px;margin:0 auto;">
+    <div style="background:linear-gradient(135deg,#6366f1,#2563eb);padding:32px 24px;border-radius:12px 12px 0 0;">
+      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">Account created</h1>
+      <p style="color:#c7d2fe;margin:8px 0 0;font-size:14px;">{company_name} · CV Analyzer</p>
+    </div>
+    <div style="background:#fff;padding:32px 24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
+      <p style="margin:0 0 16px;">Hi <strong>{admin_name}</strong>,</p>
+      <p style="margin:0 0 20px;">Your CV Analyzer account for <strong>{company_name}</strong> has been created successfully.</p>
+      <p style="margin:0 0 20px;">To activate your workspace and start screening CVs, log in and select a subscription plan.</p>
+      <p style="text-align:center;margin:0 0 24px;">
+        <a href="{login_url}" style="background:linear-gradient(135deg,#6366f1,#2563eb);color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
+          Log In &amp; Select Plan &#x2192;
+        </a>
+      </p>
+      <p style="margin:0;font-size:12px;color:#94a3b8;">If you did not create this account, you can safely ignore this email.</p>
+    </div>
+    </body></html>
+    """
+    await _send(to_email, subject, html_body, text_body)
+
+
+async def send_tenant_admin_created_email(
+    to_email: str, admin_name: str, company_name: str, login_url: str
+) -> None:
+    """Sent when a Super Admin creates a new tenant and admin user."""
+    subject = f"Your CV Analyzer account — {company_name}"
+    text_body = (
+        f"Hi {admin_name},\n\n"
+        f"A CV Analyzer account has been created for you as the administrator of {company_name}.\n\n"
+        "Your account was set up by the platform team.\n\n"
+        "For security, please change your password after your first login.\n\n"
+        f"Log in here:\n{login_url}\n\n"
+        "The CV Analyzer Team"
+    )
+    html_body = f"""
+    <html><body style="font-family:sans-serif;color:#1e293b;max-width:560px;margin:0 auto;">
+    <div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:32px 24px;border-radius:12px 12px 0 0;">
+      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">Account created for you</h1>
+      <p style="color:#94a3b8;margin:8px 0 0;font-size:14px;">{company_name} · CV Analyzer</p>
+    </div>
+    <div style="background:#fff;padding:32px 24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
+      <p style="margin:0 0 16px;">Hi <strong>{admin_name}</strong>,</p>
+      <p style="margin:0 0 16px;">
+        A CV Analyzer administrator account has been created for you for <strong>{company_name}</strong>.
+        Your account was provisioned by the platform team.
+      </p>
+      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:12px 16px;margin:0 0 24px;font-size:13px;color:#713f12;">
+        <strong>Security reminder:</strong> Please change your temporary password after your first login.
+      </div>
+      <p style="text-align:center;margin:0 0 24px;">
+        <a href="{login_url}" style="background:#1e3a5f;color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
+          Log In to CV Analyzer &#x2192;
+        </a>
+      </p>
+      <p style="margin:0;font-size:12px;color:#94a3b8;">If you were not expecting this email, please contact support.</p>
+    </div>
+    </body></html>
+    """
+    await _send(to_email, subject, html_body, text_body)
+
+
+async def send_user_created_welcome_email(
+    to_email: str, user_name: str, company_name: str, role: str, login_url: str
+) -> None:
+    """Sent when a tenant admin creates a new team member."""
+    role_display = role.replace("_", " ").title()
+    subject = f"You've been added to {company_name} on CV Analyzer"
+    text_body = (
+        f"Hi {user_name},\n\n"
+        f"You have been added as a team member on {company_name}'s CV Analyzer workspace.\n\n"
+        f"Your role: {role_display}\n\n"
+        "For security, please change your password after your first login.\n\n"
+        f"Log in here:\n{login_url}\n\n"
+        "The CV Analyzer Team"
+    )
+    html_body = f"""
+    <html><body style="font-family:sans-serif;color:#1e293b;max-width:560px;margin:0 auto;">
+    <div style="background:linear-gradient(135deg,#059669,#0284c7);padding:32px 24px;border-radius:12px 12px 0 0;">
+      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">You've been added to a team</h1>
+      <p style="color:#a7f3d0;margin:8px 0 0;font-size:14px;">{company_name} · CV Analyzer</p>
+    </div>
+    <div style="background:#fff;padding:32px 24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
+      <p style="margin:0 0 16px;">Hi <strong>{user_name}</strong>,</p>
+      <p style="margin:0 0 16px;">
+        You have been added to <strong>{company_name}</strong>'s workspace on CV Analyzer
+        with the role of <strong>{role_display}</strong>.
+      </p>
+      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:12px 16px;margin:0 0 24px;font-size:13px;color:#713f12;">
+        <strong>Security reminder:</strong> Please change your temporary password after your first login.
+      </div>
+      <p style="text-align:center;margin:0 0 24px;">
+        <a href="{login_url}" style="background:linear-gradient(135deg,#059669,#0284c7);color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
+          Log In to CV Analyzer &#x2192;
+        </a>
+      </p>
+      <p style="margin:0;font-size:12px;color:#94a3b8;">If you were not expecting this email, please contact your account administrator.</p>
+    </div>
+    </body></html>
+    """
+    await _send(to_email, subject, html_body, text_body)

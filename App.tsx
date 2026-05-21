@@ -205,6 +205,7 @@ const AppInner: React.FC = () => {
       role: userRole,
       tenant_id: payload?.tenant_id || user.tenant_id,
       email: payload?.email || user.email,
+      tenant_type: user.tenant_type,
     };
     setAuth({ token, user: updatedUser });
     addToast('Welcome back!', 'success');

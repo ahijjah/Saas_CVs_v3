@@ -12,6 +12,8 @@ interface UsageData {
   plan_code: string;
   plan_name: string;
   subscription_status: string;
+  pending_plan?: string | null;
+  tenant_type?: string;
   trial_end_at: string | null;
   subscription_started_at: string | null;
   subscription_ends_at: string | null;
@@ -316,14 +318,7 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
       {usage && (
         <div>
           <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.usageThisMonth}</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <UsageBar
-              label={t.cvsProcessed}
-              used={usage.usage.processed_cvs_this_month}
-              limit={usage.limits.max_processed_cvs_per_month}
-              pct={usage.percentage_used.cvs}
-              color="bg-violet-500"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <UsageBar
               label={t.activeCampaigns}
               used={usage.usage.active_campaigns}

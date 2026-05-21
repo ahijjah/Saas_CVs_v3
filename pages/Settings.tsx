@@ -941,7 +941,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
       )}
 
       {/* ── Client Organizations shortcut (agency/recruiter tenants) ─────────── */}
-      {!isSuperAdmin && isTenantAdmin && (
+      {!isSuperAdmin && isTenantAdmin && profile?.tenant_type !== 'organization' && (
         <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
           <div className="px-8 py-6 flex items-center justify-between">
             <div className="flex items-center gap-4">

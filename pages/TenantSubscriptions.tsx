@@ -872,53 +872,65 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                 <div className="flex items-center justify-center py-10">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rose-500" />
                 </div>
-              ) : usageData ? (
-                <div className="space-y-5">
-                  {/* Plan badge */}
-                  <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3">
-                    <span className="text-xs font-bold text-textMuted uppercase tracking-widest">Plan</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-black text-textMain capitalize">{usageData.plan}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${STATUS_COLORS[usageData.subscription_status || 'active']}`}>
-                        {t.statusLabels[usageData.subscription_status || 'active']}
-                      </span>
+              ) : usageData ? (() => {
+                const PENDING = new Set(['pending_plan_selection', 'pending_payment', 'pending_sales_contact']);
+                const isPending = PENDING.has(usageData.subscription_status);
+                return (
+                  <div className="space-y-5">
+                    {/* Plan badge */}
+                    <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3">
+                      <span className="text-xs font-bold text-textMuted uppercase tracking-widest">Plan</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-textMain capitalize">{usageData.plan || '—'}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${STATUS_COLORS[usageData.subscription_status || 'active']}`}>
+                          {t.statusLabels[usageData.subscription_status || 'active']}
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Usage bars */}
-                  <UsageBar
-                    label={t.campaigns}
-                    used={usageData.usage.active_campaigns}
-                    limit={usageData.limits.max_campaigns}
-                    pct={usageData.percentage_used.campaigns}
-                  />
-                  <UsageBar
-                    label={t.cvs}
-                    used={usageData.usage.processed_cvs_this_month}
-                    limit={usageData.limits.max_processed_cvs_per_month}
-                    pct={usageData.percentage_used.cvs}
-                  />
-                  <UsageBar
-                    label={t.users}
-                    used={usageData.usage.active_users}
-                    limit={usageData.limits.max_users}
-                    pct={usageData.percentage_used.users}
-                  />
-
-                  {/* Features */}
-                  <div className="pt-2 border-t border-border">
-                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">Features</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {Object.entries(usageData.plan_features).map(([feat, enabled]) => (
-                        <div key={feat} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium ${enabled ? 'bg-green-50 text-green-700' : 'bg-slate-50 text-slate-400'}`}>
-                          <span>{enabled ? '✓' : '×'}</span>
-                          <span className="capitalize">{feat.replace(/_/g, ' ')}</span>
+                    {isPending ? (
+                      <div className="flex flex-col items-center gap-2 py-6 text-center">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
+                          <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
                         </div>
-                      ))}
-                    </div>
+                        <p className="text-sm font-bold text-textMain">No active subscription yet</p>
+                        <p className="text-xs text-textMuted">Usage limits will apply after plan activation.</p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Usage bars */}
+                        <UsageBar
+                          label={t.campaigns}
+                          used={usageData.usage.active_campaigns}
+                          limit={usageData.limits.max_campaigns}
+                          pct={usageData.percentage_used.campaigns}
+                        />
+                        <UsageBar
+                          label={t.users}
+                          used={usageData.usage.active_users}
+                          limit={usageData.limits.max_users}
+                          pct={usageData.percentage_used.users}
+                        />
+
+                        {/* Features */}
+                        <div className="pt-2 border-t border-border">
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">Features</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {Object.entries(usageData.plan_features).map(([feat, enabled]) => (
+                              <div key={feat} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium ${enabled ? 'bg-green-50 text-green-700' : 'bg-slate-50 text-slate-400'}`}>
+                                <span>{enabled ? '✓' : '×'}</span>
+                                <span className="capitalize">{feat.replace(/_/g, ' ')}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
-                </div>
-              ) : (
+                );
+              })() : (
                 <p className="text-center text-sm text-textMuted py-6">No usage data available</p>
               )}
             </div>

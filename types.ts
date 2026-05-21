@@ -6,6 +6,7 @@ export interface User {
   email: string;
   role: string;
   tenant_name?: string;
+  tenant_type?: string;
   cv_ingestion_mode?: 'platform_email' | 'forwarding';
   subscription_status?: SubscriptionStatus;
 }
@@ -35,6 +36,7 @@ export interface UserProfile {
   email_domain?: string;
   plan?: string | null;
   pending_plan?: string | null;
+  tenant_type?: string;
   max_users?: number;
   max_jobs?: number;
   tenant_status?: string;

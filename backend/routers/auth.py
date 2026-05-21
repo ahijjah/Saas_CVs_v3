@@ -133,7 +133,8 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
                    t.tenant_id, t.name AS tenant_name, t.email_domain,
                    t.cv_ingestion_mode, t.forwarding_email,
                    t.plan, t.pending_plan, t.max_users, t.max_jobs,
-                   t.status AS tenant_status, t.created_at AS tenant_created_at,
+                   t.tenant_type, t.status AS tenant_status,
+                   t.created_at AS tenant_created_at,
                    t.subscription_status, t.trial_end_at
             FROM users u
             JOIN tenants t ON t.tenant_id = u.tenant_id
@@ -170,6 +171,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
         "email_domain": p["email_domain"],
         "plan": p["plan"],
         "pending_plan": p["pending_plan"],
+        "tenant_type": p["tenant_type"] or "organization",
         "max_users": p["max_users"],
         "max_jobs": p["max_jobs"],
         "tenant_status": p["tenant_status"],
@@ -191,7 +193,7 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
         text("""
             SELECT u.user_id, u.tenant_id, u.email, u.full_name, u.role, u.status,
                    u.password_hash, t.cv_ingestion_mode, t.status AS tenant_status,
-                   t.subscription_status, t.name AS tenant_name
+                   t.subscription_status, t.name AS tenant_name, t.tenant_type
             FROM users u
             JOIN tenants t ON t.tenant_id = u.tenant_id
             WHERE u.email = :email
@@ -232,6 +234,7 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
             "email": user["email"],
             "role": user["role"],
             "tenant_name": user["tenant_name"],
+            "tenant_type": user["tenant_type"] or "organization",
             "subscription_status": user["subscription_status"] or "active",
         },
         "cv_ingestion_mode": user["cv_ingestion_mode"],
@@ -291,14 +294,14 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
     user_id = str(user_result.scalar_one())
     await db.commit()
 
-    # Send welcome email — fire-and-forget (non-blocking, never fails the registration)
+    # Send registration confirmation email — fire-and-forget, never blocks registration
     try:
-        from services.email_service import send_welcome_email
+        from services.email_service import send_registration_welcome_email as _send_reg_email
         from config import get_settings as _cfg
         _settings = _cfg()
         login_url = getattr(_settings, "app_base_url", "https://app.ai970.cloud")
         import asyncio as _asyncio
-        _asyncio.create_task(send_welcome_email(
+        _asyncio.create_task(_send_reg_email(
             to_email=body.email,
             admin_name=body.admin_name,
             company_name=body.tenant_name,
@@ -323,6 +326,8 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
             "tenant_id": tenant_id,
             "email": body.email,
             "role": "admin",
+            "tenant_type": body.tenant_type or "organization",
+            "subscription_status": "pending_plan_selection",
         },
         "cv_ingestion_mode": "platform_email",
         "message": "Registration successful",
