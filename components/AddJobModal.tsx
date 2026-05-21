@@ -33,16 +33,18 @@ const T = {
     fwdDesc: (email: string) => `Please forward all CVs for this job to ${email}. Our AI will route them automatically.`,
     jobTitle: 'Job Title',
     department: 'Department / Client',
+    clientPlaceholder: 'Select client…',
+    clientNone: 'No client (internal)',
     jobLocation: 'Location',
     jobType: 'Job Type',
+    jobTypePlaceholder: 'Select type…',
+    jobTypes: ['Full-time', 'Part-time', 'Contract', 'Freelance', 'Internship', 'Temporary'],
     duration: 'Duration',
     jobDesc: 'Job Description',
     jobDescPlaceholder: 'Describe the role, responsibilities, required skills and experience…',
     cancel: 'Cancel',
     creating: 'Creating…',
     submit: 'Create Job',
-    clientOrg: 'Client Organization',
-    clientOrgPlaceholder: 'Select a client organization',
     clientOrgRequired: 'Client organization is required for agency tenants.',
     errorTitle: 'Job title is required.',
     errorDesc: 'Job description is required.',
@@ -56,16 +58,18 @@ const T = {
     fwdDesc: (email: string) => `يرجى إعادة توجيه جميع السير الذاتية لهذه الوظيفة إلى ${email}. سيقوم الذكاء الاصطناعي بتوجيهها تلقائياً.`,
     jobTitle: 'المسمى الوظيفي',
     department: 'القسم / العميل',
+    clientPlaceholder: 'اختر عميلاً…',
+    clientNone: 'بدون عميل (داخلي)',
     jobLocation: 'الموقع',
     jobType: 'نوع الوظيفة',
+    jobTypePlaceholder: 'اختر النوع…',
+    jobTypes: ['دوام كامل', 'دوام جزئي', 'عقد', 'مستقل', 'تدريب', 'مؤقت'],
     duration: 'المدة',
     jobDesc: 'وصف الوظيفة',
     jobDescPlaceholder: 'صف الدور والمسؤوليات والمهارات والخبرات المطلوبة…',
     cancel: 'إلغاء',
     creating: 'جارٍ الإنشاء…',
     submit: 'إنشاء الوظيفة',
-    clientOrg: 'منظمة العميل',
-    clientOrgPlaceholder: 'اختر منظمة العميل',
     clientOrgRequired: 'منظمة العميل مطلوبة لمستأجري الوكالات.',
     errorTitle: 'المسمى الوظيفي مطلوب.',
     errorDesc: 'وصف الوظيفة مطلوب.',
@@ -173,7 +177,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
           <div className="p-8 space-y-5 max-h-[70vh] overflow-y-auto bg-white">
 
-            {/* Title + Department */}
+            {/* Title + Department/Client */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-textMuted uppercase tracking-widest">
@@ -190,39 +194,44 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.department}</label>
-                <input
-                  name="client"
-                  type="text"
-                  placeholder="Engineering / Acme Corp"
-                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                  value={formData.client}
-                  onChange={handleChange}
-                />
+                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">
+                  {t.department} {isAgencyTenant && clientOrgs.length > 0 && <span className="text-error">*</span>}
+                </label>
+                {/* Agency/recruiter tenants with active clients: dropdown merged with client org */}
+                {isAgencyTenant && clientOrgs.length > 0 ? (
+                  <select
+                    name="client_organization_id"
+                    value={formData.client_organization_id}
+                    onChange={e => {
+                      const orgId = e.target.value;
+                      const org = clientOrgs.find(o => o.client_organization_id === orgId);
+                      setFormData(prev => ({
+                        ...prev,
+                        client_organization_id: orgId,
+                        client: org ? org.organization_name : '',
+                      }));
+                    }}
+                    className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
+                  >
+                    <option value="">{t.clientPlaceholder}</option>
+                    {clientOrgs.map(org => (
+                      <option key={org.client_organization_id} value={org.client_organization_id}>
+                        {org.organization_name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    name="client"
+                    type="text"
+                    placeholder="Engineering / Acme Corp"
+                    className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                    value={formData.client}
+                    onChange={handleChange}
+                  />
+                )}
               </div>
             </div>
-
-            {/* Client Organization (agency/recruiter tenants) */}
-            {clientOrgs.length > 0 && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">
-                  {t.clientOrg} {isAgencyTenant && <span className="text-error">*</span>}
-                </label>
-                <select
-                  name="client_organization_id"
-                  value={formData.client_organization_id}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
-                >
-                  <option value="">{t.clientOrgPlaceholder}</option>
-                  {clientOrgs.map(org => (
-                    <option key={org.client_organization_id} value={org.client_organization_id}>
-                      {org.organization_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             {/* Location + Job Type + Duration */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -239,14 +248,17 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.jobType}</label>
-                <input
+                <select
                   name="job_type"
-                  type="text"
-                  placeholder="Full-time"
-                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
                   value={formData.job_type}
                   onChange={handleChange}
-                />
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
+                >
+                  <option value="">{t.jobTypePlaceholder}</option>
+                  {t.jobTypes.map(jt => (
+                    <option key={jt} value={jt}>{jt}</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.duration}</label>

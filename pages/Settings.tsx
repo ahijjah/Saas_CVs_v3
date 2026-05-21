@@ -229,7 +229,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersAccessDenied, setUsersAccessDenied] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [addUserForm, setAddUserForm] = useState({ email: '', full_name: '', password: '', role: 'hr_manager' });
+  const [addUserForm, setAddUserForm] = useState({ email: '', full_name: '', role: 'hr_manager' });
   const [savingUser, setSavingUser] = useState(false);
   const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
   // Inline user edit state
@@ -376,7 +376,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         setTenantUsers(prev => [...prev, response.user]);
         setUsersActiveCount(prev => prev + 1);
         setShowAddUser(false);
-        setAddUserForm({ email: '', full_name: '', password: '', role: 'hr_manager' });
+        setAddUserForm({ email: '', full_name: '', role: 'hr_manager' });
         addToast('User added successfully.', 'success');
       }
     } catch (err: any) {
@@ -750,7 +750,16 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
           {showAddUser && (
             <form onSubmit={handleAddUser} className="px-8 py-6 border-b border-border bg-blue-50/30 animate-fade-in">
               <h4 className="text-xs font-black text-textMuted uppercase tracking-widest mb-4">{t.addUserTitle}</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Password-free note */}
+              <div className="flex items-center gap-2 mb-4 px-3 py-2.5 bg-sky-50 border border-sky-100 rounded-xl text-xs text-sky-700">
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                {lang === 'ar'
+                  ? 'سيتلقى المستخدم بريداً إلكترونياً لتفعيل حسابه وتعيين كلمة مروره.'
+                  : 'The user will receive an activation email to verify their address and set their own password.'}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.fullName}</label>
                   <input
@@ -771,18 +780,6 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                     className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
                     value={addUserForm.email}
                     onChange={e => setAddUserForm(prev => ({ ...prev, email: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.password}</label>
-                  <input
-                    required
-                    type="password"
-                    placeholder="Min. 8 characters"
-                    minLength={8}
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                    value={addUserForm.password}
-                    onChange={e => setAddUserForm(prev => ({ ...prev, password: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-1.5">

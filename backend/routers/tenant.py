@@ -29,7 +29,7 @@ ALLOWED_ROLES = {"admin", "hr_manager", "recruiter", "viewer"}
 class CreateTenantUserRequest(BaseModel):
     email: EmailStr
     full_name: str
-    password: str
+    password: str | None = None  # optional — a random password is generated when omitted
     role: str = "recruiter"
 
     @field_validator("role")
@@ -159,7 +159,9 @@ async def create_tenant_user(
     import hashlib as _hashlib
     import secrets as _secrets
     from datetime import datetime as _datetime, timedelta as _timedelta, timezone as _tz
-    password_hash = hash_password(body.password)
+    # Use provided password or generate a secure random one (user will change it after activation)
+    raw_password = body.password if body.password else _secrets.token_urlsafe(24)
+    password_hash = hash_password(raw_password)
     verify_token = _secrets.token_urlsafe(48)
     verify_token_hash = _hashlib.sha256(verify_token.encode()).hexdigest()
     verify_expires = _datetime.now(_tz.utc) + _timedelta(hours=48)
