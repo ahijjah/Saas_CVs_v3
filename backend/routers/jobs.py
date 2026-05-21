@@ -29,7 +29,8 @@ class CreateJobRequest(BaseModel):
     description: str
     qualified_threshold: int | None = None
     partial_threshold: int | None = None
-    client_organization_id: str | None = None  # mandatory for agency/individual_recruiter tenants
+    client_organization_id: str | None = None  # NULL = General job for agency tenants
+    vacancies_count: int | None = None
 
 
 class UpdateCriteriaRequest(BaseModel):
@@ -317,25 +318,26 @@ async def create_job(
             INSERT INTO jobs (tenant_id, created_by, title, department, location,
                               job_type, duration, description,
                               qualified_threshold, partial_threshold, job_code, status,
-                              client_organization_id)
+                              client_organization_id, vacancies_count)
             VALUES (:tid, :uid, :title, :dept, :location, :job_type, :duration, :desc,
                     :qt, :pt, :job_code, 'active',
-                    CAST(:coid AS uuid))
+                    CAST(:coid AS uuid), :vacancies_count)
             RETURNING job_id
         """),
         {
-            "tid":      current_user.tenant_id,
-            "uid":      current_user.user_id,
-            "title":    body.title,
-            "dept":     body.department,
-            "location": body.location,
-            "job_type": body.job_type,
-            "duration": body.duration,
-            "desc":     body.description,
-            "qt":       body.qualified_threshold,
-            "pt":       body.partial_threshold,
-            "job_code": job_code,
-            "coid":     body.client_organization_id,
+            "tid":            current_user.tenant_id,
+            "uid":            current_user.user_id,
+            "title":          body.title,
+            "dept":           body.department,
+            "location":       body.location,
+            "job_type":       body.job_type,
+            "duration":       body.duration,
+            "desc":           body.description,
+            "qt":             body.qualified_threshold,
+            "pt":             body.partial_threshold,
+            "job_code":       job_code,
+            "coid":           body.client_organization_id,
+            "vacancies_count": max(1, body.vacancies_count) if body.vacancies_count else 1,
         },
     )
     job_id = str(job_result.scalar_one())
@@ -416,17 +418,22 @@ async def get_job_details(
                     WHERE (a.duplicate_status IS NULL OR a.duplicate_status = 'not_duplicate')
                       AND a.processing_status != 'failed'
                 ) AS applications_valid_count,
-                t.forwarding_email AS tenant_forwarding_email
+                t.forwarding_email AS tenant_forwarding_email,
+                auc.role_for_client AS user_client_role
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
             JOIN tenants t ON t.tenant_id = j.tenant_id
             LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
             LEFT JOIN users cu ON cu.user_id = j.created_by
             LEFT JOIN users uu ON uu.user_id = j.updated_by
+            LEFT JOIN agency_user_clients auc
+                   ON auc.client_organization_id = j.client_organization_id
+                  AND auc.user_id = CAST(:uid AS uuid)
+                  AND auc.tenant_id = j.tenant_id
             WHERE j.job_id = :jid AND j.tenant_id = :tid
-            GROUP BY j.job_id, t.tenant_id, co.organization_name, cu.full_name, uu.full_name
+            GROUP BY j.job_id, t.tenant_id, co.organization_name, cu.full_name, uu.full_name, auc.role_for_client
         """),
-        {"jid": job_id, "tid": current_user.tenant_id},
+        {"jid": job_id, "tid": current_user.tenant_id, "uid": current_user.user_id},
     )
     job = job_row.mappings().first()
     if not job:
@@ -498,6 +505,7 @@ async def get_job_details(
             "applications_in_progress": int(job["applications_in_progress"]),
             "client_organization_id": str(job["client_organization_id"]) if job["client_organization_id"] else None,
             "client_org_name":        job["client_org_name"],
+            "user_client_role":       job["user_client_role"],
             "qualified_threshold":      job["qualified_threshold"],
             "partial_threshold":        job["partial_threshold"],
             "max_applications":               job["max_applications"],
@@ -522,15 +530,50 @@ async def update_ingestion_settings(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Update per-job CV ingestion channel settings."""
+    """Update per-job CV ingestion channel settings.
+
+    Permission rules:
+    - Tenant admin / super_admin / hr_manager: always allowed.
+    - Agency/individual_recruiter tenant, client-linked job: allowed for account_manager of that client.
+    - Agency/individual_recruiter tenant, General job (NULL client): admin/hr_manager only.
+    - Organization tenant: admin/hr_manager only.
+    """
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     job_row = await db.execute(
-        text("SELECT job_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
+        text("SELECT job_id, client_organization_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
         {"jid": job_id, "tid": current_user.tenant_id},
     )
-    if not job_row.first():
+    job_info = job_row.mappings().first()
+    if not job_info:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    # Permission check
+    role = (current_user.role or "").lower()
+    if role not in ("admin", "super_admin", "hr_manager"):
+        # May still be allowed if user is account_manager for this job's client org
+        job_client_org_id = job_info["client_organization_id"]
+        allowed = False
+        if job_client_org_id:
+            tenant_row = await db.execute(
+                text("SELECT tenant_type FROM tenants WHERE tenant_id = :tid"),
+                {"tid": current_user.tenant_id},
+            )
+            tenant_type = (tenant_row.scalar_one_or_none() or "organization")
+            if tenant_type in ("agency", "individual_recruiter"):
+                cr = await db.execute(
+                    text("""
+                        SELECT role_for_client FROM agency_user_clients
+                        WHERE user_id = CAST(:uid AS uuid)
+                          AND client_organization_id = :cid
+                          AND tenant_id = CAST(:tid AS uuid)
+                    """),
+                    {"uid": current_user.user_id, "cid": job_client_org_id, "tid": current_user.tenant_id},
+                )
+                if cr.scalar_one_or_none() == "account_manager":
+                    allowed = True
+        if not allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to modify intake settings for this job")
 
     updates: dict = {}
     # New semantic names take precedence; legacy names are accepted as aliases

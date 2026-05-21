@@ -1051,6 +1051,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   if (!details) return null;
 
+  const canEditIntake = canEdit || (details as any).user_client_role === 'account_manager';
+
   const analysis = details.analysis_json ?? undefined;
   const metaValues = [details.job_client, details.job_type || 'Full-time', details.location || 'Remote', details.posted_date || '-', details.closing_date || '-'];
   const publicApplyUrl = `${window.location.origin}/apply/${details.job_code}`;
@@ -1174,7 +1176,20 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               <h1 className="text-base font-black text-textMain truncate">{details.job_title}</h1>
               <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${statusColor}`}>{details.job_status}</span>
             </div>
-            <p className="text-[10px] text-textMuted font-mono mt-0.5">{details.job_code}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-[10px] text-textMuted font-mono">{details.job_code}</p>
+              {((details as any).client_org_name || details.job_client) && (
+                <span className="text-[10px] text-textMuted">·</span>
+              )}
+              {((details as any).client_org_name != null) && (
+                <span className={`text-[10px] font-bold ${(details as any).client_org_name ? 'text-indigo-600' : 'text-slate-400'}`}>
+                  {(details as any).client_org_name || 'General'}
+                </span>
+              )}
+              {(details as any).client_org_name == null && details.job_client && (
+                <span className="text-[10px] text-textMuted">{details.job_client}</span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -1451,7 +1466,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
             {t.intakeChannels}
           </h3>
-          {!canEdit && (
+          {!canEditIntake && (
             <span className="text-[10px] text-textMuted font-bold px-2 py-0.5 bg-slate-100 rounded-full">{isAr ? 'للعرض فقط' : 'View only'}</span>
           )}
         </div>
@@ -1514,9 +1529,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <p className="text-[11px] text-textMuted leading-relaxed max-w-sm">{t.option2Desc}</p>
                 </div>
                 <button
-                  disabled={togglingAlias || !canEdit}
-                  onClick={() => canEdit && handleIngestionToggle('receive_cv_via_platform_email', !details.receive_cv_via_platform_email)}
-                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_platform_email ? 'bg-success' : 'bg-slate-300'} ${togglingAlias || !canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={togglingAlias || !canEditIntake}
+                  onClick={() => canEditIntake && handleIngestionToggle('receive_cv_via_platform_email', !details.receive_cv_via_platform_email)}
+                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_platform_email ? 'bg-success' : 'bg-slate-300'} ${togglingAlias || !canEditIntake ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.receive_cv_via_platform_email ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
                 </button>
@@ -1544,9 +1559,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <p className="text-[11px] text-textMuted leading-relaxed max-w-sm">{t.option1Desc}</p>
                 </div>
                 <button
-                  disabled={togglingFwd || !canEdit}
-                  onClick={() => canEdit && handleIngestionToggle('receive_cv_via_forwarding_email', !details.receive_cv_via_forwarding_email)}
-                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_forwarding_email ? 'bg-primary' : 'bg-slate-300'} ${togglingFwd || !canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={togglingFwd || !canEditIntake}
+                  onClick={() => canEditIntake && handleIngestionToggle('receive_cv_via_forwarding_email', !details.receive_cv_via_forwarding_email)}
+                  className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none ${details.receive_cv_via_forwarding_email ? 'bg-primary' : 'bg-slate-300'} ${togglingFwd || !canEditIntake ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${details.receive_cv_via_forwarding_email ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
                 </button>
@@ -1967,9 +1982,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                             : '—'}
                         </td>
                         <td className="px-4 py-2.5 text-textMuted truncate max-w-[160px]">
-                          {log.original_candidate_name
-                            ? <span className="font-medium text-textMain">{log.original_candidate_name}</span>
-                            : '—'}
+                          {log.original_candidate_name && log.original_application_id
+                            ? <button onClick={() => onOpenApplication(jobId, log.original_application_id)} className="font-medium text-primary hover:underline transition-colors">{log.original_candidate_name}</button>
+                            : log.original_candidate_name
+                              ? <span className="font-medium text-textMain">{log.original_candidate_name}</span>
+                              : '—'}
                         </td>
                         <td className="px-4 py-2.5 text-textMuted truncate max-w-[160px]">{log.duplicate_reason?.replace(/_/g, ' ') || log.notes || '—'}</td>
                         <td className="px-4 py-2.5 whitespace-nowrap">

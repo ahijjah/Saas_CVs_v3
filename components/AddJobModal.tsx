@@ -21,6 +21,7 @@ interface FormData {
   job_type: string;
   job_duration: string;
   client_organization_id: string;
+  vacancies_count: string;
 }
 
 const T = {
@@ -39,6 +40,8 @@ const T = {
     jobTypePlaceholder: 'Select type…',
     jobTypes: ['Full-time', 'Part-time', 'Contract', 'Freelance', 'Internship', 'Temporary'],
     duration: 'Duration',
+    vacancies: 'Vacancies',
+    vacanciesPlaceholder: 'e.g. 3',
     jobDesc: 'Job Description',
     jobDescPlaceholder: 'Describe the role, responsibilities, required skills and experience…',
     cancel: 'Cancel',
@@ -62,6 +65,8 @@ const T = {
     jobTypePlaceholder: 'اختر النوع…',
     jobTypes: ['دوام كامل', 'دوام جزئي', 'عقد', 'مستقل', 'تدريب', 'مؤقت'],
     duration: 'المدة',
+    vacancies: 'الشواغر',
+    vacanciesPlaceholder: 'مثال: 3',
     jobDesc: 'وصف الوظيفة',
     jobDescPlaceholder: 'صف الدور والمسؤوليات والمهارات والخبرات المطلوبة…',
     cancel: 'إلغاء',
@@ -93,6 +98,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     job_type: '',
     job_duration: '',
     client_organization_id: '',
+    vacancies_count: '',
   });
 
   // Only fetch client orgs for agency/recruiter tenants
@@ -143,12 +149,14 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     setLoading(true);
     try {
       const isGeneral = formData.client_organization_id === '__general__';
-      const payload: Record<string, string | null> = { title, description };
+      const payload: Record<string, string | number | null> = { title, description };
       if (!isGeneral && formData.client_organization_id) payload.client_organization_id = formData.client_organization_id;
       if (!isGeneral && formData.client.trim()) payload.department = formData.client.trim();
       if (formData.job_location.trim()) payload.location = formData.job_location.trim();
       if (formData.job_type) payload.job_type = formData.job_type;
       if (formData.job_duration.trim()) payload.duration = formData.job_duration.trim();
+      const vac = parseInt(formData.vacancies_count);
+      if (vac > 0) payload.vacancies_count = vac;
 
       const responseData = await apiService.post(WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL, payload, token);
       addToast('Job created successfully!', 'success');
@@ -261,8 +269,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               )}
             </div>
 
-            {/* Row 2: Location + Job Type + Duration */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Row 2: Location + Job Type + Duration + Vacancies */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.jobLocation}</label>
                 <input
@@ -296,6 +304,18 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                   placeholder="Permanent"
                   className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
                   value={formData.job_duration}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.vacancies}</label>
+                <input
+                  name="vacancies_count"
+                  type="number"
+                  min={1}
+                  placeholder={t.vacanciesPlaceholder}
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  value={formData.vacancies_count}
                   onChange={handleChange}
                 />
               </div>

@@ -150,6 +150,7 @@ export interface Job {
   restrict_forwarding_sender_to_tenant_email?: boolean;
   client_organization_id?: string | null;
   client_org_name?: string | null;
+  vacancies_count?: number | null;
   applications_total: number;
   applications_qualified: number;
   applications_partial: number;
@@ -191,6 +192,7 @@ export interface AnalysisJson {
 }
 
 export interface JobDetails extends Job {
+  user_client_role?: string | null;
   description: string;
   analysis_json: AnalysisJson | null;
   forwarding_email?: string;

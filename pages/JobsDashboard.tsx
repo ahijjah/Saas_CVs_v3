@@ -31,7 +31,8 @@ const T = {
     rejLabel: 'Rej.',
     viewDetails: 'View Campaign Details',
     colCode: 'Job Code',
-    colTitle: 'Title / Client',
+    colTitle: 'Title',
+    colClient: 'Client',
     colTenant: 'Tenant',
     colStatus: 'Status',
     colTotal: 'Total',
@@ -64,7 +65,8 @@ const T = {
     rejLabel: 'مرفوض',
     viewDetails: 'عرض تفاصيل الحملة',
     colCode: 'رمز الوظيفة',
-    colTitle: 'المسمى / العميل',
+    colTitle: 'المسمى',
+    colClient: 'العميل',
     colTenant: 'المستأجر',
     colStatus: 'الحالة',
     colTotal: 'الإجمالي',
@@ -416,6 +418,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                   <tr>
                     <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider whitespace-nowrap">{t.colCode}</th>
                     <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider whitespace-nowrap">{t.colTitle}</th>
+                    {isAgencyTenant && <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider whitespace-nowrap">{t.colClient}</th>}
                     {superAdmin && <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider whitespace-nowrap">{t.colTenant}</th>}
                     <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider whitespace-nowrap">{t.colStatus}</th>
                     <th className="px-6 py-4 text-xs font-semibold text-textMuted uppercase tracking-wider text-center whitespace-nowrap">{t.colTotal}</th>
@@ -428,7 +431,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                 <tbody className="divide-y divide-border">
                   {filteredJobs.length === 0 ? (
                     <tr>
-                      <td colSpan={superAdmin ? 9 : 8} className="px-6 py-12 text-center text-textMuted">
+                      <td colSpan={superAdmin ? 9 : isAgencyTenant ? 9 : 8} className="px-6 py-12 text-center text-textMuted">
                         {t.noJobsTable}
                       </td>
                     </tr>
@@ -450,20 +453,17 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                           >
                             {job.job_title}
                           </button>
-                          <div className="text-xs text-textMuted whitespace-nowrap">
-                            {job.job_client}
-                            {isAgencyTenant && (
-                              <span className={`ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold ${job.client_org_name ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
-                                {job.client_org_name || 'General'}
-                              </span>
-                            )}
-                            {!isAgencyTenant && job.client_org_name && (
-                              <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700">
-                                {job.client_org_name}
-                              </span>
-                            )}
-                          </div>
+                          {job.job_client && (
+                            <div className="text-xs text-textMuted whitespace-nowrap">{job.job_client}</div>
+                          )}
                         </td>
+                        {isAgencyTenant && (
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${job.client_org_name ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {job.client_org_name || 'General'}
+                            </span>
+                          </td>
+                        )}
                         {superAdmin && (
                           <td className="px-6 py-4 text-xs text-textMuted whitespace-nowrap">{job.tenant_name || '—'}</td>
                         )}

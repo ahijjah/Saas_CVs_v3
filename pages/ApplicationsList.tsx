@@ -271,6 +271,9 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
       <ApplicationDetails
         data={selectedDetails}
         onBack={() => setView('list')}
+        jobMeta={jobMeta}
+        onDownloadCV={() => handleDownloadApplicationCV(selectedDetails.application_id)}
+        downloadingCV={downloadingCVId === selectedDetails.application_id}
       />
     );
   }

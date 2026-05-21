@@ -3,9 +3,22 @@ import React, { useState } from 'react';
 import { ApplicationDetailedAnalysis, ScoreDimension } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
+interface JobMetaStrip {
+  job_title: string;
+  job_client: string | null;
+  job_code: string;
+  job_status: string;
+  job_type: string | null;
+  location: string | null;
+  client_org_name: string | null;
+}
+
 interface ApplicationDetailsProps {
   data: ApplicationDetailedAnalysis;
   onBack: () => void;
+  jobMeta?: JobMetaStrip | null;
+  onDownloadCV?: () => void;
+  downloadingCV?: boolean;
 }
 
 const T = {
@@ -162,7 +175,7 @@ const LANG_LABELS: Record<string, { en: string; ar: string }> = {
   mixed: { en: 'Mixed',   ar: 'مختلط' },
 };
 
-export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, onBack }) => {
+export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, onBack, jobMeta, onDownloadCV, downloadingCV }) => {
   const { lang, isAr } = useLanguage() as { lang: 'en' | 'ar'; isAr: boolean };
   const t = T[lang];
 
@@ -272,14 +285,46 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   return (
     <div className="space-y-8 animate-fade-in max-w-6xl mx-auto pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <button onClick={onBack} className="flex items-center text-primary hover:text-primaryDark transition-colors text-sm font-bold group gap-2">
           <svg className={`w-4 h-4 transform transition-transform ${isAr ? 'group-hover:translate-x-1 rotate-180' : 'group-hover:-translate-x-1'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
           {t.back}
         </button>
+        {onDownloadCV && (
+          <button
+            onClick={onDownloadCV}
+            disabled={downloadingCV}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-xs font-bold text-textMuted hover:text-primary hover:border-primary transition-colors disabled:opacity-50"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            {downloadingCV ? (lang === 'ar' ? 'جارٍ التحميل…' : 'Downloading…') : (lang === 'ar' ? 'تحميل السيرة' : 'Download CV')}
+          </button>
+        )}
       </div>
+
+      {/* Job metadata strip */}
+      {jobMeta && (
+        <div className="bg-white rounded-xl border border-border px-5 py-3.5 flex flex-wrap items-center gap-x-5 gap-y-2 shadow-sm">
+          <div className="min-w-0">
+            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-0.5">{jobMeta.job_code}</p>
+            <p className="text-sm font-bold text-textMain truncate">{jobMeta.job_title}</p>
+          </div>
+          {jobMeta.client_org_name !== undefined && (
+            <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${jobMeta.client_org_name ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
+              {jobMeta.client_org_name || (lang === 'ar' ? 'عام' : 'General')}
+            </span>
+          )}
+          {jobMeta.job_type && <span className="shrink-0 text-xs text-textMuted font-medium">{jobMeta.job_type}</span>}
+          {jobMeta.location && <span className="shrink-0 text-xs text-textMuted">{jobMeta.location}</span>}
+          <span className={`shrink-0 ml-auto px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+            jobMeta.job_status === 'Active' ? 'bg-green-100 text-green-800' :
+            jobMeta.job_status === 'Closed' ? 'bg-slate-100 text-slate-800' :
+            'bg-amber-100 text-amber-800'
+          }`}>{jobMeta.job_status}</span>
+        </div>
+      )}
 
       {/* Low Match Banner */}
       {isLowMatch && (
