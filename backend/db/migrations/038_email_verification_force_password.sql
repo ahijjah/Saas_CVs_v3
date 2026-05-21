@@ -2,6 +2,8 @@
 -- Adds email verification workflow and must_change_password flag to users.
 -- Extends the users.status CHECK to include 'pending_email_verification'.
 
+SET search_path TO cv_analyzer;
+
 -- ── 1. Extend status CHECK constraint ──────────────────────────────────────
 -- Drop the inline, auto-named constraint first (name varies by PG version).
 DO $$
