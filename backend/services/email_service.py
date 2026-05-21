@@ -216,6 +216,87 @@ async def send_tenant_admin_created_email(
     await _send(to_email, subject, html_body, text_body)
 
 
+async def send_email_verification_email(
+    to_email: str, name: str, company_name: str, verify_link: str
+) -> None:
+    """Sent after public tenant self-registration — user must click to activate account."""
+    subject = "Verify your email — CV Analyzer"
+    text_body = (
+        f"Hi {name},\n\n"
+        f"Thanks for registering {company_name} on CV Analyzer.\n\n"
+        "Please verify your email address to activate your account:\n"
+        f"{verify_link}\n\n"
+        "This link expires in 48 hours.\n\n"
+        "If you did not create this account, ignore this email.\n\n"
+        "The CV Analyzer Team"
+    )
+    html_body = f"""
+    <html><body style="font-family:sans-serif;color:#1e293b;max-width:560px;margin:0 auto;">
+    <div style="background:linear-gradient(135deg,#6366f1,#2563eb);padding:32px 24px;border-radius:12px 12px 0 0;">
+      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">Verify your email</h1>
+      <p style="color:#c7d2fe;margin:8px 0 0;font-size:14px;">{company_name} · CV Analyzer</p>
+    </div>
+    <div style="background:#fff;padding:32px 24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
+      <p style="margin:0 0 16px;">Hi <strong>{name}</strong>,</p>
+      <p style="margin:0 0 20px;">
+        Thanks for registering <strong>{company_name}</strong> on CV Analyzer.
+        Please verify your email address to activate your account.
+      </p>
+      <p style="text-align:center;margin:0 0 24px;">
+        <a href="{verify_link}" style="background:linear-gradient(135deg,#6366f1,#2563eb);color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
+          Verify Email Address &#x2192;
+        </a>
+      </p>
+      <p style="margin:0 0 8px;font-size:12px;color:#94a3b8;">This link expires in 48 hours.</p>
+      <p style="margin:0;font-size:12px;color:#94a3b8;">If you did not create this account, you can safely ignore this email.</p>
+    </div>
+    </body></html>
+    """
+    await _send(to_email, subject, html_body, text_body)
+
+
+async def send_activation_email(
+    to_email: str, name: str, company_name: str, verify_link: str, role: str | None = None
+) -> None:
+    """Sent when a Super Admin or tenant admin creates a user account on their behalf."""
+    role_display = role.replace("_", " ").title() if role else "Administrator"
+    subject = f"Activate your CV Analyzer account — {company_name}"
+    text_body = (
+        f"Hi {name},\n\n"
+        f"An account has been created for you on {company_name}'s CV Analyzer workspace.\n\n"
+        f"Your role: {role_display}\n\n"
+        "Click the link below to verify your email and activate your account:\n"
+        f"{verify_link}\n\n"
+        "This link expires in 48 hours. After activation you will be asked to set a new password.\n\n"
+        "The CV Analyzer Team"
+    )
+    html_body = f"""
+    <html><body style="font-family:sans-serif;color:#1e293b;max-width:560px;margin:0 auto;">
+    <div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:32px 24px;border-radius:12px 12px 0 0;">
+      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">Activate your account</h1>
+      <p style="color:#94a3b8;margin:8px 0 0;font-size:14px;">{company_name} · CV Analyzer</p>
+    </div>
+    <div style="background:#fff;padding:32px 24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
+      <p style="margin:0 0 16px;">Hi <strong>{name}</strong>,</p>
+      <p style="margin:0 0 8px;">
+        An account has been created for you on <strong>{company_name}</strong>'s CV Analyzer workspace
+        with the role of <strong>{role_display}</strong>.
+      </p>
+      <p style="margin:0 0 20px;font-size:13px;color:#64748b;">
+        Click below to verify your email and set your password. This link expires in <strong>48 hours</strong>.
+      </p>
+      <p style="text-align:center;margin:0 0 24px;">
+        <a href="{verify_link}" style="background:#1e3a5f;color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
+          Activate Account &#x2192;
+        </a>
+      </p>
+      <p style="margin:0;font-size:12px;color:#94a3b8;">If you were not expecting this email, please contact your account administrator.</p>
+    </div>
+    </body></html>
+    """
+    await _send(to_email, subject, html_body, text_body)
+
+
 async def send_user_created_welcome_email(
     to_email: str, user_name: str, company_name: str, role: str, login_url: str
 ) -> None:

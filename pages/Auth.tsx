@@ -142,9 +142,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
   const t = T[lang];
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'login' | 'register'>(
+  const [view, setView] = useState<'login' | 'register' | 'verify_sent'>(
     searchParams.get('mode') === 'register' ? 'register' : 'login'
   );
+  const [registeredEmail, setRegisteredEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showLoginPw, setShowLoginPw] = useState(false);
@@ -216,8 +217,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
         password:     registerForm.password,
         tenant_type:  registerForm.tenant_type,
       });
-      addToast('Account created! Please sign in.', 'success');
-      switchView('login');
+      setRegisteredEmail(registerForm.admin_email);
+      setView('verify_sent');
     } catch (err: any) {
       const msg = err.message || 'Registration failed.';
       setError(msg); addToast(msg, 'error');
@@ -324,6 +325,35 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, addToast }) 
               {t.noAccount}
             </button>
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Check Your Email View ────────────────────────────────────────────────────
+  if (view === 'verify_sent') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-slate-50">
+        <div className="bg-white rounded-2xl shadow-xl border border-border p-10 max-w-sm w-full text-center">
+          <div className="w-14 h-14 rounded-full bg-indigo-100 flex items-center justify-center mx-auto mb-5">
+            <svg className="w-7 h-7 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-textMain mb-2">Check your email</h2>
+          <p className="text-sm text-textMuted mb-1">
+            We've sent a verification link to:
+          </p>
+          <p className="text-sm font-bold text-textMain mb-5">{registeredEmail}</p>
+          <p className="text-xs text-textMuted mb-6">
+            Click the link in the email to activate your account. The link expires in 48 hours.
+          </p>
+          <button
+            onClick={() => switchView('login')}
+            className="w-full py-2.5 border border-border text-sm font-bold text-textMuted rounded-xl hover:bg-slate-50 transition-colors"
+          >
+            Back to Login
+          </button>
         </div>
       </div>
     );

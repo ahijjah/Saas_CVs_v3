@@ -12,6 +12,7 @@ export const WEBHOOK_CONFIG = {
   GET_PROFILE_WEBHOOK_URL:       `${API_BASE}/auth/me`,
   UPDATE_PROFILE_WEBHOOK_URL:    `${API_BASE}/auth/me`,
   CHANGE_PASSWORD_WEBHOOK_URL:   `${API_BASE}/auth/change-password`,
+  VERIFY_EMAIL_URL:              `${API_BASE}/auth/verify-email`,
   RESET_PASSWORD_WEBHOOK_URL:    `${API_BASE}/auth/reset-password`,
   FORGOT_PASSWORD_WEBHOOK_URL:   `${API_BASE}/auth/forgot-password`,
   // Admin endpoints

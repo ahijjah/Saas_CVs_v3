@@ -36,6 +36,8 @@ import { ClientOrganizationsPage } from './pages/ClientOrganizations';
 import { PlanSelectionPage } from './pages/PlanSelection';
 import { PaymentSimulationPage } from './pages/PaymentSimulation';
 import { ToastContainer, ToastType } from './components/Toast';
+import { VerifyEmail } from './pages/VerifyEmail';
+import { ForceChangePassword } from './pages/ForceChangePassword';
 
 // ── JWT helper ─────────────────────────────────────────────────────────────
 function decodeJwtPayload(token: string) {
@@ -109,6 +111,10 @@ const AuthedLayout: React.FC<{
 // ── Super-admin guard: renders <Outlet /> or redirects ────────────────────
 const SuperAdminGuard: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) =>
   isSuperAdmin ? <Outlet /> : <Navigate to="/jobs" replace />;
+
+// ── Must-change-password guard ────────────────────────────────────────────
+const MustChangePasswordGuard: React.FC<{ mustChange: boolean }> = ({ mustChange }) =>
+  mustChange ? <Navigate to="/change-password" replace /> : <Outlet />;
 
 // Statuses that require plan selection / payment before accessing the product
 const PLAN_GATE_STATUSES = new Set([
@@ -206,10 +212,15 @@ const AppInner: React.FC = () => {
       tenant_id: payload?.tenant_id || user.tenant_id,
       email: payload?.email || user.email,
       tenant_type: user.tenant_type,
+      must_change_password: user.must_change_password ?? false,
     };
     setAuth({ token, user: updatedUser });
     addToast('Welcome back!', 'success');
-    navigate(getPostLoginRoute(userRole, user.subscription_status), { replace: true });
+    if (updatedUser.must_change_password) {
+      navigate('/change-password', { replace: true });
+    } else {
+      navigate(getPostLoginRoute(userRole, user.subscription_status), { replace: true });
+    }
   };
 
   const handleUserUpdate = (patch: Partial<User>) => {
@@ -265,6 +276,13 @@ const AppInner: React.FC = () => {
           path="/apply/:jobCode"
           element={<PublicJobApply addToast={addToast} />}
         />
+        {/* Email verification — public, no auth required */}
+        <Route
+          path="/verify-email"
+          element={
+            <VerifyEmail onVerifySuccess={handleLoginSuccess} addToast={addToast} />
+          }
+        />
 
         {/* ── Landing / login ───────────────────────────────────────────── */}
         <Route
@@ -295,11 +313,29 @@ const AppInner: React.FC = () => {
 
         {/* ── Authenticated routes — all wrapped by Layout via Outlet ───── */}
         <Route element={<AuthedLayout auth={auth} onLogout={handleLogout} />}>
+          {/* Force password change — accessible even when must_change_password=true */}
+          <Route
+            path="/change-password"
+            element={
+              <ForceChangePassword
+                auth={auth}
+                onPasswordChanged={() => {
+                  handleUserUpdate({ must_change_password: false });
+                  navigate(getPostLoginRoute(role, auth.user?.subscription_status), { replace: true });
+                }}
+                addToast={addToast}
+              />
+            }
+          />
+
           {/* /dashboard — smart redirect */}
           <Route
             path="/dashboard"
             element={<Navigate to={defaultHome} replace />}
           />
+
+          {/* All remaining authenticated routes gated behind MustChangePasswordGuard */}
+          <Route element={<MustChangePasswordGuard mustChange={!!auth.user?.must_change_password} />}>
 
           {/* Pre-subscription pages — accessible for pending_* tenants */}
           <Route
@@ -380,6 +416,7 @@ const AppInner: React.FC = () => {
 
           {/* 404 inside layout */}
           <Route path="*" element={<NotFoundPage defaultHome={defaultHome} />} />
+          </Route>{/* end MustChangePasswordGuard */}
         </Route>
 
         {/* Catch-all for unauthenticated unknown paths */}

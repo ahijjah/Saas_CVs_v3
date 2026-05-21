@@ -9,6 +9,7 @@ export interface User {
   tenant_type?: string;
   cv_ingestion_mode?: 'platform_email' | 'forwarding';
   subscription_status?: SubscriptionStatus;
+  must_change_password?: boolean;
 }
 
 export type SubscriptionStatus =
@@ -51,7 +52,7 @@ export interface TenantUser {
   email: string;
   full_name: string;
   role: string;
-  status: 'active' | 'disabled';
+  status: 'active' | 'disabled' | 'pending_email_verification';
   created_at: string | null;
   last_login_at: string | null;
 }

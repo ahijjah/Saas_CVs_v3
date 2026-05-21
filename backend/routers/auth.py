@@ -4,7 +4,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,8 @@ from services.email_service import send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
+
+_VERIFY_TOKEN_EXPIRY_HOURS = 48
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -70,7 +72,6 @@ class UpdateProfileRequest(BaseModel):
     def valid_mode(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        # Accept both frontend ('FORWARD') and stored ('forwarding') values
         _map = {
             'platform_email': 'platform_email',
             'IMAP': 'platform_email',
@@ -84,7 +85,6 @@ class UpdateProfileRequest(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    # Accept both field names from frontend
     old_password: str | None = None
     current_password: str | None = None
     new_password: str
@@ -121,7 +121,7 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _generate_reset_token() -> str:
+def _generate_token() -> str:
     return secrets.token_urlsafe(48)
 
 
@@ -129,7 +129,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
     """Fetch full profile data and return serialized dict."""
     row = await db.execute(
         text("""
-            SELECT u.user_id, u.full_name, u.email, u.role,
+            SELECT u.user_id, u.full_name, u.email, u.role, u.must_change_password,
                    t.tenant_id, t.name AS tenant_name, t.email_domain,
                    t.cv_ingestion_mode, t.forwarding_email,
                    t.plan, t.pending_plan, t.max_users, t.max_jobs,
@@ -151,7 +151,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
             SELECT COUNT(*)
             FROM users
             WHERE tenant_id = :tenant_id
-              AND status = 'active'
+              AND status IN ('active', 'pending_email_verification')
         """),
         {"tenant_id": p["tenant_id"]},
     )
@@ -166,6 +166,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
         "admin_name": p["full_name"],
         "email": p["email"],
         "role": p["role"],
+        "must_change_password": bool(p["must_change_password"]),
         "intake_method": intake_method,
         "forwarding_email": p["forwarding_email"],
         "email_domain": p["email_domain"],
@@ -186,13 +187,13 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
 
 @router.post("/login")
 async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]):
-    # Use super_admin context so we can look up any user by email without RLS blocking
     await set_rls_context(db, "", "super_admin")
 
     row = await db.execute(
         text("""
             SELECT u.user_id, u.tenant_id, u.email, u.full_name, u.role, u.status,
-                   u.password_hash, t.cv_ingestion_mode, t.status AS tenant_status,
+                   u.password_hash, u.must_change_password,
+                   t.cv_ingestion_mode, t.status AS tenant_status,
                    t.subscription_status, t.name AS tenant_name, t.tenant_type
             FROM users u
             JOIN tenants t ON t.tenant_id = u.tenant_id
@@ -205,12 +206,16 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+    if user["status"] == "pending_email_verification":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email address before logging in. Check your inbox for the verification link.",
+        )
     if user["status"] != "active":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
     if user["tenant_status"] != "active":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant suspended")
 
-    # Update last_login_at
     await db.execute(
         text("UPDATE users SET last_login_at = now() WHERE user_id = :uid"),
         {"uid": str(user["user_id"])},
@@ -227,6 +232,7 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
     return {
         "success": True,
         "token": token,
+        "must_change_password": bool(user["must_change_password"]),
         "user": {
             "user_id": str(user["user_id"]),
             "sub": str(user["user_id"]),
@@ -236,6 +242,7 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
             "tenant_name": user["tenant_name"],
             "tenant_type": user["tenant_type"] or "organization",
             "subscription_status": user["subscription_status"] or "active",
+            "must_change_password": bool(user["must_change_password"]),
         },
         "cv_ingestion_mode": user["cv_ingestion_mode"],
         "message": "Login successful",
@@ -246,7 +253,6 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
 async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(get_db)]):
     await set_rls_context(db, "", "super_admin")
 
-    # Check email uniqueness
     existing = await db.execute(
         text("SELECT user_id FROM users WHERE email = :email"),
         {"email": body.email},
@@ -256,9 +262,6 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
 
     password_hash = hash_password(body.password)
 
-    # Create tenant — subscription_status = 'pending_plan_selection' until the
-    # tenant explicitly picks a plan from PlanSelection.  Trial dates are set
-    # only when they activate the free-trial via POST /tenant/subscription/activate-trial.
     tenant_result = await db.execute(
         text("""
             INSERT INTO tenants (
@@ -277,11 +280,23 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
     )
     tenant_id = str(tenant_result.scalar_one())
 
-    # Create admin user
+    # Create admin in pending_email_verification state (cannot login until verified)
+    verify_token = _generate_token()
+    verify_token_hash = _hash_token(verify_token)
+    verify_expires = datetime.now(timezone.utc) + timedelta(hours=_VERIFY_TOKEN_EXPIRY_HOURS)
+
     user_result = await db.execute(
         text("""
-            INSERT INTO users (tenant_id, email, password_hash, full_name, role, status)
-            VALUES (:tid, :email, :pw, :name, 'admin', 'active')
+            INSERT INTO users (
+                tenant_id, email, password_hash, full_name, role, status,
+                email_verification_token_hash, email_verification_expires_at,
+                must_change_password
+            )
+            VALUES (
+                :tid, :email, :pw, :name, 'admin', 'pending_email_verification',
+                :token_hash, :expires,
+                false
+            )
             RETURNING user_id
         """),
         {
@@ -289,48 +304,107 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
             "email": body.email,
             "pw": password_hash,
             "name": body.admin_name,
+            "token_hash": verify_token_hash,
+            "expires": verify_expires,
         },
     )
     user_id = str(user_result.scalar_one())
     await db.commit()
 
-    # Send registration confirmation email — fire-and-forget, never blocks registration
+    # Send email verification link — fire-and-forget
     try:
-        from services.email_service import send_registration_welcome_email as _send_reg_email
-        from config import get_settings as _cfg
-        _settings = _cfg()
-        login_url = getattr(_settings, "app_base_url", "https://app.ai970.cloud")
+        from services.email_service import send_email_verification_email as _send_verify
         import asyncio as _asyncio
-        _asyncio.create_task(_send_reg_email(
+        verify_link = f"{settings.app_base_url}/verify-email?token={verify_token}"
+        _asyncio.create_task(_send_verify(
             to_email=body.email,
-            admin_name=body.admin_name,
+            name=body.admin_name,
             company_name=body.tenant_name,
-            login_url=login_url,
+            verify_link=verify_link,
         ))
     except Exception:
-        pass  # email failure must never block registration
+        pass
 
-    token = create_access_token({
-        "sub": user_id,
-        "tenant_id": tenant_id,
+    return {
+        "success": True,
+        "needs_verification": True,
         "email": body.email,
-        "role": "admin",
+        "message": "Registration successful. Please check your email to verify your account.",
+    }
+
+
+@router.get("/verify-email")
+async def verify_email(
+    token: str = Query(..., description="Email verification token"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify email address via token from verification email. Issues a JWT on success."""
+    await set_rls_context(db, "", "super_admin")
+
+    token_hash = _hash_token(token)
+    row = await db.execute(
+        text("""
+            SELECT u.user_id, u.tenant_id, u.email, u.role, u.must_change_password,
+                   t.status AS tenant_status, t.subscription_status,
+                   t.name AS tenant_name, t.tenant_type, t.cv_ingestion_mode
+            FROM users u
+            JOIN tenants t ON t.tenant_id = u.tenant_id
+            WHERE u.email_verification_token_hash = :hash
+              AND u.email_verification_expires_at > now()
+              AND u.status = 'pending_email_verification'
+        """),
+        {"hash": token_hash},
+    )
+    user = row.mappings().first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification link. Please register again or contact support.",
+        )
+
+    if user["tenant_status"] != "active":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant suspended")
+
+    # Activate the user
+    await db.execute(
+        text("""
+            UPDATE users
+            SET status                         = 'active',
+                email_verified_at              = now(),
+                email_verification_token_hash  = NULL,
+                email_verification_expires_at  = NULL,
+                last_login_at                  = now()
+            WHERE user_id = :uid
+        """),
+        {"uid": str(user["user_id"])},
+    )
+    await db.commit()
+
+    jwt_token = create_access_token({
+        "sub": str(user["user_id"]),
+        "tenant_id": str(user["tenant_id"]),
+        "email": user["email"],
+        "role": user["role"],
     })
 
     return {
         "success": True,
-        "token": token,
+        "token": jwt_token,
+        "must_change_password": bool(user["must_change_password"]),
         "user": {
-            "user_id": user_id,
-            "sub": user_id,
-            "tenant_id": tenant_id,
-            "email": body.email,
-            "role": "admin",
-            "tenant_type": body.tenant_type or "organization",
-            "subscription_status": "pending_plan_selection",
+            "user_id": str(user["user_id"]),
+            "sub": str(user["user_id"]),
+            "tenant_id": str(user["tenant_id"]),
+            "email": user["email"],
+            "role": user["role"],
+            "tenant_name": user["tenant_name"],
+            "tenant_type": user["tenant_type"] or "organization",
+            "subscription_status": user["subscription_status"] or "active",
+            "must_change_password": bool(user["must_change_password"]),
         },
-        "cv_ingestion_mode": "platform_email",
-        "message": "Registration successful",
+        "cv_ingestion_mode": user["cv_ingestion_mode"],
+        "message": "Email verified successfully. Welcome!",
     }
 
 
@@ -389,28 +463,37 @@ async def change_password(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    actual_old = body.old_password or body.current_password
-    if not actual_old:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is required")
-
     if body.new_password != body.confirm_password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
-    if body.new_password == actual_old:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must differ from old password")
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     row = await db.execute(
-        text("SELECT password_hash FROM users WHERE user_id = :uid"),
+        text("SELECT password_hash, must_change_password FROM users WHERE user_id = :uid"),
         {"uid": current_user.user_id},
     )
     user = row.mappings().first()
-    if not user or not verify_password(actual_old, user["password_hash"]):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect current password")
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # If not a forced change, verify old password
+    if not user["must_change_password"]:
+        actual_old = body.old_password or body.current_password
+        if not actual_old:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is required")
+        if not verify_password(actual_old, user["password_hash"]):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect current password")
+        if body.new_password == actual_old:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must differ from old password")
 
     new_hash = hash_password(body.new_password)
     await db.execute(
-        text("UPDATE users SET password_hash = :pw WHERE user_id = :uid"),
+        text("""
+            UPDATE users
+            SET password_hash       = :pw,
+                must_change_password = false
+            WHERE user_id = :uid
+        """),
         {"pw": new_hash, "uid": current_user.user_id},
     )
     await db.commit()
@@ -427,11 +510,10 @@ async def forgot_password(body: ForgotPasswordRequest, db: Annotated[AsyncSessio
     )
     user = row.mappings().first()
 
-    # Always return success to avoid email enumeration
     if not user:
         return {"success": True, "message": "If the email exists, a reset link has been sent"}
 
-    token = _generate_reset_token()
+    token = _generate_token()
     token_hash = _hash_token(token)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
 
@@ -476,9 +558,10 @@ async def reset_password(body: ResetPasswordRequest, db: Annotated[AsyncSession,
     await db.execute(
         text("""
             UPDATE users
-            SET password_hash = :pw,
-                reset_token_hash = NULL,
-                reset_token_expires = NULL
+            SET password_hash       = :pw,
+                reset_token_hash    = NULL,
+                reset_token_expires = NULL,
+                must_change_password = false
             WHERE user_id = :uid
         """),
         {"pw": new_hash, "uid": str(user["user_id"])},

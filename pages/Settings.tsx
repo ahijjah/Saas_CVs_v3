@@ -897,7 +897,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                   ) : (
                     <div className="px-8 py-4 flex items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
                       <div className="flex items-center gap-4 min-w-0">
-                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${user.status === 'active' ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-textMuted'}`}>
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${user.status === 'active' ? 'bg-primary/10 text-primary' : user.status === 'pending_email_verification' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-textMuted'}`}>
                           {user.full_name.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
@@ -909,8 +909,12 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                         <span className="hidden sm:block text-[10px] font-black uppercase tracking-widest text-textMuted px-2 py-1 bg-slate-100 rounded-md">
                           {(t.roles as any)[user.role] || user.role}
                         </span>
-                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-textMuted'}`}>
-                          {user.status === 'active' ? t.active : t.disabled}
+                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${
+                          user.status === 'active' ? 'bg-green-100 text-green-800'
+                          : user.status === 'pending_email_verification' ? 'bg-amber-100 text-amber-700'
+                          : 'bg-slate-100 text-textMuted'
+                        }`}>
+                          {user.status === 'active' ? t.active : user.status === 'pending_email_verification' ? 'Pending' : t.disabled}
                         </span>
                         {user.user_id !== auth.user?.user_id && (
                           <button
@@ -920,7 +924,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                             {t.editUser}
                           </button>
                         )}
-                        {user.user_id !== auth.user?.user_id && (
+                        {user.user_id !== auth.user?.user_id && user.status !== 'pending_email_verification' && (
                           <button
                             onClick={() => handleToggleUserStatus(user.user_id, user.status)}
                             disabled={togglingUserId === user.user_id || (user.status === 'disabled' && atLimit)}

@@ -388,16 +388,12 @@ export const SubscriptionPlansPage: React.FC<Props> = ({ auth, addToast }) => {
                   {plan.description && (
                     <p className="text-white/80 text-xs mt-2 leading-relaxed">{plan.description}</p>
                   )}
-                  <div className="mt-3 text-xs font-bold bg-white/10 rounded-lg px-3 py-1.5 inline-block">
-                    {plan.trial_days} {t.trial}
-                  </div>
                 </div>
 
                 {/* Limits strip */}
-                <div className="p-4 grid grid-cols-3 gap-3 border-b border-border">
+                <div className="p-4 grid grid-cols-2 gap-3 border-b border-border">
                   {[
                     { label: 'Campaigns', value: plan.max_campaigns },
-                    { label: 'CVs / mo', value: plan.max_processed_cvs_per_month.toLocaleString() },
                     { label: 'Users', value: plan.max_users },
                   ].map(({ label, value }) => (
                     <div key={label} className="text-center bg-slate-50 rounded-xl p-2">
@@ -597,7 +593,7 @@ export const SubscriptionPlansPage: React.FC<Props> = ({ auth, addToast }) => {
               {/* Pricing */}
               <div>
                 <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.pricing}</p>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-textMuted mb-1">{t.monthlyPrice}</label>
                     <input type="number" min="0" step="0.01"
@@ -614,37 +610,18 @@ export const SubscriptionPlansPage: React.FC<Props> = ({ auth, addToast }) => {
                       className="w-full px-3 py-2 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-300"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-textMuted mb-1">{t.trialDays}</label>
-                    <input type="number" min="0"
-                      value={form.trial_days}
-                      onChange={(e) => setField('trial_days', parseInt(e.target.value) || 0)}
-                      className="w-full px-3 py-2 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-300"
-                    />
-                  </div>
                 </div>
               </div>
 
               {/* Limits */}
               <div>
                 <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.limits}</p>
-                <p className="text-[10px] text-textMuted mb-3">
-                  These override the feature matrix numeric values for enforcement. Edit individual feature values in the Feature Matrix view.
-                </p>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-textMuted mb-1">{t.maxCampaigns}</label>
                     <input type="number" min="1"
                       value={form.max_campaigns}
                       onChange={(e) => setField('max_campaigns', parseInt(e.target.value) || 1)}
-                      className="w-full px-3 py-2 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-300"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-textMuted mb-1">{t.maxCvs}</label>
-                    <input type="number" min="1"
-                      value={form.max_processed_cvs_per_month}
-                      onChange={(e) => setField('max_processed_cvs_per_month', parseInt(e.target.value) || 1)}
                       className="w-full px-3 py-2 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-300"
                     />
                   </div>

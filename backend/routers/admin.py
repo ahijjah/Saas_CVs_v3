@@ -243,19 +243,35 @@ async def create_tenant(
         tenant_id = str(result.scalar_one())
 
         user_id: str | None = None
+        _verify_token: str | None = None
         if has_admin:
+            import hashlib as _hl, secrets as _sec
+            from datetime import datetime as _dt, timedelta as _td, timezone as _tz2
             pw_hash = hash_password(body.admin_password)  # type: ignore[arg-type]
+            _verify_token = _sec.token_urlsafe(48)
+            _verify_hash = _hl.sha256(_verify_token.encode()).hexdigest()
+            _verify_exp = _dt.now(_tz2.utc) + _td(hours=48)
             user_result = await db.execute(
                 text("""
-                    INSERT INTO users (tenant_id, email, password_hash, full_name, role, status)
-                    VALUES (:tid, :email, :pw, :name, 'admin', 'active')
+                    INSERT INTO users (
+                        tenant_id, email, password_hash, full_name, role,
+                        status, must_change_password,
+                        email_verification_token_hash, email_verification_expires_at
+                    )
+                    VALUES (
+                        :tid, :email, :pw, :name, 'admin',
+                        'pending_email_verification', true,
+                        :token_hash, :expires
+                    )
                     RETURNING user_id
                 """),
                 {
-                    "tid":   tenant_id,
-                    "email": str(body.admin_email),
-                    "pw":    pw_hash,
-                    "name":  body.admin_full_name,
+                    "tid":        tenant_id,
+                    "email":      str(body.admin_email),
+                    "pw":         pw_hash,
+                    "name":       body.admin_full_name,
+                    "token_hash": _verify_hash,
+                    "expires":    _verify_exp,
                 },
             )
             user_id = str(user_result.scalar_one())
@@ -273,17 +289,19 @@ async def create_tenant(
             )
         raise
 
-    # Send welcome email to the new admin — fire-and-forget, never blocks creation
-    if user_id and has_admin:
+    # Send activation email to new admin — fire-and-forget
+    if user_id and has_admin and _verify_token:
         try:
-            from services.email_service import send_tenant_admin_created_email as _send_admin_email
+            from services.email_service import send_activation_email as _send_activation
             import asyncio as _asyncio
-            login_url = getattr(settings, "app_base_url", "https://app.ai970.cloud")
-            _asyncio.create_task(_send_admin_email(
+            _base_url = getattr(settings, "app_base_url", "https://app.ai970.cloud")
+            verify_link = f"{_base_url}/verify-email?token={_verify_token}"
+            _asyncio.create_task(_send_activation(
                 to_email=str(body.admin_email),
-                admin_name=body.admin_full_name or "",
+                name=body.admin_full_name or "",
                 company_name=body.name,
-                login_url=login_url,
+                verify_link=verify_link,
+                role="admin",
             ))
         except Exception:
             pass

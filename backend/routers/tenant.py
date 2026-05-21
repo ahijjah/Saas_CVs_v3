@@ -76,11 +76,13 @@ def _require_tenant_admin(current_user) -> None:
 
 
 async def _get_active_count_and_limit(tenant_id: str, db) -> tuple[int, int]:
-    """Return (active_user_count, max_users) scoped to a specific tenant_id."""
+    """Return (seat_count, max_users) scoped to a specific tenant_id.
+    Counts both 'active' and 'pending_email_verification' — both occupy a seat."""
     count_row = await db.execute(
         text("""
             SELECT COUNT(*) FROM users
-            WHERE tenant_id = :tid AND status = 'active'
+            WHERE tenant_id = :tid
+              AND status IN ('active', 'pending_email_verification')
         """),
         {"tid": tenant_id},
     )
@@ -127,7 +129,7 @@ async def list_tenant_users(
         for r in rows.mappings().all()
     ]
 
-    active_count = sum(1 for u in users if u["status"] == "active")
+    active_count = sum(1 for u in users if u["status"] in ("active", "pending_email_verification"))
     _, max_users = await _get_active_count_and_limit(current_user.tenant_id, db)
 
     return {
@@ -154,22 +156,38 @@ async def create_tenant_user(
             detail="User limit reached for your current plan.",
         )
 
+    import hashlib as _hashlib
+    import secrets as _secrets
+    from datetime import datetime as _datetime, timedelta as _timedelta, timezone as _tz
     password_hash = hash_password(body.password)
+    verify_token = _secrets.token_urlsafe(48)
+    verify_token_hash = _hashlib.sha256(verify_token.encode()).hexdigest()
+    verify_expires = _datetime.now(_tz.utc) + _timedelta(hours=48)
 
     try:
         # tenant_id is always taken from the JWT — never from the request body.
         user_result = await db.execute(
             text("""
-                INSERT INTO users (tenant_id, email, password_hash, full_name, role, status)
-                VALUES (:tid, :email, :pw, :name, :role, 'active')
+                INSERT INTO users (
+                    tenant_id, email, password_hash, full_name, role,
+                    status, must_change_password,
+                    email_verification_token_hash, email_verification_expires_at
+                )
+                VALUES (
+                    :tid, :email, :pw, :name, :role,
+                    'pending_email_verification', true,
+                    :token_hash, :expires
+                )
                 RETURNING user_id, email, full_name, role, status, created_at
             """),
             {
-                "tid": current_user.tenant_id,
-                "email": body.email,
-                "pw": password_hash,
-                "name": body.full_name,
-                "role": body.role,
+                "tid":        current_user.tenant_id,
+                "email":      body.email,
+                "pw":         password_hash,
+                "name":       body.full_name,
+                "role":       body.role,
+                "token_hash": verify_token_hash,
+                "expires":    verify_expires,
             },
         )
         user = user_result.mappings().first()
@@ -183,23 +201,25 @@ async def create_tenant_user(
             )
         raise
 
-    # Send welcome email to new user — fire-and-forget, never blocks creation
+    # Send activation email — fire-and-forget, never blocks creation
     try:
-        from services.email_service import send_user_created_welcome_email as _send_user_email
+        from services.email_service import send_activation_email as _send_activation
         from config import get_settings as _cfg
         import asyncio as _asyncio
-        _login_url = getattr(_cfg(), "app_base_url", "https://app.ai970.cloud")
+        _settings = _cfg()
+        _base_url = getattr(_settings, "app_base_url", "https://app.ai970.cloud")
+        verify_link = f"{_base_url}/verify-email?token={verify_token}"
         tenant_name_row = await db.execute(
             text("SELECT name FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
             {"tid": current_user.tenant_id},
         )
         _tenant_name = (tenant_name_row.scalar_one_or_none() or "")
-        _asyncio.create_task(_send_user_email(
+        _asyncio.create_task(_send_activation(
             to_email=str(body.email),
-            user_name=body.full_name,
+            name=body.full_name,
             company_name=_tenant_name,
+            verify_link=verify_link,
             role=body.role,
-            login_url=_login_url,
         ))
     except Exception:
         pass
