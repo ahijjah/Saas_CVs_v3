@@ -224,34 +224,82 @@ async def send_email_verification_email(
     text_body = (
         f"Hi {name},\n\n"
         f"Thanks for registering {company_name} on CV Analyzer.\n\n"
-        "Please verify your email address to activate your account:\n"
+        "Please verify your email address to activate your account by clicking the link below:\n\n"
         f"{verify_link}\n\n"
         "This link expires in 48 hours.\n\n"
-        "If you did not create this account, ignore this email.\n\n"
+        "If your link expires, you can request a new verification email from the login page.\n\n"
+        "If you did not create this account, you can safely ignore this email.\n\n"
         "The CV Analyzer Team"
     )
-    html_body = f"""
-    <html><body style="font-family:sans-serif;color:#1e293b;max-width:560px;margin:0 auto;">
-    <div style="background:linear-gradient(135deg,#6366f1,#2563eb);padding:32px 24px;border-radius:12px 12px 0 0;">
-      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">Verify your email</h1>
-      <p style="color:#c7d2fe;margin:8px 0 0;font-size:14px;">{company_name} · CV Analyzer</p>
-    </div>
-    <div style="background:#fff;padding:32px 24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
-      <p style="margin:0 0 16px;">Hi <strong>{name}</strong>,</p>
-      <p style="margin:0 0 20px;">
-        Thanks for registering <strong>{company_name}</strong> on CV Analyzer.
-        Please verify your email address to activate your account.
-      </p>
-      <p style="text-align:center;margin:0 0 24px;">
-        <a href="{verify_link}" style="background:linear-gradient(135deg,#6366f1,#2563eb);color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
-          Verify Email Address &#x2192;
-        </a>
-      </p>
-      <p style="margin:0 0 8px;font-size:12px;color:#94a3b8;">This link expires in 48 hours.</p>
-      <p style="margin:0;font-size:12px;color:#94a3b8;">If you did not create this account, you can safely ignore this email.</p>
-    </div>
-    </body></html>
-    """
+    html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;padding:32px 16px;">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;">
+
+      <!-- Header -->
+      <tr>
+        <td style="background-color:#2563eb;padding:32px 28px;border-radius:8px 8px 0 0;">
+          <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;">Verify your email address</p>
+          <p style="margin:8px 0 0;font-size:14px;color:#bfdbfe;">{company_name} &middot; CV Analyzer</p>
+        </td>
+      </tr>
+
+      <!-- Body -->
+      <tr>
+        <td style="background-color:#ffffff;padding:32px 28px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;">
+
+          <p style="margin:0 0 16px;font-size:15px;color:#1e293b;">Hi <strong>{name}</strong>,</p>
+
+          <p style="margin:0 0 12px;font-size:15px;color:#1e293b;">
+            Thanks for registering <strong>{company_name}</strong> on CV Analyzer.
+          </p>
+
+          <p style="margin:0 0 28px;font-size:15px;color:#1e293b;">
+            Please verify your email address to activate your account. Click the button below to get started.
+          </p>
+
+          <!-- CTA button (table-based for email client compatibility) -->
+          <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 28px;">
+            <tr>
+              <td align="center" style="background-color:#2563eb;border-radius:6px;">
+                <a href="{verify_link}"
+                   style="display:inline-block;padding:14px 32px;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;letter-spacing:0.3px;">
+                  Verify Email
+                </a>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Fallback URL -->
+          <p style="margin:0 0 6px;font-size:13px;color:#475569;">
+            If the button does not work, copy and paste the following link into your browser:
+          </p>
+          <p style="margin:0 0 28px;font-size:12px;color:#1e293b;word-break:break-all;background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:10px 12px;">
+            {verify_link}
+          </p>
+
+          <!-- Expiry + resend -->
+          <p style="margin:0 0 8px;font-size:13px;color:#64748b;">
+            &#x23F1; This verification link expires in <strong>48 hours</strong>.
+          </p>
+          <p style="margin:0 0 24px;font-size:13px;color:#64748b;">
+            If your link expires, you can request a new verification email from the login page.
+          </p>
+
+          <p style="margin:0;font-size:12px;color:#94a3b8;">
+            If you did not create this account, you can safely ignore this email.
+          </p>
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
     await _send(to_email, subject, html_body, text_body)
 
 
@@ -265,35 +313,83 @@ async def send_activation_email(
         f"Hi {name},\n\n"
         f"An account has been created for you on {company_name}'s CV Analyzer workspace.\n\n"
         f"Your role: {role_display}\n\n"
-        "Click the link below to verify your email and activate your account:\n"
+        "Click the link below to verify your email and activate your account:\n\n"
         f"{verify_link}\n\n"
-        "This link expires in 48 hours. After activation you will be asked to set a new password.\n\n"
+        "This link expires in 48 hours. After activation you will be prompted to set your password.\n\n"
+        "If your link expires, you can request a new verification email from the login page.\n\n"
+        "If you were not expecting this email, please contact your account administrator.\n\n"
         "The CV Analyzer Team"
     )
-    html_body = f"""
-    <html><body style="font-family:sans-serif;color:#1e293b;max-width:560px;margin:0 auto;">
-    <div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:32px 24px;border-radius:12px 12px 0 0;">
-      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">Activate your account</h1>
-      <p style="color:#94a3b8;margin:8px 0 0;font-size:14px;">{company_name} · CV Analyzer</p>
-    </div>
-    <div style="background:#fff;padding:32px 24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;">
-      <p style="margin:0 0 16px;">Hi <strong>{name}</strong>,</p>
-      <p style="margin:0 0 8px;">
-        An account has been created for you on <strong>{company_name}</strong>'s CV Analyzer workspace
-        with the role of <strong>{role_display}</strong>.
-      </p>
-      <p style="margin:0 0 20px;font-size:13px;color:#64748b;">
-        Click below to verify your email and set your password. This link expires in <strong>48 hours</strong>.
-      </p>
-      <p style="text-align:center;margin:0 0 24px;">
-        <a href="{verify_link}" style="background:#1e3a5f;color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">
-          Activate Account &#x2192;
-        </a>
-      </p>
-      <p style="margin:0;font-size:12px;color:#94a3b8;">If you were not expecting this email, please contact your account administrator.</p>
-    </div>
-    </body></html>
-    """
+    html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;padding:32px 16px;">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;">
+
+      <!-- Header -->
+      <tr>
+        <td style="background-color:#2563eb;padding:32px 28px;border-radius:8px 8px 0 0;">
+          <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;">Activate your account</p>
+          <p style="margin:8px 0 0;font-size:14px;color:#bfdbfe;">{company_name} &middot; CV Analyzer</p>
+        </td>
+      </tr>
+
+      <!-- Body -->
+      <tr>
+        <td style="background-color:#ffffff;padding:32px 28px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;">
+
+          <p style="margin:0 0 16px;font-size:15px;color:#1e293b;">Hi <strong>{name}</strong>,</p>
+
+          <p style="margin:0 0 12px;font-size:15px;color:#1e293b;">
+            An account has been created for you on <strong>{company_name}</strong>'s CV Analyzer workspace
+            with the role of <strong>{role_display}</strong>.
+          </p>
+
+          <p style="margin:0 0 28px;font-size:15px;color:#1e293b;">
+            Click the button below to verify your email and set your password to get started.
+          </p>
+
+          <!-- CTA button (table-based for email client compatibility) -->
+          <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 28px;">
+            <tr>
+              <td align="center" style="background-color:#2563eb;border-radius:6px;">
+                <a href="{verify_link}"
+                   style="display:inline-block;padding:14px 32px;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;letter-spacing:0.3px;">
+                  Activate Account
+                </a>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Fallback URL -->
+          <p style="margin:0 0 6px;font-size:13px;color:#475569;">
+            If the button does not work, copy and paste the following link into your browser:
+          </p>
+          <p style="margin:0 0 28px;font-size:12px;color:#1e293b;word-break:break-all;background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:10px 12px;">
+            {verify_link}
+          </p>
+
+          <!-- Expiry + resend -->
+          <p style="margin:0 0 8px;font-size:13px;color:#64748b;">
+            &#x23F1; This activation link expires in <strong>48 hours</strong>.
+          </p>
+          <p style="margin:0 0 24px;font-size:13px;color:#64748b;">
+            If your link expires, you can request a new verification email from the login page.
+          </p>
+
+          <p style="margin:0;font-size:12px;color:#94a3b8;">
+            If you were not expecting this email, please contact your account administrator.
+          </p>
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
     await _send(to_email, subject, html_body, text_body)
 
 
