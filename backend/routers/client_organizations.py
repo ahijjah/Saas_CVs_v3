@@ -53,6 +53,14 @@ class AssignUserRequest(BaseModel):
     role_for_client: str = "recruiter"
 
 
+# Tenant role → maximum permitted client access roles (descending privilege)
+_TENANT_ROLE_MAX_CLIENT_ROLES: dict[str, list[str]] = {
+    "hr_manager": ["account_manager", "recruiter", "viewer"],
+    "recruiter":  ["recruiter", "viewer"],
+    "viewer":     ["viewer"],
+}
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _require_agency_tenant(tenant_id: str, db: AsyncSession) -> str:
@@ -438,16 +446,38 @@ async def assign_user_to_client(
     if not corg_check.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client organisation not found")
 
-    # Verify user belongs to tenant
-    user_check = await db.execute(
+    # Verify user belongs to tenant and fetch their tenant role
+    user_row = await db.execute(
         text("""
-            SELECT user_id FROM users
+            SELECT user_id, role FROM users
             WHERE user_id = CAST(:uid AS uuid) AND tenant_id = CAST(:tid AS uuid) AND status = 'active'
         """),
         {"uid": body.user_id, "tid": current_user.tenant_id},
     )
-    if not user_check.first():
+    target_user = user_row.mappings().first()
+    if not target_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active user not found in this tenant")
+
+    target_tenant_role = target_user["role"]
+
+    # Admins have global access to all client orgs — block explicit assignment
+    if target_tenant_role == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Tenant Admins have automatic access to all client organisations and cannot be assigned to specific clients.",
+        )
+
+    # Privilege escalation guard: client role must not exceed what the tenant role permits
+    allowed_client_roles = _TENANT_ROLE_MAX_CLIENT_ROLES.get(target_tenant_role, ["viewer"])
+    if body.role_for_client not in allowed_client_roles:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"A user with tenant role '{target_tenant_role}' cannot be granted "
+                f"the client access role '{body.role_for_client}'. "
+                f"Allowed roles: {', '.join(allowed_client_roles)}."
+            ),
+        )
 
     try:
         result = await db.execute(

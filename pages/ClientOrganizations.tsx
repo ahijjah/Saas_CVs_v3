@@ -39,12 +39,14 @@ const T = {
     modalUsersTitle: 'Assigned Users',
     assignUser: 'Assign User',
     removeUser: 'Remove',
-    roleForClient: 'Role',
-    roleAccountManager: 'Account Manager',
-    roleRecruiter: 'Recruiter',
-    roleViewer: 'Viewer',
+    roleForClient: 'Client Access Role',
+    tenantRole: 'Tenant Role',
+    roleAccountManager: 'Client Account Manager',
+    roleRecruiter: 'Client Recruiter',
+    roleViewer: 'Client Viewer',
     selectUser: 'Select user...',
     noUsers: 'No users assigned to this client yet.',
+    adminGlobalNote: 'Tenant Admins have automatic access to all client organisations and cannot be assigned to specific clients.',
     confirmDeactivate: 'Deactivate this client organisation? Linked jobs will not be deleted.',
     createdSuccess: 'Client organisation created.',
     updatedSuccess: 'Client organisation updated.',
@@ -81,12 +83,14 @@ const T = {
     modalUsersTitle: 'المستخدمون المعيّنون',
     assignUser: 'تعيين مستخدم',
     removeUser: 'إزالة',
-    roleForClient: 'الدور',
-    roleAccountManager: 'مدير الحساب',
-    roleRecruiter: 'مسؤول توظيف',
-    roleViewer: 'مشاهد',
+    roleForClient: 'دور وصول العميل',
+    tenantRole: 'دور المستأجر',
+    roleAccountManager: 'مدير حساب العميل',
+    roleRecruiter: 'مسؤول توظيف العميل',
+    roleViewer: 'مشاهد العميل',
     selectUser: 'اختر مستخدماً...',
     noUsers: 'لم يتم تعيين أي مستخدمين لهذا العميل بعد.',
+    adminGlobalNote: 'مسؤولو المستأجر لديهم وصول تلقائي لجميع منظمات العملاء ولا يمكن تعيينهم لعملاء محددين.',
     confirmDeactivate: 'تعطيل هذه المنظمة؟ لن يتم حذف الوظائف المرتبطة.',
     createdSuccess: 'تم إنشاء منظمة العميل.',
     updatedSuccess: 'تم تحديث منظمة العميل.',
@@ -311,9 +315,26 @@ export const ClientOrganizationsPage: React.FC<ClientOrganizationsProps> = ({ au
     viewer:          t.roleViewer,
   };
 
-  // Unassigned users for the dropdown
+  // Tenant role → max permitted client access roles (privilege escalation guard)
+  const MAX_CLIENT_ROLES: Record<string, string[]> = {
+    hr_manager: ['account_manager', 'recruiter', 'viewer'],
+    recruiter:  ['recruiter', 'viewer'],
+    viewer:     ['viewer'],
+  };
+
+  // Unassigned users for the dropdown — exclude admins (they have global access)
   const assignedIds = assignedUsers.map(u => u.user_id);
-  const unassignedUsers = tenantUsers.filter(u => !assignedIds.includes(u.user_id) && u.status === 'active');
+  const unassignedUsers = tenantUsers.filter(
+    u => !assignedIds.includes(u.user_id) && u.status === 'active' && u.role !== 'admin'
+  );
+
+  // Allowed client roles for the currently selected user
+  const selectedUserRole = assignUserId
+    ? (unassignedUsers.find(u => u.user_id === assignUserId)?.role ?? '')
+    : '';
+  const allowedClientRoles: string[] = selectedUserRole
+    ? (MAX_CLIENT_ROLES[selectedUserRole] ?? ['account_manager', 'recruiter', 'viewer'])
+    : ['account_manager', 'recruiter', 'viewer'];
 
   return (
     <div className="space-y-6">
@@ -502,9 +523,15 @@ export const ClientOrganizationsPage: React.FC<ClientOrganizationsProps> = ({ au
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-textMain truncate">{u.full_name}</p>
                       <p className="text-xs text-textMuted truncate">{u.email}</p>
-                      <span className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider">
-                        {roleLabels[u.role_for_client] || u.role_for_client}
-                      </span>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                          {t.tenantRole}: {u.tenant_role}
+                        </span>
+                        <span className="text-slate-300 text-[9px]">|</span>
+                        <span className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider">
+                          {t.roleForClient}: {roleLabels[u.role_for_client] || u.role_for_client}
+                        </span>
+                      </div>
                     </div>
                     {isAdmin && (
                       <button onClick={() => handleRemoveUser(u.user_id)}
@@ -517,37 +544,57 @@ export const ClientOrganizationsPage: React.FC<ClientOrganizationsProps> = ({ au
               )}
             </div>
 
-            {isAdmin && unassignedUsers.length > 0 && (
+            {isAdmin && (
               <div className="px-6 py-4 border-t border-border space-y-3">
-                <p className="text-xs font-bold text-textMuted uppercase tracking-wider">{t.assignUser}</p>
-                <div className="flex gap-2">
-                  <select
-                    value={assignUserId}
-                    onChange={e => setAssignUserId(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    <option value="">{t.selectUser}</option>
-                    {unassignedUsers.map(u => (
-                      <option key={u.user_id} value={u.user_id}>{u.full_name} ({u.email})</option>
-                    ))}
-                  </select>
-                  <select
-                    value={assignRole}
-                    onChange={e => setAssignRole(e.target.value)}
-                    className="px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    <option value="recruiter">{t.roleRecruiter}</option>
-                    <option value="account_manager">{t.roleAccountManager}</option>
-                    <option value="viewer">{t.roleViewer}</option>
-                  </select>
-                  <button
-                    onClick={handleAssignUser}
-                    disabled={!assignUserId || assigning}
-                    className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-xl hover:bg-primaryDark transition-colors disabled:opacity-50"
-                  >
-                    {assigning ? '…' : '+'}
-                  </button>
+                {/* Admin global-access note */}
+                <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
+                  <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z" />
+                  </svg>
+                  <span>{t.adminGlobalNote}</span>
                 </div>
+                {unassignedUsers.length > 0 && (
+                  <>
+                    <p className="text-xs font-bold text-textMuted uppercase tracking-wider">{t.assignUser}</p>
+                    <div className="flex gap-2">
+                      <select
+                        value={assignUserId}
+                        onChange={e => {
+                          const uid = e.target.value;
+                          setAssignUserId(uid);
+                          // Reset role to highest allowed for new user's tenant role
+                          const userRole = unassignedUsers.find(u => u.user_id === uid)?.role ?? '';
+                          const allowed = MAX_CLIENT_ROLES[userRole] ?? ['account_manager', 'recruiter', 'viewer'];
+                          setAssignRole(allowed[0]);
+                        }}
+                        className="flex-1 px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        <option value="">{t.selectUser}</option>
+                        {unassignedUsers.map(u => (
+                          <option key={u.user_id} value={u.user_id}>
+                            {u.full_name} ({u.email})
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={assignRole}
+                        onChange={e => setAssignRole(e.target.value)}
+                        className="px-3 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        {allowedClientRoles.map(r => (
+                          <option key={r} value={r}>{roleLabels[r] ?? r}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleAssignUser}
+                        disabled={!assignUserId || assigning}
+                        className="px-4 py-2 bg-primary text-white text-sm font-bold rounded-xl hover:bg-primaryDark transition-colors disabled:opacity-50"
+                      >
+                        {assigning ? '…' : '+'}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
