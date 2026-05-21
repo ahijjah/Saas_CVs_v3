@@ -89,7 +89,7 @@ const ApplicationsRoute: React.FC<{
       initialFilter={filter}
       initialApplicationId={appId}
       auth={auth}
-      onBack={() => navigate('/jobs')}
+      onBack={() => navigate(`/jobs/${jobId}`)}
       addToast={addToast}
     />
   );

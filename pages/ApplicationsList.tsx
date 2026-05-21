@@ -15,9 +15,19 @@ interface ApplicationsListProps {
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
+interface JobMeta {
+  job_title: string;
+  job_client: string | null;
+  job_code: string;
+  job_status: string;
+  job_type: string | null;
+  location: string | null;
+  client_org_name: string | null;
+}
+
 const T = {
   en: {
-    backToCampaigns: 'Back to Campaigns',
+    backToCampaigns: 'Back to Job',
     filterAll: 'All',
     filterQualified: 'Qualified',
     filterPartial: 'Partial',
@@ -36,9 +46,13 @@ const T = {
     statusProcessing: 'Processing',
     exitReason: 'Reason:',
     duplicateOf: 'Duplicate of another submission',
+    viewCV: 'View CV',
+    downloadingCV: 'Downloading…',
+    client: 'Client',
+    general: 'General',
   },
   ar: {
-    backToCampaigns: 'العودة إلى الحملات',
+    backToCampaigns: 'العودة إلى الوظيفة',
     filterAll: 'الكل',
     filterQualified: 'مؤهلون',
     filterPartial: 'جزئيون',
@@ -57,6 +71,10 @@ const T = {
     statusProcessing: 'قيد المعالجة',
     exitReason: 'السبب:',
     duplicateOf: 'مكرر لطلب آخر',
+    viewCV: 'عرض السيرة',
+    downloadingCV: 'جارٍ التحميل…',
+    client: 'العميل',
+    general: 'عام',
   },
 };
 
@@ -76,6 +94,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   const [loading, setLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const fetchInFlightRef = useRef<string | null>(null);
+  const [jobMeta, setJobMeta] = useState<JobMeta | null>(null);
+  const [downloadingCVId, setDownloadingCVId] = useState<string | null>(null);
 
   const filterLabels: Record<ApplicationFilter, string> = {
     all: t.filterAll,
@@ -102,6 +122,51 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
       setApplicationsAll([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchJobMeta = async () => {
+    try {
+      const data = await apiService.get(
+        WEBHOOK_CONFIG.GET_JOBS_WEBHOOK_URL,
+        {},
+        auth.token!
+      );
+      const jobs: any[] = Array.isArray(data) ? data : [];
+      const job = jobs.find(j => j.job_id === jobId);
+      if (job) {
+        setJobMeta({
+          job_title: job.job_title,
+          job_client: job.job_client,
+          job_code: job.job_code,
+          job_status: job.job_status,
+          job_type: job.job_type || null,
+          location: job.location || null,
+          client_org_name: job.client_org_name || null,
+        });
+      }
+    } catch { /* non-critical */ }
+  };
+
+  const handleDownloadApplicationCV = async (applicationId: string) => {
+    setDownloadingCVId(applicationId);
+    try {
+      const url = `${WEBHOOK_CONFIG.CV_DOWNLOAD_BASE_URL}/${applicationId}/cv`;
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${auth.token!}` } });
+      if (!resp.ok) throw new Error('CV not available');
+      const blob = await resp.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = 'cv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 10000);
+    } catch {
+      addToast('Could not download CV.', 'error');
+    } finally {
+      setDownloadingCVId(null);
     }
   };
 
@@ -179,6 +244,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   useEffect(() => {
     fetchApplications();
+    fetchJobMeta();
   }, [jobId]);
 
   // Auto-open a specific application when navigated from JobDetails duplicate section
@@ -245,6 +311,43 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         </div>
       </div>
 
+      {/* Job metadata header */}
+      {jobMeta && (
+        <div className="bg-white rounded-xl border border-border px-5 py-4 flex flex-wrap items-center gap-x-6 gap-y-2 shadow-sm">
+          <div className="min-w-0">
+            <p className="text-xs font-black text-textMuted uppercase tracking-widest mb-0.5">{jobMeta.job_code}</p>
+            <h2 className="text-base font-bold text-textMain truncate">{jobMeta.job_title}</h2>
+          </div>
+          {jobMeta.client_org_name !== undefined && (
+            <div className="shrink-0">
+              <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-0.5">{t.client}</p>
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${jobMeta.client_org_name ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
+                {jobMeta.client_org_name || t.general}
+              </span>
+            </div>
+          )}
+          {jobMeta.job_type && (
+            <div className="shrink-0">
+              <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-0.5">Type</p>
+              <p className="text-xs font-bold text-textMain">{jobMeta.job_type}</p>
+            </div>
+          )}
+          {jobMeta.location && (
+            <div className="shrink-0">
+              <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-0.5">Location</p>
+              <p className="text-xs font-bold text-textMain">{jobMeta.location}</p>
+            </div>
+          )}
+          <div className="shrink-0 ml-auto">
+            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+              jobMeta.job_status === 'Active' ? 'bg-green-100 text-green-800' :
+              jobMeta.job_status === 'Closed' ? 'bg-slate-100 text-slate-800' :
+              'bg-amber-100 text-amber-800'
+            }`}>{jobMeta.job_status}</span>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4">
         {loading ? (
           <div className="p-12 text-center text-textMuted flex flex-col items-center">
@@ -297,6 +400,14 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                       {detailsLoading ? t.loadingAnalysis : t.viewAnalysis}
                     </button>
                   )}
+                  <button
+                    disabled={downloadingCVId === (app.application_id || app.id)}
+                    onClick={() => handleDownloadApplicationCV(app.application_id || app.id)}
+                    className="flex items-center gap-1 text-[11px] font-bold text-textMuted hover:text-primary transition-colors disabled:opacity-50"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    {downloadingCVId === (app.application_id || app.id) ? t.downloadingCV : t.viewCV}
+                  </button>
                 </div>
               </div>
             );

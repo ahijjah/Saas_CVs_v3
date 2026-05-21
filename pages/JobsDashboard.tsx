@@ -181,9 +181,11 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
   const clientOrgOptions = isAgencyTenant
     ? Array.from(new Set(jobs.map(j => j.client_org_name).filter(Boolean))) as string[]
     : [];
+  const hasGeneralJobs = isAgencyTenant && jobs.some(j => !j.client_org_name);
 
   const filteredJobs = jobs.filter(j => {
     if (tenantFilter && j.tenant_name !== tenantFilter) return false;
+    if (clientOrgFilter === '__general__') return !j.client_org_name;
     if (clientOrgFilter && j.client_org_name !== clientOrgFilter) return false;
     return true;
   });
@@ -208,13 +210,14 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
               ))}
             </select>
           )}
-          {isAgencyTenant && clientOrgOptions.length > 0 && (
+          {isAgencyTenant && (clientOrgOptions.length > 0 || hasGeneralJobs) && (
             <select
               value={clientOrgFilter}
               onChange={e => setClientOrgFilter(e.target.value)}
               className="w-full sm:w-48 border border-border rounded-xl px-3 py-2 text-sm text-textMain bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <option value="">{t.allClients}</option>
+              {hasGeneralJobs && <option value="__general__">General</option>}
               {clientOrgOptions.map(co => (
                 <option key={co} value={co}>{co}</option>
               ))}
@@ -327,7 +330,12 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                         </button>
                         <div className="text-xs text-textMuted truncate">
                           {job.job_client}
-                          {job.client_org_name && (
+                          {isAgencyTenant && (
+                            <span className={`ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold ${job.client_org_name ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {job.client_org_name || 'General'}
+                            </span>
+                          )}
+                          {!isAgencyTenant && job.client_org_name && (
                             <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700">
                               {job.client_org_name}
                             </span>
@@ -444,7 +452,12 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                           </button>
                           <div className="text-xs text-textMuted whitespace-nowrap">
                             {job.job_client}
-                            {job.client_org_name && (
+                            {isAgencyTenant && (
+                              <span className={`ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold ${job.client_org_name ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
+                                {job.client_org_name || 'General'}
+                              </span>
+                            )}
+                            {!isAgencyTenant && job.client_org_name && (
                               <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700">
                                 {job.client_org_name}
                               </span>

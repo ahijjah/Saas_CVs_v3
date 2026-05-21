@@ -276,15 +276,10 @@ async def create_job(
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
-    # Agency / individual_recruiter tenants: client_organization_id is mandatory
+    # Agency / individual_recruiter tenants: client_organization_id is optional (NULL = General job)
     tenant_type = tenant["tenant_type"] or "organization"
-    if tenant_type in ("agency", "individual_recruiter"):
-        if not body.client_organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="client_organization_id is required for agency and individual recruiter accounts.",
-            )
-        # Verify client org belongs to this tenant
+    if tenant_type in ("agency", "individual_recruiter") and body.client_organization_id:
+        # Verify the provided client org belongs to this tenant
         corg_row = await db.execute(
             text("""
                 SELECT client_organization_id FROM client_organizations

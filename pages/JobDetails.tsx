@@ -156,13 +156,17 @@ const T = {
     noDuplicates: 'No duplicate submissions',
     dupSubmissionsTitle: 'Duplicate Submissions',
     dupSubmissionsHint: 'These CVs were rejected before scoring because they matched an existing submission for this job (same file hash or near-identical content). They are not scored applications.',
-    dupColName: 'Name',
+    dupColName: 'Duplicate Candidate',
     dupColEmail: 'Email',
     dupColFile: 'File',
     dupColReceived: 'Received',
     dupColReason: 'Reason',
+    dupColSimilarity: 'Similarity',
+    dupColOriginal: 'Original Submission',
+    dupDownloadCV: 'Download',
     dupShowAll: 'Show all',
     dupShowLess: 'Show less',
+    refresh: 'Refresh',
     tabPublicLink: 'Public Link',
     tabEmailAlias: 'Email Alias',
     tabEmailFwd: 'Email Forwarding',
@@ -314,13 +318,17 @@ const T = {
     noDuplicates: 'لا توجد طلبات مكررة',
     dupSubmissionsTitle: 'الطلبات المكررة',
     dupSubmissionsHint: 'هذه السير الذاتية رُفضت قبل التقييم لأنها تطابقت مع طلب موجود لهذه الوظيفة (نفس الملف أو محتوى متطابق تقريبًا). لم يتم تقييمها.',
-    dupColName: 'الاسم',
+    dupColName: 'المرشح المكرر',
     dupColEmail: 'البريد الإلكتروني',
     dupColFile: 'الملف',
     dupColReceived: 'وُصل في',
     dupColReason: 'السبب',
+    dupColSimilarity: 'التشابه',
+    dupColOriginal: 'الطلب الأصلي',
+    dupDownloadCV: 'تحميل',
     dupShowAll: 'عرض الكل',
     dupShowLess: 'عرض أقل',
+    refresh: 'تحديث',
     tabPublicLink: 'الرابط العام',
     tabEmailAlias: 'بريد مخصص',
     tabEmailFwd: 'إعادة توجيه',
@@ -359,6 +367,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   const [duplicateLogs, setDuplicateLogs] = useState<any[]>([]);
   const [loadingDupLogs, setLoadingDupLogs] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Criteria extraction polling tick — increments after each poll so the
   // effect always re-schedules even when status string stays unchanged.
@@ -575,6 +584,31 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       setLoadingDupLogs(false);
     }
   }, [jobId, auth.token]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchJobDetails(), fetchQueueStatus(), fetchDuplicateLogs()]);
+    setRefreshing(false);
+  }, [fetchJobDetails, fetchQueueStatus, fetchDuplicateLogs]);
+
+  const handleDownloadDupCV = useCallback(async (logId: string, filename: string) => {
+    try {
+      const url = `${WEBHOOK_CONFIG.DUPLICATE_LOGS_BASE_URL}/${jobId}/duplicate-logs/${logId}/cv`;
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${auth.token!}` } });
+      if (!resp.ok) throw new Error('CV not available');
+      const blob = await resp.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = filename || 'cv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 10000);
+    } catch {
+      addToast('Could not download duplicate CV file.', 'error');
+    }
+  }, [jobId, auth.token, addToast]);
 
   useEffect(() => { fetchUploadedCVs(); }, [fetchUploadedCVs]);
   useEffect(() => { fetchQueueStatus(); }, [fetchQueueStatus]);
@@ -1144,6 +1178,14 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-border text-textMuted text-[10px] font-black rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            <svg className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            {t.refresh}
+          </button>
           <button onClick={() => handleCopy(publicApplyUrl, setCopiedApplyLink)} className="flex items-center gap-1.5 px-3 py-1.5 border border-violet-200 bg-violet-50 text-violet-700 text-[10px] font-black rounded-lg hover:bg-violet-100 transition-colors">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
             {copiedApplyLink ? t.copied : t.copyBtn}
@@ -1904,9 +1946,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                     <tr className="border-b border-border bg-slate-50">
                       <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColName}</th>
                       <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColEmail}</th>
-                      <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColFile}</th>
                       <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColReceived}</th>
+                      <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColSimilarity}</th>
+                      <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColOriginal}</th>
                       <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColReason}</th>
+                      <th className="px-4 py-2.5 text-left text-[9px] font-black text-textMuted uppercase tracking-widest">{t.dupColFile}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -1914,11 +1958,25 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                       <tr key={log.log_id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-2.5 font-medium text-textMain truncate max-w-[140px]">{log.duplicate_name || '—'}</td>
                         <td className="px-4 py-2.5 text-textMuted truncate max-w-[160px]">{log.duplicate_email || '—'}</td>
-                        <td className="px-4 py-2.5 text-textMuted truncate max-w-[140px]">{log.raw_filename || '—'}</td>
                         <td className="px-4 py-2.5 text-textMuted whitespace-nowrap">
                           {log.received_at ? new Date(log.received_at).toLocaleDateString() : '—'}
                         </td>
-                        <td className="px-4 py-2.5 text-textMuted truncate max-w-[180px]">{log.notes || '—'}</td>
+                        <td className="px-4 py-2.5 text-textMuted whitespace-nowrap">
+                          {log.duplicate_similarity_score != null
+                            ? <span className={`font-bold ${log.duplicate_similarity_score >= 95 ? 'text-error' : log.duplicate_similarity_score >= 80 ? 'text-warning' : 'text-textMuted'}`}>{Math.round(log.duplicate_similarity_score)}%</span>
+                            : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-textMuted truncate max-w-[160px]">
+                          {log.original_candidate_name
+                            ? <span className="font-medium text-textMain">{log.original_candidate_name}</span>
+                            : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-textMuted truncate max-w-[160px]">{log.duplicate_reason?.replace(/_/g, ' ') || log.notes || '—'}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          {log.has_duplicate_cv
+                            ? <button onClick={() => handleDownloadDupCV(log.log_id, log.duplicate_original_filename || log.raw_filename || 'cv')} className="text-[10px] font-black text-primary hover:underline">{t.dupDownloadCV}</button>
+                            : <span className="text-textMuted">{log.raw_filename || '—'}</span>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

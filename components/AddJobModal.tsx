@@ -30,8 +30,9 @@ const T = {
     jobTitle: 'Job Title',
     clientOrg: 'Client Organization',
     clientOrgPlaceholder: 'Select client…',
-    clientOrgRequired: 'Client organization is required for agency tenants.',
-    noClientsWarning: 'You must create a client organization before creating a job.',
+    clientOrgGeneral: 'General (No specific client)',
+    clientOrgRequired: 'Please select a client or General.',
+    noClientsWarning: 'No client organizations found. You can create a General job or add clients first.',
     department: 'Department / Client',
     jobLocation: 'Location',
     jobType: 'Job Type',
@@ -52,8 +53,9 @@ const T = {
     jobTitle: 'المسمى الوظيفي',
     clientOrg: 'منظمة العميل',
     clientOrgPlaceholder: 'اختر عميلاً…',
-    clientOrgRequired: 'منظمة العميل مطلوبة لمستأجري الوكالات.',
-    noClientsWarning: 'يجب إنشاء منظمة عميل قبل إنشاء وظيفة.',
+    clientOrgGeneral: 'عام (بدون عميل محدد)',
+    clientOrgRequired: 'يرجى اختيار عميل أو عام.',
+    noClientsWarning: 'لا توجد منظمات عملاء. يمكنك إنشاء وظيفة عامة أو إضافة عملاء أولاً.',
     department: 'القسم / العميل',
     jobLocation: 'الموقع',
     jobType: 'نوع الوظيفة',
@@ -114,11 +116,14 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
   const handleClientOrgChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const orgId = e.target.value;
+    if (orgId === '__general__') {
+      setFormData(prev => ({ ...prev, client_organization_id: '__general__', client: '' }));
+      return;
+    }
     const org = clientOrgs.find(o => o.client_organization_id === orgId);
     setFormData(prev => ({
       ...prev,
       client_organization_id: orgId,
-      // Keep department in sync with org name for backend compatibility
       client: org ? org.organization_name : '',
     }));
   };
@@ -137,9 +142,10 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
     setLoading(true);
     try {
+      const isGeneral = formData.client_organization_id === '__general__';
       const payload: Record<string, string | null> = { title, description };
-      if (formData.client_organization_id) payload.client_organization_id = formData.client_organization_id;
-      if (formData.client.trim()) payload.department = formData.client.trim();
+      if (!isGeneral && formData.client_organization_id) payload.client_organization_id = formData.client_organization_id;
+      if (!isGeneral && formData.client.trim()) payload.department = formData.client.trim();
       if (formData.job_location.trim()) payload.location = formData.job_location.trim();
       if (formData.job_type) payload.job_type = formData.job_type;
       if (formData.job_duration.trim()) payload.duration = formData.job_duration.trim();
@@ -159,13 +165,11 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
   // Validation:
   // - job_title and job_description are always required
-  // - client_organization_id is required only for agency/recruiter tenants
-  // - agency tenants must also have at least one active client org loaded (otherwise button blocked with warning shown)
+  // - for agency tenants: must select a client org or "__general__" (General = no specific client)
   const hasTitle = formData.job_title.trim().length > 0;
   const hasDesc = formData.job_description.trim().length > 0;
   const clientOrgSatisfied = !isAgencyTenant || !!formData.client_organization_id;
-  const hasClientsAvailable = !isAgencyTenant || clientOrgs.length > 0;
-  const isFormValid = hasTitle && hasDesc && clientOrgSatisfied && hasClientsAvailable;
+  const isFormValid = hasTitle && hasDesc && clientOrgSatisfied;
 
   return (
     <div className="fixed inset-0 bg-textMain/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -228,9 +232,9 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                       value={formData.client_organization_id}
                       onChange={handleClientOrgChange}
                       className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
-                      disabled={clientOrgs.length === 0}
                     >
                       <option value="">{t.clientOrgPlaceholder}</option>
+                      <option value="__general__">{t.clientOrgGeneral}</option>
                       {clientOrgs.map(org => (
                         <option key={org.client_organization_id} value={org.client_organization_id}>
                           {org.organization_name}
