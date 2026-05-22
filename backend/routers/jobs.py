@@ -192,11 +192,15 @@ async def list_jobs(
         )
         if client_ids is not None:
             if len(client_ids) == 0:
-                return []  # no assigned clients → empty result
-            placeholders = ", ".join(f"CAST(:cid{i} AS uuid)" for i in range(len(client_ids)))
-            extra_filters.append(f"j.client_organization_id IN ({placeholders})")
-            for i, cid in enumerate(client_ids):
-                params[f"cid{i}"] = cid
+                # No assigned clients — only General jobs (NULL client) are visible
+                extra_filters.append("j.client_organization_id IS NULL")
+            else:
+                placeholders = ", ".join(f"CAST(:cid{i} AS uuid)" for i in range(len(client_ids)))
+                extra_filters.append(
+                    f"(j.client_organization_id IS NULL OR j.client_organization_id IN ({placeholders}))"
+                )
+                for i, cid in enumerate(client_ids):
+                    params[f"cid{i}"] = cid
 
     # Optional explicit client_org filter (for admin/super-admin filtering by client)
     if client_organization_id:
@@ -434,9 +438,24 @@ async def get_job_details(
             LEFT JOIN users cu ON cu.user_id = j.created_by
             LEFT JOIN users uu ON uu.user_id = j.updated_by
             WHERE j.job_id = :jid AND j.tenant_id = :tid
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
             GROUP BY j.job_id, t.tenant_id, co.organization_name, cu.full_name, uu.full_name
         """),
-        {"jid": job_id, "tid": current_user.tenant_id},
+        {
+            "jid":      job_id,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
     )
     job = job_row.mappings().first()
     if not job:
@@ -779,15 +798,31 @@ async def get_duplicate_logs(
                 af.original_name                AS original_cv_filename,
                 af.file_path                    AS original_cv_file_path
             FROM duplicate_application_logs dl
+            JOIN jobs j ON j.job_id = dl.job_id
             LEFT JOIN applications a
                 ON a.application_id = dl.original_application_id
             LEFT JOIN application_files af
                 ON af.application_id = dl.original_application_id
             WHERE dl.job_id = :job_id AND dl.tenant_id = :tenant_id
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tenant_id AS uuid)
+                )
+              )
             ORDER BY dl.received_at DESC
             LIMIT 200
         """),
-        {"job_id": job_id, "tenant_id": tenant_id},
+        {
+            "job_id":    job_id,
+            "tenant_id": tenant_id,
+            "uid":       current_user.user_id,
+            "is_admin":  (role or "").lower() in ("admin", "super_admin"),
+        },
     )
 
     logs = []
@@ -821,16 +856,29 @@ async def download_duplicate_cv(
 
     row = await db.execute(
         text("""
-            SELECT duplicate_file_path, duplicate_original_filename, duplicate_content_type
-            FROM duplicate_application_logs
-            WHERE log_id = :log_id
-              AND job_id = :job_id
-              AND tenant_id = :tenant_id
+            SELECT dl.duplicate_file_path, dl.duplicate_original_filename, dl.duplicate_content_type
+            FROM duplicate_application_logs dl
+            JOIN jobs j ON j.job_id = dl.job_id
+            WHERE dl.log_id = :log_id
+              AND dl.job_id = :job_id
+              AND dl.tenant_id = :tenant_id
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tenant_id AS uuid)
+                )
+              )
         """),
         {
-            "log_id": log_id,
-            "job_id": job_id,
+            "log_id":    log_id,
+            "job_id":    job_id,
             "tenant_id": current_user.tenant_id,
+            "uid":       current_user.user_id,
+            "is_admin":  (current_user.role or "").lower() in ("admin", "super_admin"),
         },
     )
     rec = row.mappings().first()

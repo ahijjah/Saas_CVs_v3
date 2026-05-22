@@ -55,11 +55,27 @@ async def list_applications(
                 a.applied_at::date                   AS applied_date,
                 s.evaluation_notes                   AS summary
             FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
             LEFT JOIN application_scores s ON s.application_id = a.application_id
             WHERE a.job_id = :jid AND a.tenant_id = :tid
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
             ORDER BY a.applied_at DESC
         """),
-        {"jid": job_id, "tid": current_user.tenant_id},
+        {
+            "jid":      job_id,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
     )
     apps = []
     for r in rows.mappings():
@@ -127,8 +143,23 @@ async def get_application_details(
             JOIN jobs j ON j.job_id = a.job_id
             LEFT JOIN application_scores s ON s.application_id = a.application_id
             WHERE a.application_id = :aid AND a.tenant_id = :tid
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
         """),
-        {"aid": application_id, "tid": current_user.tenant_id},
+        {
+            "aid":      application_id,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
     )
     app = row.mappings().first()
     if not app:
@@ -341,14 +372,30 @@ async def list_uploaded_cvs(
                 a.applied_at,
                 af.original_name
             FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
             LEFT JOIN application_files af ON af.application_id = a.application_id
             LEFT JOIN application_scores s ON s.application_id = a.application_id
             WHERE a.job_id = :jid
               AND a.tenant_id = :tid
               AND a.submission_source = 'manual_upload'
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
             ORDER BY a.applied_at DESC
         """),
-        {"jid": job_id, "tid": current_user.tenant_id},
+        {
+            "jid":      job_id,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
     )
 
     _stage_labels = {
@@ -637,10 +684,26 @@ async def download_cv(
             SELECT af.file_path, af.original_name, af.mime_type
             FROM application_files af
             JOIN applications a ON a.application_id = af.application_id
+            JOIN jobs j ON j.job_id = a.job_id
             WHERE af.application_id = :aid AND a.tenant_id = :tid
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
             LIMIT 1
         """),
-        {"aid": application_id, "tid": current_user.tenant_id},
+        {
+            "aid":      application_id,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
     )
     rec = row.mappings().first()
     if not rec:
