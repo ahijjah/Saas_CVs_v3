@@ -4,7 +4,7 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { User, ClientOrganization } from '../types';
 import { useLanguage } from '../context/LanguageContext';
-import { evaluateJobDescriptionQuality } from '../utils/jobDescriptionQuality';
+import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
 interface AddJobModalProps {
   onClose: () => void;
@@ -66,6 +66,7 @@ const T = {
     qualityNeedsImprovement: 'Needs Improvement',
     qualityReady: 'Ready for AI Analysis',
     qualityBlocksSubmit: 'Please add meaningful job details before creating the campaign.',
+    titleInvalid: 'Please enter a real job title, such as Sales Assistant, Accountant, Driver, or HR Manager.',
   },
   ar: {
     title: 'إنشاء وظيفة جديدة',
@@ -104,6 +105,7 @@ const T = {
     qualityNeedsImprovement: 'يحتاج تحسين',
     qualityReady: 'جاهز للتحليل',
     qualityBlocksSubmit: 'يرجى إضافة تفاصيل وظيفية مفيدة قبل إنشاء الحملة.',
+    titleInvalid: 'يرجى إدخال مسمى وظيفي حقيقي، مثل: مساعد مبيعات، محاسب، سائق، أو مدير موارد بشرية.',
   },
 };
 
@@ -289,7 +291,10 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const descQuality = hasDesc ? evaluateJobDescriptionQuality(formData.job_description) : null;
   const descQualityBlocks = descQuality?.state === 'insufficient';
 
-  const isFormValid = hasTitle && hasDesc && clientOrgSatisfied && !descQualityBlocks;
+  const titleValidation = hasTitle ? validateJobTitle(formData.job_title, lang) : null;
+  const titleInvalid = titleValidation !== null && !titleValidation.valid;
+
+  const isFormValid = hasTitle && hasDesc && clientOrgSatisfied && !descQualityBlocks && !titleInvalid;
 
   const inputCls = 'w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm';
   const selectCls = `${inputCls} bg-white`;
@@ -334,10 +339,13 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                   name="job_title"
                   type="text"
                   placeholder="Senior Backend Developer"
-                  className={inputCls}
+                  className={`${inputCls} ${titleInvalid ? 'border-red-400 focus:ring-red-200/40 focus:border-red-400' : ''}`}
                   value={formData.job_title}
                   onChange={handleChange}
                 />
+                {titleInvalid && (
+                  <p className="text-[11px] text-red-600 font-bold leading-snug">{(t as any).titleInvalid}</p>
+                )}
               </div>
 
               {isAgencyTenant ? (
@@ -485,9 +493,9 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
           {/* Footer */}
           <div className="px-8 py-5 bg-slate-50 border-t border-border flex flex-wrap justify-end items-center gap-4 sticky bottom-0 z-10">
-            {descQualityBlocks && (
+            {(descQualityBlocks || titleInvalid) && (
               <p className="text-xs text-error font-bold flex-1 min-w-0 text-left">
-                {t.qualityBlocksSubmit}
+                {titleInvalid ? (t as any).titleInvalid : t.qualityBlocksSubmit}
               </p>
             )}
             <button

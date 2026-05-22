@@ -4,7 +4,7 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus } from '../types';
 import { useLanguage } from '../context/LanguageContext';
-import { evaluateJobDescriptionQuality } from '../utils/jobDescriptionQuality';
+import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
 interface JobDetailsProps {
   jobId: string;
@@ -125,8 +125,22 @@ const T = {
     criteriaConfirm: 'Confirm Update',
     criteriaListHint: '(one per line)',
     viewOriginalCriteria: 'View Original AI Criteria',
-    hideOriginalCriteria: 'Hide Original',
+    hideOriginalCriteria: 'Hide Original AI Criteria',
     modifiedBadge: 'Modified',
+    aiGeneratedBadge: 'AI Generated',
+    manuallyModifiedBadge: 'Manually Modified',
+    titleInvalidMsg: 'Please enter a real job title, such as Sales Assistant, Accountant, Driver, or HR Manager.',
+    metaJobTitle: 'Job Title',
+    origAiHeader: 'AI-Generated Criteria',
+    origAiSubtitle: 'Baseline criteria extracted by AI. Edits above reflect your modifications.',
+    origScoreability: 'Scoreability',
+    origConfidence: 'Confidence',
+    origReason: 'AI Reasoning',
+    origSuggestedImprovements: 'Suggested Improvements',
+    origAiModel: 'AI Model',
+    origGeneratedAt: 'Generated',
+    origTechJson: 'Technical JSON',
+    origHideTechJson: 'Hide JSON',
     jobMetadata: 'Job Details',
     editMeta: 'Edit',
     saveMeta: 'Save Changes',
@@ -307,9 +321,23 @@ const T = {
     criteriaWarningBody: 'قد تكون بعض الطلبات قد تم تقييمها بناءً على منطق التقييم السابق. لن يؤدي التحديث إلى إعادة تقييم الطلبات الموجودة تلقائياً.',
     criteriaConfirm: 'تأكيد التحديث',
     criteriaListHint: '(سطر لكل عنصر)',
-    viewOriginalCriteria: 'عرض المعايير الأصلية',
-    hideOriginalCriteria: 'إخفاء الأصلية',
+    viewOriginalCriteria: 'عرض المعايير الأصلية للذكاء الاصطناعي',
+    hideOriginalCriteria: 'إخفاء المعايير الأصلية',
     modifiedBadge: 'معدَّل',
+    aiGeneratedBadge: 'أنشأه الذكاء الاصطناعي',
+    manuallyModifiedBadge: 'معدَّل يدوياً',
+    titleInvalidMsg: 'يرجى إدخال مسمى وظيفي حقيقي، مثل: مساعد مبيعات، محاسب، سائق، أو مدير موارد بشرية.',
+    metaJobTitle: 'المسمى الوظيفي',
+    origAiHeader: 'المعايير المُنشأة بالذكاء الاصطناعي',
+    origAiSubtitle: 'المعايير الأساسية المستخرجة بالذكاء الاصطناعي. التعديلات أعلاه تعكس تعديلاتك.',
+    origScoreability: 'قابلية التقييم',
+    origConfidence: 'مستوى الثقة',
+    origReason: 'تحليل الذكاء الاصطناعي',
+    origSuggestedImprovements: 'تحسينات مقترحة',
+    origAiModel: 'نموذج الذكاء الاصطناعي',
+    origGeneratedAt: 'تاريخ الإنشاء',
+    origTechJson: 'البيانات التقنية JSON',
+    origHideTechJson: 'إخفاء JSON',
     jobMetadata: 'تفاصيل الوظيفة',
     editMeta: 'تعديل',
     saveMeta: 'حفظ التغييرات',
@@ -438,6 +466,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [savingCriteria, setSavingCriteria] = useState(false);
   const [showCriteriaWarning, setShowCriteriaWarning] = useState(false);
   const [showOriginalCriteria, setShowOriginalCriteria] = useState(false);
+  const [showOriginalTechJson, setShowOriginalTechJson] = useState(false);
   const originalAiCriteriaRef = useRef<any>(null);
 
   // Duplicate submissions section ref + display state
@@ -975,6 +1004,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   const handleMetaSave = useCallback(async () => {
     if (!details) return;
+    if (draftMeta.title) {
+      const { valid, message } = validateJobTitle(draftMeta.title, lang);
+      if (!valid) { addToast(message || (t as any).titleInvalidMsg, 'error'); return; }
+    }
     setSavingMeta(true);
     const prevCriteriaStatus = details.criteria_extraction_status;
     try {
@@ -1147,12 +1180,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   ];
   const weightLabels = t.evalWeightLabels;
   const weightKeys: ('skills' | 'experience' | 'education' | 'certifications' | 'soft_skills' | 'domain_knowledge' | 'other_requirements')[] = ['skills', 'experience', 'education', 'certifications', 'soft_skills', 'domain_knowledge', 'other_requirements'];
-  const isModified = (getter: (a: any) => any): boolean => {
-    const orig = originalAiCriteriaRef.current;
-    if (!orig || !analysis) return false;
-    try { return JSON.stringify(getter(analysis)) !== JSON.stringify(getter(orig)); } catch { return false; }
-  };
-  const modifiedBadge = <span className="ml-2 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">{t.modifiedBadge}</span>;
+  const criteriaLastEditedBy = (details as any).criteria_last_edited_by ?? null;
+  const criteriaBadge = criteriaLastEditedBy
+    ? <span className="ml-2 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">{(t as any).manuallyModifiedBadge}</span>
+    : analysis
+    ? <span className="ml-2 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 align-middle">{(t as any).aiGeneratedBadge}</span>
+    : null;
   const weightTotal = editingWeights ? Object.values(draftWeights).reduce((s, v) => s + v, 0) : 0;
 
   const jobCode = details.job_code || details.job_id;
@@ -1475,6 +1508,24 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         <div className="px-6 py-5">
           {editingMeta ? (
             <div className="space-y-4 animate-fade-in">
+              {/* Job Title — full-width */}
+              {(() => {
+                const titleVal = draftMeta.title || '';
+                const tv = titleVal ? validateJobTitle(titleVal, lang) : null;
+                const titleBorderCls = tv && !tv.valid ? 'border-red-400 focus:ring-red-200/40 focus:border-red-400' : 'border-border focus:ring-primary/20 focus:border-primary';
+                return (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{(t as any).metaJobTitle || t.jobMetadata}</label>
+                    <input
+                      type="text"
+                      className={`w-full px-3 py-2 border rounded-lg text-sm bg-white focus:ring-2 outline-none ${titleBorderCls}`}
+                      value={titleVal}
+                      onChange={e => setDraftMeta(p => ({ ...p, title: e.target.value }))}
+                    />
+                    {tv && !tv.valid && <p className="text-[11px] text-red-600 font-bold">{tv.message}</p>}
+                  </div>
+                );
+              })()}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaStatusLabel}</label>
@@ -2047,9 +2098,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       {/* F. AI Criteria ──────────────────────────────────────────────────── */}
       <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2 flex-wrap">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
             {t.skillsAnalysis}
+            {!editingCriteria && criteriaBadge}
           </h3>
           {canEdit && details.criteria_extraction_status === 'completed' && !editingCriteria && (
             <button onClick={handleCriteriaEdit} className="text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">{t.editCriteria}</button>
@@ -2108,13 +2160,13 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             <div className="space-y-6">
               {/* Skills */}
               <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.requiredSkills}{isModified(a => a?.skills?.required) && modifiedBadge}</p>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.requiredSkills}</p>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {(analysis?.skills?.required || []).map((s, i) => (
                     <span key={i} className="px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-textMain">{s}</span>
                   ))}
                 </div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.preferredSkills}{isModified(a => a?.skills?.preferred) && modifiedBadge}</p>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.preferredSkills}</p>
                 <div className="flex flex-wrap gap-2">
                   {(analysis?.skills?.preferred || []).map((s, i) => (
                     <span key={i} className="px-3 py-1.5 bg-blue-50 text-primary border border-blue-100 rounded-lg text-xs font-bold">{s}</span>
@@ -2126,7 +2178,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 <div className="bg-slate-50 rounded-xl p-4 border border-border">
                   <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.experience}</p>
                   <p className="text-lg font-black text-primary mb-2">{analysis?.experience?.minimum_years || 0}{t.years}</p>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.relevantRoles}{isModified(a => a?.experience?.relevant_roles) && modifiedBadge}</p>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.relevantRoles}</p>
                   <ul className="space-y-0.5">
                     {(analysis?.experience?.relevant_roles || []).map((r, i) => <li key={i} className="text-xs font-bold text-textMain">• {r}</li>)}
                   </ul>
@@ -2134,7 +2186,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 <div className="bg-slate-50 rounded-xl p-4 border border-border">
                   <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.education}</p>
                   <p className="text-sm font-black text-textMain mb-2">{analysis?.education?.minimum_level || 'N/A'}</p>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.fieldsOfStudy}{isModified(a => a?.education?.fields_of_study) && modifiedBadge}</p>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.fieldsOfStudy}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {(analysis?.education?.fields_of_study || []).map((f, i) => <span key={i} className="px-2 py-0.5 bg-white border border-border rounded text-[10px] font-bold text-textMuted">{f}</span>)}
                   </div>
@@ -2143,12 +2195,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               {/* Other categories */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
-                  { label: t.certifications,    items: analysis?.certifications,    modKey: (a: any) => a?.certifications },
-                  { label: t.domainKnowledge,   items: analysis?.domain_knowledge,  modKey: (a: any) => a?.domain_knowledge },
-                  { label: t.otherRequirements, items: analysis?.other_requirements, modKey: (a: any) => a?.other_requirements },
+                  { label: t.certifications,    items: analysis?.certifications },
+                  { label: t.domainKnowledge,   items: analysis?.domain_knowledge },
+                  { label: t.otherRequirements, items: analysis?.other_requirements },
                 ].map((cat, idx) => (
                   <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-border">
-                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{cat.label}{isModified(cat.modKey) && modifiedBadge}</p>
+                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{cat.label}</p>
                     <ul className="space-y-1">
                       {(cat.items || []).length > 0
                         ? (cat.items || []).map((item, i) => <li key={i} className="text-[11px] font-bold text-textMain leading-snug">• {item}</li>)
@@ -2314,49 +2366,185 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
       {/* G. Reference Content ────────────────────────────────────────────────── */}
       <div className="mt-6 space-y-3">
-        {originalAiCriteriaRef.current && (
+        {originalAiCriteriaRef.current && criteriaLastEditedBy && (
           <div className="bg-white rounded-2xl border border-border overflow-hidden shadow-sm">
             <button
               onClick={() => setShowOriginalCriteria(p => !p)}
               className="w-full px-5 py-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors"
             >
               <span className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                {showOriginalCriteria ? t.hideOriginalCriteria : t.viewOriginalCriteria}
+                <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                {showOriginalCriteria ? (t as any).hideOriginalCriteria : (t as any).viewOriginalCriteria}
+                <span className="normal-case font-normal text-[9px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 rounded-full">{(t as any).aiGeneratedBadge}</span>
               </span>
               <svg className={`w-4 h-4 text-textMuted transition-transform ${showOriginalCriteria ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
             </button>
             {showOriginalCriteria && (() => {
               const orig = originalAiCriteriaRef.current;
+              const aiModel = (details as any).ai_model;
+              const aiGeneratedAt = (details as any).ai_generated_at;
+              const scoreability = orig?.scoreability;
+              const confidence = orig?.confidence;
+              const aiReason = orig?.reason || orig?.scoreability_reason;
+              const suggestedImprovements = orig?.suggested_improvements;
+              const scoringWeights = orig?.scoring_weights;
               return (
-                <div className="px-5 py-4 border-t border-border animate-fade-in">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] text-textMuted">
-                    {[
-                      { label: t.requiredSkills,   items: orig?.skills?.required },
-                      { label: t.preferredSkills,  items: orig?.skills?.preferred },
-                      { label: t.relevantRoles,    items: orig?.experience?.relevant_roles },
-                      { label: t.fieldsOfStudy,    items: orig?.education?.fields_of_study },
-                      { label: t.certifications,   items: orig?.certifications },
-                      { label: t.domainKnowledge,  items: orig?.domain_knowledge },
-                      { label: t.otherRequirements,items: orig?.other_requirements },
-                    ].map((sec, i) => (sec.items?.length ? (
-                      <div key={i}>
-                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{sec.label}</p>
-                        <p className="leading-relaxed">{sec.items.join(', ')}</p>
-                      </div>
-                    ) : null))}
-                    {orig?.experience?.minimum_years != null && (
-                      <div>
-                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.minYears}</p>
-                        <p>{orig.experience.minimum_years}{t.years}</p>
+                <div className="border-t border-border animate-fade-in">
+                  {/* Header metadata row */}
+                  {(aiModel || aiGeneratedAt) && (
+                    <div className="px-5 py-3 bg-indigo-50/60 border-b border-indigo-100 flex items-center gap-4 flex-wrap">
+                      {aiModel && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">{(t as any).origAiModel}</span>
+                          <span className="text-[10px] font-bold text-indigo-700 font-mono">{aiModel}</span>
+                        </div>
+                      )}
+                      {aiGeneratedAt && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">{(t as any).origGeneratedAt}</span>
+                          <span className="text-[10px] font-bold text-indigo-700">{new Date(aiGeneratedAt).toLocaleDateString()}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="px-5 py-4 space-y-5">
+                    {/* Scoreability + Confidence */}
+                    {(scoreability != null || confidence != null) && (
+                      <div className="grid grid-cols-2 gap-3">
+                        {scoreability != null && (
+                          <div className="bg-slate-50 rounded-xl p-3 border border-border">
+                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{(t as any).origScoreability}</p>
+                            <p className={`text-sm font-black capitalize ${scoreability === 'high' ? 'text-emerald-600' : scoreability === 'medium' ? 'text-amber-600' : 'text-red-500'}`}>{scoreability}</p>
+                          </div>
+                        )}
+                        {confidence != null && (
+                          <div className="bg-slate-50 rounded-xl p-3 border border-border">
+                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{(t as any).origConfidence}</p>
+                            <p className={`text-sm font-black capitalize ${confidence === 'high' ? 'text-emerald-600' : confidence === 'medium' ? 'text-amber-600' : 'text-red-500'}`}>{confidence}</p>
+                          </div>
+                        )}
                       </div>
                     )}
-                    {orig?.education?.minimum_level && (
+                    {/* AI Reason */}
+                    {aiReason && (
                       <div>
-                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.minLevel}</p>
-                        <p>{orig.education.minimum_level}</p>
+                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{(t as any).origReason}</p>
+                        <p className="text-[11px] text-textMuted leading-relaxed">{aiReason}</p>
                       </div>
                     )}
+                    {/* Suggested improvements */}
+                    {suggestedImprovements?.length > 0 && (
+                      <div>
+                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">{(t as any).origSuggestedImprovements}</p>
+                        <ul className="space-y-1">
+                          {suggestedImprovements.map((imp: string, i: number) => (
+                            <li key={i} className="text-[11px] text-amber-700 flex items-start gap-1.5"><span className="shrink-0">→</span>{imp}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {/* Skills */}
+                    {(orig?.skills?.required?.length || orig?.skills?.preferred?.length) ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {orig.skills.required?.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">{t.requiredSkills}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {orig.skills.required.map((s: string, i: number) => <span key={i} className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-textMain">{s}</span>)}
+                            </div>
+                          </div>
+                        )}
+                        {orig.skills.preferred?.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">{t.preferredSkills}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {orig.skills.preferred.map((s: string, i: number) => <span key={i} className="px-2 py-0.5 bg-blue-50 border border-blue-100 rounded text-[10px] font-bold text-primary">{s}</span>)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                    {/* Experience */}
+                    {(orig?.experience?.minimum_years != null || orig?.experience?.relevant_roles?.length || orig?.experience?.responsibilities?.length) && (
+                      <div className="bg-slate-50 rounded-xl p-3 border border-border">
+                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">{t.experience}</p>
+                        <div className="space-y-2">
+                          {orig.experience.minimum_years != null && <p className="text-[11px] font-bold text-textMain">{t.minYears}: {orig.experience.minimum_years}{t.years}</p>}
+                          {orig.experience.relevant_roles?.length > 0 && (
+                            <div>
+                              <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">{t.relevantRoles}</p>
+                              <ul className="space-y-0.5">{orig.experience.relevant_roles.map((r: string, i: number) => <li key={i} className="text-[11px] text-textMain">• {r}</li>)}</ul>
+                            </div>
+                          )}
+                          {orig.experience.responsibilities?.length > 0 && (
+                            <div>
+                              <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">Responsibilities</p>
+                              <ul className="space-y-0.5">{orig.experience.responsibilities.map((r: string, i: number) => <li key={i} className="text-[11px] text-textMain">• {r}</li>)}</ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {/* Education */}
+                    {(orig?.education?.minimum_level || orig?.education?.fields_of_study?.length) && (
+                      <div className="bg-slate-50 rounded-xl p-3 border border-border">
+                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">{t.education}</p>
+                        {orig.education.minimum_level && <p className="text-[11px] font-bold text-textMain mb-1">{t.minLevel}: {orig.education.minimum_level}</p>}
+                        {orig.education.fields_of_study?.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {orig.education.fields_of_study.map((f: string, i: number) => <span key={i} className="px-2 py-0.5 bg-white border border-border rounded text-[10px] font-bold text-textMuted">{f}</span>)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* Certifications / Domain / Other */}
+                    {([
+                      { label: t.certifications, items: orig?.certifications },
+                      { label: t.domainKnowledge, items: orig?.domain_knowledge },
+                      { label: t.otherRequirements, items: orig?.other_requirements },
+                    ].filter(s => s.items?.length)).length > 0 && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {[
+                          { label: t.certifications, items: orig?.certifications },
+                          { label: t.domainKnowledge, items: orig?.domain_knowledge },
+                          { label: t.otherRequirements, items: orig?.other_requirements },
+                        ].map((sec, i) => sec.items?.length ? (
+                          <div key={i} className="bg-slate-50 rounded-xl p-3 border border-border">
+                            <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">{sec.label}</p>
+                            <ul className="space-y-0.5">{sec.items.map((it: string, j: number) => <li key={j} className="text-[11px] text-textMain">• {it}</li>)}</ul>
+                          </div>
+                        ) : null)}
+                      </div>
+                    )}
+                    {/* Scoring weights */}
+                    {scoringWeights && Object.keys(scoringWeights).length > 0 && (
+                      <div>
+                        <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">{t.evalLogic}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(scoringWeights).map(([k, v]) => (
+                            <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 border border-indigo-100 rounded-lg text-[10px] font-bold text-indigo-700">
+                              {k.replace(/_/g, ' ')}: {v}%
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Technical JSON collapsible */}
+                    <div className="border-t border-border pt-3">
+                      <button
+                        onClick={() => setShowOriginalTechJson(p => !p)}
+                        className="flex items-center gap-2 text-[9px] font-black text-textMuted uppercase tracking-widest hover:text-textMain transition-colors"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+                        {showOriginalTechJson ? (t as any).origHideTechJson : (t as any).origTechJson}
+                        <svg className={`w-3 h-3 transition-transform ${showOriginalTechJson ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                      </button>
+                      {showOriginalTechJson && (
+                        <pre className="mt-2 p-3 bg-slate-900 text-slate-200 rounded-xl text-[10px] font-mono overflow-x-auto leading-relaxed max-h-64 overflow-y-auto">
+                          {JSON.stringify(orig, null, 2)}
+                        </pre>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

@@ -172,3 +172,33 @@ export function evaluateJobDescriptionQuality(description: string): JobDescripti
     },
   };
 }
+
+// ── Job title validation ───────────────────────────────────────────────────────
+
+const TITLE_PLACEHOLDER = /^(test\d*|sample|demo|placeholder|temp|hello|hi|n\/a|na|tbd|todo|job|new\s+job|title|position|vacancy|role|post|opening|اختبار|تجربة|مثال|نموذج|وظيفة\s*جديدة|منصب|دور)\.?$/i;
+const TITLE_SYMBOLS_ONLY = /^[\d\s\W]+$/;
+
+const TITLE_BAD_MESSAGE = 'Please enter a real job title, such as Sales Assistant, Accountant, Driver, or HR Manager.';
+const TITLE_BAD_MESSAGE_AR = 'يرجى إدخال مسمى وظيفي حقيقي، مثل: مساعد مبيعات، محاسب، سائق، أو مدير موارد بشرية.';
+
+export interface TitleValidationResult {
+  valid: boolean;
+  message?: string;
+}
+
+export function validateJobTitle(title: string, lang: 'en' | 'ar' = 'en'): TitleValidationResult {
+  const text = (title ?? '').trim();
+  const badMsg = lang === 'ar' ? TITLE_BAD_MESSAGE_AR : TITLE_BAD_MESSAGE;
+
+  if (!text) return { valid: false, message: lang === 'ar' ? 'المسمى الوظيفي مطلوب.' : 'Job title is required.' };
+  if (text.length < 2) return { valid: false, message: badMsg };
+  if (TITLE_PLACEHOLDER.test(text)) return { valid: false, message: badMsg };
+  if (TITLE_SYMBOLS_ONLY.test(text)) return { valid: false, message: badMsg };
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > 0 && words.every(w => w.toLowerCase() === words[0].toLowerCase())) {
+    return { valid: false, message: badMsg };
+  }
+
+  return { valid: true };
+}

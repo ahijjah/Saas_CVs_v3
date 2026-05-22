@@ -256,3 +256,50 @@ def evaluate_description_quality(description: str) -> DescriptionQuality:
         state = "ready"
 
     return DescriptionQuality(score=score, state=state, issues=issues, suggestions=suggestions)
+
+
+# ── Job title validation ───────────────────────────────────────────────────────
+
+_TITLE_PLACEHOLDER_RE = re.compile(
+    r"^(test\d*|sample|demo|placeholder|temp|hello|hi|n/?a|tbd|todo|"
+    r"job|new\s+job|title|position|vacancy|role|post|opening|"
+    r"اختبار|تجربة|مثال|نموذج|وظيفة\s*جديدة|منصب|دور)\.?$",
+    re.IGNORECASE,
+)
+_TITLE_SYMBOLS_ONLY_RE = re.compile(r"^[\d\s\W]+$")
+
+
+def validate_job_title(title: str) -> tuple[bool, str | None]:
+    """Return (is_valid, error_message_or_None).
+
+    Rejects placeholder, gibberish, and symbol-only titles.
+    Allows real job titles of all kinds (Cashier, Driver, HR Manager, etc.).
+    """
+    text = (title or "").strip()
+
+    if not text:
+        return False, "Job title is required."
+
+    if len(text) < 2:
+        return False, "Job title is too short."
+
+    if _TITLE_PLACEHOLDER_RE.match(text.lower()):
+        return False, (
+            "Please enter a real job title, such as Sales Assistant, "
+            "Accountant, Driver, or HR Manager."
+        )
+
+    if _TITLE_SYMBOLS_ONLY_RE.match(text):
+        return False, (
+            "Please enter a real job title, such as Sales Assistant, "
+            "Accountant, Driver, or HR Manager."
+        )
+
+    words = text.split()
+    if len(words) > 0 and all(w.lower() == words[0].lower() for w in words):
+        return False, (
+            "Please enter a real job title, such as Sales Assistant, "
+            "Accountant, Driver, or HR Manager."
+        )
+
+    return True, None

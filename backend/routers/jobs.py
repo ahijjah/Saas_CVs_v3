@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import CurrentUserDep, get_current_user
 from config import get_settings
 from database import get_db, set_rls_context
-from services.job_description_quality import evaluate_description_quality
+from services.job_description_quality import evaluate_description_quality, validate_job_title
 from services.subscription_service import can_create_campaign
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -280,6 +280,11 @@ async def create_job(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    # Title validation gate
+    title_valid, title_error = validate_job_title(body.title)
+    if not title_valid:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=title_error)
+
     # Quality-gate: reject clearly meaningless descriptions before hitting the DB
     desc_quality = evaluate_description_quality(body.description)
     if desc_quality.state == "insufficient":
@@ -488,7 +493,7 @@ async def get_job_details(
                    weight_skills, weight_experience, weight_education,
                    weight_certifications, weight_soft_skills,
                    weight_domain_knowledge, weight_other,
-                   ai_model, ai_generated_at, last_edited_at
+                   ai_model, ai_generated_at, last_edited_at, last_edited_by
             FROM job_criteria WHERE job_id = :jid
         """),
         {"jid": job_id},
@@ -573,6 +578,7 @@ async def get_job_details(
             "criteria_extraction_max_retries": max_retries,
             "criteria_retry_allowed":          criteria_retry_allowed,
             "criteria_retry_blocked_reason":   retry_blocked_reason,
+            "criteria_last_edited_by":         str(criteria["last_edited_by"]) if criteria and criteria["last_edited_by"] else None,
             "ingestion_note": (
                 f"Send CVs directly to: {job['platform_email']}"
                 if via_platform
@@ -1018,7 +1024,9 @@ async def update_criteria_content(
                 certifications    = :certifications,
                 soft_skills       = :soft_skills,
                 domain_knowledge  = :domain_knowledge,
-                other_requirements= :other_requirements
+                other_requirements= :other_requirements,
+                last_edited_by    = :uid,
+                last_edited_at    = now()
             WHERE job_id = :jid
         """),
         {
@@ -1030,6 +1038,7 @@ async def update_criteria_content(
             "soft_skills":       flat.get("soft_skills", []),
             "domain_knowledge":  flat["domain_knowledge"],
             "other_requirements":flat["other_requirements"],
+            "uid":               str(current_user.user_id),
             "jid":               job_id,
         },
     )
@@ -1177,6 +1186,9 @@ async def update_job_metadata(
     updates: dict = {}
 
     if body.title is not None:
+        title_valid, title_error = validate_job_title(body.title)
+        if not title_valid:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=title_error)
         updates["title"] = body.title.strip()
     if body.department is not None:
         updates["department"] = body.department.strip() or None
