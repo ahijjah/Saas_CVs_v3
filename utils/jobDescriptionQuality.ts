@@ -177,6 +177,7 @@ export function evaluateJobDescriptionQuality(description: string): JobDescripti
 
 const TITLE_PLACEHOLDER = /^(test\d*|sample|demo|placeholder|temp|hello|hi|n\/a|na|tbd|todo|job|new\s+job|title|position|vacancy|role|post|opening|اختبار|تجربة|مثال|نموذج|وظيفة\s*جديدة|منصب|دور)\.?$/i;
 const TITLE_SYMBOLS_ONLY = /^[\d\s\W]+$/;
+const TITLE_REPEAT_CHARS = /(.)\1{2,}/; // 3+ identical consecutive chars (aaa, aaaa, zzz…)
 
 const TITLE_BAD_MESSAGE = 'Please enter a real job title, such as Sales Assistant, Accountant, Driver, or HR Manager.';
 const TITLE_BAD_MESSAGE_AR = 'يرجى إدخال مسمى وظيفي حقيقي، مثل: مساعد مبيعات، محاسب، سائق، أو مدير موارد بشرية.';
@@ -194,9 +195,10 @@ export function validateJobTitle(title: string, lang: 'en' | 'ar' = 'en'): Title
   if (text.length < 2) return { valid: false, message: badMsg };
   if (TITLE_PLACEHOLDER.test(text)) return { valid: false, message: badMsg };
   if (TITLE_SYMBOLS_ONLY.test(text)) return { valid: false, message: badMsg };
+  if (TITLE_REPEAT_CHARS.test(text)) return { valid: false, message: badMsg };
 
   const words = text.split(/\s+/).filter(Boolean);
-  if (words.length > 0 && words.every(w => w.toLowerCase() === words[0].toLowerCase())) {
+  if (words.length > 1 && words.every(w => w.toLowerCase() === words[0].toLowerCase())) {
     return { valid: false, message: badMsg };
   }
 

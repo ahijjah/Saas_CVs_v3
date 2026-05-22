@@ -267,6 +267,7 @@ _TITLE_PLACEHOLDER_RE = re.compile(
     re.IGNORECASE,
 )
 _TITLE_SYMBOLS_ONLY_RE = re.compile(r"^[\d\s\W]+$")
+_TITLE_REPEAT_CHARS_RE = re.compile(r"(.)\1{2,}")  # 3+ identical consecutive chars
 
 
 def validate_job_title(title: str) -> tuple[bool, str | None]:
@@ -295,8 +296,14 @@ def validate_job_title(title: str) -> tuple[bool, str | None]:
             "Accountant, Driver, or HR Manager."
         )
 
+    if _TITLE_REPEAT_CHARS_RE.search(text):
+        return False, (
+            "Please enter a real job title, such as Sales Assistant, "
+            "Accountant, Driver, or HR Manager."
+        )
+
     words = text.split()
-    if len(words) > 0 and all(w.lower() == words[0].lower() for w in words):
+    if len(words) > 1 and all(w.lower() == words[0].lower() for w in words):
         return False, (
             "Please enter a real job title, such as Sales Assistant, "
             "Accountant, Driver, or HR Manager."
