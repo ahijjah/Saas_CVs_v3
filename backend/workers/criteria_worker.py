@@ -5,8 +5,11 @@ Flow:
   1. Mark job_criteria row as 'processing'
   2. Call OpenAI via extract_job_criteria()
   3. Flatten nested result to flat arrays for scoring pipeline
-  4. Write analysis_json + flat arrays + weights to DB, mark 'completed'
-  5. On max-retry failure: mark 'failed' with error message
+  4. Validate criteria quality (sufficient content or explicitly open/broad role)
+  5. Write analysis_json + flat arrays + weights to DB
+     - 'completed' if quality check passes
+     - 'failed'    if all criteria arrays are empty and role is not open/broad
+  6. On max-retry failure: mark 'failed' with error message
 
 Event-loop safety
 -----------------
@@ -21,6 +24,55 @@ import logging
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+_EMPTY_DESCRIPTION_ERROR = (
+    "The job description does not contain enough information for reliable CV scoring. "
+    "Please add responsibilities, skills, qualifications, or indicate that the role is "
+    "open to all backgrounds."
+)
+
+# Keywords that indicate an intentionally open/broad role with no specific requirements.
+# Matched case-insensitively against text from other_requirements, domain_knowledge,
+# experience.key_responsibilities, and experience.relevant_roles.
+_OPEN_ROLE_KEYWORDS = (
+    "open to all", "all backgrounds", "no specific", "no requirement",
+    "any background", "everyone is welcome", "anyone can apply",
+    "no experience required", "open role", "general hire",
+    # Arabic equivalents
+    "مفتوح", "جميع التخصصات", "لا يشترط", "لا تشترط", "مفتوحة",
+)
+
+
+def _check_criteria_quality(analysis: dict, flat: dict) -> tuple[bool, bool]:
+    """
+    Validate that extracted criteria contain enough signal for CV scoring.
+
+    Returns:
+        (is_sufficient, is_open_broad)
+        - is_sufficient:  True when scoring can proceed (either real criteria exist
+                          or the role is explicitly open/broad).
+        - is_open_broad:  True when the analysis text signals no specific requirements.
+    """
+    counted_keys = (
+        "skills", "experience", "education",
+        "certifications", "domain_knowledge", "other_requirements",
+    )
+    total_items = sum(len(flat.get(k) or []) for k in counted_keys)
+
+    if total_items > 0:
+        return True, False
+
+    # All flat arrays are empty — check whether the AI indicated an open/broad role.
+    exp = analysis.get("experience") or {}
+    candidate_texts: list[str] = []
+    for key in ("other_requirements", "domain_knowledge"):
+        candidate_texts.extend(str(v) for v in (analysis.get(key) or []))
+    candidate_texts.extend(str(v) for v in (exp.get("key_responsibilities") or []))
+    candidate_texts.extend(str(v) for v in (exp.get("relevant_roles") or []))
+
+    combined = " ".join(candidate_texts).lower()
+    is_open_broad = any(kw in combined for kw in _OPEN_ROLE_KEYWORDS)
+    return is_open_broad, is_open_broad
 
 
 def _run_in_fresh_loop(coro):
@@ -104,6 +156,21 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
     analysis = await extract_job_criteria(description, prompt_override=criteria_prompt)
     flat = flatten_criteria_for_scoring(analysis)
 
+    is_sufficient, is_open_broad = _check_criteria_quality(analysis, flat)
+
+    if is_sufficient:
+        final_status = "completed"
+        final_error = None
+        log_suffix = "open/broad role — no specific criteria" if is_open_broad else "OK"
+        logger.info("[job:%s] Criteria quality check passed (%s).", job_id, log_suffix)
+    else:
+        final_status = "failed"
+        final_error = _EMPTY_DESCRIPTION_ERROR
+        logger.warning(
+            "[job:%s] Criteria quality check failed — all arrays empty, not an open role.",
+            job_id,
+        )
+
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
         await db.execute(
@@ -127,9 +194,9 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
                     weight_other               = :weight_other,
                     ai_model                   = :model,
                     ai_generated_at            = now(),
-                    criteria_extraction_status = 'completed',
-                    criteria_extracted_at      = now(),
-                    criteria_extraction_error  = NULL
+                    criteria_extraction_status = :status,
+                    criteria_extracted_at      = CASE WHEN :status = 'completed' THEN now() ELSE criteria_extracted_at END,
+                    criteria_extraction_error  = :error
                 WHERE job_id = :jid
             """),
             {
@@ -149,11 +216,17 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
                 "weight_domain_knowledge": flat["weight_domain_knowledge"],
                 "weight_other":            flat["weight_other"],
                 "model":              settings.openai_model,
+                "status":             final_status,
+                "error":              final_error,
                 "jid":                job_id,
             },
         )
         await db.commit()
-    logger.info("[job:%s] Criteria extraction completed.", job_id)
+
+    if is_sufficient:
+        logger.info("[job:%s] Criteria extraction completed.", job_id)
+    else:
+        logger.warning("[job:%s] Criteria extraction marked failed: empty description.", job_id)
 
 
 async def _mark_failed(job_id: str, error: str) -> None:
