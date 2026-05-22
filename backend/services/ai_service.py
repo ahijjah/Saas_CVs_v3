@@ -123,7 +123,7 @@ You are an expert HR analyst evaluating bilingual resumes (Arabic/English/mixed)
 CRITICAL RULES:
 1. The CV may be in Arabic, English, or a mix — analyze it regardless of language.
 2. Cross-lingual matching IS valid: an Arabic CV demonstrating Python skills satisfies an English "Python" requirement and vice versa.
-3. Output ALL human-readable text fields in English.
+3. Output ALL recruiter-facing narrative text fields in the configured output language (see "Output Language" instruction in the user message).
 4. Scores must reflect actual evidence found in the CV — do not penalize for language choice.
 
 OUTPUT: Valid JSON only — no markdown, no explanation, no code blocks.
@@ -141,7 +141,7 @@ Return exactly this structure:
   "score_domain_knowledge": <integer 0-100>,
   "score_other": <integer 0-100>,
   "score_details": {
-    "skills":           {"positive": ["matched evidence 1", ...], "negative": ["gap 1", ...], "additional_strengths": ["transferable strength 1", ...], "summary": "one sentence"},
+    "skills":           {"positive": ["matched evidence 1", ...], "negative": ["gap 1", ...], "additional_strengths": ["transferable strength 1", ...], "summary": "one sentence in configured output language"},
     "experience":       {"positive": [...], "negative": [...], "additional_strengths": [...], "summary": "..."},
     "education":        {"positive": [...], "negative": [...], "additional_strengths": [...], "summary": "..."},
     "certifications":   {"positive": [...], "negative": [...], "additional_strengths": [...], "summary": "..."},
@@ -152,16 +152,16 @@ Return exactly this structure:
   "strengths": ["strength 1", "strength 2", ...],
   "gaps_identified": ["gap 1", "gap 2", ...],
   "red_flags": ["red flag 1", ...],
-  "evaluation_notes": "Executive summary in English (2-3 sentences)",
+  "evaluation_notes": "Executive summary in configured output language (2-3 sentences)",
   "interview_questions": ["Interview question 1", "Interview question 2", ...],
   "reasoning": {
-    "skills": "One sentence explaining the skills score",
-    "experience": "One sentence explaining the experience score",
-    "education": "One sentence explaining the education score",
-    "certifications": "One sentence explaining the certifications score",
-    "soft_skills": "One sentence explaining the soft skills score",
-    "domain_knowledge": "One sentence explaining the domain knowledge score",
-    "other": "One sentence explaining the other requirements score"
+    "skills": "One sentence in configured output language explaining the skills score",
+    "experience": "One sentence in configured output language explaining the experience score",
+    "education": "One sentence in configured output language explaining the education score",
+    "certifications": "One sentence in configured output language explaining the certifications score",
+    "soft_skills": "One sentence in configured output language explaining the soft skills score",
+    "domain_knowledge": "One sentence in configured output language explaining the domain knowledge score",
+    "other": "One sentence in configured output language explaining the other requirements score"
   }
 }
 
@@ -177,13 +177,13 @@ REQUIRED FIELD RULES:
 - score_details.positive: specific evidence from the CV that directly matches the job requirements (2-4 items, quote CV specifics)
 - score_details.negative: specific gaps or missing requirements relative to the job (1-3 items, [] if none)
 - score_details.additional_strengths: transferable skills or relevant experience beyond the explicit requirements that add value (0-3 items, [] if none)
-- score_details.summary: one sentence justifying the score
+- score_details.summary: one sentence in the configured output language justifying the score
 - strengths: 3-5 specific strengths with evidence from the CV
 - gaps_identified: missing or weak areas relative to the role
 - red_flags: concerns (employment gaps, contradictions, unverifiable claims) — use [] if none
-- evaluation_notes: executive summary in English
+- evaluation_notes: executive summary in the configured output language
 - interview_questions: 3-5 targeted questions to probe identified gaps or verify claims
-- reasoning: one sentence per dimension explaining EXACTLY why that score was given
+- reasoning: one sentence per dimension in the configured output language explaining EXACTLY why that score was given
 """
 
 
@@ -340,6 +340,25 @@ def flatten_criteria_for_scoring(analysis: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Maps output_language codes (from ai_prompts.output_language) to prose instructions.
+_OUTPUT_LANG_MAP: dict[str, str] = {
+    "ar":      "Arabic",
+    "arabic":  "Arabic",
+    "en":      "English",
+    "english": "English",
+    "auto":    "the same language as the CV and job description (match the dominant language of the content)",
+}
+
+
+def _resolve_output_language(prompt_override: dict | None) -> str:
+    """Return a human-readable language instruction from the prompt record's output_language field.
+
+    Priority: prompt_override.output_language → 'English' default.
+    """
+    raw = ((prompt_override or {}).get("output_language") or "").strip().lower()
+    return _OUTPUT_LANG_MAP.get(raw, "English")
+
+
 async def score_cv(
     cv_text: str,
     criteria: dict[str, Any],
@@ -364,10 +383,11 @@ async def score_cv(
     client = openai_client or _get_client()
     criteria_text = json.dumps(criteria, indent=2, ensure_ascii=False)
 
-    system_prompt = (prompt_override or {}).get("system_prompt") or SCORING_SYSTEM_PROMPT
-    model         = (prompt_override or {}).get("model")         or settings.openai_model
-    temperature   = (prompt_override or {}).get("temperature",  0.2)
-    max_tokens    = (prompt_override or {}).get("max_tokens",   3000)
+    system_prompt   = (prompt_override or {}).get("system_prompt") or SCORING_SYSTEM_PROMPT
+    model           = (prompt_override or {}).get("model")         or settings.openai_model
+    temperature     = (prompt_override or {}).get("temperature",  0.2)
+    max_tokens      = (prompt_override or {}).get("max_tokens",   3000)
+    output_language = _resolve_output_language(prompt_override)
 
     lang_hint = {
         "ar": "Note: The CV is written in Arabic.",
@@ -389,6 +409,9 @@ async def score_cv(
         )
 
     user_prompt = (
+        f"Output Language: Write ALL recruiter-facing narrative fields "
+        f"(evaluation_notes, reasoning, strengths, gaps_identified, red_flags, "
+        f"interview_questions, and all score_details text) in {output_language}.\n"
         f"Job Title: {job_title}\n"
         f"{lang_hint}\n"
         f"{gatekeeper_note}\n"
