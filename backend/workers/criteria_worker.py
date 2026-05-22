@@ -162,6 +162,7 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
     from services.ai_service import extract_job_criteria, flatten_criteria_for_scoring, load_active_prompt
     from config import get_settings
     from sqlalchemy import text
+    from datetime import datetime, timezone
 
     settings = get_settings()
 
@@ -189,11 +190,13 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
     if is_sufficient:
         final_status = "completed"
         final_error = None
+        extracted_at_value = datetime.now(timezone.utc)
         log_suffix = "open/broad role — no specific criteria" if is_open_broad else "OK"
         logger.info("[job:%s] Criteria quality check passed (%s).", job_id, log_suffix)
     else:
         final_status = "failed"
         final_error = quality_error
+        extracted_at_value = None
         logger.warning(
             "[job:%s] Criteria quality check failed — all arrays empty, not an open role.",
             job_id,
@@ -223,7 +226,7 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
                     ai_model                   = :model,
                     ai_generated_at            = now(),
                     criteria_extraction_status = :status,
-                    criteria_extracted_at      = CASE WHEN :status = 'completed' THEN now() ELSE criteria_extracted_at END,
+                    criteria_extracted_at      = COALESCE(:extracted_at, criteria_extracted_at),
                     criteria_extraction_error  = :error
                 WHERE job_id = :jid
             """),
@@ -245,6 +248,7 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
                 "weight_other":            flat["weight_other"],
                 "model":              settings.openai_model,
                 "status":             final_status,
+                "extracted_at":       extracted_at_value,
                 "error":              final_error,
                 "jid":                job_id,
             },
