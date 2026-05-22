@@ -90,10 +90,16 @@ const T = {
     criteriaPending: 'AI criteria analysis is being generated. This page will refresh automatically.',
     criteriaProcessing: 'AI criteria analysis is in progress. This page will refresh automatically.',
     criteriaFailed: 'AI criteria analysis failed.',
-    criteriaInsufficient: 'This campaign is not ready to receive CVs. The job description does not contain enough information for reliable scoring.',
+    criteriaInsufficient: 'This campaign is not ready to receive CVs',
+    criteriaInsufficientDetail: 'The job description does not contain enough information for reliable CV scoring. Please update the job description with clear responsibilities, skills, qualifications, or indicate that the role is open to all backgrounds.',
     criteriaBlocked: 'Maximum AI analysis retries reached. Please improve the job description and contact support, or create a new campaign.',
-    retryExtraction: 'Retry',
+    retryExtraction: 'Retry AI Analysis',
     retryUpdateDescFirst: 'Update the job description before retrying analysis.',
+    editJobDesc: 'Edit Job Description',
+    jobDescLabel: 'Job Description',
+    jobDescHelperText: 'Add responsibilities, required skills, qualifications, experience expectations, or clearly state that the role is open to all backgrounds.',
+    jobDescExample: 'Example: "This role is open to all backgrounds. No specific degree or previous experience is required. Training will be provided."',
+    descUpdatedRetryReady: 'Job description updated. You can now retry AI analysis.',
     intakeBlockedBanner: 'CV intake is disabled until the job analysis is completed.',
     intakeChannelsDisabledNote: 'Intake channels are disabled until job analysis is completed.',
     restrictSender: 'Restrict to tenant email domain',
@@ -262,10 +268,16 @@ const T = {
     criteriaPending: 'جارٍ إنشاء تحليل معايير الذكاء الاصطناعي. ستُحدَّث هذه الصفحة تلقائياً.',
     criteriaProcessing: 'تحليل معايير الذكاء الاصطناعي قيد التنفيذ. ستُحدَّث هذه الصفحة تلقائياً.',
     criteriaFailed: 'فشل تحليل معايير الذكاء الاصطناعي.',
-    criteriaInsufficient: 'هذه الحملة غير جاهزة لاستقبال السير الذاتية. وصف الوظيفة لا يحتوي على معلومات كافية للتقييم الدقيق.',
+    criteriaInsufficient: 'هذه الحملة غير جاهزة لاستقبال السير الذاتية',
+    criteriaInsufficientDetail: 'وصف الوظيفة لا يحتوي على معلومات كافية للتقييم الدقيق. يرجى تحديث وصف الوظيفة بالمهام والمهارات المطلوبة والمؤهلات أو الإشارة إلى أن الدور مفتوح لجميع الخلفيات.',
     criteriaBlocked: 'تم الوصول إلى الحد الأقصى لإعادة محاولات التحليل. يرجى تحسين وصف الوظيفة أو إنشاء حملة جديدة.',
-    retryExtraction: 'إعادة المحاولة',
+    retryExtraction: 'إعادة تحليل الذكاء الاصطناعي',
     retryUpdateDescFirst: 'قم بتحديث وصف الوظيفة قبل إعادة المحاولة.',
+    editJobDesc: 'تعديل وصف الوظيفة',
+    jobDescLabel: 'وصف الوظيفة',
+    jobDescHelperText: 'أضف المهام والمهارات المطلوبة والمؤهلات وتوقعات الخبرة، أو صرّح بأن الدور مفتوح لجميع الخلفيات.',
+    jobDescExample: 'مثال: "هذا الدور مفتوح لجميع الخلفيات. لا يشترط شهادة محددة أو خبرة سابقة. سيتم توفير التدريب."',
+    descUpdatedRetryReady: 'تم تحديث وصف الوظيفة. يمكنك الآن إعادة محاولة تحليل الذكاء الاصطناعي.',
     intakeBlockedBanner: 'استقبال السير الذاتية معطل حتى اكتمال تحليل الوظيفة.',
     intakeChannelsDisabledNote: 'قنوات الاستقبال معطلة حتى اكتمال تحليل الوظيفة.',
     restrictSender: 'تقييد بنطاق البريد الخاص بالمستأجر',
@@ -400,7 +412,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [editingMeta, setEditingMeta] = useState(false);
   const [draftMeta, setDraftMeta] = useState<Record<string, string>>({});
   const [savingMeta, setSavingMeta] = useState(false);
+  const [descSavedNotice, setDescSavedNotice] = useState(false);
   const [copiedApplyLink, setCopiedApplyLink] = useState(false);
+  const descriptionFieldRef = useRef<HTMLTextAreaElement>(null);
 
   // Application controls (max_applications, auto_close)
   const [editingControls, setEditingControls] = useState(false);
@@ -918,26 +932,40 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     }
   }, [auth.token, addToast]);
 
+  const _buildDraftMeta = useCallback((d: typeof details) => ({
+    title:                (d as any).job_title || '',
+    department:           (d as any).job_client || '',
+    location:             (d as any).location || '',
+    job_type:             (d as any).job_type || '',
+    duration:             (d as any).duration || '',
+    experience_level:     (d as any).experience_level || '',
+    work_mode:            (d as any).work_mode || '',
+    application_deadline: (d as any).application_deadline || '',
+    vacancies_count:      String((d as any).vacancies_count || ''),
+    status:               ((d as any).job_status || 'active').toLowerCase(),
+    description:          (d as any).description || '',
+  }), []);
+
   const handleMetaEdit = useCallback(() => {
     if (!details) return;
-    setDraftMeta({
-      title:                (details as any).job_title || '',
-      department:           (details as any).job_client || '',
-      location:             (details as any).location || '',
-      job_type:             (details as any).job_type || '',
-      duration:             (details as any).duration || '',
-      experience_level:     (details as any).experience_level || '',
-      work_mode:            (details as any).work_mode || '',
-      application_deadline: (details as any).application_deadline || '',
-      vacancies_count:      String((details as any).vacancies_count || ''),
-      status:               ((details as any).job_status || 'active').toLowerCase(),
-    });
+    setDraftMeta(_buildDraftMeta(details));
     setEditingMeta(true);
-  }, [details]);
+  }, [details, _buildDraftMeta]);
+
+  const handleEditJobDescription = useCallback(() => {
+    if (!details) return;
+    setDraftMeta(_buildDraftMeta(details));
+    setEditingMeta(true);
+    setTimeout(() => {
+      descriptionFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      descriptionFieldRef.current?.focus();
+    }, 150);
+  }, [details, _buildDraftMeta]);
 
   const handleMetaSave = useCallback(async () => {
     if (!details) return;
     setSavingMeta(true);
+    const prevCriteriaStatus = details.criteria_extraction_status;
     try {
       const payload: Record<string, string | number | null> = {
         department:           draftMeta.department,
@@ -951,6 +979,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         status:               draftMeta.status,
       };
       if (draftMeta.title) payload.title = draftMeta.title;
+      if ('description' in draftMeta) payload.description = draftMeta.description;
       await apiService.put(
         `${WEBHOOK_CONFIG.UPDATE_JOB_URL}/${(details as any).job_id}`,
         payload,
@@ -959,10 +988,13 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
       if (data) {
         const p = Array.isArray(data) ? data[0] : data;
-        setDetails({ ...p.details, analysis_json: p.analysis });
+        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis });
       }
       setEditingMeta(false);
       addToast(t.metaSaved, 'success');
+      if (prevCriteriaStatus === 'insufficient' || prevCriteriaStatus === 'blocked') {
+        setDescSavedNotice(true);
+      }
     } catch (err: any) {
       addToast(err?.message || 'Failed to update job.', 'error');
     } finally {
@@ -1296,30 +1328,94 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       {(() => {
         const cs = details.criteria_extraction_status;
         if (!cs || cs === 'completed') return null;
-        const isBlocked     = cs === 'blocked';
+        const isBlocked      = cs === 'blocked';
         const isInsufficient = cs === 'insufficient';
-        const isFailed      = cs === 'failed';
-        const isSpinning    = cs === 'pending' || cs === 'processing';
-        const canRetry      = (details as any).criteria_retry_allowed === true;
+        const isFailed       = cs === 'failed';
+        const isSpinning     = cs === 'pending' || cs === 'processing';
+        const canRetry       = (details as any).criteria_retry_allowed === true;
         const blockedReason: string | null = (details as any).criteria_retry_blocked_reason ?? null;
         const retryCount: number = (details as any).criteria_extraction_retry_count ?? 0;
         const maxRetries: number = (details as any).criteria_extraction_max_retries ?? 3;
 
-        const bannerColor = (isBlocked || isFailed)
-          ? 'bg-red-50 border-red-200'
-          : isInsufficient
-          ? 'bg-amber-50 border-amber-200'
-          : 'bg-blue-50 border-blue-200';
+        /* ── Insufficient: prominent action-oriented banner ── */
+        if (isInsufficient) {
+          return (
+            <div className="mb-6 rounded-2xl border-2 border-amber-300 bg-amber-50 p-5">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="shrink-0 w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center mt-0.5">
+                  <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-black text-amber-900">{t.criteriaInsufficient}</p>
+                  <p className="text-xs text-amber-800 mt-1 leading-relaxed">{(t as any).criteriaInsufficientDetail}</p>
+                  {details.criteria_extraction_error && (
+                    <p className="text-[11px] text-amber-700 mt-2 italic border-l-2 border-amber-300 pl-2">{details.criteria_extraction_error}</p>
+                  )}
+                  <p className="text-[10px] text-amber-600/80 mt-2 font-bold">
+                    {retryCount} / {maxRetries} {isAr ? 'محاولة مستخدمة' : 'retries used'}
+                  </p>
+                </div>
+              </div>
 
+              {descSavedNotice && (
+                <div className="mb-3 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <p className="text-xs font-bold text-emerald-700">{(t as any).descUpdatedRetryReady}</p>
+                </div>
+              )}
+
+              {canEditIntake && (
+                <div className="flex flex-wrap items-center gap-3">
+                  {!editingMeta && (
+                    <button
+                      onClick={handleEditJobDescription}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white text-xs font-black rounded-xl hover:bg-amber-700 transition-colors shadow-sm"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      {(t as any).editJobDesc}
+                    </button>
+                  )}
+                  <button
+                    onClick={handleRetryExtraction}
+                    disabled={!canRetry}
+                    title={!canRetry ? (blockedReason === 'description_unchanged' ? (t as any).retryUpdateDescFirst : isAr ? 'غير متاح' : 'Not available') : undefined}
+                    className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-black rounded-xl transition-colors border ${canRetry ? 'bg-white border-amber-300 text-amber-700 hover:bg-amber-50' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'}`}
+                  >
+                    {t.retryExtraction}
+                  </button>
+                  {blockedReason === 'description_unchanged' && !editingMeta && (
+                    <p className="text-[10px] text-amber-700 font-bold w-full mt-1">{t.retryUpdateDescFirst}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        /* ── Blocked banner ── */
+        if (isBlocked) {
+          return (
+            <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-error shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                <div>
+                  <p className="text-sm font-bold text-textMain">{t.criteriaBlocked}</p>
+                  {details.criteria_extraction_error && (
+                    <p className="text-xs text-error/80 mt-0.5">{details.criteria_extraction_error}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        /* ── Failed / pending / processing ── */
+        const bannerColor = isFailed ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200';
         const icon = isSpinning
           ? <svg className="animate-spin w-5 h-5 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
           : <svg className="w-5 h-5 text-error shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>;
-
-        const headline = isBlocked ? t.criteriaBlocked
-          : isInsufficient ? t.criteriaInsufficient
-          : isFailed       ? t.criteriaFailed
-          : cs === 'processing' ? t.criteriaProcessing
-          : t.criteriaPending;
+        const headline = isFailed ? t.criteriaFailed : cs === 'processing' ? t.criteriaProcessing : t.criteriaPending;
+        const canRetryFailed = isFailed && (details as any).criteria_retry_allowed === true;
 
         return (
           <div className={`mb-6 rounded-2xl border p-4 ${bannerColor}`}>
@@ -1328,25 +1424,19 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 {icon}
                 <div>
                   <p className="text-sm font-bold text-textMain">{headline}</p>
-                  {(isInsufficient || isFailed || isBlocked) && details.criteria_extraction_error && (
+                  {isFailed && details.criteria_extraction_error && (
                     <p className="text-xs text-error/80 mt-0.5">{details.criteria_extraction_error}</p>
                   )}
-                  {(isInsufficient || isFailed) && !isBlocked && (
-                    <p className="text-[10px] text-textMuted mt-1">
-                      {retryCount} / {maxRetries} {isAr ? 'محاولة' : 'retries used'}
-                    </p>
-                  )}
-                  {blockedReason === 'description_unchanged' && (
-                    <p className="text-xs text-amber-700 mt-1 font-bold">{t.retryUpdateDescFirst}</p>
+                  {isFailed && (
+                    <p className="text-[10px] text-textMuted mt-1">{retryCount} / {maxRetries} {isAr ? 'محاولة' : 'retries used'}</p>
                   )}
                 </div>
               </div>
-              {(isInsufficient || isFailed) && canEditIntake && (
+              {isFailed && canEditIntake && (
                 <button
                   onClick={handleRetryExtraction}
-                  disabled={!canRetry}
-                  title={!canRetry && blockedReason === 'description_unchanged' ? t.retryUpdateDescFirst : undefined}
-                  className={`shrink-0 px-4 py-1.5 text-white text-xs font-bold rounded-lg transition-colors ${canRetry ? 'bg-error hover:bg-red-700' : 'bg-slate-300 cursor-not-allowed'}`}
+                  disabled={!canRetryFailed}
+                  className={`shrink-0 px-4 py-1.5 text-white text-xs font-bold rounded-lg transition-colors ${canRetryFailed ? 'bg-error hover:bg-red-700' : 'bg-slate-300 cursor-not-allowed'}`}
                 >
                   {t.retryExtraction}
                 </button>
@@ -1425,6 +1515,27 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <input type="text" placeholder="Permanent / 6 months" className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.duration} onChange={e => setDraftMeta(p => ({ ...p, duration: e.target.value }))} />
                 </div>
               </div>
+
+              {/* Job Description — full-width, highlighted when analysis is insufficient */}
+              <div className={`space-y-2 p-4 rounded-xl border-2 transition-colors ${intakeBlocked ? 'border-amber-300 bg-amber-50/50' : 'border-border bg-slate-50/50'}`}>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className={`text-[10px] font-black uppercase tracking-widest ${intakeBlocked ? 'text-amber-700' : 'text-textMuted'}`}>
+                    {(t as any).jobDescLabel}
+                    {intakeBlocked && <span className="ml-2 px-1.5 py-0.5 text-[9px] font-black bg-amber-200 text-amber-800 rounded-full">Update required</span>}
+                  </label>
+                  <p className="text-[10px] text-textMuted leading-relaxed max-w-lg">{(t as any).jobDescHelperText}</p>
+                </div>
+                <textarea
+                  ref={descriptionFieldRef}
+                  rows={12}
+                  className={`w-full px-3 py-2.5 border rounded-lg text-sm bg-white focus:ring-2 outline-none font-mono leading-relaxed resize-y transition-colors ${intakeBlocked ? 'border-amber-300 focus:ring-amber-300/40 focus:border-amber-400' : 'border-border focus:ring-primary/20 focus:border-primary'}`}
+                  value={draftMeta.description}
+                  onChange={e => setDraftMeta(p => ({ ...p, description: e.target.value }))}
+                  placeholder={(t as any).jobDescHelperText}
+                />
+                <p className="text-[10px] text-textMuted italic">{(t as any).jobDescExample}</p>
+              </div>
+
               <div className="flex justify-end gap-3 pt-2">
                 <button onClick={() => setEditingMeta(false)} disabled={savingMeta} className="px-5 py-2 text-sm font-bold text-textMuted hover:text-textMain transition-colors disabled:opacity-50">{t.cancelMeta}</button>
                 <button onClick={handleMetaSave} disabled={savingMeta} className="flex items-center gap-2 px-6 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primaryDark transition-colors disabled:opacity-50">

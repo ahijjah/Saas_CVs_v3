@@ -95,6 +95,7 @@ class UpdateJobMetadataRequest(BaseModel):
     status: str | None = None  # active / inactive / closed
     max_applications: int | None = None  # 0 = clear limit (set to NULL)
     auto_close_when_limit_reached: bool | None = None
+    description: str | None = None  # full job description text
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1191,6 +1192,8 @@ async def update_job_metadata(
         updates["max_applications"] = body.max_applications if body.max_applications > 0 else None
     if body.auto_close_when_limit_reached is not None:
         updates["auto_close_when_limit_reached"] = body.auto_close_when_limit_reached
+    if body.description is not None:
+        updates["description"] = body.description.strip()
     if body.status is not None:
         s = body.status.lower()
         if s not in ALLOWED_STATUS:
@@ -1204,7 +1207,7 @@ async def update_job_metadata(
         return {"success": True, "message": "No changes"}
 
     updates["updated_by"] = current_user.user_id
-    set_sql = ", ".join(f"{k} = :{k}" for k in updates)
+    set_sql = ", ".join(f"{k} = :{k}" for k in updates) + ", updated_at = NOW()"
     updates["jid"] = job_id
     try:
         await db.execute(
