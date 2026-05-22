@@ -50,15 +50,6 @@ class UpdateClientOrgRequest(BaseModel):
 
 class AssignUserRequest(BaseModel):
     user_id: str
-    role_for_client: str = "recruiter"
-
-
-# Tenant role → maximum permitted client access roles (descending privilege)
-_TENANT_ROLE_MAX_CLIENT_ROLES: dict[str, list[str]] = {
-    "hr_manager": ["account_manager", "recruiter", "viewer"],
-    "recruiter":  ["recruiter", "viewer"],
-    "viewer":     ["viewer"],
-}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -391,7 +382,7 @@ async def list_client_org_users(
 
     rows = await db.execute(
         text("""
-            SELECT auc.id, auc.user_id, auc.role_for_client, auc.created_at,
+            SELECT auc.id, auc.user_id, auc.created_at,
                    u.email, u.full_name, u.role AS tenant_role, u.status
             FROM agency_user_clients auc
             JOIN users u ON u.user_id = auc.user_id
@@ -403,14 +394,13 @@ async def list_client_org_users(
     )
     users = [
         {
-            "assignment_id":    str(r["id"]),
-            "user_id":          str(r["user_id"]),
-            "email":            r["email"],
-            "full_name":        r["full_name"],
-            "tenant_role":      r["tenant_role"],
-            "user_status":      r["status"],
-            "role_for_client":  r["role_for_client"],
-            "assigned_at":      r["created_at"].isoformat() if r["created_at"] else None,
+            "assignment_id": str(r["id"]),
+            "user_id":       str(r["user_id"]),
+            "email":         r["email"],
+            "full_name":     r["full_name"],
+            "tenant_role":   r["tenant_role"],
+            "user_status":   r["status"],
+            "assigned_at":   r["created_at"].isoformat() if r["created_at"] else None,
         }
         for r in rows.mappings()
     ]
@@ -424,16 +414,10 @@ async def assign_user_to_client(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Assign a tenant user to a client organisation with a specific role."""
+    """Assign a tenant user to a client organisation."""
     _require_admin_or_super(current_user)
     await set_rls_context(db, current_user.tenant_id, current_user.role)
     await _require_agency_tenant(current_user.tenant_id, db)
-
-    if body.role_for_client not in ("account_manager", "recruiter", "viewer"):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="role_for_client must be one of: account_manager, recruiter, viewer",
-        )
 
     # Verify client org belongs to tenant
     corg_check = await db.execute(
@@ -467,36 +451,23 @@ async def assign_user_to_client(
             detail="Tenant Admins have automatic access to all client organisations and cannot be assigned to specific clients.",
         )
 
-    # Privilege escalation guard: client role must not exceed what the tenant role permits
-    allowed_client_roles = _TENANT_ROLE_MAX_CLIENT_ROLES.get(target_tenant_role, ["viewer"])
-    if body.role_for_client not in allowed_client_roles:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f"A user with tenant role '{target_tenant_role}' cannot be granted "
-                f"the client access role '{body.role_for_client}'. "
-                f"Allowed roles: {', '.join(allowed_client_roles)}."
-            ),
-        )
-
     try:
         result = await db.execute(
             text("""
-                INSERT INTO agency_user_clients (tenant_id, user_id, client_organization_id, role_for_client)
-                VALUES (CAST(:tid AS uuid), CAST(:uid AS uuid), CAST(:cid AS uuid), :role)
-                ON CONFLICT (user_id, client_organization_id)
-                DO UPDATE SET role_for_client = EXCLUDED.role_for_client
+                INSERT INTO agency_user_clients (tenant_id, user_id, client_organization_id)
+                VALUES (CAST(:tid AS uuid), CAST(:uid AS uuid), CAST(:cid AS uuid))
+                ON CONFLICT (user_id, client_organization_id) DO NOTHING
                 RETURNING id
             """),
             {
-                "tid":  current_user.tenant_id,
-                "uid":  body.user_id,
-                "cid":  client_org_id,
-                "role": body.role_for_client,
+                "tid": current_user.tenant_id,
+                "uid": body.user_id,
+                "cid": client_org_id,
             },
         )
         await db.commit()
-        return {"success": True, "assignment_id": str(result.scalar_one())}
+        assignment_id = result.scalar_one_or_none()
+        return {"success": True, "assignment_id": str(assignment_id) if assignment_id else None}
     except Exception as exc:
         await db.rollback()
         raise HTTPException(
@@ -547,7 +518,7 @@ async def my_client_assignments(
     rows = await db.execute(
         text("""
             SELECT co.client_organization_id, co.organization_name, co.industry,
-                   co.status, auc.role_for_client, auc.created_at AS assigned_at
+                   co.status, auc.created_at AS assigned_at
             FROM agency_user_clients auc
             JOIN client_organizations co ON co.client_organization_id = auc.client_organization_id
             WHERE auc.user_id = CAST(:uid AS uuid)
@@ -563,7 +534,6 @@ async def my_client_assignments(
             "organization_name":      r["organization_name"],
             "industry":               r["industry"],
             "status":                 r["status"],
-            "role_for_client":        r["role_for_client"],
             "assigned_at":            r["assigned_at"].isoformat() if r["assigned_at"] else None,
         }
         for r in rows.mappings()

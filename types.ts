@@ -117,8 +117,6 @@ export interface ClientOrganization {
   assigned_users_count?: number;
 }
 
-export type ClientRole = 'account_manager' | 'recruiter' | 'viewer';
-
 export interface AgencyUserClient {
   assignment_id: string;
   user_id: string;
@@ -126,7 +124,6 @@ export interface AgencyUserClient {
   full_name: string;
   tenant_role: string;
   user_status: string;
-  role_for_client: ClientRole;
   assigned_at?: string;
 }
 
@@ -192,7 +189,6 @@ export interface AnalysisJson {
 }
 
 export interface JobDetails extends Job {
-  user_client_role?: string | null;
   description: string;
   analysis_json: AnalysisJson | null;
   forwarding_email?: string;

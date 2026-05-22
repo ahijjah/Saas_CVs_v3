@@ -21,7 +21,7 @@ router = APIRouter(prefix="/tenant", tags=["tenant"])
 
 # Roles a tenant admin is permitted to assign to new users.
 # super_admin is intentionally excluded — only /admin/users can create those.
-ALLOWED_ROLES = {"admin", "hr_manager", "recruiter", "viewer"}
+ALLOWED_ROLES = {"admin", "hr_manager", "recruiter"}
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────

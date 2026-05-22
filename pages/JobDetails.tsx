@@ -1053,7 +1053,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   if (!details) return null;
 
-  const canEditIntake = canEdit || (details as any).user_client_role === 'account_manager';
+  const canEditIntake = canEdit;
 
   const analysis = details.analysis_json ?? undefined;
   const metaValues = [details.job_client, details.job_type || 'Full-time', details.location || 'Remote', details.posted_date || '-', details.closing_date || '-'];

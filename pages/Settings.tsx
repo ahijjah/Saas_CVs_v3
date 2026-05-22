@@ -66,7 +66,7 @@ const T = {
     email: 'Email',
     password: 'Password',
     role: 'Role',
-    roles: { admin: 'Admin', hr_manager: 'HR Manager', recruiter: 'Recruiter', viewer: 'Viewer' },
+    roles: { admin: 'Admin', hr_manager: 'HR Manager', recruiter: 'Recruiter' },
     rolePermissionsTitle: 'Role Permissions',
     rolePermissions: {
       admin: [
@@ -155,7 +155,7 @@ const T = {
     email: 'البريد الإلكتروني',
     password: 'كلمة المرور',
     role: 'الدور',
-    roles: { admin: 'مدير الحساب', hr_manager: 'مدير الموارد البشرية', recruiter: 'مسؤول التوظيف', viewer: 'مشاهد' },
+    roles: { admin: 'مدير الحساب', hr_manager: 'مدير الموارد البشرية', recruiter: 'مسؤول التوظيف' },
     rolePermissionsTitle: 'صلاحيات الأدوار',
     rolePermissions: {
       admin: [
@@ -789,11 +789,9 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                     value={addUserForm.role}
                     onChange={e => setAddUserForm(prev => ({ ...prev, role: e.target.value }))}
                   >
-                    {Object.entries(t.roles)
-                      .filter(([val]) => val !== 'viewer')
-                      .map(([val, label]) => (
-                        <option key={val} value={val}>{label}</option>
-                      ))}
+                    {Object.entries(t.roles).map(([val, label]) => (
+                      <option key={val} value={val}>{label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
