@@ -242,6 +242,7 @@ export interface ScoreDimension {
 export interface ScoreDetail {
   positive: string[];
   negative: string[];
+  additional_strengths?: string[];
   summary: string;
 }
 

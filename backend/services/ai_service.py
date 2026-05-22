@@ -141,13 +141,13 @@ Return exactly this structure:
   "score_domain_knowledge": <integer 0-100>,
   "score_other": <integer 0-100>,
   "score_details": {
-    "skills":           {"positive": ["evidence 1", ...], "negative": ["gap 1", ...], "summary": "one sentence"},
-    "experience":       {"positive": [...], "negative": [...], "summary": "..."},
-    "education":        {"positive": [...], "negative": [...], "summary": "..."},
-    "certifications":   {"positive": [...], "negative": [...], "summary": "..."},
-    "soft_skills":      {"positive": [...], "negative": [...], "summary": "..."},
-    "domain_knowledge": {"positive": [...], "negative": [...], "summary": "..."},
-    "other":            {"positive": [...], "negative": [...], "summary": "..."}
+    "skills":           {"positive": ["matched evidence 1", ...], "negative": ["gap 1", ...], "additional_strengths": ["transferable strength 1", ...], "summary": "one sentence"},
+    "experience":       {"positive": [...], "negative": [...], "additional_strengths": [...], "summary": "..."},
+    "education":        {"positive": [...], "negative": [...], "additional_strengths": [...], "summary": "..."},
+    "certifications":   {"positive": [...], "negative": [...], "additional_strengths": [...], "summary": "..."},
+    "soft_skills":      {"positive": [...], "negative": [...], "additional_strengths": [...], "summary": "..."},
+    "domain_knowledge": {"positive": [...], "negative": [...], "additional_strengths": [...], "summary": "..."},
+    "other":            {"positive": [...], "negative": [...], "additional_strengths": [...], "summary": "..."}
   },
   "strengths": ["strength 1", "strength 2", ...],
   "gaps_identified": ["gap 1", "gap 2", ...],
@@ -174,8 +174,9 @@ SCORING GUIDE (for each dimension):
 
 REQUIRED FIELD RULES:
 - candidate_name/email/phone: extract from CV contact section, use empty string if not found
-- score_details.positive: specific evidence from the CV supporting the score (2-4 items)
-- score_details.negative: specific gaps or missing requirements (1-3 items, [] if none)
+- score_details.positive: specific evidence from the CV that directly matches the job requirements (2-4 items, quote CV specifics)
+- score_details.negative: specific gaps or missing requirements relative to the job (1-3 items, [] if none)
+- score_details.additional_strengths: transferable skills or relevant experience beyond the explicit requirements that add value (0-3 items, [] if none)
 - score_details.summary: one sentence justifying the score
 - strengths: 3-5 specific strengths with evidence from the CV
 - gaps_identified: missing or weak areas relative to the role

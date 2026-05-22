@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ApplicationDetailedAnalysis, ScoreDimension } from '../types';
+import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface JobMetaStrip {
@@ -92,6 +92,13 @@ const T = {
       platform_email:   'Dedicated Email',
       public_apply:     'Link',
     } as Record<string, string>,
+    evidenceAnalysis: 'Evidence-Based Analysis',
+    matchedEvidence: 'Matched Evidence',
+    missingEvidence: 'Missing / Weak Evidence',
+    additionalStrengths: 'Additional Relevant Strengths',
+    notInFinalScore: 'Not included in final score',
+    additionalInsights: 'Additional Recruiter Insights',
+    scoreOverview: 'Score Overview',
   },
   ar: {
     back: 'العودة إلى الطلبات',
@@ -163,6 +170,13 @@ const T = {
       platform_email:   'بريد مخصص',
       public_apply:     'الرابط',
     } as Record<string, string>,
+    evidenceAnalysis: 'تحليل قائم على الأدلة',
+    matchedEvidence: 'الأدلة المطابقة',
+    missingEvidence: 'الأدلة الناقصة / الضعيفة',
+    additionalStrengths: 'نقاط قوة إضافية ذات صلة',
+    notInFinalScore: 'غير محتسب في النتيجة النهائية',
+    additionalInsights: 'رؤى إضافية للمسؤول',
+    scoreOverview: 'نظرة عامة على النتيجة',
   },
 };
 
@@ -184,35 +198,99 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
     data.gatekeeper_passed === false
   );
 
-  const getScoreColor = (achieved: number, max: number) => {
-    if (!max || max === 0) return 'bg-slate-200';
+  const getScoreBadgeColor = (achieved: number, max: number) => {
+    if (!max || max === 0) return 'bg-slate-100 text-slate-600';
     const pct = (achieved / max) * 100;
-    if (pct >= 80) return 'bg-success';
-    if (pct >= 60) return 'bg-warning';
-    return 'bg-error';
+    if (pct >= 80) return 'bg-green-100 text-green-800';
+    if (pct >= 60) return 'bg-amber-100 text-amber-800';
+    return 'bg-red-100 text-red-800';
   };
 
-  const renderScoreBar = (label: string, dimension?: ScoreDimension, reasoningText?: string) => {
-    if (!dimension || dimension.max === 0) return null;
-    const percentage = Math.min(100, (dimension.achieved / dimension.max) * 100);
-    const colorClass = getScoreColor(dimension.achieved, dimension.max);
-    const dimReasoning = reasoningText || dimension.reasoning;
+  const renderEvidenceCard = (
+    label: string,
+    dim: ScoreDimension | undefined,
+    detail: ScoreDetail | undefined,
+    reasoning: string,
+    isInsight = false,
+  ) => {
+    if (!dim && !detail) return null;
+    const hasDim = dim && dim.max > 0;
+    const pct = hasDim ? Math.round((dim!.achieved / dim!.max) * 100) : 0;
+    const badgeColor = hasDim ? getScoreBadgeColor(dim!.achieved, dim!.max) : 'bg-slate-100 text-slate-500';
+    const hasEvidence = (detail?.positive?.length ?? 0) > 0 || (detail?.negative?.length ?? 0) > 0 || (detail?.additional_strengths?.length ?? 0) > 0;
 
     return (
-      <div className="space-y-1">
-        <div className="flex justify-between text-[10px] font-black uppercase tracking-wider">
-          <span className="text-textMuted">{label}</span>
-          <span className="text-textMain font-mono">{dimension.achieved} / {dimension.max}</span>
+      <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden flex flex-col">
+        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-2 bg-slate-50 flex-wrap">
+          <h5 className="text-[10px] font-black text-textMain uppercase tracking-wider">{label}</h5>
+          <div className={`flex items-center gap-2 ${isAr ? 'flex-row-reverse' : ''}`}>
+            {hasDim && (
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${badgeColor}`}>
+                {dim!.achieved} / {dim!.max}
+              </span>
+            )}
+            {hasDim && !isInsight && dim!.weight != null && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700">
+                {dim!.weight}%
+              </span>
+            )}
+            {isInsight && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
+                {t.notInFinalScore}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200/50">
-          <div
-            className={`h-full transition-all duration-1000 ${colorClass}`}
-            style={{ width: `${percentage}%` }}
-          />
+        <div className="px-5 py-4 space-y-3 flex-1">
+          {(detail?.positive?.length ?? 0) > 0 && (
+            <div>
+              <p className="text-[9px] font-black text-green-700 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                <span>✅</span> {t.matchedEvidence}
+              </p>
+              <ul className="space-y-1">
+                {detail!.positive.map((item, i) => (
+                  <li key={i} className="text-xs text-textMain leading-relaxed flex items-start gap-1.5">
+                    <span className="text-green-500 mt-0.5 shrink-0">•</span><span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(detail?.negative?.length ?? 0) > 0 && (
+            <div>
+              <p className="text-[9px] font-black text-red-600 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                <span>❌</span> {t.missingEvidence}
+              </p>
+              <ul className="space-y-1">
+                {detail!.negative.map((item, i) => (
+                  <li key={i} className="text-xs text-textMain leading-relaxed flex items-start gap-1.5">
+                    <span className="text-red-400 mt-0.5 shrink-0">•</span><span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(detail?.additional_strengths?.length ?? 0) > 0 && (
+            <div>
+              <p className="text-[9px] font-black text-blue-700 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                <span>➕</span> {t.additionalStrengths}
+              </p>
+              <ul className="space-y-1">
+                {detail!.additional_strengths!.map((item, i) => (
+                  <li key={i} className="text-xs text-textMain leading-relaxed flex items-start gap-1.5">
+                    <span className="text-blue-400 mt-0.5 shrink-0">•</span><span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!hasEvidence && reasoning && (
+            <p className="text-xs text-textMuted italic leading-relaxed">{reasoning}</p>
+          )}
+          {detail?.summary && (
+            <p className="text-[10px] text-textMuted italic leading-relaxed pt-2 border-t border-slate-100">{detail.summary}</p>
+          )}
         </div>
-        {dimReasoning && (
-          <p className="text-[10px] text-textMuted italic leading-relaxed pt-0.5">{dimReasoning}</p>
-        )}
       </div>
     );
   };
@@ -263,6 +341,19 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
     [t.scoreBars[5], scores.domain_knowledge,  data.reasoning?.domain_knowledge  || ''],
     [t.scoreBars[6], scores.other_requirements, data.reasoning?.other            || ''],
   ];
+
+  // Evidence dims: pairs label+dim+detail+reasoning for each scoring dimension
+  const DETAIL_KEYS = ['skills', 'experience', 'education', 'certifications', 'soft_skills', 'domain_knowledge', 'other'] as const;
+  const SCORES_KEYS: (keyof typeof scores)[] = ['skills', 'experience', 'education', 'certifications', 'soft_skills', 'domain_knowledge', 'other_requirements'];
+  const evidenceDims = DETAIL_KEYS.map((dk, i) => ({
+    label: t.scoreBars[i],
+    dim: scores[SCORES_KEYS[i]],
+    detail: data.score_details?.[dk],
+    reasoning: scoreDims[i][2],
+  }));
+  const weightedEvidenceDims = evidenceDims.filter(d => !d.dim || (d.dim.weight ?? 1) > 0);
+  const zeroWeightEvidenceDims = evidenceDims.filter(d => d.dim && d.dim.weight === 0);
+  const hasEvidenceSection = !isLowMatch && (data.score_details != null || evidenceDims.some(d => d.dim));
 
   const hasIntelligence = data.local_similarity_score != null || data.cv_language || (data.matched_skills?.length ?? 0) > 0 || (data.missing_skills?.length ?? 0) > 0;
   const hasRedFlags = (data.red_flags?.length ?? 0) > 0;
@@ -456,14 +547,30 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           )}
         </div>
 
-        <div className="bg-white rounded-3xl border border-border shadow-sm p-8 space-y-6">
-          <h4 className="text-[10px] font-black text-textMain uppercase tracking-widest flex items-center">
-            <span className={`w-2 h-4 bg-primary rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span> {t.dimScoring}
+        <div className="bg-white rounded-3xl border border-border shadow-sm p-6 flex flex-col">
+          <h4 className="text-[10px] font-black text-textMain uppercase tracking-widest flex items-center mb-5">
+            <span className={`w-2 h-4 bg-primary rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span> {t.scoreOverview}
           </h4>
-          <div className="space-y-4">
-            {scoreDims.map(([label, dim, reason]) => renderScoreBar(label, dim, reason))}
+          <div className="flex-1 divide-y divide-slate-50">
+            {scoreDims.map(([label, dim]) => {
+              if (!dim || dim.max === 0) return null;
+              const pct = Math.round((dim.achieved / dim.max) * 100);
+              const badge = getScoreBadgeColor(dim.achieved, dim.max);
+              return (
+                <div key={label} className="flex items-center gap-2 py-2.5">
+                  <span className="flex-1 text-[10px] font-bold text-textMuted uppercase tracking-wide truncate">{label}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${badge}`}>{dim.achieved}<span className="opacity-60">/{dim.max}</span></span>
+                  {dim.weight != null && dim.weight > 0 && (
+                    <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[9px] font-bold w-8 text-center">{dim.weight}%</span>
+                  )}
+                  {dim.weight === 0 && (
+                    <span className="px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded text-[9px] font-bold w-8 text-center">—</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <div className="pt-6 border-t border-slate-100">
+          <div className="pt-4 mt-4 border-t border-slate-100">
             <p className="text-[10px] text-textMuted italic leading-relaxed">{t.scoringNote}</p>
           </div>
         </div>
@@ -547,6 +654,36 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             </div>
           )}
         </div>
+      )}
+
+      {/* Evidence-Based Analysis */}
+      {hasEvidenceSection && (
+        <section className="space-y-6">
+          <div className="flex items-center gap-3">
+            <span className="w-2 h-4 bg-primary rounded-full shrink-0"></span>
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.evidenceAnalysis}</h3>
+          </div>
+          {/* Weighted dimensions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {weightedEvidenceDims.map(({ label, dim, detail, reasoning }) =>
+              renderEvidenceCard(label, dim, detail, reasoning, false)
+            )}
+          </div>
+          {/* Zero-weight dimensions → Additional Recruiter Insights */}
+          {zeroWeightEvidenceDims.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.additionalInsights}</h4>
+                <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-full">{t.notInFinalScore}</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {zeroWeightEvidenceDims.map(({ label, dim, detail, reasoning }) =>
+                  renderEvidenceCard(label, dim, detail, reasoning, true)
+                )}
+              </div>
+            </div>
+          )}
+        </section>
       )}
 
       {/* HR Evaluation Grid */}
