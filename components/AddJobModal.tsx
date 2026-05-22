@@ -4,6 +4,7 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { User, ClientOrganization } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { evaluateJobDescriptionQuality } from '../utils/jobDescriptionQuality';
 
 interface AddJobModalProps {
   onClose: () => void;
@@ -60,6 +61,11 @@ const T = {
     submit: 'Create Job',
     errorTitle: 'Job title is required.',
     errorDesc: 'Job description is required.',
+    qualityLabel: 'Description Quality',
+    qualityInsufficient: 'Insufficient',
+    qualityNeedsImprovement: 'Needs Improvement',
+    qualityReady: 'Ready for AI Analysis',
+    qualityBlocksSubmit: 'Please add meaningful job details before creating the campaign.',
   },
   ar: {
     title: 'إنشاء وظيفة جديدة',
@@ -93,8 +99,91 @@ const T = {
     submit: 'إنشاء الوظيفة',
     errorTitle: 'المسمى الوظيفي مطلوب.',
     errorDesc: 'وصف الوظيفة مطلوب.',
+    qualityLabel: 'جودة الوصف',
+    qualityInsufficient: 'غير كافٍ',
+    qualityNeedsImprovement: 'يحتاج تحسين',
+    qualityReady: 'جاهز للتحليل',
+    qualityBlocksSubmit: 'يرجى إضافة تفاصيل وظيفية مفيدة قبل إنشاء الحملة.',
   },
 };
+
+// ── Quality indicator ─────────────────────────────────────────────────────────
+
+interface QualityT {
+  qualityLabel: string;
+  qualityInsufficient: string;
+  qualityNeedsImprovement: string;
+  qualityReady: string;
+}
+
+const QUALITY_STYLES = {
+  insufficient:      { bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-700',     bar: 'bg-red-400',     dot: 'bg-red-500'     },
+  needs_improvement: { bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-700',   bar: 'bg-amber-400',   dot: 'bg-amber-500'   },
+  ready:             { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', bar: 'bg-emerald-500', dot: 'bg-emerald-500' },
+} as const;
+
+function DescriptionQualityIndicator({
+  quality,
+  t,
+}: {
+  quality: ReturnType<typeof evaluateJobDescriptionQuality>;
+  t: QualityT;
+}) {
+  const s = QUALITY_STYLES[quality.state];
+  const stateLabel = quality.state === 'insufficient' ? t.qualityInsufficient
+    : quality.state === 'needs_improvement' ? t.qualityNeedsImprovement
+    : t.qualityReady;
+
+  return (
+    <div className={`rounded-xl border px-3 py-2.5 ${s.bg} ${s.border}`}>
+      {/* Score bar */}
+      <div className="flex items-center gap-3 mb-2">
+        <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${s.text}`}>{t.qualityLabel}</span>
+        <div className="flex-1 h-1.5 bg-white/60 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-300 ${s.bar}`}
+            style={{ width: `${quality.score}%` }}
+          />
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+          <span className={`text-[10px] font-black ${s.text}`}>{stateLabel}</span>
+        </div>
+      </div>
+
+      {/* Issues */}
+      {quality.issues.length > 0 && (
+        <ul className={`space-y-0.5 mb-1.5 ${s.text}`}>
+          {quality.issues.map((issue, i) => (
+            <li key={i} className="text-[11px] flex items-start gap-1.5">
+              <span className="shrink-0 mt-0.5">•</span>{issue}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Suggestions (only when not ready) */}
+      {quality.state !== 'ready' && quality.suggestions.length > 0 && (
+        <ul className="space-y-0.5 text-textMuted">
+          {quality.suggestions.map((s, i) => (
+            <li key={i} className="text-[11px] flex items-start gap-1.5">
+              <span className="shrink-0 mt-0.5 opacity-60">→</span>{s}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Ready success message */}
+      {quality.state === 'ready' && (
+        <p className={`text-[11px] font-bold ${s.text}`}>
+          {quality.suggestions[0] ?? 'Description is ready for AI analysis.'}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
 
 export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, token, user, addToast }) => {
   const { lang } = useLanguage();
@@ -196,7 +285,11 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const hasTitle = formData.job_title.trim().length > 0;
   const hasDesc = formData.job_description.trim().length > 0;
   const clientOrgSatisfied = !isAgencyTenant || !!formData.client_organization_id;
-  const isFormValid = hasTitle && hasDesc && clientOrgSatisfied;
+
+  const descQuality = hasDesc ? evaluateJobDescriptionQuality(formData.job_description) : null;
+  const descQualityBlocks = descQuality?.state === 'insufficient';
+
+  const isFormValid = hasTitle && hasDesc && clientOrgSatisfied && !descQualityBlocks;
 
   const inputCls = 'w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm';
   const selectCls = `${inputCls} bg-white`;
@@ -350,7 +443,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               </div>
             </div>
 
-            {/* Row 4: Description */}
+            {/* Row 4: Description + live quality indicator */}
             <div className="space-y-1.5">
               <label className={labelCls}>{t.jobDesc} <span className="text-error">*</span></label>
               <textarea
@@ -358,15 +451,26 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 name="job_description"
                 rows={7}
                 placeholder={t.jobDescPlaceholder}
-                className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm leading-relaxed"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 outline-none transition-all text-sm leading-relaxed ${
+                  descQuality?.state === 'insufficient' ? 'border-red-300 focus:ring-red-200 focus:border-red-400' :
+                  descQuality?.state === 'needs_improvement' ? 'border-amber-300 focus:ring-amber-200 focus:border-amber-400' :
+                  descQuality?.state === 'ready' ? 'border-emerald-300 focus:ring-emerald-200 focus:border-emerald-400' :
+                  'border-border focus:ring-primary/20 focus:border-primary'
+                }`}
                 value={formData.job_description}
                 onChange={handleChange}
               />
-              <p className="text-xs text-textMuted">
-                {formData.job_description.trim().length > 0
-                  ? `${formData.job_description.trim().length} chars — AI will extract criteria automatically`
-                  : 'The more detail you provide, the better the AI scoring will be.'}
-              </p>
+
+              {/* Quality indicator — shown once user starts typing */}
+              {descQuality && (
+                <DescriptionQualityIndicator quality={descQuality} t={t} />
+              )}
+
+              {!hasDesc && (
+                <p className="text-xs text-textMuted">
+                  The more detail you provide, the better the AI scoring will be.
+                </p>
+              )}
             </div>
 
             {/* System-generated fields note */}
@@ -380,7 +484,12 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
           </div>
 
           {/* Footer */}
-          <div className="px-8 py-5 bg-slate-50 border-t border-border flex justify-end items-center gap-4 sticky bottom-0 z-10">
+          <div className="px-8 py-5 bg-slate-50 border-t border-border flex flex-wrap justify-end items-center gap-4 sticky bottom-0 z-10">
+            {descQualityBlocks && (
+              <p className="text-xs text-error font-bold flex-1 min-w-0 text-left">
+                {t.qualityBlocksSubmit}
+              </p>
+            )}
             <button
               type="button"
               onClick={onClose}

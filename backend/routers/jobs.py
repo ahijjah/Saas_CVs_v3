@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import CurrentUserDep, get_current_user
 from config import get_settings
 from database import get_db, set_rls_context
+from services.job_description_quality import evaluate_description_quality
 from services.subscription_service import can_create_campaign
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -278,6 +279,14 @@ async def create_job(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    # Quality-gate: reject clearly meaningless descriptions before hitting the DB
+    desc_quality = evaluate_description_quality(body.description)
+    if desc_quality.state == "insufficient":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=desc_quality.rejection_message(),
+        )
 
     # Verify tenant exists and get tenant_type
     t_row = await db.execute(
@@ -1091,7 +1100,15 @@ async def retry_criteria_extraction(
             detail="Maximum analysis retries reached for this campaign.",
         )
 
-    # For insufficient: require a meaningful description change
+    # Quality gate: reject if description still insufficient for AI analysis
+    desc_quality = evaluate_description_quality(description)
+    if not desc_quality.is_sufficient_for_ai:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=desc_quality.rejection_message(),
+        )
+
+    # For insufficient: require a meaningful description change (hash check)
     if current_status == "insufficient":
         last_hash = job["criteria_last_failed_description_hash"]
         if last_hash and _normalize_description_hash(description) == last_hash:

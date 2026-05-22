@@ -4,6 +4,7 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { evaluateJobDescriptionQuality } from '../utils/jobDescriptionQuality';
 
 interface JobDetailsProps {
   jobId: string;
@@ -100,6 +101,11 @@ const T = {
     jobDescHelperText: 'Add responsibilities, required skills, qualifications, experience expectations, or clearly state that the role is open to all backgrounds.',
     jobDescExample: 'Example: "This role is open to all backgrounds. No specific degree or previous experience is required. Training will be provided."',
     descUpdatedRetryReady: 'Job description updated. You can now retry AI analysis.',
+    qualityLabel: 'Description Quality',
+    qualityInsufficient: 'Insufficient',
+    qualityNeedsImprovement: 'Needs Improvement',
+    qualityReady: 'Ready for AI Analysis',
+    qualityAiBlockedHint: 'AI analysis cannot run yet. Please improve the job description by adding responsibilities, skills, qualifications, or experience expectations.',
     intakeBlockedBanner: 'CV intake is disabled until the job analysis is completed.',
     intakeChannelsDisabledNote: 'Intake channels are disabled until job analysis is completed.',
     restrictSender: 'Restrict to tenant email domain',
@@ -278,6 +284,11 @@ const T = {
     jobDescHelperText: 'أضف المهام والمهارات المطلوبة والمؤهلات وتوقعات الخبرة، أو صرّح بأن الدور مفتوح لجميع الخلفيات.',
     jobDescExample: 'مثال: "هذا الدور مفتوح لجميع الخلفيات. لا يشترط شهادة محددة أو خبرة سابقة. سيتم توفير التدريب."',
     descUpdatedRetryReady: 'تم تحديث وصف الوظيفة. يمكنك الآن إعادة محاولة تحليل الذكاء الاصطناعي.',
+    qualityLabel: 'جودة الوصف',
+    qualityInsufficient: 'غير كافٍ',
+    qualityNeedsImprovement: 'يحتاج تحسين',
+    qualityReady: 'جاهز للتحليل',
+    qualityAiBlockedHint: 'لا يمكن تشغيل التحليل بعد. يرجى تحسين الوصف بإضافة مهام أو مهارات أو مؤهلات أو توقعات خبرة.',
     intakeBlockedBanner: 'استقبال السير الذاتية معطل حتى اكتمال تحليل الوظيفة.',
     intakeChannelsDisabledNote: 'قنوات الاستقبال معطلة حتى اكتمال تحليل الوظيفة.',
     restrictSender: 'تقييد بنطاق البريد الخاص بالمستأجر',
@@ -1525,15 +1536,85 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   </label>
                   <p className="text-[10px] text-textMuted leading-relaxed max-w-lg">{(t as any).jobDescHelperText}</p>
                 </div>
-                <textarea
-                  ref={descriptionFieldRef}
-                  rows={12}
-                  className={`w-full px-3 py-2.5 border rounded-lg text-sm bg-white focus:ring-2 outline-none font-mono leading-relaxed resize-y transition-colors ${intakeBlocked ? 'border-amber-300 focus:ring-amber-300/40 focus:border-amber-400' : 'border-border focus:ring-primary/20 focus:border-primary'}`}
-                  value={draftMeta.description}
-                  onChange={e => setDraftMeta(p => ({ ...p, description: e.target.value }))}
-                  placeholder={(t as any).jobDescHelperText}
-                />
-                <p className="text-[10px] text-textMuted italic">{(t as any).jobDescExample}</p>
+                {(() => {
+                  const dq = draftMeta.description?.trim()
+                    ? evaluateJobDescriptionQuality(draftMeta.description)
+                    : null;
+                  const borderCls = dq?.state === 'insufficient'
+                    ? 'border-red-300 focus:ring-red-200/40 focus:border-red-400'
+                    : dq?.state === 'needs_improvement'
+                    ? 'border-amber-300 focus:ring-amber-300/40 focus:border-amber-400'
+                    : dq?.state === 'ready'
+                    ? 'border-emerald-300 focus:ring-emerald-200/40 focus:border-emerald-400'
+                    : intakeBlocked
+                    ? 'border-amber-300 focus:ring-amber-300/40 focus:border-amber-400'
+                    : 'border-border focus:ring-primary/20 focus:border-primary';
+
+                  const QUAL_STYLES = {
+                    insufficient:      { bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-700',     bar: 'bg-red-400',     dot: 'bg-red-500'     },
+                    needs_improvement: { bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-700',   bar: 'bg-amber-400',   dot: 'bg-amber-500'   },
+                    ready:             { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', bar: 'bg-emerald-500', dot: 'bg-emerald-500' },
+                  } as const;
+
+                  return (
+                    <>
+                      <textarea
+                        ref={descriptionFieldRef}
+                        rows={12}
+                        className={`w-full px-3 py-2.5 border rounded-lg text-sm bg-white focus:ring-2 outline-none font-mono leading-relaxed resize-y transition-colors ${borderCls}`}
+                        value={draftMeta.description}
+                        onChange={e => setDraftMeta(p => ({ ...p, description: e.target.value }))}
+                        placeholder={(t as any).jobDescHelperText}
+                      />
+
+                      {/* Live quality indicator */}
+                      {dq && (() => {
+                        const s = QUAL_STYLES[dq.state];
+                        const stateLabel = dq.state === 'insufficient' ? (t as any).qualityInsufficient
+                          : dq.state === 'needs_improvement' ? (t as any).qualityNeedsImprovement
+                          : (t as any).qualityReady;
+                        return (
+                          <div className={`rounded-xl border px-3 py-2.5 ${s.bg} ${s.border}`}>
+                            <div className="flex items-center gap-3 mb-1.5">
+                              <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${s.text}`}>{(t as any).qualityLabel}</span>
+                              <div className="flex-1 h-1.5 bg-white/60 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full transition-all duration-300 ${s.bar}`} style={{ width: `${dq.score}%` }} />
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                                <span className={`text-[10px] font-black ${s.text}`}>{stateLabel}</span>
+                              </div>
+                            </div>
+                            {dq.issues.length > 0 && (
+                              <ul className={`space-y-0.5 mb-1 ${s.text}`}>
+                                {dq.issues.map((iss, i) => (
+                                  <li key={i} className="text-[11px] flex items-start gap-1.5"><span className="shrink-0">•</span>{iss}</li>
+                                ))}
+                              </ul>
+                            )}
+                            {dq.state !== 'ready' && dq.suggestions.length > 0 && (
+                              <ul className="space-y-0.5 text-textMuted">
+                                {dq.suggestions.map((sg, i) => (
+                                  <li key={i} className="text-[11px] flex items-start gap-1.5"><span className="shrink-0 opacity-60">→</span>{sg}</li>
+                                ))}
+                              </ul>
+                            )}
+                            {dq.state === 'ready' && (
+                              <p className={`text-[11px] font-bold ${s.text}`}>{dq.suggestions[0] ?? (t as any).qualityReady}</p>
+                            )}
+                            {dq.state === 'insufficient' && (
+                              <p className={`text-[11px] font-bold mt-1 ${s.text}`}>{(t as any).qualityAiBlockedHint}</p>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {!dq && (
+                        <p className="text-[10px] text-textMuted italic">{(t as any).jobDescExample}</p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
