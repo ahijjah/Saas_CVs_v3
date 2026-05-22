@@ -12,6 +12,7 @@ Prompt codes used by the pipeline:
 Workers load the active DB prompt at task execution time and fall back to
 the hardcoded defaults in ai_service.py if no active version is found.
 """
+import re
 import uuid
 from typing import Annotated
 
@@ -28,6 +29,8 @@ router = APIRouter(prefix="/admin/ai-prompts", tags=["ai-prompts"])
 VALID_CATEGORIES = {"criteria", "scoring", "screening", "summary", "interview"}
 VALID_MODELS = {"gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"}
 VALID_LANGUAGES = {"ar", "en", "auto"}
+
+_PROMPT_CODE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 # Hardcoded defaults so "Reset to default" can recreate the original prompts.
 # These mirror the constants in ai_service.py.
@@ -188,6 +191,19 @@ class CreatePromptRequest(BaseModel):
     max_tokens: int = Field(2000, ge=1, le=32000)
     output_language: str = "ar"
     notes: str | None = None
+
+    @field_validator("prompt_code")
+    @classmethod
+    def validate_prompt_code(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("prompt_code is required")
+        if not _PROMPT_CODE_RE.match(v):
+            raise ValueError(
+                "prompt_code must be lowercase snake_case — only lowercase letters, digits, "
+                "and underscores, starting with a letter (e.g. cv_scoring, criteria_extraction)"
+            )
+        return v
 
     @field_validator("prompt_category")
     @classmethod
