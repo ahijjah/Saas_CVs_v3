@@ -371,14 +371,30 @@ async def _score_cv_async(
                 raise RuntimeError(f"No criteria found for job {job_id}")
 
             weights = {
-                "weight_skills":           prompt_cfg.weights.get("weight_skills", criteria["weight_skills"]),
-                "weight_experience":       prompt_cfg.weights.get("weight_experience", criteria["weight_experience"]),
-                "weight_education":        prompt_cfg.weights.get("weight_education", criteria["weight_education"]),
-                "weight_certifications":   prompt_cfg.weights.get("weight_certifications", criteria["weight_certifications"]),
-                "weight_soft_skills":      prompt_cfg.weights.get("weight_soft_skills", criteria["weight_soft_skills"]),
-                "weight_domain_knowledge": prompt_cfg.weights.get("weight_domain_knowledge", criteria["weight_domain_knowledge"]),
-                "weight_other":            prompt_cfg.weights.get("weight_other", criteria["weight_other"]),
+                "weight_skills":           criteria["weight_skills"],
+                "weight_experience":       criteria["weight_experience"],
+                "weight_education":        criteria["weight_education"],
+                "weight_certifications":   criteria["weight_certifications"],
+                "weight_soft_skills":      criteria["weight_soft_skills"],
+                "weight_domain_knowledge": criteria["weight_domain_knowledge"],
+                "weight_other":            criteria["weight_other"],
             }
+            # Only apply per-dimension overrides when scoring_overrides explicitly
+            # supplies them (e.g. a one-off re-score request).  prompt_cfg.weights
+            # (system-profile defaults) must NOT override job-specific weights.
+            _WEIGHT_KEYS = [
+                "weight_skills", "weight_experience", "weight_education",
+                "weight_certifications", "weight_soft_skills",
+                "weight_domain_knowledge", "weight_other",
+            ]
+            for _wk in _WEIGHT_KEYS:
+                if scoring_overrides.get(_wk) is not None and isinstance(scoring_overrides[_wk], int):
+                    weights[_wk] = scoring_overrides[_wk]
+
+            logger.info(
+                "[%s] Effective scoring weights: %s",
+                application_id, weights,
+            )
 
             required_skills = (
                 list(criteria.get("skills") or []) + list(criteria.get("certifications") or [])
