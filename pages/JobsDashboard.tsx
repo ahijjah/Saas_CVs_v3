@@ -103,8 +103,10 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
   const [tenantFilter, setTenantFilter] = useState('');
   const [clientOrgFilter, setClientOrgFilter] = useState('');
   const superAdmin = isSuperAdmin(auth);
-
-  // Plan usage (tenant users only — not shown for super admin)
+  const tenantType = auth.user?.tenant_type ?? '';
+  const isAgencyTenant = !superAdmin && (
+    tenantType === 'agency' || tenantType === 'individual_recruiter'
+  );
   const [planUsage, setPlanUsage] = useState<{
     active_campaigns: number; max_campaigns: number;
     processed_cvs: number; max_cvs: number;
@@ -175,10 +177,6 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
   const tenantOptions = superAdmin
     ? Array.from(new Set(jobs.map(j => j.tenant_name).filter(Boolean))) as string[]
     : [];
-
-  const isAgencyTenant = !superAdmin && (
-    planUsage?.tenant_type === 'agency' || planUsage?.tenant_type === 'individual_recruiter'
-  );
 
   const clientOrgOptions = isAgencyTenant
     ? Array.from(new Set(jobs.map(j => j.client_org_name).filter(Boolean))) as string[]
