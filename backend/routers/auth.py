@@ -135,7 +135,8 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
                    t.plan, t.pending_plan, t.max_users, t.max_jobs,
                    t.tenant_type, t.status AS tenant_status,
                    t.created_at AS tenant_created_at,
-                   t.subscription_status, t.trial_end_at
+                   t.subscription_status, t.trial_end_at,
+                   t.job_application_controls_enabled
             FROM users u
             JOIN tenants t ON t.tenant_id = u.tenant_id
             WHERE u.user_id = :uid
@@ -180,6 +181,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
         "trial_end_at": p["trial_end_at"].isoformat() if p["trial_end_at"] else None,
         "tenant_created_at": p["tenant_created_at"].isoformat() if p["tenant_created_at"] else None,
         "active_users_count": active_count,
+        "job_application_controls_enabled": bool(p["job_application_controls_enabled"]),
     }
 
 

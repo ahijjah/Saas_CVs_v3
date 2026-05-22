@@ -10,6 +10,7 @@ export interface User {
   cv_ingestion_mode?: 'platform_email' | 'forwarding';
   subscription_status?: SubscriptionStatus;
   must_change_password?: boolean;
+  job_application_controls_enabled?: boolean;
 }
 
 export type SubscriptionStatus =
@@ -414,6 +415,7 @@ export interface TenantSubscriptionRow {
   status: 'active' | 'suspended';
   created_at: string;
   user_count?: number;
+  job_application_controls_enabled?: boolean;
 }
 
 export interface TenantUsage {

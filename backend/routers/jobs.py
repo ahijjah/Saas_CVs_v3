@@ -430,7 +430,8 @@ async def get_job_details(
                     WHERE (a.duplicate_status IS NULL OR a.duplicate_status = 'not_duplicate')
                       AND a.processing_status != 'failed'
                 ) AS applications_valid_count,
-                t.forwarding_email AS tenant_forwarding_email
+                t.forwarding_email AS tenant_forwarding_email,
+                t.job_application_controls_enabled
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
             JOIN tenants t ON t.tenant_id = j.tenant_id
@@ -527,6 +528,7 @@ async def get_job_details(
             "applications_in_progress": int(job["applications_in_progress"]),
             "client_organization_id": str(job["client_organization_id"]) if job["client_organization_id"] else None,
             "client_org_name":        job["client_org_name"],
+            "job_application_controls_enabled": bool(job["job_application_controls_enabled"]),
             "qualified_threshold":      job["qualified_threshold"],
             "partial_threshold":        job["partial_threshold"],
             "max_applications":               job["max_applications"],
@@ -1054,6 +1056,21 @@ async def update_job_metadata(
     )
     if not job_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    # If application controls are being updated, verify the feature is enabled for this tenant
+    controls_fields = {"max_applications", "auto_close_when_limit_reached"}
+    requested_controls = controls_fields & body.model_fields_set
+    if requested_controls:
+        flag_row = await db.execute(
+            text("SELECT job_application_controls_enabled FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+            {"tid": current_user.tenant_id},
+        )
+        flag = flag_row.scalar_one_or_none()
+        if not flag:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Job application controls are not enabled for this tenant.",
+            )
 
     ALLOWED_STATUS = {"active", "inactive", "closed"}
     updates: dict = {}

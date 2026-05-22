@@ -103,19 +103,25 @@ async def check_job_applicant_limit(
     row = await db.execute(
         text("""
             SELECT j.max_applications,
+                   t.job_application_controls_enabled,
                    COUNT(a.application_id) AS valid_count
             FROM jobs j
+            JOIN tenants t ON t.tenant_id = j.tenant_id
             LEFT JOIN applications a ON a.job_id = j.job_id
                 AND a.processing_status != 'failed'
                 AND (a.duplicate_status IS NULL OR a.duplicate_status = 'not_duplicate')
             WHERE j.job_id = CAST(:jid AS uuid)
-            GROUP BY j.job_id
+            GROUP BY j.job_id, t.job_application_controls_enabled
         """),
         {"jid": job_id},
     )
     r = row.mappings().first()
     if not r:
         return {"allowed": True, "used": 0, "limit": None, "message": ""}
+
+    # If the tenant does not have application controls enabled, skip the limit check entirely
+    if not r["job_application_controls_enabled"]:
+        return {"allowed": True, "used": int(r["valid_count"]), "limit": None, "message": ""}
 
     limit = r["max_applications"]
     if limit is None:

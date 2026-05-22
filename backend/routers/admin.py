@@ -148,6 +148,7 @@ async def list_tenants(
                    t.trial_end_at, t.subscription_started_at, t.subscription_ends_at,
                    t.monthly_cv_processing_soft_limit,
                    t.monthly_cv_processing_hard_limit,
+                   t.job_application_controls_enabled,
                    COUNT(DISTINCT u.user_id) AS user_count
             FROM tenants t
             LEFT JOIN users u ON u.tenant_id = t.tenant_id
@@ -177,6 +178,7 @@ async def list_tenants(
             "subscription_ends_at": r["subscription_ends_at"].isoformat() if r["subscription_ends_at"] else None,
             "monthly_cv_processing_soft_limit": r["monthly_cv_processing_soft_limit"],
             "monthly_cv_processing_hard_limit": r["monthly_cv_processing_hard_limit"],
+            "job_application_controls_enabled": bool(r["job_application_controls_enabled"]),
             "created_at":  r["created_at"].isoformat() if r["created_at"] else None,
             "user_count":  r["user_count"],
         })
@@ -653,6 +655,44 @@ async def update_tenant_subscription(
 
     await db.commit()
     return {"success": True, "action": body.action}
+
+
+class UpdateTenantFeaturesRequest(BaseModel):
+    job_application_controls_enabled: bool | None = None
+
+
+@router.patch("/tenants/{tenant_id}/features", dependencies=[RequireSuperAdmin])
+async def update_tenant_features(
+    tenant_id: str,
+    body: UpdateTenantFeaturesRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Toggle feature flags for a tenant (Super Admin only)."""
+    await set_rls_context(db, current_user.tenant_id, "super_admin")
+
+    existing = await db.execute(
+        text("SELECT tenant_id FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": tenant_id},
+    )
+    if not existing.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    updates: dict = {}
+    if body.job_application_controls_enabled is not None:
+        updates["job_application_controls_enabled"] = body.job_application_controls_enabled
+
+    if not updates:
+        return {"success": True, "message": "No changes to apply."}
+
+    set_parts = ", ".join(f"{k} = :{k}" for k in updates)
+    updates["tid"] = tenant_id
+    await db.execute(
+        text(f"UPDATE tenants SET {set_parts} WHERE tenant_id = CAST(:tid AS uuid)"),
+        updates,
+    )
+    await db.commit()
+    return {"success": True}
 
 
 class UpdateTenantFairUsageRequest(BaseModel):

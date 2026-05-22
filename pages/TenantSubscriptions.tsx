@@ -159,6 +159,7 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
   const [selectedPlan, setSelectedPlan] = useState('');
   const [trialEndAt, setTrialEndAt] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [featureSaving, setFeatureSaving] = useState(false);
 
   // Usage modal
   const [usageTarget, setUsageTarget] = useState<TenantSubscriptionRow | null>(null);
@@ -251,6 +252,24 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
       addToast(err.message || t.errorAction, 'error');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const toggleFeature = async (feature: 'job_application_controls_enabled', currentValue: boolean) => {
+    if (!manageTarget) return;
+    setFeatureSaving(true);
+    try {
+      await apiService.patch(
+        `${WEBHOOK_CONFIG.ADMIN_TENANTS_URL}/${manageTarget.tenant_id}/features`,
+        { [feature]: !currentValue },
+        auth.token!,
+      );
+      setManageTarget(prev => prev ? { ...prev, [feature]: !currentValue } : prev);
+      setTenants(prev => prev.map(t_ => t_.tenant_id === manageTarget.tenant_id ? { ...t_, [feature]: !currentValue } : t_));
+    } catch (err: any) {
+      addToast(err.message || t.errorAction, 'error');
+    } finally {
+      setFeatureSaving(false);
     }
   };
 
@@ -575,6 +594,24 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                     ✅ {t.reactivate}
                   </button>
                 )}
+              </div>
+
+              {/* Feature Flags */}
+              <div className="pt-2 border-t border-border space-y-2">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">Feature Flags</p>
+                <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3">
+                  <div>
+                    <p className="text-xs font-bold text-textMain">Application Controls</p>
+                    <p className="text-[10px] text-textMuted">Allow setting max applications &amp; auto-close per job</p>
+                  </div>
+                  <button
+                    disabled={featureSaving}
+                    onClick={() => toggleFeature('job_application_controls_enabled', !!manageTarget.job_application_controls_enabled)}
+                    className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none disabled:opacity-50 ${manageTarget.job_application_controls_enabled ? 'bg-rose-500' : 'bg-slate-300'}`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${manageTarget.job_application_controls_enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
