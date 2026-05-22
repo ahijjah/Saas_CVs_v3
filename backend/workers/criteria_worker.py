@@ -43,16 +43,43 @@ _OPEN_ROLE_KEYWORDS = (
 )
 
 
-def _check_criteria_quality(analysis: dict, flat: dict) -> tuple[bool, bool]:
+def _check_criteria_quality(analysis: dict, flat: dict) -> tuple[bool, bool, str | None]:
     """
     Validate that extracted criteria contain enough signal for CV scoring.
 
+    Prefers the structured ``scoreability`` object returned by updated prompts.
+    Falls back to keyword heuristics for prompts that do not yet emit it.
+
     Returns:
-        (is_sufficient, is_open_broad)
-        - is_sufficient:  True when scoring can proceed (either real criteria exist
-                          or the role is explicitly open/broad).
-        - is_open_broad:  True when the analysis text signals no specific requirements.
+        (is_sufficient, is_open_broad, error_message)
+        - is_sufficient:   True when scoring can proceed.
+        - is_open_broad:   True when the role has no specific requirements but is valid.
+        - error_message:   Populated only when is_sufficient is False; used as
+                           criteria_extraction_error in the DB.
     """
+    scoreability = analysis.get("scoreability")
+    if isinstance(scoreability, dict):
+        status = (scoreability.get("status") or "").lower()
+        reason = scoreability.get("reason") or None
+
+        if status == "insufficient":
+            error = reason or _EMPTY_DESCRIPTION_ERROR
+            return False, False, error
+
+        if status == "open_broad":
+            return True, True, None
+
+        if status == "scoreable":
+            counted_keys = (
+                "skills", "experience", "education",
+                "certifications", "domain_knowledge", "other_requirements",
+            )
+            total_items = sum(len(flat.get(k) or []) for k in counted_keys)
+            if total_items > 0:
+                return True, False, None
+            # Prompt said scoreable but arrays are empty — fall through to heuristic.
+
+    # ── Keyword fallback (old prompts without scoreability) ──────────────────
     counted_keys = (
         "skills", "experience", "education",
         "certifications", "domain_knowledge", "other_requirements",
@@ -60,9 +87,8 @@ def _check_criteria_quality(analysis: dict, flat: dict) -> tuple[bool, bool]:
     total_items = sum(len(flat.get(k) or []) for k in counted_keys)
 
     if total_items > 0:
-        return True, False
+        return True, False, None
 
-    # All flat arrays are empty — check whether the AI indicated an open/broad role.
     exp = analysis.get("experience") or {}
     candidate_texts: list[str] = []
     for key in ("other_requirements", "domain_knowledge"):
@@ -72,7 +98,9 @@ def _check_criteria_quality(analysis: dict, flat: dict) -> tuple[bool, bool]:
 
     combined = " ".join(candidate_texts).lower()
     is_open_broad = any(kw in combined for kw in _OPEN_ROLE_KEYWORDS)
-    return is_open_broad, is_open_broad
+    if is_open_broad:
+        return True, True, None
+    return False, False, _EMPTY_DESCRIPTION_ERROR
 
 
 def _run_in_fresh_loop(coro):
@@ -156,7 +184,7 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
     analysis = await extract_job_criteria(description, prompt_override=criteria_prompt)
     flat = flatten_criteria_for_scoring(analysis)
 
-    is_sufficient, is_open_broad = _check_criteria_quality(analysis, flat)
+    is_sufficient, is_open_broad, quality_error = _check_criteria_quality(analysis, flat)
 
     if is_sufficient:
         final_status = "completed"
@@ -165,7 +193,7 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
         logger.info("[job:%s] Criteria quality check passed (%s).", job_id, log_suffix)
     else:
         final_status = "failed"
-        final_error = _EMPTY_DESCRIPTION_ERROR
+        final_error = quality_error
         logger.warning(
             "[job:%s] Criteria quality check failed — all arrays empty, not an open role.",
             job_id,
