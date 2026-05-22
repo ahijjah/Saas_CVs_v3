@@ -50,6 +50,9 @@ const T = {
     planLimitReached: 'Limit reached',
     trialBadge: 'Trial',
     scoringInProgress: 'Scoring in progress',
+    analysisPending: 'Analysis Pending',
+    analysisInsufficient: 'Needs Improvement',
+    analysisBlocked: 'Analysis Blocked',
   },
   ar: {
     title: 'حملات التوظيف النشطة',
@@ -82,6 +85,9 @@ const T = {
     planLimitReached: 'الحد الأقصى',
     trialBadge: 'تجريبي',
     scoringInProgress: 'جاري التقييم',
+    analysisPending: 'التحليل معلق',
+    analysisInsufficient: 'يحتاج تحسين',
+    analysisBlocked: 'التحليل محظور',
     filterByClient: 'تصفية حسب العميل',
     allClients: 'جميع العملاء',
   },
@@ -356,6 +362,18 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                             {t.scoringInProgress}
                           </span>
                         )}
+                        {job.criteria_extraction_status === 'blocked' && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700">{t.analysisBlocked}</span>
+                        )}
+                        {job.criteria_extraction_status === 'insufficient' && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700">{t.analysisInsufficient}</span>
+                        )}
+                        {(job.criteria_extraction_status === 'pending' || job.criteria_extraction_status === 'processing') && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-600">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                            {t.analysisPending}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -478,6 +496,18 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                                 {t.scoringInProgress}
+                              </span>
+                            )}
+                            {job.criteria_extraction_status === 'blocked' && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">{t.analysisBlocked}</span>
+                            )}
+                            {job.criteria_extraction_status === 'insufficient' && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">{t.analysisInsufficient}</span>
+                            )}
+                            {(job.criteria_extraction_status === 'pending' || job.criteria_extraction_status === 'processing') && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                                {t.analysisPending}
                               </span>
                             )}
                           </div>

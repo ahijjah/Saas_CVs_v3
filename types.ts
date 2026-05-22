@@ -134,6 +134,7 @@ export interface Job {
   job_title: string;
   job_client: string;
   job_status: 'Active' | 'Closed' | 'Draft';
+  criteria_extraction_status?: string;
   tenant_name?: string;
   job_type?: string;
   location?: string;
@@ -204,8 +205,13 @@ export interface JobDetails extends Job {
   send_confirmation_to_cv_email_for_platform_email?: boolean;
   // AI comparison toggle
   enable_ai_comparison?: boolean;
-  criteria_extraction_status?: 'pending' | 'processing' | 'completed' | 'failed';
+  criteria_extraction_status?: 'pending' | 'processing' | 'completed' | 'insufficient' | 'blocked' | 'failed';
   criteria_extraction_error?: string | null;
+  // Retry control
+  criteria_extraction_retry_count?: number;
+  criteria_extraction_max_retries?: number;
+  criteria_retry_allowed?: boolean;
+  criteria_retry_blocked_reason?: 'max_retries_reached' | 'description_unchanged' | null;
 }
 
 // decision='low_match' is a frontend-only display alias for evaluation_stage=1 + gatekeeper_passed=false + decision='rejected'

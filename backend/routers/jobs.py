@@ -224,6 +224,7 @@ async def list_jobs(
                 j.client_organization_id,
                 co.organization_name AS client_org_name,
                 t.name AS tenant_name,
+                jc.criteria_extraction_status,
                 COUNT(a.application_id)                                             AS applications_total,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
@@ -234,10 +235,11 @@ async def list_jobs(
             FROM jobs j
             JOIN tenants t ON t.tenant_id = j.tenant_id
             LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
+            LEFT JOIN job_criteria jc ON jc.job_id = j.job_id
             LEFT JOIN applications a ON a.job_id = j.job_id
             {base_where}
             {extra_sql}
-            GROUP BY j.job_id, t.name, co.organization_name
+            GROUP BY j.job_id, t.name, co.organization_name, jc.criteria_extraction_status
             ORDER BY j.created_at DESC
         """),
         params,
@@ -257,6 +259,7 @@ async def list_jobs(
             "client_org_name":    r["client_org_name"],
             "receive_cv_via_forwarding_email": r["receive_cv_via_forwarding_email"],
             "receive_cv_via_platform_email":   r["receive_cv_via_platform_email"],
+            "criteria_extraction_status":      r["criteria_extraction_status"] or "pending",
             "posted_date":        r["created_at"].date().isoformat() if r["created_at"] else None,
             "applications_total":       r["applications_total"],
             "applications_qualified":   r["applications_qualified"],
@@ -469,6 +472,9 @@ async def get_job_details(
                    criteria_extraction_status,
                    criteria_extraction_error,
                    criteria_extracted_at,
+                   criteria_extraction_retry_count,
+                   criteria_last_failed_description_hash,
+                   criteria_last_failed_at,
                    weight_skills, weight_experience, weight_education,
                    weight_certifications, weight_soft_skills,
                    weight_domain_knowledge, weight_other,
@@ -487,6 +493,24 @@ async def get_job_details(
     extraction_error     = criteria["criteria_extraction_error"]  if criteria else None
     analysis_json        = criteria["analysis_json"]          if criteria else None
     original_analysis_json = criteria["original_analysis_json"] if criteria else None
+
+    # Retry control fields
+    from workers.criteria_worker import _normalize_description_hash
+    retry_count      = int(criteria["criteria_extraction_retry_count"] or 0) if criteria else 0
+    last_failed_hash = (criteria["criteria_last_failed_description_hash"] if criteria else None)
+    cfg_row = await db.execute(
+        text("SELECT value FROM system_config WHERE key = 'criteria_extraction_max_retries'"), {},
+    )
+    max_retries = int(cfg_row.scalar_one_or_none() or 3)
+
+    current_description_hash = _normalize_description_hash(job["description"] or "")
+    if extraction_status == "blocked" or retry_count >= max_retries:
+        retry_blocked_reason: str | None = "max_retries_reached"
+    elif last_failed_hash and current_description_hash == last_failed_hash:
+        retry_blocked_reason = "description_unchanged"
+    else:
+        retry_blocked_reason = None
+    criteria_retry_allowed = retry_blocked_reason is None and extraction_status in ("insufficient", "failed")
 
     via_forwarding = job["receive_cv_via_forwarding_email"]
     via_platform   = job["receive_cv_via_platform_email"]
@@ -533,8 +557,12 @@ async def get_job_details(
             "partial_threshold":        job["partial_threshold"],
             "max_applications":               job["max_applications"],
             "auto_close_when_limit_reached":  job["auto_close_when_limit_reached"],
-            "criteria_extraction_status": extraction_status,
-            "criteria_extraction_error":  extraction_error,
+            "criteria_extraction_status":     extraction_status,
+            "criteria_extraction_error":      extraction_error,
+            "criteria_extraction_retry_count": retry_count,
+            "criteria_extraction_max_retries": max_retries,
+            "criteria_retry_allowed":          criteria_retry_allowed,
+            "criteria_retry_blocked_reason":   retry_blocked_reason,
             "ingestion_note": (
                 f"Send CVs directly to: {job['platform_email']}"
                 if via_platform
@@ -1005,31 +1033,86 @@ async def retry_criteria_extraction(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Re-queue AI criteria extraction for a job whose extraction previously failed."""
+    """Re-queue AI criteria extraction subject to retry limits and description-change check."""
+    from workers.criteria_worker import _normalize_description_hash, extract_criteria_task
+
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    job_row = await db.execute(
-        text("SELECT description FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
+    row = await db.execute(
+        text("""
+            SELECT j.description,
+                   jc.criteria_extraction_status,
+                   jc.criteria_extraction_retry_count,
+                   jc.criteria_last_failed_description_hash
+            FROM jobs j
+            LEFT JOIN job_criteria jc ON jc.job_id = j.job_id
+            WHERE j.job_id = :jid AND j.tenant_id = :tid
+        """),
         {"jid": job_id, "tid": current_user.tenant_id},
     )
-    job = job_row.mappings().first()
+    job = row.mappings().first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
+    cfg_row = await db.execute(
+        text("SELECT value FROM system_config WHERE key = 'criteria_extraction_max_retries'"),
+        {},
+    )
+    max_retries = int(cfg_row.scalar_one_or_none() or 3)
+
+    current_status = job["criteria_extraction_status"] or "pending"
+    retry_count    = int(job["criteria_extraction_retry_count"] or 0)
+    description    = job["description"] or ""
+
+    # Terminal block — already exhausted
+    if current_status == "blocked":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum analysis retries reached for this campaign.",
+        )
+
+    # Only retryable from these states
+    if current_status not in ("insufficient", "failed"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Criteria extraction cannot be retried in status '{current_status}'.",
+        )
+
+    # Enforce retry cap — transition to blocked
+    if retry_count >= max_retries:
+        await db.execute(
+            text("UPDATE job_criteria SET criteria_extraction_status = 'blocked' WHERE job_id = :jid"),
+            {"jid": job_id},
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum analysis retries reached for this campaign.",
+        )
+
+    # For insufficient: require a meaningful description change
+    if current_status == "insufficient":
+        last_hash = job["criteria_last_failed_description_hash"]
+        if last_hash and _normalize_description_hash(description) == last_hash:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please update the job description with more meaningful details before retrying analysis.",
+            )
+
+    # Allowed — increment counter and re-queue
     await db.execute(
         text("""
             UPDATE job_criteria
-            SET criteria_extraction_status = 'pending',
-                criteria_extraction_error  = NULL
+            SET criteria_extraction_status        = 'pending',
+                criteria_extraction_retry_count   = criteria_extraction_retry_count + 1,
+                criteria_extraction_error         = NULL
             WHERE job_id = :jid
         """),
         {"jid": job_id},
     )
     await db.commit()
 
-    from workers.criteria_worker import extract_criteria_task
-    extract_criteria_task.delay(job_id, job["description"])
-
+    extract_criteria_task.delay(job_id, description)
     return {"success": True, "message": "Criteria extraction re-queued."}
 
 

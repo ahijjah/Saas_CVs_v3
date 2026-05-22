@@ -557,7 +557,43 @@ async def process_cv_intake(
             error_message=job_limit_check.get("message", "Job applicant limit reached"),
         )
 
-    # ── Step 4b: tenant CV quota (plan + hard monthly limit) ──────────────────
+    # ── Step 4b: criteria analysis gate ──────────────────────────────────────
+    _INTAKE_BLOCKING_STATUSES = frozenset({"pending", "processing", "insufficient", "blocked"})
+    criteria_status_row = await db.execute(
+        text("SELECT criteria_extraction_status FROM job_criteria WHERE job_id = CAST(:jid AS uuid)"),
+        {"jid": job_id},
+    )
+    criteria_status = criteria_status_row.scalar_one_or_none() or "pending"
+    if criteria_status in _INTAKE_BLOCKING_STATUSES:
+        log_id = await _safe_log(
+            db,
+            tenant_id=tenant_id,
+            job_id=job_id,
+            intake_method=intake_method,
+            status="REJECTED",
+            candidate_email=candidate_email,
+            candidate_name=candidate_name,
+            original_filename=original_filename,
+            file_hash=file_hash,
+            file_size_bytes=len(content),
+            mime_type=content_type,
+            error_message=f"CV intake blocked: job analysis status is '{criteria_status}'",
+            source_identifier=source_identifier,
+            source_message_id=source_message_id,
+            sender_email=sender_email,
+            recipient_email=recipient_email,
+            subject=subject,
+            processing_started_at=started,
+            received_at=received,
+        )
+        await db.commit()
+        return IntakeResult(
+            status="INTAKE_BLOCKED",
+            intake_log_id=log_id,
+            error_message="CV intake is disabled because the job analysis is not completed.",
+        )
+
+    # ── Step 4c: tenant CV quota (plan + hard monthly limit) ──────────────────
     cv_check = await can_process_cv(tenant_id, db)
     if not cv_check["allowed"]:
         log_id = await _safe_log(

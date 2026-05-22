@@ -18,12 +18,19 @@ engine + sessionmaker (no shared pool, no cross-loop Future references), owns
 its own event loop, and uses an isolated NullPool engine in `_mark_failed`.
 """
 import asyncio
+import hashlib
 import json
 import logging
 
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_description_hash(description: str) -> str:
+    """SHA-256 of whitespace-normalised lowercase description text."""
+    normalized = " ".join((description or "").lower().split())
+    return hashlib.sha256(normalized.encode()).hexdigest()
 
 _EMPTY_DESCRIPTION_ERROR = (
     "The job description does not contain enough information for reliable CV scoring. "
@@ -191,14 +198,18 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
         final_status = "completed"
         final_error = None
         extracted_at_value = datetime.now(timezone.utc)
+        desc_hash_value = None   # preserve any existing failed hash via COALESCE
+        failed_at_value = None
         log_suffix = "open/broad role — no specific criteria" if is_open_broad else "OK"
         logger.info("[job:%s] Criteria quality check passed (%s).", job_id, log_suffix)
     else:
-        final_status = "failed"
+        final_status = "insufficient"
         final_error = quality_error
         extracted_at_value = None
+        desc_hash_value = _normalize_description_hash(description)
+        failed_at_value = datetime.now(timezone.utc)
         logger.warning(
-            "[job:%s] Criteria quality check failed — all arrays empty, not an open role.",
+            "[job:%s] Criteria quality check failed — description insufficient.",
             job_id,
         )
 
@@ -223,11 +234,13 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
                     weight_soft_skills         = :weight_soft_skills,
                     weight_domain_knowledge    = :weight_domain_knowledge,
                     weight_other               = :weight_other,
-                    ai_model                   = :model,
-                    ai_generated_at            = now(),
-                    criteria_extraction_status = :status,
-                    criteria_extracted_at      = COALESCE(:extracted_at, criteria_extracted_at),
-                    criteria_extraction_error  = :error
+                    ai_model                                = :model,
+                    ai_generated_at                         = now(),
+                    criteria_extraction_status              = :status,
+                    criteria_extracted_at                   = COALESCE(:extracted_at, criteria_extracted_at),
+                    criteria_extraction_error               = :error,
+                    criteria_last_failed_description_hash   = COALESCE(:desc_hash, criteria_last_failed_description_hash),
+                    criteria_last_failed_at                 = COALESCE(:failed_at, criteria_last_failed_at)
                 WHERE job_id = :jid
             """),
             {
@@ -250,6 +263,8 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
                 "status":             final_status,
                 "extracted_at":       extracted_at_value,
                 "error":              final_error,
+                "desc_hash":          desc_hash_value,
+                "failed_at":          failed_at_value,
                 "jid":                job_id,
             },
         )
@@ -258,7 +273,7 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
     if is_sufficient:
         logger.info("[job:%s] Criteria extraction completed.", job_id)
     else:
-        logger.warning("[job:%s] Criteria extraction marked failed: empty description.", job_id)
+        logger.warning("[job:%s] Criteria extraction marked insufficient.", job_id)
 
 
 async def _mark_failed(job_id: str, error: str) -> None:

@@ -90,7 +90,12 @@ const T = {
     criteriaPending: 'AI criteria analysis is being generated. This page will refresh automatically.',
     criteriaProcessing: 'AI criteria analysis is in progress. This page will refresh automatically.',
     criteriaFailed: 'AI criteria analysis failed.',
+    criteriaInsufficient: 'This campaign is not ready to receive CVs. The job description does not contain enough information for reliable scoring.',
+    criteriaBlocked: 'Maximum AI analysis retries reached. Please improve the job description and contact support, or create a new campaign.',
     retryExtraction: 'Retry',
+    retryUpdateDescFirst: 'Update the job description before retrying analysis.',
+    intakeBlockedBanner: 'CV intake is disabled until the job analysis is completed.',
+    intakeChannelsDisabledNote: 'Intake channels are disabled until job analysis is completed.',
     restrictSender: 'Restrict to tenant email domain',
     restrictSenderHint: 'Only accept forwarded CVs from your own email domain.',
     confirmationSettings: 'Confirmation Email & AI Settings',
@@ -257,7 +262,12 @@ const T = {
     criteriaPending: 'جارٍ إنشاء تحليل معايير الذكاء الاصطناعي. ستُحدَّث هذه الصفحة تلقائياً.',
     criteriaProcessing: 'تحليل معايير الذكاء الاصطناعي قيد التنفيذ. ستُحدَّث هذه الصفحة تلقائياً.',
     criteriaFailed: 'فشل تحليل معايير الذكاء الاصطناعي.',
+    criteriaInsufficient: 'هذه الحملة غير جاهزة لاستقبال السير الذاتية. وصف الوظيفة لا يحتوي على معلومات كافية للتقييم الدقيق.',
+    criteriaBlocked: 'تم الوصول إلى الحد الأقصى لإعادة محاولات التحليل. يرجى تحسين وصف الوظيفة أو إنشاء حملة جديدة.',
     retryExtraction: 'إعادة المحاولة',
+    retryUpdateDescFirst: 'قم بتحديث وصف الوظيفة قبل إعادة المحاولة.',
+    intakeBlockedBanner: 'استقبال السير الذاتية معطل حتى اكتمال تحليل الوظيفة.',
+    intakeChannelsDisabledNote: 'قنوات الاستقبال معطلة حتى اكتمال تحليل الوظيفة.',
     restrictSender: 'تقييد بنطاق البريد الخاص بالمستأجر',
     restrictSenderHint: 'قبول السير المُعاد توجيهها من نطاقك فقط.',
     confirmationSettings: 'إعدادات تأكيد البريد والذكاء الاصطناعي',
@@ -658,11 +668,19 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         {},
         auth.token!
       );
-      setDetails(prev => prev ? { ...prev, criteria_extraction_status: 'pending', criteria_extraction_error: null } : prev);
+      setDetails(prev => prev ? {
+        ...prev,
+        criteria_extraction_status: 'pending',
+        criteria_extraction_error: null,
+        criteria_extraction_retry_count: ((prev as any).criteria_extraction_retry_count || 0) + 1,
+        criteria_retry_allowed: false,
+        criteria_retry_blocked_reason: null,
+      } : prev);
       setCriteriaPolltick(0);
       addToast('AI analysis retry queued.', 'success');
-    } catch {
-      addToast('Failed to retry AI analysis.', 'error');
+    } catch (err: any) {
+      const msg: string = (err?.message || err?.detail || '').trim();
+      addToast(msg || 'Failed to retry AI analysis.', 'error');
     }
   }, [details, auth.token, addToast]);
 
@@ -1067,6 +1085,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   if (!details) return null;
 
   const canEditIntake = canEdit;
+  const intakeBlocked = ['pending', 'processing', 'insufficient', 'blocked'].includes(details.criteria_extraction_status || '');
 
   const analysis = details.analysis_json ?? undefined;
   const metaValues = [details.job_client, details.job_type || 'Full-time', details.location || 'Remote', details.posted_date || '-', details.closing_date || '-'];
@@ -1274,24 +1293,68 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       </div>
 
       {/* AI extraction status banner ───────────────────────────────────────── */}
-      {details.criteria_extraction_status && details.criteria_extraction_status !== 'completed' && (
-        <div className={`mb-6 rounded-2xl border p-4 flex items-center justify-between gap-4 ${details.criteria_extraction_status === 'failed' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
-          <div className="flex items-center gap-3">
-            {details.criteria_extraction_status === 'failed'
-              ? <svg className="w-5 h-5 text-error shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-              : <svg className="animate-spin w-5 h-5 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>}
-            <div>
-              <p className="text-sm font-bold text-textMain">
-                {details.criteria_extraction_status === 'failed' ? t.criteriaFailed : details.criteria_extraction_status === 'processing' ? t.criteriaProcessing : t.criteriaPending}
-              </p>
-              {details.criteria_extraction_status === 'failed' && details.criteria_extraction_error && <p className="text-xs text-error/80 mt-0.5">{details.criteria_extraction_error}</p>}
+      {(() => {
+        const cs = details.criteria_extraction_status;
+        if (!cs || cs === 'completed') return null;
+        const isBlocked     = cs === 'blocked';
+        const isInsufficient = cs === 'insufficient';
+        const isFailed      = cs === 'failed';
+        const isSpinning    = cs === 'pending' || cs === 'processing';
+        const canRetry      = (details as any).criteria_retry_allowed === true;
+        const blockedReason: string | null = (details as any).criteria_retry_blocked_reason ?? null;
+        const retryCount: number = (details as any).criteria_extraction_retry_count ?? 0;
+        const maxRetries: number = (details as any).criteria_extraction_max_retries ?? 3;
+
+        const bannerColor = (isBlocked || isFailed)
+          ? 'bg-red-50 border-red-200'
+          : isInsufficient
+          ? 'bg-amber-50 border-amber-200'
+          : 'bg-blue-50 border-blue-200';
+
+        const icon = isSpinning
+          ? <svg className="animate-spin w-5 h-5 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+          : <svg className="w-5 h-5 text-error shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>;
+
+        const headline = isBlocked ? t.criteriaBlocked
+          : isInsufficient ? t.criteriaInsufficient
+          : isFailed       ? t.criteriaFailed
+          : cs === 'processing' ? t.criteriaProcessing
+          : t.criteriaPending;
+
+        return (
+          <div className={`mb-6 rounded-2xl border p-4 ${bannerColor}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                {icon}
+                <div>
+                  <p className="text-sm font-bold text-textMain">{headline}</p>
+                  {(isInsufficient || isFailed || isBlocked) && details.criteria_extraction_error && (
+                    <p className="text-xs text-error/80 mt-0.5">{details.criteria_extraction_error}</p>
+                  )}
+                  {(isInsufficient || isFailed) && !isBlocked && (
+                    <p className="text-[10px] text-textMuted mt-1">
+                      {retryCount} / {maxRetries} {isAr ? 'محاولة' : 'retries used'}
+                    </p>
+                  )}
+                  {blockedReason === 'description_unchanged' && (
+                    <p className="text-xs text-amber-700 mt-1 font-bold">{t.retryUpdateDescFirst}</p>
+                  )}
+                </div>
+              </div>
+              {(isInsufficient || isFailed) && canEditIntake && (
+                <button
+                  onClick={handleRetryExtraction}
+                  disabled={!canRetry}
+                  title={!canRetry && blockedReason === 'description_unchanged' ? t.retryUpdateDescFirst : undefined}
+                  className={`shrink-0 px-4 py-1.5 text-white text-xs font-bold rounded-lg transition-colors ${canRetry ? 'bg-error hover:bg-red-700' : 'bg-slate-300 cursor-not-allowed'}`}
+                >
+                  {t.retryExtraction}
+                </button>
+              )}
             </div>
           </div>
-          {details.criteria_extraction_status === 'failed' && (
-            <button onClick={handleRetryExtraction} className="shrink-0 px-4 py-1.5 bg-error text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">{t.retryExtraction}</button>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {/* Main grid ─────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:items-start">
@@ -1497,6 +1560,14 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           )}
         </div>
 
+        {/* Intake channels disabled notice */}
+        {intakeBlocked && (
+          <div className="mx-6 mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2.5">
+            <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            <p className="text-xs font-bold text-amber-800">{t.intakeChannelsDisabledNote}</p>
+          </div>
+        )}
+
         {/* ── Tab strip ── */}
         <div className="flex border-b border-border overflow-x-auto">
           {([
@@ -1652,6 +1723,14 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 </div>
               )}
 
+              {/* Intake blocked notice */}
+              {intakeBlocked && (
+                <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2.5">
+                  <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                  <p className="text-xs font-bold text-amber-800">{t.intakeBlockedBanner}</p>
+                </div>
+              )}
+
               {/* File input */}
               <div className="flex flex-wrap items-center gap-3 mb-4">
                 <input
@@ -1661,11 +1740,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                   className="hidden"
                   id="cv-file-input"
+                  disabled={intakeBlocked}
                   onChange={e => { if (e.target.files?.length) handleUpload(e.target.files); }}
                 />
                 <label
                   htmlFor="cv-file-input"
-                  className={`inline-flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-[11px] font-black text-indigo-700 rounded-xl transition-colors ${uploading || cvsScoringInProgress || !!deletingCVId ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer hover:bg-indigo-50'}`}
+                  className={`inline-flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-[11px] font-black text-indigo-700 rounded-xl transition-colors ${uploading || cvsScoringInProgress || !!deletingCVId || intakeBlocked ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer hover:bg-indigo-50'}`}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                   {uploading ? t.uploadingBtn : t.chooseFiles}

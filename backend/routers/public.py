@@ -204,6 +204,11 @@ async def _handle_public_submission(
         cover_letter=cover_letter.strip() if cover_letter else None,
     )
 
+    if result.status == "INTAKE_BLOCKED":
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This position is not currently accepting applications. Please try again later.",
+        )
     if result.status == "DUPLICATE_APPLICATION":
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,

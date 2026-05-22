@@ -332,6 +332,11 @@ async def upload_cv(
     except IntakeValidationError as exc:
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
 
+    if result.status == "INTAKE_BLOCKED":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="CV intake is disabled because the job analysis is not completed.",
+        )
     if result.status == "DUPLICATE_APPLICATION":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
