@@ -351,6 +351,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const isSuperAdmin = (auth.user?.role || '').toLowerCase() === 'super_admin';
   const role = (auth.user?.role || '').toLowerCase();
   const canEdit = role === 'admin' || role === 'hr_manager';
+  const tenantType = auth.user?.tenant_type ?? '';
+  const isAgencyTenant = tenantType === 'agency' || tenantType === 'individual_recruiter';
 
   const [details, setDetails] = useState<JobDetailsType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1321,17 +1323,19 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaExperienceLevel}</label>
                   <select className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.experience_level} onChange={e => setDraftMeta(p => ({ ...p, experience_level: e.target.value }))}>
                     <option value="">{t.notSet}</option>
-                    {['Entry', 'Mid', 'Senior', 'Managerial'].map(o => <option key={o} value={o}>{o}</option>)}
+                    {['Entry-level', 'Junior', 'Mid-level', 'Senior', 'Lead', 'Executive'].map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaLocation}</label>
                   <input type="text" placeholder="e.g. Riyadh, SA" className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.location} onChange={e => setDraftMeta(p => ({ ...p, location: e.target.value }))} />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaDepartment}</label>
-                  <input type="text" placeholder="Engineering" className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.department} onChange={e => setDraftMeta(p => ({ ...p, department: e.target.value }))} />
-                </div>
+                {!isAgencyTenant && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaDepartment}</label>
+                    <input type="text" placeholder="Engineering" className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.department} onChange={e => setDraftMeta(p => ({ ...p, department: e.target.value }))} />
+                  </div>
+                )}
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.metaDeadline}</label>
                   <input type="date" className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" value={draftMeta.application_deadline} onChange={e => setDraftMeta(p => ({ ...p, application_deadline: e.target.value }))} />
@@ -1361,11 +1365,20 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaWorkMode}</p><p className="text-sm font-bold text-textMain">{(details as any).work_mode || t.notSet}</p></div>
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaExperienceLevel}</p><p className="text-sm font-bold text-textMain">{(details as any).experience_level || t.notSet}</p></div>
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaLocation}</p><p className="text-sm font-bold text-textMain">{(details as any).location || t.notSet}</p></div>
-              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaDepartment}</p><p className="text-sm font-bold text-textMain">{details.job_client || t.notSet}</p></div>
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">
+                  {isAgencyTenant ? (lang === 'ar' ? 'العميل' : 'Client') : t.metaDepartment}
+                </p>
+                <p className="text-sm font-bold text-textMain">
+                  {isAgencyTenant
+                    ? ((details as any).client_org_name || (lang === 'ar' ? 'عام' : 'General'))
+                    : (details.job_client || t.notSet)}
+                </p>
+              </div>
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaDuration}</p><p className="text-sm font-bold text-textMain">{(details as any).duration || t.notSet}</p></div>
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaDeadline}</p><p className="text-sm font-bold text-textMain">{(details as any).application_deadline ? new Date((details as any).application_deadline).toLocaleDateString() : t.notSet}</p></div>
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaVacancies}</p><p className="text-sm font-bold text-textMain">{(details as any).vacancies_count ?? t.notSet}</p></div>
-              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaCreated}</p><p className="text-sm font-bold text-textMain">{details.posted_date || t.notSet}</p></div>
+              <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaCreated}</p><p className="text-sm font-bold text-textMain">{(details as any).created_at ? new Date((details as any).created_at).toLocaleDateString() : (details.posted_date || t.notSet)}</p></div>
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaUpdated}</p><p className="text-sm font-bold text-textMain">{(details as any).updated_at ? new Date((details as any).updated_at).toLocaleDateString() : t.notSet}</p></div>
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaCreatedBy}</p><p className="text-sm font-bold text-textMain">{(details as any).created_by_name || t.notSet}</p></div>
               <div><p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.metaUpdatedBy}</p><p className="text-sm font-bold text-textMain">{(details as any).updated_by_name || t.notSet}</p></div>

@@ -25,7 +25,10 @@ class CreateJobRequest(BaseModel):
     department: str | None = None
     location: str | None = None
     job_type: str | None = None
+    work_mode: str | None = None
+    experience_level: str | None = None
     duration: str | None = None
+    application_deadline: str | None = None  # ISO date string YYYY-MM-DD
     description: str
     qualified_threshold: int | None = None
     partial_threshold: int | None = None
@@ -316,28 +319,33 @@ async def create_job(
     job_result = await db.execute(
         text("""
             INSERT INTO jobs (tenant_id, created_by, title, department, location,
-                              job_type, duration, description,
+                              job_type, work_mode, experience_level,
+                              duration, application_deadline, description,
                               qualified_threshold, partial_threshold, job_code, status,
                               client_organization_id, vacancies_count)
-            VALUES (:tid, :uid, :title, :dept, :location, :job_type, :duration, :desc,
+            VALUES (:tid, :uid, :title, :dept, :location, :job_type, :work_mode, :experience_level,
+                    :duration, CAST(NULLIF(:application_deadline, '') AS DATE), :desc,
                     :qt, :pt, :job_code, 'active',
                     CAST(:coid AS uuid), :vacancies_count)
             RETURNING job_id
         """),
         {
-            "tid":            current_user.tenant_id,
-            "uid":            current_user.user_id,
-            "title":          body.title,
-            "dept":           body.department,
-            "location":       body.location,
-            "job_type":       body.job_type,
-            "duration":       body.duration,
-            "desc":           body.description,
-            "qt":             body.qualified_threshold,
-            "pt":             body.partial_threshold,
-            "job_code":       job_code,
-            "coid":           body.client_organization_id,
-            "vacancies_count": max(1, body.vacancies_count) if body.vacancies_count else 1,
+            "tid":                current_user.tenant_id,
+            "uid":                current_user.user_id,
+            "title":              body.title,
+            "dept":               body.department,
+            "location":           body.location,
+            "job_type":           body.job_type,
+            "work_mode":          body.work_mode,
+            "experience_level":   body.experience_level,
+            "duration":           body.duration,
+            "application_deadline": body.application_deadline,
+            "desc":               body.description,
+            "qt":                 body.qualified_threshold,
+            "pt":                 body.partial_threshold,
+            "job_code":           job_code,
+            "coid":               body.client_organization_id,
+            "vacancies_count":    max(1, body.vacancies_count) if body.vacancies_count else 1,
         },
     )
     job_id = str(job_result.scalar_one())

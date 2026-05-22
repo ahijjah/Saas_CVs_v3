@@ -19,9 +19,12 @@ interface FormData {
   client: string;
   job_location: string;
   job_type: string;
+  work_mode: string;
+  experience_level: string;
   job_duration: string;
-  client_organization_id: string;
+  application_deadline: string;
   vacancies_count: string;
+  client_organization_id: string;
 }
 
 const T = {
@@ -39,11 +42,19 @@ const T = {
     jobType: 'Job Type',
     jobTypePlaceholder: 'Select type…',
     jobTypes: ['Full-time', 'Part-time', 'Contract', 'Freelance', 'Internship', 'Temporary'],
+    workMode: 'Work Mode',
+    workModePlaceholder: 'Select mode…',
+    workModes: ['On-site', 'Remote', 'Hybrid'],
+    experienceLevel: 'Experience Level',
+    experienceLevelPlaceholder: 'Select level…',
+    experienceLevels: ['Entry-level', 'Junior', 'Mid-level', 'Senior', 'Lead', 'Executive'],
     duration: 'Duration',
+    applicationDeadline: 'Application Deadline',
     vacancies: 'Vacancies',
     vacanciesPlaceholder: 'e.g. 3',
     jobDesc: 'Job Description',
     jobDescPlaceholder: 'Describe the role, responsibilities, required skills and experience…',
+    systemNote: 'Job code, status, created date, and audit fields are generated automatically by the system.',
     cancel: 'Cancel',
     creating: 'Creating…',
     submit: 'Create Job',
@@ -64,11 +75,19 @@ const T = {
     jobType: 'نوع الوظيفة',
     jobTypePlaceholder: 'اختر النوع…',
     jobTypes: ['دوام كامل', 'دوام جزئي', 'عقد', 'مستقل', 'تدريب', 'مؤقت'],
+    workMode: 'طريقة العمل',
+    workModePlaceholder: 'اختر الطريقة…',
+    workModes: ['حضوري', 'عن بُعد', 'هجين'],
+    experienceLevel: 'مستوى الخبرة',
+    experienceLevelPlaceholder: 'اختر المستوى…',
+    experienceLevels: ['مبتدئ', 'مساعد', 'متوسط', 'أول', 'قيادي', 'تنفيذي'],
     duration: 'المدة',
+    applicationDeadline: 'آخر موعد للتقديم',
     vacancies: 'الشواغر',
     vacanciesPlaceholder: 'مثال: 3',
     jobDesc: 'وصف الوظيفة',
     jobDescPlaceholder: 'صف الدور والمسؤوليات والمهارات والخبرات المطلوبة…',
+    systemNote: 'رمز الوظيفة والحالة وتاريخ الإنشاء وحقول المراجعة تُنشأ تلقائياً بواسطة النظام.',
     cancel: 'إلغاء',
     creating: 'جارٍ الإنشاء…',
     submit: 'إنشاء الوظيفة',
@@ -81,8 +100,6 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const { lang } = useLanguage();
   const t = T[lang];
 
-  // Derive agency status directly from the user prop — no async needed.
-  // tenant_type is populated from the JWT / profile fetch when the user logs in.
   const tenantType = user?.tenant_type ?? '';
   const isAgencyTenant = tenantType === 'agency' || tenantType === 'individual_recruiter';
 
@@ -96,22 +113,23 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     client: '',
     job_location: '',
     job_type: '',
+    work_mode: '',
+    experience_level: '',
     job_duration: '',
-    client_organization_id: '',
+    application_deadline: '',
     vacancies_count: '',
+    client_organization_id: '',
   });
 
-  // Only fetch client orgs for agency/recruiter tenants
   useEffect(() => {
     if (!token || !isAgencyTenant) return;
     setClientOrgsLoading(true);
     apiService.get(WEBHOOK_CONFIG.CLIENT_ORGANIZATIONS_URL, {}, token)
       .then((data: any) => {
-        // API returns { client_organizations: [...], total: N }
         const orgs: ClientOrganization[] = data?.client_organizations ?? [];
         setClientOrgs(orgs.filter(o => o.status === 'active'));
       })
-      .catch(() => { /* 403 for org tenants is expected and silently ignored */ })
+      .catch(() => {})
       .finally(() => setClientOrgsLoading(false));
   }, [token, isAgencyTenant]);
 
@@ -150,11 +168,15 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     try {
       const isGeneral = formData.client_organization_id === '__general__';
       const payload: Record<string, string | number | null> = { title, description };
+
       if (!isGeneral && formData.client_organization_id) payload.client_organization_id = formData.client_organization_id;
-      if (!isGeneral && formData.client.trim()) payload.department = formData.client.trim();
+      if (!isAgencyTenant && formData.client.trim()) payload.department = formData.client.trim();
       if (formData.job_location.trim()) payload.location = formData.job_location.trim();
       if (formData.job_type) payload.job_type = formData.job_type;
+      if (formData.work_mode) payload.work_mode = formData.work_mode;
+      if (formData.experience_level) payload.experience_level = formData.experience_level;
       if (formData.job_duration.trim()) payload.duration = formData.job_duration.trim();
+      if (formData.application_deadline) payload.application_deadline = formData.application_deadline;
       const vac = parseInt(formData.vacancies_count);
       if (vac > 0) payload.vacancies_count = vac;
 
@@ -171,18 +193,20 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     }
   };
 
-  // Validation:
-  // - job_title and job_description are always required
-  // - for agency tenants: must select a client org or "__general__" (General = no specific client)
   const hasTitle = formData.job_title.trim().length > 0;
   const hasDesc = formData.job_description.trim().length > 0;
   const clientOrgSatisfied = !isAgencyTenant || !!formData.client_organization_id;
   const isFormValid = hasTitle && hasDesc && clientOrgSatisfied;
 
+  const inputCls = 'w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm';
+  const selectCls = `${inputCls} bg-white`;
+  const labelCls = 'text-xs font-bold text-textMuted uppercase tracking-widest';
+
   return (
     <div className="fixed inset-0 bg-textMain/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-8 overflow-hidden animate-scale-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 overflow-hidden animate-scale-in">
         <form onSubmit={handleSubmit} className="flex flex-col h-full">
+
           {/* Header */}
           <div className="px-8 py-6 border-b border-border flex justify-between items-center bg-white sticky top-0 z-10">
             <div>
@@ -196,9 +220,9 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
             </button>
           </div>
 
-          <div className="p-8 space-y-5 max-h-[70vh] overflow-y-auto bg-white">
+          <div className="p-8 space-y-5 max-h-[75vh] overflow-y-auto bg-white">
 
-            {/* Agency tenant: no active clients warning */}
+            {/* Warning: no active clients */}
             {isAgencyTenant && !clientOrgsLoading && clientOrgs.length === 0 && (
               <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
                 <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -208,60 +232,44 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               </div>
             )}
 
-            {/* Row 1: Job Title + Client Org (agency) or Department (org tenant) */}
+            {/* Row 1: Job Title + Client Org / Department */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">
-                  {t.jobTitle} <span className="text-error">*</span>
-                </label>
+                <label className={labelCls}>{t.jobTitle} <span className="text-error">*</span></label>
                 <input
                   required
                   name="job_title"
                   type="text"
                   placeholder="Senior Backend Developer"
-                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  className={inputCls}
                   value={formData.job_title}
                   onChange={handleChange}
                 />
               </div>
 
               {isAgencyTenant ? (
-                /* Agency/recruiter: required client org dropdown */
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-textMuted uppercase tracking-widest">
-                    {t.clientOrg} <span className="text-error">*</span>
-                  </label>
+                  <label className={labelCls}>{t.clientOrg} <span className="text-error">*</span></label>
                   {clientOrgsLoading ? (
-                    <div className="w-full px-4 py-2.5 border border-border rounded-lg text-sm text-textMuted bg-slate-50">
-                      Loading clients…
-                    </div>
+                    <div className="w-full px-4 py-2.5 border border-border rounded-lg text-sm text-textMuted bg-slate-50">Loading clients…</div>
                   ) : (
-                    <select
-                      value={formData.client_organization_id}
-                      onChange={handleClientOrgChange}
-                      className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
-                    >
+                    <select value={formData.client_organization_id} onChange={handleClientOrgChange} className={selectCls}>
                       <option value="">{t.clientOrgPlaceholder}</option>
                       <option value="__general__">{t.clientOrgGeneral}</option>
                       {clientOrgs.map(org => (
-                        <option key={org.client_organization_id} value={org.client_organization_id}>
-                          {org.organization_name}
-                        </option>
+                        <option key={org.client_organization_id} value={org.client_organization_id}>{org.organization_name}</option>
                       ))}
                     </select>
                   )}
                 </div>
               ) : (
-                /* Organization tenant: optional free-text department */
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-textMuted uppercase tracking-widest">
-                    {t.department}
-                  </label>
+                  <label className={labelCls}>{t.department}</label>
                   <input
                     name="client"
                     type="text"
                     placeholder="Engineering / Finance"
-                    className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                    className={inputCls}
                     value={formData.client}
                     onChange={handleChange}
                   />
@@ -269,63 +277,82 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               )}
             </div>
 
-            {/* Row 2: Location + Job Type + Duration + Vacancies */}
+            {/* Row 2: Job Type + Work Mode + Experience Level */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="space-y-1.5">
+                <label className={labelCls}>{t.jobType}</label>
+                <select name="job_type" value={formData.job_type} onChange={handleChange} className={selectCls}>
+                  <option value="">{t.jobTypePlaceholder}</option>
+                  {t.jobTypes.map(jt => <option key={jt} value={jt}>{jt}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className={labelCls}>{t.workMode}</label>
+                <select name="work_mode" value={formData.work_mode} onChange={handleChange} className={selectCls}>
+                  <option value="">{t.workModePlaceholder}</option>
+                  {t.workModes.map(wm => <option key={wm} value={wm}>{wm}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className={labelCls}>{t.experienceLevel}</label>
+                <select name="experience_level" value={formData.experience_level} onChange={handleChange} className={selectCls}>
+                  <option value="">{t.experienceLevelPlaceholder}</option>
+                  {t.experienceLevels.map(el => <option key={el} value={el}>{el}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Row 3: Location + Duration + Vacancies + Deadline */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.jobLocation}</label>
+                <label className={labelCls}>{t.jobLocation}</label>
                 <input
                   name="job_location"
                   type="text"
                   placeholder="Hybrid / Riyadh, SA"
-                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  className={inputCls}
                   value={formData.job_location}
                   onChange={handleChange}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.jobType}</label>
-                <select
-                  name="job_type"
-                  value={formData.job_type}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
-                >
-                  <option value="">{t.jobTypePlaceholder}</option>
-                  {t.jobTypes.map(jt => (
-                    <option key={jt} value={jt}>{jt}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.duration}</label>
+                <label className={labelCls}>{t.duration}</label>
                 <input
                   name="job_duration"
                   type="text"
                   placeholder="Permanent"
-                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  className={inputCls}
                   value={formData.job_duration}
                   onChange={handleChange}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-textMuted uppercase tracking-widest">{t.vacancies}</label>
+                <label className={labelCls}>{t.vacancies}</label>
                 <input
                   name="vacancies_count"
                   type="number"
                   min={1}
                   placeholder={t.vacanciesPlaceholder}
-                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  className={inputCls}
                   value={formData.vacancies_count}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className={labelCls}>{t.applicationDeadline}</label>
+                <input
+                  name="application_deadline"
+                  type="date"
+                  className={inputCls}
+                  value={formData.application_deadline}
                   onChange={handleChange}
                 />
               </div>
             </div>
 
-            {/* Row 3: Description */}
+            {/* Row 4: Description */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-textMuted uppercase tracking-widest">
-                {t.jobDesc} <span className="text-error">*</span>
-              </label>
+              <label className={labelCls}>{t.jobDesc} <span className="text-error">*</span></label>
               <textarea
                 required
                 name="job_description"
@@ -341,6 +368,15 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                   : 'The more detail you provide, the better the AI scoring will be.'}
               </p>
             </div>
+
+            {/* System-generated fields note */}
+            <div className="flex items-start gap-2.5 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
+              <svg className="w-4 h-4 shrink-0 mt-0.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-xs text-textMuted leading-relaxed">{t.systemNote}</p>
+            </div>
+
           </div>
 
           {/* Footer */}
@@ -369,6 +405,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               ) : t.submit}
             </button>
           </div>
+
         </form>
       </div>
     </div>
