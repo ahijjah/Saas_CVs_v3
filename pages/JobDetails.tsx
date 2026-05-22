@@ -67,6 +67,7 @@ const T = {
     uploadBtn: 'Upload CVs',
     uploadingBtn: 'Uploading...',
     chooseFiles: 'Choose files (PDF / DOC / DOCX)',
+    uploadMaxLimitReached: 'This campaign has reached its maximum allowed number of applications. New CV uploads are currently disabled for this job.',
     uploadedCVsTitle: 'Uploaded CVs',
     noUploads: 'No CVs uploaded yet.',
     scoreBtnLabel: 'Score uploaded CVs',
@@ -233,6 +234,7 @@ const T = {
     uploadBtn: 'رفع السير الذاتية',
     uploadingBtn: 'جارٍ الرفع...',
     chooseFiles: 'اختر ملفات (PDF / DOC / DOCX)',
+    uploadMaxLimitReached: 'وصلت هذه الحملة إلى الحد الأقصى المسموح به من الطلبات. تم تعطيل رفع السير الذاتية الجديدة لهذه الوظيفة.',
     uploadedCVsTitle: 'السير الذاتية المرفوعة',
     noUploads: 'لم يتم رفع أي سيرة ذاتية بعد.',
     scoreBtnLabel: 'تقييم السير الذاتية المرفوعة',
@@ -811,7 +813,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     setUploading(true);
     let successCount = 0;
     let failCount = 0;
+    let maxLimitReached = false;
     for (const file of Array.from(files)) {
+      // Stop submitting further files once the limit is confirmed hit
+      if (maxLimitReached) break;
       const fd = new FormData();
       fd.append('job_id', jobId);
       fd.append('candidate_name', file.name.replace(/\.[^.]+$/, ''));
@@ -819,12 +824,20 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       try {
         await apiService.postForm(WEBHOOK_CONFIG.CV_UPLOAD_URL, fd, auth.token!);
         successCount++;
-      } catch {
-        failCount++;
+      } catch (err: any) {
+        const msg: string = (err?.message || '').toLowerCase();
+        if (msg.includes('no longer accepting applications') || msg.includes('applicant limit')) {
+          maxLimitReached = true;
+        } else {
+          failCount++;
+        }
       }
     }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (maxLimitReached) {
+      addToast(T[lang].uploadMaxLimitReached, 'error');
+    }
     if (successCount > 0) addToast(`${successCount} CV(s) uploaded successfully.`, 'success');
     if (failCount > 0) addToast(`${failCount} CV(s) failed to upload.`, 'error');
     const newCVs = await fetchUploadedCVs();
@@ -834,7 +847,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     if (newIds.length > 0) {
       setSessionUploadIds(new Set([...sessionIdsRef.current, ...newIds]));
     }
-  }, [jobId, auth.token, addToast, fetchUploadedCVs, uploadedCVs, setSessionUploadIds]);
+  }, [jobId, auth.token, lang, addToast, fetchUploadedCVs, uploadedCVs, setSessionUploadIds]);
 
   const handleScorePending = useCallback(async () => {
     setScoring(true);
