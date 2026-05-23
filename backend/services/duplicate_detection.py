@@ -13,9 +13,14 @@ Layer 2 — Candidate identity matching
 
 Never blocks or deletes — always sets possible_duplicate only.
 Never compares across different job_ids.
+
+Exact content duplicate detection (primary path):
+  compute_normalized_text_hash() + check_exact_content_duplicate()
+  Uses SHA-256 of normalised text — O(1) lookup, format-agnostic.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import unicodedata
@@ -67,6 +72,69 @@ def _normalise_phone(phone: Optional[str]) -> str:
     elif digits.startswith("0"):
         digits = digits[1:]
     return digits
+
+
+# ── Exact content duplicate (primary pipeline path) ──────────────────────────
+
+def compute_normalized_text_hash(raw_text: str) -> str:
+    """
+    Normalise extracted CV text and return a deterministic SHA-256 hex digest.
+
+    The same normalisation pipeline as _normalise_cv_text() is applied so that
+    PDFs and DOCX exports of the same CV — which may differ in whitespace,
+    bullets, and encoding artefacts — produce an identical hash.
+    """
+    normalized = _normalise_cv_text(raw_text)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+async def check_exact_content_duplicate(
+    db,
+    application_id: str,
+    job_id: str,
+    tenant_id: str,
+    normalized_hash: str,
+) -> dict | None:
+    """
+    Return the first application in the same job whose application_files row
+    has an identical normalized_text_hash, or None if no match.
+
+    Must be called with an open AsyncSession that has RLS context set.
+    The session is NOT committed here — caller is responsible.
+
+    Returns a dict with keys: application_id, candidate_name, candidate_email.
+    """
+    from sqlalchemy import text
+
+    if not normalized_hash:
+        return None
+
+    row = await db.execute(
+        text("""
+            SELECT a.application_id, a.candidate_name, a.candidate_email
+            FROM application_files af
+            JOIN applications a ON a.application_id = af.application_id
+            WHERE af.normalized_text_hash = :hash
+              AND a.job_id               = :job_id
+              AND a.tenant_id            = :tenant_id
+              AND af.application_id      != :self_id
+            LIMIT 1
+        """),
+        {
+            "hash":      normalized_hash,
+            "job_id":    job_id,
+            "tenant_id": tenant_id,
+            "self_id":   application_id,
+        },
+    )
+    result = row.mappings().first()
+    if result:
+        return {
+            "application_id": str(result["application_id"]),
+            "candidate_name":  result["candidate_name"],
+            "candidate_email": result["candidate_email"],
+        }
+    return None
 
 
 # ── Priority ordering (higher = stronger, must not be overwritten by weaker) ──

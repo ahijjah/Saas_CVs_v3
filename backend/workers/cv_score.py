@@ -208,7 +208,10 @@ async def _score_cv_async(
     from services.docx_service import convert_docx_to_pdf
     from services.email_service import send_cv_received_email
     from services.llm_provider import get_comparison_client_async
-    from services.duplicate_detection import detect_possible_duplicate
+    from services.duplicate_detection import (
+        compute_normalized_text_hash,
+        check_exact_content_duplicate,
+    )
     from services.local_processor import run_gatekeeper
     from services.pdf_service import extract_text_from_pdf
     from services.prompt_config import load_prompt_config
@@ -254,13 +257,19 @@ async def _score_cv_async(
             logger.info("[%s] Extracting PDF text", application_id)
             raw_cv_text = extract_text_from_pdf(file_bytes)
 
+            # Compute normalized hash immediately after extraction — used for
+            # exact content duplicate detection in Step 2b below.
+            normalized_text_hash = compute_normalized_text_hash(raw_cv_text)
+
             await db.execute(
                 text("""
                     UPDATE application_files
-                    SET extracted_text = :text, extraction_status = 'done'
+                    SET extracted_text        = :text,
+                        extraction_status     = 'done',
+                        normalized_text_hash  = :nhash
                     WHERE application_id = :aid
                 """),
-                {"text": raw_cv_text, "aid": application_id},
+                {"text": raw_cv_text, "nhash": normalized_text_hash, "aid": application_id},
             )
 
             # ── Load scoring config early — needed for quality gate + gatekeeper
@@ -297,58 +306,50 @@ async def _score_cv_async(
                 _scoring_committed = True
                 return
 
-            # ── Step 2b: Duplicate detection (local, no LLM) ─────────────────
-            logger.info("[%s] Running duplicate detection", application_id)
-            app_id_row = await db.execute(
-                text("""
-                    SELECT candidate_name, candidate_email,
-                           submission_source,
-                           submitted_by_user_id, submitted_by_name, submitted_by_email
-                    FROM applications WHERE application_id = :aid
-                """),
-                {"aid": application_id},
+            # ── Step 2b: Exact content duplicate pre-screening ────────────────
+            # Uses normalized_text_hash for O(1) lookup — format-agnostic
+            # (same CV exported as PDF vs DOCX produces the same hash).
+            # Applies uniformly to ALL intake methods; no application is deleted.
+            logger.info("[%s] Exact content duplicate pre-screening", application_id)
+            content_dup = await check_exact_content_duplicate(
+                db=db,
+                application_id=application_id,
+                job_id=job_id,
+                tenant_id=tenant_id,
+                normalized_hash=normalized_text_hash,
             )
-            app_id_data = app_id_row.mappings().first()
-
-            if app_id_data:
-                await detect_possible_duplicate(
-                    db=db,
-                    application_id=application_id,
-                    job_id=job_id,
-                    tenant_id=tenant_id,
-                    candidate_name=app_id_data["candidate_name"] or "",
-                    candidate_email=app_id_data["candidate_email"],
-                    candidate_phone=None,   # re-checked after Level 3
-                    extracted_text=raw_cv_text,
+            if content_dup:
+                ref_id = content_dup["application_id"]
+                logger.info(
+                    "[%s] Exact content duplicate detected — ref=%s stopping scoring",
+                    application_id, ref_id,
+                )
+                await db.execute(
+                    text("""
+                        UPDATE applications SET
+                            duplicate_status                   = 'exact_duplicate',
+                            duplicate_reference_application_id = :ref_id,
+                            duplicate_reason                   = 'normalized_text_hash',
+                            duplicate_checked_at               = now(),
+                            evaluation_stage                   = 1,
+                            evaluation_exit_reason             = :reason,
+                            processing_status                  = 'scored',
+                            decision                           = 'rejected',
+                            scored_at                          = now()
+                        WHERE application_id = :aid
+                    """),
+                    {
+                        "ref_id": ref_id,
+                        "reason": (
+                            f"Exact content duplicate of application "
+                            f"{ref_id[:8]}… — identical CV content already on file."
+                        ),
+                        "aid": application_id,
+                    },
                 )
                 await db.commit()
-
-                # Manual/public uploads with high content similarity → dup log
-                if app_id_data["submission_source"] in ("manual_upload", "public_apply"):
-                    dup_check = await db.execute(
-                        text("""
-                            SELECT duplicate_reason,
-                                   duplicate_reference_application_id,
-                                   duplicate_similarity_score
-                            FROM applications WHERE application_id = :aid
-                        """),
-                        {"aid": application_id},
-                    )
-                    dup_info = dup_check.mappings().first()
-                    if dup_info and dup_info["duplicate_reason"] == "high_content_similarity":
-                        logger.info(
-                            "[%s] Duplicate detected (high_content_similarity) — converting to log",
-                            application_id,
-                        )
-                        # Raises on failure; outer except will call _mark_failed.
-                        await _convert_manual_dup_to_log(
-                            db, application_id, job_id, tenant_id,
-                            mime_type, file_path, app_id_data, dup_info,
-                        )
-                        # _convert_manual_dup_to_log deleted the application row;
-                        # treat this as a terminal-success path.
-                        _scoring_committed = True
-                        return
+                _scoring_committed = True
+                return
 
             # ── Step 3: Fetch job criteria + scoring config ───────────────────
             logger.info("[%s] Fetching job criteria", application_id)
@@ -702,26 +703,6 @@ async def _score_cv_async(
                 final_score,
                 decision,
             )
-
-            # ── Post-scoring: duplicate re-check with phone ───────────────────
-            if extracted_phone:
-                try:
-                    await detect_possible_duplicate(
-                        db=db,
-                        application_id=application_id,
-                        job_id=job_id,
-                        tenant_id=tenant_id,
-                        candidate_name=extracted_name or (app_id_data["candidate_name"] if app_id_data else ""),
-                        candidate_email=extracted_email or (app_id_data["candidate_email"] if app_id_data else None),
-                        candidate_phone=extracted_phone,
-                        extracted_text=raw_cv_text,
-                    )
-                    await db.commit()
-                except Exception as dup_exc:
-                    logger.warning(
-                        "[%s] Post-scoring duplicate check failed (non-critical): %s",
-                        application_id, dup_exc,
-                    )
 
             # ── Post-scoring: optional AI comparison ──────────────────────────
             # Job-level flag takes priority; falls back to system default.
