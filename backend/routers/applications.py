@@ -120,6 +120,12 @@ async def get_application_details(
                 a.duplicate_similarity_score,
                 a.duplicate_reason,
                 a.duplicate_checked_at,
+                a.security_check_status,
+                a.security_risk_level,
+                a.security_risk_score,
+                a.security_reason_codes,
+                a.security_detected_patterns,
+                a.security_checked_at,
                 j.title AS job_title, j.job_id,
                 (SELECT af2.original_name FROM application_files af2
                  WHERE af2.application_id = a.application_id LIMIT 1) AS original_filename,
@@ -287,6 +293,12 @@ async def get_application_details(
         "duplicate_reason":                   app["duplicate_reason"],
         "duplicate_checked_at":               app["duplicate_checked_at"].isoformat() if app["duplicate_checked_at"] else None,
         "duplicate_reference":                dup_ref_info,
+        "security_check_status":    app["security_check_status"],
+        "security_risk_level":      app["security_risk_level"],
+        "security_risk_score":      int(app["security_risk_score"]) if app["security_risk_score"] is not None else None,
+        "security_reason_codes":    list(app["security_reason_codes"] or []),
+        "security_detected_patterns": list(app["security_detected_patterns"] or []),
+        "security_checked_at":      app["security_checked_at"].isoformat() if app["security_checked_at"] else None,
     }
 
 

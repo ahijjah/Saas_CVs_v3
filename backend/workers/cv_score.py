@@ -449,6 +449,137 @@ async def _score_cv_async(
                 await db.commit()
                 # Do NOT return — continue through gatekeeper and LLM scoring.
 
+            # ── Step 2c: Security / prompt-injection check ────────────────────
+            # Runs after exact-duplicate detection, before gatekeeper and AI.
+            # High-risk blocked apps are kept visible; we do NOT delete records.
+            from services.security_detection import run_security_check
+            _sec_result = await run_security_check(
+                db=db,
+                application_id=application_id,
+                tenant_id=tenant_id,
+                cv_text=raw_cv_text,
+                # extra_texts: pass knockout answers here when available
+            )
+
+            if _sec_result is not None:
+                # Persist result fields regardless of outcome
+                await db.execute(
+                    text("""
+                        UPDATE applications SET
+                            security_check_status    = :status,
+                            security_risk_level      = :risk_level,
+                            security_risk_score      = :risk_score,
+                            security_reason_codes    = :reason_codes,
+                            security_detected_patterns = :patterns,
+                            security_checked_at      = now()
+                        WHERE application_id = :aid
+                    """),
+                    {
+                        "status":       _sec_result.status,
+                        "risk_level":   _sec_result.risk_level,
+                        "risk_score":   _sec_result.risk_score,
+                        "reason_codes": _sec_result.reason_codes,
+                        "patterns":     _sec_result.detected_patterns,
+                        "aid":          application_id,
+                    },
+                )
+
+                _sec_cfg_block = _sec_result.status == "blocked"
+                _sec_cfg_medium_action = None
+
+                if _sec_result.status == "warning":
+                    # Load medium-risk action from DB config (cached in result context)
+                    _medium_row = await db.execute(
+                        text("SELECT value FROM system_config WHERE key = 'security_prompt_injection_medium_risk_action'")
+                    )
+                    _medium_action = (_medium_row.scalar_one_or_none() or "allow_with_warning").strip()
+                    _sec_cfg_medium_action = _medium_action
+
+                    if _medium_action == "block_for_review":
+                        _sec_cfg_block = True
+
+                if _sec_cfg_block:
+                    _exit_reason = (
+                        f"[security_check] {_sec_result.summary}"
+                    )
+                    logger.warning(
+                        "[%s] Security check BLOCKED: risk=%s score=%d codes=%s",
+                        application_id, _sec_result.risk_level,
+                        _sec_result.risk_score, _sec_result.reason_codes,
+                    )
+                    await db.execute(
+                        text("""
+                            UPDATE applications SET
+                                processing_status      = 'failed',
+                                evaluation_stage       = NULL,
+                                evaluation_exit_reason = :reason,
+                                scored_at              = now()
+                            WHERE application_id = :aid
+                        """),
+                        {"reason": _exit_reason, "aid": application_id},
+                    )
+                    await db.commit()
+
+                    # Audit log — safe summary only, no raw CV text
+                    try:
+                        from services.audit_service import log_action
+                        _audit_action = (
+                            "security_high_risk_blocked"
+                            if _sec_result.risk_level == "high"
+                            else "security_medium_risk_blocked_for_review"
+                        )
+                        await log_action(
+                            db=db,
+                            tenant_id=tenant_id,
+                            user_id=None,
+                            user_email="system",
+                            action=_audit_action,
+                            resource_type="application",
+                            resource_id=application_id,
+                            details={
+                                "risk_level":        _sec_result.risk_level,
+                                "risk_score":        _sec_result.risk_score,
+                                "reason_codes":      _sec_result.reason_codes,
+                                "pattern_categories": _sec_result.detected_patterns,
+                                "summary":           _sec_result.summary,
+                            },
+                        )
+                        await db.commit()
+                    except Exception as _audit_exc:
+                        logger.warning("[%s] Audit log failed for security block: %s", application_id, _audit_exc)
+
+                    _scoring_committed = True
+                    return
+
+                elif _sec_result.status == "warning":
+                    logger.info(
+                        "[%s] Security check WARNING (action=%s): risk=%s score=%d codes=%s",
+                        application_id, _sec_cfg_medium_action,
+                        _sec_result.risk_level, _sec_result.risk_score, _sec_result.reason_codes,
+                    )
+                    try:
+                        from services.audit_service import log_action
+                        await log_action(
+                            db=db,
+                            tenant_id=tenant_id,
+                            user_id=None,
+                            user_email="system",
+                            action="security_medium_risk_warning",
+                            resource_type="application",
+                            resource_id=application_id,
+                            details={
+                                "risk_level":        _sec_result.risk_level,
+                                "risk_score":        _sec_result.risk_score,
+                                "reason_codes":      _sec_result.reason_codes,
+                                "pattern_categories": _sec_result.detected_patterns,
+                                "summary":           _sec_result.summary,
+                            },
+                        )
+                        await db.commit()
+                    except Exception as _audit_exc:
+                        logger.warning("[%s] Audit log failed for security warning: %s", application_id, _audit_exc)
+                    # Continue to gatekeeper and AI scoring
+
             # ── Step 3: Fetch job criteria + scoring config ───────────────────
             logger.info("[%s] Fetching job criteria", application_id)
             criteria_row = await db.execute(

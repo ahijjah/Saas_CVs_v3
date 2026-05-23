@@ -99,6 +99,29 @@ const T = {
     notInFinalScore: 'Not included in final score',
     additionalInsights: 'Additional Recruiter Insights',
     scoreOverview: 'Score Overview',
+    securityCheck: 'Security Check',
+    securityPassed: 'Passed',
+    securityWarning: 'Warning',
+    securityBlocked: 'Blocked',
+    securityRiskLevel: 'Risk Level',
+    securityRiskScore: 'Risk Score',
+    securityReasonCodes: 'Reason Codes',
+    securityPatternCategories: 'Pattern Categories',
+    securityCheckedAt: 'Checked At',
+    securitySummary: 'Summary',
+    securityBlockedNote: 'This application was blocked before scoring due to suspicious content detected in the CV.',
+    securityWarningNote: 'Suspicious content was detected in this CV. The application was allowed through for review.',
+    securityPatternLabels: {
+      override_instructions: 'Instruction Override',
+      score_manipulation:    'Score Manipulation',
+      reveal_prompt:         'Prompt Reveal Attempt',
+      jailbreak:             'Jailbreak Pattern',
+      scoring_rule_change:   'Scoring Rule Change',
+      auto_qualify:          'Auto-Qualify Attempt',
+      obfuscated:            'Obfuscated Content',
+      encoded_payload:       'Encoded Payload',
+      unicode_spam:          'Unicode Anomaly',
+    } as Record<string, string>,
   },
   ar: {
     back: 'العودة إلى الطلبات',
@@ -177,6 +200,29 @@ const T = {
     notInFinalScore: 'غير محتسب في النتيجة النهائية',
     additionalInsights: 'رؤى إضافية للمسؤول',
     scoreOverview: 'نظرة عامة على النتيجة',
+    securityCheck: 'فحص الأمان',
+    securityPassed: 'اجتاز',
+    securityWarning: 'تحذير',
+    securityBlocked: 'محجوب',
+    securityRiskLevel: 'مستوى المخاطر',
+    securityRiskScore: 'درجة المخاطر',
+    securityReasonCodes: 'رموز الأسباب',
+    securityPatternCategories: 'فئات الأنماط',
+    securityCheckedAt: 'وقت الفحص',
+    securitySummary: 'الملخص',
+    securityBlockedNote: 'تم حجب هذا الطلب قبل التقييم بسبب محتوى مشبوه تم اكتشافه في السيرة الذاتية.',
+    securityWarningNote: 'تم اكتشاف محتوى مشبوه في هذه السيرة الذاتية. تم السماح بمرور الطلب للمراجعة.',
+    securityPatternLabels: {
+      override_instructions: 'محاولة تجاوز التعليمات',
+      score_manipulation:    'محاولة التلاعب بالدرجات',
+      reveal_prompt:         'محاولة كشف النظام',
+      jailbreak:             'نمط تجاوز القيود',
+      scoring_rule_change:   'محاولة تغيير معايير التقييم',
+      auto_qualify:          'محاولة الإجازة التلقائية',
+      obfuscated:            'محتوى مخفي',
+      encoded_payload:       'حمولة مشفرة',
+      unicode_spam:          'تشوه يونيكود',
+    } as Record<string, string>,
   },
 };
 
@@ -468,6 +514,53 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           )}
         </div>
       )}
+
+      {/* ── Security Check Banner ───────────────────────────────────────────── */}
+      {(data as any).security_check_status && (data as any).security_check_status !== 'passed' && (() => {
+        const secStatus: string = (data as any).security_check_status;
+        const secLevel: string  = (data as any).security_risk_level || '';
+        const secScore: number  = (data as any).security_risk_score ?? 0;
+        const secCodes: string[] = (data as any).security_reason_codes || [];
+        const secPatterns: string[] = (data as any).security_detected_patterns || [];
+        const secAt: string | null = (data as any).security_checked_at || null;
+        const isBlocked = secStatus === 'blocked';
+        const patternLabels = (t as any).securityPatternLabels as Record<string, string>;
+        return (
+          <div className={`rounded-2xl p-5 border-l-4 ${isBlocked ? 'bg-red-50 border-red-500' : 'bg-amber-50 border-amber-400'}`}>
+            <div className="flex items-start gap-3 mb-3">
+              <svg className={`w-5 h-5 mt-0.5 shrink-0 ${isBlocked ? 'text-red-500' : 'text-amber-500'}`} fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <div className="flex-1">
+                <p className={`text-sm font-bold ${isBlocked ? 'text-red-800' : 'text-amber-800'}`}>
+                  {isBlocked ? (t as any).securityBlockedNote : (t as any).securityWarningNote}
+                </p>
+              </div>
+              <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${isBlocked ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                {isBlocked ? (t as any).securityBlocked : (t as any).securityWarning}
+              </span>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+              <span className="text-textMuted">{(t as any).securityRiskLevel}</span>
+              <span className={`font-bold uppercase ${secLevel === 'high' ? 'text-red-600' : secLevel === 'medium' ? 'text-amber-600' : 'text-green-600'}`}>{secLevel}</span>
+              <span className="text-textMuted">{(t as any).securityRiskScore}</span>
+              <span className="font-semibold text-textMain">{secScore}</span>
+              {secPatterns.length > 0 && (
+                <>
+                  <span className="text-textMuted">{(t as any).securityPatternCategories}</span>
+                  <span className="font-semibold text-textMain">{secPatterns.map(p => patternLabels[p] || p).join(', ')}</span>
+                </>
+              )}
+              {secAt && (
+                <>
+                  <span className="text-textMuted">{(t as any).securityCheckedAt}</span>
+                  <span className="text-textMain">{new Date(secAt).toLocaleString()}</span>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Application Intake Metadata ─────────────────────────────────────── */}
       {(data.submission_source || data.applied_at || data.email_sender_address ||
