@@ -786,3 +786,28 @@ async def update_user_status(
     await db.commit()
 
     return {"success": True, "message": f"User {body.status}"}
+
+
+@router.post("/backfill-canonical-fingerprints", dependencies=[RequireSuperAdmin])
+async def trigger_canonical_fingerprint_backfill(batch_size: int = 200):
+    """
+    Enqueue a background task to compute canonical_text_fingerprint for all
+    application_files rows where it is currently NULL (rows scored before
+    migration 043 or before the enhanced canonical normalisation was deployed).
+
+    The task runs asynchronously via Celery — this endpoint returns immediately
+    with the task ID.  Progress can be monitored via Celery task status.
+
+    batch_size controls how many rows are processed per DB round-trip (default 200).
+    """
+    from workers.backfill_canonical_fp import backfill_canonical_fingerprints_task
+
+    task = backfill_canonical_fingerprints_task.delay(batch_size=batch_size)
+    return {
+        "success": True,
+        "task_id": task.id,
+        "message": (
+            f"Canonical fingerprint backfill enqueued (batch_size={batch_size}). "
+            "Check Celery task logs for progress."
+        ),
+    }

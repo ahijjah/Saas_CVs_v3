@@ -15,6 +15,7 @@ celery_app = Celery(
         "workers.criteria_worker",
         "workers.notification_worker",
         "workers.watchdog",
+        "workers.backfill_canonical_fp",
     ],
 )
 

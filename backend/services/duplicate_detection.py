@@ -1,22 +1,21 @@
 """
 Duplicate CV detection service — intra-job, two-layer, no LLM.
 
-Layer 1 — Normalised content similarity (rapidfuzz token_sort_ratio)
-  Threshold: 95 out of 100 (conservative vs spec's 98 to account for
-  extraction differences between PDF and DOCX parsers of the same document).
-  reason: "high_content_similarity"
+Exact-match duplicate detection (primary, O(1)):
+  Three independent checks in sequence — first match wins:
+    1. file_hash          — binary identity (SHA-256 of raw file bytes)
+    2. normalized_text_hash  — content identity after light normalisation
+    3. canonical_text_fingerprint — order-independent bag-of-words hash
+       (cross-format: PDF vs DOCX of the same CV)
 
-Layer 2 — Candidate identity matching
+High-similarity fallback (last resort, O(n)):
+  token_set_ratio >= 97% on normalised text.
+  Handles residual PDF/DOCX extraction differences that survive fingerprinting.
+  reason: "content_similarity_fallback"
+
+Fuzzy identity matching (legacy path, no longer triggers delete):
   Fields: email (exact), phone (normalised exact), name (fuzzy >= 90).
-  Trigger: at least 2 of the 3 present fields match.
   reason: "identity_match"
-
-Never blocks or deletes — always sets possible_duplicate only.
-Never compares across different job_ids.
-
-Exact content duplicate detection (primary path):
-  compute_normalized_text_hash() + check_exact_content_duplicate()
-  Uses SHA-256 of normalised text — O(1) lookup, format-agnostic.
 """
 from __future__ import annotations
 
@@ -29,31 +28,133 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
-_CONTENT_THRESHOLD: float = 95.0   # token_sort_ratio — marks possible_duplicate during scoring
-_CONTENT_STOP_THRESHOLD: float = 90.0  # token_sort_ratio — reject at upload, do not score
+_CONTENT_THRESHOLD: float = 95.0
+_CONTENT_STOP_THRESHOLD: float = 90.0
 _NAME_FUZZY_THRESHOLD: float = 90.0
+_HIGH_SIMILARITY_THRESHOLD: float = 97.0  # token_set_ratio for cross-format fallback
+
+# ── Arabic / digit normalisation tables ──────────────────────────────────────
+
+# Arabic-Indic (U+0660–U+0669) + Extended Persian (U+06F0–U+06F9) → ASCII 0–9
+# NFKD does NOT decompose these — explicit translation required.
+_INDIC_DIGIT_TABLE = str.maketrans(
+    "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹",
+    "01234567890123456789",
+)
+
+# Tokens excluded from the canonical fingerprint.
+# All entries are in post-normalisation form (after _normalise_for_canonical):
+#   ى → ي  |  ة → ه  |  أإآ → ا (via NFKD+combining strip)  |  ٱ → ا
+# These tokens appear in virtually every CV regardless of format and
+# add no discriminating power; removing them prevents false positives
+# when two different CVs share only section headings and boilerplate.
+_CV_STOP_TOKENS: frozenset[str] = frozenset({
+    # English function words
+    "the", "and", "for", "with", "from", "that", "this", "are", "was", "been",
+    "have", "has", "had", "will", "would", "could", "should", "may", "can",
+    "not", "but", "also", "other", "than", "into", "over", "such", "any",
+    "all", "more", "its", "our", "your", "their", "very", "well",
+    "who", "how", "did", "per", "etc", "page",
+    # Universal CV section headings / boilerplate
+    "education", "experience", "skills", "summary", "profile", "objective",
+    "languages", "certifications", "references", "contact", "information",
+    "work", "employment", "history", "professional", "technical", "personal",
+    "available", "upon", "request", "curriculum", "vitae", "resume",
+    # Arabic function words (post-normalisation forms)
+    "الي",    # إلى  after NFKD + ى→ي
+    "علي",    # على  after ى→ي
+    "هذا", "هذه",
+    "التي", "الذي",
+    "وقد", "ولقد",
+    # Arabic CV section headings (post-normalisation)
+    "التعليم",
+    "الخبرات", "الخبره",   # الخبرة → الخبره
+    "المهارات",
+    "اللغات",
+    "الملخص",
+    "المهني",
+    "الشخصيه",             # الشخصية → الشخصيه
+    "التوظيف",
+})
 
 
 # ── Text normalisation ────────────────────────────────────────────────────────
 
 def _normalise_cv_text(raw: str) -> str:
     """
-    Aggressively normalise extracted CV text before similarity comparison.
-    Handles PDF-vs-DOCX extraction artefacts, bullet symbols, repeated whitespace.
+    Light normalisation for similarity comparison and normalized_text_hash.
+    Preserves token order; handles common PDF/DOCX extraction artefacts.
     """
     if not raw:
         return ""
     text = raw.lower()
-    # Unicode NFC — normalise accented chars to single code-points
     text = unicodedata.normalize("NFC", text)
-    # Replace common bullet / decoration chars with space
     text = re.sub(r"[•·▪►✓✗✘✔❖◦‣⁃\*]+", " ", text)
-    # Normalise all dash/hyphen variants to ASCII hyphen
     text = re.sub(r"[‐-―−⁄]", "-", text)
-    # Drop non-content punctuation (keep letters, digits, hyphens, Arabic block)
     text = re.sub(r"[^\w\s\-؀-ۿ]", " ", text, flags=re.UNICODE)
-    # Collapse whitespace
     text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _normalise_for_canonical(raw: str) -> str:
+    """
+    Aggressive normalisation for canonical cross-format fingerprint generation.
+
+    More destructive than _normalise_cv_text — designed to absorb PDF/DOCX
+    extraction artefacts rather than preserve readability:
+
+    NFKD + combining-char removal
+      Expands typographic ligatures (ﬁ→fi, ﬂ→fl, ﬃ→ffi) and resolves Unicode
+      compatibility characters.  Strips diacritical marks and Arabic harakat
+      that differ between PDF font rendering and LibreOffice DOCX→PDF output.
+
+    Arabic normalisation (explicit, after NFKD)
+      · Residual Alef variants أإآٱ → ا  (ٱ U+0671 not handled by NFKD)
+      · Alef Maqsura ى → ي  (no NFKD decomposition)
+      · Ta Marbuta  ة → ه  (no NFKD decomposition)
+      · Arabic-Indic / Extended Persian digits → ASCII 0–9
+
+    Intra-letter hyphen removal
+      "pre-screening" → "prescreening" absorbs line-break hyphenation artefacts
+      (one parser joins the word across a line break; the other does not).
+      Only letter-to-letter hyphens are removed; "2020-2024" is preserved.
+
+    Invisible characters
+      Soft hyphens (U+00AD), zero-width spaces (U+200B–U+200F), line/paragraph
+      separators (U+2028/U+2029) and BOM (U+FEFF) are stripped.
+    """
+    if not raw:
+        return ""
+
+    # 1. NFKD — expands ligatures, resolves compatibility chars
+    text = unicodedata.normalize("NFKD", raw)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+
+    # 2. Explicit Arabic normalisations not resolved by NFKD+strip
+    text = re.sub(r"[أإآٱ]", "ا", text)    # residual Alef variants incl. U+0671
+    text = re.sub(r"ى", "ي", text)           # Alef Maqsura → Ya
+    text = re.sub(r"ة", "ه", text)           # Ta Marbuta → Ha
+    text = text.translate(_INDIC_DIGIT_TABLE)
+
+    # 3. Lowercase
+    text = text.lower()
+
+    # 4. Remove invisible / zero-width control characters
+    text = re.sub(r"[­​‌‍‎‏  ﻿]", "", text)
+
+    # 5. Remove intra-letter hyphens (line-break hyphenation artefacts).
+    #    Only between Unicode letters — digit ranges like "2020-2024" are kept.
+    text = re.sub(r"(?<=[^\W\d_])-(?=[^\W\d_])", "", text, flags=re.UNICODE)
+
+    # 6. Bullets and decoration → space
+    text = re.sub(r"[•·▪►✓✗✘✔❖◦‣⁃*|]+", " ", text)
+
+    # 7. Drop all remaining punctuation; keep letters, digits, Arabic, space
+    text = re.sub(r"[^\w\s]", " ", text, flags=re.UNICODE)
+
+    # 8. Collapse whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+
     return text
 
 
@@ -66,7 +167,6 @@ def _normalise_phone(phone: Optional[str]) -> str:
     if not phone:
         return ""
     digits = re.sub(r"\D", "", phone)
-    # Strip leading international prefix: 00 or single 0
     if digits.startswith("00"):
         digits = digits[2:]
     elif digits.startswith("0"):
@@ -77,51 +177,48 @@ def _normalise_phone(phone: Optional[str]) -> str:
 # ── Exact content duplicate (primary pipeline path) ──────────────────────────
 
 def compute_normalized_text_hash(raw_text: str) -> str:
-    """
-    Normalise extracted CV text and return a deterministic SHA-256 hex digest.
-
-    The same normalisation pipeline as _normalise_cv_text() is applied so that
-    PDFs and DOCX exports of the same CV — which may differ in whitespace,
-    bullets, and encoding artefacts — produce an identical hash.
-    """
+    """SHA-256 of lightly-normalised CV text (order-preserving, all tokens)."""
     normalized = _normalise_cv_text(raw_text)
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def _compute_canonical_tokens(normalized: str) -> str:
+def _compute_canonical_tokens(canonical_text: str) -> str:
     """
-    Produce a sorted, deduplicated token string for cross-format fingerprinting.
+    Sorted, deduplicated, stop-word-filtered token string from canonical text.
 
-    PDF and DOCX parsers extract the same vocabulary but in different order (due
-    to column layout, bounding-box reading order, table rendering, etc.).
-    Sorting and deduplicating tokens makes the fingerprint order-independent
-    while keeping it sensitive to vocabulary differences between distinct CVs.
-
-    Tokens shorter than 3 chars are dropped as noise; Arabic tokens are always
-    kept regardless of length (short Arabic words carry meaning).
+    Three filter passes on the output of _normalise_for_canonical():
+      1. len < 3 — noise, OCR artefacts, Arabic two-letter function words
+      2. pure digit < 4 chars — page numbers; 4-digit years are kept
+      3. _CV_STOP_TOKENS — boilerplate common to every CV in both formats
     """
-    tokens = normalized.split()
-    filtered = [
-        t for t in tokens
-        if len(t) >= 3 or re.search(r"[؀-ۿ]", t)
-    ]
+    tokens = canonical_text.split()
+    filtered = []
+    for t in tokens:
+        if len(t) < 3:
+            continue
+        if t.isdigit() and len(t) < 4:
+            continue
+        if t in _CV_STOP_TOKENS:
+            continue
+        filtered.append(t)
     return " ".join(sorted(set(filtered)))
 
 
 def compute_canonical_text_fingerprint(raw_text: str) -> str:
     """
-    Produce an order-independent fingerprint for cross-format duplicate detection
-    (same CV submitted as PDF and as DOCX).
+    Order-independent canonical fingerprint for cross-format duplicate detection.
 
-    Unlike normalized_text_hash (which preserves token order), this fingerprint
-    sorts and deduplicates tokens so that vocabulary-equivalent texts produce the
-    same hash regardless of extraction-order differences between parsers.
+    Pipeline: _normalise_for_canonical → _compute_canonical_tokens → SHA-256
+
+    Handles the PDF vs DOCX case where parsers extract identical vocabulary
+    in different order due to column layout / bounding-box reading differences.
+    The sorted deduplicated token set is invariant to extraction order.
 
     Returns a SHA-256 hex digest of the sorted canonical token string.
     """
-    normalized = _normalise_cv_text(raw_text)
-    canonical = _compute_canonical_tokens(normalized)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    canonical_text = _normalise_for_canonical(raw_text)
+    canonical_tokens = _compute_canonical_tokens(canonical_text)
+    return hashlib.sha256(canonical_tokens.encode("utf-8")).hexdigest()
 
 
 async def check_exact_file_hash_duplicate(
@@ -273,6 +370,81 @@ async def check_exact_canonical_fingerprint_duplicate(
             "candidate_email": result["candidate_email"],
         }
     return None
+
+
+async def check_high_similarity_duplicate(
+    db,
+    application_id: str,
+    job_id: str,
+    tenant_id: str,
+    extracted_text: str,
+    threshold: float = _HIGH_SIMILARITY_THRESHOLD,
+) -> dict | None:
+    """
+    Cross-format fallback: compare normalised CV text against all scored CVs in
+    the same job using rapidfuzz token_set_ratio.
+
+    Used when all three exact fingerprint checks (file_hash, normalized_text_hash,
+    canonical_text_fingerprint) miss — a last resort for residual PDF/DOCX
+    extraction differences that survive the canonical normalisation pipeline.
+
+    token_set_ratio handles extra tokens well (headers, footers, page numbers
+    added by LibreOffice DOCX→PDF conversion) by computing the ratio on the
+    common-token intersection rather than the full strings.
+
+    Threshold default is 97.0 (very conservative) to avoid false positives.
+    Minimum normalised text length of 500 chars guards against short CVs where
+    any two documents may score unreliably high.
+
+    Must be called with an open AsyncSession that has RLS context set.
+    The session is NOT committed here.
+
+    Returns dict with keys: application_id, candidate_name, candidate_email,
+    similarity_score — or None if no match found.
+    """
+    from rapidfuzz import fuzz
+    from sqlalchemy import text
+
+    if not extracted_text:
+        return None
+
+    norm_new = _normalise_cv_text(extracted_text)
+    if len(norm_new) < 500:
+        return None
+
+    rows = await db.execute(
+        text("""
+            SELECT a.application_id, a.candidate_name, a.candidate_email,
+                   af.extracted_text
+            FROM application_files af
+            JOIN applications a ON a.application_id = af.application_id
+            WHERE a.job_id           = :jid
+              AND a.tenant_id        = :tid
+              AND af.application_id  != :self_id
+              AND af.extraction_status = 'done'
+              AND af.extracted_text IS NOT NULL
+        """),
+        {"jid": job_id, "tid": tenant_id, "self_id": application_id},
+    )
+
+    best_score = 0.0
+    best_match: dict | None = None
+
+    for row in rows.mappings():
+        existing_norm = _normalise_cv_text(row["extracted_text"] or "")
+        if len(existing_norm) < 500:
+            continue
+        score = fuzz.token_set_ratio(norm_new, existing_norm)
+        if score >= threshold and score > best_score:
+            best_score = score
+            best_match = {
+                "application_id":  str(row["application_id"]),
+                "candidate_name":  row["candidate_name"],
+                "candidate_email": row["candidate_email"],
+                "similarity_score": float(score),
+            }
+
+    return best_match
 
 
 # ── Priority ordering (higher = stronger, must not be overwritten by weaker) ──

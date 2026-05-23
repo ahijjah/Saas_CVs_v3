@@ -215,6 +215,7 @@ async def _score_cv_async(
         check_exact_file_hash_duplicate,
         check_exact_content_duplicate,
         check_exact_canonical_fingerprint_duplicate,
+        check_high_similarity_duplicate,
     )
     from services.local_processor import run_gatekeeper
     from services.pdf_service import extract_text_from_pdf
@@ -387,6 +388,23 @@ async def _score_cv_async(
                 if canon_dup:
                     _dup_match = canon_dup
                     _dup_reason = "canonical_text_fingerprint"
+
+            # Check 4: high-similarity fallback (last resort, O(n) per job)
+            # Handles residual PDF/DOCX extraction differences that survive
+            # the canonical normalisation pipeline (e.g. extreme layout changes,
+            # table rendering order).  97% token_set_ratio threshold is very
+            # conservative — at this level the two CVs are virtually identical.
+            if _dup_match is None:
+                sim_dup = await check_high_similarity_duplicate(
+                    db=db,
+                    application_id=application_id,
+                    job_id=job_id,
+                    tenant_id=tenant_id,
+                    extracted_text=raw_cv_text,
+                )
+                if sim_dup:
+                    _dup_match = sim_dup
+                    _dup_reason = "content_similarity_fallback"
 
             if _dup_match:
                 ref_id = _dup_match["application_id"]
