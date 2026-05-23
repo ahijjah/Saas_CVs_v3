@@ -56,10 +56,10 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
       addToast('Full name and email address are required.', 'error'); return;
     }
 
-    // Validate required knockout questions
+    // All knockout questions are mandatory when the job has any
     const questions = job?.knockout_questions ?? [];
     for (const q of questions) {
-      if (q.is_required && !knockoutAnswers[q.question_id]?.trim()) {
+      if (!knockoutAnswers[q.question_id]?.trim()) {
         addToast(`Please answer: "${q.question_text}"`, 'error');
         return;
       }
@@ -290,7 +290,7 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
                   <div key={q.question_id} className="space-y-1.5">
                     <label className="text-sm font-semibold text-textMain">
                       {idx + 1}. {q.question_text}
-                      {q.is_required && <span className="text-red-500 ml-1">*</span>}
+                      <span className="text-red-500 ml-1">*</span>
                     </label>
                     {q.question_type === 'yes_no' && (
                       <div className="flex gap-4">
@@ -310,7 +310,7 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
                         ))}
                       </div>
                     )}
-                    {q.question_type === 'multiple_choice' && (
+                    {q.question_type === 'single_choice' && (
                       <div className="space-y-1">
                         {(q.options ?? []).map(opt => (
                           <label key={opt} className="flex items-center gap-2 cursor-pointer">
@@ -328,14 +328,14 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
                         ))}
                       </div>
                     )}
-                    {q.question_type === 'text' && (
-                      <textarea
-                        rows={2}
+                    {q.question_type === 'number' && (
+                      <input
+                        type="number"
                         disabled={!intakeOpen}
                         value={knockoutAnswers[q.question_id] || ''}
                         onChange={e => setKnockoutAnswers(prev => ({ ...prev, [q.question_id]: e.target.value }))}
-                        className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none disabled:bg-slate-50"
-                        placeholder="Your answer..."
+                        className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none disabled:bg-slate-50"
+                        placeholder="Enter a number"
                       />
                     )}
                   </div>

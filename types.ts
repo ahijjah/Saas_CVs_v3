@@ -368,7 +368,7 @@ export interface UploadQueueStatus {
 export interface KnockoutQuestion {
   question_id: string;
   question_text: string;
-  question_type: 'yes_no' | 'multiple_choice' | 'text';
+  question_type: 'yes_no' | 'single_choice' | 'number';
   is_required: boolean;
   disqualifying_answer?: string | null;
   options?: string[] | null;

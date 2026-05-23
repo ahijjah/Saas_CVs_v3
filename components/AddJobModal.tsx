@@ -74,8 +74,8 @@ const T = {
     knockoutAddQuestion: 'Add Question',
     knockoutQuestionPlaceholder: 'e.g. Do you have a valid driving licence?',
     knockoutTypeyesNo: 'Yes / No',
-    knockoutTypeMultiChoice: 'Multiple Choice',
-    knockoutTypeText: 'Text',
+    knockoutTypeSingleChoice: 'Single Choice',
+    knockoutTypeNumber: 'Number',
     knockoutRequired: 'Required',
     knockoutDisqualify: 'Disqualifying answer',
     knockoutDisqualifyNone: 'None',
@@ -129,8 +129,8 @@ const T = {
     knockoutAddQuestion: 'إضافة سؤال',
     knockoutQuestionPlaceholder: 'مثال: هل تمتلك رخصة قيادة سارية؟',
     knockoutTypeyesNo: 'نعم / لا',
-    knockoutTypeMultiChoice: 'اختيار متعدد',
-    knockoutTypeText: 'نصي',
+    knockoutTypeSingleChoice: 'اختيار واحد',
+    knockoutTypeNumber: 'رقمي',
     knockoutRequired: 'إلزامي',
     knockoutDisqualify: 'الإجابة المُقصية',
     knockoutDisqualifyNone: 'لا يوجد',
@@ -324,7 +324,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
         const questions = knockoutQuestions
           .filter(q => q.question_text?.trim())
           .map(q => {
-            const opts = q.question_type === 'multiple_choice' && q.optionsText
+            const opts = q.question_type === 'single_choice' && q.optionsText
               ? q.optionsText.split('\n').map((s: string) => s.trim()).filter(Boolean)
               : undefined;
             return {
@@ -589,8 +589,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                               className={selectCls}
                             >
                               <option value="yes_no">{(t as any).knockoutTypeyesNo}</option>
-                              <option value="multiple_choice">{(t as any).knockoutTypeMultiChoice}</option>
-                              <option value="text">{(t as any).knockoutTypeText}</option>
+                              <option value="single_choice">{(t as any).knockoutTypeSingleChoice}</option>
+                              <option value="number">{(t as any).knockoutTypeNumber}</option>
                             </select>
                             <label className="flex items-center gap-2 cursor-pointer">
                               <input
@@ -601,7 +601,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                               />
                               <span className="text-xs text-textMuted font-semibold">{(t as any).knockoutRequired}</span>
                             </label>
-                            {q.question_type !== 'text' && (
+                            {(q.question_type === 'yes_no' || q.question_type === 'single_choice') && (
                               <div className="space-y-1">
                                 <p className="text-[10px] text-textMuted font-bold uppercase tracking-widest">{(t as any).knockoutDisqualify}</p>
                                 {q.question_type === 'yes_no' ? (
@@ -629,7 +629,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                               </div>
                             )}
                           </div>
-                          {q.question_type === 'multiple_choice' && (
+                          {q.question_type === 'single_choice' && (
                             <div className="space-y-1">
                               <p className="text-[10px] text-textMuted font-bold uppercase tracking-widest">{(t as any).knockoutOptions}</p>
                               <textarea

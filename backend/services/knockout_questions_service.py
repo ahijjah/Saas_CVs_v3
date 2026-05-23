@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-_VALID_TYPES = {"yes_no", "multiple_choice", "text"}
+_VALID_TYPES = {"yes_no", "single_choice", "number"}
 _DEFAULT_MAX = 5
 
 
@@ -38,12 +38,12 @@ def _validate_question(q: dict) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"question_type must be one of {sorted(_VALID_TYPES)}, got '{qtype}'.",
         )
-    if qtype == "multiple_choice":
+    if qtype == "single_choice":
         opts = q.get("options")
         if not opts or not isinstance(opts, list) or len(opts) < 2:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="multiple_choice questions require at least 2 options.",
+                detail="single_choice questions require at least 2 options.",
             )
         if q.get("disqualifying_answer") and q["disqualifying_answer"] not in opts:
             raise HTTPException(
@@ -56,6 +56,7 @@ def _validate_question(q: dict) -> None:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="For yes_no questions, disqualifying_answer must be 'yes' or 'no'.",
             )
+    # number type: no options required; disqualifying_answer not validated in V1
 
 
 async def get_job_knockout_questions(db: AsyncSession, job_id: str) -> list[dict]:
