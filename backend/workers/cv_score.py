@@ -466,12 +466,13 @@ async def _score_cv_async(
                 await db.execute(
                     text("""
                         UPDATE applications SET
-                            security_check_status    = :status,
-                            security_risk_level      = :risk_level,
-                            security_risk_score      = :risk_score,
-                            security_reason_codes    = :reason_codes,
-                            security_detected_patterns = :patterns,
-                            security_checked_at      = now()
+                            security_check_status       = :status,
+                            security_risk_level         = :risk_level,
+                            security_risk_score         = :risk_score,
+                            security_reason_codes       = :reason_codes,
+                            security_detected_patterns  = :patterns,
+                            security_detected_snippets  = :snippets,
+                            security_checked_at         = now()
                         WHERE application_id = :aid
                     """),
                     {
@@ -480,6 +481,7 @@ async def _score_cv_async(
                         "risk_score":   _sec_result.risk_score,
                         "reason_codes": _sec_result.reason_codes,
                         "patterns":     _sec_result.detected_patterns,
+                        "snippets":     _sec_result.detected_snippets,
                         "aid":          application_id,
                     },
                 )

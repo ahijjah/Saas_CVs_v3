@@ -172,6 +172,7 @@ class SecurityCheckResult:
     risk_score: int
     reason_codes: list[str] = field(default_factory=list)
     detected_patterns: list[str] = field(default_factory=list)   # safe category labels only
+    detected_snippets: list[str] = field(default_factory=list)   # truncated safe excerpts
     summary: str = ""
 
 
@@ -237,9 +238,23 @@ _HEX_RE = re.compile(r"\b(?:0x)?[0-9a-fA-F]{16,}\b")
 _INVISIBLE_RE = re.compile(r"[​-‏  ﻿­͏؜]+")
 
 
-def _check_encoded_payloads(text: str) -> list[str]:
-    """Return list of triggered encoded-payload reason codes."""
+_MAX_SNIPPET_LEN = 80   # max chars per displayed excerpt
+_MAX_SNIPPETS    = 5    # max excerpts stored per application
+
+
+def _sanitize_snippet(raw: str) -> str:
+    """Return a safe, truncated display excerpt — no control chars, max 80 chars."""
+    text = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", raw)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > _MAX_SNIPPET_LEN:
+        text = text[:_MAX_SNIPPET_LEN].rstrip() + "\u2026"
+    return text
+
+
+def _check_encoded_payloads(text: str) -> tuple[list[str], list[str]]:
+    """Return (reason_codes, safe_display_snippets) for encoded/hidden payloads."""
     hits: list[str] = []
+    snippets: list[str] = []
 
     b64_matches = _B64_RE.findall(text)
     for m in b64_matches:
@@ -250,20 +265,24 @@ def _check_encoded_payloads(text: str) -> list[str]:
                 "reveal", "override", "qualify", "disregard",
             )):
                 hits.append("encoded_payload")
+                snippets.append("[Base64-encoded content containing suspicious keywords]")
                 break
         except Exception:
             pass
 
     if _HEX_RE.search(text):
-        hits.append("encoded_payload")
+        if "encoded_payload" not in hits:
+            hits.append("encoded_payload")
+        snippets.append("[Hex-encoded sequence detected]")
 
     invisible = _INVISIBLE_RE.findall(text)
     # Count total invisible characters across all matches
     total_invisible = sum(len(m) for m in invisible)
     if total_invisible > 5:
         hits.append("unicode_spam")
+        snippets.append("[Invisible or unusual Unicode characters detected]")
 
-    return hits
+    return hits, snippets
 
 
 # ── Main detection logic ──────────────────────────────────────────────────────
@@ -272,20 +291,22 @@ def _detect(
     text: str,
     extra_patterns: list[str],
     fuzzy_threshold: int,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     """
     Run all detection layers.
 
     Returns:
         reason_codes        — deduplicated list of triggered category strings
-        detected_categories — same, for storage (never stores raw matched text)
+        detected_categories — same, for storage
+        detected_snippets   — safe truncated excerpts of matched suspicious text
     """
     if not text:
-        return [], []
+        return [], [], []
 
     norm   = _normalise_for_detection(text)
     canon  = _normalise_canonical(text)
     hits:  set[str] = set()
+    raw_snippets: list[str] = []
 
     # ── Layer 1 & 2: regex on norm + canon ───────────────────────────────────
     all_patterns = _BUILTIN_PATTERNS.copy()
@@ -295,8 +316,19 @@ def _detect(
 
     for category, pattern in all_patterns:
         try:
-            if re.search(pattern, norm) or re.search(pattern, canon):
+            m = re.search(pattern, norm)
+            src = norm
+            if not m:
+                m = re.search(pattern, canon)
+                src = canon
+            if m:
                 hits.add(category)
+                ctx_start = max(0, m.start() - 15)
+                ctx_end   = min(len(src), m.end() + 30)
+                prefix    = "\u2026" if ctx_start > 0 else ""
+                snippet   = _sanitize_snippet(prefix + src[ctx_start:ctx_end])
+                if snippet:
+                    raw_snippets.append(snippet)
         except re.error:
             pass
 
@@ -306,7 +338,6 @@ def _detect(
         # Scan in sliding windows of ~200 chars to avoid scoring against the
         # entire document (which dilutes partial matches).
         window_size = 200
-        overlap     = 50
         words = norm.split()
         # Rebuild chunks of approximately window_size chars
         chunks: list[str] = []
@@ -331,16 +362,28 @@ def _detect(
                 score = fuzz.partial_ratio(phrase, chunk)
                 if score >= fuzzy_threshold:
                     hits.add(phrase_category)
+                    snippet = _sanitize_snippet(chunk)
+                    if snippet:
+                        raw_snippets.append(snippet)
                     break
     except ImportError:
         pass  # rapidfuzz not available — skip layer 3
 
     # ── Layer 4: encoded payloads ─────────────────────────────────────────────
-    encoded_hits = _check_encoded_payloads(text)
+    encoded_hits, encoded_snippets = _check_encoded_payloads(text)
     hits.update(encoded_hits)
+    raw_snippets.extend(encoded_snippets)
+
+    # Deduplicate snippets preserving detection order, cap at _MAX_SNIPPETS
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for s in raw_snippets:
+        if s not in seen:
+            seen.add(s)
+            deduped.append(s)
 
     result = sorted(hits)
-    return result, result
+    return result, result, deduped[:_MAX_SNIPPETS]
 
 
 # ── Risk scoring ──────────────────────────────────────────────────────────────
@@ -409,7 +452,7 @@ async def run_security_check(
         parts.extend(t for t in extra_texts if t)
     combined = "\n".join(parts)[:max_chars]
 
-    reason_codes, detected_categories = _detect(combined, extra_patterns, fuzzy_thresh)
+    reason_codes, detected_categories, detected_snippets = _detect(combined, extra_patterns, fuzzy_thresh)
     risk_level, risk_score, status = _compute_risk(reason_codes, medium_thresh, high_thresh)
 
     summary = _build_summary(status, risk_level, risk_score, reason_codes)
@@ -420,6 +463,7 @@ async def run_security_check(
         risk_score=risk_score,
         reason_codes=reason_codes,
         detected_patterns=detected_categories,  # category labels only, never raw text
+        detected_snippets=detected_snippets,
         summary=summary,
     )
 

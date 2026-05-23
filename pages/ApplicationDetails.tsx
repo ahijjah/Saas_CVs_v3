@@ -111,6 +111,8 @@ const T = {
     securitySummary: 'Summary',
     securityBlockedNote: 'This application was blocked before scoring due to suspicious content detected in the CV.',
     securityWarningNote: 'Suspicious content was detected in this CV. The application was allowed through for review.',
+    securityDetectedStatements: 'Detected Suspicious Statements',
+    securitySnippetsNote: 'Short excerpts shown for reviewer context. Full CV content is not displayed here.',
     securityPatternLabels: {
       override_instructions: 'Instruction Override',
       score_manipulation:    'Score Manipulation',
@@ -212,6 +214,8 @@ const T = {
     securitySummary: 'الملخص',
     securityBlockedNote: 'تم حجب هذا الطلب قبل التقييم بسبب محتوى مشبوه تم اكتشافه في السيرة الذاتية.',
     securityWarningNote: 'تم اكتشاف محتوى مشبوه في هذه السيرة الذاتية. تم السماح بمرور الطلب للمراجعة.',
+    securityDetectedStatements: 'العبارات المشبوهة المكتشفة',
+    securitySnippetsNote: 'مقاطع قصيرة تُعرض لأغراض المراجعة. لا يُعرض النص الكامل للسيرة الذاتية هنا.',
     securityPatternLabels: {
       override_instructions: 'محاولة تجاوز التعليمات',
       score_manipulation:    'محاولة التلاعب بالدرجات',
@@ -517,11 +521,12 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
 
       {/* ── Security Check Banner ───────────────────────────────────────────── */}
       {data.security_check_status && data.security_check_status !== 'passed' && (() => {
-        const secStatus = data.security_check_status!;
-        const secLevel  = data.security_risk_level || '';
-        const secScore  = data.security_risk_score ?? 0;
-        const secCodes  = data.security_reason_codes || [];
+        const secStatus   = data.security_check_status!;
+        const secLevel    = data.security_risk_level || '';
+        const secScore    = data.security_risk_score ?? 0;
+        const secCodes    = data.security_reason_codes || [];
         const secPatterns = data.security_detected_patterns || [];
+        const secSnippets = data.security_detected_snippets || [];
         const secAt: string | null = data.security_checked_at || null;
         const isBlocked = secStatus === 'blocked';
         const patternLabels = (t as any).securityPatternLabels as Record<string, string>;
@@ -558,6 +563,23 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 </>
               )}
             </div>
+            {secSnippets.length > 0 && (
+              <div className="mt-3">
+                <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isBlocked ? 'text-red-700' : 'text-amber-700'}`}>
+                  {(t as any).securityDetectedStatements}
+                </p>
+                <ul className="space-y-1.5">
+                  {secSnippets.map((snippet, i) => (
+                    <li key={i} className={`text-xs rounded-lg px-3 py-2 font-mono leading-relaxed ${isBlocked ? 'bg-red-100 text-red-900' : 'bg-amber-100 text-amber-900'}`}>
+                      &ldquo;{snippet}&rdquo;
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[10px] text-textMuted mt-2 italic">
+                  {(t as any).securitySnippetsNote}
+                </p>
+              </div>
+            )}
           </div>
         );
       })()}

@@ -339,6 +339,7 @@ export interface ApplicationDetailedAnalysis {
   security_risk_score?: number | null;
   security_reason_codes?: string[];
   security_detected_patterns?: string[];
+  security_detected_snippets?: string[];
   security_checked_at?: string | null;
 }
 

@@ -125,6 +125,7 @@ async def get_application_details(
                 a.security_risk_score,
                 a.security_reason_codes,
                 a.security_detected_patterns,
+                a.security_detected_snippets,
                 a.security_checked_at,
                 j.title AS job_title, j.job_id,
                 (SELECT af2.original_name FROM application_files af2
@@ -296,9 +297,10 @@ async def get_application_details(
         "security_check_status":    app["security_check_status"],
         "security_risk_level":      app["security_risk_level"],
         "security_risk_score":      int(app["security_risk_score"]) if app["security_risk_score"] is not None else None,
-        "security_reason_codes":    list(app["security_reason_codes"] or []),
+        "security_reason_codes":      list(app["security_reason_codes"] or []),
         "security_detected_patterns": list(app["security_detected_patterns"] or []),
-        "security_checked_at":      app["security_checked_at"].isoformat() if app["security_checked_at"] else None,
+        "security_detected_snippets": list(app["security_detected_snippets"] or []),
+        "security_checked_at":        app["security_checked_at"].isoformat() if app["security_checked_at"] else None,
     }
 
 
