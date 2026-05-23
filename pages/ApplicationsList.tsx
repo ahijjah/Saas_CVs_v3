@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { Application, AuthState, ApplicationFilter } from '../types';
@@ -86,6 +87,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 }) => {
   const { lang } = useLanguage();
   const t = T[lang];
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [view, setView] = useState<'list' | 'details'>('list');
   const [applicationsAll, setApplicationsAll] = useState<Application[]>([]);
@@ -241,6 +243,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
       setSelectedDetails(normalized);
       setView("details");
+      setSearchParams(prev => { const p = new URLSearchParams(prev); p.set('app_id', appId); return p; }, { replace: true });
     } catch (err: any) {
       if (fetchInFlightRef.current === appId) {
         console.error("[ApplicationsList] Details fetch error:", err);
@@ -282,7 +285,10 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     return (
       <ApplicationDetails
         data={selectedDetails}
-        onBack={() => setView('list')}
+        onBack={() => {
+          setView('list');
+          setSearchParams(prev => { const p = new URLSearchParams(prev); p.delete('app_id'); return p; }, { replace: true });
+        }}
         jobMeta={jobMeta}
         onDownloadCV={() => handleDownloadApplicationCV(selectedDetails.application_id)}
         downloadingCV={downloadingCVId === selectedDetails.application_id}

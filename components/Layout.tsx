@@ -26,6 +26,7 @@ const T = {
       '/jobs':                        'Campaigns',
       '/jobs/:id':                    'Job Details',
       '/applications':                'Applications',
+      '/applications/details':        'Application Details',
       '/settings':                    'Settings',
       '/plan-usage':                  'Plan & Usage',
       '/client-organizations':        'Client Organizations',
@@ -53,6 +54,7 @@ const T = {
       '/jobs':                        'الحملات',
       '/jobs/:id':                    'تفاصيل الوظيفة',
       '/applications':                'الطلبات',
+      '/applications/details':        'تفاصيل الطلب',
       '/settings':                    'الإعدادات',
       '/plan-usage':                  'الخطة والاستخدام',
       '/client-organizations':        'منظمات العملاء',
@@ -104,8 +106,8 @@ function menuIdToRoute(id: string): string {
   return map[id] || '/jobs';
 }
 
-/** Derive a human-readable page title from the current pathname. */
-function pathnameToTitle(pathname: string, titles: Record<string, string>): string {
+/** Derive a human-readable page title from the current pathname + search string. */
+function pathnameToTitle(pathname: string, search: string, titles: Record<string, string>): string {
   // Exact and prefix matches
   if (titles[pathname]) return titles[pathname];
   // /jobs/:jobId → "Job Details"
@@ -118,7 +120,11 @@ function pathnameToTitle(pathname: string, titles: Record<string, string>): stri
   if (pathname.startsWith('/admin/platform-secrets'))     return titles['/admin/platform-secrets'] || '';
   if (pathname.startsWith('/admin/ai-prompts'))           return titles['/admin/ai-prompts'] || '';
   if (pathname.startsWith('/admin/audit-logs'))           return titles['/admin/audit-logs'] || '';
-  if (pathname.startsWith('/applications'))               return titles['/applications'] || '';
+  if (pathname.startsWith('/applications')) {
+    // app_id in the query string signals we're viewing a single application's detail
+    if (new URLSearchParams(search).has('app_id')) return titles['/applications/details'] || 'Application Details';
+    return titles['/applications'] || '';
+  }
   if (pathname.startsWith('/jobs'))                       return titles['/jobs'] || '';
   return pathname.split('/').filter(Boolean).pop()?.replace(/-/g, ' ') || '';
 }
@@ -141,7 +147,7 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
   const showClientOrgs = user?.tenant_type !== 'organization';
 
   const currentMenuId = pathnameToMenuId(location.pathname);
-  const pageTitle = pathnameToTitle(location.pathname, t.pageTitles);
+  const pageTitle = pathnameToTitle(location.pathname, location.search, t.pageTitles);
 
   const handleNavigate = (id: string) => {
     navigate(menuIdToRoute(id));
