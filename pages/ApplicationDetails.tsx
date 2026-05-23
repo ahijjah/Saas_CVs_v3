@@ -103,14 +103,16 @@ const T = {
     securityPassed: 'Passed',
     securityWarning: 'Warning',
     securityBlocked: 'Blocked',
+    securityAlertTitle: 'Suspicious Content Detected — Application Blocked',
+    securityWarningTitle: 'Suspicious Content Detected — Under Review',
+    securityWhyFlagged: 'Why was this flagged?',
+    securityBlockedSummary: 'This CV contains content that appears designed to manipulate the automated evaluation process. The application was blocked and was not scored.',
+    securityWarningSummary: 'This CV contains content that may be attempting to influence the automated evaluation process. The application was allowed through but should be reviewed carefully.',
+    securityGuidanceNote: 'Please review this application carefully before proceeding.',
     securityRiskLevel: 'Risk Level',
-    securityRiskScore: 'Risk Score',
-    securityReasonCodes: 'Reason Codes',
-    securityPatternCategories: 'Pattern Categories',
+    securitySeverityScore: 'Severity Score',
+    securityIssueTypes: 'Issue Types Detected',
     securityCheckedAt: 'Checked At',
-    securitySummary: 'Summary',
-    securityBlockedNote: 'This application was blocked before scoring due to suspicious content detected in the CV.',
-    securityWarningNote: 'Suspicious content was detected in this CV. The application was allowed through for review.',
     securityDetectedStatements: 'Detected Suspicious Statements',
     securitySnippetsNote: 'Short excerpts shown for reviewer context. Full CV content is not displayed here.',
     securityPatternLabels: {
@@ -123,6 +125,17 @@ const T = {
       obfuscated:            'Obfuscated Content',
       encoded_payload:       'Encoded Payload',
       unicode_spam:          'Unicode Anomaly',
+    } as Record<string, string>,
+    securityReasonExplanations: {
+      override_instructions: 'The CV attempted to override or ignore the system\'s evaluation instructions.',
+      score_manipulation:    'The CV attempted to artificially influence or increase the candidate\'s score.',
+      reveal_prompt:         'The CV attempted to expose internal evaluation logic or hidden system instructions.',
+      jailbreak:             'The CV attempted to bypass or disable the AI evaluation system\'s rules.',
+      scoring_rule_change:   'The CV attempted to alter the scoring criteria or evaluation rules.',
+      auto_qualify:          'The CV attempted to automatically mark the candidate as qualified.',
+      obfuscated:            'The CV contains deliberately obscured or hidden text to evade detection.',
+      encoded_payload:       'The CV contains encoded or encrypted content that conceals suspicious instructions.',
+      unicode_spam:          'The CV contains unusual or invisible characters that may be used to hide content.',
     } as Record<string, string>,
   },
   ar: {
@@ -206,14 +219,16 @@ const T = {
     securityPassed: 'اجتاز',
     securityWarning: 'تحذير',
     securityBlocked: 'محجوب',
+    securityAlertTitle: 'محتوى مشبوه — تم حجب الطلب',
+    securityWarningTitle: 'محتوى مشبوه — قيد المراجعة',
+    securityWhyFlagged: 'لماذا تم تحديد هذا الطلب؟',
+    securityBlockedSummary: 'تحتوي هذه السيرة الذاتية على محتوى يبدو مصمماً للتلاعب بعملية التقييم الآلي. تم حجب الطلب ولم يُقيَّم.',
+    securityWarningSummary: 'تحتوي هذه السيرة الذاتية على محتوى قد يُحاول التأثير على عملية التقييم الآلي. تم السماح بمرور الطلب ويجب مراجعته بعناية.',
+    securityGuidanceNote: 'يرجى مراجعة هذا الطلب بعناية قبل المتابعة.',
     securityRiskLevel: 'مستوى المخاطر',
-    securityRiskScore: 'درجة المخاطر',
-    securityReasonCodes: 'رموز الأسباب',
-    securityPatternCategories: 'فئات الأنماط',
+    securitySeverityScore: 'درجة الخطورة',
+    securityIssueTypes: 'أنواع المشكلات المكتشفة',
     securityCheckedAt: 'وقت الفحص',
-    securitySummary: 'الملخص',
-    securityBlockedNote: 'تم حجب هذا الطلب قبل التقييم بسبب محتوى مشبوه تم اكتشافه في السيرة الذاتية.',
-    securityWarningNote: 'تم اكتشاف محتوى مشبوه في هذه السيرة الذاتية. تم السماح بمرور الطلب للمراجعة.',
     securityDetectedStatements: 'العبارات المشبوهة المكتشفة',
     securitySnippetsNote: 'مقاطع قصيرة تُعرض لأغراض المراجعة. لا يُعرض النص الكامل للسيرة الذاتية هنا.',
     securityPatternLabels: {
@@ -226,6 +241,17 @@ const T = {
       obfuscated:            'محتوى مخفي',
       encoded_payload:       'حمولة مشفرة',
       unicode_spam:          'تشوه يونيكود',
+    } as Record<string, string>,
+    securityReasonExplanations: {
+      override_instructions: 'حاولت السيرة الذاتية تجاوز أو تجاهل تعليمات التقييم.',
+      score_manipulation:    'حاولت السيرة الذاتية التأثير اصطناعياً على درجة المرشح.',
+      reveal_prompt:         'حاولت السيرة الذاتية كشف المنطق الداخلي لعملية التقييم.',
+      jailbreak:             'حاولت السيرة الذاتية تعطيل قواعد نظام التقييم الذكي.',
+      scoring_rule_change:   'حاولت السيرة الذاتية تغيير معايير أو قواعد التقييم.',
+      auto_qualify:          'حاولت السيرة الذاتية تصنيف المرشح تلقائياً كمؤهل.',
+      obfuscated:            'تحتوي السيرة الذاتية على نص مخفي أو مبهم للتحايل على الفحص.',
+      encoded_payload:       'تحتوي السيرة الذاتية على محتوى مشفر يُخفي تعليمات مشبوهة.',
+      unicode_spam:          'تحتوي السيرة الذاتية على أحرف غير مرئية قد تُستخدم لإخفاء محتوى.',
     } as Record<string, string>,
   },
 };
@@ -530,56 +556,90 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const secAt: string | null = data.security_checked_at || null;
         const isBlocked = secStatus === 'blocked';
         const patternLabels = (t as any).securityPatternLabels as Record<string, string>;
+        const reasonExplanations = (t as any).securityReasonExplanations as Record<string, string>;
         return (
-          <div className={`rounded-2xl p-5 border-l-4 ${isBlocked ? 'bg-red-50 border-red-500' : 'bg-amber-50 border-amber-400'}`}>
-            <div className="flex items-start gap-3 mb-3">
-              <svg className={`w-5 h-5 mt-0.5 shrink-0 ${isBlocked ? 'text-red-500' : 'text-amber-500'}`} fill="currentColor" viewBox="0 0 20 20">
+          <div className={`rounded-2xl border-l-4 overflow-hidden ${isBlocked ? 'border-red-500' : 'border-amber-400'}`}>
+            {/* Header */}
+            <div className={`flex items-start gap-3 px-5 py-4 ${isBlocked ? 'bg-red-600' : 'bg-amber-500'}`}>
+              <svg className="w-5 h-5 mt-0.5 shrink-0 text-white" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
-              <div className="flex-1">
-                <p className={`text-sm font-bold ${isBlocked ? 'text-red-800' : 'text-amber-800'}`}>
-                  {isBlocked ? (t as any).securityBlockedNote : (t as any).securityWarningNote}
-                </p>
-              </div>
-              <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${isBlocked ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+              <p className="flex-1 text-sm font-bold text-white leading-snug">
+                {isBlocked ? (t as any).securityAlertTitle : (t as any).securityWarningTitle}
+              </p>
+              <span className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/20 text-white">
                 {isBlocked ? (t as any).securityBlocked : (t as any).securityWarning}
               </span>
             </div>
-            <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
-              <span className="text-textMuted">{(t as any).securityRiskLevel}</span>
-              <span className={`font-bold uppercase ${secLevel === 'high' ? 'text-red-600' : secLevel === 'medium' ? 'text-amber-600' : 'text-green-600'}`}>{secLevel}</span>
-              <span className="text-textMuted">{(t as any).securityRiskScore}</span>
-              <span className="font-semibold text-textMain">{secScore}</span>
-              {secPatterns.length > 0 && (
-                <>
-                  <span className="text-textMuted">{(t as any).securityPatternCategories}</span>
-                  <span className="font-semibold text-textMain">{secPatterns.map(p => patternLabels[p] || p).join(', ')}</span>
-                </>
-              )}
-              {secAt && (
-                <>
-                  <span className="text-textMuted">{(t as any).securityCheckedAt}</span>
-                  <span className="text-textMain">{new Date(secAt).toLocaleString()}</span>
-                </>
+
+            <div className={`px-5 py-4 space-y-4 ${isBlocked ? 'bg-red-50' : 'bg-amber-50'}`}>
+              {/* Why flagged explanation */}
+              <div className={`rounded-xl p-4 border ${isBlocked ? 'bg-red-100/60 border-red-200' : 'bg-amber-100/60 border-amber-200'}`}>
+                <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isBlocked ? 'text-red-700' : 'text-amber-700'}`}>
+                  {(t as any).securityWhyFlagged}
+                </p>
+                <p className={`text-xs mb-2 leading-relaxed ${isBlocked ? 'text-red-900' : 'text-amber-900'}`}>
+                  {isBlocked ? (t as any).securityBlockedSummary : (t as any).securityWarningSummary}
+                </p>
+                {secCodes.length > 0 && (
+                  <ul className="space-y-1 mt-2">
+                    {secCodes.map(code => {
+                      const explanation = reasonExplanations[code];
+                      return explanation ? (
+                        <li key={code} className={`flex items-start gap-2 text-xs ${isBlocked ? 'text-red-800' : 'text-amber-800'}`}>
+                          <span className="mt-1 shrink-0 w-1.5 h-1.5 rounded-full bg-current opacity-70" />
+                          {explanation}
+                        </li>
+                      ) : null;
+                    })}
+                  </ul>
+                )}
+              </div>
+
+              {/* Guidance note */}
+              <p className={`text-xs font-semibold ${isBlocked ? 'text-red-700' : 'text-amber-700'}`}>
+                ⚠ {(t as any).securityGuidanceNote}
+              </p>
+
+              {/* Technical details grid */}
+              <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+                <span className="text-textMuted">{(t as any).securityRiskLevel}</span>
+                <span className={`font-bold uppercase ${secLevel === 'high' ? 'text-red-600' : secLevel === 'medium' ? 'text-amber-600' : 'text-green-600'}`}>{secLevel}</span>
+                <span className="text-textMuted">{(t as any).securitySeverityScore}</span>
+                <span className="font-semibold text-textMain">{secScore}</span>
+                {secPatterns.length > 0 && (
+                  <>
+                    <span className="text-textMuted">{(t as any).securityIssueTypes}</span>
+                    <span className="font-semibold text-textMain">{secPatterns.map(p => patternLabels[p] || p).join(', ')}</span>
+                  </>
+                )}
+                {secAt && (
+                  <>
+                    <span className="text-textMuted">{(t as any).securityCheckedAt}</span>
+                    <span className="text-textMain">{new Date(secAt).toLocaleString()}</span>
+                  </>
+                )}
+              </div>
+
+              {/* Detected snippets */}
+              {secSnippets.length > 0 && (
+                <div>
+                  <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isBlocked ? 'text-red-700' : 'text-amber-700'}`}>
+                    {(t as any).securityDetectedStatements}
+                  </p>
+                  <ul className="space-y-1.5">
+                    {secSnippets.map((snippet, i) => (
+                      <li key={i} className={`text-xs rounded-lg px-3 py-2 font-mono leading-relaxed ${isBlocked ? 'bg-red-100 text-red-900' : 'bg-amber-100 text-amber-900'}`}>
+                        &ldquo;{snippet}&rdquo;
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[10px] text-textMuted mt-2 italic">
+                    {(t as any).securitySnippetsNote}
+                  </p>
+                </div>
               )}
             </div>
-            {secSnippets.length > 0 && (
-              <div className="mt-3">
-                <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isBlocked ? 'text-red-700' : 'text-amber-700'}`}>
-                  {(t as any).securityDetectedStatements}
-                </p>
-                <ul className="space-y-1.5">
-                  {secSnippets.map((snippet, i) => (
-                    <li key={i} className={`text-xs rounded-lg px-3 py-2 font-mono leading-relaxed ${isBlocked ? 'bg-red-100 text-red-900' : 'bg-amber-100 text-amber-900'}`}>
-                      &ldquo;{snippet}&rdquo;
-                    </li>
-                  ))}
-                </ul>
-                <p className="text-[10px] text-textMuted mt-2 italic">
-                  {(t as any).securitySnippetsNote}
-                </p>
-              </div>
-            )}
           </div>
         );
       })()}
