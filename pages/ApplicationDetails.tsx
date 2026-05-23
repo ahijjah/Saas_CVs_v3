@@ -516,13 +516,13 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
       )}
 
       {/* ── Security Check Banner ───────────────────────────────────────────── */}
-      {(data as any).security_check_status && (data as any).security_check_status !== 'passed' && (() => {
-        const secStatus: string = (data as any).security_check_status;
-        const secLevel: string  = (data as any).security_risk_level || '';
-        const secScore: number  = (data as any).security_risk_score ?? 0;
-        const secCodes: string[] = (data as any).security_reason_codes || [];
-        const secPatterns: string[] = (data as any).security_detected_patterns || [];
-        const secAt: string | null = (data as any).security_checked_at || null;
+      {data.security_check_status && data.security_check_status !== 'passed' && (() => {
+        const secStatus = data.security_check_status!;
+        const secLevel  = data.security_risk_level || '';
+        const secScore  = data.security_risk_score ?? 0;
+        const secCodes  = data.security_reason_codes || [];
+        const secPatterns = data.security_detected_patterns || [];
+        const secAt: string | null = data.security_checked_at || null;
         const isBlocked = secStatus === 'blocked';
         const patternLabels = (t as any).securityPatternLabels as Record<string, string>;
         return (

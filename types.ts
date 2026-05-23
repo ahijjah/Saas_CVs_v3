@@ -334,6 +334,12 @@ export interface ApplicationDetailedAnalysis {
     candidate_name: string;
     applied_at: string | null;
   } | null;
+  security_check_status?: 'passed' | 'warning' | 'blocked' | null;
+  security_risk_level?: 'low' | 'medium' | 'high' | null;
+  security_risk_score?: number | null;
+  security_reason_codes?: string[];
+  security_detected_patterns?: string[];
+  security_checked_at?: string | null;
 }
 
 export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate';
