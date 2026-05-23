@@ -389,23 +389,9 @@ async def _score_cv_async(
                     _dup_match = canon_dup
                     _dup_reason = "canonical_text_fingerprint"
 
-            # Check 4: high-similarity fallback (last resort, O(n) per job)
-            # Handles residual PDF/DOCX extraction differences that survive
-            # the canonical normalisation pipeline (e.g. extreme layout changes,
-            # table rendering order).  97% token_set_ratio threshold is very
-            # conservative — at this level the two CVs are virtually identical.
-            if _dup_match is None:
-                sim_dup = await check_high_similarity_duplicate(
-                    db=db,
-                    application_id=application_id,
-                    job_id=job_id,
-                    tenant_id=tenant_id,
-                    extracted_text=raw_cv_text,
-                )
-                if sim_dup:
-                    _dup_match = sim_dup
-                    _dup_reason = "content_similarity_fallback"
-
+            # Checks 1–3 are deterministic exact-hash matches.  A match means
+            # the record is an exact duplicate: write to duplicate_application_logs,
+            # move the file, delete the transient application, stop scoring.
             if _dup_match:
                 ref_id = _dup_match["application_id"]
                 logger.info(
@@ -423,6 +409,45 @@ async def _score_cv_async(
                 )
                 _scoring_committed = True  # record deleted — _mark_failed is a no-op
                 return
+
+            # Check 4: content similarity fallback — recruiter-review signal only.
+            # Approximate (rapidfuzz token_set_ratio >= 97%).  At this threshold
+            # the CVs are very likely the same document in different formats, but
+            # because it is NOT a deterministic hash match we cannot safely delete
+            # the record.  Instead we mark possible_duplicate and continue scoring
+            # so the recruiter can review before taking action.
+            sim_dup = await check_high_similarity_duplicate(
+                db=db,
+                application_id=application_id,
+                job_id=job_id,
+                tenant_id=tenant_id,
+                extracted_text=raw_cv_text,
+            )
+            if sim_dup:
+                ref_id = sim_dup["application_id"]
+                logger.info(
+                    "[%s] Content similarity fallback: possible_duplicate ref=%s score=%.1f "
+                    "— marking and continuing to scoring",
+                    application_id, ref_id, sim_dup["similarity_score"],
+                )
+                await db.execute(
+                    text("""
+                        UPDATE applications SET
+                            duplicate_status                   = 'possible_duplicate',
+                            duplicate_reference_application_id = :ref_id,
+                            duplicate_similarity_score         = :score,
+                            duplicate_reason                   = 'content_similarity_fallback',
+                            duplicate_checked_at               = now()
+                        WHERE application_id = :aid
+                    """),
+                    {
+                        "ref_id": ref_id,
+                        "score":  sim_dup["similarity_score"],
+                        "aid":    application_id,
+                    },
+                )
+                await db.commit()
+                # Do NOT return — continue through gatekeeper and LLM scoring.
 
             # ── Step 3: Fetch job criteria + scoring config ───────────────────
             logger.info("[%s] Fetching job criteria", application_id)
