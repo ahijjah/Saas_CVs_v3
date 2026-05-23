@@ -38,6 +38,7 @@ Fixes applied here:
     application as failed if a non-critical post-scoring step raises.
 """
 import asyncio
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -210,6 +211,7 @@ async def _score_cv_async(
     from services.llm_provider import get_comparison_client_async
     from services.duplicate_detection import (
         compute_normalized_text_hash,
+        check_exact_file_hash_duplicate,
         check_exact_content_duplicate,
     )
     from services.local_processor import run_gatekeeper
@@ -248,6 +250,10 @@ async def _score_cv_async(
             if not path.exists():
                 raise FileNotFoundError(f"CV file not found: {file_path}")
             file_bytes = path.read_bytes()
+
+            # Hash the original bytes before any conversion so that the same
+            # source file always produces the same hash regardless of format.
+            file_hash = hashlib.sha256(file_bytes).hexdigest()
 
             if mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                 logger.info("[%s] Converting DOCX → PDF", application_id)
@@ -306,43 +312,74 @@ async def _score_cv_async(
                 _scoring_committed = True
                 return
 
-            # ── Step 2b: Exact content duplicate pre-screening ────────────────
-            # Uses normalized_text_hash for O(1) lookup — format-agnostic
-            # (same CV exported as PDF vs DOCX produces the same hash).
-            # Applies uniformly to ALL intake methods; no application is deleted.
-            logger.info("[%s] Exact content duplicate pre-screening", application_id)
-            content_dup = await check_exact_content_duplicate(
+            # ── Step 2b: Unified exact duplicate pre-screening ────────────────
+            # Two checks run in sequence; first match wins.  Both apply to ALL
+            # intake methods (manual_upload, public_apply, email_forwarding,
+            # platform_email).  No application record is deleted on match.
+            #
+            # Check 1 — exact file hash (binary identity)
+            #   Source: application_intake_log.file_hash (SHA-256 of raw bytes)
+            #   Catches: same file re-submitted unchanged
+            #
+            # Check 2 — normalized text hash (content identity)
+            #   Source: application_files.normalized_text_hash
+            #   Catches: same CV in different formats (PDF ↔ DOCX ↔ re-export)
+            logger.info("[%s] Unified exact duplicate pre-screening", application_id)
+
+            _dup_match: dict | None = None
+            _dup_reason: str | None = None
+
+            # Check 1: exact file hash
+            file_hash_dup = await check_exact_file_hash_duplicate(
                 db=db,
                 application_id=application_id,
                 job_id=job_id,
                 tenant_id=tenant_id,
-                normalized_hash=normalized_text_hash,
+                file_hash=file_hash,
             )
-            if content_dup:
-                ref_id = content_dup["application_id"]
+            if file_hash_dup:
+                _dup_match = file_hash_dup
+                _dup_reason = "file_hash"
+
+            # Check 2: normalized text hash (only if check 1 did not match)
+            if _dup_match is None:
+                content_dup = await check_exact_content_duplicate(
+                    db=db,
+                    application_id=application_id,
+                    job_id=job_id,
+                    tenant_id=tenant_id,
+                    normalized_hash=normalized_text_hash,
+                )
+                if content_dup:
+                    _dup_match = content_dup
+                    _dup_reason = "normalized_text_hash"
+
+            if _dup_match:
+                ref_id = _dup_match["application_id"]
                 logger.info(
-                    "[%s] Exact content duplicate detected — ref=%s stopping scoring",
-                    application_id, ref_id,
+                    "[%s] Exact duplicate detected (reason=%s) — ref=%s stopping scoring",
+                    application_id, _dup_reason, ref_id,
                 )
                 await db.execute(
                     text("""
                         UPDATE applications SET
                             duplicate_status                   = 'exact_duplicate',
                             duplicate_reference_application_id = :ref_id,
-                            duplicate_reason                   = 'normalized_text_hash',
+                            duplicate_reason                   = :dup_reason,
                             duplicate_checked_at               = now(),
                             evaluation_stage                   = 1,
-                            evaluation_exit_reason             = :reason,
+                            evaluation_exit_reason             = :exit_reason,
                             processing_status                  = 'scored',
                             decision                           = 'rejected',
                             scored_at                          = now()
                         WHERE application_id = :aid
                     """),
                     {
-                        "ref_id": ref_id,
-                        "reason": (
-                            f"Exact content duplicate of application "
-                            f"{ref_id[:8]}… — identical CV content already on file."
+                        "ref_id":      ref_id,
+                        "dup_reason":  _dup_reason,
+                        "exit_reason": (
+                            f"Exact duplicate of application {ref_id[:8]}… "
+                            f"(matched by {_dup_reason})."
                         ),
                         "aid": application_id,
                     },

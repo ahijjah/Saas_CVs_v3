@@ -493,38 +493,10 @@ async def process_cv_intake(
     # ── Step 2: hash ──────────────────────────────────────────────────────────
     file_hash = compute_file_hash(content)
 
-    # ── Step 3: exact duplicate check ─────────────────────────────────────────
-    existing = await check_exact_file_duplicate(db, job_id, file_hash)
-    if existing:
-        dup_app_id = str(existing["application_id"]) if existing.get("application_id") else None
-        log_id = await _safe_log(
-            db,
-            tenant_id=tenant_id,
-            job_id=job_id,
-            intake_method=intake_method,
-            status="DUPLICATE_APPLICATION",
-            candidate_email=candidate_email,
-            candidate_name=candidate_name,
-            original_filename=original_filename,
-            file_hash=file_hash,
-            file_size_bytes=len(content),
-            mime_type=content_type,
-            duplicate_reference_application_id=dup_app_id,
-            source_identifier=source_identifier,
-            source_message_id=source_message_id,
-            sender_email=sender_email,
-            recipient_email=recipient_email,
-            subject=subject,
-            processing_started_at=started,
-            received_at=received,
-        )
-        await db.commit()
-        return IntakeResult(
-            status="DUPLICATE_APPLICATION",
-            intake_log_id=log_id,
-            duplicate_reference_application_id=dup_app_id,
-            error_message="Identical file already submitted for this position.",
-        )
+    # ── Step 3: exact duplicate check moved to scoring pipeline ──────────────
+    # file_hash is stored in application_intake_log (Step 10 below) so the
+    # scoring pipeline can look it up for unified pre-screening.  Intake no
+    # longer blocks or rejects duplicates — it only saves and enqueues.
 
     # ── Step 4a: per-job applicant cap ───────────────────────────────────────
     job_limit_check = await check_job_applicant_limit(db, job_id)

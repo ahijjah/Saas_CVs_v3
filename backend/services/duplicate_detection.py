@@ -88,6 +88,57 @@ def compute_normalized_text_hash(raw_text: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+async def check_exact_file_hash_duplicate(
+    db,
+    application_id: str,
+    job_id: str,
+    tenant_id: str,
+    file_hash: str,
+) -> dict | None:
+    """
+    Return the first application in the same job whose intake log entry has an
+    identical file_hash (exact binary duplicate), or None if no match.
+
+    Looks up application_intake_log which is populated by all intake methods
+    (manual_upload, public_apply, email_forwarding, platform_email).
+
+    Must be called with an open AsyncSession that has RLS context set.
+    """
+    from sqlalchemy import text
+
+    if not file_hash:
+        return None
+
+    row = await db.execute(
+        text("""
+            SELECT ail.application_id, a.candidate_name, a.candidate_email
+            FROM application_intake_log ail
+            JOIN applications a ON a.application_id = ail.application_id
+            WHERE ail.file_hash        = :hash
+              AND ail.job_id           = :job_id
+              AND ail.tenant_id        = :tenant_id
+              AND ail.application_id  IS NOT NULL
+              AND ail.application_id  != :self_id
+              AND ail.status           = 'RECEIVED_SUCCESSFULLY'
+            LIMIT 1
+        """),
+        {
+            "hash":      file_hash,
+            "job_id":    job_id,
+            "tenant_id": tenant_id,
+            "self_id":   application_id,
+        },
+    )
+    result = row.mappings().first()
+    if result:
+        return {
+            "application_id": str(result["application_id"]),
+            "candidate_name":  result["candidate_name"],
+            "candidate_email": result["candidate_email"],
+        }
+    return None
+
+
 async def check_exact_content_duplicate(
     db,
     application_id: str,
