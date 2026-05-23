@@ -236,8 +236,8 @@ const T = {
     knockoutEdit: 'Edit',
     knockoutNoQuestions: 'No knockout questions configured.',
     knockoutViewOnly: 'View only',
-    knockoutEmailLocked: 'Email intake channels are disabled because this job has active knockout questions. Candidates must apply via the public link.',
-    knockoutIntakeLockNote: 'Email intake is disabled — this job has active knockout questions.',
+    knockoutEmailLocked: 'Knockout questions are only applied to public link applications. CVs received by email alias or forwarding will not include knockout question answers and will not be evaluated against knockout criteria.',
+    knockoutIntakeLockNote: 'Note: Knockout questions only apply to public link applications. Email intake is not affected.',
   },
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
@@ -455,8 +455,8 @@ const T = {
     knockoutEdit: 'تعديل',
     knockoutNoQuestions: 'لم يتم تهيئة أسئلة إقصاء.',
     knockoutViewOnly: 'للعرض فقط',
-    knockoutEmailLocked: 'قنوات البريد الإلكتروني معطّلة لأن هذه الوظيفة تحتوي على أسئلة إقصاء نشطة. يجب على المرشحين التقديم عبر الرابط العام.',
-    knockoutIntakeLockNote: 'استقبال البريد معطّل — هذه الوظيفة تحتوي على أسئلة إقصاء نشطة.',
+    knockoutEmailLocked: 'تُطبَّق أسئلة الإقصاء فقط على الطلبات المقدَّمة عبر رابط التقديم العام. السير الذاتية الواردة عبر البريد المخصص أو إعادة التوجيه لن تتضمن إجابات أسئلة الإقصاء ولن تُقيَّم بناءً عليها.',
+    knockoutIntakeLockNote: 'ملاحظة: تُطبَّق أسئلة الإقصاء فقط على الطلبات العامة. استقبال البريد غير متأثر.',
   },
 };
 
@@ -2001,9 +2001,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           {activeIntakeTab === 'email-alias' && (
             <div>
               {hasKnockoutQuestions && (
-                <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2.5">
-                  <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                  <p className="text-xs font-bold text-amber-800">{(t as any).knockoutIntakeLockNote}</p>
+                <div className="mb-4 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-2.5">
+                  <svg className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <p className="text-xs text-blue-800">{(t as any).knockoutIntakeLockNote}</p>
                 </div>
               )}
               <div className="flex items-start justify-between gap-3 mb-4">
@@ -2040,9 +2040,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           {activeIntakeTab === 'email-forwarding' && (
             <div>
               {hasKnockoutQuestions && (
-                <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2.5">
-                  <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                  <p className="text-xs font-bold text-amber-800">{(t as any).knockoutIntakeLockNote}</p>
+                <div className="mb-4 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-2.5">
+                  <svg className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <p className="text-xs text-blue-800">{(t as any).knockoutIntakeLockNote}</p>
                 </div>
               )}
               <div className="flex items-start justify-between gap-3 mb-4">
@@ -2272,11 +2272,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         </div>
 
         <div className="px-6 py-5">
-          {/* Email lock notice */}
+          {/* Informational note about email intake scope */}
           {hasKnockoutQuestions && (
-            <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2.5">
-              <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-              <p className="text-xs font-bold text-amber-800">{(t as any).knockoutEmailLocked}</p>
+            <div className="mb-4 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-2.5">
+              <svg className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <p className="text-xs text-blue-800">{(t as any).knockoutEmailLocked}</p>
             </div>
           )}
 
