@@ -88,6 +88,42 @@ def compute_normalized_text_hash(raw_text: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def _compute_canonical_tokens(normalized: str) -> str:
+    """
+    Produce a sorted, deduplicated token string for cross-format fingerprinting.
+
+    PDF and DOCX parsers extract the same vocabulary but in different order (due
+    to column layout, bounding-box reading order, table rendering, etc.).
+    Sorting and deduplicating tokens makes the fingerprint order-independent
+    while keeping it sensitive to vocabulary differences between distinct CVs.
+
+    Tokens shorter than 3 chars are dropped as noise; Arabic tokens are always
+    kept regardless of length (short Arabic words carry meaning).
+    """
+    tokens = normalized.split()
+    filtered = [
+        t for t in tokens
+        if len(t) >= 3 or re.search(r"[؀-ۿ]", t)
+    ]
+    return " ".join(sorted(set(filtered)))
+
+
+def compute_canonical_text_fingerprint(raw_text: str) -> str:
+    """
+    Produce an order-independent fingerprint for cross-format duplicate detection
+    (same CV submitted as PDF and as DOCX).
+
+    Unlike normalized_text_hash (which preserves token order), this fingerprint
+    sorts and deduplicates tokens so that vocabulary-equivalent texts produce the
+    same hash regardless of extraction-order differences between parsers.
+
+    Returns a SHA-256 hex digest of the sorted canonical token string.
+    """
+    normalized = _normalise_cv_text(raw_text)
+    canonical = _compute_canonical_tokens(normalized)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 async def check_exact_file_hash_duplicate(
     db,
     application_id: str,
@@ -173,6 +209,57 @@ async def check_exact_content_duplicate(
         """),
         {
             "hash":      normalized_hash,
+            "job_id":    job_id,
+            "tenant_id": tenant_id,
+            "self_id":   application_id,
+        },
+    )
+    result = row.mappings().first()
+    if result:
+        return {
+            "application_id": str(result["application_id"]),
+            "candidate_name":  result["candidate_name"],
+            "candidate_email": result["candidate_email"],
+        }
+    return None
+
+
+async def check_exact_canonical_fingerprint_duplicate(
+    db,
+    application_id: str,
+    job_id: str,
+    tenant_id: str,
+    canonical_fp: str,
+) -> dict | None:
+    """
+    Return the first application in the same job whose application_files row has
+    an identical canonical_text_fingerprint, or None if no match.
+
+    canonical_text_fingerprint is order-independent (sorted deduplicated tokens)
+    so it detects the same CV submitted as PDF and as DOCX even when the parsers
+    produce tokens in a different sequence.
+
+    Must be called with an open AsyncSession that has RLS context set.
+    The session is NOT committed here — caller is responsible.
+    """
+    from sqlalchemy import text
+
+    if not canonical_fp:
+        return None
+
+    row = await db.execute(
+        text("""
+            SELECT a.application_id, a.candidate_name, a.candidate_email
+            FROM application_files af
+            JOIN applications a ON a.application_id = af.application_id
+            WHERE af.canonical_text_fingerprint = :fp
+              AND a.job_id                      = :job_id
+              AND a.tenant_id                   = :tenant_id
+              AND af.application_id             != :self_id
+            LIMIT 1
+        """),
+        {
+            "fp":        canonical_fp,
             "job_id":    job_id,
             "tenant_id": tenant_id,
             "self_id":   application_id,

@@ -211,8 +211,10 @@ async def _score_cv_async(
     from services.llm_provider import get_comparison_client_async
     from services.duplicate_detection import (
         compute_normalized_text_hash,
+        compute_canonical_text_fingerprint,
         check_exact_file_hash_duplicate,
         check_exact_content_duplicate,
+        check_exact_canonical_fingerprint_duplicate,
     )
     from services.local_processor import run_gatekeeper
     from services.pdf_service import extract_text_from_pdf
@@ -263,19 +265,28 @@ async def _score_cv_async(
             logger.info("[%s] Extracting PDF text", application_id)
             raw_cv_text = extract_text_from_pdf(file_bytes)
 
-            # Compute normalized hash immediately after extraction — used for
-            # exact content duplicate detection in Step 2b below.
+            # Compute both fingerprints immediately after extraction.
+            # normalized_text_hash — order-preserving; catches re-uploads of same file.
+            # canonical_text_fingerprint — sorted/deduped tokens; catches same CV as
+            #   PDF vs DOCX where parsers may extract tokens in different order.
             normalized_text_hash = compute_normalized_text_hash(raw_cv_text)
+            canonical_text_fingerprint = compute_canonical_text_fingerprint(raw_cv_text)
 
             await db.execute(
                 text("""
                     UPDATE application_files
-                    SET extracted_text        = :text,
-                        extraction_status     = 'done',
-                        normalized_text_hash  = :nhash
+                    SET extracted_text              = :text,
+                        extraction_status           = 'done',
+                        normalized_text_hash        = :nhash,
+                        canonical_text_fingerprint  = :canon_fp
                     WHERE application_id = :aid
                 """),
-                {"text": raw_cv_text, "nhash": normalized_text_hash, "aid": application_id},
+                {
+                    "text":     raw_cv_text,
+                    "nhash":    normalized_text_hash,
+                    "canon_fp": canonical_text_fingerprint,
+                    "aid":      application_id,
+                },
             )
 
             # ── Load scoring config early — needed for quality gate + gatekeeper
@@ -313,17 +324,27 @@ async def _score_cv_async(
                 return
 
             # ── Step 2b: Unified exact duplicate pre-screening ────────────────
-            # Two checks run in sequence; first match wins.  Both apply to ALL
-            # intake methods (manual_upload, public_apply, email_forwarding,
-            # platform_email).  No application record is deleted on match.
+            # Three checks run in sequence; first match wins.  All apply to every
+            # intake method (manual_upload, public_apply, email_forwarding,
+            # platform_email).
             #
             # Check 1 — exact file hash (binary identity)
             #   Source: application_intake_log.file_hash (SHA-256 of raw bytes)
-            #   Catches: same file re-submitted unchanged
+            #   Catches: same file re-submitted byte-for-byte unchanged
             #
-            # Check 2 — normalized text hash (content identity)
+            # Check 2 — normalized text hash (content identity, order-preserving)
             #   Source: application_files.normalized_text_hash
-            #   Catches: same CV in different formats (PDF ↔ DOCX ↔ re-export)
+            #   Catches: same CV re-extracted from identical source bytes
+            #
+            # Check 3 — canonical text fingerprint (order-independent)
+            #   Source: application_files.canonical_text_fingerprint
+            #   Catches: same CV submitted as PDF and DOCX (parsers may produce
+            #   tokens in different order due to column layout / bounding boxes)
+            #
+            # On match: write to duplicate_application_logs, move CV file to the
+            # duplicates directory, DELETE the transient application record.
+            # The application is NOT left in a 'rejected' state — it is removed
+            # entirely so it never appears in recruiter application lists.
             logger.info("[%s] Unified exact duplicate pre-screening", application_id)
 
             _dup_match: dict | None = None
@@ -354,38 +375,35 @@ async def _score_cv_async(
                     _dup_match = content_dup
                     _dup_reason = "normalized_text_hash"
 
+            # Check 3: canonical fingerprint (cross-format, only if checks 1+2 missed)
+            if _dup_match is None:
+                canon_dup = await check_exact_canonical_fingerprint_duplicate(
+                    db=db,
+                    application_id=application_id,
+                    job_id=job_id,
+                    tenant_id=tenant_id,
+                    canonical_fp=canonical_text_fingerprint,
+                )
+                if canon_dup:
+                    _dup_match = canon_dup
+                    _dup_reason = "canonical_text_fingerprint"
+
             if _dup_match:
                 ref_id = _dup_match["application_id"]
                 logger.info(
-                    "[%s] Exact duplicate detected (reason=%s) — ref=%s stopping scoring",
+                    "[%s] Exact duplicate (reason=%s ref=%s) → duplicate log + delete",
                     application_id, _dup_reason, ref_id,
                 )
-                await db.execute(
-                    text("""
-                        UPDATE applications SET
-                            duplicate_status                   = 'exact_duplicate',
-                            duplicate_reference_application_id = :ref_id,
-                            duplicate_reason                   = :dup_reason,
-                            duplicate_checked_at               = now(),
-                            evaluation_stage                   = 1,
-                            evaluation_exit_reason             = :exit_reason,
-                            processing_status                  = 'scored',
-                            decision                           = 'rejected',
-                            scored_at                          = now()
-                        WHERE application_id = :aid
-                    """),
-                    {
-                        "ref_id":      ref_id,
-                        "dup_reason":  _dup_reason,
-                        "exit_reason": (
-                            f"Exact duplicate of application {ref_id[:8]}… "
-                            f"(matched by {_dup_reason})."
-                        ),
-                        "aid": application_id,
-                    },
+                await _write_exact_dup_to_log(
+                    db=db,
+                    application_id=application_id,
+                    job_id=job_id,
+                    tenant_id=tenant_id,
+                    file_hash=file_hash,
+                    dup_reason=_dup_reason,
+                    ref_id=ref_id,
                 )
-                await db.commit()
-                _scoring_committed = True
+                _scoring_committed = True  # record deleted — _mark_failed is a no-op
                 return
 
             # ── Step 3: Fetch job criteria + scoring config ───────────────────
@@ -874,35 +892,47 @@ async def _score_cv_async(
 
 # ── Duplicate-to-log conversion ───────────────────────────────────────────────
 
-async def _convert_manual_dup_to_log(
+async def _write_exact_dup_to_log(
     db,
     application_id: str,
     job_id: str,
     tenant_id: str,
-    mime_type: str,
-    file_path: str,
-    app_data: dict,
-    dup_info: dict,
+    file_hash: str,
+    dup_reason: str,
+    ref_id: str,
 ) -> None:
     """
-    Move a manual-upload application that has high_content_similarity into
-    duplicate_application_logs and delete the transient application record.
+    Write an exact-duplicate application to duplicate_application_logs, move its
+    CV file to the duplicates directory, and DELETE the transient application and
+    application_files records.
 
-    Called from Step 2b of the scoring pipeline.  *db* is already open with
-    RLS set.  Raises on any failure — the caller handles cleanup.
+    Applies uniformly to all intake methods (manual_upload, public_apply,
+    email_forwarding, platform_email).  The intake method is read from
+    applications.submission_source so no caller-side branching is needed.
+
+    *db* is already open with RLS set.  Commits before returning.
+    Raises on any failure — the caller handles cleanup.
     """
+    import shutil as _shutil
     import uuid as _uuid
     from pathlib import Path as _Path
     from config import get_settings as _get_settings
     from sqlalchemy import text
 
     cfg = _get_settings()
-    logger.info(
-        "[%s] _convert_manual_dup_to_log: ref=%s",
-        application_id,
-        dup_info.get("duplicate_reference_application_id"),
-    )
 
+    # ── Fetch application metadata ────────────────────────────────────────────
+    app_row = await db.execute(
+        text("""
+            SELECT candidate_email, candidate_name, submission_source,
+                   submitted_by_user_id, submitted_by_name, submitted_by_email
+            FROM applications WHERE application_id = :aid
+        """),
+        {"aid": application_id},
+    )
+    app_data = app_row.mappings().first()
+
+    # ── Fetch file metadata ───────────────────────────────────────────────────
     file_row = await db.execute(
         text("""
             SELECT file_path, original_name, mime_type, file_size_bytes
@@ -912,6 +942,8 @@ async def _convert_manual_dup_to_log(
     )
     file_meta = file_row.mappings().first()
 
+    # ── Move CV file to duplicates directory ──────────────────────────────────
+    log_id = str(_uuid.uuid4())
     dup_file_path: str | None = None
     dup_orig_name: str | None = None
     dup_content_type: str | None = None
@@ -920,31 +952,23 @@ async def _convert_manual_dup_to_log(
     if file_meta and file_meta["file_path"]:
         src = _Path(cfg.files_base_path) / file_meta["file_path"]
         ext = _Path(file_meta["file_path"]).suffix.lstrip(".")
-        log_id_for_file = str(_uuid.uuid4())
         dup_dir = (
             _Path(cfg.files_base_path)
             / "tenants" / tenant_id / "jobs" / job_id / "duplicates"
         )
         dup_dir.mkdir(parents=True, exist_ok=True)
-        dst = dup_dir / f"{log_id_for_file}.{ext}"
+        dst = dup_dir / f"{log_id}.{ext}"
         if src.exists():
-            import shutil
-            shutil.move(str(src), str(dst))
+            _shutil.move(str(src), str(dst))
             dup_file_path = str(dst.relative_to(cfg.files_base_path))
         dup_orig_name = file_meta["original_name"]
         dup_content_type = file_meta["mime_type"]
         dup_file_size = file_meta["file_size_bytes"]
-    else:
-        log_id_for_file = str(_uuid.uuid4())
 
-    ref_id = (
-        str(dup_info["duplicate_reference_application_id"])
-        if dup_info["duplicate_reference_application_id"] else None
-    )
-    sim_score = (
-        float(dup_info["duplicate_similarity_score"])
-        if dup_info["duplicate_similarity_score"] is not None else None
-    )
+    # ── Write duplicate log entry ─────────────────────────────────────────────
+    source = (app_data["submission_source"] if app_data else None) or "unknown"
+    candidate_email = (app_data["candidate_email"] if app_data else None) or ""
+    candidate_name = (app_data["candidate_name"] if app_data else None)
 
     await db.execute(
         text("""
@@ -957,40 +981,41 @@ async def _convert_manual_dup_to_log(
                  submitted_by_user_id, submitted_by_name, submitted_by_email,
                  duplicate_file_path, duplicate_original_filename,
                  duplicate_content_type, duplicate_file_size_bytes,
-                 duplicate_reason, duplicate_similarity_score)
+                 duplicate_reason, duplicate_application_id)
             VALUES
                 (:log_id, :tenant_id, :job_id,
                  :email, :name,
-                 NULL, NOW(),
-                 :orig_id,
-                 :filename, :notes, 'manual_upload',
+                 :file_hash, NOW(),
+                 :ref_id,
+                 :orig_name, :notes, :source,
                  :uploader_id, :uploader_name, :uploader_email,
                  :dup_file_path, :dup_orig_name,
                  :dup_content_type, :dup_file_size,
-                 'high_content_similarity', :similarity_score)
+                 :dup_reason, :dup_app_id)
         """),
         {
-            "log_id":          log_id_for_file,
+            "log_id":          log_id,
             "tenant_id":       tenant_id,
             "job_id":          job_id,
-            "email":           app_data["candidate_email"],
-            "name":            app_data["candidate_name"],
-            "orig_id":         ref_id,
-            "filename":        dup_orig_name,
+            "email":           candidate_email,
+            "name":            candidate_name,
+            "file_hash":       file_hash,
+            "ref_id":          ref_id,
+            "orig_name":       dup_orig_name,
             "notes": (
-                f"Manual upload duplicate detected during scoring — "
-                f"content similarity {sim_score:.1f}% ≥ 90% threshold."
-                if sim_score else
-                "Manual upload duplicate detected during scoring."
+                f"Exact duplicate detected during scoring pipeline "
+                f"(matched by {dup_reason}) — ref application {ref_id[:8]}…"
             ),
-            "uploader_id":     str(app_data["submitted_by_user_id"]) if app_data["submitted_by_user_id"] else None,
-            "uploader_name":   app_data["submitted_by_name"],
-            "uploader_email":  app_data["submitted_by_email"],
+            "source":          source,
+            "uploader_id":     str(app_data["submitted_by_user_id"]) if app_data and app_data["submitted_by_user_id"] else None,
+            "uploader_name":   app_data["submitted_by_name"] if app_data else None,
+            "uploader_email":  app_data["submitted_by_email"] if app_data else None,
             "dup_file_path":   dup_file_path,
             "dup_orig_name":   dup_orig_name,
             "dup_content_type": dup_content_type,
             "dup_file_size":   dup_file_size,
-            "similarity_score": sim_score,
+            "dup_reason":      dup_reason,
+            "dup_app_id":      application_id,
         },
     )
 
@@ -1006,8 +1031,8 @@ async def _convert_manual_dup_to_log(
     await db.commit()
 
     logger.info(
-        "[%s] Duplicate converted to log: ref=%s sim=%.1f",
-        application_id, ref_id, sim_score or 0,
+        "[%s] Exact duplicate → log (log_id=%s reason=%s ref=%s source=%s)",
+        application_id, log_id, dup_reason, ref_id[:8], source,
     )
 
 
