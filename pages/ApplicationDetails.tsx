@@ -99,6 +99,9 @@ const T = {
     notInFinalScore: 'Not included in final score',
     additionalInsights: 'Additional Recruiter Insights',
     scoreOverview: 'Score Overview',
+    securityBlockedPageTitle: 'Application Security Review',
+    securityBlockedBadge: 'Blocked Before AI Scoring',
+    securityCandidateRef: 'Candidate Reference',
     securityCheck: 'Security Check',
     securityPassed: 'Passed',
     securityWarning: 'Warning',
@@ -116,26 +119,36 @@ const T = {
     securityDetectedStatements: 'Detected Suspicious Statements',
     securitySnippetsNote: 'Short excerpts shown for reviewer context. Full CV content is not displayed here.',
     securityPatternLabels: {
-      override_instructions: 'Instruction Override',
-      score_manipulation:    'Score Manipulation',
-      reveal_prompt:         'Prompt Reveal Attempt',
-      jailbreak:             'Jailbreak Pattern',
-      scoring_rule_change:   'Scoring Rule Change',
-      auto_qualify:          'Auto-Qualify Attempt',
-      obfuscated:            'Obfuscated Content',
-      encoded_payload:       'Encoded Payload',
-      unicode_spam:          'Unicode Anomaly',
+      override_instructions:          'Instruction Override',
+      score_manipulation:             'Score Manipulation',
+      reveal_prompt:                  'Prompt Reveal Attempt',
+      jailbreak:                      'Jailbreak Pattern',
+      scoring_rule_change:            'Scoring Rule Change',
+      auto_qualify:                   'Auto-Qualify Attempt',
+      forced_ranking:                 'Forced Ranking Attempt',
+      automatic_pass:                 'Automatic Pass Attempt',
+      prompt_disclosure_attempt:      'Evaluation Logic Disclosure',
+      bypass_evaluation_rules:        'Evaluation Bypass Attempt',
+      false_requirement_satisfaction: 'False Requirement Satisfaction',
+      obfuscated:                     'Obfuscated Content',
+      encoded_payload:                'Encoded Payload',
+      unicode_spam:                   'Unicode Anomaly',
     } as Record<string, string>,
     securityReasonExplanations: {
-      override_instructions: 'The CV attempted to override or ignore the system\'s evaluation instructions.',
-      score_manipulation:    'The CV attempted to artificially influence or increase the candidate\'s score.',
-      reveal_prompt:         'The CV attempted to expose internal evaluation logic or hidden system instructions.',
-      jailbreak:             'The CV attempted to bypass or disable the AI evaluation system\'s rules.',
-      scoring_rule_change:   'The CV attempted to alter the scoring criteria or evaluation rules.',
-      auto_qualify:          'The CV attempted to automatically mark the candidate as qualified.',
-      obfuscated:            'The CV contains deliberately obscured or hidden text to evade detection.',
-      encoded_payload:       'The CV contains encoded or encrypted content that conceals suspicious instructions.',
-      unicode_spam:          'The CV contains unusual or invisible characters that may be used to hide content.',
+      override_instructions:          'The CV attempted to override or ignore the system\'s evaluation instructions.',
+      score_manipulation:             'The CV attempted to artificially influence or increase the candidate\'s score.',
+      reveal_prompt:                  'The CV attempted to expose internal evaluation logic or hidden system instructions.',
+      jailbreak:                      'The CV attempted to bypass or disable the AI evaluation system\'s rules.',
+      scoring_rule_change:            'The CV attempted to alter the scoring criteria or evaluation rules.',
+      auto_qualify:                   'The CV attempted to automatically mark the candidate as qualified.',
+      forced_ranking:                 'The CV attempted to force the candidate to be ranked among top applicants.',
+      automatic_pass:                 'The CV attempted to automatically pass HR or technical screening stages.',
+      prompt_disclosure_attempt:      'The CV attempted to reveal hidden recruiter scoring logic or internal evaluation criteria.',
+      bypass_evaluation_rules:        'The CV attempted to bypass standard evaluation limitations or criteria.',
+      false_requirement_satisfaction: 'The CV attempted to mark missing requirements as satisfied regardless of actual evidence.',
+      obfuscated:                     'The CV contains deliberately obscured or hidden text to evade detection.',
+      encoded_payload:                'The CV contains encoded or encrypted content that conceals suspicious instructions.',
+      unicode_spam:                   'The CV contains unusual or invisible characters that may be used to hide content.',
     } as Record<string, string>,
   },
   ar: {
@@ -215,6 +228,9 @@ const T = {
     notInFinalScore: 'غير محتسب في النتيجة النهائية',
     additionalInsights: 'رؤى إضافية للمسؤول',
     scoreOverview: 'نظرة عامة على النتيجة',
+    securityBlockedPageTitle: 'مراجعة أمان الطلب',
+    securityBlockedBadge: 'محجوب قبل التقييم بالذكاء الاصطناعي',
+    securityCandidateRef: 'مرجع المرشح',
     securityCheck: 'فحص الأمان',
     securityPassed: 'اجتاز',
     securityWarning: 'تحذير',
@@ -232,26 +248,36 @@ const T = {
     securityDetectedStatements: 'العبارات المشبوهة المكتشفة',
     securitySnippetsNote: 'مقاطع قصيرة تُعرض لأغراض المراجعة. لا يُعرض النص الكامل للسيرة الذاتية هنا.',
     securityPatternLabels: {
-      override_instructions: 'محاولة تجاوز التعليمات',
-      score_manipulation:    'محاولة التلاعب بالدرجات',
-      reveal_prompt:         'محاولة كشف النظام',
-      jailbreak:             'نمط تجاوز القيود',
-      scoring_rule_change:   'محاولة تغيير معايير التقييم',
-      auto_qualify:          'محاولة الإجازة التلقائية',
-      obfuscated:            'محتوى مخفي',
-      encoded_payload:       'حمولة مشفرة',
-      unicode_spam:          'تشوه يونيكود',
+      override_instructions:          'محاولة تجاوز التعليمات',
+      score_manipulation:             'محاولة التلاعب بالدرجات',
+      reveal_prompt:                  'محاولة كشف النظام',
+      jailbreak:                      'نمط تجاوز القيود',
+      scoring_rule_change:            'محاولة تغيير معايير التقييم',
+      auto_qualify:                   'محاولة الإجازة التلقائية',
+      forced_ranking:                 'محاولة ترتيب إجباري',
+      automatic_pass:                 'محاولة الاجتياز التلقائي',
+      prompt_disclosure_attempt:      'محاولة كشف منطق التقييم',
+      bypass_evaluation_rules:        'محاولة تجاوز قواعد التقييم',
+      false_requirement_satisfaction: 'محاولة تلبية متطلبات وهمية',
+      obfuscated:                     'محتوى مخفي',
+      encoded_payload:                'حمولة مشفرة',
+      unicode_spam:                   'تشوه يونيكود',
     } as Record<string, string>,
     securityReasonExplanations: {
-      override_instructions: 'حاولت السيرة الذاتية تجاوز أو تجاهل تعليمات التقييم.',
-      score_manipulation:    'حاولت السيرة الذاتية التأثير اصطناعياً على درجة المرشح.',
-      reveal_prompt:         'حاولت السيرة الذاتية كشف المنطق الداخلي لعملية التقييم.',
-      jailbreak:             'حاولت السيرة الذاتية تعطيل قواعد نظام التقييم الذكي.',
-      scoring_rule_change:   'حاولت السيرة الذاتية تغيير معايير أو قواعد التقييم.',
-      auto_qualify:          'حاولت السيرة الذاتية تصنيف المرشح تلقائياً كمؤهل.',
-      obfuscated:            'تحتوي السيرة الذاتية على نص مخفي أو مبهم للتحايل على الفحص.',
-      encoded_payload:       'تحتوي السيرة الذاتية على محتوى مشفر يُخفي تعليمات مشبوهة.',
-      unicode_spam:          'تحتوي السيرة الذاتية على أحرف غير مرئية قد تُستخدم لإخفاء محتوى.',
+      override_instructions:          'حاولت السيرة الذاتية تجاوز أو تجاهل تعليمات التقييم.',
+      score_manipulation:             'حاولت السيرة الذاتية التأثير اصطناعياً على درجة المرشح.',
+      reveal_prompt:                  'حاولت السيرة الذاتية كشف المنطق الداخلي لعملية التقييم.',
+      jailbreak:                      'حاولت السيرة الذاتية تعطيل قواعد نظام التقييم الذكي.',
+      scoring_rule_change:            'حاولت السيرة الذاتية تغيير معايير أو قواعد التقييم.',
+      auto_qualify:                   'حاولت السيرة الذاتية تصنيف المرشح تلقائياً كمؤهل.',
+      forced_ranking:                 'حاولت السيرة الذاتية إجبار النظام على تصنيف المرشح ضمن الأفضل.',
+      automatic_pass:                 'حاولت السيرة الذاتية اجتياز مراحل الفرز الأولي تلقائياً.',
+      prompt_disclosure_attempt:      'حاولت السيرة الذاتية الكشف عن منطق التقييم السري أو المعايير الداخلية.',
+      bypass_evaluation_rules:        'حاولت السيرة الذاتية تجاوز القيود والمعايير المعتادة للتقييم.',
+      false_requirement_satisfaction: 'حاولت السيرة الذاتية اعتبار المتطلبات المفقودة مستوفاة بغض النظر عن الأدلة.',
+      obfuscated:                     'تحتوي السيرة الذاتية على نص مخفي أو مبهم للتحايل على الفحص.',
+      encoded_payload:                'تحتوي السيرة الذاتية على محتوى مشفر يُخفي تعليمات مشبوهة.',
+      unicode_spam:                   'تحتوي السيرة الذاتية على أحرف غير مرئية قد تُستخدم لإخفاء محتوى.',
     } as Record<string, string>,
   },
 };
@@ -407,6 +433,9 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const analysis = data.analysis || ({} as ApplicationDetailedAnalysis['analysis']);
   const scores = data.scores || {};
   const isLowMatch = data.decision === 'low_match';
+  const isSecurityBlocked =
+    data.security_check_status === 'blocked' ||
+    (data.evaluation_exit_reason?.startsWith('[security_check]') ?? false);
 
   const scoreDims: [string, ScoreDimension | undefined, string][] = [
     [t.scoreBars[0], scores.skills,            data.reasoning?.skills            || ''],
@@ -493,8 +522,176 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         </div>
       )}
 
+      {/* ── Security-Blocked: page heading + candidate card ─────────────────── */}
+      {isSecurityBlocked && (() => {
+        const secStatus   = data.security_check_status!;
+        const secLevel    = data.security_risk_level || '';
+        const secScore    = data.security_risk_score ?? 0;
+        const secCodes    = data.security_reason_codes || [];
+        const secPatterns = data.security_detected_patterns || [];
+        const secSnippets = data.security_detected_snippets || [];
+        const secAt: string | null = data.security_checked_at || null;
+        const patternLabels      = (t as any).securityPatternLabels as Record<string, string>;
+        const reasonExplanations = (t as any).securityReasonExplanations as Record<string, string>;
+        return (
+          <div className="space-y-6">
+            {/* Page heading */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="text-xl font-black text-red-700 tracking-tight">
+                {(t as any).securityBlockedPageTitle}
+              </h2>
+              <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-600 text-white">
+                {(t as any).securityBlockedBadge}
+              </span>
+            </div>
+
+            {/* Candidate identification card — no score, no summary */}
+            <div className="bg-white rounded-3xl border border-red-200 shadow-sm overflow-hidden">
+              <div className="p-8 bg-red-50 border-b border-red-100 flex items-center gap-6 flex-wrap">
+                {/* Blocked icon in place of score circle */}
+                <div className="w-24 h-24 rounded-3xl flex flex-col items-center justify-center bg-red-600 text-white shadow-xl shrink-0">
+                  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-red-100 text-red-800">
+                      {(t as any).securityBlocked}
+                    </span>
+                    {data.duplicate_status === 'possible_duplicate' && (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-orange-100 text-orange-700">
+                        {t.possibleDuplicate}
+                      </span>
+                    )}
+                    <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">• REF: {data.application_id}</span>
+                  </div>
+                  <h1 className="text-3xl font-black text-textMain tracking-tight">{candidateName}</h1>
+                </div>
+              </div>
+            </div>
+
+            {/* Duplicate banner (if applicable) */}
+            {data.duplicate_status === 'possible_duplicate' && (
+              <div className={`bg-orange-50 border ${isAr ? 'border-r-4' : 'border-l-4'} border-orange-400 rounded-2xl p-5`}>
+                <div className="flex items-start gap-3 mb-3">
+                  <svg className="w-5 h-5 text-orange-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-orange-800">{t.dupBannerTitle}</p>
+                    {data.duplicate_reason && (
+                      <p className="text-xs text-orange-600 mt-0.5">
+                        {data.duplicate_reason === 'high_content_similarity' ? t.dupContentSimilarity : t.dupIdentityMatch}
+                        {data.duplicate_similarity_score != null && ` — ${data.duplicate_similarity_score.toFixed(1)}%`}
+                      </p>
+                    )}
+                  </div>
+                  <span className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700">
+                    {t.possibleDuplicate}
+                  </span>
+                </div>
+                {data.duplicate_reference && (
+                  <div className="mt-3 bg-white rounded-xl border border-orange-200 px-4 py-3">
+                    <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-2">{t.dupRefLabel}</p>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                      <span className="text-textMuted">{t.dupCandidateName}</span>
+                      <span className="font-semibold text-textMain">{data.duplicate_reference.candidate_name}</span>
+                      {data.duplicate_reference.applied_at && (
+                        <>
+                          <span className="text-textMuted">{t.dupSubmittedOn}</span>
+                          <span className="font-semibold text-textMain">{new Date(data.duplicate_reference.applied_at).toLocaleDateString()}</span>
+                        </>
+                      )}
+                      <span className="text-textMuted">{t.dupRefId}</span>
+                      <span className="font-mono text-[10px] text-textMuted">{data.duplicate_reference.application_id.slice(0, 8)}…</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Security detail panel — full expanded as primary content */}
+            <div className="rounded-2xl border-l-4 border-red-500 overflow-hidden">
+              <div className="flex items-start gap-3 px-5 py-4 bg-red-600">
+                <svg className="w-5 h-5 mt-0.5 shrink-0 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <p className="flex-1 text-sm font-bold text-white leading-snug">
+                  {(t as any).securityAlertTitle}
+                </p>
+                <span className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/20 text-white">
+                  {(t as any).securityBlocked}
+                </span>
+              </div>
+              <div className="px-5 py-4 space-y-4 bg-red-50">
+                {/* Why flagged */}
+                <div className="rounded-xl p-4 border bg-red-100/60 border-red-200">
+                  <p className="text-[10px] font-black uppercase tracking-widest mb-2 text-red-700">
+                    {(t as any).securityWhyFlagged}
+                  </p>
+                  <p className="text-xs mb-2 leading-relaxed text-red-900">
+                    {(t as any).securityBlockedSummary}
+                  </p>
+                  {secCodes.length > 0 && (
+                    <ul className="space-y-1 mt-2">
+                      {secCodes.map(code => {
+                        const explanation = reasonExplanations[code];
+                        return explanation ? (
+                          <li key={code} className="flex items-start gap-2 text-xs text-red-800">
+                            <span className="mt-1 shrink-0 w-1.5 h-1.5 rounded-full bg-current opacity-70" />
+                            {explanation}
+                          </li>
+                        ) : null;
+                      })}
+                    </ul>
+                  )}
+                </div>
+                {/* Guidance */}
+                <p className="text-xs font-semibold text-red-700">⚠ {(t as any).securityGuidanceNote}</p>
+                {/* Details grid */}
+                <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+                  <span className="text-textMuted">{(t as any).securityRiskLevel}</span>
+                  <span className="font-bold uppercase text-red-600">{secLevel}</span>
+                  <span className="text-textMuted">{(t as any).securitySeverityScore}</span>
+                  <span className="font-semibold text-textMain">{secScore}</span>
+                  {secPatterns.length > 0 && (
+                    <>
+                      <span className="text-textMuted">{(t as any).securityIssueTypes}</span>
+                      <span className="font-semibold text-textMain">{secPatterns.map(p => patternLabels[p] || p).join(', ')}</span>
+                    </>
+                  )}
+                  {secAt && (
+                    <>
+                      <span className="text-textMuted">{(t as any).securityCheckedAt}</span>
+                      <span className="text-textMain">{new Date(secAt).toLocaleString()}</span>
+                    </>
+                  )}
+                </div>
+                {/* Snippets */}
+                {secSnippets.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest mb-2 text-red-700">
+                      {(t as any).securityDetectedStatements}
+                    </p>
+                    <ul className="space-y-1.5">
+                      {secSnippets.map((snippet, i) => (
+                        <li key={i} className="text-xs rounded-lg px-3 py-2 font-mono leading-relaxed bg-red-100 text-red-900">
+                          &ldquo;{snippet}&rdquo;
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-[10px] text-textMuted mt-2 italic">{(t as any).securitySnippetsNote}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Low Match Banner */}
-      {isLowMatch && (
+      {!isSecurityBlocked && isLowMatch && (
         <div className={`bg-slate-50 border ${isAr ? 'border-r-4' : 'border-l-4'} border-slate-400 rounded-2xl p-5 flex items-start gap-4`}>
           <svg className="w-5 h-5 text-slate-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
@@ -503,8 +700,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         </div>
       )}
 
-      {/* Possible Duplicate Banner */}
-      {data.duplicate_status === 'possible_duplicate' && (
+      {/* Possible Duplicate Banner — only in normal layout; blocked layout renders its own */}
+      {!isSecurityBlocked && data.duplicate_status === 'possible_duplicate' && (
         <div className={`bg-orange-50 border ${isAr ? 'border-r-4' : 'border-l-4'} border-orange-400 rounded-2xl p-5`}>
           <div className="flex items-start gap-3 mb-3">
             <svg className="w-5 h-5 text-orange-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -545,8 +742,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         </div>
       )}
 
-      {/* ── Security Check Banner ───────────────────────────────────────────── */}
-      {data.security_check_status && data.security_check_status !== 'passed' && (() => {
+      {/* ── Security Check Banner — warning state only; blocked uses dedicated layout above ── */}
+      {!isSecurityBlocked && data.security_check_status && data.security_check_status !== 'passed' && (() => {
         const secStatus   = data.security_check_status!;
         const secLevel    = data.security_risk_level || '';
         const secScore    = data.security_risk_score ?? 0;
@@ -682,8 +879,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         );
       })()}
 
-      {/* Profile & Scoring */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Profile & Scoring — hidden for security-blocked applications */}
+      {!isSecurityBlocked && <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
           <div className="p-8 bg-slate-50 border-b border-border flex items-center gap-8">
             <div className={`w-24 h-24 rounded-3xl flex flex-col items-center justify-center font-black text-white shadow-xl rotate-3 transform hover:rotate-0 transition-transform ${
@@ -749,10 +946,10 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             <p className="text-[10px] text-textMuted italic leading-relaxed">{t.scoringNote}</p>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Intelligence Analysis Panel */}
-      {hasIntelligence && (
+      {!isSecurityBlocked && hasIntelligence && (
         <div className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
           <button
             onClick={() => setIntelligenceExpanded(v => !v)}
@@ -832,7 +1029,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
       )}
 
       {/* Evidence-Based Analysis */}
-      {hasEvidenceSection && (
+      {!isSecurityBlocked && hasEvidenceSection && (
         <section className="space-y-6">
           <div className="flex items-center gap-3">
             <span className="w-2 h-4 bg-primary rounded-full shrink-0"></span>
@@ -862,7 +1059,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
       )}
 
       {/* HR Evaluation Grid */}
-      {!isLowMatch && (
+      {!isSecurityBlocked && !isLowMatch && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {renderSection(t.sections.matchedSkills, analysis.cv_skills_matched)}
           {renderSection(t.sections.expFit, analysis.cv_experience_summary)}
@@ -874,7 +1071,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
       )}
 
       {/* Red Flags */}
-      {hasRedFlags && (
+      {!isSecurityBlocked && hasRedFlags && (
         <div className={`bg-amber-50 border ${isAr ? 'border-r-4' : 'border-l-4'} border-amber-400 rounded-2xl p-6`}>
           <h4 className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-4 flex items-center gap-2">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -894,7 +1091,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
       )}
 
       {/* Strengths & Risks */}
-      {!isLowMatch && (
+      {!isSecurityBlocked && !isLowMatch && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {renderSection(t.sections.strengths, analysis.strengths)}
           {renderSection(t.sections.risks, analysis.risks)}
@@ -902,7 +1099,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
       )}
 
       {/* Interview Support */}
-      {!isLowMatch && ((analysis.interview_focus_points?.length ?? 0) > 0 || (analysis.interview_suggested_questions?.length ?? 0) > 0) && (
+      {!isSecurityBlocked && !isLowMatch && ((analysis.interview_focus_points?.length ?? 0) > 0 || (analysis.interview_suggested_questions?.length ?? 0) > 0) && (
         <div className="bg-indigo-900 rounded-3xl p-8 text-white shadow-xl shadow-indigo-200">
           <h3 className="text-sm font-black uppercase tracking-widest mb-8 flex items-center">
             <svg className={`w-5 h-5 ${isAr ? 'ml-3' : 'mr-3'} text-indigo-400`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
@@ -936,7 +1133,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
       )}
 
       {/* AI Comparison Results */}
-      {(data.ai_comparisons?.length ?? 0) > 0 && (
+      {!isSecurityBlocked && (data.ai_comparisons?.length ?? 0) > 0 && (
         <section className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
           <div className="px-8 py-5 border-b border-slate-100">
             <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
@@ -1004,7 +1201,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
       )}
 
       {/* Scoring Audit — provider, model, prompt versions */}
-      {(data.scoring_provider || data.ai_model || data.scoring_prompt_code || data.level2_prompt_code) && (
+      {!isSecurityBlocked && (data.scoring_provider || data.ai_model || data.scoring_prompt_code || data.level2_prompt_code) && (
         <section className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
           <div className="px-8 py-5 border-b border-slate-100">
             <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
@@ -1052,7 +1249,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
       )}
 
       {/* Raw Data */}
-      <section className="bg-white rounded-3xl border border-border overflow-hidden">
+      {!isSecurityBlocked && <section className="bg-white rounded-3xl border border-border overflow-hidden">
         <button
           onClick={() => setShowRaw(!showRaw)}
           className="w-full px-8 py-5 flex items-center justify-between hover:bg-slate-50 transition-colors"
@@ -1073,7 +1270,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             </div>
           </div>
         )}
-      </section>
+      </section>}
     </div>
   );
 };
