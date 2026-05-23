@@ -225,6 +225,18 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         submitted_by_name:   detailsObj?.submitted_by_name,
         submitted_by_email:  detailsObj?.submitted_by_email,
         original_filename:   detailsObj?.original_filename,
+        // Processing / evaluation state
+        processing_status:        detailsObj?.processing_status,
+        evaluation_stage:         detailsObj?.evaluation_stage,
+        evaluation_exit_reason:   detailsObj?.evaluation_exit_reason,
+        // Security check fields
+        security_check_status:      detailsObj?.security_check_status,
+        security_risk_level:        detailsObj?.security_risk_level,
+        security_risk_score:        detailsObj?.security_risk_score,
+        security_reason_codes:      detailsObj?.security_reason_codes || [],
+        security_detected_patterns: detailsObj?.security_detected_patterns || [],
+        security_detected_snippets: detailsObj?.security_detected_snippets || [],
+        security_checked_at:        detailsObj?.security_checked_at,
       };
 
       setSelectedDetails(normalized);
