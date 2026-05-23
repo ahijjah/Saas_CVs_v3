@@ -212,6 +212,7 @@ export interface JobDetails extends Job {
   criteria_extraction_max_retries?: number;
   criteria_retry_allowed?: boolean;
   criteria_retry_blocked_reason?: 'max_retries_reached' | 'description_unchanged' | null;
+  knockout_questions?: KnockoutQuestion[];
 }
 
 // decision='low_match' is a frontend-only display alias for evaluation_stage=1 + gatekeeper_passed=false + decision='rejected'
@@ -363,6 +364,21 @@ export interface UploadQueueStatus {
 }
 
 // ─── Platform Control ─────────────────────────────────────────────────────────
+
+export interface KnockoutQuestion {
+  question_id: string;
+  question_text: string;
+  question_type: 'yes_no' | 'multiple_choice' | 'text';
+  is_required: boolean;
+  disqualifying_answer?: string | null;
+  options?: string[] | null;
+  display_order: number;
+}
+
+export interface KnockoutAnswer {
+  question_id: string;
+  answer_value: string;
+}
 
 export interface PlatformConfig {
   key: string;

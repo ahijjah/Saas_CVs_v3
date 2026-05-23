@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { User, ClientOrganization } from '../types';
+import { User, ClientOrganization, KnockoutQuestion } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
@@ -67,6 +67,22 @@ const T = {
     qualityReady: 'Ready for AI Analysis',
     qualityBlocksSubmit: 'Please add meaningful job details before creating the campaign.',
     titleInvalid: 'Please enter a real job title, such as Sales Assistant, Accountant, Driver, or HR Manager.',
+    knockoutTitle: 'Knockout Questions',
+    knockoutSubtitle: 'Optional pre-screening questions shown to candidates before they submit.',
+    knockoutToggleOn: 'Add Knockout Questions',
+    knockoutToggleOff: 'Remove Knockout Questions',
+    knockoutAddQuestion: 'Add Question',
+    knockoutQuestionPlaceholder: 'e.g. Do you have a valid driving licence?',
+    knockoutTypeyesNo: 'Yes / No',
+    knockoutTypeMultiChoice: 'Multiple Choice',
+    knockoutTypeText: 'Text',
+    knockoutRequired: 'Required',
+    knockoutDisqualify: 'Disqualifying answer',
+    knockoutDisqualifyNone: 'None',
+    knockoutOptions: 'Options (one per line)',
+    knockoutOptionsPlaceholder: 'Option A\nOption B\nOption C',
+    knockoutRemove: 'Remove',
+    knockoutMaxReached: (n: number) => `Maximum ${n} questions allowed.`,
   },
   ar: {
     title: 'إنشاء وظيفة جديدة',
@@ -106,6 +122,22 @@ const T = {
     qualityReady: 'جاهز للتحليل',
     qualityBlocksSubmit: 'يرجى إضافة تفاصيل وظيفية مفيدة قبل إنشاء الحملة.',
     titleInvalid: 'يرجى إدخال مسمى وظيفي حقيقي، مثل: مساعد مبيعات، محاسب، سائق، أو مدير موارد بشرية.',
+    knockoutTitle: 'أسئلة الإقصاء',
+    knockoutSubtitle: 'أسئلة اختيارية تُعرض للمرشحين قبل التقديم.',
+    knockoutToggleOn: 'إضافة أسئلة إقصاء',
+    knockoutToggleOff: 'إزالة أسئلة الإقصاء',
+    knockoutAddQuestion: 'إضافة سؤال',
+    knockoutQuestionPlaceholder: 'مثال: هل تمتلك رخصة قيادة سارية؟',
+    knockoutTypeyesNo: 'نعم / لا',
+    knockoutTypeMultiChoice: 'اختيار متعدد',
+    knockoutTypeText: 'نصي',
+    knockoutRequired: 'إلزامي',
+    knockoutDisqualify: 'الإجابة المُقصية',
+    knockoutDisqualifyNone: 'لا يوجد',
+    knockoutOptions: 'الخيارات (سطر لكل خيار)',
+    knockoutOptionsPlaceholder: 'خيار أ\nخيار ب\nخيار ج',
+    knockoutRemove: 'حذف',
+    knockoutMaxReached: (n: number) => `الحد الأقصى ${n} أسئلة مسموح بها.`,
   },
 };
 
@@ -194,9 +226,13 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const tenantType = user?.tenant_type ?? '';
   const isAgencyTenant = tenantType === 'agency' || tenantType === 'individual_recruiter';
 
+  const MAX_KNOCKOUT = 5;
+
   const [loading, setLoading] = useState(false);
   const [clientOrgs, setClientOrgs] = useState<ClientOrganization[]>([]);
   const [clientOrgsLoading, setClientOrgsLoading] = useState(false);
+  const [showKnockout, setShowKnockout] = useState(false);
+  const [knockoutQuestions, setKnockoutQuestions] = useState<Partial<KnockoutQuestion & { optionsText: string }>[]>([]);
 
   const [formData, setFormData] = useState<FormData>({
     job_title: '',
@@ -243,6 +279,19 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     }));
   };
 
+  const addKnockoutQuestion = () => {
+    if (knockoutQuestions.length >= MAX_KNOCKOUT) return;
+    setKnockoutQuestions(prev => [...prev, { question_text: '', question_type: 'yes_no', is_required: true, disqualifying_answer: undefined, optionsText: '' }]);
+  };
+
+  const removeKnockoutQuestion = (idx: number) => {
+    setKnockoutQuestions(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateKnockoutQuestion = (idx: number, field: string, value: unknown) => {
+    setKnockoutQuestions(prev => prev.map((q, i) => i === idx ? { ...q, [field]: value } : q));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -270,6 +319,24 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       if (formData.application_deadline) payload.application_deadline = formData.application_deadline;
       const vac = parseInt(formData.vacancies_count);
       if (vac > 0) payload.vacancies_count = vac;
+
+      if (showKnockout && knockoutQuestions.length > 0) {
+        const questions = knockoutQuestions
+          .filter(q => q.question_text?.trim())
+          .map(q => {
+            const opts = q.question_type === 'multiple_choice' && q.optionsText
+              ? q.optionsText.split('\n').map((s: string) => s.trim()).filter(Boolean)
+              : undefined;
+            return {
+              question_text: q.question_text!.trim(),
+              question_type: q.question_type || 'yes_no',
+              is_required: q.is_required ?? true,
+              disqualifying_answer: q.disqualifying_answer || null,
+              options: opts || null,
+            };
+          });
+        if (questions.length > 0) payload.knockout_questions = questions as any;
+      }
 
       const responseData = await apiService.post(WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL, payload, token);
       addToast('Job created successfully!', 'success');
@@ -478,6 +545,129 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 <p className="text-xs text-textMuted">
                   The more detail you provide, the better the AI scoring will be.
                 </p>
+              )}
+            </div>
+
+            {/* Knockout Questions */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className={`${labelCls}`}>{(t as any).knockoutTitle}</p>
+                  <p className="text-[11px] text-textMuted mt-0.5">{(t as any).knockoutSubtitle}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowKnockout(v => !v); if (showKnockout) setKnockoutQuestions([]); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                    showKnockout
+                      ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+                      : 'bg-primary/5 border-primary/20 text-primary hover:bg-primary/10'
+                  }`}
+                >
+                  {showKnockout ? (t as any).knockoutToggleOff : (t as any).knockoutToggleOn}
+                </button>
+              </div>
+
+              {showKnockout && (
+                <div className="space-y-3">
+                  {knockoutQuestions.map((q, idx) => (
+                    <div key={idx} className="border border-border rounded-xl p-4 space-y-3 bg-slate-50">
+                      <div className="flex items-start gap-3">
+                        <span className="w-5 h-5 bg-primary text-white text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">{idx + 1}</span>
+                        <div className="flex-1 space-y-2">
+                          <input
+                            type="text"
+                            value={q.question_text || ''}
+                            onChange={e => updateKnockoutQuestion(idx, 'question_text', e.target.value)}
+                            placeholder={(t as any).knockoutQuestionPlaceholder}
+                            className={inputCls}
+                          />
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <select
+                              value={q.question_type || 'yes_no'}
+                              onChange={e => updateKnockoutQuestion(idx, 'question_type', e.target.value)}
+                              className={selectCls}
+                            >
+                              <option value="yes_no">{(t as any).knockoutTypeyesNo}</option>
+                              <option value="multiple_choice">{(t as any).knockoutTypeMultiChoice}</option>
+                              <option value="text">{(t as any).knockoutTypeText}</option>
+                            </select>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={q.is_required ?? true}
+                                onChange={e => updateKnockoutQuestion(idx, 'is_required', e.target.checked)}
+                                className="rounded border-border"
+                              />
+                              <span className="text-xs text-textMuted font-semibold">{(t as any).knockoutRequired}</span>
+                            </label>
+                            {q.question_type !== 'text' && (
+                              <div className="space-y-1">
+                                <p className="text-[10px] text-textMuted font-bold uppercase tracking-widest">{(t as any).knockoutDisqualify}</p>
+                                {q.question_type === 'yes_no' ? (
+                                  <select
+                                    value={q.disqualifying_answer || ''}
+                                    onChange={e => updateKnockoutQuestion(idx, 'disqualifying_answer', e.target.value || undefined)}
+                                    className={selectCls}
+                                  >
+                                    <option value="">{(t as any).knockoutDisqualifyNone}</option>
+                                    <option value="yes">Yes</option>
+                                    <option value="no">No</option>
+                                  </select>
+                                ) : (
+                                  <select
+                                    value={q.disqualifying_answer || ''}
+                                    onChange={e => updateKnockoutQuestion(idx, 'disqualifying_answer', e.target.value || undefined)}
+                                    className={selectCls}
+                                  >
+                                    <option value="">{(t as any).knockoutDisqualifyNone}</option>
+                                    {(q.optionsText || '').split('\n').map((o: string) => o.trim()).filter(Boolean).map((o: string) => (
+                                      <option key={o} value={o}>{o}</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          {q.question_type === 'multiple_choice' && (
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-textMuted font-bold uppercase tracking-widest">{(t as any).knockoutOptions}</p>
+                              <textarea
+                                rows={3}
+                                value={q.optionsText || ''}
+                                onChange={e => updateKnockoutQuestion(idx, 'optionsText', e.target.value)}
+                                placeholder={(t as any).knockoutOptionsPlaceholder}
+                                className={`${inputCls} resize-none font-mono text-xs`}
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeKnockoutQuestion(idx)}
+                          className="text-textMuted hover:text-red-600 transition-colors p-1 rounded"
+                          title={(t as any).knockoutRemove}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {knockoutQuestions.length < MAX_KNOCKOUT ? (
+                    <button
+                      type="button"
+                      onClick={addKnockoutQuestion}
+                      className="w-full py-2 border-2 border-dashed border-border rounded-xl text-xs font-bold text-textMuted hover:border-primary hover:text-primary transition-colors"
+                    >
+                      + {(t as any).knockoutAddQuestion}
+                    </button>
+                  ) : (
+                    <p className="text-[11px] text-amber-600 text-center">{(t as any).knockoutMaxReached(MAX_KNOCKOUT)}</p>
+                  )}
+                </div>
               )}
             </div>
 

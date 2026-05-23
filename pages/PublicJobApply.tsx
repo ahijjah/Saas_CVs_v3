@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { WEBHOOK_CONFIG } from '../config';
+import { KnockoutQuestion, KnockoutAnswer } from '../types';
 
 interface PublicJobApplyProps {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -21,6 +22,7 @@ interface PublicJobInfo {
   deadline_passed?: boolean;
   max_applications?: number | null;
   applications_count?: number | null;
+  knockout_questions?: KnockoutQuestion[];
 }
 
 export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
@@ -32,6 +34,7 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
   const [submitted, setSubmitted] = useState(false);
   const [form, setForm] = useState({ candidate_name: '', email: '', phone: '', cover_letter: '' });
   const [file, setFile] = useState<File | null>(null);
+  const [knockoutAnswers, setKnockoutAnswers] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!jobCode) { setLoading(false); setNotFound(true); return; }
@@ -52,6 +55,16 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
     if (!form.candidate_name.trim() || !form.email.trim()) {
       addToast('Full name and email address are required.', 'error'); return;
     }
+
+    // Validate required knockout questions
+    const questions = job?.knockout_questions ?? [];
+    for (const q of questions) {
+      if (q.is_required && !knockoutAnswers[q.question_id]?.trim()) {
+        addToast(`Please answer: "${q.question_text}"`, 'error');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const fd = new FormData();
@@ -61,6 +74,13 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
       if (form.phone.trim()) fd.append('phone', form.phone.trim());
       if (form.cover_letter.trim()) fd.append('cover_letter', form.cover_letter.trim());
       fd.append('file', file);
+
+      if (questions.length > 0) {
+        const answers: KnockoutAnswer[] = questions
+          .filter(q => knockoutAnswers[q.question_id]?.trim())
+          .map(q => ({ question_id: q.question_id, answer_value: knockoutAnswers[q.question_id].trim() }));
+        if (answers.length > 0) fd.append('knockout_answers', JSON.stringify(answers));
+      }
       const resp = await fetch(WEBHOOK_CONFIG.PUBLIC_APPLY_URL, { method: 'POST', body: fd });
       if (resp.status === 409) {
         addToast('This position is no longer accepting applications.', 'info');
@@ -262,6 +282,67 @@ export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {
                 placeholder="Tell us why you're a great fit..."
               />
             </div>
+            {/* Knockout Questions */}
+            {(job.knockout_questions ?? []).length > 0 && (
+              <div className="space-y-4 pt-2 border-t border-border">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">Pre-Screening Questions</p>
+                {(job.knockout_questions ?? []).map((q, idx) => (
+                  <div key={q.question_id} className="space-y-1.5">
+                    <label className="text-sm font-semibold text-textMain">
+                      {idx + 1}. {q.question_text}
+                      {q.is_required && <span className="text-red-500 ml-1">*</span>}
+                    </label>
+                    {q.question_type === 'yes_no' && (
+                      <div className="flex gap-4">
+                        {['yes', 'no'].map(opt => (
+                          <label key={opt} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`knockout_${q.question_id}`}
+                              value={opt}
+                              checked={knockoutAnswers[q.question_id] === opt}
+                              onChange={() => setKnockoutAnswers(prev => ({ ...prev, [q.question_id]: opt }))}
+                              disabled={!intakeOpen}
+                              className="text-primary"
+                            />
+                            <span className="text-sm capitalize">{opt}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    {q.question_type === 'multiple_choice' && (
+                      <div className="space-y-1">
+                        {(q.options ?? []).map(opt => (
+                          <label key={opt} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`knockout_${q.question_id}`}
+                              value={opt}
+                              checked={knockoutAnswers[q.question_id] === opt}
+                              onChange={() => setKnockoutAnswers(prev => ({ ...prev, [q.question_id]: opt }))}
+                              disabled={!intakeOpen}
+                              className="text-primary"
+                            />
+                            <span className="text-sm">{opt}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    {q.question_type === 'text' && (
+                      <textarea
+                        rows={2}
+                        disabled={!intakeOpen}
+                        value={knockoutAnswers[q.question_id] || ''}
+                        onChange={e => setKnockoutAnswers(prev => ({ ...prev, [q.question_id]: e.target.value }))}
+                        className="w-full px-4 py-2.5 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none disabled:bg-slate-50"
+                        placeholder="Your answer..."
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={submitting || !intakeOpen}

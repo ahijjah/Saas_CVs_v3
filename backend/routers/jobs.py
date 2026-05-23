@@ -35,6 +35,7 @@ class CreateJobRequest(BaseModel):
     partial_threshold: int | None = None
     client_organization_id: str | None = None  # NULL = General job for agency tenants
     vacancies_count: int | None = None
+    knockout_questions: list[dict] | None = None
 
 
 class UpdateCriteriaRequest(BaseModel):
@@ -97,6 +98,7 @@ class UpdateJobMetadataRequest(BaseModel):
     max_applications: int | None = None  # 0 = clear limit (set to NULL)
     auto_close_when_limit_reached: bool | None = None
     description: str | None = None  # full job description text
+    knockout_questions: list[dict] | None = None  # None = don't touch; [] = clear all
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -392,6 +394,11 @@ async def create_job(
     job_dir = Path(settings.files_base_path) / "tenants" / current_user.tenant_id / "jobs" / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
+    if body.knockout_questions:
+        from services.knockout_questions_service import save_job_knockout_questions
+        await save_job_knockout_questions(db, job_id, current_user.tenant_id, body.knockout_questions)
+        await db.commit()
+
     # Queue async AI extraction — does not block job creation
     from workers.criteria_worker import extract_criteria_task
     extract_criteria_task.delay(job_id, body.description)
@@ -530,6 +537,9 @@ async def get_job_details(
     via_forwarding = job["receive_cv_via_forwarding_email"]
     via_platform   = job["receive_cv_via_platform_email"]
 
+    from services.knockout_questions_service import get_job_knockout_questions
+    knockout_questions = await get_job_knockout_questions(db, job_id)
+
     return {
         "details": {
             "job_id":             str(job["job_id"]),
@@ -579,6 +589,7 @@ async def get_job_details(
             "criteria_retry_allowed":          criteria_retry_allowed,
             "criteria_retry_blocked_reason":   retry_blocked_reason,
             "criteria_last_edited_by":         str(criteria["last_edited_by"]) if criteria and criteria["last_edited_by"] else None,
+            "knockout_questions":              knockout_questions,
             "ingestion_note": (
                 f"Send CVs directly to: {job['platform_email']}"
                 if via_platform
@@ -1232,22 +1243,29 @@ async def update_job_metadata(
             )
         updates["status"] = s
 
-    if not updates:
+    # Handle knockout_questions separately (None = leave alone, [] = clear all)
+    if body.knockout_questions is not None:
+        from services.knockout_questions_service import save_job_knockout_questions
+        await save_job_knockout_questions(db, job_id, current_user.tenant_id, body.knockout_questions)
+
+    if not updates and body.knockout_questions is None:
         return {"success": True, "message": "No changes"}
 
-    updates["updated_by"] = current_user.user_id
-    set_sql = ", ".join(f"{k} = :{k}" for k in updates) + ", updated_at = NOW()"
-    updates["jid"] = job_id
-    try:
-        await db.execute(
-            text(f"UPDATE jobs SET {set_sql} WHERE job_id = :jid"),
-            updates,
-        )
-        await db.commit()
-    except Exception as exc:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update job: {exc}",
-        ) from exc
+    if updates:
+        updates["updated_by"] = current_user.user_id
+        set_sql = ", ".join(f"{k} = :{k}" for k in updates) + ", updated_at = NOW()"
+        updates["jid"] = job_id
+        try:
+            await db.execute(
+                text(f"UPDATE jobs SET {set_sql} WHERE job_id = :jid"),
+                updates,
+            )
+        except Exception as exc:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update job: {exc}",
+            ) from exc
+
+    await db.commit()
     return {"success": True, "message": "Job updated"}

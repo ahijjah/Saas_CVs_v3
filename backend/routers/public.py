@@ -92,6 +92,9 @@ async def get_public_job(
         if applications_count >= job["max_applications"]:
             intake_open = False
 
+    from services.knockout_questions_service import get_job_knockout_questions
+    knockout_questions = await get_job_knockout_questions(db, str(job["job_id"]))
+
     return {
         "job_title":           job["title"],
         "job_code":            job["job_code"],
@@ -106,6 +109,17 @@ async def get_public_job(
         "deadline_passed":     deadline_passed,
         "max_applications":    job["max_applications"],
         "applications_count":  applications_count,
+        "knockout_questions":  [
+            {
+                "question_id":    q["question_id"],
+                "question_text":  q["question_text"],
+                "question_type":  q["question_type"],
+                "is_required":    q["is_required"],
+                "options":        q["options"],
+                "display_order":  q["display_order"],
+            }
+            for q in knockout_questions
+        ],
     }
 
 
@@ -117,9 +131,18 @@ async def submit_public_application(
     email: Annotated[str, Form()],
     phone: Annotated[str | None, Form()] = None,
     cover_letter: Annotated[str | None, Form()] = None,
+    knockout_answers: Annotated[str | None, Form()] = None,
     file: UploadFile = File(...),
 ):
     """Accept a public CV submission. No auth required."""
+    import json as _json
+    parsed_answers: list[dict] = []
+    if knockout_answers:
+        try:
+            parsed_answers = _json.loads(knockout_answers)
+        except Exception:
+            pass
+
     try:
         return await _handle_public_submission(
             db=db,
@@ -129,6 +152,7 @@ async def submit_public_application(
             phone=phone,
             cover_letter=cover_letter,
             file=file,
+            knockout_answers=parsed_answers,
         )
     except HTTPException:
         raise
@@ -160,6 +184,7 @@ async def _handle_public_submission(
     phone: str | None,
     cover_letter: str | None,
     file: UploadFile,
+    knockout_answers: list[dict] | None = None,
 ) -> dict:
     content = await file.read()
 
@@ -219,6 +244,14 @@ async def _handle_public_submission(
             status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="This position is temporarily unable to accept applications. Please try again later.",
         )
+
+    if knockout_answers and result.application_id:
+        try:
+            from services.knockout_questions_service import save_knockout_answers
+            await save_knockout_answers(db, result.application_id, job_id, knockout_answers)
+            await db.commit()
+        except Exception as exc:
+            logger.error("Failed to save knockout answers for application %s: %s", result.application_id, exc)
 
     # ── Auto-close job if intake limit now reached ────────────────────────────
     if job["max_applications"] is not None and job["auto_close_when_limit_reached"]:
