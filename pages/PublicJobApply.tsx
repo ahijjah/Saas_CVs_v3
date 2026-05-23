@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { WEBHOOK_CONFIG } from '../config';
-import { KnockoutQuestion, KnockoutAnswer } from '../types';
+import { PublicKnockoutQuestion, KnockoutAnswer } from '../types';
 
 interface PublicJobApplyProps {
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -22,7 +22,7 @@ interface PublicJobInfo {
   deadline_passed?: boolean;
   max_applications?: number | null;
   applications_count?: number | null;
-  knockout_questions?: KnockoutQuestion[];
+  knockout_questions?: PublicKnockoutQuestion[];
 }
 
 export const PublicJobApply: React.FC<PublicJobApplyProps> = ({ addToast }) => {

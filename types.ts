@@ -365,12 +365,31 @@ export interface UploadQueueStatus {
 
 // ─── Platform Control ─────────────────────────────────────────────────────────
 
+export interface PassingCriteria {
+  // yes_no and single_choice
+  passing_answers?: string[];
+  // number
+  operator?: '>=' | '>' | '=' | '<=' | '<';
+  value?: number;
+}
+
+/** Full question shape — authenticated APIs only. Includes passing_criteria. */
 export interface KnockoutQuestion {
   question_id: string;
   question_text: string;
   question_type: 'yes_no' | 'single_choice' | 'number';
   is_required: boolean;
-  disqualifying_answer?: string | null;
+  passing_criteria?: PassingCriteria | null;
+  options?: string[] | null;
+  display_order: number;
+}
+
+/** Public question shape — candidate-facing API. passing_criteria omitted. */
+export interface PublicKnockoutQuestion {
+  question_id: string;
+  question_text: string;
+  question_type: 'yes_no' | 'single_choice' | 'number';
+  is_required: boolean;
   options?: string[] | null;
   display_order: number;
 }

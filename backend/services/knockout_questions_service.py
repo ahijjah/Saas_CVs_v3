@@ -1,8 +1,16 @@
 """
 Service: job-level knockout questions + candidate answer persistence.
+
+passing_criteria JSONB shapes by question_type:
+  yes_no:        {"passing_answers": ["yes"]}  — subset of ["yes","no"]
+  single_choice: {"passing_answers": ["Option A",...]}  — subset of options
+  number:        {"operator": ">=", "value": 3}  — operator in {>=,>,=,<=,<}
+
+passing_criteria is INTERNAL and must never be exposed on public (unauthenticated)
+endpoints. Use get_public_job_knockout_questions() for the candidate-facing API.
 """
+import json
 import logging
-from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import text
@@ -11,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 _VALID_TYPES = {"yes_no", "single_choice", "number"}
+_VALID_OPERATORS = {">=", ">", "=", "<=", "<"}
 _DEFAULT_MAX = 5
 
 
@@ -25,8 +34,64 @@ async def _get_max_questions(db: AsyncSession) -> int:
         return _DEFAULT_MAX
 
 
+def _validate_passing_criteria(qtype: str, criteria: dict | None, options: list | None) -> None:
+    """Raise HTTPException if passing_criteria is missing or malformed for the given type."""
+    if criteria is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="passing_criteria is required for all knockout questions.",
+        )
+
+    if qtype == "yes_no":
+        answers = criteria.get("passing_answers")
+        if not answers or not isinstance(answers, list) or len(answers) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="yes_no questions require passing_criteria.passing_answers with at least one value.",
+            )
+        invalid = [a for a in answers if a not in ("yes", "no")]
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"yes_no passing_answers must be 'yes' and/or 'no', got: {invalid}.",
+            )
+
+    elif qtype == "single_choice":
+        if not options or len(options) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="single_choice questions require at least 2 options.",
+            )
+        answers = criteria.get("passing_answers")
+        if not answers or not isinstance(answers, list) or len(answers) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="single_choice questions require passing_criteria.passing_answers with at least one value.",
+            )
+        invalid = [a for a in answers if a not in options]
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"passing_answers values must exist in options, invalid: {invalid}.",
+            )
+
+    elif qtype == "number":
+        operator = criteria.get("operator")
+        value = criteria.get("value")
+        if operator not in _VALID_OPERATORS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"number questions require passing_criteria.operator, one of {sorted(_VALID_OPERATORS)}.",
+            )
+        if value is None or not isinstance(value, (int, float)):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="number questions require passing_criteria.value as a numeric.",
+            )
+
+
 def _validate_question(q: dict) -> None:
-    """Raise HTTPException if a question dict is malformed."""
+    """Full structural validation for a single question dict."""
     if not isinstance(q.get("question_text"), str) or not q["question_text"].strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -38,32 +103,23 @@ def _validate_question(q: dict) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"question_type must be one of {sorted(_VALID_TYPES)}, got '{qtype}'.",
         )
-    if qtype == "single_choice":
-        opts = q.get("options")
-        if not opts or not isinstance(opts, list) or len(opts) < 2:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="single_choice questions require at least 2 options.",
-            )
-        if q.get("disqualifying_answer") and q["disqualifying_answer"] not in opts:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="disqualifying_answer must be one of the provided options.",
-            )
-    if qtype == "yes_no" and q.get("disqualifying_answer"):
-        if q["disqualifying_answer"] not in ("yes", "no"):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="For yes_no questions, disqualifying_answer must be 'yes' or 'no'.",
-            )
-    # number type: no options required; disqualifying_answer not validated in V1
+    options = q.get("options")
+    if options is not None and not isinstance(options, list):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="options must be a list.",
+        )
+    _validate_passing_criteria(qtype, q.get("passing_criteria"), options)
 
 
-async def get_job_knockout_questions(db: AsyncSession, job_id: str) -> list[dict]:
+# ── Public (unauthenticated) fetch — passing_criteria excluded ────────────────
+
+async def get_public_job_knockout_questions(db: AsyncSession, job_id: str) -> list[dict]:
+    """Return questions for the candidate apply page. Strips passing_criteria."""
     rows = await db.execute(
         text("""
-            SELECT question_id, job_id, question_text, question_type,
-                   is_required, disqualifying_answer, options, display_order
+            SELECT question_id, question_text, question_type,
+                   is_required, options, display_order
             FROM job_knockout_questions
             WHERE job_id = :jid
             ORDER BY display_order, created_at
@@ -72,17 +128,46 @@ async def get_job_knockout_questions(db: AsyncSession, job_id: str) -> list[dict
     )
     return [
         {
-            "question_id":          str(r["question_id"]),
-            "question_text":        r["question_text"],
-            "question_type":        r["question_type"],
-            "is_required":          r["is_required"],
-            "disqualifying_answer": r["disqualifying_answer"],
-            "options":              r["options"],
-            "display_order":        r["display_order"],
+            "question_id":   str(r["question_id"]),
+            "question_text": r["question_text"],
+            "question_type": r["question_type"],
+            "is_required":   r["is_required"],
+            "options":       r["options"],
+            "display_order": r["display_order"],
         }
         for r in rows.mappings()
     ]
 
+
+# ── Authenticated (internal) fetch — full, includes passing_criteria ──────────
+
+async def get_job_knockout_questions(db: AsyncSession, job_id: str) -> list[dict]:
+    """Return questions with passing_criteria for authenticated (admin/recruiter) APIs."""
+    rows = await db.execute(
+        text("""
+            SELECT question_id, question_text, question_type,
+                   is_required, options, passing_criteria, display_order
+            FROM job_knockout_questions
+            WHERE job_id = :jid
+            ORDER BY display_order, created_at
+        """),
+        {"jid": job_id},
+    )
+    return [
+        {
+            "question_id":      str(r["question_id"]),
+            "question_text":    r["question_text"],
+            "question_type":    r["question_type"],
+            "is_required":      r["is_required"],
+            "options":          r["options"],
+            "passing_criteria": r["passing_criteria"],
+            "display_order":    r["display_order"],
+        }
+        for r in rows.mappings()
+    ]
+
+
+# ── Write ─────────────────────────────────────────────────────────────────────
 
 async def save_job_knockout_questions(
     db: AsyncSession,
@@ -91,8 +176,6 @@ async def save_job_knockout_questions(
     questions: list[dict],
 ) -> None:
     """Replace all knockout questions for a job atomically."""
-    import json
-
     max_q = await _get_max_questions(db)
     if len(questions) > max_q:
         raise HTTPException(
@@ -103,7 +186,6 @@ async def save_job_knockout_questions(
     for q in questions:
         _validate_question(q)
 
-    # Delete existing and re-insert
     await db.execute(
         text("DELETE FROM job_knockout_questions WHERE job_id = :jid"),
         {"jid": job_id},
@@ -111,23 +193,24 @@ async def save_job_knockout_questions(
 
     for i, q in enumerate(questions):
         opts = q.get("options")
-        opts_json = json.dumps(opts) if opts else None
+        criteria = q.get("passing_criteria")
         await db.execute(
             text("""
                 INSERT INTO job_knockout_questions
                     (job_id, tenant_id, question_text, question_type,
-                     is_required, disqualifying_answer, options, display_order)
-                VALUES (:jid, :tid, :qtext, :qtype, :required, :disq, CAST(:opts AS jsonb), :order)
+                     is_required, options, passing_criteria, display_order)
+                VALUES (:jid, :tid, :qtext, :qtype, :required,
+                        CAST(:opts AS jsonb), CAST(:criteria AS jsonb), :order)
             """),
             {
-                "jid":     job_id,
-                "tid":     tenant_id,
-                "qtext":   q["question_text"].strip(),
-                "qtype":   q.get("question_type", "yes_no"),
+                "jid":      job_id,
+                "tid":      tenant_id,
+                "qtext":    q["question_text"].strip(),
+                "qtype":    q.get("question_type", "yes_no"),
                 "required": q.get("is_required", True),
-                "disq":    q.get("disqualifying_answer"),
-                "opts":    opts_json,
-                "order":   i,
+                "opts":     json.dumps(opts) if opts is not None else None,
+                "criteria": json.dumps(criteria) if criteria is not None else None,
+                "order":    i,
             },
         )
 
@@ -139,55 +222,39 @@ async def save_knockout_answers(
     answers: list[dict],
 ) -> None:
     """
-    Persist candidate answers.  Each answer: {question_id, answer_value}.
-    Marks is_disqualifying based on the question's disqualifying_answer.
+    Persist candidate answers. Each item: {question_id, answer_value}.
+
+    is_disqualifying is always stored as FALSE in this phase — pass/fail
+    evaluation against passing_criteria will be implemented in the
+    pre-screening stage.
     """
     if not answers:
         return
 
-    # Load questions to check disqualifying logic
+    valid_qids = set()
     rows = await db.execute(
-        text("""
-            SELECT question_id, disqualifying_answer, is_required
-            FROM job_knockout_questions WHERE job_id = :jid
-        """),
+        text("SELECT question_id FROM job_knockout_questions WHERE job_id = :jid"),
         {"jid": job_id},
     )
-    q_map: dict[str, dict] = {
-        str(r["question_id"]): {
-            "disqualifying_answer": r["disqualifying_answer"],
-            "is_required": r["is_required"],
-        }
-        for r in rows.mappings()
-    }
+    for r in rows:
+        valid_qids.add(str(r[0]))
 
     for ans in answers:
         qid = str(ans.get("question_id", ""))
         val = str(ans.get("answer_value", "")).strip()
-        if qid not in q_map:
-            continue  # skip answers to unknown/deleted questions
-
-        q_meta = q_map[qid]
-        is_disq = bool(
-            q_meta["disqualifying_answer"]
-            and val.lower() == q_meta["disqualifying_answer"].lower()
-        )
+        if qid not in valid_qids:
+            continue
 
         await db.execute(
             text("""
                 INSERT INTO application_knockout_answers
                     (application_id, question_id, answer_value, is_disqualifying)
-                VALUES (:aid, CAST(:qid AS uuid), :val, :disq)
+                VALUES (:aid, CAST(:qid AS uuid), :val, FALSE)
                 ON CONFLICT (application_id, question_id) DO UPDATE
                     SET answer_value = EXCLUDED.answer_value,
-                        is_disqualifying = EXCLUDED.is_disqualifying
+                        is_disqualifying = FALSE
             """),
-            {
-                "aid":  application_id,
-                "qid":  qid,
-                "val":  val,
-                "disq": is_disq,
-            },
+            {"aid": application_id, "qid": qid, "val": val},
         )
 
 
@@ -208,11 +275,11 @@ async def get_application_knockout_answers(
     )
     return [
         {
-            "answer_id":       str(r["answer_id"]),
-            "question_id":     str(r["question_id"]),
-            "question_text":   r["question_text"],
-            "question_type":   r["question_type"],
-            "answer_value":    r["answer_value"],
+            "answer_id":        str(r["answer_id"]),
+            "question_id":      str(r["question_id"]),
+            "question_text":    r["question_text"],
+            "question_type":    r["question_type"],
+            "answer_value":     r["answer_value"],
             "is_disqualifying": r["is_disqualifying"],
         }
         for r in rows.mappings()

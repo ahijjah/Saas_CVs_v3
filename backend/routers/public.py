@@ -92,8 +92,8 @@ async def get_public_job(
         if applications_count >= job["max_applications"]:
             intake_open = False
 
-    from services.knockout_questions_service import get_job_knockout_questions
-    knockout_questions = await get_job_knockout_questions(db, str(job["job_id"]))
+    from services.knockout_questions_service import get_public_job_knockout_questions
+    knockout_questions = await get_public_job_knockout_questions(db, str(job["job_id"]))
 
     return {
         "job_title":           job["title"],
@@ -109,17 +109,7 @@ async def get_public_job(
         "deadline_passed":     deadline_passed,
         "max_applications":    job["max_applications"],
         "applications_count":  applications_count,
-        "knockout_questions":  [
-            {
-                "question_id":    q["question_id"],
-                "question_text":  q["question_text"],
-                "question_type":  q["question_type"],
-                "is_required":    q["is_required"],
-                "options":        q["options"],
-                "display_order":  q["display_order"],
-            }
-            for q in knockout_questions
-        ],
+        "knockout_questions":  knockout_questions,
     }
 
 

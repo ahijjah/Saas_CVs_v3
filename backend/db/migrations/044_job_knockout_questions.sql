@@ -7,10 +7,10 @@ CREATE TABLE IF NOT EXISTS job_knockout_questions (
     job_id          UUID        NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
     tenant_id       UUID        NOT NULL,
     question_text   TEXT        NOT NULL,
-    question_type   VARCHAR(20) NOT NULL DEFAULT 'yes_no',   -- yes_no | multiple_choice | text
+    question_type   VARCHAR(20) NOT NULL DEFAULT 'yes_no',   -- yes_no | single_choice | number
     is_required     BOOLEAN     NOT NULL DEFAULT TRUE,
-    disqualifying_answer TEXT,          -- for yes_no: 'yes'/'no'; for multiple_choice: one option value
-    options         JSONB,              -- for multiple_choice: ["Option A","Option B",...]
+    disqualifying_answer TEXT,          -- legacy column, superseded by passing_criteria
+    options         JSONB,              -- for single_choice: ["Option A","Option B",...]
     display_order   INT         NOT NULL DEFAULT 0,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -33,15 +33,18 @@ CREATE INDEX IF NOT EXISTS idx_knockout_answers_application
     ON application_knockout_answers (application_id);
 
 -- Platform config: max questions allowed per job
-INSERT INTO system_config (key, value, value_type, category, description, is_editable)
+-- Column names: type (not value_type), editable (not is_editable)
+-- Valid categories: scoring|ai|email|queue|subscription|security|general
+INSERT INTO system_config (key, value, type, category, description, editable)
 VALUES (
     'max_knockout_questions_per_job',
     '5',
     'number',
-    'pre_screening',
+    'general',
     'Maximum number of knockout questions allowed per job posting.',
     TRUE
 )
 ON CONFLICT (key) DO NOTHING;
 
 COMMIT;
+

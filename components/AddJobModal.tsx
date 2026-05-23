@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { User, ClientOrganization, KnockoutQuestion } from '../types';
+import { User, ClientOrganization, KnockoutQuestion, PassingCriteria } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
@@ -77,8 +77,11 @@ const T = {
     knockoutTypeSingleChoice: 'Single Choice',
     knockoutTypeNumber: 'Number',
     knockoutRequired: 'Required',
-    knockoutDisqualify: 'Disqualifying answer',
-    knockoutDisqualifyNone: 'None',
+    knockoutPassing: 'Passing criteria',
+    knockoutPassingAnswers: 'Passing answers',
+    knockoutPassingOperator: 'Operator',
+    knockoutPassingValue: 'Value',
+    knockoutPassingHint: (op: string, val: string) => `Pass if answer is ${op} ${val}`,
     knockoutOptions: 'Options (one per line)',
     knockoutOptionsPlaceholder: 'Option A\nOption B\nOption C',
     knockoutRemove: 'Remove',
@@ -132,8 +135,11 @@ const T = {
     knockoutTypeSingleChoice: 'اختيار واحد',
     knockoutTypeNumber: 'رقمي',
     knockoutRequired: 'إلزامي',
-    knockoutDisqualify: 'الإجابة المُقصية',
-    knockoutDisqualifyNone: 'لا يوجد',
+    knockoutPassing: 'معايير الاجتياز',
+    knockoutPassingAnswers: 'إجابات الاجتياز',
+    knockoutPassingOperator: 'المعامل',
+    knockoutPassingValue: 'القيمة',
+    knockoutPassingHint: (op: string, val: string) => `يجتاز إذا كانت الإجابة ${op} ${val}`,
     knockoutOptions: 'الخيارات (سطر لكل خيار)',
     knockoutOptionsPlaceholder: 'خيار أ\nخيار ب\nخيار ج',
     knockoutRemove: 'حذف',
@@ -232,7 +238,13 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const [clientOrgs, setClientOrgs] = useState<ClientOrganization[]>([]);
   const [clientOrgsLoading, setClientOrgsLoading] = useState(false);
   const [showKnockout, setShowKnockout] = useState(false);
-  const [knockoutQuestions, setKnockoutQuestions] = useState<Partial<KnockoutQuestion & { optionsText: string }>[]>([]);
+  type LocalQuestion = Partial<KnockoutQuestion> & {
+    optionsText: string;        // raw textarea value for single_choice options
+    passingAnswers: string[];   // for yes_no / single_choice
+    passingOperator: string;    // for number
+    passingValue: string;       // for number (string for input binding)
+  };
+  const [knockoutQuestions, setKnockoutQuestions] = useState<LocalQuestion[]>([]);
 
   const [formData, setFormData] = useState<FormData>({
     job_title: '',
@@ -281,7 +293,10 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
   const addKnockoutQuestion = () => {
     if (knockoutQuestions.length >= MAX_KNOCKOUT) return;
-    setKnockoutQuestions(prev => [...prev, { question_text: '', question_type: 'yes_no', is_required: true, disqualifying_answer: undefined, optionsText: '' }]);
+    setKnockoutQuestions(prev => [...prev, {
+      question_text: '', question_type: 'yes_no', is_required: true,
+      optionsText: '', passingAnswers: [], passingOperator: '>=', passingValue: '',
+    }]);
   };
 
   const removeKnockoutQuestion = (idx: number) => {
@@ -324,15 +339,23 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
         const questions = knockoutQuestions
           .filter(q => q.question_text?.trim())
           .map(q => {
-            const opts = q.question_type === 'single_choice' && q.optionsText
+            const qtype = q.question_type || 'yes_no';
+            const opts = qtype === 'single_choice' && q.optionsText
               ? q.optionsText.split('\n').map((s: string) => s.trim()).filter(Boolean)
-              : undefined;
+              : null;
+            let criteria: PassingCriteria | null = null;
+            if (qtype === 'yes_no' || qtype === 'single_choice') {
+              criteria = { passing_answers: q.passingAnswers ?? [] };
+            } else if (qtype === 'number') {
+              const numVal = parseFloat(q.passingValue ?? '');
+              criteria = { operator: q.passingOperator || '>=', value: isNaN(numVal) ? 0 : numVal };
+            }
             return {
               question_text: q.question_text!.trim(),
-              question_type: q.question_type || 'yes_no',
+              question_type: qtype,
               is_required: q.is_required ?? true,
-              disqualifying_answer: q.disqualifying_answer || null,
-              options: opts || null,
+              options: opts,
+              passing_criteria: criteria,
             };
           });
         if (questions.length > 0) payload.knockout_questions = questions as any;
@@ -601,34 +624,9 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                               />
                               <span className="text-xs text-textMuted font-semibold">{(t as any).knockoutRequired}</span>
                             </label>
-                            {(q.question_type === 'yes_no' || q.question_type === 'single_choice') && (
-                              <div className="space-y-1">
-                                <p className="text-[10px] text-textMuted font-bold uppercase tracking-widest">{(t as any).knockoutDisqualify}</p>
-                                {q.question_type === 'yes_no' ? (
-                                  <select
-                                    value={q.disqualifying_answer || ''}
-                                    onChange={e => updateKnockoutQuestion(idx, 'disqualifying_answer', e.target.value || undefined)}
-                                    className={selectCls}
-                                  >
-                                    <option value="">{(t as any).knockoutDisqualifyNone}</option>
-                                    <option value="yes">Yes</option>
-                                    <option value="no">No</option>
-                                  </select>
-                                ) : (
-                                  <select
-                                    value={q.disqualifying_answer || ''}
-                                    onChange={e => updateKnockoutQuestion(idx, 'disqualifying_answer', e.target.value || undefined)}
-                                    className={selectCls}
-                                  >
-                                    <option value="">{(t as any).knockoutDisqualifyNone}</option>
-                                    {(q.optionsText || '').split('\n').map((o: string) => o.trim()).filter(Boolean).map((o: string) => (
-                                      <option key={o} value={o}>{o}</option>
-                                    ))}
-                                  </select>
-                                )}
-                              </div>
-                            )}
                           </div>
+
+                          {/* Options textarea — single_choice only */}
                           {q.question_type === 'single_choice' && (
                             <div className="space-y-1">
                               <p className="text-[10px] text-textMuted font-bold uppercase tracking-widest">{(t as any).knockoutOptions}</p>
@@ -641,6 +639,87 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                               />
                             </div>
                           )}
+
+                          {/* Passing criteria */}
+                          <div className="space-y-1.5 pt-1 border-t border-slate-200">
+                            <p className="text-[10px] text-textMuted font-bold uppercase tracking-widest">{(t as any).knockoutPassing}</p>
+
+                            {/* yes_no: two checkboxes */}
+                            {q.question_type === 'yes_no' && (
+                              <div className="flex gap-4">
+                                {(['yes', 'no'] as const).map(opt => (
+                                  <label key={opt} className="flex items-center gap-1.5 cursor-pointer text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={(q.passingAnswers ?? []).includes(opt)}
+                                      onChange={e => {
+                                        const cur = q.passingAnswers ?? [];
+                                        updateKnockoutQuestion(idx, 'passingAnswers',
+                                          e.target.checked ? [...cur, opt] : cur.filter(a => a !== opt));
+                                      }}
+                                      className="rounded border-border"
+                                    />
+                                    <span className="capitalize">{opt}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* single_choice: one checkbox per parsed option */}
+                            {q.question_type === 'single_choice' && (() => {
+                              const opts = (q.optionsText || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
+                              return opts.length > 0 ? (
+                                <div className="flex flex-wrap gap-3">
+                                  {opts.map((opt: string) => (
+                                    <label key={opt} className="flex items-center gap-1.5 cursor-pointer text-sm">
+                                      <input
+                                        type="checkbox"
+                                        checked={(q.passingAnswers ?? []).includes(opt)}
+                                        onChange={e => {
+                                          const cur = q.passingAnswers ?? [];
+                                          updateKnockoutQuestion(idx, 'passingAnswers',
+                                            e.target.checked ? [...cur, opt] : cur.filter((a: string) => a !== opt));
+                                        }}
+                                        className="rounded border-border"
+                                      />
+                                      <span>{opt}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-[11px] text-textMuted italic">Add options above first</p>
+                              );
+                            })()}
+
+                            {/* number: operator + value */}
+                            {q.question_type === 'number' && (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={q.passingOperator || '>='}
+                                    onChange={e => updateKnockoutQuestion(idx, 'passingOperator', e.target.value)}
+                                    className={`${selectCls} w-24`}
+                                  >
+                                    {(['>=', '>', '=', '<=', '<'] as const).map(op => (
+                                      <option key={op} value={op}>{op}</option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    type="number"
+                                    value={q.passingValue || ''}
+                                    onChange={e => updateKnockoutQuestion(idx, 'passingValue', e.target.value)}
+                                    placeholder="e.g. 3"
+                                    className={`${inputCls} w-28`}
+                                  />
+                                </div>
+                                {q.passingValue && (
+                                  <p className="text-[11px] text-primary font-semibold">
+                                    {(t as any).knockoutPassingHint(q.passingOperator || '>=', q.passingValue)}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <button
                           type="button"
