@@ -640,6 +640,22 @@ async def update_ingestion_settings(
     elif body.alias_enabled is not None:
         updates["receive_cv_via_platform_email"] = body.alias_enabled
 
+    # Enforce: email channels cannot be enabled while knockout questions exist
+    enabling_email = (
+        updates.get("receive_cv_via_forwarding_email") is True
+        or updates.get("receive_cv_via_platform_email") is True
+    )
+    if enabling_email:
+        from services.knockout_questions_service import job_has_active_knockout_questions
+        if await job_has_active_knockout_questions(db, job_id):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Email intake cannot be enabled for jobs with mandatory knockout questions. "
+                    "Please remove knockout questions or use the public application link."
+                ),
+            )
+
     if body.restrict_forwarding_sender_to_tenant_email is not None:
         updates["restrict_forwarding_sender_to_tenant_email"] = body.restrict_forwarding_sender_to_tenant_email
 
@@ -1247,6 +1263,10 @@ async def update_job_metadata(
     if body.knockout_questions is not None:
         from services.knockout_questions_service import save_job_knockout_questions
         await save_job_knockout_questions(db, job_id, current_user.tenant_id, body.knockout_questions)
+        # Auto-disable email channels when knockout questions are active
+        if len(body.knockout_questions) > 0:
+            updates["receive_cv_via_forwarding_email"] = False
+            updates["receive_cv_via_platform_email"] = False
 
     if not updates and body.knockout_questions is None:
         return {"success": True, "message": "No changes"}

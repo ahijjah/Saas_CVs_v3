@@ -215,6 +215,15 @@ async def save_job_knockout_questions(
         )
 
 
+async def job_has_active_knockout_questions(db: AsyncSession, job_id: str) -> bool:
+    """Return True if the job has at least one knockout question configured."""
+    result = await db.execute(
+        text("SELECT 1 FROM job_knockout_questions WHERE job_id = :jid LIMIT 1"),
+        {"jid": job_id},
+    )
+    return result.first() is not None
+
+
 async def save_knockout_answers(
     db: AsyncSession,
     application_id: str,

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus } from '../types';
+import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus, KnockoutQuestion, PassingCriteria } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
@@ -212,6 +212,32 @@ const T = {
     progressProcessing: '{n} processing',
     progressScored: '{n} scored',
     progressFailed: '{n} failed',
+    knockoutTitle: 'Knockout Questions',
+    knockoutSubtitle: 'Pre-screening questions shown to candidates before they submit via the public apply link.',
+    knockoutAddQuestion: 'Add Question',
+    knockoutQuestionPlaceholder: 'e.g. Do you have a valid driving licence?',
+    knockoutTypeyesNo: 'Yes / No',
+    knockoutTypeSingleChoice: 'Single Choice',
+    knockoutTypeNumber: 'Number',
+    knockoutRequired: 'Required',
+    knockoutPassing: 'Passing criteria',
+    knockoutPassingAnswers: 'Passing answers',
+    knockoutPassingOperator: 'Operator',
+    knockoutPassingValue: 'Value',
+    knockoutPassingHint: (op: string, val: string) => `Pass if answer is ${op} ${val}`,
+    knockoutOptions: 'Options (one per line)',
+    knockoutOptionsPlaceholder: 'Option A\nOption B\nOption C',
+    knockoutRemove: 'Remove',
+    knockoutMaxReached: (n: number) => `Maximum ${n} questions allowed.`,
+    knockoutSave: 'Save Questions',
+    knockoutSaving: 'Saving...',
+    knockoutSaved: 'Knockout questions updated',
+    knockoutCancel: 'Cancel',
+    knockoutEdit: 'Edit',
+    knockoutNoQuestions: 'No knockout questions configured.',
+    knockoutViewOnly: 'View only',
+    knockoutEmailLocked: 'Email intake channels are disabled because this job has active knockout questions. Candidates must apply via the public link.',
+    knockoutIntakeLockNote: 'Email intake is disabled — this job has active knockout questions.',
   },
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
@@ -405,6 +431,32 @@ const T = {
     progressProcessing: '{n} قيد المعالجة',
     progressScored: '{n} تم تقييمه',
     progressFailed: '{n} فشل',
+    knockoutTitle: 'أسئلة الإقصاء',
+    knockoutSubtitle: 'أسئلة تمهيدية تُعرض للمرشحين قبل التقديم عبر رابط التقديم العام.',
+    knockoutAddQuestion: 'إضافة سؤال',
+    knockoutQuestionPlaceholder: 'مثال: هل تمتلك رخصة قيادة سارية؟',
+    knockoutTypeyesNo: 'نعم / لا',
+    knockoutTypeSingleChoice: 'اختيار واحد',
+    knockoutTypeNumber: 'رقمي',
+    knockoutRequired: 'إلزامي',
+    knockoutPassing: 'معايير الاجتياز',
+    knockoutPassingAnswers: 'إجابات الاجتياز',
+    knockoutPassingOperator: 'المعامل',
+    knockoutPassingValue: 'القيمة',
+    knockoutPassingHint: (op: string, val: string) => `يجتاز إذا كانت الإجابة ${op} ${val}`,
+    knockoutOptions: 'الخيارات (سطر لكل خيار)',
+    knockoutOptionsPlaceholder: 'خيار أ\nخيار ب\nخيار ج',
+    knockoutRemove: 'حذف',
+    knockoutMaxReached: (n: number) => `الحد الأقصى ${n} أسئلة مسموح بها.`,
+    knockoutSave: 'حفظ الأسئلة',
+    knockoutSaving: 'جارٍ الحفظ...',
+    knockoutSaved: 'تم تحديث أسئلة الإقصاء',
+    knockoutCancel: 'إلغاء',
+    knockoutEdit: 'تعديل',
+    knockoutNoQuestions: 'لم يتم تهيئة أسئلة إقصاء.',
+    knockoutViewOnly: 'للعرض فقط',
+    knockoutEmailLocked: 'قنوات البريد الإلكتروني معطّلة لأن هذه الوظيفة تحتوي على أسئلة إقصاء نشطة. يجب على المرشحين التقديم عبر الرابط العام.',
+    knockoutIntakeLockNote: 'استقبال البريد معطّل — هذه الوظيفة تحتوي على أسئلة إقصاء نشطة.',
   },
 };
 
@@ -454,6 +506,18 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [descSavedNotice, setDescSavedNotice] = useState(false);
   const [copiedApplyLink, setCopiedApplyLink] = useState(false);
   const descriptionFieldRef = useRef<HTMLTextAreaElement>(null);
+
+  // Knockout questions editing
+  type LocalQuestion = Partial<KnockoutQuestion> & {
+    optionsText: string;
+    passingAnswers: string[];
+    passingOperator: string;
+    passingValue: string;
+  };
+  const [editingKnockout, setEditingKnockout] = useState(false);
+  const [knockoutDraft, setKnockoutDraft] = useState<LocalQuestion[]>([]);
+  const [savingKnockout, setSavingKnockout] = useState(false);
+  const MAX_KNOCKOUT = 5;
 
   // Application controls (max_applications, auto_close)
   const [editingControls, setEditingControls] = useState(false);
@@ -1135,6 +1199,80 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     }
   }, [details, draftCriteria, auth.token, addToast, t.criteriaSaved]);
 
+  const handleKnockoutEdit = useCallback(() => {
+    if (!details) return;
+    const existing = details.knockout_questions ?? [];
+    setKnockoutDraft(existing.map(q => ({
+      ...q,
+      optionsText: (q.options ?? []).join('\n'),
+      passingAnswers: q.passing_criteria?.passing_answers ?? [],
+      passingOperator: q.passing_criteria?.operator ?? '>=',
+      passingValue: q.passing_criteria?.value !== undefined ? String(q.passing_criteria.value) : '',
+    })));
+    setEditingKnockout(true);
+  }, [details]);
+
+  const handleKnockoutSave = useCallback(async () => {
+    if (!details) return;
+    setSavingKnockout(true);
+    try {
+      const questions = knockoutDraft
+        .filter(q => q.question_text?.trim())
+        .map(q => {
+          const qtype = q.question_type || 'yes_no';
+          const opts = qtype === 'single_choice' && q.optionsText
+            ? q.optionsText.split('\n').map((s: string) => s.trim()).filter(Boolean)
+            : null;
+          let criteria: PassingCriteria | null = null;
+          if (qtype === 'yes_no' || qtype === 'single_choice') {
+            criteria = { passing_answers: q.passingAnswers ?? [] };
+          } else if (qtype === 'number') {
+            const numVal = parseFloat(q.passingValue ?? '');
+            criteria = { operator: (q.passingOperator || '>=') as PassingCriteria['operator'], value: isNaN(numVal) ? 0 : numVal };
+          }
+          return {
+            question_text: q.question_text!.trim(),
+            question_type: qtype,
+            is_required: q.is_required ?? true,
+            options: opts,
+            passing_criteria: criteria,
+          };
+        });
+      await apiService.put(
+        `${WEBHOOK_CONFIG.UPDATE_JOB_URL}/${(details as any).job_id}`,
+        { knockout_questions: questions },
+        auth.token!
+      );
+      const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
+      if (data) {
+        const p = Array.isArray(data) ? data[0] : data;
+        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis });
+      }
+      setEditingKnockout(false);
+      addToast((t as any).knockoutSaved, 'success');
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to save knockout questions.', 'error');
+    } finally {
+      setSavingKnockout(false);
+    }
+  }, [details, knockoutDraft, auth.token, addToast, t]);
+
+  const addKnockoutDraftQuestion = useCallback(() => {
+    if (knockoutDraft.length >= MAX_KNOCKOUT) return;
+    setKnockoutDraft(prev => [...prev, {
+      question_text: '', question_type: 'yes_no', is_required: true,
+      optionsText: '', passingAnswers: [], passingOperator: '>=', passingValue: '',
+    }]);
+  }, [knockoutDraft.length]);
+
+  const removeKnockoutDraftQuestion = useCallback((idx: number) => {
+    setKnockoutDraft(prev => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  const updateKnockoutDraftQuestion = useCallback((idx: number, field: string, value: unknown) => {
+    setKnockoutDraft(prev => prev.map((q, i) => i === idx ? { ...q, [field]: value } : q));
+  }, []);
+
   // ── Derived values ─────────────────────────────────────────────────────────
 
   if (loading) {
@@ -1161,6 +1299,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   if (!details) return null;
 
   const canEditIntake = canEdit;
+  const canManageKnockout = canEdit || isSuperAdmin;
+  const hasKnockoutQuestions = (details.knockout_questions ?? []).length > 0;
   const intakeBlocked = ['pending', 'processing', 'insufficient', 'blocked'].includes(details.criteria_extraction_status || '');
 
   const analysis = details.analysis_json ?? undefined;
@@ -1860,6 +2000,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           {/* Email Alias tab */}
           {activeIntakeTab === 'email-alias' && (
             <div>
+              {hasKnockoutQuestions && (
+                <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2.5">
+                  <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                  <p className="text-xs font-bold text-amber-800">{(t as any).knockoutIntakeLockNote}</p>
+                </div>
+              )}
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div>
                   <div className="flex items-center gap-2 mb-0.5">
@@ -1893,6 +2039,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           {/* Email Forwarding tab */}
           {activeIntakeTab === 'email-forwarding' && (
             <div>
+              {hasKnockoutQuestions && (
+                <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2.5">
+                  <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                  <p className="text-xs font-bold text-amber-800">{(t as any).knockoutIntakeLockNote}</p>
+                </div>
+              )}
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div>
                   <p className="text-xs font-black text-textMain mb-0.5">{t.option1Title}</p>
@@ -2092,6 +2244,254 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             </div>
           )}
 
+        </div>
+      </section>
+
+      {/* G. Knockout Questions ───────────────────────────────────────────── */}
+      <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+            {(t as any).knockoutTitle}
+            {hasKnockoutQuestions && !editingKnockout && (
+              <span className="text-[9px] font-bold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">
+                {(details.knockout_questions ?? []).length}
+              </span>
+            )}
+          </h3>
+          <div className="flex items-center gap-2">
+            {!canManageKnockout && (
+              <span className="text-[10px] text-textMuted font-bold px-2 py-0.5 bg-slate-100 rounded-full">{(t as any).knockoutViewOnly}</span>
+            )}
+            {canManageKnockout && !editingKnockout && (
+              <button onClick={handleKnockoutEdit} className="text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">
+                {(t as any).knockoutEdit}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="px-6 py-5">
+          {/* Email lock notice */}
+          {hasKnockoutQuestions && (
+            <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2.5">
+              <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              <p className="text-xs font-bold text-amber-800">{(t as any).knockoutEmailLocked}</p>
+            </div>
+          )}
+
+          {/* View mode */}
+          {!editingKnockout && (
+            <div>
+              {(details.knockout_questions ?? []).length === 0 ? (
+                <p className="text-xs text-textMuted italic">{(t as any).knockoutNoQuestions}</p>
+              ) : (
+                <div className="space-y-3">
+                  {(details.knockout_questions ?? []).map((q, idx) => (
+                    <div key={q.question_id || idx} className="border border-border rounded-xl p-4 bg-slate-50">
+                      <div className="flex items-start gap-3">
+                        <span className="w-5 h-5 bg-primary text-white text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">{idx + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-textMain mb-1">{q.question_text}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[9px] font-bold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full uppercase">
+                              {q.question_type === 'yes_no' ? (t as any).knockoutTypeyesNo
+                                : q.question_type === 'single_choice' ? (t as any).knockoutTypeSingleChoice
+                                : (t as any).knockoutTypeNumber}
+                            </span>
+                            {q.is_required && (
+                              <span className="text-[9px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full uppercase">{(t as any).knockoutRequired}</span>
+                            )}
+                            {q.options && q.options.length > 0 && (
+                              <span className="text-[10px] text-textMuted">{q.options.join(' · ')}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Edit mode */}
+          {editingKnockout && canManageKnockout && (
+            <div className="space-y-3 animate-fade-in">
+              <p className="text-[11px] text-textMuted">{(t as any).knockoutSubtitle}</p>
+              {knockoutDraft.map((q, idx) => {
+                const inputCls = 'w-full px-3 py-2 border border-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all';
+                const selectCls = `${inputCls} bg-white`;
+                return (
+                  <div key={idx} className="border border-border rounded-xl p-4 space-y-3 bg-slate-50">
+                    <div className="flex items-start gap-3">
+                      <span className="w-5 h-5 bg-primary text-white text-[10px] font-black rounded-full flex items-center justify-center shrink-0 mt-0.5">{idx + 1}</span>
+                      <div className="flex-1 space-y-2">
+                        <input
+                          type="text"
+                          value={q.question_text || ''}
+                          onChange={e => updateKnockoutDraftQuestion(idx, 'question_text', e.target.value)}
+                          placeholder={(t as any).knockoutQuestionPlaceholder}
+                          className={inputCls}
+                        />
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          <select
+                            value={q.question_type || 'yes_no'}
+                            onChange={e => updateKnockoutDraftQuestion(idx, 'question_type', e.target.value)}
+                            className={selectCls}
+                          >
+                            <option value="yes_no">{(t as any).knockoutTypeyesNo}</option>
+                            <option value="single_choice">{(t as any).knockoutTypeSingleChoice}</option>
+                            <option value="number">{(t as any).knockoutTypeNumber}</option>
+                          </select>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={q.is_required ?? true}
+                              onChange={e => updateKnockoutDraftQuestion(idx, 'is_required', e.target.checked)}
+                              className="rounded border-border"
+                            />
+                            <span className="text-xs text-textMuted font-semibold">{(t as any).knockoutRequired}</span>
+                          </label>
+                        </div>
+
+                        {/* Options textarea — single_choice only */}
+                        {q.question_type === 'single_choice' && (
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-textMuted font-bold uppercase tracking-widest">{(t as any).knockoutOptions}</p>
+                            <textarea
+                              rows={3}
+                              value={q.optionsText || ''}
+                              onChange={e => updateKnockoutDraftQuestion(idx, 'optionsText', e.target.value)}
+                              placeholder={(t as any).knockoutOptionsPlaceholder}
+                              className={`${inputCls} resize-none font-mono text-xs`}
+                            />
+                          </div>
+                        )}
+
+                        {/* Passing criteria */}
+                        <div className="space-y-1.5 pt-1 border-t border-slate-200">
+                          <p className="text-[10px] text-textMuted font-bold uppercase tracking-widest">{(t as any).knockoutPassing}</p>
+
+                          {q.question_type === 'yes_no' && (
+                            <div className="flex gap-4">
+                              {(['yes', 'no'] as const).map(opt => (
+                                <label key={opt} className="flex items-center gap-1.5 cursor-pointer text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={(q.passingAnswers ?? []).includes(opt)}
+                                    onChange={e => {
+                                      const cur = q.passingAnswers ?? [];
+                                      updateKnockoutDraftQuestion(idx, 'passingAnswers',
+                                        e.target.checked ? [...cur, opt] : cur.filter(a => a !== opt));
+                                    }}
+                                    className="rounded border-border"
+                                  />
+                                  <span className="capitalize">{opt}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+
+                          {q.question_type === 'single_choice' && (() => {
+                            const opts = (q.optionsText || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
+                            return opts.length > 0 ? (
+                              <div className="flex flex-wrap gap-3">
+                                {opts.map((opt: string) => (
+                                  <label key={opt} className="flex items-center gap-1.5 cursor-pointer text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={(q.passingAnswers ?? []).includes(opt)}
+                                      onChange={e => {
+                                        const cur = q.passingAnswers ?? [];
+                                        updateKnockoutDraftQuestion(idx, 'passingAnswers',
+                                          e.target.checked ? [...cur, opt] : cur.filter((a: string) => a !== opt));
+                                      }}
+                                      className="rounded border-border"
+                                    />
+                                    <span>{opt}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-textMuted italic">Add options above first</p>
+                            );
+                          })()}
+
+                          {q.question_type === 'number' && (
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={q.passingOperator || '>='}
+                                  onChange={e => updateKnockoutDraftQuestion(idx, 'passingOperator', e.target.value)}
+                                  className={`${selectCls} w-24`}
+                                >
+                                  {(['>=', '>', '=', '<=', '<'] as const).map(op => (
+                                    <option key={op} value={op}>{op}</option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="number"
+                                  value={q.passingValue || ''}
+                                  onChange={e => updateKnockoutDraftQuestion(idx, 'passingValue', e.target.value)}
+                                  placeholder="e.g. 3"
+                                  className={`${inputCls} w-28`}
+                                />
+                              </div>
+                              {q.passingValue && (
+                                <p className="text-[11px] text-primary font-semibold">
+                                  {(t as any).knockoutPassingHint(q.passingOperator || '>=', q.passingValue)}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeKnockoutDraftQuestion(idx)}
+                        className="text-textMuted hover:text-red-600 transition-colors p-1 rounded"
+                        title={(t as any).knockoutRemove}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {knockoutDraft.length < MAX_KNOCKOUT ? (
+                <button
+                  type="button"
+                  onClick={addKnockoutDraftQuestion}
+                  className="w-full py-2 border-2 border-dashed border-border rounded-xl text-xs font-bold text-textMuted hover:border-primary hover:text-primary transition-colors"
+                >
+                  + {(t as any).knockoutAddQuestion}
+                </button>
+              ) : (
+                <p className="text-[11px] text-amber-600 text-center">{(t as any).knockoutMaxReached(MAX_KNOCKOUT)}</p>
+              )}
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={handleKnockoutSave}
+                  disabled={savingKnockout}
+                  className="px-4 py-2 bg-primary text-white text-xs font-black rounded-xl hover:bg-primaryDark transition-colors disabled:opacity-50"
+                >
+                  {savingKnockout ? (t as any).knockoutSaving : (t as any).knockoutSave}
+                </button>
+                <button
+                  onClick={() => setEditingKnockout(false)}
+                  disabled={savingKnockout}
+                  className="px-4 py-2 text-xs font-bold text-textMuted hover:text-textMain transition-colors disabled:opacity-50"
+                >
+                  {(t as any).knockoutCancel}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
