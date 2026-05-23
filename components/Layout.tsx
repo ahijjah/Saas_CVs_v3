@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { User } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { usePageTitle } from '../context/PageTitleContext';
 
 interface LayoutProps {
   user: User | null;
@@ -146,8 +147,9 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
   const isTenantAdmin = user?.role?.toLowerCase() === 'admin';
   const showClientOrgs = user?.tenant_type !== 'organization';
 
+  const { pageTitle: contextTitle } = usePageTitle();
   const currentMenuId = pathnameToMenuId(location.pathname);
-  const pageTitle = pathnameToTitle(location.pathname, location.search, t.pageTitles);
+  const pageTitle = contextTitle ?? pathnameToTitle(location.pathname, location.search, t.pageTitles);
 
   const handleNavigate = (id: string) => {
     navigate(menuIdToRoute(id));

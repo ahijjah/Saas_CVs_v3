@@ -6,6 +6,7 @@ import { WEBHOOK_CONFIG } from '../config';
 import { Application, AuthState, ApplicationFilter } from '../types';
 import { ApplicationDetails } from './ApplicationDetails';
 import { useLanguage } from '../context/LanguageContext';
+import { usePageTitle } from '../context/PageTitleContext';
 
 interface ApplicationsListProps {
   jobId: string;
@@ -87,9 +88,22 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 }) => {
   const { lang } = useLanguage();
   const t = T[lang];
+  const { setPageTitle } = usePageTitle();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [view, setView] = useState<'list' | 'details'>('list');
+
+  const enterDetailView = (appId: string) => {
+    setView('details');
+    setPageTitle(lang === 'ar' ? 'تفاصيل الطلب' : 'Application Details');
+    setSearchParams(prev => { const p = new URLSearchParams(prev); p.set('app_id', appId); return p; }, { replace: true });
+  };
+
+  const exitDetailView = () => {
+    setView('list');
+    setPageTitle(null);
+    setSearchParams(prev => { const p = new URLSearchParams(prev); p.delete('app_id'); return p; }, { replace: true });
+  };
   const [applicationsAll, setApplicationsAll] = useState<Application[]>([]);
   const [selectedDetails, setSelectedDetails] = useState<any | null>(null);
   const [filter, setFilter] = useState<ApplicationFilter>(initialFilter);
@@ -242,8 +256,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
       };
 
       setSelectedDetails(normalized);
-      setView("details");
-      setSearchParams(prev => { const p = new URLSearchParams(prev); p.set('app_id', appId); return p; }, { replace: true });
+      enterDetailView(appId);
     } catch (err: any) {
       if (fetchInFlightRef.current === appId) {
         console.error("[ApplicationsList] Details fetch error:", err);
@@ -261,6 +274,16 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     fetchApplications();
     fetchJobMeta();
   }, [jobId]);
+
+  // Keep context title in sync when language switches while in detail view
+  useEffect(() => {
+    if (view === 'details') {
+      setPageTitle(lang === 'ar' ? 'تفاصيل الطلب' : 'Application Details');
+    }
+  }, [lang, view]);
+
+  // Clear context title on unmount so other pages are unaffected
+  useEffect(() => () => { setPageTitle(null); }, []);
 
   // Auto-open a specific application when navigated from JobDetails duplicate section
   useEffect(() => {
@@ -285,10 +308,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     return (
       <ApplicationDetails
         data={selectedDetails}
-        onBack={() => {
-          setView('list');
-          setSearchParams(prev => { const p = new URLSearchParams(prev); p.delete('app_id'); return p; }, { replace: true });
-        }}
+        onBack={exitDetailView}
         jobMeta={jobMeta}
         onDownloadCV={() => handleDownloadApplicationCV(selectedDetails.application_id)}
         downloadingCV={downloadingCVId === selectedDetails.application_id}

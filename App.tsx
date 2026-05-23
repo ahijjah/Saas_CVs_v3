@@ -12,6 +12,7 @@ import {
 } from 'react-router-dom';
 import { AuthState, User, ApplicationFilter } from './types';
 import { LanguageProvider } from './context/LanguageContext';
+import { PageTitleProvider } from './context/PageTitleContext';
 import { AuthPage } from './pages/Auth';
 import { LandingPage } from './pages/LandingPage';
 import { Layout } from './components/Layout';
@@ -444,9 +445,11 @@ const AppInner: React.FC = () => {
 // ── Root: BrowserRouter + language provider ────────────────────────────────
 const App: React.FC = () => (
   <LanguageProvider>
-    <BrowserRouter>
-      <AppInner />
-    </BrowserRouter>
+    <PageTitleProvider>
+      <BrowserRouter>
+        <AppInner />
+      </BrowserRouter>
+    </PageTitleProvider>
   </LanguageProvider>
 );
 
