@@ -192,6 +192,43 @@ async def get_application_details(
                 "applied_at":     ref["applied_at"].isoformat() if ref["applied_at"] else None,
             }
 
+    # Fetch knockout question answers with question metadata
+    ko_rows = await db.execute(
+        text("""
+            SELECT
+                a.answer_id,
+                a.question_id,
+                a.answer_value,
+                a.is_disqualifying,
+                q.question_text,
+                q.question_type,
+                q.is_required,
+                q.options,
+                q.passing_criteria,
+                q.display_order
+            FROM application_knockout_answers a
+            JOIN job_knockout_questions q ON q.question_id = a.question_id
+            WHERE a.application_id = CAST(:aid AS uuid)
+            ORDER BY q.display_order, q.created_at
+        """),
+        {"aid": application_id},
+    )
+    knockout_answers = [
+        {
+            "answer_id":        str(r["answer_id"]),
+            "question_id":      str(r["question_id"]),
+            "answer_value":     r["answer_value"],
+            "is_disqualifying": r["is_disqualifying"],
+            "question_text":    r["question_text"],
+            "question_type":    r["question_type"],
+            "is_required":      r["is_required"],
+            "options":          r["options"],
+            "passing_criteria": r["passing_criteria"],
+            "display_order":    r["display_order"],
+        }
+        for r in ko_rows.mappings()
+    ]
+
     # Fetch AI comparison results if available
     comp_rows = await db.execute(
         text("""
@@ -301,6 +338,7 @@ async def get_application_details(
         "security_detected_patterns": list(app["security_detected_patterns"] or []),
         "security_detected_snippets": list(app["security_detected_snippets"] or []),
         "security_checked_at":        app["security_checked_at"].isoformat() if app["security_checked_at"] else None,
+        "knockout_answers":           knockout_answers,
     }
 
 

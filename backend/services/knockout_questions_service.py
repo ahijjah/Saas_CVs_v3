@@ -258,7 +258,7 @@ async def save_knockout_answers(
             text("""
                 INSERT INTO application_knockout_answers
                     (application_id, question_id, answer_value, is_disqualifying)
-                VALUES (:aid, CAST(:qid AS uuid), :val, FALSE)
+                VALUES (CAST(:aid AS uuid), CAST(:qid AS uuid), :val, FALSE)
                 ON CONFLICT (application_id, question_id) DO UPDATE
                     SET answer_value = EXCLUDED.answer_value,
                         is_disqualifying = FALSE

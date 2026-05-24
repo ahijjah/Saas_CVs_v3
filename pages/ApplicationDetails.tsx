@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail } from '../types';
+import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, PassingCriteria } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface JobMetaStrip {
@@ -116,6 +116,16 @@ const T = {
     securitySeverityScore: 'Severity Score',
     securityIssueTypes: 'Issue Types Detected',
     securityCheckedAt: 'Checked At',
+    knockoutSectionTitle: 'Knockout Questions',
+    knockoutNoAnswers: 'No knockout answers were submitted for this application.',
+    knockoutQuestion: 'Question',
+    knockoutAnswer: 'Answer',
+    knockoutRequired: 'Required',
+    knockoutPassingCriteria: 'Passing Criteria',
+    knockoutStatus: 'Status',
+    knockoutStatusRecorded: 'Recorded',
+    knockoutCriteriaPass: (op: string, val: string) => `Pass if answer is ${op} ${val}`,
+    knockoutCriteriaAnswers: (answers: string[]) => `Must answer: ${answers.join(' or ')}`,
     securityDetectedStatements: 'Detected Suspicious Statements',
     securitySnippetsNote: 'Short excerpts shown for reviewer context. Full CV content is not displayed here.',
     securityPatternLabels: {
@@ -245,6 +255,16 @@ const T = {
     securitySeverityScore: 'درجة الخطورة',
     securityIssueTypes: 'أنواع المشكلات المكتشفة',
     securityCheckedAt: 'وقت الفحص',
+    knockoutSectionTitle: 'أسئلة الفرز المسبق',
+    knockoutNoAnswers: 'لم يُقدِّم المتقدم أي إجابات على أسئلة الفرز.',
+    knockoutQuestion: 'السؤال',
+    knockoutAnswer: 'الإجابة',
+    knockoutRequired: 'إلزامي',
+    knockoutPassingCriteria: 'معايير الاجتياز',
+    knockoutStatus: 'الحالة',
+    knockoutStatusRecorded: 'مُسجَّل',
+    knockoutCriteriaPass: (op: string, val: string) => `ينجح إذا كانت الإجابة ${op} ${val}`,
+    knockoutCriteriaAnswers: (answers: string[]) => `يجب الإجابة بـ: ${answers.join(' أو ')}`,
     securityDetectedStatements: 'العبارات المشبوهة المكتشفة',
     securitySnippetsNote: 'مقاطع قصيرة تُعرض لأغراض المراجعة. لا يُعرض النص الكامل للسيرة الذاتية هنا.',
     securityPatternLabels: {
@@ -875,6 +895,71 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 </div>
               ))}
             </div>
+          </div>
+        );
+      })()}
+
+      {/* Knockout Questions Section */}
+      {(() => {
+        const koAnswers: KnockoutAnswerRecord[] = data.knockout_answers ?? [];
+        const kt = t as any;
+        const formatCriteria = (q: KnockoutAnswerRecord): string | null => {
+          const pc: PassingCriteria | null | undefined = q.passing_criteria;
+          if (!pc) return null;
+          if (q.question_type === 'number' && pc.operator != null && pc.value != null) {
+            return kt.knockoutCriteriaPass(pc.operator, String(pc.value));
+          }
+          if ((q.question_type === 'yes_no' || q.question_type === 'single_choice') && pc.passing_answers?.length) {
+            return kt.knockoutCriteriaAnswers(pc.passing_answers);
+          }
+          return null;
+        };
+        return (
+          <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+            <div className="px-6 py-3 border-b border-border flex items-center gap-2 bg-slate-50">
+              <svg className="w-3.5 h-3.5 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{kt.knockoutSectionTitle}</h4>
+            </div>
+            {koAnswers.length === 0 ? (
+              <p className="px-6 py-4 text-sm text-textMuted italic">{kt.knockoutNoAnswers}</p>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {koAnswers.map((qa, idx) => {
+                  const criteriaLabel = formatCriteria(qa);
+                  return (
+                    <div key={qa.answer_id} className="px-6 py-4 grid grid-cols-1 md:grid-cols-4 gap-x-8 gap-y-1.5">
+                      <div className="md:col-span-2">
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{idx + 1}. {kt.knockoutQuestion}</p>
+                        <p className="text-sm font-medium text-textMain">
+                          {qa.question_text}
+                          {qa.is_required && (
+                            <span className="ml-1.5 px-1.5 py-0.5 bg-slate-100 text-textMuted text-[9px] font-black uppercase rounded">{kt.knockoutRequired}</span>
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{kt.knockoutAnswer}</p>
+                        <p className="text-sm font-semibold text-textMain capitalize">{qa.answer_value}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{kt.knockoutPassingCriteria}</p>
+                        {criteriaLabel ? (
+                          <p className="text-sm text-slate-600">{criteriaLabel}</p>
+                        ) : (
+                          <p className="text-sm text-slate-400 italic">—</p>
+                        )}
+                        <p className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-600`}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
+                          {kt.knockoutStatusRecorded}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       })()}

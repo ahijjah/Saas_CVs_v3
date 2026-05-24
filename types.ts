@@ -346,6 +346,7 @@ export interface ApplicationDetailedAnalysis {
   security_detected_patterns?: string[];
   security_detected_snippets?: string[];
   security_checked_at?: string | null;
+  knockout_answers?: KnockoutAnswerRecord[];
 }
 
 export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'failed_needs_review' | 'blocked';
@@ -383,6 +384,20 @@ export interface PassingCriteria {
   // number
   operator?: '>=' | '>' | '=' | '<=' | '<';
   value?: number;
+}
+
+/** Knockout answer with question metadata — returned in application detail API. */
+export interface KnockoutAnswerRecord {
+  answer_id: string;
+  question_id: string;
+  answer_value: string;
+  is_disqualifying: boolean;
+  question_text: string;
+  question_type: 'yes_no' | 'single_choice' | 'number';
+  is_required: boolean;
+  options?: string[] | null;
+  passing_criteria?: PassingCriteria | null;
+  display_order: number;
 }
 
 /** Full question shape — authenticated APIs only. Includes passing_criteria. */
