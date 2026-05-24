@@ -48,6 +48,9 @@ export const WEBHOOK_CONFIG = {
   AI_PROMPTS_URL:               `${API_BASE}/admin/ai-prompts`,
   // Platform Control — Audit Logs
   AUDIT_LOGS_URL:               `${API_BASE}/admin/audit-logs`,
+  // Platform Control — AI Usage & Cost
+  AI_USAGE_URL:                 `${API_BASE}/admin/ai-usage`,
+  AI_PRICING_URL:               `${API_BASE}/admin/ai-usage/pricing`,
   // Job settings
   JOB_SETTINGS_BASE_URL:        `${API_BASE}/jobs`,
   UPDATE_JOB_URL:            `${API_BASE}/jobs`,

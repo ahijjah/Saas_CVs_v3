@@ -411,9 +411,13 @@ async def score_cv(
     gatekeeper_context: dict | None = None,
     prompt_override: dict | None = None,
     openai_client: Any | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     Score a CV against extracted criteria.
+
+    Returns:
+        (result, usage_info) where usage_info contains:
+            prompt_tokens, completion_tokens, total_tokens, model, finish_reason
 
     Args:
         cv_text:            Cleaned CV text (from local_processor)
@@ -424,6 +428,7 @@ async def score_cv(
         prompt_override:    Active DB prompt dict from load_active_prompt(), or None for hardcoded default.
         openai_client:      Optional pre-built AsyncOpenAI-compatible client (e.g. DeepSeek). Uses default if None.
     """
+    import time as _time
     client = openai_client or _get_client()
     criteria_text = json.dumps(criteria, indent=2, ensure_ascii=False)
 
@@ -468,6 +473,7 @@ async def score_cv(
     )
 
     try:
+        _t0 = _time.monotonic()
         response = await client.chat.completions.create(
             model=model,
             messages=[
@@ -478,6 +484,7 @@ async def score_cv(
             max_tokens=max_tokens,
             response_format={"type": "json_object"},
         )
+        latency_ms = int((_time.monotonic() - _t0) * 1000)
         raw = response.choices[0].message.content
         result = json.loads(raw)
 
@@ -487,7 +494,17 @@ async def score_cv(
         result.setdefault("score_details", {})
         result.setdefault("red_flags", [])
         result.setdefault("reasoning", {})
-        return result
+
+        usage = getattr(response, "usage", None)
+        usage_info: dict[str, Any] = {
+            "prompt_tokens":     getattr(usage, "prompt_tokens",     0) if usage else 0,
+            "completion_tokens": getattr(usage, "completion_tokens", 0) if usage else 0,
+            "total_tokens":      getattr(usage, "total_tokens",      0) if usage else 0,
+            "model":             model,
+            "finish_reason":     response.choices[0].finish_reason if response.choices else None,
+            "latency_ms":        latency_ms,
+        }
+        return result, usage_info
     except Exception as exc:
         logger.error("LLM CV scoring failed: %s", exc)
         raise

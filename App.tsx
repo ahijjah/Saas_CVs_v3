@@ -32,6 +32,7 @@ import { PlanUsagePage } from './pages/PlanUsage';
 import { PlatformSecretsPage } from './pages/PlatformSecrets';
 import { AIPromptsPage } from './pages/AIPrompts';
 import AuditLogs from './pages/AuditLogs';
+import { AIUsagePage } from './pages/AIUsage';
 import { PublicJobApply } from './pages/PublicJobApply';
 import { ClientOrganizationsPage } from './pages/ClientOrganizations';
 import { PlanSelectionPage } from './pages/PlanSelection';
@@ -413,6 +414,7 @@ const AppInner: React.FC = () => {
             <Route path="/admin/platform-secrets" element={<PlatformSecretsPage {...sharedAuth} />} />
             <Route path="/admin/ai-prompts" element={<AIPromptsPage {...sharedAuth} />} />
             <Route path="/admin/audit-logs" element={<AuditLogs />} />
+            <Route path="/admin/ai-usage" element={<AIUsagePage {...sharedAuth} />} />
           </Route>
 
           {/* 404 inside layout */}

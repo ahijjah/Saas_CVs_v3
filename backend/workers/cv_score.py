@@ -813,13 +813,38 @@ async def _score_cv_async(
                 "missing_skills":          gatekeeper_result.missing_skills,
             }
 
-            ai_result = await score_cv(
+            ai_result, _usage = await score_cv(
                 cv_text=gatekeeper_result.cleaned_cv_text,
                 criteria=criteria_dict,
                 job_title=criteria["job_title"],
                 cv_language=gatekeeper_result.cv_language,
                 gatekeeper_context=gatekeeper_context,
                 prompt_override=scoring_prompt,
+            )
+
+            # Log AI usage — never raises
+            from services.ai_usage_service import log_ai_usage as _log_ai_usage
+            await _log_ai_usage(
+                db=db,
+                stage="cv_scoring",
+                provider="openai",
+                model=_usage.get("model", ""),
+                prompt_tokens=_usage.get("prompt_tokens", 0),
+                completion_tokens=_usage.get("completion_tokens", 0),
+                total_tokens=_usage.get("total_tokens", 0),
+                latency_ms=_usage.get("latency_ms"),
+                request_status="success",
+                tenant_id=tenant_id,
+                job_id=job_id,
+                application_id=application_id,
+                prompt_key=(scoring_prompt or {}).get("prompt_code"),
+                prompt_version_id=(scoring_prompt or {}).get("version_id") or (scoring_prompt or {}).get("id"),
+                metadata={
+                    "finish_reason":           _usage.get("finish_reason"),
+                    "cv_language":             gatekeeper_result.cv_language,
+                    "gatekeeper_passed":       True,
+                    "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
+                },
             )
 
             final_score = compute_final_score(ai_result, weights)
@@ -949,7 +974,7 @@ async def _score_cv_async(
                 try:
                     comparison_client = await get_comparison_client_async(db)
                     if comparison_client is not None:
-                        comp_result = await score_cv(
+                        comp_result, _comp_usage = await score_cv(
                             cv_text=gatekeeper_result.cleaned_cv_text,
                             criteria=criteria_dict,
                             job_title=criteria["job_title"],
@@ -958,6 +983,30 @@ async def _score_cv_async(
                             prompt_override=scoring_prompt,
                             openai_client=comparison_client.client,
                         )
+
+                        # Log comparison usage — never raises
+                        from services.ai_usage_service import log_ai_usage as _log_ai_usage
+                        await _log_ai_usage(
+                            db=db,
+                            stage="cv_comparison",
+                            provider=comparison_client.provider,
+                            model=_comp_usage.get("model", comparison_client.model),
+                            prompt_tokens=_comp_usage.get("prompt_tokens", 0),
+                            completion_tokens=_comp_usage.get("completion_tokens", 0),
+                            total_tokens=_comp_usage.get("total_tokens", 0),
+                            latency_ms=_comp_usage.get("latency_ms"),
+                            request_status="success",
+                            tenant_id=tenant_id,
+                            job_id=job_id,
+                            application_id=application_id,
+                            prompt_key=(scoring_prompt or {}).get("prompt_code"),
+                            metadata={
+                                "finish_reason":  _comp_usage.get("finish_reason"),
+                                "cv_language":    gatekeeper_result.cv_language,
+                                "comparison_run": True,
+                            },
+                        )
+
                         comp_final = compute_final_score(comp_result, weights)
                         comp_score_details = comp_result.get("score_details") or {}
 
