@@ -124,6 +124,15 @@ const T = {
     stoppedTechnicalStatus: 'Technical Status',
     stoppedProcessingStatus: 'Processing Status',
     stoppedEvalStage: 'Evaluation Stage',
+    stoppedMeaningfulReasonLabel: 'Meaningful Reason',
+    stoppedTechnicalReason: 'Technical Reason',
+    stoppedNoTechnicalReason: 'No technical reason was recorded.',
+    stoppedMeaningfulReasons: {
+      security_blocked:  'The CV was blocked because it contains suspicious content that may try to manipulate the automated evaluation.',
+      extraction_failed: 'The CV could not be read reliably. The extracted text was missing, corrupted, or too short for scoring.',
+      processing_error:  'The application could not be processed due to a system or scoring error. It may require technical review.',
+      other:             'The application stopped before AI scoring and requires review.',
+    } as Record<string, string>,
     stoppedLabels: {
       security_blocked:  'Security Blocked',
       extraction_failed: 'Extraction Failed',
@@ -280,6 +289,15 @@ const T = {
     stoppedTechnicalStatus: 'الحالة التقنية',
     stoppedProcessingStatus: 'حالة المعالجة',
     stoppedEvalStage: 'مرحلة التقييم',
+    stoppedMeaningfulReasonLabel: 'السبب المفهوم',
+    stoppedTechnicalReason: 'السبب التقني',
+    stoppedNoTechnicalReason: 'لم يُسجَّل أي سبب تقني.',
+    stoppedMeaningfulReasons: {
+      security_blocked:  'تم حجب السيرة الذاتية لاحتوائها على محتوى مشبوه قد يُحاول التلاعب بعملية التقييم الآلي.',
+      extraction_failed: 'تعذّر قراءة السيرة الذاتية بشكل موثوق. النص المستخرج مفقود أو تالف أو قصير جداً للتقييم.',
+      processing_error:  'تعذّرت معالجة الطلب بسبب خطأ في النظام أو في عملية التقييم. قد يتطلب مراجعة تقنية.',
+      other:             'توقّف الطلب قبل التقييم بالذكاء الاصطناعي ويتطلب مراجعة.',
+    } as Record<string, string>,
     stoppedLabels: {
       security_blocked:  'محجوب أمنياً',
       extraction_failed: 'فشل الاستخراج',
@@ -723,8 +741,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                   )}
                   {data.evaluation_exit_reason && (
                     <>
-                      <span className="text-textMuted col-span-2 mt-1 pt-1 border-t border-slate-100">{(t as any).stoppedReasonDetail}</span>
-                      <span className="text-textMain col-span-2 text-xs leading-relaxed break-words">{data.evaluation_exit_reason}</span>
+                      <span className="text-textMuted col-span-2 mt-1 pt-1 border-t border-slate-100">{(t as any).stoppedTechnicalReason}</span>
+                      <span className="text-textMain col-span-2 text-xs leading-relaxed break-words font-mono">{data.evaluation_exit_reason}</span>
                     </>
                   )}
                 </div>
@@ -944,13 +962,15 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const st = t as any;
         const sr = data.stopped_reason;
         const labels = st.stoppedLabels as Record<string, string>;
+        const meaningfulReasons = st.stoppedMeaningfulReasons as Record<string, string>;
         const categoryLabel = sr ? (labels[sr] || sr) : st.stoppedReasonUnknown;
         const badgeStyle = sr === 'extraction_failed'
           ? 'bg-amber-100 text-amber-700'
           : sr === 'processing_error' || !sr
           ? 'bg-slate-100 text-slate-600'
           : 'bg-red-100 text-red-700';
-        const detailText = data.evaluation_exit_reason || st.stoppedReasonNoDetail;
+        const meaningfulText = sr ? (meaningfulReasons[sr] || meaningfulReasons['other']) : meaningfulReasons['other'];
+        const technicalText = data.evaluation_exit_reason || null;
         const evalStageLabel = data.evaluation_stage != null ? `Stage ${data.evaluation_stage}` : '—';
         return (
           <div className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden">
@@ -966,10 +986,10 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{st.stoppedReasonCategory}</p>
                 <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-black ${badgeStyle}`}>{categoryLabel}</span>
               </div>
-              {/* Detailed Reason */}
+              {/* Meaningful Reason */}
               <div className="md:col-span-2">
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{st.stoppedReasonDetail}</p>
-                <p className={`text-sm leading-relaxed ${data.evaluation_exit_reason ? 'text-textMain' : 'text-textMuted italic'}`}>{detailText}</p>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{st.stoppedMeaningfulReasonLabel}</p>
+                <p className="text-sm leading-relaxed text-textMain">{meaningfulText}</p>
               </div>
               {/* Technical Status */}
               <div>
@@ -984,6 +1004,13 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                     <span className="font-mono">{evalStageLabel}</span>
                   </div>
                 </div>
+              </div>
+              {/* Technical Reason */}
+              <div className="md:col-span-2">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{st.stoppedTechnicalReason}</p>
+                <p className={`text-sm leading-relaxed font-mono ${technicalText ? 'text-textMain' : 'text-textMuted italic'}`}>
+                  {technicalText || st.stoppedNoTechnicalReason}
+                </p>
               </div>
             </div>
           </div>
