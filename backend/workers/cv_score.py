@@ -307,6 +307,7 @@ async def _score_cv_async(
                     text("""
                         UPDATE applications SET
                             processing_status      = 'failed',
+                            stopped_reason         = 'extraction_failed',
                             evaluation_exit_reason = :reason,
                             scored_at              = now()
                         WHERE application_id = :aid
@@ -513,6 +514,7 @@ async def _score_cv_async(
                         text("""
                             UPDATE applications SET
                                 processing_status      = 'failed',
+                                stopped_reason         = 'security_blocked',
                                 evaluation_stage       = NULL,
                                 evaluation_exit_reason = :reason,
                                 scored_at              = now()
@@ -1253,6 +1255,7 @@ async def _mark_failed(application_id: str, error: str) -> None:
                 text("""
                     UPDATE applications SET
                         processing_status      = 'failed',
+                        stopped_reason         = 'processing_error',
                         evaluation_exit_reason = :err,
                         scored_at              = now()
                     WHERE application_id = :aid

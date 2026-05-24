@@ -79,6 +79,7 @@ async def _reset_stuck_async() -> int:
                 text("""
                     UPDATE applications
                     SET processing_status      = 'failed',
+                        stopped_reason         = 'processing_error',
                         evaluation_exit_reason = :reason,
                         scored_at              = now()
                     WHERE processing_status IN ('queued', 'processing')

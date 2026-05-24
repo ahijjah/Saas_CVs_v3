@@ -116,6 +116,13 @@ const T = {
     securitySeverityScore: 'Severity Score',
     securityIssueTypes: 'Issue Types Detected',
     securityCheckedAt: 'Checked At',
+    stoppedReasonTitle: 'Stopped Before AI Scoring',
+    stoppedReasonLabels: {
+      security_blocked:  'Security Blocked',
+      extraction_failed: 'Extraction Failed',
+      processing_error:  'Processing Error',
+      other:             'Failed',
+    } as Record<string, string>,
     knockoutSectionTitle: 'Knockout Questions',
     knockoutNoAnswers: 'No knockout answers were submitted for this application.',
     knockoutQuestion: 'Question',
@@ -258,6 +265,13 @@ const T = {
     securitySeverityScore: 'درجة الخطورة',
     securityIssueTypes: 'أنواع المشكلات المكتشفة',
     securityCheckedAt: 'وقت الفحص',
+    stoppedReasonTitle: 'توقف قبل التقييم بالذكاء الاصطناعي',
+    stoppedReasonLabels: {
+      security_blocked:  'محجوب أمنياً',
+      extraction_failed: 'فشل الاستخراج',
+      processing_error:  'خطأ في المعالجة',
+      other:             'فشل',
+    } as Record<string, string>,
     knockoutSectionTitle: 'أسئلة الفرز المسبق',
     knockoutNoAnswers: 'لم يُقدِّم المتقدم أي إجابات على أسئلة الفرز.',
     knockoutQuestion: 'السؤال',
@@ -901,6 +915,29 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 </div>
               ))}
             </div>
+          </div>
+        );
+      })()}
+
+      {/* Stopped Before AI — badge shown when processing_status=failed and not the full security-blocked page */}
+      {!isSecurityBlocked && data.processing_status === 'failed' && data.stopped_reason && (() => {
+        const sr = data.stopped_reason!;
+        const labels = (t as any).stoppedReasonLabels as Record<string, string>;
+        const badgeStyles: Record<string, string> = {
+          security_blocked:  'bg-red-100 text-red-700',
+          extraction_failed: 'bg-amber-100 text-amber-700',
+          processing_error:  'bg-slate-100 text-slate-600',
+          other:             'bg-slate-100 text-slate-600',
+        };
+        return (
+          <div className={`flex items-center gap-2 px-5 py-3 rounded-xl border ${sr === 'security_blocked' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+            <svg className={`w-4 h-4 shrink-0 ${sr === 'security_blocked' ? 'text-red-500' : 'text-amber-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span className="text-sm font-bold text-textMain">{(t as any).stoppedReasonTitle}</span>
+            <span className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${badgeStyles[sr] || badgeStyles.other}`}>
+              {labels[sr] || sr}
+            </span>
           </div>
         );
       })()}

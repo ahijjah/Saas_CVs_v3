@@ -229,6 +229,7 @@ export interface Application {
   score: number | null;
   status: ApplicationDecision | null;
   processing_status?: string;
+  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'other' | null;
   duplicate_status?: 'not_duplicate' | 'possible_duplicate';
   duplicate_reason?: string | null;
   duplicate_reference_application_id?: string | null;
@@ -288,6 +289,7 @@ export interface ApplicationDetailedAnalysis {
   overall_score: number;
   submission_source?: 'manual_upload' | 'email_forwarding' | 'platform_email';
   processing_status?: string;
+  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'other' | null;
   evaluation_stage?: 1 | 2 | 3 | null;
   evaluation_exit_reason?: string | null;
   scores: {

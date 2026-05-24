@@ -265,6 +265,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         security_detected_patterns: detailsObj?.security_detected_patterns || [],
         security_detected_snippets: detailsObj?.security_detected_snippets || [],
         security_checked_at:        detailsObj?.security_checked_at,
+        // Stopped reason (Phase 2 field — null for historical rows)
+        stopped_reason:             detailsObj?.stopped_reason ?? null,
         // Knockout question answers
         knockout_answers:           detailsObj?.knockout_answers || [],
       };
@@ -311,9 +313,17 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   // low_match is treated as rejected for all display/filter purposes
   const normaliseStatus = (s: string) => s === 'low_match' ? 'rejected' : s;
   // Classification based on processing_status (primary) and flags (secondary)
-  const isAiScored          = (a: Application) => a.processing_status === 'scored';
-  const isSecurityBlocked   = (a: Application) => a.processing_status === 'failed' && a.security_check_status === 'blocked';
-  const isFailedNeedsReview = (a: Application) => a.processing_status === 'failed' && a.security_check_status !== 'blocked';
+  const isAiScored = (a: Application) => a.processing_status === 'scored';
+  // stopped_reason-first; fall back to security_check_status for historical rows (stopped_reason=null)
+  const isSecurityBlocked = (a: Application) =>
+    a.processing_status === 'failed' && (
+      a.stopped_reason === 'security_blocked' ||
+      (a.stopped_reason == null && a.security_check_status === 'blocked')
+    );
+  const isFailedNeedsReview = (a: Application) =>
+    a.processing_status === 'failed' &&
+    a.stopped_reason !== 'security_blocked' &&
+    !(a.stopped_reason == null && a.security_check_status === 'blocked');
   // possible_duplicate is a flag only — an app can have any processing_status
   const isPossibleDuplicate = (a: Application) => a.duplicate_status === 'possible_duplicate';
 
