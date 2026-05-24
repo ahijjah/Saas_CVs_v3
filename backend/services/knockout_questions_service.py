@@ -240,6 +240,31 @@ async def save_knockout_answers(
     if not answers:
         return
 
+    # Resolve tenant_id from the application row; fall back to the job row.
+    tenant_row = await db.execute(
+        text("SELECT tenant_id FROM applications WHERE application_id = CAST(:aid AS uuid)"),
+        {"aid": application_id},
+    )
+    tenant_id: str | None = None
+    tenant_result = tenant_row.scalar_one_or_none()
+    if tenant_result:
+        tenant_id = str(tenant_result)
+    else:
+        job_row = await db.execute(
+            text("SELECT tenant_id FROM jobs WHERE job_id = :jid"),
+            {"jid": job_id},
+        )
+        job_tenant = job_row.scalar_one_or_none()
+        if job_tenant:
+            tenant_id = str(job_tenant)
+
+    if not tenant_id:
+        logger.error(
+            "Cannot save knockout answers: tenant_id not found for application_id=%s job_id=%s",
+            application_id, job_id,
+        )
+        raise RuntimeError(f"tenant_id not found for application {application_id}")
+
     valid_qids = set()
     rows = await db.execute(
         text("SELECT question_id FROM job_knockout_questions WHERE job_id = :jid"),
@@ -260,13 +285,13 @@ async def save_knockout_answers(
             await db.execute(
                 text("""
                     INSERT INTO application_knockout_answers
-                        (application_id, question_id, answer_value, is_disqualifying)
-                    VALUES (CAST(:aid AS uuid), CAST(:qid AS uuid), CAST(:val AS jsonb), FALSE)
+                        (application_id, tenant_id, question_id, answer_value, is_disqualifying)
+                    VALUES (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid), CAST(:val AS jsonb), FALSE)
                     ON CONFLICT (application_id, question_id) DO UPDATE
-                        SET answer_value = EXCLUDED.answer_value,
+                        SET answer_value    = EXCLUDED.answer_value,
                             is_disqualifying = FALSE
                 """),
-                {"aid": application_id, "qid": qid, "val": val_json},
+                {"aid": application_id, "tid": tenant_id, "qid": qid, "val": val_json},
             )
         except Exception as exc:
             logger.error(
