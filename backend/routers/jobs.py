@@ -229,13 +229,20 @@ async def list_jobs(
                 co.organization_name AS client_org_name,
                 t.name AS tenant_name,
                 jc.criteria_extraction_status,
-                COUNT(a.application_id)                                             AS applications_total,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected,
+                COUNT(a.application_id)                                                                       AS applications_total,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')                              AS applications_qualified,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')                                AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected'
+                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
+                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))           AS applications_rejected,
                 COUNT(a.application_id) FILTER (
                     WHERE a.processing_status IN ('pending', 'queued', 'processing')
-                ) AS applications_in_progress
+                ) AS applications_in_progress,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored')                        AS applications_scored,
+                COUNT(a.application_id) FILTER (WHERE a.security_check_status = 'blocked')                   AS applications_security_blocked,
+                COUNT(a.application_id) FILTER (WHERE a.duplicate_status = 'possible_duplicate')             AS applications_possible_duplicate,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
+                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked'))            AS applications_failed_needs_review
             FROM jobs j
             JOIN tenants t ON t.tenant_id = j.tenant_id
             LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
@@ -265,11 +272,15 @@ async def list_jobs(
             "receive_cv_via_platform_email":   r["receive_cv_via_platform_email"],
             "criteria_extraction_status":      r["criteria_extraction_status"] or "pending",
             "posted_date":        r["created_at"].date().isoformat() if r["created_at"] else None,
-            "applications_total":       r["applications_total"],
-            "applications_qualified":   r["applications_qualified"],
-            "applications_partial":     r["applications_partial"],
-            "applications_rejected":    r["applications_rejected"],
-            "applications_in_progress": int(r["applications_in_progress"]),
+            "applications_total":               r["applications_total"],
+            "applications_qualified":           r["applications_qualified"],
+            "applications_partial":             r["applications_partial"],
+            "applications_rejected":            r["applications_rejected"],
+            "applications_in_progress":         int(r["applications_in_progress"]),
+            "applications_scored":              int(r["applications_scored"]),
+            "applications_security_blocked":    int(r["applications_security_blocked"]),
+            "applications_possible_duplicate":  int(r["applications_possible_duplicate"]),
+            "applications_failed_needs_review": int(r["applications_failed_needs_review"]),
         })
     return jobs
 
@@ -444,10 +455,12 @@ async def get_job_details(
                 co.organization_name AS client_org_name,
                 cu.full_name AS created_by_name,
                 uu.full_name AS updated_by_name,
-                COUNT(a.application_id)                                             AS applications_total,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')    AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')      AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')     AS applications_rejected,
+                COUNT(a.application_id)                                                                       AS applications_total,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')                              AS applications_qualified,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')                                AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected'
+                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
+                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))           AS applications_rejected,
                 COUNT(a.application_id) FILTER (
                     WHERE a.processing_status IN ('pending', 'queued', 'processing')
                 ) AS applications_in_progress,
@@ -455,6 +468,11 @@ async def get_job_details(
                     WHERE (a.duplicate_status IS NULL OR a.duplicate_status = 'not_duplicate')
                       AND a.processing_status != 'failed'
                 ) AS applications_valid_count,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored')                        AS applications_scored,
+                COUNT(a.application_id) FILTER (WHERE a.security_check_status = 'blocked')                   AS applications_security_blocked,
+                COUNT(a.application_id) FILTER (WHERE a.duplicate_status = 'possible_duplicate')             AS applications_possible_duplicate,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
+                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked'))            AS applications_failed_needs_review,
                 t.forwarding_email AS tenant_forwarding_email,
                 t.job_application_controls_enabled
             FROM jobs j
@@ -569,12 +587,16 @@ async def get_job_details(
             "updated_at":           job["updated_at"].isoformat() if job["updated_at"] else None,
             "created_by_name":      job["created_by_name"] or "",
             "updated_by_name":      job["updated_by_name"] or "",
-            "applications_total":       job["applications_total"],
-            "applications_qualified":   job["applications_qualified"],
-            "applications_partial":     job["applications_partial"],
-            "applications_rejected":    job["applications_rejected"],
-            "applications_valid_count":  job["applications_valid_count"],
-            "applications_in_progress": int(job["applications_in_progress"]),
+            "applications_total":               job["applications_total"],
+            "applications_qualified":           job["applications_qualified"],
+            "applications_partial":             job["applications_partial"],
+            "applications_rejected":            job["applications_rejected"],
+            "applications_valid_count":         job["applications_valid_count"],
+            "applications_in_progress":         int(job["applications_in_progress"]),
+            "applications_scored":              int(job["applications_scored"]),
+            "applications_security_blocked":    int(job["applications_security_blocked"]),
+            "applications_possible_duplicate":  int(job["applications_possible_duplicate"]),
+            "applications_failed_needs_review": int(job["applications_failed_needs_review"]),
             "client_organization_id": str(job["client_organization_id"]) if job["client_organization_id"] else None,
             "client_org_name":        job["client_org_name"],
             "job_application_controls_enabled": bool(job["job_application_controls_enabled"]),

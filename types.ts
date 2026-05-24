@@ -160,6 +160,10 @@ export interface Job {
   applications_below_threshold?: number;
   applications_recommended?: number;
   applications_in_progress?: number;
+  applications_scored?: number;
+  applications_security_blocked?: number;
+  applications_possible_duplicate?: number;
+  applications_failed_needs_review?: number;
 }
 
 export interface AnalysisJson {
@@ -229,6 +233,7 @@ export interface Application {
   duplicate_reason?: string | null;
   duplicate_reference_application_id?: string | null;
   evaluation_exit_reason?: string | null;
+  security_check_status?: 'passed' | 'warning' | 'blocked' | null;
   applied_date: string;
   summary: string;
 }
@@ -343,7 +348,7 @@ export interface ApplicationDetailedAnalysis {
   security_checked_at?: string | null;
 }
 
-export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate';
+export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'failed_needs_review';
 
 export interface UploadedCV {
   application_id: string;

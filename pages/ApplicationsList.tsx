@@ -36,6 +36,9 @@ const T = {
     filterRejected: 'Rejected',
     filterLowMatch: 'Low Match',
     filterPossibleDuplicate: 'Possible Duplicates',
+    filterAiScored: 'AI Scored',
+    filterSecurityBlocked: 'Security Blocked',
+    filterFailedNeedsReview: 'Failed / Needs Review',
     loading: 'Loading applications...',
     noApps: 'No applications found matching this criteria.',
     appliedOn: 'Applied on',
@@ -61,6 +64,9 @@ const T = {
     filterRejected: 'مرفوضون',
     filterLowMatch: 'تطابق منخفض',
     filterPossibleDuplicate: 'مكررات محتملة',
+    filterAiScored: 'مُقيَّم بالذكاء الاصطناعي',
+    filterSecurityBlocked: 'محظور أمنياً',
+    filterFailedNeedsReview: 'فشل / يحتاج مراجعة',
     loading: 'جارٍ تحميل الطلبات...',
     noApps: 'لا توجد طلبات مطابقة لهذه المعايير.',
     appliedOn: 'تاريخ التقديم',
@@ -81,7 +87,7 @@ const T = {
 };
 
 // low_match is an internal status; it maps to 'rejected' for display purposes
-const FILTER_KEYS: ApplicationFilter[] = ['all', 'qualified', 'partial', 'rejected', 'possible_duplicate'];
+const FILTER_KEYS: ApplicationFilter[] = ['all', 'ai_scored', 'qualified', 'partial', 'rejected', 'security_blocked', 'possible_duplicate', 'failed_needs_review'];
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   jobId, initialFilter, initialApplicationId, auth, onBack, addToast
@@ -120,6 +126,9 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     rejected: t.filterRejected,
     low_match: t.filterLowMatch,
     possible_duplicate: t.filterPossibleDuplicate,
+    ai_scored: t.filterAiScored,
+    security_blocked: t.filterSecurityBlocked,
+    failed_needs_review: t.filterFailedNeedsReview,
   };
 
   const fetchApplications = async () => {
@@ -300,6 +309,22 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     if (filter === 'all') return applicationsAll;
     if (filter === 'possible_duplicate') {
       return applicationsAll.filter(a => a.duplicate_status === 'possible_duplicate');
+    }
+    if (filter === 'security_blocked') {
+      return applicationsAll.filter(a => a.security_check_status === 'blocked');
+    }
+    if (filter === 'ai_scored') {
+      return applicationsAll.filter(a => a.processing_status === 'scored');
+    }
+    if (filter === 'failed_needs_review') {
+      return applicationsAll.filter(a => a.processing_status === 'failed' && a.security_check_status !== 'blocked');
+    }
+    if (filter === 'rejected') {
+      return applicationsAll.filter(a =>
+        normaliseStatus((a.status ?? '').toLowerCase().trim()) === 'rejected' &&
+        a.security_check_status !== 'blocked' &&
+        a.duplicate_status !== 'possible_duplicate'
+      );
     }
     return applicationsAll.filter(a => normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
   })();
