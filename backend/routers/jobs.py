@@ -239,8 +239,12 @@ async def list_jobs(
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
                     AND a.decision = 'rejected')                                                                  AS applications_rejected,
                 -- Stopped Before AI: processing_status = 'failed'
+                -- stopped_reason is authoritative; fall back to security_check_status for historical rows
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
-                    AND a.security_check_status = 'blocked')                                                     AS applications_security_blocked,
+                    AND (
+                        a.stopped_reason = 'security_blocked'
+                        OR (a.stopped_reason IS NULL AND a.security_check_status = 'blocked')
+                    ))                                                                                            AS applications_security_blocked,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
                     AND a.stopped_reason = 'duplicate_blocked')                                                  AS applications_duplicate_blocked,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
@@ -476,8 +480,12 @@ async def get_job_details(
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
                     AND a.decision = 'rejected')                                                                  AS applications_rejected,
                 -- Stopped Before AI: processing_status = 'failed'
+                -- stopped_reason is authoritative; fall back to security_check_status for historical rows
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
-                    AND a.security_check_status = 'blocked')                                                     AS applications_security_blocked,
+                    AND (
+                        a.stopped_reason = 'security_blocked'
+                        OR (a.stopped_reason IS NULL AND a.security_check_status = 'blocked')
+                    ))                                                                                            AS applications_security_blocked,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
                     AND a.stopped_reason = 'duplicate_blocked')                                                  AS applications_duplicate_blocked,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'

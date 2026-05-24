@@ -538,6 +538,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const scores = data.scores || {};
   const isLowMatch = data.decision === 'low_match';
   const isSecurityBlocked =
+    data.stopped_reason === 'security_blocked' ||
     data.security_check_status === 'blocked' ||
     (data.evaluation_exit_reason?.startsWith('[security_check]') ?? false);
 
