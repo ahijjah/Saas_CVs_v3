@@ -141,6 +141,20 @@ const T = {
       duplicate_blocked: 'Duplicate Blocked',
       other:             'Failed',
     } as Record<string, string>,
+    dupDetailTitle: 'Duplicate Application Details',
+    dupDetailReason: 'Match Type',
+    dupDetailOriginalCandidate: 'Original Candidate',
+    dupDetailOriginalRef: 'Reference Application ID',
+    dupDetailOriginalSubmitted: 'Original Submitted',
+    dupDetailSimilarity: 'Similarity Score',
+    dupDetailCheckedAt: 'Detected At',
+    dupDetailReasonLabels: {
+      file_hash:                  'Exact File Match (byte-for-byte identical)',
+      normalized_text_hash:       'Exact Content Match (identical extracted text)',
+      canonical_text_fingerprint: 'Cross-Format Match (same CV, different file format)',
+      content_similarity_fallback:'High Content Similarity',
+    } as Record<string, string>,
+    dupDetailUnknownRef: 'Reference application not available',
     knockoutSectionTitle: 'Knockout Questions',
     knockoutNoAnswers: 'No knockout answers were submitted for this application.',
     knockoutQuestion: 'Question',
@@ -308,6 +322,20 @@ const T = {
       duplicate_blocked: 'مكرر موقوف',
       other:             'فشل',
     } as Record<string, string>,
+    dupDetailTitle: 'تفاصيل الطلب المكرر',
+    dupDetailReason: 'نوع التطابق',
+    dupDetailOriginalCandidate: 'المرشح الأصلي',
+    dupDetailOriginalRef: 'معرف الطلب المرجعي',
+    dupDetailOriginalSubmitted: 'تاريخ التقديم الأصلي',
+    dupDetailSimilarity: 'درجة التشابه',
+    dupDetailCheckedAt: 'وقت الاكتشاف',
+    dupDetailReasonLabels: {
+      file_hash:                  'تطابق مطابق للملف (بايت بايت)',
+      normalized_text_hash:       'تطابق مطابق للمحتوى (نص مستخرج متطابق)',
+      canonical_text_fingerprint: 'تطابق بين صيغ مختلفة (نفس السيرة الذاتية بتنسيق آخر)',
+      content_similarity_fallback:'تشابه عالٍ في المحتوى',
+    } as Record<string, string>,
+    dupDetailUnknownRef: 'الطلب المرجعي غير متاح',
     knockoutSectionTitle: 'أسئلة الفرز المسبق',
     knockoutNoAnswers: 'لم يُقدِّم المتقدم أي إجابات على أسئلة الفرز.',
     knockoutQuestion: 'السؤال',
@@ -1017,6 +1045,73 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 <p className={`text-sm leading-relaxed font-mono ${technicalText ? 'text-textMain' : 'text-textMuted italic'}`}>
                   {technicalText || st.stoppedNoTechnicalReason}
                 </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Duplicate Application Details — shown for exact_duplicate and possible_duplicate */}
+      {(data.duplicate_status === 'exact_duplicate' || data.duplicate_status === 'possible_duplicate') && (() => {
+        const dt = t as any;
+        const reasonLabels = dt.dupDetailReasonLabels as Record<string, string>;
+        const reasonLabel = data.duplicate_reason
+          ? (reasonLabels[data.duplicate_reason] || data.duplicate_reason.replace(/_/g, ' '))
+          : '—';
+        const refInfo = data.duplicate_reference;
+        const isExact = data.duplicate_status === 'exact_duplicate';
+        const borderColor = isExact ? 'border-orange-200' : 'border-orange-200';
+        const headerBg   = isExact ? 'bg-orange-50'     : 'bg-orange-50';
+        const headerText = isExact ? 'text-orange-700'  : 'text-orange-700';
+        return (
+          <div className={`bg-white rounded-2xl border ${borderColor} shadow-sm overflow-hidden`}>
+            <div className={`px-6 py-3 border-b ${borderColor} ${headerBg} flex items-center gap-2`}>
+              <svg className={`w-3.5 h-3.5 ${headerText} shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <h4 className={`text-[10px] font-black ${headerText} uppercase tracking-widest`}>{dt.dupDetailTitle}</h4>
+            </div>
+            <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+              {/* Match Type */}
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{dt.dupDetailReason}</p>
+                <p className="text-sm text-textMain">{reasonLabel}</p>
+              </div>
+              {/* Detected At */}
+              {data.duplicate_checked_at && (
+                <div>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{dt.dupDetailCheckedAt}</p>
+                  <p className="text-sm text-textMain">{new Date(data.duplicate_checked_at).toLocaleString()}</p>
+                </div>
+              )}
+              {/* Similarity Score (for possible_duplicate) */}
+              {data.duplicate_similarity_score != null && (
+                <div>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{dt.dupDetailSimilarity}</p>
+                  <p className={`text-sm font-bold ${data.duplicate_similarity_score >= 95 ? 'text-red-600' : data.duplicate_similarity_score >= 80 ? 'text-amber-600' : 'text-textMain'}`}>
+                    {Math.round(data.duplicate_similarity_score)}%
+                  </p>
+                </div>
+              )}
+              {/* Reference Application */}
+              <div className="md:col-span-2">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{dt.dupDetailOriginalCandidate}</p>
+                {refInfo ? (
+                  <div className="bg-orange-50 rounded-xl border border-orange-100 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                    <span className="text-textMuted">{dt.dupDetailOriginalCandidate}</span>
+                    <span className="font-semibold text-textMain">{refInfo.candidate_name || '—'}</span>
+                    {refInfo.applied_at && (
+                      <>
+                        <span className="text-textMuted">{dt.dupDetailOriginalSubmitted}</span>
+                        <span className="font-semibold text-textMain">{new Date(refInfo.applied_at).toLocaleDateString()}</span>
+                      </>
+                    )}
+                    <span className="text-textMuted">{dt.dupDetailOriginalRef}</span>
+                    <span className="font-mono text-[10px] text-textMuted">{refInfo.application_id.slice(0, 8)}…</span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-textMuted italic">{dt.dupDetailUnknownRef}</p>
+                )}
               </div>
             </div>
           </div>
