@@ -1333,11 +1333,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     { value: details.applications_rejected  || 0, filter: 'rejected',  color: 'text-error',     hoverBg: 'hover:bg-red-50    hover:border-red-200',    hoverText: 'group-hover:text-error'   },
   ];
   const blockedTotal = ((details as any).applications_security_blocked || 0) +
+    ((details as any).applications_duplicate_blocked || 0) +
     ((details as any).applications_failed_needs_review || 0);
-  // Duplicate Blocked is always 0 until the data model tracks it separately
   const blockedItems = [
     { count: (details as any).applications_security_blocked    || 0, filter: 'security_blocked',   label: (t as any).kpiChipSecurityBlocked,   dotColor: 'bg-red-400',    textColor: 'text-red-700',    hoverColor: 'hover:text-red-900 hover:bg-red-50'    },
-    { count: 0,                                                       filter: 'possible_duplicate', label: (t as any).kpiChipDuplicateBlocked,  dotColor: 'bg-orange-400', textColor: 'text-orange-700', hoverColor: 'hover:text-orange-900 hover:bg-orange-50' },
+    { count: (details as any).applications_duplicate_blocked   || 0, filter: 'duplicate_blocked',  label: (t as any).kpiChipDuplicateBlocked,  dotColor: 'bg-orange-400', textColor: 'text-orange-700', hoverColor: 'hover:text-orange-900 hover:bg-orange-50' },
     { count: (details as any).applications_failed_needs_review || 0, filter: 'failed_needs_review',label: (t as any).kpiChipFailedNeedsReview, dotColor: 'bg-slate-400',  textColor: 'text-slate-600',  hoverColor: 'hover:text-slate-900 hover:bg-slate-100'  },
   ];
   const weightLabels = t.evalWeightLabels;

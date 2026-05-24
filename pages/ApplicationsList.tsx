@@ -39,6 +39,7 @@ const T = {
     filterAiScored: 'AI Scored',
     filterBlocked: 'Blocked',
     filterSecurityBlocked: 'Security Blocked',
+    filterDuplicateBlocked: 'Duplicate Blocked',
     filterFailedNeedsReview: 'Failed / Needs Review',
     loading: 'Loading applications...',
     noApps: 'No applications found matching this criteria.',
@@ -68,6 +69,7 @@ const T = {
     filterAiScored: 'مُقيَّم بالذكاء الاصطناعي',
     filterBlocked: 'موقوف',
     filterSecurityBlocked: 'محظور أمنياً',
+    filterDuplicateBlocked: 'مكرر موقوف',
     filterFailedNeedsReview: 'فشل / يحتاج مراجعة',
     loading: 'جارٍ تحميل الطلبات...',
     noApps: 'لا توجد طلبات مطابقة لهذه المعايير.',
@@ -89,7 +91,7 @@ const T = {
 };
 
 // low_match is an internal status; it maps to 'rejected' for display purposes
-const FILTER_KEYS: ApplicationFilter[] = ['all', 'ai_scored', 'qualified', 'partial', 'rejected', 'blocked', 'security_blocked', 'possible_duplicate', 'failed_needs_review'];
+const FILTER_KEYS: ApplicationFilter[] = ['all', 'ai_scored', 'qualified', 'partial', 'rejected', 'blocked', 'security_blocked', 'duplicate_blocked', 'possible_duplicate', 'failed_needs_review'];
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   jobId, initialFilter, initialApplicationId, auth, onBack, addToast
@@ -131,6 +133,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     ai_scored: t.filterAiScored,
     blocked: t.filterBlocked,
     security_blocked: t.filterSecurityBlocked,
+    duplicate_blocked: (t as any).filterDuplicateBlocked,
     failed_needs_review: t.filterFailedNeedsReview,
   };
 
@@ -320,9 +323,12 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
       a.stopped_reason === 'security_blocked' ||
       (a.stopped_reason == null && a.security_check_status === 'blocked')
     );
+  const isDuplicateBlocked = (a: Application) =>
+    a.processing_status === 'failed' && a.stopped_reason === 'duplicate_blocked';
   const isFailedNeedsReview = (a: Application) =>
     a.processing_status === 'failed' &&
     a.stopped_reason !== 'security_blocked' &&
+    a.stopped_reason !== 'duplicate_blocked' &&
     !(a.stopped_reason == null && a.security_check_status === 'blocked');
   // possible_duplicate is a flag only — an app can have any processing_status
   const isPossibleDuplicate = (a: Application) => a.duplicate_status === 'possible_duplicate';
@@ -331,6 +337,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     if (filter === 'all') return applicationsAll;
     if (filter === 'ai_scored')          return applicationsAll.filter(isAiScored);
     if (filter === 'security_blocked')   return applicationsAll.filter(isSecurityBlocked);
+    if (filter === 'duplicate_blocked')  return applicationsAll.filter(isDuplicateBlocked);
     if (filter === 'failed_needs_review') return applicationsAll.filter(isFailedNeedsReview);
     if (filter === 'blocked')            return applicationsAll.filter(a => a.processing_status === 'failed');
     if (filter === 'possible_duplicate') return applicationsAll.filter(isPossibleDuplicate);

@@ -1080,24 +1080,26 @@ async def _write_exact_dup_to_log(
     ref_id: str,
 ) -> None:
     """
-    Write an exact-duplicate application to duplicate_application_logs, move its
-    CV file to the duplicates directory, and DELETE the transient application and
-    application_files records.
+    Mark an exact-duplicate application as failed/stopped, write an audit entry
+    to duplicate_application_logs, and keep the application and application_files
+    rows intact so the record remains visible in recruiter dashboards.
 
-    Applies uniformly to all intake methods (manual_upload, public_apply,
-    email_forwarding, platform_email).  The intake method is read from
-    applications.submission_source so no caller-side branching is needed.
+    The application row is updated to:
+      processing_status  = 'failed'
+      stopped_reason     = 'duplicate_blocked'
+      duplicate_status   = 'exact_duplicate'
+      duplicate_reference_application_id = ref_id
+      duplicate_reason   = dup_reason (e.g. 'file_hash')
+      evaluation_exit_reason = admin-friendly message
+
+    The CV file is NOT moved — it stays in application_files so the existing
+    CV download endpoint continues to work.
 
     *db* is already open with RLS set.  Commits before returning.
     Raises on any failure — the caller handles cleanup.
     """
-    import shutil as _shutil
     import uuid as _uuid
-    from pathlib import Path as _Path
-    from config import get_settings as _get_settings
     from sqlalchemy import text
-
-    cfg = _get_settings()
 
     # ── Fetch application metadata ────────────────────────────────────────────
     app_row = await db.execute(
@@ -1110,40 +1112,34 @@ async def _write_exact_dup_to_log(
     )
     app_data = app_row.mappings().first()
 
-    # ── Fetch file metadata ───────────────────────────────────────────────────
-    file_row = await db.execute(
-        text("""
-            SELECT file_path, original_name, mime_type, file_size_bytes
-            FROM application_files WHERE application_id = :aid LIMIT 1
-        """),
-        {"aid": application_id},
+    # ── Mark application as duplicate-blocked (no deletion) ──────────────────
+    exit_reason = (
+        f"This application was detected as an exact duplicate of an earlier submission "
+        f"(matched by {dup_reason}). Reference application: {ref_id[:8]}…"
     )
-    file_meta = file_row.mappings().first()
+    await db.execute(
+        text("""
+            UPDATE applications SET
+                processing_status                  = 'failed',
+                stopped_reason                     = 'duplicate_blocked',
+                duplicate_status                   = 'exact_duplicate',
+                duplicate_reference_application_id = :ref_id,
+                duplicate_reason                   = :dup_reason,
+                duplicate_checked_at               = now(),
+                evaluation_exit_reason             = :exit_reason,
+                scored_at                          = now()
+            WHERE application_id = :aid
+        """),
+        {
+            "ref_id":      ref_id,
+            "dup_reason":  dup_reason,
+            "exit_reason": exit_reason,
+            "aid":         application_id,
+        },
+    )
 
-    # ── Move CV file to duplicates directory ──────────────────────────────────
+    # ── Write audit log entry ─────────────────────────────────────────────────
     log_id = str(_uuid.uuid4())
-    dup_file_path: str | None = None
-    dup_orig_name: str | None = None
-    dup_content_type: str | None = None
-    dup_file_size: int | None = None
-
-    if file_meta and file_meta["file_path"]:
-        src = _Path(cfg.files_base_path) / file_meta["file_path"]
-        ext = _Path(file_meta["file_path"]).suffix.lstrip(".")
-        dup_dir = (
-            _Path(cfg.files_base_path)
-            / "tenants" / tenant_id / "jobs" / job_id / "duplicates"
-        )
-        dup_dir.mkdir(parents=True, exist_ok=True)
-        dst = dup_dir / f"{log_id}.{ext}"
-        if src.exists():
-            _shutil.move(str(src), str(dst))
-            dup_file_path = str(dst.relative_to(cfg.files_base_path))
-        dup_orig_name = file_meta["original_name"]
-        dup_content_type = file_meta["mime_type"]
-        dup_file_size = file_meta["file_size_bytes"]
-
-    # ── Write duplicate log entry ─────────────────────────────────────────────
     source = (app_data["submission_source"] if app_data else None) or "unknown"
     candidate_email = (app_data["candidate_email"] if app_data else None) or ""
     candidate_name = (app_data["candidate_name"] if app_data else None)
@@ -1165,51 +1161,36 @@ async def _write_exact_dup_to_log(
                  :email, :name,
                  :file_hash, NOW(),
                  :ref_id,
-                 :orig_name, :notes, :source,
+                 NULL, :notes, :source,
                  :uploader_id, :uploader_name, :uploader_email,
-                 :dup_file_path, :dup_orig_name,
-                 :dup_content_type, :dup_file_size,
+                 NULL, NULL, NULL, NULL,
                  :dup_reason, :dup_app_id)
         """),
         {
-            "log_id":          log_id,
-            "tenant_id":       tenant_id,
-            "job_id":          job_id,
-            "email":           candidate_email,
-            "name":            candidate_name,
-            "file_hash":       file_hash,
-            "ref_id":          ref_id,
-            "orig_name":       dup_orig_name,
+            "log_id":        log_id,
+            "tenant_id":     tenant_id,
+            "job_id":        job_id,
+            "email":         candidate_email,
+            "name":          candidate_name,
+            "file_hash":     file_hash,
+            "ref_id":        ref_id,
             "notes": (
                 f"Exact duplicate detected during scoring pipeline "
                 f"(matched by {dup_reason}) — ref application {ref_id[:8]}…"
             ),
-            "source":          source,
-            "uploader_id":     str(app_data["submitted_by_user_id"]) if app_data and app_data["submitted_by_user_id"] else None,
-            "uploader_name":   app_data["submitted_by_name"] if app_data else None,
-            "uploader_email":  app_data["submitted_by_email"] if app_data else None,
-            "dup_file_path":   dup_file_path,
-            "dup_orig_name":   dup_orig_name,
-            "dup_content_type": dup_content_type,
-            "dup_file_size":   dup_file_size,
-            "dup_reason":      dup_reason,
-            "dup_app_id":      application_id,
+            "source":        source,
+            "uploader_id":   str(app_data["submitted_by_user_id"]) if app_data and app_data["submitted_by_user_id"] else None,
+            "uploader_name": app_data["submitted_by_name"] if app_data else None,
+            "uploader_email":app_data["submitted_by_email"] if app_data else None,
+            "dup_reason":    dup_reason,
+            "dup_app_id":    application_id,
         },
     )
 
-    # Delete files row first (no ON DELETE CASCADE), then the application.
-    await db.execute(
-        text("DELETE FROM application_files WHERE application_id = :aid"),
-        {"aid": application_id},
-    )
-    await db.execute(
-        text("DELETE FROM applications WHERE application_id = :aid"),
-        {"aid": application_id},
-    )
     await db.commit()
 
     logger.info(
-        "[%s] Exact duplicate → log (log_id=%s reason=%s ref=%s source=%s)",
+        "[%s] Exact duplicate → marked failed/duplicate_blocked (log_id=%s reason=%s ref=%s source=%s)",
         application_id, log_id, dup_reason, ref_id[:8], source,
     )
 

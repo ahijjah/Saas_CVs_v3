@@ -131,12 +131,14 @@ const T = {
       security_blocked:  'The CV was blocked because it contains suspicious content that may try to manipulate the automated evaluation.',
       extraction_failed: 'The CV could not be read reliably. The extracted text was missing, corrupted, or too short for scoring.',
       processing_error:  'The application could not be processed due to a system or scoring error. It may require technical review.',
+      duplicate_blocked: 'This CV was detected as an exact duplicate of a previously submitted application. It was blocked automatically and was not scored.',
       other:             'The application stopped before AI scoring and requires review.',
     } as Record<string, string>,
     stoppedLabels: {
       security_blocked:  'Security Blocked',
       extraction_failed: 'Extraction Failed',
       processing_error:  'Processing Error',
+      duplicate_blocked: 'Duplicate Blocked',
       other:             'Failed',
     } as Record<string, string>,
     knockoutSectionTitle: 'Knockout Questions',
@@ -296,12 +298,14 @@ const T = {
       security_blocked:  'تم حجب السيرة الذاتية لاحتوائها على محتوى مشبوه قد يُحاول التلاعب بعملية التقييم الآلي.',
       extraction_failed: 'تعذّر قراءة السيرة الذاتية بشكل موثوق. النص المستخرج مفقود أو تالف أو قصير جداً للتقييم.',
       processing_error:  'تعذّرت معالجة الطلب بسبب خطأ في النظام أو في عملية التقييم. قد يتطلب مراجعة تقنية.',
+      duplicate_blocked: 'تم اكتشاف أن هذه السيرة الذاتية مكررة بشكل مطابق لطلب تقديم سابق. تم حجبها تلقائياً ولم تُقيَّم.',
       other:             'توقّف الطلب قبل التقييم بالذكاء الاصطناعي ويتطلب مراجعة.',
     } as Record<string, string>,
     stoppedLabels: {
       security_blocked:  'محجوب أمنياً',
       extraction_failed: 'فشل الاستخراج',
       processing_error:  'خطأ في المعالجة',
+      duplicate_blocked: 'مكرر موقوف',
       other:             'فشل',
     } as Record<string, string>,
     knockoutSectionTitle: 'أسئلة الفرز المسبق',
@@ -966,6 +970,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const categoryLabel = sr ? (labels[sr] || sr) : st.stoppedReasonUnknown;
         const badgeStyle = sr === 'extraction_failed'
           ? 'bg-amber-100 text-amber-700'
+          : sr === 'duplicate_blocked'
+          ? 'bg-orange-100 text-orange-700'
           : sr === 'processing_error' || !sr
           ? 'bg-slate-100 text-slate-600'
           : 'bg-red-100 text-red-700';

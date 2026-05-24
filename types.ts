@@ -162,6 +162,7 @@ export interface Job {
   applications_in_progress?: number;
   applications_scored?: number;
   applications_security_blocked?: number;
+  applications_duplicate_blocked?: number;
   applications_possible_duplicate?: number;
   applications_failed_needs_review?: number;
 }
@@ -229,8 +230,8 @@ export interface Application {
   score: number | null;
   status: ApplicationDecision | null;
   processing_status?: string;
-  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'other' | null;
-  duplicate_status?: 'not_duplicate' | 'possible_duplicate';
+  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'other' | null;
+  duplicate_status?: 'not_duplicate' | 'possible_duplicate' | 'exact_duplicate';
   duplicate_reason?: string | null;
   duplicate_reference_application_id?: string | null;
   evaluation_exit_reason?: string | null;
@@ -289,7 +290,7 @@ export interface ApplicationDetailedAnalysis {
   overall_score: number;
   submission_source?: 'manual_upload' | 'email_forwarding' | 'platform_email';
   processing_status?: string;
-  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'other' | null;
+  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'other' | null;
   evaluation_stage?: 1 | 2 | 3 | null;
   evaluation_exit_reason?: string | null;
   scores: {
@@ -331,7 +332,7 @@ export interface ApplicationDetailedAnalysis {
   level2_prompt_code?: string;
   level2_prompt_version?: number;
   ai_comparisons?: AIComparison[];
-  duplicate_status?: 'not_duplicate' | 'possible_duplicate';
+  duplicate_status?: 'not_duplicate' | 'possible_duplicate' | 'exact_duplicate';
   duplicate_reference_application_id?: string | null;
   duplicate_similarity_score?: number | null;
   duplicate_reason?: string | null;
@@ -351,7 +352,7 @@ export interface ApplicationDetailedAnalysis {
   knockout_answers?: KnockoutAnswerRecord[];
 }
 
-export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'failed_needs_review' | 'blocked';
+export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked';
 
 export interface UploadedCV {
   application_id: string;

@@ -242,7 +242,11 @@ async def list_jobs(
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
                     AND a.security_check_status = 'blocked')                                                     AS applications_security_blocked,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
-                    AND a.security_check_status IS DISTINCT FROM 'blocked')                                      AS applications_failed_needs_review,
+                    AND a.stopped_reason = 'duplicate_blocked')                                                  AS applications_duplicate_blocked,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
+                    AND a.stopped_reason IS DISTINCT FROM 'security_blocked'
+                    AND a.stopped_reason IS DISTINCT FROM 'duplicate_blocked'
+                    AND NOT (a.stopped_reason IS NULL AND a.security_check_status = 'blocked'))                  AS applications_failed_needs_review,
                 -- Possible duplicate: flag only, not a blocked/stopped category
                 COUNT(a.application_id) FILTER (WHERE a.duplicate_status = 'possible_duplicate')                 AS applications_possible_duplicate,
                 -- In-progress
@@ -285,6 +289,7 @@ async def list_jobs(
             "applications_in_progress":         int(r["applications_in_progress"]),
             "applications_scored":              int(r["applications_scored"]),
             "applications_security_blocked":    int(r["applications_security_blocked"]),
+            "applications_duplicate_blocked":   int(r["applications_duplicate_blocked"]),
             "applications_possible_duplicate":  int(r["applications_possible_duplicate"]),
             "applications_failed_needs_review": int(r["applications_failed_needs_review"]),
         })
@@ -474,7 +479,11 @@ async def get_job_details(
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
                     AND a.security_check_status = 'blocked')                                                     AS applications_security_blocked,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
-                    AND a.security_check_status IS DISTINCT FROM 'blocked')                                      AS applications_failed_needs_review,
+                    AND a.stopped_reason = 'duplicate_blocked')                                                  AS applications_duplicate_blocked,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
+                    AND a.stopped_reason IS DISTINCT FROM 'security_blocked'
+                    AND a.stopped_reason IS DISTINCT FROM 'duplicate_blocked'
+                    AND NOT (a.stopped_reason IS NULL AND a.security_check_status = 'blocked'))                  AS applications_failed_needs_review,
                 -- Possible duplicate: flag only, not a blocked/stopped category
                 COUNT(a.application_id) FILTER (WHERE a.duplicate_status = 'possible_duplicate')                 AS applications_possible_duplicate,
                 -- Legacy valid-count kept for controls logic
@@ -608,6 +617,7 @@ async def get_job_details(
             "applications_in_progress":         int(job["applications_in_progress"]),
             "applications_scored":              int(job["applications_scored"]),
             "applications_security_blocked":    int(job["applications_security_blocked"]),
+            "applications_duplicate_blocked":   int(job["applications_duplicate_blocked"]),
             "applications_possible_duplicate":  int(job["applications_possible_duplicate"]),
             "applications_failed_needs_review": int(job["applications_failed_needs_review"]),
             "client_organization_id": str(job["client_organization_id"]) if job["client_organization_id"] else None,
