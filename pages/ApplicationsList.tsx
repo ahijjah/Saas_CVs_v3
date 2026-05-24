@@ -265,6 +265,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         security_detected_patterns: detailsObj?.security_detected_patterns || [],
         security_detected_snippets: detailsObj?.security_detected_snippets || [],
         security_checked_at:        detailsObj?.security_checked_at,
+        // Knockout question answers
+        knockout_answers:           detailsObj?.knockout_answers || [],
       };
 
       setSelectedDetails(normalized);
