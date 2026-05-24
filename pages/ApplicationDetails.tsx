@@ -117,7 +117,14 @@ const T = {
     securityIssueTypes: 'Issue Types Detected',
     securityCheckedAt: 'Checked At',
     stoppedReasonTitle: 'Stopped Before AI Scoring',
-    stoppedReasonLabels: {
+    stoppedReasonCategory: 'Reason Category',
+    stoppedReasonDetail: 'Detailed Reason',
+    stoppedReasonNoDetail: 'No detailed reason was recorded.',
+    stoppedReasonUnknown: 'Failed / Unknown',
+    stoppedTechnicalStatus: 'Technical Status',
+    stoppedProcessingStatus: 'Processing Status',
+    stoppedEvalStage: 'Evaluation Stage',
+    stoppedLabels: {
       security_blocked:  'Security Blocked',
       extraction_failed: 'Extraction Failed',
       processing_error:  'Processing Error',
@@ -266,7 +273,14 @@ const T = {
     securityIssueTypes: 'أنواع المشكلات المكتشفة',
     securityCheckedAt: 'وقت الفحص',
     stoppedReasonTitle: 'توقف قبل التقييم بالذكاء الاصطناعي',
-    stoppedReasonLabels: {
+    stoppedReasonCategory: 'فئة السبب',
+    stoppedReasonDetail: 'السبب التفصيلي',
+    stoppedReasonNoDetail: 'لم يُسجَّل أي سبب تفصيلي.',
+    stoppedReasonUnknown: 'فشل / غير معروف',
+    stoppedTechnicalStatus: 'الحالة التقنية',
+    stoppedProcessingStatus: 'حالة المعالجة',
+    stoppedEvalStage: 'مرحلة التقييم',
+    stoppedLabels: {
       security_blocked:  'محجوب أمنياً',
       extraction_failed: 'فشل الاستخراج',
       processing_error:  'خطأ في المعالجة',
@@ -707,6 +721,12 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                       <span className="text-textMain">{new Date(secAt).toLocaleString()}</span>
                     </>
                   )}
+                  {data.evaluation_exit_reason && (
+                    <>
+                      <span className="text-textMuted col-span-2 mt-1 pt-1 border-t border-slate-100">{(t as any).stoppedReasonDetail}</span>
+                      <span className="text-textMain col-span-2 text-xs leading-relaxed break-words">{data.evaluation_exit_reason}</span>
+                    </>
+                  )}
                 </div>
                 {/* Snippets */}
                 {secSnippets.length > 0 && (
@@ -919,25 +939,53 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         );
       })()}
 
-      {/* Stopped Before AI — badge shown when processing_status=failed and not the full security-blocked page */}
-      {!isSecurityBlocked && data.processing_status === 'failed' && data.stopped_reason && (() => {
-        const sr = data.stopped_reason!;
-        const labels = (t as any).stoppedReasonLabels as Record<string, string>;
-        const badgeStyles: Record<string, string> = {
-          security_blocked:  'bg-red-100 text-red-700',
-          extraction_failed: 'bg-amber-100 text-amber-700',
-          processing_error:  'bg-slate-100 text-slate-600',
-          other:             'bg-slate-100 text-slate-600',
-        };
+      {/* Stopped Before AI — full detail card for non-security-blocked failed applications */}
+      {!isSecurityBlocked && data.processing_status === 'failed' && (() => {
+        const st = t as any;
+        const sr = data.stopped_reason;
+        const labels = st.stoppedLabels as Record<string, string>;
+        const categoryLabel = sr ? (labels[sr] || sr) : st.stoppedReasonUnknown;
+        const badgeStyle = sr === 'extraction_failed'
+          ? 'bg-amber-100 text-amber-700'
+          : sr === 'processing_error' || !sr
+          ? 'bg-slate-100 text-slate-600'
+          : 'bg-red-100 text-red-700';
+        const detailText = data.evaluation_exit_reason || st.stoppedReasonNoDetail;
+        const evalStageLabel = data.evaluation_stage != null ? `Stage ${data.evaluation_stage}` : '—';
         return (
-          <div className={`flex items-center gap-2 px-5 py-3 rounded-xl border ${sr === 'security_blocked' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
-            <svg className={`w-4 h-4 shrink-0 ${sr === 'security_blocked' ? 'text-red-500' : 'text-amber-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span className="text-sm font-bold text-textMain">{(t as any).stoppedReasonTitle}</span>
-            <span className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${badgeStyles[sr] || badgeStyles.other}`}>
-              {labels[sr] || sr}
-            </span>
+          <div className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-3 border-b border-amber-200 bg-amber-50 flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <h4 className="text-[10px] font-black text-amber-700 uppercase tracking-widest">{st.stoppedReasonTitle}</h4>
+            </div>
+            <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-4">
+              {/* Reason Category */}
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{st.stoppedReasonCategory}</p>
+                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-black ${badgeStyle}`}>{categoryLabel}</span>
+              </div>
+              {/* Detailed Reason */}
+              <div className="md:col-span-2">
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{st.stoppedReasonDetail}</p>
+                <p className={`text-sm leading-relaxed ${data.evaluation_exit_reason ? 'text-textMain' : 'text-textMuted italic'}`}>{detailText}</p>
+              </div>
+              {/* Technical Status */}
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{st.stoppedTechnicalStatus}</p>
+                <div className="space-y-1 text-xs text-textMuted">
+                  <div className="flex gap-2">
+                    <span className="font-semibold">{st.stoppedProcessingStatus}:</span>
+                    <span className="font-mono">{data.processing_status}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-semibold">{st.stoppedEvalStage}:</span>
+                    <span className="font-mono">{evalStageLabel}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         );
       })()}
