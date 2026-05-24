@@ -22,8 +22,11 @@ const T = {
     returnDashboard: 'Return to Dashboard',
     reviewPortal: 'Review Portal',
     metaLabels: ['Client', 'Type', 'Location', 'Posted', 'Closing'],
-    kpiLabels: ['Total Received', 'AI Scored', 'Qualified', 'Partial', 'Rejected'],
-    kpiStoppedLabel: 'Stopped Before AI',
+    kpiTotalLabel: 'Total Received',
+    kpiAiScoredLabel: 'AI Scored',
+    kpiBlockedLabel: 'Blocked Before Scoring',
+    kpiNoneBlocked: 'None',
+    kpiLabels: ['Qualified', 'Partial', 'Rejected'],
     kpiChipSecurityBlocked: 'Security Blocked',
     kpiChipPossibleDuplicate: 'Possible Duplicates',
     kpiChipFailedNeedsReview: 'Failed / Needs Review',
@@ -249,8 +252,11 @@ const T = {
     returnDashboard: 'العودة إلى لوحة التحكم',
     reviewPortal: 'بوابة المراجعة',
     metaLabels: ['العميل', 'النوع', 'الموقع', 'تاريخ النشر', 'تاريخ الإغلاق'],
-    kpiLabels: ['إجمالي الوارد', 'مُقيَّم بالذكاء الاصطناعي', 'مؤهلون', 'جزئيون', 'مرفوضون'],
-    kpiStoppedLabel: 'موقوف قبل الذكاء الاصطناعي',
+    kpiTotalLabel: 'إجمالي الوارد',
+    kpiAiScoredLabel: 'مُقيَّم بالذكاء الاصطناعي',
+    kpiBlockedLabel: 'موقوف قبل التقييم',
+    kpiNoneBlocked: 'لا يوجد',
+    kpiLabels: ['مؤهلون', 'جزئيون', 'مرفوضون'],
     kpiChipSecurityBlocked: 'محظور أمنياً',
     kpiChipPossibleDuplicate: 'مكررات محتملة',
     kpiChipFailedNeedsReview: 'فشل / يحتاج مراجعة',
@@ -1320,21 +1326,20 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     closed: 'bg-slate-100 text-slate-500',
   };
   const statusColor = statusColorMap[(details.job_status || '').toLowerCase()] || 'bg-slate-100 text-slate-500';
-  const kpiValues = [
-    { value: details.applications_total, filter: 'all', color: 'text-textMain' },
-    { value: (details as any).applications_scored || 0, filter: 'ai_scored', color: 'text-indigo-600' },
-    { value: details.applications_qualified || 0, filter: 'qualified', color: 'text-success' },
-    { value: details.applications_partial || 0, filter: 'partial', color: 'text-warning' },
-    { value: details.applications_rejected || 0, filter: 'rejected', color: 'text-error' },
+  const aiScoredTotal   = (details as any).applications_scored || 0;
+  const aiSubItems = [
+    { value: details.applications_qualified || 0, filter: 'qualified', color: 'text-success',   hoverBg: 'hover:bg-green-50  hover:border-green-200',  hoverText: 'group-hover:text-success' },
+    { value: details.applications_partial   || 0, filter: 'partial',   color: 'text-warning',   hoverBg: 'hover:bg-amber-50  hover:border-amber-200',  hoverText: 'group-hover:text-warning' },
+    { value: details.applications_rejected  || 0, filter: 'rejected',  color: 'text-error',     hoverBg: 'hover:bg-red-50    hover:border-red-200',    hoverText: 'group-hover:text-error'   },
   ];
-  const stoppedBeforeAI = ((details as any).applications_security_blocked || 0) +
+  const blockedTotal = ((details as any).applications_security_blocked || 0) +
     ((details as any).applications_possible_duplicate || 0) +
     ((details as any).applications_failed_needs_review || 0);
-  const stoppedChips = [
-    { count: (details as any).applications_security_blocked || 0, filter: 'security_blocked', label: (t as any).kpiChipSecurityBlocked, color: 'text-red-700 bg-red-50 border-red-200 hover:bg-red-100' },
-    { count: (details as any).applications_possible_duplicate || 0, filter: 'possible_duplicate', label: (t as any).kpiChipPossibleDuplicate, color: 'text-orange-700 bg-orange-50 border-orange-200 hover:bg-orange-100' },
-    { count: (details as any).applications_failed_needs_review || 0, filter: 'failed_needs_review', label: (t as any).kpiChipFailedNeedsReview, color: 'text-slate-700 bg-slate-50 border-slate-200 hover:bg-slate-100' },
-  ].filter(c => c.count > 0);
+  const blockedItems = [
+    { count: (details as any).applications_security_blocked    || 0, filter: 'security_blocked',   label: (t as any).kpiChipSecurityBlocked,   dotColor: 'bg-red-400',    textColor: 'text-red-700',    hoverColor: 'hover:text-red-900 hover:bg-red-50'    },
+    { count: (details as any).applications_possible_duplicate  || 0, filter: 'possible_duplicate', label: (t as any).kpiChipPossibleDuplicate, dotColor: 'bg-orange-400', textColor: 'text-orange-700', hoverColor: 'hover:text-orange-900 hover:bg-orange-50' },
+    { count: (details as any).applications_failed_needs_review || 0, filter: 'failed_needs_review',label: (t as any).kpiChipFailedNeedsReview, dotColor: 'bg-slate-400',  textColor: 'text-slate-600',  hoverColor: 'hover:text-slate-900 hover:bg-slate-100'  },
+  ];
   const weightLabels = t.evalWeightLabels;
   const weightKeys: ('skills' | 'experience' | 'education' | 'certifications' | 'soft_skills' | 'domain_knowledge' | 'other_requirements')[] = ['skills', 'experience', 'education', 'certifications', 'soft_skills', 'domain_knowledge', 'other_requirements'];
   const criteriaLastEditedBy = (details as any).criteria_last_edited_by ?? null;
@@ -1480,45 +1485,70 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       </div>
 
       {/* B. Applications insight strip ─────────────────────────────────────── */}
-      <div className="mb-6 bg-white rounded-2xl border border-border shadow-sm">
-        <div className="px-5 py-4 space-y-3">
-          {/* Row 1: donut + KPI cards */}
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="shrink-0">{renderDonut()}</div>
-            <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-3 min-w-0">
-              {kpiValues.map((kpi, idx) => (
-                <button key={idx} onClick={() => onViewApplications(details.job_id, kpi.filter)}
-                  className="flex flex-col items-center py-3 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-transparent hover:border-border transition-all group cursor-pointer">
-                  <span className={`text-xl font-black ${kpi.color} group-hover:scale-105 transition-transform`}>{kpi.value ?? 0}</span>
-                  <span className="text-[9px] font-black text-textMuted uppercase tracking-wider mt-0.5 group-hover:text-primary transition-colors">{t.kpiLabels[idx]}</span>
-                </button>
-              ))}
-            </div>
+      <div className="mb-6 bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+        {/* Total header row */}
+        <div className="px-5 py-3 border-b border-border flex items-center justify-between bg-slate-50/60">
+          <span className="text-[10px] font-black text-textMuted uppercase tracking-wider">{(t as any).kpiTotalLabel}</span>
+          <div className="flex items-center gap-3">
             {((details as any).applications_in_progress ?? 0) > 0 && (
-              <div className="shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-200">
-                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
-                <div>
-                  <p className="text-[11px] font-black text-blue-800">{t.scoringInProgress}</p>
-                  <p className="text-[9px] text-blue-600">{t.scoringProgressDetail.replace('{count}', String((details as any).applications_in_progress))}</p>
-                </div>
-              </div>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse inline-block" />
+                {t.scoringProgressDetail.replace('{count}', String((details as any).applications_in_progress))}
+              </span>
             )}
+            <button onClick={() => onViewApplications(details.job_id, 'all')}
+              className="text-2xl font-black text-textMain hover:text-primary transition-colors leading-none">
+              {details.applications_total ?? 0}
+            </button>
           </div>
-          {/* Row 2: Stopped Before AI breakdown chips */}
-          {stoppedChips.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border">
-              <span className="text-[10px] font-black text-textMuted uppercase tracking-wider shrink-0">{(t as any).kpiStoppedLabel}:</span>
-              <span className="text-[11px] font-black text-textMuted shrink-0">{stoppedBeforeAI}</span>
-              <span className="text-textMuted/40 text-[10px] shrink-0">·</span>
-              {stoppedChips.map(chip => (
-                <button key={chip.filter} onClick={() => onViewApplications(details.job_id, chip.filter)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-black uppercase tracking-wide transition-colors ${chip.color}`}>
-                  <span>{chip.count}</span>
-                  <span>{chip.label}</span>
+        </div>
+
+        {/* Two-column main body */}
+        <div className="flex flex-col sm:flex-row divide-y sm:divide-y-0 sm:divide-x divide-border">
+
+          {/* Left — AI Scored (70%) */}
+          <div className="flex-[7] px-5 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[10px] font-black text-textMuted uppercase tracking-wider">{(t as any).kpiAiScoredLabel}</span>
+              <button onClick={() => onViewApplications(details.job_id, 'ai_scored')}
+                className="text-xl font-black text-indigo-600 hover:text-indigo-800 hover:scale-105 transition-all leading-none">
+                {aiScoredTotal}
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {aiSubItems.map((item, idx) => (
+                <button key={idx} onClick={() => onViewApplications(details.job_id, item.filter)}
+                  className={`flex flex-col items-center py-3 px-2 rounded-xl bg-slate-50 border border-transparent ${item.hoverBg} transition-all group cursor-pointer`}>
+                  <span className={`text-xl font-black ${item.color} group-hover:scale-105 transition-transform`}>{item.value}</span>
+                  <span className={`text-[9px] font-black text-textMuted uppercase tracking-wider mt-0.5 ${item.hoverText} transition-colors`}>{t.kpiLabels[idx]}</span>
                 </button>
               ))}
             </div>
-          )}
+          </div>
+
+          {/* Right — Blocked Before Scoring (30%) */}
+          <div className="flex-[3] px-5 py-4 bg-slate-50/40">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[10px] font-black text-textMuted uppercase tracking-wider leading-tight">{(t as any).kpiBlockedLabel}</span>
+              <button onClick={() => onViewApplications(details.job_id, 'blocked')}
+                className="text-xl font-black text-slate-500 hover:text-slate-700 hover:scale-105 transition-all leading-none">
+                {blockedTotal}
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {blockedItems.map(item => (
+                <button key={item.filter} onClick={() => onViewApplications(details.job_id, item.filter)}
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-transparent ${item.hoverColor} transition-colors group`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${item.dotColor} shrink-0`} />
+                  <span className={`flex-1 text-[10px] font-bold ${item.textColor} text-left leading-tight`}>{item.label}</span>
+                  <span className={`text-[11px] font-black ${item.textColor}`}>{item.count}</span>
+                </button>
+              ))}
+              {blockedTotal === 0 && (
+                <p className="text-[10px] text-textMuted/60 italic px-1">{(t as any).kpiNoneBlocked}</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

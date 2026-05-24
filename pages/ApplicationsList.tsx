@@ -37,6 +37,7 @@ const T = {
     filterLowMatch: 'Low Match',
     filterPossibleDuplicate: 'Possible Duplicates',
     filterAiScored: 'AI Scored',
+    filterBlocked: 'Blocked',
     filterSecurityBlocked: 'Security Blocked',
     filterFailedNeedsReview: 'Failed / Needs Review',
     loading: 'Loading applications...',
@@ -65,6 +66,7 @@ const T = {
     filterLowMatch: 'تطابق منخفض',
     filterPossibleDuplicate: 'مكررات محتملة',
     filterAiScored: 'مُقيَّم بالذكاء الاصطناعي',
+    filterBlocked: 'موقوف',
     filterSecurityBlocked: 'محظور أمنياً',
     filterFailedNeedsReview: 'فشل / يحتاج مراجعة',
     loading: 'جارٍ تحميل الطلبات...',
@@ -87,7 +89,7 @@ const T = {
 };
 
 // low_match is an internal status; it maps to 'rejected' for display purposes
-const FILTER_KEYS: ApplicationFilter[] = ['all', 'ai_scored', 'qualified', 'partial', 'rejected', 'security_blocked', 'possible_duplicate', 'failed_needs_review'];
+const FILTER_KEYS: ApplicationFilter[] = ['all', 'ai_scored', 'qualified', 'partial', 'rejected', 'blocked', 'security_blocked', 'possible_duplicate', 'failed_needs_review'];
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   jobId, initialFilter, initialApplicationId, auth, onBack, addToast
@@ -127,6 +129,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     low_match: t.filterLowMatch,
     possible_duplicate: t.filterPossibleDuplicate,
     ai_scored: t.filterAiScored,
+    blocked: t.filterBlocked,
     security_blocked: t.filterSecurityBlocked,
     failed_needs_review: t.filterFailedNeedsReview,
   };
@@ -305,28 +308,25 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   // low_match is treated as rejected for all display/filter purposes
   const normaliseStatus = (s: string) => s === 'low_match' ? 'rejected' : s;
+  // Exclusive priority helpers (priority order: blocked > duplicate > failed > ai_scored)
+  const isSecurityBlocked   = (a: Application) => a.security_check_status === 'blocked';
+  const isPossibleDuplicate = (a: Application) => a.duplicate_status === 'possible_duplicate' && !isSecurityBlocked(a);
+  const isFailedNeedsReview = (a: Application) => a.processing_status === 'failed' && !isSecurityBlocked(a) && !isPossibleDuplicate(a);
+  const isAiScored          = (a: Application) => a.status != null && !isSecurityBlocked(a) && !isPossibleDuplicate(a);
+
   const filteredApplications = (() => {
     if (filter === 'all') return applicationsAll;
-    if (filter === 'possible_duplicate') {
-      return applicationsAll.filter(a => a.duplicate_status === 'possible_duplicate');
-    }
-    if (filter === 'security_blocked') {
-      return applicationsAll.filter(a => a.security_check_status === 'blocked');
-    }
-    if (filter === 'ai_scored') {
-      return applicationsAll.filter(a => a.processing_status === 'scored');
-    }
-    if (filter === 'failed_needs_review') {
-      return applicationsAll.filter(a => a.processing_status === 'failed' && a.security_check_status !== 'blocked');
-    }
+    if (filter === 'security_blocked')   return applicationsAll.filter(isSecurityBlocked);
+    if (filter === 'possible_duplicate') return applicationsAll.filter(isPossibleDuplicate);
+    if (filter === 'failed_needs_review') return applicationsAll.filter(isFailedNeedsReview);
+    if (filter === 'blocked')            return applicationsAll.filter(a => isSecurityBlocked(a) || isPossibleDuplicate(a) || isFailedNeedsReview(a));
+    if (filter === 'ai_scored')          return applicationsAll.filter(isAiScored);
     if (filter === 'rejected') {
       return applicationsAll.filter(a =>
-        normaliseStatus((a.status ?? '').toLowerCase().trim()) === 'rejected' &&
-        a.security_check_status !== 'blocked' &&
-        a.duplicate_status !== 'possible_duplicate'
+        isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase().trim()) === 'rejected'
       );
     }
-    return applicationsAll.filter(a => normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
+    return applicationsAll.filter(a => isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
   })();
 
   if (view === 'details' && selectedDetails) {

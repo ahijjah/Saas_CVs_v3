@@ -348,7 +348,7 @@ export interface ApplicationDetailedAnalysis {
   security_checked_at?: string | null;
 }
 
-export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'failed_needs_review';
+export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'failed_needs_review' | 'blocked';
 
 export interface UploadedCV {
   application_id: string;
