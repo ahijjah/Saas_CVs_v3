@@ -252,19 +252,28 @@ async def save_knockout_answers(
         qid = str(ans.get("question_id", ""))
         val = str(ans.get("answer_value", "")).strip()
         if qid not in valid_qids:
+            logger.debug("Skipping answer for unknown question_id=%s (job=%s)", qid, job_id)
             continue
 
-        await db.execute(
-            text("""
-                INSERT INTO application_knockout_answers
-                    (application_id, question_id, answer_value, is_disqualifying)
-                VALUES (CAST(:aid AS uuid), CAST(:qid AS uuid), :val, FALSE)
-                ON CONFLICT (application_id, question_id) DO UPDATE
-                    SET answer_value = EXCLUDED.answer_value,
-                        is_disqualifying = FALSE
-            """),
-            {"aid": application_id, "qid": qid, "val": val},
-        )
+        val_json = json.dumps(val)
+        try:
+            await db.execute(
+                text("""
+                    INSERT INTO application_knockout_answers
+                        (application_id, question_id, answer_value, is_disqualifying)
+                    VALUES (CAST(:aid AS uuid), CAST(:qid AS uuid), CAST(:val AS jsonb), FALSE)
+                    ON CONFLICT (application_id, question_id) DO UPDATE
+                        SET answer_value = EXCLUDED.answer_value,
+                            is_disqualifying = FALSE
+                """),
+                {"aid": application_id, "qid": qid, "val": val_json},
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to insert knockout answer application_id=%s question_id=%s: %s",
+                application_id, qid, exc,
+            )
+            raise
 
 
 async def get_application_knockout_answers(
