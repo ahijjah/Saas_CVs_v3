@@ -24,11 +24,11 @@ const T = {
     metaLabels: ['Client', 'Type', 'Location', 'Posted', 'Closing'],
     kpiTotalLabel: 'Total Received',
     kpiAiScoredLabel: 'AI Scored',
-    kpiBlockedLabel: 'Blocked Before Scoring',
+    kpiBlockedLabel: 'Stopped Before AI',
     kpiNoneBlocked: 'None',
     kpiLabels: ['Qualified', 'Partial', 'Rejected'],
     kpiChipSecurityBlocked: 'Security Blocked',
-    kpiChipPossibleDuplicate: 'Possible Duplicates',
+    kpiChipDuplicateBlocked: 'Duplicate Blocked',
     kpiChipFailedNeedsReview: 'Failed / Needs Review',
     skillsAnalysis: 'Skills Analysis',
     requiredSkills: 'Required Skills',
@@ -254,11 +254,11 @@ const T = {
     metaLabels: ['العميل', 'النوع', 'الموقع', 'تاريخ النشر', 'تاريخ الإغلاق'],
     kpiTotalLabel: 'إجمالي الوارد',
     kpiAiScoredLabel: 'مُقيَّم بالذكاء الاصطناعي',
-    kpiBlockedLabel: 'موقوف قبل التقييم',
+    kpiBlockedLabel: 'موقوف قبل الذكاء الاصطناعي',
     kpiNoneBlocked: 'لا يوجد',
     kpiLabels: ['مؤهلون', 'جزئيون', 'مرفوضون'],
     kpiChipSecurityBlocked: 'محظور أمنياً',
-    kpiChipPossibleDuplicate: 'مكررات محتملة',
+    kpiChipDuplicateBlocked: 'مكرر موقوف',
     kpiChipFailedNeedsReview: 'فشل / يحتاج مراجعة',
     skillsAnalysis: 'تحليل المهارات',
     requiredSkills: 'المهارات المطلوبة',
@@ -1333,11 +1333,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     { value: details.applications_rejected  || 0, filter: 'rejected',  color: 'text-error',     hoverBg: 'hover:bg-red-50    hover:border-red-200',    hoverText: 'group-hover:text-error'   },
   ];
   const blockedTotal = ((details as any).applications_security_blocked || 0) +
-    ((details as any).applications_possible_duplicate || 0) +
     ((details as any).applications_failed_needs_review || 0);
+  // Duplicate Blocked is always 0 until the data model tracks it separately
   const blockedItems = [
     { count: (details as any).applications_security_blocked    || 0, filter: 'security_blocked',   label: (t as any).kpiChipSecurityBlocked,   dotColor: 'bg-red-400',    textColor: 'text-red-700',    hoverColor: 'hover:text-red-900 hover:bg-red-50'    },
-    { count: (details as any).applications_possible_duplicate  || 0, filter: 'possible_duplicate', label: (t as any).kpiChipPossibleDuplicate, dotColor: 'bg-orange-400', textColor: 'text-orange-700', hoverColor: 'hover:text-orange-900 hover:bg-orange-50' },
+    { count: 0,                                                       filter: 'possible_duplicate', label: (t as any).kpiChipDuplicateBlocked,  dotColor: 'bg-orange-400', textColor: 'text-orange-700', hoverColor: 'hover:text-orange-900 hover:bg-orange-50' },
     { count: (details as any).applications_failed_needs_review || 0, filter: 'failed_needs_review',label: (t as any).kpiChipFailedNeedsReview, dotColor: 'bg-slate-400',  textColor: 'text-slate-600',  hoverColor: 'hover:text-slate-900 hover:bg-slate-100'  },
   ];
   const weightLabels = t.evalWeightLabels;
@@ -1536,14 +1536,22 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               </button>
             </div>
             <div className="space-y-1.5">
-              {blockedItems.map(item => (
-                <button key={item.filter} onClick={() => onViewApplications(details.job_id, item.filter)}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-transparent ${item.hoverColor} transition-colors group`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${item.dotColor} shrink-0`} />
-                  <span className={`flex-1 text-[10px] font-bold ${item.textColor} text-left leading-tight`}>{item.label}</span>
-                  <span className={`text-[11px] font-black ${item.textColor}`}>{item.count}</span>
-                </button>
-              ))}
+              {blockedItems.map(item =>
+                item.count > 0 ? (
+                  <button key={item.filter} onClick={() => onViewApplications(details.job_id, item.filter)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-transparent ${item.hoverColor} transition-colors group`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${item.dotColor} shrink-0`} />
+                    <span className={`flex-1 text-[10px] font-bold ${item.textColor} text-left leading-tight`}>{item.label}</span>
+                    <span className={`text-[11px] font-black ${item.textColor}`}>{item.count}</span>
+                  </button>
+                ) : (
+                  <div key={item.filter} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg opacity-40">
+                    <span className={`w-1.5 h-1.5 rounded-full ${item.dotColor} shrink-0`} />
+                    <span className="flex-1 text-[10px] font-bold text-textMuted text-left leading-tight">{item.label}</span>
+                    <span className="text-[11px] font-black text-textMuted">0</span>
+                  </div>
+                )
+              )}
               {blockedTotal === 0 && (
                 <p className="text-[10px] text-textMuted/60 italic px-1">{(t as any).kpiNoneBlocked}</p>
               )}

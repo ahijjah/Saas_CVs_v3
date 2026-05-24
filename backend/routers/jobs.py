@@ -230,30 +230,22 @@ async def list_jobs(
                 t.name AS tenant_name,
                 jc.criteria_extraction_status,
                 COUNT(a.application_id)                                                                          AS applications_total,
-                -- Priority 1: Security Blocked
-                COUNT(a.application_id) FILTER (WHERE a.security_check_status = 'blocked')                      AS applications_security_blocked,
-                -- Priority 2: Possible Duplicate (not blocked)
-                COUNT(a.application_id) FILTER (WHERE a.duplicate_status = 'possible_duplicate'
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked'))               AS applications_possible_duplicate,
-                -- Priority 3: Failed/Needs Review (not blocked, not duplicate)
+                -- AI Scored: primary classification by processing_status
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored')                           AS applications_scored,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                    AND a.decision = 'qualified')                                                                 AS applications_qualified,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                    AND a.decision = 'partial')                                                                   AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                    AND a.decision = 'rejected')                                                                  AS applications_rejected,
+                -- Stopped Before AI: processing_status = 'failed'
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
-                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))              AS applications_failed_needs_review,
-                -- Priority 4: AI Scored (decision is set, not blocked, not duplicate)
-                COUNT(a.application_id) FILTER (WHERE a.decision IS NOT NULL
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
-                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))              AS applications_scored,
-                -- AI scored sub-categories (exclusive: not blocked, not duplicate)
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified'
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
-                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))              AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial'
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
-                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))              AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected'
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
-                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))              AS applications_rejected,
-                -- In-progress (not yet categorized)
+                    AND a.security_check_status = 'blocked')                                                     AS applications_security_blocked,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
+                    AND a.security_check_status IS DISTINCT FROM 'blocked')                                      AS applications_failed_needs_review,
+                -- Possible duplicate: flag only, not a blocked/stopped category
+                COUNT(a.application_id) FILTER (WHERE a.duplicate_status = 'possible_duplicate')                 AS applications_possible_duplicate,
+                -- In-progress
                 COUNT(a.application_id) FILTER (
                     WHERE a.processing_status IN ('pending', 'queued', 'processing')
                 ) AS applications_in_progress
@@ -470,35 +462,27 @@ async def get_job_details(
                 cu.full_name AS created_by_name,
                 uu.full_name AS updated_by_name,
                 COUNT(a.application_id)                                                                          AS applications_total,
-                -- Priority 1: Security Blocked
-                COUNT(a.application_id) FILTER (WHERE a.security_check_status = 'blocked')                      AS applications_security_blocked,
-                -- Priority 2: Possible Duplicate (not blocked)
-                COUNT(a.application_id) FILTER (WHERE a.duplicate_status = 'possible_duplicate'
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked'))               AS applications_possible_duplicate,
-                -- Priority 3: Failed/Needs Review (not blocked, not duplicate)
+                -- AI Scored: primary classification by processing_status
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored')                           AS applications_scored,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                    AND a.decision = 'qualified')                                                                 AS applications_qualified,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                    AND a.decision = 'partial')                                                                   AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                    AND a.decision = 'rejected')                                                                  AS applications_rejected,
+                -- Stopped Before AI: processing_status = 'failed'
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
-                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))              AS applications_failed_needs_review,
-                -- Priority 4: AI Scored (decision is set, not blocked, not duplicate)
-                COUNT(a.application_id) FILTER (WHERE a.decision IS NOT NULL
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
-                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))              AS applications_scored,
-                -- AI scored sub-categories (exclusive: not blocked, not duplicate)
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified'
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
-                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))              AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial'
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
-                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))              AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected'
-                    AND (a.security_check_status IS NULL OR a.security_check_status != 'blocked')
-                    AND (a.duplicate_status IS NULL OR a.duplicate_status != 'possible_duplicate'))              AS applications_rejected,
+                    AND a.security_check_status = 'blocked')                                                     AS applications_security_blocked,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
+                    AND a.security_check_status IS DISTINCT FROM 'blocked')                                      AS applications_failed_needs_review,
+                -- Possible duplicate: flag only, not a blocked/stopped category
+                COUNT(a.application_id) FILTER (WHERE a.duplicate_status = 'possible_duplicate')                 AS applications_possible_duplicate,
                 -- Legacy valid-count kept for controls logic
                 COUNT(a.application_id) FILTER (
                     WHERE (a.duplicate_status IS NULL OR a.duplicate_status = 'not_duplicate')
                       AND a.processing_status != 'failed'
                 ) AS applications_valid_count,
-                -- In-progress (not yet categorized)
+                -- In-progress
                 COUNT(a.application_id) FILTER (
                     WHERE a.processing_status IN ('pending', 'queued', 'processing')
                 ) AS applications_in_progress,

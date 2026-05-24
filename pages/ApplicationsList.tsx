@@ -308,25 +308,24 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   // low_match is treated as rejected for all display/filter purposes
   const normaliseStatus = (s: string) => s === 'low_match' ? 'rejected' : s;
-  // Exclusive priority helpers (priority order: blocked > duplicate > failed > ai_scored)
-  const isSecurityBlocked   = (a: Application) => a.security_check_status === 'blocked';
-  const isPossibleDuplicate = (a: Application) => a.duplicate_status === 'possible_duplicate' && !isSecurityBlocked(a);
-  const isFailedNeedsReview = (a: Application) => a.processing_status === 'failed' && !isSecurityBlocked(a) && !isPossibleDuplicate(a);
-  const isAiScored          = (a: Application) => a.status != null && !isSecurityBlocked(a) && !isPossibleDuplicate(a);
+  // Classification based on processing_status (primary) and flags (secondary)
+  const isAiScored          = (a: Application) => a.processing_status === 'scored';
+  const isSecurityBlocked   = (a: Application) => a.processing_status === 'failed' && a.security_check_status === 'blocked';
+  const isFailedNeedsReview = (a: Application) => a.processing_status === 'failed' && a.security_check_status !== 'blocked';
+  // possible_duplicate is a flag only — an app can have any processing_status
+  const isPossibleDuplicate = (a: Application) => a.duplicate_status === 'possible_duplicate';
 
   const filteredApplications = (() => {
     if (filter === 'all') return applicationsAll;
-    if (filter === 'security_blocked')   return applicationsAll.filter(isSecurityBlocked);
-    if (filter === 'possible_duplicate') return applicationsAll.filter(isPossibleDuplicate);
-    if (filter === 'failed_needs_review') return applicationsAll.filter(isFailedNeedsReview);
-    if (filter === 'blocked')            return applicationsAll.filter(a => isSecurityBlocked(a) || isPossibleDuplicate(a) || isFailedNeedsReview(a));
     if (filter === 'ai_scored')          return applicationsAll.filter(isAiScored);
-    if (filter === 'rejected') {
-      return applicationsAll.filter(a =>
-        isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase().trim()) === 'rejected'
-      );
-    }
-    return applicationsAll.filter(a => isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
+    if (filter === 'security_blocked')   return applicationsAll.filter(isSecurityBlocked);
+    if (filter === 'failed_needs_review') return applicationsAll.filter(isFailedNeedsReview);
+    if (filter === 'blocked')            return applicationsAll.filter(a => a.processing_status === 'failed');
+    if (filter === 'possible_duplicate') return applicationsAll.filter(isPossibleDuplicate);
+    if (filter === 'qualified') return applicationsAll.filter(a => isAiScored(a) && a.status === 'qualified');
+    if (filter === 'partial')   return applicationsAll.filter(a => isAiScored(a) && a.status === 'partial');
+    if (filter === 'rejected')  return applicationsAll.filter(a => isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase()) === 'rejected');
+    return applicationsAll.filter(a => normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
   })();
 
   if (view === 'details' && selectedDetails) {
