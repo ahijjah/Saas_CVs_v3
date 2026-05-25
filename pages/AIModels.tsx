@@ -13,9 +13,10 @@ interface Props {
 const T = {
   en: {
     title:               'AI Models',
-    subtitle:            'Manage the AI model registry and configure which model handles each pipeline stage.',
+    subtitle:            'Manage the AI model registry and configure which LLM model is used for each AI operation.',
     registryTab:         'Model Registry',
-    stageDefaultsTab:    'Stage Defaults',
+    stageDefaultsTab:    'LLM Usage Defaults',
+    stageDefaultsNote:   'Only LLM-based operations are configurable here. Security checks, duplicate detection, gatekeeper screening, and other rule-based stages run locally and do not use an LLM.',
     secretsTab:          'Provider Secrets',
     addModel:            'Add Model',
     provider:            'Provider',
@@ -57,7 +58,7 @@ const T = {
     formDisplayName:     'Display name',
     formSecretKey:       'Platform secret key (e.g. OPENAI_API_KEY)',
     formBaseUrl:         'Base URL (leave blank for provider default)',
-    formStages:          'Supported stages (comma-separated)',
+    formStages:          'Supported LLM stages (comma-separated: cv_analyzer, cv_scoring, cv_comparison, fallback)',
     formContextTokens:   'Max context tokens',
     formInputPrice:      'Input price per 1M tokens ($)',
     formOutputPrice:     'Output price per 1M tokens ($)',
@@ -66,9 +67,10 @@ const T = {
   },
   ar: {
     title:               'نماذج الذكاء الاصطناعي',
-    subtitle:            'إدارة سجل نماذج الذكاء الاصطناعي وتكوين النموذج المسؤول عن كل مرحلة.',
+    subtitle:            'إدارة سجل نماذج الذكاء الاصطناعي وتكوين النموذج المستخدم لكل عملية ذكاء اصطناعي.',
     registryTab:         'سجل النماذج',
-    stageDefaultsTab:    'إعدادات المراحل',
+    stageDefaultsTab:    'إعدادات نماذج LLM',
+    stageDefaultsNote:   'يمكن تكوين عمليات الذكاء الاصطناعي (LLM) فقط هنا. تعمل مراحل الفحص الأمني وكشف التكرار والحارس الدلالي وغيرها من المراحل القائمة على القواعد محلياً ولا تستخدم نماذج LLM.',
     secretsTab:          'مفاتيح المزودين',
     addModel:            'إضافة نموذج',
     provider:            'المزود',
@@ -110,7 +112,7 @@ const T = {
     formDisplayName:     'الاسم المعروض',
     formSecretKey:       'مفتاح سري للمنصة (مثل OPENAI_API_KEY)',
     formBaseUrl:         'عنوان URL الأساسي (اتركه فارغاً للقيمة الافتراضية)',
-    formStages:          'المراحل المدعومة (مفصولة بفواصل)',
+    formStages:          'مراحل LLM المدعومة (مفصولة بفواصل: cv_analyzer, cv_scoring, cv_comparison, fallback)',
     formContextTokens:   'الحد الأقصى لرموز السياق',
     formInputPrice:      'سعر الإدخال لكل مليون رمز ($)',
     formOutputPrice:     'سعر الإخراج لكل مليون رمز ($)',
@@ -179,9 +181,11 @@ const BLANK_FORM: BlankForm = {
   notes: '',
 };
 
-const ALL_STAGES = [
-  'cv_scoring', 'cv_comparison', 'criteria_extraction',
-  'level2_screening', 'translation_explanation', 'fallback',
+// Only real LLM stages shown in the UI — local-code stages are intentionally excluded
+const LLM_STAGES: { key: string; labelEn: string; labelAr: string }[] = [
+  { key: 'cv_analyzer', labelEn: 'CV Analyzer (Criteria Extraction)', labelAr: 'محلل السيرة الذاتية (استخراج المعايير)' },
+  { key: 'cv_scoring',  labelEn: 'CV Scoring',                        labelAr: 'تقييم السيرة الذاتية' },
+  { key: 'fallback',    labelEn: 'Fallback Model',                    labelAr: 'نموذج الاحتياط' },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -208,12 +212,10 @@ async function apiFetch(url: string, token: string | null, options: RequestInit 
 
 // ── Stage badge ──────────────────────────────────────────────────────────────
 const STAGE_COLORS: Record<string, string> = {
-  cv_scoring:             'bg-indigo-100 text-indigo-700',
-  cv_comparison:          'bg-purple-100 text-purple-700',
-  criteria_extraction:    'bg-cyan-100 text-cyan-700',
-  level2_screening:       'bg-green-100 text-green-700',
-  translation_explanation:'bg-amber-100 text-amber-700',
-  fallback:               'bg-slate-100 text-slate-600',
+  cv_analyzer:   'bg-cyan-100 text-cyan-700',
+  cv_scoring:    'bg-indigo-100 text-indigo-700',
+  cv_comparison: 'bg-purple-100 text-purple-700',
+  fallback:      'bg-slate-100 text-slate-600',
 };
 
 const StageBadge: React.FC<{ stage: string }> = ({ stage }) => (
@@ -660,9 +662,18 @@ export const AIModelsPage: React.FC<Props> = ({ auth, addToast }) => {
         </div>
       )}
 
-      {/* ── Stage Defaults tab ───────────────────────────────────────────── */}
+      {/* ── LLM Usage Defaults tab ───────────────────────────────────────── */}
       {tab === 'stage-defaults' && (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+        <div className="space-y-4">
+          {/* Explanatory note */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex gap-3 items-start">
+            <svg className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-amber-800">{(t as any).stageDefaultsNote}</p>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100">
             <span className="text-sm font-semibold text-slate-700">{t.stageDefaultsTab}</span>
           </div>
@@ -676,7 +687,8 @@ export const AIModelsPage: React.FC<Props> = ({ auth, addToast }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {ALL_STAGES.map(stage => {
+                {LLM_STAGES.map(({ key: stage, labelEn, labelAr }) => {
+                  const stageLabel = lang === 'ar' ? labelAr : labelEn;
                   const def = stageDefaults.find(s => s.stage === stage);
                   const pending = getPending(stage);
                   const stageModels = getStageModels(stage);
@@ -686,7 +698,10 @@ export const AIModelsPage: React.FC<Props> = ({ auth, addToast }) => {
                   return (
                     <tr key={stage} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <StageBadge stage={stage} />
+                        <div className="flex flex-col gap-0.5">
+                          <StageBadge stage={stage} />
+                          <span className="text-xs text-slate-500 mt-0.5">{stageLabel}</span>
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <select
@@ -742,6 +757,7 @@ export const AIModelsPage: React.FC<Props> = ({ auth, addToast }) => {
                 })}
               </tbody>
             </table>
+          </div>
           </div>
         </div>
       )}

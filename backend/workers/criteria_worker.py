@@ -206,7 +206,7 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
         _RegSession = async_sessionmaker(_reg_engine, class_=_AsyncSession, expire_on_commit=False)
         async with _RegSession() as _db_reg:
             await _set_rls_context(_db_reg, "", "super_admin")
-            _crit_reg = await _resolve_crit(_db_reg, "criteria_extraction")
+            _crit_reg = await _resolve_crit(_db_reg, "cv_analyzer")
         await _reg_engine.dispose()
     except Exception as _reg_exc:
         logger.warning("[job:%s] Registry lookup failed (non-critical): %s", job_id, _reg_exc)

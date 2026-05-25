@@ -17,8 +17,7 @@ router = APIRouter(prefix="/admin/ai-models", tags=["ai-models"])
 RequireSuperAdmin = Depends(require_role("super_admin"))
 
 VALID_STAGES = frozenset([
-    "cv_scoring", "cv_comparison", "criteria_extraction",
-    "level2_screening", "translation_explanation", "fallback",
+    "cv_analyzer", "cv_scoring", "cv_comparison", "fallback",
 ])
 
 
