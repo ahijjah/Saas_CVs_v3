@@ -189,7 +189,38 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
 
     logger.info("[job:%s] Criteria extraction started.", job_id)
 
-    analysis = await extract_job_criteria(description, prompt_override=criteria_prompt)
+    # Resolve stage model from registry — needs a fresh session (previous one was closed above)
+    _crit_reg = None
+    try:
+        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession as _AsyncSession
+        from sqlalchemy.pool import NullPool as _NullPool
+        from config import get_settings as _get_settings
+        from database import set_rls_context as _set_rls_context
+        from services.ai_model_registry_service import resolve_stage_client as _resolve_crit
+        _reg_cfg = _get_settings()
+        _reg_engine = create_async_engine(
+            _reg_cfg.database_url,
+            poolclass=_NullPool,
+            connect_args={"server_settings": {"search_path": _reg_cfg.db_schema}},
+        )
+        _RegSession = async_sessionmaker(_reg_engine, class_=_AsyncSession, expire_on_commit=False)
+        async with _RegSession() as _db_reg:
+            await _set_rls_context(_db_reg, "", "super_admin")
+            _crit_reg = await _resolve_crit(_db_reg, "criteria_extraction")
+        await _reg_engine.dispose()
+    except Exception as _reg_exc:
+        logger.warning("[job:%s] Registry lookup failed (non-critical): %s", job_id, _reg_exc)
+        _crit_reg = None
+
+    _crit_prompt = criteria_prompt
+    if _crit_reg:
+        _crit_prompt = {**(criteria_prompt or {}), "model": _crit_reg.model_name}
+
+    analysis = await extract_job_criteria(
+        description,
+        prompt_override=_crit_prompt,
+        openai_client=_crit_reg.client if _crit_reg else None,
+    )
     flat = flatten_criteria_for_scoring(analysis)
 
     is_sufficient, is_open_broad, quality_error = _check_criteria_quality(analysis, flat)

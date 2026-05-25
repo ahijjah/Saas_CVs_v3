@@ -22,7 +22,7 @@ const T = {
     platformConfig: 'Platform Config', subscriptionPlans: 'Subscription Plans',
     tenantSubscriptions: 'Tenant Subscriptions',
     secrets: 'Secrets & Credentials', aiPrompts: 'AI Prompts', auditLogs: 'Audit Logs',
-    aiUsage: 'AI Usage & Cost',
+    aiUsage: 'AI Usage & Cost', aiModels: 'AI Models',
     organization: 'Organization', langBtn: 'عربي',
     pageTitles: {
       '/jobs':                        'Campaigns',
@@ -41,6 +41,7 @@ const T = {
       '/admin/ai-prompts':            'AI Prompts',
       '/admin/audit-logs':            'Audit Logs',
       '/admin/ai-usage':              'AI Usage & Cost',
+      '/admin/ai-models':             'AI Models',
     } as Record<string, string>,
   },
   ar: {
@@ -52,7 +53,7 @@ const T = {
     platformConfig: 'إعدادات المنصة', subscriptionPlans: 'خطط الاشتراك',
     tenantSubscriptions: 'اشتراكات المستأجرين',
     secrets: 'المفاتيح والبيانات السرية', aiPrompts: 'موجهات الذكاء الاصطناعي', auditLogs: 'سجل التدقيق',
-    aiUsage: 'استخدام الذكاء الاصطناعي والتكلفة',
+    aiUsage: 'استخدام الذكاء الاصطناعي والتكلفة', aiModels: 'نماذج الذكاء الاصطناعي',
     organization: 'المنظمة', langBtn: 'English',
     pageTitles: {
       '/jobs':                        'الحملات',
@@ -71,6 +72,7 @@ const T = {
       '/admin/ai-prompts':            'موجهات الذكاء الاصطناعي',
       '/admin/audit-logs':            'سجل التدقيق',
       '/admin/ai-usage':              'استخدام الذكاء الاصطناعي والتكلفة',
+      '/admin/ai-models':             'نماذج الذكاء الاصطناعي',
     } as Record<string, string>,
   },
 };
@@ -86,6 +88,7 @@ function pathnameToMenuId(pathname: string): string {
   if (pathname.startsWith('/admin/ai-prompts'))         return 'admin-ai-prompts';
   if (pathname.startsWith('/admin/audit-logs'))         return 'admin-audit-logs';
   if (pathname.startsWith('/admin/ai-usage'))           return 'admin-ai-usage';
+  if (pathname.startsWith('/admin/ai-models'))          return 'admin-ai-models';
   if (pathname === '/plan-usage')          return 'plan-usage';
   if (pathname === '/client-organizations') return 'client-organizations';
   if (pathname === '/settings')            return 'settings';
@@ -109,6 +112,7 @@ function menuIdToRoute(id: string): string {
     'admin-ai-prompts':           '/admin/ai-prompts',
     'admin-audit-logs':           '/admin/audit-logs',
     'admin-ai-usage':             '/admin/ai-usage',
+    'admin-ai-models':            '/admin/ai-models',
   };
   return map[id] || '/jobs';
 }
@@ -128,6 +132,7 @@ function pathnameToTitle(pathname: string, search: string, titles: Record<string
   if (pathname.startsWith('/admin/ai-prompts'))           return titles['/admin/ai-prompts'] || '';
   if (pathname.startsWith('/admin/audit-logs'))           return titles['/admin/audit-logs'] || '';
   if (pathname.startsWith('/admin/ai-usage'))             return titles['/admin/ai-usage'] || '';
+  if (pathname.startsWith('/admin/ai-models'))            return titles['/admin/ai-models'] || '';
   if (pathname.startsWith('/applications')) {
     // app_id in the query string signals we're viewing a single application's detail
     if (new URLSearchParams(search).has('app_id')) return titles['/applications/details'] || 'Application Details';
@@ -236,6 +241,11 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
     { id: 'admin-ai-usage', label: t.aiUsage, icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    )},
+    { id: 'admin-ai-models', label: t.aiModels, icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
       </svg>
     )},
   ];

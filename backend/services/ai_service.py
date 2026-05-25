@@ -302,14 +302,16 @@ async def lightweight_screen_cv(
 async def extract_job_criteria(
     job_description: str,
     prompt_override: dict | None = None,
+    openai_client: Any | None = None,
 ) -> dict[str, Any]:
     """
     Call OpenAI to extract structured hiring criteria from a job description.
     Returns a nested dict matching the frontend AnalysisJson interface.
 
     prompt_override: active DB prompt dict from load_active_prompt(), or None for hardcoded default.
+    openai_client: optional pre-built AsyncOpenAI client (from registry). Falls back to _get_client().
     """
-    client = _get_client()
+    client = openai_client or _get_client()
 
     system_prompt = (prompt_override or {}).get("system_prompt") or CRITERIA_SYSTEM_PROMPT
     model         = (prompt_override or {}).get("model")         or settings.openai_model

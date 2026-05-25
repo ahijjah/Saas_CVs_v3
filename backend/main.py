@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import get_settings
 from database import engine
 from routers import (
-    admin, ai_prompts, ai_usage, applications, audit_logs, auth, client_organizations,
+    admin, ai_models, ai_prompts, ai_usage, applications, audit_logs, auth, client_organizations,
     jobs, platform_config, platform_secrets, public, subscription_plans, tenant,
 )
 
@@ -45,6 +45,7 @@ app.include_router(platform_config.router)
 app.include_router(subscription_plans.router)
 app.include_router(tenant.router)
 app.include_router(platform_secrets.router)
+app.include_router(ai_models.router)
 app.include_router(ai_prompts.router)
 app.include_router(ai_usage.router)
 app.include_router(audit_logs.router)

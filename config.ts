@@ -51,6 +51,11 @@ export const WEBHOOK_CONFIG = {
   // Platform Control — AI Usage & Cost
   AI_USAGE_URL:                 `${API_BASE}/admin/ai-usage`,
   AI_PRICING_URL:               `${API_BASE}/admin/ai-usage/pricing`,
+  // Platform Control — AI Models
+  AI_MODELS_URL:                `${API_BASE}/admin/ai-models`,
+  AI_MODELS_REGISTRY_URL:       `${API_BASE}/admin/ai-models/registry`,
+  AI_STAGE_DEFAULTS_URL:        `${API_BASE}/admin/ai-models/stage-defaults`,
+  AI_PROVIDER_SECRETS_URL:      `${API_BASE}/admin/ai-models/provider-secrets-status`,
   // Job settings
   JOB_SETTINGS_BASE_URL:        `${API_BASE}/jobs`,
   UPDATE_JOB_URL:            `${API_BASE}/jobs`,
