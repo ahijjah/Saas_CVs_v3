@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from routers.admin import require_role
+from auth.dependencies import require_role
 
 router = APIRouter(prefix="/admin/ai-models", tags=["ai-models"])
 RequireSuperAdmin = Depends(require_role("super_admin"))
