@@ -17,7 +17,7 @@ const T = {
     registryTab:         'Model Registry',
     stageDefaultsTab:    'LLM Usage Defaults',
     stageDefaultsNote:   'Only LLM-based operations are configurable here. Security checks, duplicate detection, gatekeeper screening, and other rule-based stages run locally and do not use an LLM.',
-    secretsTab:          'Provider Secrets',
+    secretsTab:          'Provider Credentials',
     addModel:            'Add Model',
     provider:            'Provider',
     modelName:           'Model Name',
@@ -43,10 +43,13 @@ const T = {
     secretStatus:        'Secret',
     configured:          'Configured',
     missing:             'Missing',
-    providerSecrets:     'Provider API Key Status',
-    secretsNote:         'Values are never shown. Green = key is set in Platform Secrets.',
+    providerSecrets:     'Provider API Credentials',
+    secretsNote:         'Enter your provider API keys here. Values are masked after saving and never shown again.',
+    keyPlaceholder:      'Enter API key value...',
+    update:              'Update',
+    keyUpdated:          'Updated',
     noModels:            'No models registered yet.',
-    noSecrets:           'No provider secrets found.',
+    noSecrets:           'No provider credentials found.',
     errorLoad:           'Failed to load data.',
     savedOk:             'Saved successfully.',
     errorSave:           'Save failed.',
@@ -71,7 +74,7 @@ const T = {
     registryTab:         'سجل النماذج',
     stageDefaultsTab:    'إعدادات نماذج LLM',
     stageDefaultsNote:   'يمكن تكوين عمليات الذكاء الاصطناعي (LLM) فقط هنا. تعمل مراحل الفحص الأمني وكشف التكرار والحارس الدلالي وغيرها من المراحل القائمة على القواعد محلياً ولا تستخدم نماذج LLM.',
-    secretsTab:          'مفاتيح المزودين',
+    secretsTab:          'بيانات اعتماد المزودين',
     addModel:            'إضافة نموذج',
     provider:            'المزود',
     modelName:           'اسم النموذج',
@@ -97,10 +100,13 @@ const T = {
     secretStatus:        'المفتاح',
     configured:          'محدد',
     missing:             'مفقود',
-    providerSecrets:     'حالة مفاتيح API',
-    secretsNote:         'القيم لا تُعرض أبداً. الأخضر = المفتاح مُعيَّن في أسرار المنصة.',
+    providerSecrets:     'بيانات اعتماد API للمزودين',
+    secretsNote:         'أدخل مفاتيح API الخاصة بمزودي الخدمة هنا. يتم إخفاء القيم بعد الحفظ ولا تُعرض مجدداً.',
+    keyPlaceholder:      'أدخل قيمة مفتاح API...',
+    update:              'تحديث',
+    keyUpdated:          'تم التحديث',
     noModels:            'لا توجد نماذج مسجلة بعد.',
-    noSecrets:           'لم يتم العثور على أسرار مزودين.',
+    noSecrets:           'لم يتم العثور على بيانات اعتماد مزودين.',
     errorLoad:           'فشل تحميل البيانات.',
     savedOk:             'تم الحفظ بنجاح.',
     errorSave:           'فشل الحفظ.',
@@ -183,9 +189,10 @@ const BLANK_FORM: BlankForm = {
 
 // Only real LLM stages shown in the UI — local-code stages are intentionally excluded
 const LLM_STAGES: { key: string; labelEn: string; labelAr: string }[] = [
-  { key: 'cv_analyzer', labelEn: 'CV Analyzer (Criteria Extraction)', labelAr: 'محلل السيرة الذاتية (استخراج المعايير)' },
-  { key: 'cv_scoring',  labelEn: 'CV Scoring',                        labelAr: 'تقييم السيرة الذاتية' },
-  { key: 'fallback',    labelEn: 'Fallback Model',                    labelAr: 'نموذج الاحتياط' },
+  { key: 'cv_analyzer',   labelEn: 'CV Analyzer (Criteria Extraction)', labelAr: 'محلل السيرة الذاتية (استخراج المعايير)' },
+  { key: 'cv_scoring',    labelEn: 'CV Scoring',                        labelAr: 'تقييم السيرة الذاتية' },
+  { key: 'cv_comparison', labelEn: 'CV Comparison (Secondary Scorer)',  labelAr: 'مقارنة السيرة الذاتية (المُقيِّم الثانوي)' },
+  { key: 'fallback',      labelEn: 'Fallback Model',                    labelAr: 'نموذج الاحتياط' },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -251,6 +258,11 @@ export const AIModelsPage: React.FC<Props> = ({ auth, addToast }) => {
   // Stage defaults edit — track pending changes per stage
   const [stagePending, setStagePending] = useState<Record<string, { primary: string | null; fallback: string | null }>>({});
   const [stageSaving, setStageSaving] = useState<Record<string, boolean>>({});
+
+  // Provider credentials edit
+  const [credInputs, setCredInputs] = useState<Record<string, string>>({});
+  const [credSaving, setCredSaving] = useState<Record<string, boolean>>({});
+  const [credSaved, setCredSaved] = useState<Record<string, boolean>>({});
 
   // ── Load all data ──────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -393,6 +405,27 @@ export const AIModelsPage: React.FC<Props> = ({ auth, addToast }) => {
       addToast?.(err.message || t.errorSave, 'error');
     } finally {
       setStageSaving(prev => ({ ...prev, [stage]: false }));
+    }
+  };
+
+  // ── Provider credentials ───────────────────────────────────────────────────
+  const handleSaveCred = async (key: string) => {
+    const val = (credInputs[key] || '').trim();
+    if (!val) return;
+    setCredSaving(prev => ({ ...prev, [key]: true }));
+    try {
+      await apiFetch(`${(WEBHOOK_CONFIG as any).PLATFORM_SECRETS_URL}/${key}`, token, {
+        method: 'PUT',
+        body: JSON.stringify({ value: val }),
+      });
+      setCredInputs(prev => ({ ...prev, [key]: '' }));
+      setCredSaved(prev => ({ ...prev, [key]: true }));
+      setTimeout(() => setCredSaved(prev => ({ ...prev, [key]: false })), 2500);
+      await loadAll();
+    } catch (err: any) {
+      addToast?.(err.message || t.errorSave, 'error');
+    } finally {
+      setCredSaving(prev => ({ ...prev, [key]: false }));
     }
   };
 
@@ -762,7 +795,7 @@ export const AIModelsPage: React.FC<Props> = ({ auth, addToast }) => {
         </div>
       )}
 
-      {/* ── Provider Secrets tab ─────────────────────────────────────────── */}
+      {/* ── Provider Credentials tab ─────────────────────────────────────── */}
       {tab === 'secrets' && (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100">
@@ -774,14 +807,39 @@ export const AIModelsPage: React.FC<Props> = ({ auth, addToast }) => {
           ) : (
             <div className="divide-y divide-slate-50">
               {Object.entries(secrets).map(([key, hasValue]) => (
-                <div key={key} className="flex items-center justify-between px-6 py-4">
-                  <span className="font-mono text-sm text-slate-700">{key}</span>
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-                    hasValue ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-                  }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${hasValue ? 'bg-green-500' : 'bg-red-400'}`} />
-                    {hasValue ? t.configured : t.missing}
-                  </span>
+                <div key={key} className="flex items-center gap-4 px-6 py-4">
+                  {/* Key name + status badge */}
+                  <div className="flex items-center gap-3 min-w-[220px]">
+                    <span className="font-mono text-sm text-slate-700">{key}</span>
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold shrink-0 ${
+                      hasValue ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${hasValue ? 'bg-green-500' : 'bg-amber-400'}`} />
+                      {hasValue ? t.configured : t.missing}
+                    </span>
+                  </div>
+                  {/* Editable credential input */}
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      type="password"
+                      value={credInputs[key] || ''}
+                      onChange={e => setCredInputs(prev => ({ ...prev, [key]: e.target.value }))}
+                      placeholder={t.keyPlaceholder}
+                      autoComplete="new-password"
+                      className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 max-w-sm"
+                    />
+                    <button
+                      onClick={() => handleSaveCred(key)}
+                      disabled={credSaving[key] || !credInputs[key]?.trim()}
+                      className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap disabled:opacity-50 ${
+                        credSaved[key]
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      }`}
+                    >
+                      {credSaving[key] ? t.saving : credSaved[key] ? t.keyUpdated : t.update}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
