@@ -267,7 +267,7 @@ export type ApplicationDecision = 'qualified' | 'partial' | 'rejected' | 'low_ma
 
 export type WorkflowStatus =
   | 'new'
-  | 'in_review'
+  | 'under_review'
   | 'shortlisted'
   | 'interviewing'
   | 'offer_made'

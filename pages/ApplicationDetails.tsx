@@ -415,19 +415,19 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'new';
 
   const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-    new:                   ['in_review', 'shortlisted', 'on_hold', 'rejected_by_recruiter'],
-    in_review:             ['shortlisted', 'on_hold', 'rejected_by_recruiter', 'new'],
-    shortlisted:           ['interviewing', 'in_review', 'on_hold', 'rejected_by_recruiter'],
+    new:                   ['under_review', 'shortlisted', 'on_hold', 'rejected_by_recruiter'],
+    under_review:          ['shortlisted', 'on_hold', 'rejected_by_recruiter', 'new'],
+    shortlisted:           ['interviewing', 'under_review', 'on_hold', 'rejected_by_recruiter'],
     interviewing:          ['offer_made', 'shortlisted', 'on_hold', 'rejected_by_recruiter'],
     offer_made:            ['hired', 'interviewing', 'on_hold', 'rejected_by_recruiter'],
     hired:                 [],
-    rejected_by_recruiter: ['in_review'],
-    on_hold:               ['new', 'in_review', 'shortlisted', 'interviewing', 'offer_made', 'rejected_by_recruiter'],
+    rejected_by_recruiter: ['under_review'],
+    on_hold:               ['new', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'rejected_by_recruiter'],
   };
 
   const WF_LABELS: Record<WorkflowStatus, string> = {
     new:                   'New',
-    in_review:             'In Review',
+    under_review:          'Under Review',
     shortlisted:           'Shortlisted',
     interviewing:          'Interviewing',
     offer_made:            'Offer Made',
@@ -438,7 +438,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
 
   const WF_STYLES: Record<WorkflowStatus, string> = {
     new:                   'bg-slate-100 text-slate-600 border-slate-200',
-    in_review:             'bg-blue-100 text-blue-700 border-blue-200',
+    under_review:          'bg-blue-100 text-blue-700 border-blue-200',
     shortlisted:           'bg-indigo-100 text-indigo-700 border-indigo-200',
     interviewing:          'bg-purple-100 text-purple-700 border-purple-200',
     offer_made:            'bg-amber-100 text-amber-700 border-amber-200',
@@ -449,7 +449,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
 
   const WF_ACTION_LABELS: Record<WorkflowStatus, string> = {
     new:                   'Mark New',
-    in_review:             'Mark In Review',
+    under_review:          'Mark Under Review',
     shortlisted:           'Shortlist',
     interviewing:          'Move to Interview',
     offer_made:            'Make Offer',

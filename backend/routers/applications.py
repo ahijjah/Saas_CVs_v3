@@ -25,19 +25,19 @@ settings = get_settings()
 
 
 WORKFLOW_STATUSES = frozenset((
-    "new", "in_review", "shortlisted", "interviewing",
+    "new", "under_review", "shortlisted", "interviewing",
     "offer_made", "hired", "rejected_by_recruiter", "on_hold",
 ))
 
 VALID_WORKFLOW_TRANSITIONS: dict[str, frozenset] = {
-    "new":                   frozenset({"in_review", "shortlisted", "on_hold", "rejected_by_recruiter"}),
-    "in_review":             frozenset({"shortlisted", "on_hold", "rejected_by_recruiter", "new"}),
-    "shortlisted":           frozenset({"interviewing", "in_review", "on_hold", "rejected_by_recruiter"}),
+    "new":                   frozenset({"under_review", "shortlisted", "on_hold", "rejected_by_recruiter"}),
+    "under_review":          frozenset({"shortlisted", "on_hold", "rejected_by_recruiter", "new"}),
+    "shortlisted":           frozenset({"interviewing", "under_review", "on_hold", "rejected_by_recruiter"}),
     "interviewing":          frozenset({"offer_made", "shortlisted", "on_hold", "rejected_by_recruiter"}),
     "offer_made":            frozenset({"hired", "interviewing", "on_hold", "rejected_by_recruiter"}),
     "hired":                 frozenset(),
-    "rejected_by_recruiter": frozenset({"in_review"}),
-    "on_hold":               frozenset({"new", "in_review", "shortlisted", "interviewing", "offer_made", "rejected_by_recruiter"}),
+    "rejected_by_recruiter": frozenset({"under_review"}),
+    "on_hold":               frozenset({"new", "under_review", "shortlisted", "interviewing", "offer_made", "rejected_by_recruiter"}),
 }
 
 

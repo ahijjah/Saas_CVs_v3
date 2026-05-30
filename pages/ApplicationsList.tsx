@@ -102,7 +102,7 @@ const T = {
 
 const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
   new:                  'New',
-  in_review:            'In Review',
+  under_review:         'Under Review',
   shortlisted:          'Shortlisted',
   interviewing:         'Interviewing',
   offer_made:           'Offer Made',
@@ -113,7 +113,7 @@ const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
 
 const WORKFLOW_STATUS_STYLES: Record<WorkflowStatus, string> = {
   new:                  'bg-slate-100 text-slate-500',
-  in_review:            'bg-blue-100 text-blue-700',
+  under_review:         'bg-blue-100 text-blue-700',
   shortlisted:          'bg-indigo-100 text-indigo-700',
   interviewing:         'bg-purple-100 text-purple-700',
   offer_made:           'bg-amber-100 text-amber-700',
