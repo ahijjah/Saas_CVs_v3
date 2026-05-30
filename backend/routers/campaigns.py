@@ -693,6 +693,81 @@ async def get_campaign_summary(
     }
 
 
+# ── Candidates (applications for jobs in this campaign) ─────────────────────────
+
+@router.get("/{campaign_id}/candidates")
+async def get_campaign_candidates(
+    campaign_id: str,
+    workflow_status: str | None = None,
+    current_user: CurrentUserDep = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    """
+    List all applications for jobs under this campaign.
+
+    Optional filter by workflow_status (e.g. 'awaiting_review', 'hired').
+    Respects campaign access control and client scoping from parent campaign.
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    campaign = await fetch_campaign(db, campaign_id, current_user.tenant_id)
+    if not campaign:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
+
+    # Respect same client-scoping as GET /{id}
+    client_ids = await _accessible_client_ids(current_user, db)
+    if client_ids is not None and campaign["client_organization_id"] is not None:
+        if str(campaign["client_organization_id"]) not in client_ids:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
+
+    # Build query: applications for jobs under this campaign
+    filters = [
+        "j.campaign_id = CAST(:cid AS uuid)",
+        "j.tenant_id   = CAST(:tid AS uuid)",
+    ]
+    params = {"cid": campaign_id, "tid": current_user.tenant_id}
+
+    if workflow_status:
+        filters.append("a.workflow_status = :wf")
+        params["wf"] = workflow_status.lower()
+
+    where_sql = "WHERE " + " AND ".join(filters)
+
+    rows = await db.execute(
+        text(f"""
+            SELECT
+                a.application_id,
+                a.job_id,
+                a.email,
+                a.name,
+                a.workflow_status,
+                a.ai_score,
+                a.updated_at,
+                j.title AS job_title
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            {where_sql}
+            ORDER BY a.updated_at DESC
+        """),
+        params,
+    )
+
+    candidates = []
+    for r in rows.mappings():
+        candidates.append({
+            "application_id": str(r["application_id"]),
+            "job_id":         str(r["job_id"]),
+            "name":           r["name"],
+            "email":          r["email"],
+            "job_title":      r["job_title"],
+            "workflow_status": r["workflow_status"],
+            "ai_score":       float(r["ai_score"]) if r["ai_score"] else None,
+            "updated_at":     r["updated_at"].isoformat() if r["updated_at"] else None,
+        })
+
+    return {"candidates": candidates, "total": len(candidates)}
+
+
 # ── Delete (admin only — not a normal UI action) ──────────────────────────────
 
 @router.delete("/{campaign_id}", status_code=status.HTTP_200_OK)

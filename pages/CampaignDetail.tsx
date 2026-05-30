@@ -294,9 +294,13 @@ interface KpiCardProps {
   value:    React.ReactNode;
   color?:   string;
   sub?:     string;
+  onClick?: () => void;
 }
-const KpiCard: React.FC<KpiCardProps> = ({ label, value, color = 'text-slate-800', sub }) => (
-  <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-col items-center justify-center text-center min-h-[90px]">
+const KpiCard: React.FC<KpiCardProps> = ({ label, value, color = 'text-slate-800', sub, onClick }) => (
+  <div
+    onClick={onClick}
+    className={`bg-white rounded-xl border border-slate-200 p-4 flex flex-col items-center justify-center text-center min-h-[90px] ${onClick ? 'cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors' : ''}`}
+  >
     <p className={`text-2xl font-bold ${color}`}>{value}</p>
     <p className="text-xs text-slate-500 mt-0.5 leading-tight">{label}</p>
     {sub && <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>}
@@ -328,6 +332,11 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
   // ── Summary state (Overview KPIs) ─────────────────────────────────────────
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+
+  // ── Candidates state ──────────────────────────────────────────────────────
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidatesFilter, setCandidatesFilter] = useState<string | null>(null);
 
   // ── Edit modal state ──────────────────────────────────────────────────────
   const [showEdit, setShowEdit] = useState(false);
@@ -370,12 +379,33 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
     }
   }, [campaignId, token]);
 
+  const loadCandidates = useCallback(async (filter: string | null = null) => {
+    if (!campaignId || !token) return;
+    setCandidatesLoading(true);
+    try {
+      const params: Record<string, string> = {};
+      if (filter) params.workflow_status = filter;
+      const data = await apiService.get(`${WEBHOOK_CONFIG.CAMPAIGNS_URL}/${campaignId}/candidates`, params, token);
+      setCandidates(data.candidates || []);
+      setCandidatesFilter(filter);
+    } catch {
+      setCandidates([]);
+    } finally {
+      setCandidatesLoading(false);
+    }
+  }, [campaignId, token]);
+
   useEffect(() => { load(); }, [load]);
 
   // Load summary when the Overview tab is active
   useEffect(() => {
     if (activeTab === 'overview') loadSummary();
   }, [activeTab, loadSummary]);
+
+  // Load candidates when the Candidates tab is active
+  useEffect(() => {
+    if (activeTab === 'candidates') loadCandidates(candidatesFilter);
+  }, [activeTab, loadCandidates, candidatesFilter]);
 
   useEffect(() => {
     if (!token || !isAgency) return;
@@ -540,21 +570,25 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
             label={t.kpiActiveJobs}
             value={summaryLoading ? '…' : (s?.active_jobs ?? '—')}
             color="text-emerald-600"
+            onClick={() => setTab('jobs')}
           />
           <KpiCard
             label={t.kpiTotalApps}
             value={summaryLoading ? '…' : (s?.total_applications ?? '—')}
             color="text-slate-800"
+            onClick={() => { setTab('candidates'); setCandidatesFilter(null); }}
           />
           <KpiCard
             label={t.kpiAwaitingReview}
             value={summaryLoading ? '…' : (s?.awaiting_review ?? '—')}
             color="text-sky-700"
+            onClick={() => { setTab('candidates'); setCandidatesFilter('awaiting_review'); }}
           />
           <KpiCard
             label={t.kpiShortlisted}
             value={summaryLoading ? '…' : (s?.shortlisted ?? '—')}
             color="text-indigo-600"
+            onClick={() => { setTab('candidates'); setCandidatesFilter('shortlisted'); }}
           />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -562,16 +596,19 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
             label={t.kpiInterviewing}
             value={summaryLoading ? '…' : (s?.interviewing ?? '—')}
             color="text-purple-600"
+            onClick={() => { setTab('candidates'); setCandidatesFilter('interviewing'); }}
           />
           <KpiCard
             label={t.kpiHired}
             value={summaryLoading ? '…' : hired}
             color="text-green-700"
+            onClick={() => { setTab('candidates'); setCandidatesFilter('hired'); }}
           />
           <KpiCard
             label={t.kpiRejected}
             value={summaryLoading ? '…' : (s?.rejected ?? '—')}
             color="text-red-600"
+            onClick={() => { setTab('candidates'); setCandidatesFilter('rejected'); }}
           />
           <KpiCard
             label={t.kpiTimeOpen}
@@ -706,6 +743,96 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
     </div>
   );
 
+  // ── Render: Candidates tab ────────────────────────────────────────────────
+
+  const renderCandidates = () => (
+    <div className="space-y-5">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        {/* Header with filter info */}
+        <div className="px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <h2 className="font-semibold text-slate-800">
+              {candidatesFilter
+                ? `${candidatesFilter.replace(/_/g, ' ').charAt(0).toUpperCase() + candidatesFilter.replace(/_/g, ' ').slice(1).toLowerCase()}`
+                : 'All Candidates'}
+            </h2>
+            {candidatesFilter && (
+              <button
+                onClick={() => setCandidatesFilter(null)}
+                className="text-xs text-slate-500 hover:text-slate-800 underline transition-colors"
+              >
+                Clear filter
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            {candidatesLoading ? 'Loading…' : `${candidates.length} candidate${candidates.length !== 1 ? 's' : ''}`}
+          </p>
+        </div>
+
+        {/* Content */}
+        {candidatesLoading ? (
+          <div className="px-6 py-10 flex items-center justify-center">
+            <div className="w-6 h-6 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : candidates.length === 0 ? (
+          <div className="px-6 py-10 text-center text-slate-400 text-sm">
+            <p>No candidates in this campaign{candidatesFilter ? ' with this status' : ''}.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Job</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Score</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {candidates.map(cand => (
+                  <tr key={cand.application_id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-3 text-slate-900 font-medium">{cand.name}</td>
+                    <td className="px-6 py-3 text-slate-700">{cand.job_title}</td>
+                    <td className="px-6 py-3">
+                      <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                        cand.workflow_status === 'awaiting_review' ? 'bg-sky-100 text-sky-700' :
+                        cand.workflow_status === 'under_review' ? 'bg-blue-100 text-blue-700' :
+                        cand.workflow_status === 'shortlisted' ? 'bg-indigo-100 text-indigo-700' :
+                        cand.workflow_status === 'interviewing' ? 'bg-purple-100 text-purple-700' :
+                        cand.workflow_status === 'offer_made' ? 'bg-amber-100 text-amber-700' :
+                        cand.workflow_status === 'hired' ? 'bg-green-100 text-green-800' :
+                        cand.workflow_status === 'rejected' ? 'bg-red-100 text-red-700' :
+                        cand.workflow_status === 'withdrawn' ? 'bg-orange-100 text-orange-700' :
+                        cand.workflow_status === 'on_hold' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-slate-100 text-slate-700'
+                      }`}>
+                        {cand.workflow_status.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3 text-slate-700">{cand.ai_score != null ? `${(cand.ai_score * 100).toFixed(0)}%` : '—'}</td>
+                    <td className="px-6 py-3 text-slate-500 text-xs">
+                      {cand.updated_at ? new Date(cand.updated_at).toLocaleDateString() : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Coming soon note */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <p className="text-sm text-blue-900">
+          <strong>Full candidate management</strong> (profile view, action history, direct messaging) coming in the next phase.
+        </p>
+      </div>
+    </div>
+  );
+
   // ── Render: placeholder tabs ───────────────────────────────────────────────
 
   const renderPlaceholder = (tabLabel: string) => (
@@ -830,7 +957,7 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
       <div>
         {activeTab === 'overview'   && renderOverview()}
         {activeTab === 'jobs'       && renderJobs()}
-        {activeTab === 'candidates' && renderPlaceholder(t.tabCandidates)}
+        {activeTab === 'candidates' && renderCandidates()}
         {activeTab === 'activity'   && renderPlaceholder(t.tabActivity)}
         {activeTab === 'reports'    && renderPlaceholder(t.tabReports)}
       </div>
