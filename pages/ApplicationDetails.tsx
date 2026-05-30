@@ -415,8 +415,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'new';
 
   const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-    new:            ['ai_processed', 'on_hold'],
-    ai_processed:   ['under_review', 'on_hold'],
+    new:            ['awaiting_review', 'on_hold'],
+    awaiting_review: ['under_review', 'on_hold'],
     under_review:   ['shortlisted', 'on_hold', 'rejected', 'withdrawn'],
     shortlisted:    ['interviewing', 'under_review', 'on_hold', 'rejected', 'withdrawn'],
     interviewing:   ['offer_made', 'shortlisted', 'on_hold', 'rejected', 'withdrawn'],
@@ -424,12 +424,12 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
     hired:          [],
     rejected:       ['under_review'],
     withdrawn:      ['under_review'],
-    on_hold:        ['new', 'ai_processed', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'rejected', 'withdrawn'],
+    on_hold:        ['new', 'awaiting_review', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'rejected', 'withdrawn'],
   };
 
   const WF_LABELS: Record<WorkflowStatus, string> = {
     new:            'New',
-    ai_processed:   'AI Processed',
+    awaiting_review: 'Awaiting Review',
     under_review:   'Under Review',
     shortlisted:    'Shortlisted',
     interviewing:   'Interviewing',
@@ -442,7 +442,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
 
   const WF_STYLES: Record<WorkflowStatus, string> = {
     new:            'bg-slate-100 text-slate-600 border-slate-200',
-    ai_processed:   'bg-sky-100 text-sky-700 border-sky-200',
+    awaiting_review: 'bg-sky-100 text-sky-700 border-sky-200',
     under_review:   'bg-blue-100 text-blue-700 border-blue-200',
     shortlisted:    'bg-indigo-100 text-indigo-700 border-indigo-200',
     interviewing:   'bg-purple-100 text-purple-700 border-purple-200',
@@ -454,16 +454,16 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   };
 
   const WF_ACTION_LABELS: Record<WorkflowStatus, string> = {
-    new:            'Start Processing',
-    ai_processed:   'Begin Review',
-    under_review:   'Under Review',
-    shortlisted:    'Shortlist',
-    interviewing:   'Move to Interview',
-    offer_made:     'Make Offer',
-    hired:          'Mark Hired',
-    rejected:       'Reject',
-    withdrawn:      'Mark Withdrawn',
-    on_hold:        'Put On Hold',
+    new:             'Start Processing',
+    awaiting_review: 'Begin Review',
+    under_review:    'Under Review',
+    shortlisted:     'Shortlist',
+    interviewing:    'Move to Interview',
+    offer_made:      'Make Offer',
+    hired:           'Mark Hired',
+    rejected:        'Reject',
+    withdrawn:       'Mark Withdrawn',
+    on_hold:         'Put On Hold',
   };
 
   const handleTransitionClick = (target: WorkflowStatus) => {

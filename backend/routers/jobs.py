@@ -535,6 +535,17 @@ async def get_job_details(
                 COUNT(a.application_id) FILTER (
                     WHERE a.processing_status IN ('pending', 'queued', 'processing')
                 ) AS applications_in_progress,
+                -- Workflow status counts
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'new')            AS applications_new,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'awaiting_review') AS applications_awaiting_review,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'under_review')   AS applications_under_review,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'shortlisted')    AS applications_shortlisted,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'interviewing')   AS applications_interviewing,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'offer_made')     AS applications_offer_made,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'hired')          AS applications_hired,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'rejected')       AS applications_rejected_workflow,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'withdrawn')      AS applications_withdrawn,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'on_hold')        AS applications_on_hold,
                 t.forwarding_email AS tenant_forwarding_email,
                 t.job_application_controls_enabled
             FROM jobs j
@@ -661,6 +672,16 @@ async def get_job_details(
             "applications_duplicate_blocked":   int(job["applications_duplicate_blocked"]),
             "applications_possible_duplicate":  int(job["applications_possible_duplicate"]),
             "applications_failed_needs_review": int(job["applications_failed_needs_review"]),
+            "applications_new":                 int(job["applications_new"]),
+            "applications_awaiting_review":     int(job["applications_awaiting_review"]),
+            "applications_under_review":        int(job["applications_under_review"]),
+            "applications_shortlisted":         int(job["applications_shortlisted"]),
+            "applications_interviewing":        int(job["applications_interviewing"]),
+            "applications_offer_made":          int(job["applications_offer_made"]),
+            "applications_hired":               int(job["applications_hired"]),
+            "applications_rejected_workflow":   int(job["applications_rejected_workflow"]),
+            "applications_withdrawn":           int(job["applications_withdrawn"]),
+            "applications_on_hold":             int(job["applications_on_hold"]),
             "client_organization_id": str(job["client_organization_id"]) if job["client_organization_id"] else None,
             "client_org_name":        job["client_org_name"],
             "campaign_id":            str(job["campaign_id"]) if job["campaign_id"] else None,

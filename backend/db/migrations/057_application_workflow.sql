@@ -10,12 +10,12 @@ ALTER TABLE cv_analyzer.applications
     DROP CONSTRAINT IF EXISTS applications_workflow_status_check;
 ALTER TABLE cv_analyzer.applications
     ADD CONSTRAINT applications_workflow_status_check
-        CHECK (workflow_status IN ('new', 'ai_processed', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'hired', 'rejected', 'withdrawn', 'on_hold'));
+        CHECK (workflow_status IN ('new', 'awaiting_review', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'hired', 'rejected', 'withdrawn', 'on_hold'));
 
--- Backfill: scored applications that were qualified/partial go to 'ai_processed',
+-- Backfill: scored applications that were qualified/partial go to 'awaiting_review',
 -- others stay 'new'
 UPDATE cv_analyzer.applications
-SET workflow_status = 'ai_processed'
+SET workflow_status = 'awaiting_review'
 WHERE processing_status = 'scored'
   AND decision IN ('qualified', 'partial')
   AND workflow_status = 'new';

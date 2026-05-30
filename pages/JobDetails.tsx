@@ -1528,7 +1528,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       {/* Workflow status summary row */}
       {(() => {
         const d = details as any;
-        const aiProcessed = d.applications_ai_processed || 0;
+        const awaitingReview = d.applications_awaiting_review || 0;
         const underReview = d.applications_under_review || 0;
         const shortlisted = d.applications_shortlisted || 0;
         const interviewing = d.applications_interviewing || 0;
@@ -1537,11 +1537,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         const rejected = d.applications_rejected || 0;
         const withdrawn = d.applications_withdrawn || 0;
         const onHold = d.applications_on_hold || 0;
-        const total = aiProcessed + underReview + shortlisted + interviewing + offerMade + hired + rejected + withdrawn + onHold;
+        const total = awaitingReview + underReview + shortlisted + interviewing + offerMade + hired + rejected + withdrawn + onHold;
         if (total === 0) return null;
         const items = [
-          { filter: 'workflow_ai_processed',  label: 'AI Processed', count: aiProcessed,  color: 'text-sky-700',     bg: 'bg-sky-50' },
-          { filter: 'workflow_under_review',  label: 'Under Review', count: underReview,  color: 'text-blue-700',    bg: 'bg-blue-50' },
+          { filter: 'workflow_awaiting_review', label: 'Awaiting Review', count: awaitingReview, color: 'text-sky-700',     bg: 'bg-sky-50' },
+          { filter: 'workflow_under_review',   label: 'Under Review',  count: underReview,  color: 'text-blue-700',    bg: 'bg-blue-50' },
           { filter: 'workflow_shortlisted',   label: 'Shortlisted',  count: shortlisted,  color: 'text-indigo-700',  bg: 'bg-indigo-50' },
           { filter: 'workflow_interviewing',  label: 'Interviewing', count: interviewing, color: 'text-purple-700',  bg: 'bg-purple-50' },
           { filter: 'workflow_offer',         label: 'Offer Made',   count: offerMade,    color: 'text-amber-700',   bg: 'bg-amber-50' },

@@ -25,7 +25,7 @@ type AiResultFilter = 'all' | 'qualified' | 'partial' | 'rejected_low_match' | '
 type WorkflowFilter =
   | 'all'
   | 'new'
-  | 'ai_processed'
+  | 'awaiting_review'
   | 'under_review'
   | 'shortlisted'
   | 'interviewing'
@@ -65,7 +65,7 @@ function fromLegacyFilter(f: ApplicationFilter): AppFilters {
     case 'failed_needs_review': return { ...base, processing: 'processing_failed' };
     case 'blocked':            return { ...base, processing: 'stopped' };
     case 'possible_duplicate': return { ...base, flags: new Set<FlagKey>(['possible_duplicate']) };
-    case 'workflow_ai_processed':  return { ...base, workflow: 'ai_processed' };
+    case 'workflow_awaiting_review': return { ...base, workflow: 'awaiting_review' };
     case 'workflow_under_review':  return { ...base, workflow: 'under_review' };
     case 'workflow_shortlisted':   return { ...base, workflow: 'shortlisted' };
     case 'workflow_interviewing':  return { ...base, workflow: 'interviewing' };
@@ -134,10 +134,10 @@ const T = {
     aiRejectedLowMatch:  'Rejected / Low Match',
     aiNotScored:         'Not Scored',
     // Workflow options
-    wfAll:          'All Workflow',
-    wfNew:          'New',
-    wfAiProcessed:  'AI Processed',
-    wfUnderReview:  'Under Review',
+    wfAll:             'All Workflow',
+    wfNew:             'New',
+    wfAwaitingReview:  'Awaiting Review',
+    wfUnderReview:     'Under Review',
     wfShortlisted:  'Shortlisted',
     wfInterviewing: 'Interviewing',
     wfOfferMade:    'Offer Made',
@@ -193,10 +193,10 @@ const T = {
     aiPartial:           'جزئي',
     aiRejectedLowMatch:  'مرفوض / تطابق منخفض',
     aiNotScored:         'لم يُقيَّم',
-    wfAll:          'جميع المراحل',
-    wfNew:          'جديد',
-    wfAiProcessed:  'معالج بالذكاء',
-    wfUnderReview:  'قيد المراجعة',
+    wfAll:             'جميع المراحل',
+    wfNew:             'جديد',
+    wfAwaitingReview:  'في انتظار المراجعة',
+    wfUnderReview:     'قيد المراجعة',
     wfShortlisted:  'مختار',
     wfInterviewing: 'مقابلة',
     wfOfferMade:    'عرض مقدم',
@@ -231,7 +231,7 @@ const T = {
 
 const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
   new:            'New',
-  ai_processed:   'AI Processed',
+  awaiting_review: 'Awaiting Review',
   under_review:   'Under Review',
   shortlisted:    'Shortlisted',
   interviewing:   'Interviewing',
@@ -244,7 +244,7 @@ const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
 
 const WORKFLOW_STATUS_STYLES: Record<WorkflowStatus, string> = {
   new:            'bg-slate-100 text-slate-500',
-  ai_processed:   'bg-sky-100 text-sky-700',
+  awaiting_review: 'bg-sky-100 text-sky-700',
   under_review:   'bg-blue-100 text-blue-700',
   shortlisted:    'bg-indigo-100 text-indigo-700',
   interviewing:   'bg-purple-100 text-purple-700',
@@ -599,17 +599,17 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   ];
 
   const workflowOptions = [
-    { value: 'all',          label: t.wfAll          },
-    { value: 'new',          label: t.wfNew          },
-    { value: 'ai_processed', label: t.wfAiProcessed  },
-    { value: 'under_review', label: t.wfUnderReview  },
-    { value: 'shortlisted',  label: t.wfShortlisted  },
-    { value: 'interviewing', label: t.wfInterviewing },
-    { value: 'offer_made',   label: t.wfOfferMade    },
-    { value: 'hired',        label: t.wfHired        },
-    { value: 'rejected',     label: t.wfRejected     },
-    { value: 'withdrawn',    label: t.wfWithdrawn    },
-    { value: 'on_hold',      label: t.wfOnHold       },
+    { value: 'all',             label: t.wfAll             },
+    { value: 'new',             label: t.wfNew             },
+    { value: 'awaiting_review', label: t.wfAwaitingReview  },
+    { value: 'under_review',    label: t.wfUnderReview     },
+    { value: 'shortlisted',     label: t.wfShortlisted     },
+    { value: 'interviewing',    label: t.wfInterviewing    },
+    { value: 'offer_made',      label: t.wfOfferMade       },
+    { value: 'hired',           label: t.wfHired           },
+    { value: 'rejected',        label: t.wfRejected        },
+    { value: 'withdrawn',       label: t.wfWithdrawn       },
+    { value: 'on_hold',         label: t.wfOnHold          },
   ];
 
   // ── Render ─────────────────────────────────────────────────────────────────

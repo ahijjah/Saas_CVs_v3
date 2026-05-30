@@ -25,13 +25,13 @@ settings = get_settings()
 
 
 WORKFLOW_STATUSES = frozenset((
-    "new", "ai_processed", "under_review", "shortlisted", "interviewing",
+    "new", "awaiting_review", "under_review", "shortlisted", "interviewing",
     "offer_made", "hired", "rejected", "withdrawn", "on_hold",
 ))
 
 VALID_WORKFLOW_TRANSITIONS: dict[str, frozenset] = {
-    "new":            frozenset({"ai_processed", "on_hold"}),
-    "ai_processed":   frozenset({"under_review", "on_hold"}),
+    "new":            frozenset({"awaiting_review", "on_hold"}),
+    "awaiting_review": frozenset({"under_review", "on_hold"}),
     "under_review":   frozenset({"shortlisted", "on_hold", "rejected", "withdrawn"}),
     "shortlisted":    frozenset({"interviewing", "under_review", "on_hold", "rejected", "withdrawn"}),
     "interviewing":   frozenset({"offer_made", "shortlisted", "on_hold", "rejected", "withdrawn"}),
@@ -39,7 +39,7 @@ VALID_WORKFLOW_TRANSITIONS: dict[str, frozenset] = {
     "hired":          frozenset(),
     "rejected":       frozenset({"under_review"}),
     "withdrawn":      frozenset({"under_review"}),
-    "on_hold":        frozenset({"new", "ai_processed", "under_review", "shortlisted", "interviewing", "offer_made", "rejected", "withdrawn"}),
+    "on_hold":        frozenset({"new", "awaiting_review", "under_review", "shortlisted", "interviewing", "offer_made", "rejected", "withdrawn"}),
 }
 
 
