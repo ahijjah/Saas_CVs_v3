@@ -20,6 +20,7 @@ Status lifecycle
   Transitions are validated in campaign_service.validate_status_transition().
   Campaign status NEVER cascades to linked jobs.
 """
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -37,6 +38,25 @@ from services.campaign_service import (
 )
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+
+
+# ── Date parsing helpers ──────────────────────────────────────────────────────
+
+def _parse_iso_date(date_str: str | None) -> date | None:
+    """
+    Parse ISO date string (YYYY-MM-DD) to Python date object.
+    Returns None if input is None or empty string.
+    Raises HTTPException 422 on invalid format.
+    """
+    if not date_str or not date_str.strip():
+        return None
+    try:
+        return date.fromisoformat(date_str.strip())
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid date format '{date_str}'. Expected ISO format (YYYY-MM-DD).",
+        )
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -284,6 +304,10 @@ async def create_campaign(
     if owner_id:
         await _validate_owner(owner_id, current_user.tenant_id, db)
 
+    # Parse dates from ISO strings to date objects
+    start_date = _parse_iso_date(body.start_date)
+    end_date = _parse_iso_date(body.end_date)
+
     result = await db.execute(
         text("""
             INSERT INTO job_campaigns (
@@ -292,7 +316,7 @@ async def create_campaign(
                 notes, public_title, is_publicly_listed, created_by
             ) VALUES (
                 CAST(:tid AS uuid), CAST(:coid AS uuid), :name, :descr, :status,
-                CAST(:start_date AS date), CAST(:end_date AS date), :target_hire_count,
+                :start_date, :end_date, :target_hire_count,
                 CAST(:owner_id AS uuid), :notes, :public_title, :is_publicly_listed,
                 CAST(:uid AS uuid)
             )
@@ -304,8 +328,8 @@ async def create_campaign(
             "name":               name,
             "descr":              (body.description or "").strip() or None,
             "status":             initial_status,
-            "start_date":         body.start_date or None,
-            "end_date":           body.end_date or None,
+            "start_date":         start_date,
+            "end_date":           end_date,
             "target_hire_count":  body.target_hire_count,
             "owner_id":           owner_id,
             "notes":              (body.notes or "").strip() or None,
@@ -445,10 +469,10 @@ async def update_campaign(
         updates["description"] = body.description.strip() or None
 
     if body.start_date is not None:
-        updates["start_date"] = body.start_date or None
+        updates["start_date"] = _parse_iso_date(body.start_date)
 
     if body.end_date is not None:
-        updates["end_date"] = body.end_date or None
+        updates["end_date"] = _parse_iso_date(body.end_date)
 
     if body.target_hire_count is not None:
         updates["target_hire_count"] = body.target_hire_count
@@ -495,9 +519,8 @@ async def update_campaign(
             set_parts.append("client_organization_id = CAST(:client_organization_id AS uuid)")
         elif k == "campaign_owner_id":
             set_parts.append("campaign_owner_id = CAST(:campaign_owner_id AS uuid)")
-        elif k in ("start_date", "end_date"):
-            set_parts.append(f"{k} = CAST(:{k} AS date)")
         else:
+            # start_date, end_date, and other fields can be bound directly
             set_parts.append(f"{k} = :{k}")
         params[k] = v
     set_parts.append("updated_at = now()")
