@@ -390,12 +390,31 @@ const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
 // ── CandidateDetailDrawer ───────────────────────────────────────────────────
 // Right-side slide panel showing detailed candidate information.
 // Opens when user clicks a candidate row. Reuses WorkflowActionMenu for transitions.
+// Lazy-fetches full application details from GET /applications/details?application_id=<id>
+// to populate the AI Evaluation section without blocking the initial drawer open.
+
+interface AppAnalysis {
+  summary?: string;
+  strengths?: string[];
+  gaps_identified?: string[];
+  risks?: string[];
+  evaluation_notes?: string;
+}
+
+interface AppDetail {
+  application_id: string;
+  overall_score?: number;
+  decision?: string;
+  analysis?: AppAnalysis;
+  recruiter_notes?: string | null;
+}
 
 interface CandidateDetailDrawerProps {
   candidate: Candidate | null;
   open: boolean;
   lang: 'en' | 'ar';
   updatingId: string | null;
+  token: string | null;
   onClose: () => void;
   onWorkflowUpdate: (applicationId: string, toStatus: WorkflowStatus) => void;
   onNotesUpdate: (applicationId: string, notes: string) => Promise<void>;
@@ -403,7 +422,7 @@ interface CandidateDetailDrawerProps {
 }
 
 const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
-  candidate, open, lang, updatingId, onClose, onWorkflowUpdate, onNotesUpdate, addToast,
+  candidate, open, lang, updatingId, token, onClose, onWorkflowUpdate, onNotesUpdate, addToast,
 }) => {
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
   const t = T[lang];
@@ -414,11 +433,59 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [notesChanged, setNotesChanged] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
 
+  const [detail, setDetail] = useState<AppDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  // Tracks which application_id detail is loaded for, to avoid stale data
+  const detailForRef = useRef<string | null>(null);
+
   // Must come before any early return — Rules of Hooks
+
+  // Sync notes text when candidate changes; do not overwrite unsaved edits
   useEffect(() => {
     setNotesText(candidate?.recruiter_notes || '');
     setNotesChanged(false);
   }, [candidate?.application_id]);
+
+  // Lazy-fetch full application details when drawer opens for a candidate
+  useEffect(() => {
+    if (!candidate?.application_id || !open) return;
+    // Already loaded for this candidate
+    if (detailForRef.current === candidate.application_id) return;
+
+    let cancelled = false;
+    detailForRef.current = candidate.application_id;
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+
+    apiService.get(
+      WEBHOOK_CONFIG.APPLICATION_DETAILS_WEBHOOK_URL,
+      { application_id: candidate.application_id },
+      token,
+    ).then((raw: unknown) => {
+      if (cancelled) return;
+      const detailObj: AppDetail | null = Array.isArray(raw) ? raw[0] : (raw as AppDetail);
+      if (!detailObj) throw new Error('No data returned');
+      setDetail(detailObj);
+      // Sync notes from full detail only if recruiter hasn't made local edits
+      setNotesText(prev => {
+        const serverNotes = detailObj.recruiter_notes || '';
+        // If the textarea still holds the lightweight row value unchanged, update to server value
+        return prev === (candidate.recruiter_notes || '') ? serverNotes : prev;
+      });
+    }).catch((err: any) => {
+      if (cancelled) return;
+      setDetailError(err?.message || 'Failed to load evaluation details');
+      detailForRef.current = null; // allow retry on reopen
+    }).finally(() => {
+      if (!cancelled) setDetailLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  // Deliberately omit notesChanged — we only want this on application_id / open changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidate?.application_id, open, token]);
 
   if (!candidate) return null;
 
@@ -539,43 +606,85 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           {/* Divider */}
           <div className="h-px bg-slate-200" />
 
-          {/* AI Evaluation Summary */}
+          {/* AI Evaluation Summary — lazy-loaded from detail endpoint */}
           {candidate.processing_status === 'ai_scored' && (
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-slate-900">AI Evaluation</h3>
-              {(candidate.strengths || candidate.gaps || candidate.evaluation_notes) ? (
-                <>
-                  {candidate.strengths && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Strengths</label>
-                      <p className="text-sm text-slate-700 leading-relaxed">{candidate.strengths}</p>
-                    </div>
-                  )}
-                  {candidate.gaps && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Gaps</label>
-                      <p className="text-sm text-slate-700 leading-relaxed">{candidate.gaps}</p>
-                    </div>
-                  )}
-                  {candidate.evaluation_notes && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
-                      <p className="text-sm text-slate-700 leading-relaxed">{candidate.evaluation_notes}</p>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm text-slate-500 italic">
-                  No detailed evaluation available.{' '}
+
+              {detailLoading && (
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <span className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin inline-block" />
+                  Loading evaluation…
+                </div>
+              )}
+
+              {detailError && !detailLoading && (
+                <p className="text-sm text-red-500">
+                  Could not load evaluation. {' '}
                   <a
                     href={`/applications?job_id=${encodeURIComponent(candidate.job_id)}&app_id=${encodeURIComponent(candidate.application_id)}`}
-                    className="text-indigo-600 hover:text-indigo-800 font-medium"
+                    className="underline font-medium"
                   >
                     Open full application
                   </a>
-                  {' '}to view AI evaluation details.
+                  {' '}to view details.
                 </p>
               )}
+
+              {!detailLoading && !detailError && detail && (() => {
+                const summary   = detail.analysis?.summary || '';
+                const strengths = detail.analysis?.strengths || [];
+                const gaps      = detail.analysis?.gaps_identified || detail.analysis?.risks || [];
+                const hasData   = summary || strengths.length > 0 || gaps.length > 0;
+
+                return hasData ? (
+                  <>
+                    {summary && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1 uppercase">Executive Summary</label>
+                        <p className="text-sm text-slate-700 leading-relaxed">{summary}</p>
+                      </div>
+                    )}
+                    {strengths.length > 0 && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1 uppercase">Strengths</label>
+                        <ul className="space-y-1">
+                          {strengths.slice(0, 5).map((s, i) => (
+                            <li key={i} className="flex items-start gap-1.5 text-sm text-slate-700">
+                              <span className="mt-1 w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+                              {s}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {gaps.length > 0 && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1 uppercase">Gaps / Concerns</label>
+                        <ul className="space-y-1">
+                          {gaps.slice(0, 5).map((g, i) => (
+                            <li key={i} className="flex items-start gap-1.5 text-sm text-slate-700">
+                              <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+                              {g}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-500 italic">
+                    No detailed evaluation available.{' '}
+                    <a
+                      href={`/applications?job_id=${encodeURIComponent(candidate.job_id)}&app_id=${encodeURIComponent(candidate.application_id)}`}
+                      className="text-indigo-600 hover:text-indigo-800 font-medium"
+                    >
+                      Open full application
+                    </a>
+                    {' '}to view AI evaluation details.
+                  </p>
+                );
+              })()}
             </div>
           )}
 
@@ -1242,6 +1351,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         open={!!selectedAppId}
         lang={lang}
         updatingId={updatingId}
+        token={auth.token}
         onClose={closeCandidate}
         onWorkflowUpdate={handleWorkflowUpdate}
         onNotesUpdate={handleNotesUpdate}
