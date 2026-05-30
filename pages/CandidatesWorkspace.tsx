@@ -61,6 +61,11 @@ interface Candidate {
   updated_at: string | null;
   duplicate_status: string;
   recruiter_notes: string | null;
+  email?: string | null;
+  phone?: string | null;
+  strengths?: string | null;
+  gaps?: string | null;
+  evaluation_notes?: string | null;
 }
 
 interface Pagination {
@@ -382,6 +387,211 @@ const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   );
 };
 
+// ── CandidateDetailDrawer ───────────────────────────────────────────────────
+// Right-side slide panel showing detailed candidate information.
+// Opens when user clicks a candidate row. Reuses WorkflowActionMenu for transitions.
+
+interface CandidateDetailDrawerProps {
+  candidate: Candidate | null;
+  open: boolean;
+  lang: 'en' | 'ar';
+  updatingId: string | null;
+  onClose: () => void;
+  onWorkflowUpdate: (applicationId: string, toStatus: WorkflowStatus) => void;
+}
+
+const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
+  candidate, open, lang, updatingId, onClose, onWorkflowUpdate,
+}) => {
+  const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
+  const t = T[lang];
+
+  if (!candidate) return null;
+
+  const wfStyle = WORKFLOW_STATUS_STYLES[candidate.workflow_status] ?? 'bg-slate-100 text-slate-600';
+  const wfLabel = wfLabels[candidate.workflow_status] ?? candidate.workflow_status;
+  const procStyle = processingStyle(candidate.processing_status);
+  const procLabel = processingLabel(candidate.processing_status, t);
+  const aiStyle = aiDecisionStyle(candidate.status);
+  const aiLabel = aiDecisionLabel(candidate.status, t);
+  const isUpdating = updatingId === candidate.application_id;
+
+  return (
+    <>
+      {/* Overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/20 z-40"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Drawer panel */}
+      <div
+        className={`fixed right-0 top-0 bottom-0 w-full sm:w-96 bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto transition-transform duration-300 ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-slate-900">{candidate.candidate_name || '—'}</h2>
+            <p className="text-xs text-slate-500 mt-1">{candidate.job_title || '—'}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-6 py-4 space-y-6">
+          {/* Key metrics */}
+          <div className="grid grid-cols-2 gap-4">
+            {candidate.score !== null && (
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-500 uppercase">{t.colAiMatch}</label>
+                <p className="text-2xl font-bold text-slate-900">{candidate.score.toFixed(0)}%</p>
+              </div>
+            )}
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-500 uppercase">{t.colAiResult}</label>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiStyle}`}>
+                {aiLabel}
+              </span>
+            </div>
+          </div>
+
+          {/* Status pills */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 uppercase mb-2">{t.colWorkflow}</label>
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${wfStyle}`}>
+                {wfLabel}
+              </span>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 uppercase mb-2">{t.colProcessing}</label>
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${procStyle}`}>
+                {procLabel}
+              </span>
+            </div>
+          </div>
+
+          {/* Job and campaign */}
+          <div className="space-y-2 text-sm">
+            {candidate.campaign_name && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase">{T[lang].filterCampaign}</label>
+                <p className="text-slate-700 mt-0.5">{candidate.campaign_name}</p>
+              </div>
+            )}
+            {candidate.client_org_name && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase">{T[lang].filterClient}</label>
+                <p className="text-slate-700 mt-0.5">{candidate.client_org_name}</p>
+              </div>
+            )}
+            {candidate.job_code && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase">Job Code</label>
+                <p className="text-slate-700 mt-0.5">{candidate.job_code}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="h-px bg-slate-200" />
+
+          {/* AI Evaluation Summary */}
+          {candidate.processing_status === 'ai_scored' && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900">AI Evaluation</h3>
+              {candidate.strengths && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Strengths</label>
+                  <p className="text-sm text-slate-700 leading-relaxed">{candidate.strengths}</p>
+                </div>
+              )}
+              {candidate.gaps && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Gaps</label>
+                  <p className="text-sm text-slate-700 leading-relaxed">{candidate.gaps}</p>
+                </div>
+              )}
+              {candidate.evaluation_notes && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+                  <p className="text-sm text-slate-700 leading-relaxed">{candidate.evaluation_notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Recruiter Workflow Actions */}
+          {candidate.processing_status === 'ai_scored' && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900">Workflow Actions</h3>
+              <div className="flex flex-col gap-2">
+                <WorkflowActionMenu
+                  applicationId={candidate.application_id}
+                  currentStatus={candidate.workflow_status}
+                  processingStatus={candidate.processing_status}
+                  updating={isUpdating}
+                  lang={lang}
+                  onTransition={onWorkflowUpdate}
+                />
+              </div>
+              {candidate.recruiter_notes && (
+                <div className="mt-3 pt-3 border-t border-slate-200">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Recruiter Notes</label>
+                  <p className="text-sm text-slate-700 leading-relaxed">{candidate.recruiter_notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Candidate Contact Information */}
+          <div className="space-y-2 text-sm">
+            {candidate.email && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase">Email</label>
+                <p className="text-slate-700 mt-0.5 break-all">{candidate.email}</p>
+              </div>
+            )}
+            {candidate.phone && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase">Phone</label>
+                <p className="text-slate-700 mt-0.5">{candidate.phone}</p>
+              </div>
+            )}
+            {candidate.applied_at && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase">Applied</label>
+                <p className="text-slate-700 mt-0.5">{formatDate(candidate.applied_at)}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="h-px bg-slate-200" />
+
+          {/* View full application link */}
+          <a
+            href={`/applications?job_id=${encodeURIComponent(candidate.job_id)}&app_id=${encodeURIComponent(candidate.application_id)}`}
+            className="block w-full text-center py-2 px-4 rounded-lg border border-indigo-300 text-indigo-600 text-sm font-medium hover:bg-indigo-50 transition-colors"
+          >
+            View Full Application →
+          </a>
+        </div>
+      </div>
+    </>
+  );
+};
+
 // Build API params from active filters + quick view
 function buildApiParams(
   view: QuickView,
@@ -446,6 +656,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const initialClient = searchParams.get('client_organization_id') || '';
   const initialSearch = searchParams.get('search') || '';
   const initialPage = parseInt(searchParams.get('page') || '1', 10);
+  const initialAppId = searchParams.get('app_id') || '';
 
   const [activeView, setActiveView] = useState<QuickView>(initialView);
   const [workflowFilter, setWorkflowFilter] = useState(initialWorkflow);
@@ -455,6 +666,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [clientFilter, setClientFilter] = useState(initialClient);
   const [search, setSearch] = useState(initialSearch);
   const [page, setPage] = useState(initialPage);
+  const [selectedAppId, setSelectedAppId] = useState(initialAppId);
 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -539,8 +751,9 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (clientFilter)             p.client_organization_id = clientFilter;
     if (debouncedSearch)          p.search = debouncedSearch;
     if (page > 1)                 p.page = String(page);
+    if (selectedAppId)            p.app_id = selectedAppId;
     setSearchParams(p, { replace: true });
-  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, page, setSearchParams]);
+  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, page, selectedAppId, setSearchParams]);
 
   // Debounce search field
   const handleSearchChange = (value: string) => {
@@ -613,7 +826,11 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || debouncedSearch;
 
   const openCandidate = (c: Candidate) => {
-    navigate(`/applications?job_id=${encodeURIComponent(c.job_id)}&app_id=${encodeURIComponent(c.application_id)}`);
+    setSelectedAppId(c.application_id);
+  };
+
+  const closeCandidate = () => {
+    setSelectedAppId('');
   };
 
   // Optimistic workflow status update
@@ -644,6 +861,9 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       setUpdatingId(null);
     }
   };
+
+  // Find selected candidate for drawer
+  const selectedCandidate = candidates.find(c => c.application_id === selectedAppId) || null;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -918,6 +1138,16 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           </button>
         </div>
       )}
+
+      {/* Candidate Detail Drawer */}
+      <CandidateDetailDrawer
+        candidate={selectedCandidate}
+        open={!!selectedAppId}
+        lang={lang}
+        updatingId={updatingId}
+        onClose={closeCandidate}
+        onWorkflowUpdate={handleWorkflowUpdate}
+      />
     </div>
   );
 };
