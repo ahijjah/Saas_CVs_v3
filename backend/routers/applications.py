@@ -177,14 +177,7 @@ async def list_applications(
 
     # Campaign filter (tenant-wide mode only; ignored if job_id provided)
     if campaign_id and not job_id:
-        where_parts.append("""
-            EXISTS (
-                SELECT 1 FROM job_campaigns jc
-                WHERE jc.campaign_id = CAST(:campaign_id AS uuid)
-                  AND jc.tenant_id = CAST(:tid AS uuid)
-                  AND a.job_id = jc.job_id
-            )
-        """)
+        where_parts.append("j.campaign_id = CAST(:campaign_id AS uuid)")
         params["campaign_id"] = campaign_id
 
     # Client organization filter (agency/freelancer scoping)
