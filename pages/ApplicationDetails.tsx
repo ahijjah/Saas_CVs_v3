@@ -6,9 +6,8 @@ import {
   WORKFLOW_STATUS_STYLES_BORDERED,
   WORKFLOW_STATUS_LABELS_EN,
   WORKFLOW_STATUS_LABELS_AR,
-  VALID_WORKFLOW_TRANSITIONS,
-  WORKFLOW_ACTION_LABELS_EN,
 } from '../constants/workflow';
+import { WorkflowActionMenu } from '../components/WorkflowActionMenu';
 
 interface JobMetaStrip {
   job_title: string;
@@ -413,37 +412,12 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const [intelligenceExpanded, setIntelligenceExpanded] = useState(
     data.gatekeeper_passed === false
   );
-  const [noteInput, setNoteInput] = useState('');
-  const [showNoteInput, setShowNoteInput] = useState(false);
-  const [pendingStatus, setPendingStatus] = useState<WorkflowStatus | null>(null);
   const [recruiterNotesText, setRecruiterNotesText] = useState(data.recruiter_notes ?? '');
   const [notesDirty, setNotesDirty] = useState(false);
 
   const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'awaiting_review';
-
-  // WF constants imported from constants/workflow.ts
-  const VALID_TRANSITIONS = VALID_WORKFLOW_TRANSITIONS;
   const WF_LABELS = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
   const WF_STYLES = WORKFLOW_STATUS_STYLES_BORDERED;
-  const WF_ACTION_LABELS = WORKFLOW_ACTION_LABELS_EN;
-
-  const handleTransitionClick = (target: WorkflowStatus) => {
-    if (!onWorkflowStatusChange) return;
-    if (target === 'hired' || target === 'rejected' || target === 'withdrawn') {
-      setPendingStatus(target);
-      setShowNoteInput(true);
-    } else {
-      onWorkflowStatusChange(data.application_id, target);
-    }
-  };
-
-  const confirmTransition = () => {
-    if (!pendingStatus || !onWorkflowStatusChange) return;
-    onWorkflowStatusChange(data.application_id, pendingStatus, noteInput.trim() || undefined);
-    setPendingStatus(null);
-    setNoteInput('');
-    setShowNoteInput(false);
-  };
 
   const handleSaveNotes = () => {
     if (!onRecruiterNotesChange) return;
@@ -1669,51 +1643,14 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             </span>
           </div>
           <div className="px-8 py-6 space-y-4">
-            {VALID_TRANSITIONS[currentWorkflowStatus].length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {VALID_TRANSITIONS[currentWorkflowStatus].map(target => (
-                  <button
-                    key={target}
-                    onClick={() => handleTransitionClick(target)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all hover:opacity-80 ${WF_STYLES[target]}`}
-                  >
-                    {WF_ACTION_LABELS[target]}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-textMuted italic">No further transitions available.</p>
-            )}
-
-            {showNoteInput && pendingStatus && (
-              <div className="mt-3 bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
-                <p className="text-xs font-bold text-textMain">
-                  Confirm: {WF_ACTION_LABELS[pendingStatus]}
-                  <span className="text-textMuted font-normal ml-1">(optional note)</span>
-                </p>
-                <textarea
-                  value={noteInput}
-                  onChange={e => setNoteInput(e.target.value)}
-                  placeholder="Add a note for this transition (optional)..."
-                  className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
-                  rows={2}
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={confirmTransition}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold ${WF_STYLES[pendingStatus]} hover:opacity-80 transition-all`}
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    onClick={() => { setShowNoteInput(false); setPendingStatus(null); setNoteInput(''); }}
-                    className="px-4 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
+            <WorkflowActionMenu
+              applicationId={data.application_id}
+              currentStatus={currentWorkflowStatus}
+              processingStatus={data.processing_status ?? 'ai_scored'}
+              isUpdating={false}
+              lang={lang}
+              onTransition={(appId, toStatus, note) => onWorkflowStatusChange(appId, toStatus, note)}
+            />
 
             {/* Workflow History */}
             {data.workflow_history && data.workflow_history.length > 0 && (
