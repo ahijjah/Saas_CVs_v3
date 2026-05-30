@@ -1474,7 +1474,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                           isUpdating={isUpdating}
                           lang={lang}
                           userRole={auth.user?.role}
-                          advancedMoveEnabled={true}
+                          advancedMoveEnabled={auth.user?.allow_advanced_workflow_move}
                           onTransition={handleWorkflowUpdate}
                         />
                         <button
@@ -1525,7 +1525,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         token={auth.token}
         detailVersion={drawerDetailVersion}
         userRole={auth.user?.role}
-        advancedMoveEnabled={true}
+        advancedMoveEnabled={auth.user?.allow_advanced_workflow_move}
         onClose={closeCandidate}
         onWorkflowUpdate={handleWorkflowUpdate}
         onNotesUpdate={handleNotesUpdate}

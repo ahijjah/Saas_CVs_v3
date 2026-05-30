@@ -11,6 +11,7 @@ export interface User {
   subscription_status?: SubscriptionStatus;
   must_change_password?: boolean;
   job_application_controls_enabled?: boolean;
+  allow_advanced_workflow_move?: boolean;
 }
 
 export type SubscriptionStatus =

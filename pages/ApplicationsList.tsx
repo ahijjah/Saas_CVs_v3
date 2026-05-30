@@ -505,7 +505,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         downloadingCV={downloadingCVId === selectedDetails.application_id}
         token={auth.token!}
         userRole={auth.user?.role}
-        advancedMoveEnabled={true}
+        advancedMoveEnabled={auth.user?.allow_advanced_workflow_move}
         onWorkflowStatusChange={handleWorkflowStatusChange}
         onRecruiterNotesChange={handleRecruiterNotesChange}
       />

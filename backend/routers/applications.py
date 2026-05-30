@@ -973,7 +973,19 @@ async def update_workflow_status(
     is_advanced = body.advanced_move
 
     if is_advanced:
-        # Advanced move: privileged stage-jump — validate permission and require a note
+        # Advanced move: privileged stage-jump — validate permission, tenant setting, and require a note
+        # Check tenant setting
+        tenant_row = await db.execute(
+            text("SELECT allow_advanced_workflow_move FROM tenants WHERE tenant_id = :tid"),
+            {"tid": current_user.tenant_id},
+        )
+        tenant = tenant_row.mappings().first()
+        if not tenant or not tenant["allow_advanced_workflow_move"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Advanced workflow moves are disabled for this tenant.",
+            )
+
         actor_role = (current_user.role or "").lower()
         if actor_role not in ("admin", "super_admin"):
             raise HTTPException(

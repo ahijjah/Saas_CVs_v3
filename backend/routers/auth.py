@@ -136,7 +136,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
                    t.tenant_type, t.status AS tenant_status,
                    t.created_at AS tenant_created_at,
                    t.subscription_status, t.trial_end_at,
-                   t.job_application_controls_enabled
+                   t.job_application_controls_enabled, t.allow_advanced_workflow_move
             FROM users u
             JOIN tenants t ON t.tenant_id = u.tenant_id
             WHERE u.user_id = :uid
@@ -182,6 +182,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
         "tenant_created_at": p["tenant_created_at"].isoformat() if p["tenant_created_at"] else None,
         "active_users_count": active_count,
         "job_application_controls_enabled": bool(p["job_application_controls_enabled"]),
+        "allow_advanced_workflow_move": bool(p["allow_advanced_workflow_move"]),
     }
 
 
