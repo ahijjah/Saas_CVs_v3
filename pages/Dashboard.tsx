@@ -27,12 +27,6 @@ interface DashboardSummary {
     active_jobs: number;
     active_campaigns: number;
   };
-  plan_usage: {
-    max_campaigns: number | null;
-    active_campaigns: number;
-    max_processed_cvs: number | null;
-    processed_cvs_this_month: number;
-  };
 }
 
 const T = {
