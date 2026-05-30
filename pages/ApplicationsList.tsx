@@ -24,7 +24,6 @@ type AiResultFilter = 'all' | 'qualified' | 'partial' | 'rejected_low_match' | '
 
 type WorkflowFilter =
   | 'all'
-  | 'new'
   | 'awaiting_review'
   | 'under_review'
   | 'shortlisted'
@@ -135,7 +134,6 @@ const T = {
     aiNotScored:         'Not Scored',
     // Workflow options
     wfAll:             'All Workflow',
-    wfNew:             'New',
     wfAwaitingReview:  'Awaiting Review',
     wfUnderReview:     'Under Review',
     wfShortlisted:  'Shortlisted',
@@ -194,7 +192,6 @@ const T = {
     aiRejectedLowMatch:  'مرفوض / تطابق منخفض',
     aiNotScored:         'لم يُقيَّم',
     wfAll:             'جميع المراحل',
-    wfNew:             'جديد',
     wfAwaitingReview:  'في انتظار المراجعة',
     wfUnderReview:     'قيد المراجعة',
     wfShortlisted:  'مختار',
@@ -230,20 +227,18 @@ const T = {
 // ── Workflow display constants ─────────────────────────────────────────────────
 
 const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
-  new:            'New',
   awaiting_review: 'Awaiting Review',
-  under_review:   'Under Review',
-  shortlisted:    'Shortlisted',
-  interviewing:   'Interviewing',
-  offer_made:     'Offer Made',
-  hired:          'Hired',
-  rejected:       'Rejected',
-  withdrawn:      'Withdrawn',
-  on_hold:        'On Hold',
+  under_review:    'Under Review',
+  shortlisted:     'Shortlisted',
+  interviewing:    'Interviewing',
+  offer_made:      'Offer Made',
+  hired:           'Hired',
+  rejected:        'Rejected',
+  withdrawn:       'Withdrawn',
+  on_hold:         'On Hold',
 };
 
 const WORKFLOW_STATUS_STYLES: Record<WorkflowStatus, string> = {
-  new:            'bg-slate-100 text-slate-500',
   awaiting_review: 'bg-sky-100 text-sky-700',
   under_review:   'bg-blue-100 text-blue-700',
   shortlisted:    'bg-indigo-100 text-indigo-700',
@@ -419,7 +414,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         security_checked_at:        detailsObj?.security_checked_at,
         stopped_reason:   detailsObj?.stopped_reason ?? null,
         knockout_answers: detailsObj?.knockout_answers || [],
-        workflow_status:  detailsObj?.workflow_status || 'new',
+        workflow_status:  detailsObj?.workflow_status || 'awaiting_review',
         recruiter_notes:  detailsObj?.recruiter_notes ?? null,
         workflow_history: detailsObj?.workflow_history || [],
       });
@@ -600,7 +595,6 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   const workflowOptions = [
     { value: 'all',             label: t.wfAll             },
-    { value: 'new',             label: t.wfNew             },
     { value: 'awaiting_review', label: t.wfAwaitingReview  },
     { value: 'under_review',    label: t.wfUnderReview     },
     { value: 'shortlisted',     label: t.wfShortlisted     },
@@ -772,8 +766,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${styles.pill}`}>
                     {styles.label}
                   </span>
-                  {/* Workflow status pill (hidden when 'new') */}
-                  {wfStatus && wfStatus !== 'new' && (
+                  {/* Workflow status pill */}
+                  {wfStatus && (
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider ${WORKFLOW_STATUS_STYLES[wfStatus]}`}>
                       {WORKFLOW_STATUS_LABELS[wfStatus]}
                     </span>

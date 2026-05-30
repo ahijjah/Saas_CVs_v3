@@ -1,8 +1,10 @@
 -- Migration 057: Application workflow status, recruiter notes, and workflow history
 
 -- Add workflow_status to applications
+-- Default 'awaiting_review': recruiter workflow starts only after AI scoring;
+-- unscored/in-flight applications are identified by processing_status, not workflow_status.
 ALTER TABLE cv_analyzer.applications
-    ADD COLUMN IF NOT EXISTS workflow_status VARCHAR(50) NOT NULL DEFAULT 'new',
+    ADD COLUMN IF NOT EXISTS workflow_status VARCHAR(50) NOT NULL DEFAULT 'awaiting_review',
     ADD COLUMN IF NOT EXISTS recruiter_notes TEXT;
 
 -- CHECK constraint for valid workflow statuses
@@ -10,20 +12,18 @@ ALTER TABLE cv_analyzer.applications
     DROP CONSTRAINT IF EXISTS applications_workflow_status_check;
 ALTER TABLE cv_analyzer.applications
     ADD CONSTRAINT applications_workflow_status_check
-        CHECK (workflow_status IN ('new', 'awaiting_review', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'hired', 'rejected', 'withdrawn', 'on_hold'));
+        CHECK (workflow_status IN ('awaiting_review', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'hired', 'rejected', 'withdrawn', 'on_hold'));
 
--- Backfill: scored applications that were qualified/partial go to 'awaiting_review',
--- others stay 'new'
+-- Backfill: all existing applications default to 'awaiting_review' (the new column default).
+-- Nothing further is required; the column default handles rows added going forward.
+-- Rows already set to 'new' from a prior migration run must be cleared:
 UPDATE cv_analyzer.applications
 SET workflow_status = 'awaiting_review'
-WHERE processing_status = 'scored'
-  AND decision IN ('qualified', 'partial')
-  AND workflow_status = 'new';
+WHERE workflow_status = 'new';
 
 -- Index for workflow status queries (e.g. filter by status per job)
 CREATE INDEX IF NOT EXISTS idx_applications_workflow_status
-    ON cv_analyzer.applications (job_id, workflow_status)
-    WHERE workflow_status != 'new';
+    ON cv_analyzer.applications (job_id, workflow_status);
 
 -- Workflow history table
 CREATE TABLE IF NOT EXISTS cv_analyzer.application_workflow_history (

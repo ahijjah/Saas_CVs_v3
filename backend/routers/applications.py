@@ -25,21 +25,20 @@ settings = get_settings()
 
 
 WORKFLOW_STATUSES = frozenset((
-    "new", "awaiting_review", "under_review", "shortlisted", "interviewing",
+    "awaiting_review", "under_review", "shortlisted", "interviewing",
     "offer_made", "hired", "rejected", "withdrawn", "on_hold",
 ))
 
 VALID_WORKFLOW_TRANSITIONS: dict[str, frozenset] = {
-    "new":            frozenset({"awaiting_review", "on_hold"}),
-    "awaiting_review": frozenset({"under_review", "on_hold"}),
-    "under_review":   frozenset({"shortlisted", "on_hold", "rejected", "withdrawn"}),
-    "shortlisted":    frozenset({"interviewing", "under_review", "on_hold", "rejected", "withdrawn"}),
-    "interviewing":   frozenset({"offer_made", "shortlisted", "on_hold", "rejected", "withdrawn"}),
-    "offer_made":     frozenset({"hired", "interviewing", "on_hold", "rejected", "withdrawn"}),
-    "hired":          frozenset(),
-    "rejected":       frozenset({"under_review"}),
-    "withdrawn":      frozenset({"under_review"}),
-    "on_hold":        frozenset({"new", "awaiting_review", "under_review", "shortlisted", "interviewing", "offer_made", "rejected", "withdrawn"}),
+    "awaiting_review": frozenset({"under_review", "on_hold", "rejected", "withdrawn"}),
+    "under_review":    frozenset({"shortlisted", "on_hold", "rejected", "withdrawn"}),
+    "shortlisted":     frozenset({"interviewing", "under_review", "on_hold", "rejected", "withdrawn"}),
+    "interviewing":    frozenset({"offer_made", "shortlisted", "on_hold", "rejected", "withdrawn"}),
+    "offer_made":      frozenset({"hired", "interviewing", "on_hold", "rejected", "withdrawn"}),
+    "hired":           frozenset(),
+    "rejected":        frozenset({"awaiting_review", "under_review"}),
+    "withdrawn":       frozenset({"awaiting_review", "under_review"}),
+    "on_hold":         frozenset({"awaiting_review", "under_review", "shortlisted", "interviewing", "offer_made", "rejected", "withdrawn"}),
 }
 
 
@@ -120,7 +119,7 @@ async def list_applications(
             "duplicate_reason":                  r["duplicate_reason"],
             "duplicate_reference_application_id": str(r["duplicate_reference_application_id"]) if r["duplicate_reference_application_id"] else None,
             "evaluation_exit_reason":            r["evaluation_exit_reason"],
-            "workflow_status":                   r["workflow_status"] or "new",
+            "workflow_status":                   r["workflow_status"] or "awaiting_review",
             "recruiter_notes":                   r["recruiter_notes"],
             "score":                             float(r["score"]) if r["score"] is not None else None,
             "applied_date":                      r["applied_date"].isoformat() if r["applied_date"] else None,
@@ -781,7 +780,7 @@ async def update_workflow_status(
     if not rec:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
 
-    current_status = rec["workflow_status"] or "new"
+    current_status = rec["workflow_status"] or "awaiting_review"
     if new_status == current_status:
         return {"workflow_status": current_status}
 

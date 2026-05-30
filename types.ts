@@ -266,7 +266,6 @@ export interface JobDetails extends Job {
 export type ApplicationDecision = 'qualified' | 'partial' | 'rejected' | 'low_match';
 
 export type WorkflowStatus =
-  | 'new'
   | 'awaiting_review'
   | 'under_review'
   | 'shortlisted'

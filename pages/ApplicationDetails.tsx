@@ -412,51 +412,47 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const [recruiterNotesText, setRecruiterNotesText] = useState(data.recruiter_notes ?? '');
   const [notesDirty, setNotesDirty] = useState(false);
 
-  const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'new';
+  const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'awaiting_review';
 
   const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-    new:            ['awaiting_review', 'on_hold'],
-    awaiting_review: ['under_review', 'on_hold'],
-    under_review:   ['shortlisted', 'on_hold', 'rejected', 'withdrawn'],
-    shortlisted:    ['interviewing', 'under_review', 'on_hold', 'rejected', 'withdrawn'],
-    interviewing:   ['offer_made', 'shortlisted', 'on_hold', 'rejected', 'withdrawn'],
-    offer_made:     ['hired', 'interviewing', 'on_hold', 'rejected', 'withdrawn'],
-    hired:          [],
-    rejected:       ['under_review'],
-    withdrawn:      ['under_review'],
-    on_hold:        ['new', 'awaiting_review', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'rejected', 'withdrawn'],
+    awaiting_review: ['under_review', 'on_hold', 'rejected', 'withdrawn'],
+    under_review:    ['shortlisted', 'on_hold', 'rejected', 'withdrawn'],
+    shortlisted:     ['interviewing', 'under_review', 'on_hold', 'rejected', 'withdrawn'],
+    interviewing:    ['offer_made', 'shortlisted', 'on_hold', 'rejected', 'withdrawn'],
+    offer_made:      ['hired', 'interviewing', 'on_hold', 'rejected', 'withdrawn'],
+    hired:           [],
+    rejected:        ['awaiting_review', 'under_review'],
+    withdrawn:       ['awaiting_review', 'under_review'],
+    on_hold:         ['awaiting_review', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'rejected', 'withdrawn'],
   };
 
   const WF_LABELS: Record<WorkflowStatus, string> = {
-    new:            'New',
     awaiting_review: 'Awaiting Review',
-    under_review:   'Under Review',
-    shortlisted:    'Shortlisted',
-    interviewing:   'Interviewing',
-    offer_made:     'Offer Made',
-    hired:          'Hired',
-    rejected:       'Rejected',
-    withdrawn:      'Withdrawn',
-    on_hold:        'On Hold',
+    under_review:    'Under Review',
+    shortlisted:     'Shortlisted',
+    interviewing:    'Interviewing',
+    offer_made:      'Offer Made',
+    hired:           'Hired',
+    rejected:        'Rejected',
+    withdrawn:       'Withdrawn',
+    on_hold:         'On Hold',
   };
 
   const WF_STYLES: Record<WorkflowStatus, string> = {
-    new:            'bg-slate-100 text-slate-600 border-slate-200',
     awaiting_review: 'bg-sky-100 text-sky-700 border-sky-200',
-    under_review:   'bg-blue-100 text-blue-700 border-blue-200',
-    shortlisted:    'bg-indigo-100 text-indigo-700 border-indigo-200',
-    interviewing:   'bg-purple-100 text-purple-700 border-purple-200',
-    offer_made:     'bg-amber-100 text-amber-700 border-amber-200',
-    hired:          'bg-green-100 text-green-800 border-green-200',
-    rejected:       'bg-red-100 text-red-700 border-red-200',
-    withdrawn:      'bg-orange-100 text-orange-700 border-orange-200',
-    on_hold:        'bg-yellow-100 text-yellow-700 border-yellow-200',
+    under_review:    'bg-blue-100 text-blue-700 border-blue-200',
+    shortlisted:     'bg-indigo-100 text-indigo-700 border-indigo-200',
+    interviewing:    'bg-purple-100 text-purple-700 border-purple-200',
+    offer_made:      'bg-amber-100 text-amber-700 border-amber-200',
+    hired:           'bg-green-100 text-green-800 border-green-200',
+    rejected:        'bg-red-100 text-red-700 border-red-200',
+    withdrawn:       'bg-orange-100 text-orange-700 border-orange-200',
+    on_hold:         'bg-yellow-100 text-yellow-700 border-yellow-200',
   };
 
   const WF_ACTION_LABELS: Record<WorkflowStatus, string> = {
-    new:             'Start Processing',
-    awaiting_review: 'Begin Review',
-    under_review:    'Under Review',
+    awaiting_review: 'Awaiting Review',
+    under_review:    'Start Review',
     shortlisted:     'Shortlist',
     interviewing:    'Move to Interview',
     offer_made:      'Make Offer',

@@ -536,7 +536,6 @@ async def get_job_details(
                     WHERE a.processing_status IN ('pending', 'queued', 'processing')
                 ) AS applications_in_progress,
                 -- Workflow status counts
-                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'new')            AS applications_new,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'awaiting_review') AS applications_awaiting_review,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'under_review')   AS applications_under_review,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'shortlisted')    AS applications_shortlisted,
@@ -672,7 +671,6 @@ async def get_job_details(
             "applications_duplicate_blocked":   int(job["applications_duplicate_blocked"]),
             "applications_possible_duplicate":  int(job["applications_possible_duplicate"]),
             "applications_failed_needs_review": int(job["applications_failed_needs_review"]),
-            "applications_new":                 int(job["applications_new"]),
             "applications_awaiting_review":     int(job["applications_awaiting_review"]),
             "applications_under_review":        int(job["applications_under_review"]),
             "applications_shortlisted":         int(job["applications_shortlisted"]),
