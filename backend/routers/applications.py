@@ -970,7 +970,7 @@ async def update_workflow_status(
     if new_status == current_status:
         return {"workflow_status": current_status}
 
-    is_advanced = bool(body.advanced_move)
+    is_advanced = body.advanced_move
 
     if is_advanced:
         # Advanced move: privileged stage-jump — validate permission and require a note
@@ -985,7 +985,7 @@ async def update_workflow_status(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="A note/reason is required for advanced workflow moves.",
             )
-        # No transition-graph check — advanced move intentionally bypasses it
+        # Target must still be a valid workflow status, but no transition-graph check
     else:
         # Normal move: enforce the state-machine graph
         allowed = VALID_WORKFLOW_TRANSITIONS.get(current_status, frozenset())
