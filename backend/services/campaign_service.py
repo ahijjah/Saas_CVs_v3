@@ -6,12 +6,14 @@ filtering / grouping / reporting only and are NEVER a permission or security
 boundary. Access control remains governed entirely by tenant RLS and
 jobs.client_organization_id.
 
-Core invariants enforced here (application layer, v1):
+Core invariants enforced here (application layer):
   • One campaign belongs to one client only (or is public when client is NULL).
   • A campaign must not mix jobs from different clients.
       - Client campaign  → linked jobs must share the same client_organization_id.
       - Public campaign  → linked jobs must also be public (client_organization_id IS NULL).
   • A campaign's client cannot be changed while it still has linked jobs.
+  • Status transitions follow a defined lifecycle:
+      draft → active → on_hold ↔ active → closed | cancelled
 """
 from __future__ import annotations
 
@@ -19,24 +21,90 @@ from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+CAMPAIGN_STATUSES = frozenset(("draft", "active", "on_hold", "closed", "cancelled"))
+
+# Valid transitions: {current_status: {allowed_next_statuses}}
+VALID_TRANSITIONS: dict[str, frozenset[str]] = {
+    "draft":     frozenset({"active", "cancelled"}),
+    "active":    frozenset({"on_hold", "closed", "cancelled"}),
+    "on_hold":   frozenset({"active", "closed", "cancelled"}),
+    "closed":    frozenset(),   # terminal
+    "cancelled": frozenset(),   # terminal
+}
+
+# Human-readable labels for error messages
+STATUS_LABELS = {
+    "draft":     "Draft",
+    "active":    "Active",
+    "on_hold":   "On Hold",
+    "closed":    "Closed",
+    "cancelled": "Cancelled",
+}
+
+
+def validate_status_transition(current: str, new: str) -> None:
+    """
+    Raise HTTPException 422 if the status transition is not permitted.
+    Silently returns when current == new (idempotent).
+    """
+    if current == new:
+        return
+    allowed = VALID_TRANSITIONS.get(current, frozenset())
+    if new not in allowed:
+        current_label = STATUS_LABELS.get(current, current)
+        new_label = STATUS_LABELS.get(new, new)
+        allowed_labels = [STATUS_LABELS.get(s, s) for s in sorted(allowed)]
+        detail = (
+            f"Cannot transition from '{current_label}' to '{new_label}'. "
+        )
+        if allowed_labels:
+            detail += f"Allowed next statuses: {', '.join(allowed_labels)}."
+        else:
+            detail += f"'{current_label}' is a terminal status and cannot be changed."
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=detail,
+        )
+
+
+# ── Fetch ─────────────────────────────────────────────────────────────────────
 
 async def fetch_campaign(
     db: AsyncSession, campaign_id: str, tenant_id: str
 ) -> dict | None:
-    """Return the campaign row (as a dict) scoped to the tenant, or None."""
+    """Return the full campaign row (as a dict) scoped to the tenant, or None."""
     row = await db.execute(
         text("""
-            SELECT campaign_id, tenant_id, client_organization_id, name,
-                   description, status, created_by, created_at, updated_at
-            FROM job_campaigns
-            WHERE campaign_id = CAST(:cid AS uuid)
-              AND tenant_id   = CAST(:tid AS uuid)
+            SELECT
+                camp.campaign_id,
+                camp.tenant_id,
+                camp.client_organization_id,
+                camp.name,
+                camp.description,
+                camp.status,
+                camp.start_date,
+                camp.end_date,
+                camp.target_hire_count,
+                camp.campaign_owner_id,
+                camp.notes,
+                camp.public_title,
+                camp.is_publicly_listed,
+                camp.created_by,
+                camp.created_at,
+                camp.updated_at
+            FROM job_campaigns camp
+            WHERE camp.campaign_id = CAST(:cid AS uuid)
+              AND camp.tenant_id   = CAST(:tid AS uuid)
         """),
         {"cid": campaign_id, "tid": tenant_id},
     )
     r = row.mappings().first()
     return dict(r) if r else None
 
+
+# ── Client-alignment validation ───────────────────────────────────────────────
 
 async def validate_job_campaign_link(
     db: AsyncSession,
@@ -91,6 +159,8 @@ async def validate_job_campaign_link(
 
     return campaign
 
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
 
 async def campaign_has_linked_jobs(
     db: AsyncSession, campaign_id: str, tenant_id: str

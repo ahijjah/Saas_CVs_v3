@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { AuthState, Campaign, ClientOrganization } from '../types';
+import { AuthState, Campaign, CampaignStatus, ClientOrganization } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface CampaignsProps {
@@ -14,94 +14,131 @@ interface CampaignsProps {
 const T = {
   en: {
     title: 'Campaigns',
-    sub: 'Optionally group related jobs together for easier filtering and reporting. Jobs can always stay standalone.',
+    sub: 'Manage recruitment initiatives. Jobs can always remain standalone — campaigns are an optional organizational layer.',
     addCampaign: 'New Campaign',
-    loading: 'Loading...',
-    none: 'No campaigns yet. Create one to group related jobs — jobs can always remain standalone.',
+    loading: 'Loading…',
+    none: 'No campaigns yet. Create one to group related jobs together.',
     name: 'Campaign Name',
     nameRequired: 'Campaign name is required.',
     description: 'Description',
     client: 'Client',
     clientPublic: 'Public / Shared (no client)',
     clientPublicShort: 'Public / Shared',
-    clientHint: 'A client campaign may only contain jobs for that same client. A public campaign may only contain public jobs.',
+    clientHint: 'A client campaign may only contain jobs for that same client.',
+    startDate: 'Start Date',
+    endDate: 'End Date',
+    targetHire: 'Target Hire Count',
+    targetHirePlaceholder: 'e.g. 10',
+    notes: 'Notes',
+    notesPlaceholder: 'Internal operational notes…',
     status: 'Status',
-    statusActive: 'Active',
-    statusArchived: 'Archived',
+    statuses: {
+      draft: 'Draft',
+      active: 'Active',
+      on_hold: 'On Hold',
+      closed: 'Closed',
+      cancelled: 'Cancelled',
+    } as Record<string, string>,
     jobs: 'Jobs',
     activeJobs: 'Active',
-    viewJobs: 'View jobs',
+    viewDetail: 'Open',
+    viewJobs: 'View Jobs',
     edit: 'Edit',
-    archive: 'Archive',
-    unarchive: 'Reactivate',
-    delete: 'Delete',
     save: 'Save',
     cancel: 'Cancel',
-    saving: 'Saving...',
+    saving: 'Saving…',
     create: 'Create Campaign',
     modalAdd: 'New Campaign',
     modalEdit: 'Edit Campaign',
     namePlaceholder: 'e.g. Summer 2026 Hiring Drive',
     descPlaceholder: 'Optional notes about this campaign…',
-    confirmDelete: 'Delete this campaign? Linked jobs will NOT be deleted — they simply become standalone again.',
     createdOk: 'Campaign created.',
     updatedOk: 'Campaign updated.',
-    deletedOk: 'Campaign deleted. Linked jobs are now standalone.',
     errorLoad: 'Failed to load campaigns.',
     errorSave: 'Save failed.',
-    includeArchived: 'Show archived',
+    showCompleted: 'Show completed / cancelled',
     notLayerNote: 'Campaigns are an organizational layer only — they never change who can access a job.',
+    initialStatus: 'Initial Status',
+    statusDraft: 'Draft (set up before going live)',
+    statusActive: 'Active (live immediately)',
   },
   ar: {
     title: 'الحملات',
-    sub: 'اجمع الوظائف المرتبطة معاً اختيارياً لتسهيل التصفية والتقارير. يمكن أن تبقى الوظائف مستقلة دائماً.',
+    sub: 'إدارة مبادرات التوظيف. يمكن أن تبقى الوظائف مستقلة دائماً — الحملات طبقة تنظيمية اختيارية.',
     addCampaign: 'حملة جديدة',
-    loading: 'جارٍ التحميل...',
-    none: 'لا توجد حملات بعد. أنشئ حملة لتجميع الوظائف المرتبطة — يمكن أن تبقى الوظائف مستقلة دائماً.',
+    loading: 'جارٍ التحميل…',
+    none: 'لا توجد حملات بعد. أنشئ حملة لتجميع الوظائف المرتبطة.',
     name: 'اسم الحملة',
     nameRequired: 'اسم الحملة مطلوب.',
     description: 'الوصف',
     client: 'العميل',
     clientPublic: 'عام / مشترك (بدون عميل)',
     clientPublicShort: 'عام / مشترك',
-    clientHint: 'حملة العميل قد تحتوي فقط على وظائف لنفس العميل. الحملة العامة قد تحتوي فقط على وظائف عامة.',
+    clientHint: 'حملة العميل قد تحتوي فقط على وظائف لنفس العميل.',
+    startDate: 'تاريخ البداية',
+    endDate: 'تاريخ الانتهاء',
+    targetHire: 'عدد التعيينات المستهدفة',
+    targetHirePlaceholder: 'مثال: 10',
+    notes: 'ملاحظات',
+    notesPlaceholder: 'ملاحظات تشغيلية داخلية…',
     status: 'الحالة',
-    statusActive: 'نشطة',
-    statusArchived: 'مؤرشفة',
+    statuses: {
+      draft: 'مسودة',
+      active: 'نشطة',
+      on_hold: 'موقوفة',
+      closed: 'مغلقة',
+      cancelled: 'ملغية',
+    } as Record<string, string>,
     jobs: 'الوظائف',
     activeJobs: 'نشطة',
+    viewDetail: 'فتح',
     viewJobs: 'عرض الوظائف',
     edit: 'تعديل',
-    archive: 'أرشفة',
-    unarchive: 'إعادة تنشيط',
-    delete: 'حذف',
     save: 'حفظ',
     cancel: 'إلغاء',
-    saving: 'جارٍ الحفظ...',
+    saving: 'جارٍ الحفظ…',
     create: 'إنشاء حملة',
     modalAdd: 'حملة جديدة',
     modalEdit: 'تعديل الحملة',
     namePlaceholder: 'مثال: حملة توظيف صيف 2026',
     descPlaceholder: 'ملاحظات اختيارية عن هذه الحملة…',
-    confirmDelete: 'حذف هذه الحملة؟ لن تُحذف الوظائف المرتبطة — ستصبح مستقلة مرة أخرى.',
     createdOk: 'تم إنشاء الحملة.',
     updatedOk: 'تم تحديث الحملة.',
-    deletedOk: 'تم حذف الحملة. الوظائف المرتبطة أصبحت مستقلة الآن.',
     errorLoad: 'فشل تحميل الحملات.',
     errorSave: 'فشل الحفظ.',
-    includeArchived: 'إظهار المؤرشفة',
+    showCompleted: 'إظهار المكتملة / الملغية',
     notLayerNote: 'الحملات طبقة تنظيمية فقط — لا تغيّر أبداً من يمكنه الوصول إلى وظيفة.',
+    initialStatus: 'الحالة الابتدائية',
+    statusDraft: 'مسودة (الإعداد قبل الإطلاق)',
+    statusActive: 'نشطة (مباشرة فوراً)',
   },
+};
+
+// ── Status badge styles ───────────────────────────────────────────────────────
+const STATUS_STYLES: Record<string, string> = {
+  draft:     'bg-slate-100 text-slate-600',
+  active:    'bg-emerald-100 text-emerald-700',
+  on_hold:   'bg-amber-100 text-amber-700',
+  closed:    'bg-blue-100 text-blue-700',
+  cancelled: 'bg-red-100 text-red-600',
 };
 
 interface FormState {
   name: string;
   description: string;
-  client_organization_id: string;  // '' = public/shared
-  status: 'active' | 'archived';
+  client_organization_id: string;
+  start_date: string;
+  end_date: string;
+  target_hire_count: string;
+  notes: string;
+  initial_status: CampaignStatus;
 }
 
-const BLANK: FormState = { name: '', description: '', client_organization_id: '', status: 'active' };
+const BLANK: FormState = {
+  name: '', description: '', client_organization_id: '',
+  start_date: '', end_date: '', target_hire_count: '', notes: '',
+  initial_status: 'draft',
+};
 
 export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
   const { lang } = useLanguage();
@@ -111,11 +148,13 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
 
   const tenantType = auth.user?.tenant_type ?? 'organization';
   const isAgency = tenantType === 'agency' || tenantType === 'individual_recruiter';
+  const role = (auth.user?.role || '').toLowerCase();
+  const canWrite = ['admin', 'hr_manager', 'super_admin'].includes(role);
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [clientOrgs, setClientOrgs] = useState<ClientOrganization[]>([]);
   const [loading, setLoading] = useState(true);
-  const [includeArchived, setIncludeArchived] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -127,7 +166,7 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
     setLoading(true);
     try {
       const params: Record<string, string> = {};
-      if (includeArchived) params.include_archived = 'true';
+      if (showCompleted) params.show_completed = 'true';
       const [campData, clientData] = await Promise.all([
         apiService.get(WEBHOOK_CONFIG.CAMPAIGNS_URL, params, token),
         isAgency
@@ -144,7 +183,7 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, includeArchived, isAgency, addToast, t.errorLoad]);
+  }, [token, showCompleted, isAgency, addToast, t.errorLoad]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -155,7 +194,11 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
       name: c.name,
       description: c.description || '',
       client_organization_id: c.client_organization_id || '',
-      status: c.status,
+      start_date: c.start_date || '',
+      end_date: c.end_date || '',
+      target_hire_count: c.target_hire_count != null ? String(c.target_hire_count) : '',
+      notes: c.notes || '',
+      initial_status: c.status,
     });
     setShowForm(true);
   };
@@ -165,20 +208,29 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
     const name = form.name.trim();
     if (!name) { addToast(t.nameRequired, 'error'); return; }
     setSaving(true);
+    const target = form.target_hire_count.trim() ? parseInt(form.target_hire_count, 10) : null;
     try {
       if (editingId) {
         await apiService.patch(`${WEBHOOK_CONFIG.CAMPAIGNS_URL}/${editingId}`, {
           name,
-          description: form.description.trim() || null,
-          status: form.status,
+          description:       form.description.trim() || null,
           client_organization_id: form.client_organization_id || null,
+          start_date:        form.start_date || null,
+          end_date:          form.end_date || null,
+          target_hire_count: target && target > 0 ? target : null,
+          notes:             form.notes.trim() || null,
         }, token!);
         addToast(t.updatedOk, 'success');
       } else {
         await apiService.post(WEBHOOK_CONFIG.CAMPAIGNS_URL, {
           name,
-          description: form.description.trim() || null,
+          description:          form.description.trim() || null,
           client_organization_id: form.client_organization_id || null,
+          status:               form.initial_status,
+          start_date:           form.start_date || null,
+          end_date:             form.end_date || null,
+          target_hire_count:    target && target > 0 ? target : null,
+          notes:                form.notes.trim() || null,
         }, token!);
         addToast(t.createdOk, 'success');
       }
@@ -193,29 +245,6 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
     }
   };
 
-  const toggleArchive = async (c: Campaign) => {
-    try {
-      await apiService.patch(`${WEBHOOK_CONFIG.CAMPAIGNS_URL}/${c.campaign_id}`, {
-        status: c.status === 'active' ? 'archived' : 'active',
-      }, token!);
-      addToast(t.updatedOk, 'success');
-      await load();
-    } catch (err: any) {
-      addToast(err.message || t.errorSave, 'error');
-    }
-  };
-
-  const remove = async (c: Campaign) => {
-    if (!window.confirm(t.confirmDelete)) return;
-    try {
-      await apiService.delete(`${WEBHOOK_CONFIG.CAMPAIGNS_URL}/${c.campaign_id}`, token!);
-      addToast(t.deletedOk, 'success');
-      await load();
-    } catch (err: any) {
-      addToast(err.message || t.errorSave, 'error');
-    }
-  };
-
   const clientLabel = (c: Campaign) =>
     c.client_org_name || (c.client_organization_id ? '—' : t.clientPublicShort);
 
@@ -227,18 +256,20 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
           <h1 className="text-2xl font-bold text-slate-900">{t.title}</h1>
           <p className="mt-1 text-sm text-slate-500 max-w-2xl">{t.sub}</p>
         </div>
-        <button
-          onClick={openAdd}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-          </svg>
-          {t.addCampaign}
-        </button>
+        {canWrite && (
+          <button
+            onClick={openAdd}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            {t.addCampaign}
+          </button>
+        )}
       </div>
 
-      {/* Informational note — campaigns are not a security layer */}
+      {/* Informational note */}
       <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 flex gap-3 items-start">
         <svg className="w-4 h-4 text-sky-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -246,15 +277,15 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
         <p className="text-sm text-sky-800">{t.notLayerNote}</p>
       </div>
 
-      {/* Archived toggle */}
+      {/* Show-completed toggle */}
       <label className="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
         <input
           type="checkbox"
-          checked={includeArchived}
-          onChange={e => setIncludeArchived(e.target.checked)}
+          checked={showCompleted}
+          onChange={e => setShowCompleted(e.target.checked)}
           className="rounded border-slate-300 text-indigo-600"
         />
-        {t.includeArchived}
+        {t.showCompleted}
       </label>
 
       {/* Body */}
@@ -269,7 +300,10 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {campaigns.map(c => (
-            <div key={c.campaign_id} className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col gap-3">
+            <div
+              key={c.campaign_id}
+              className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col gap-3 hover:border-slate-300 transition-colors"
+            >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h3 className="font-semibold text-slate-900 truncate">{c.name}</h3>
@@ -279,15 +313,24 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
                     {clientLabel(c)}
                   </span>
                 </div>
-                <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                  c.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                }`}>
-                  {c.status === 'active' ? t.statusActive : t.statusArchived}
+                <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[c.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                  {t.statuses[c.status] ?? c.status}
                 </span>
               </div>
 
               {c.description && (
                 <p className="text-sm text-slate-500 line-clamp-2">{c.description}</p>
+              )}
+
+              {(c.start_date || c.end_date || c.target_hire_count != null) && (
+                <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                  {(c.start_date || c.end_date) && (
+                    <span>{c.start_date || '—'} → {c.end_date || '—'}</span>
+                  )}
+                  {c.target_hire_count != null && (
+                    <span>Target: <strong className="text-slate-600">{c.target_hire_count}</strong></span>
+                  )}
+                </div>
               )}
 
               <div className="flex items-center gap-4 text-xs text-slate-500">
@@ -297,29 +340,25 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
 
               <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 mt-auto">
                 <button
-                  onClick={() => navigate(`/jobs?campaign=${c.campaign_id}`)}
+                  onClick={() => navigate(`/campaigns/${c.campaign_id}`)}
                   className="px-3 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-medium hover:bg-indigo-100 transition-colors"
+                >
+                  {t.viewDetail}
+                </button>
+                <button
+                  onClick={() => navigate(`/jobs?campaign=${c.campaign_id}`)}
+                  className="px-3 py-1 rounded-lg border border-slate-200 text-slate-600 text-xs font-medium hover:bg-slate-50 transition-colors"
                 >
                   {t.viewJobs}
                 </button>
-                <button
-                  onClick={() => openEdit(c)}
-                  className="px-3 py-1 rounded-lg border border-slate-200 text-slate-600 text-xs font-medium hover:bg-slate-50 transition-colors"
-                >
-                  {t.edit}
-                </button>
-                <button
-                  onClick={() => toggleArchive(c)}
-                  className="px-3 py-1 rounded-lg border border-slate-200 text-slate-600 text-xs font-medium hover:bg-slate-50 transition-colors"
-                >
-                  {c.status === 'active' ? t.archive : t.unarchive}
-                </button>
-                <button
-                  onClick={() => remove(c)}
-                  className="px-3 py-1 rounded-lg border border-red-200 text-red-600 text-xs font-medium hover:bg-red-50 transition-colors"
-                >
-                  {t.delete}
-                </button>
+                {canWrite && (
+                  <button
+                    onClick={() => openEdit(c)}
+                    className="px-3 py-1 rounded-lg border border-slate-200 text-slate-600 text-xs font-medium hover:bg-slate-50 transition-colors"
+                  >
+                    {t.edit}
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -340,7 +379,8 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
                 </button>
               </div>
 
-              <div className="p-6 space-y-4">
+              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                {/* Name */}
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">{t.name} <span className="text-red-500">*</span></label>
                   <input
@@ -352,10 +392,11 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
                   />
                 </div>
 
+                {/* Description */}
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">{t.description}</label>
                   <textarea
-                    rows={3}
+                    rows={2}
                     value={form.description}
                     onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
                     placeholder={t.descPlaceholder}
@@ -363,7 +404,7 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
                   />
                 </div>
 
-                {/* Client selector — agency tenants only. Organisation tenants are always public. */}
+                {/* Client — agency only */}
                 {isAgency && (
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t.client}</label>
@@ -383,17 +424,64 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
                   </div>
                 )}
 
-                {/* Status — edit only */}
-                {editingId && (
+                {/* Dates */}
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">{t.status}</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t.startDate}</label>
+                    <input
+                      type="date"
+                      value={form.start_date}
+                      onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t.endDate}</label>
+                    <input
+                      type="date"
+                      value={form.end_date}
+                      onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+                  </div>
+                </div>
+
+                {/* Target hire count */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">{t.targetHire}</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={form.target_hire_count}
+                    onChange={e => setForm(p => ({ ...p, target_hire_count: e.target.value }))}
+                    placeholder={t.targetHirePlaceholder}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">{t.notes}</label>
+                  <textarea
+                    rows={2}
+                    value={form.notes}
+                    onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+                    placeholder={t.notesPlaceholder}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+                  />
+                </div>
+
+                {/* Initial status — create only */}
+                {!editingId && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t.initialStatus}</label>
                     <select
-                      value={form.status}
-                      onChange={e => setForm(p => ({ ...p, status: e.target.value as 'active' | 'archived' }))}
+                      value={form.initial_status}
+                      onChange={e => setForm(p => ({ ...p, initial_status: e.target.value as CampaignStatus }))}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
                     >
+                      <option value="draft">{t.statusDraft}</option>
                       <option value="active">{t.statusActive}</option>
-                      <option value="archived">{t.statusArchived}</option>
                     </select>
                   </div>
                 )}

@@ -118,6 +118,8 @@ export interface ClientOrganization {
   assigned_users_count?: number;
 }
 
+export type CampaignStatus = 'draft' | 'active' | 'on_hold' | 'closed' | 'cancelled';
+
 export interface Campaign {
   campaign_id: string;
   tenant_id: string;
@@ -125,12 +127,26 @@ export interface Campaign {
   client_org_name?: string | null;
   name: string;
   description?: string | null;
-  status: 'active' | 'archived';
+  status: CampaignStatus;
+  start_date?: string | null;
+  end_date?: string | null;
+  target_hire_count?: number | null;
+  campaign_owner_id?: string | null;
+  campaign_owner_name?: string | null;
+  notes?: string | null;
+  public_title?: string | null;
+  is_publicly_listed?: boolean;
   created_by?: string | null;
   created_at?: string;
   updated_at?: string;
   jobs_total?: number;
   jobs_active?: number;
+  // detail-level aggregate stats (only in GET /campaigns/:id response)
+  applications_total?: number;
+  applications_qualified?: number;
+  applications_partial?: number;
+  applications_rejected?: number;
+  applications_scored?: number;
 }
 
 export interface CampaignJobRef {

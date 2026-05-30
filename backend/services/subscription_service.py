@@ -66,11 +66,12 @@ async def _count_rolling_cvs(tenant_id: str, db: AsyncSession) -> int:
 
 
 async def _count_active_campaigns(tenant_id: str, db: AsyncSession) -> int:
-    """Count concurrently active campaigns (status = 'Active' only)."""
+    """Count non-terminal campaigns for this tenant (draft, active, on_hold)."""
     row = await db.execute(
         text("""
-            SELECT COUNT(*) FROM jobs
-            WHERE tenant_id = CAST(:tid AS uuid) AND status = 'Active'
+            SELECT COUNT(*) FROM cv_analyzer.job_campaigns
+            WHERE tenant_id = CAST(:tid AS uuid)
+              AND status IN ('draft', 'active', 'on_hold')
         """),
         {"tid": tenant_id},
     )

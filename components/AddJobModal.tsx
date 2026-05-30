@@ -6,12 +6,21 @@ import { User, ClientOrganization, Campaign, KnockoutQuestion, PassingCriteria }
 import { useLanguage } from '../context/LanguageContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
+interface PrefilledCampaign {
+  campaign_id: string;
+  name: string;
+  client_organization_id: string | null;
+  client_org_name: string | null;
+}
+
 interface AddJobModalProps {
   onClose: () => void;
   onSuccess: (jobId: string) => void;
   token: string;
   user: User | null;
   addToast: (msg: string, type: 'success' | 'error') => void;
+  /** When set, locks campaign and client fields to the given campaign context. */
+  prefilledCampaign?: PrefilledCampaign;
 }
 
 interface FormData {
@@ -232,7 +241,7 @@ function DescriptionQualityIndicator({
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
-export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, token, user, addToast }) => {
+export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, token, user, addToast, prefilledCampaign }) => {
   const { lang } = useLanguage();
   const t = T[lang];
 
@@ -254,10 +263,18 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   };
   const [knockoutQuestions, setKnockoutQuestions] = useState<LocalQuestion[]>([]);
 
+  // Derive initial client/campaign from prefilledCampaign prop if provided
+  const initClientOrgId = prefilledCampaign
+    ? (prefilledCampaign.client_organization_id ?? '__general__')
+    : '';
+  const initClient = prefilledCampaign
+    ? (prefilledCampaign.client_org_name ?? '')
+    : '';
+
   const [formData, setFormData] = useState<FormData>({
     job_title: '',
     job_description: '',
-    client: '',
+    client: initClient,
     job_location: '',
     job_type: '',
     work_mode: '',
@@ -265,8 +282,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     job_duration: '',
     application_deadline: '',
     vacancies_count: '',
-    client_organization_id: '',
-    campaign_id: '',
+    client_organization_id: initClientOrgId,
+    campaign_id: prefilledCampaign?.campaign_id ?? '',
   });
 
   useEffect(() => {
@@ -281,13 +298,14 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       .finally(() => setClientOrgsLoading(false));
   }, [token, isAgencyTenant]);
 
-  // Load active campaigns for the optional grouping selector (all tenant types).
+  // Load linkable campaigns (draft + active) for the grouping selector.
   useEffect(() => {
     if (!token) return;
     apiService.get(WEBHOOK_CONFIG.CAMPAIGNS_URL, {}, token)
       .then((data: any) => {
         const list: Campaign[] = data?.campaigns ?? [];
-        setCampaigns(list.filter(c => c.status === 'active'));
+        // draft and active campaigns can receive new jobs; on_hold/closed/cancelled cannot
+        setCampaigns(list.filter(c => c.status === 'active' || c.status === 'draft'));
       })
       .catch(() => {});
   }, [token]);
@@ -475,7 +493,16 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               {isAgencyTenant ? (
                 <div className="space-y-1.5">
                   <label className={labelCls}>{t.clientOrg} <span className="text-error">*</span></label>
-                  {clientOrgsLoading ? (
+                  {prefilledCampaign ? (
+                    /* Client is locked to the campaign's client — show as read-only badge */
+                    <div className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-700 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                      <span>{prefilledCampaign.client_org_name || t.clientOrgGeneral}</span>
+                      <span className="ml-auto text-[11px] text-slate-400">{(t as any).campaignHint}</span>
+                    </div>
+                  ) : clientOrgsLoading ? (
                     <div className="w-full px-4 py-2.5 border border-border rounded-lg text-sm text-textMuted bg-slate-50">Loading clients…</div>
                   ) : (
                     <select value={formData.client_organization_id} onChange={handleClientOrgChange} className={selectCls}>
@@ -502,8 +529,21 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               )}
             </div>
 
-            {/* Optional campaign grouping */}
-            {eligibleCampaigns.length > 0 && (
+            {/* Campaign grouping — locked badge when coming from Campaign Detail, selector otherwise */}
+            {prefilledCampaign ? (
+              <div className="space-y-1.5">
+                <label className={labelCls}>{(t as any).campaign}</label>
+                <div className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-700 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-violet-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                  </svg>
+                  <span className="font-medium text-violet-700">{prefilledCampaign.name}</span>
+                  <svg className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+              </div>
+            ) : eligibleCampaigns.length > 0 ? (
               <div className="space-y-1.5">
                 <label className={labelCls}>{(t as any).campaign}</label>
                 <select
@@ -519,7 +559,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 </select>
                 <p className="text-[11px] text-textMuted">{(t as any).campaignHint}</p>
               </div>
-            )}
+            ) : null}
 
             {/* Row 2: Job Type + Work Mode + Experience Level */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
