@@ -414,13 +414,13 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [notesChanged, setNotesChanged] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
 
-  if (!candidate) return null;
-
-  // Initialize notes text when candidate changes
+  // Must come before any early return — Rules of Hooks
   useEffect(() => {
-    setNotesText(candidate.recruiter_notes || '');
+    setNotesText(candidate?.recruiter_notes || '');
     setNotesChanged(false);
-  }, [candidate.application_id]);
+  }, [candidate?.application_id]);
+
+  if (!candidate) return null;
 
   const handleNotesChange = (value: string) => {
     setNotesText(value);
@@ -1170,8 +1170,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                     </td>
 
                     {/* Actions: workflow move dropdown + view link */}
-                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center gap-2">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                         <WorkflowActionMenu
                           applicationId={c.application_id}
                           currentStatus={c.workflow_status}
