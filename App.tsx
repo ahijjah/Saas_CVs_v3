@@ -334,12 +334,6 @@ const AppInner: React.FC = () => {
             }
           />
 
-          {/* /dashboard — smart redirect */}
-          <Route
-            path="/dashboard"
-            element={<Navigate to={defaultHome} replace />}
-          />
-
           {/* All remaining authenticated routes gated behind MustChangePasswordGuard */}
           <Route element={<MustChangePasswordGuard mustChange={!!auth.user?.must_change_password} />}>
 
