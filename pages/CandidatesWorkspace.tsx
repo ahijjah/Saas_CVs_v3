@@ -543,23 +543,38 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           {candidate.processing_status === 'ai_scored' && (
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-slate-900">AI Evaluation</h3>
-              {candidate.strengths && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Strengths</label>
-                  <p className="text-sm text-slate-700 leading-relaxed">{candidate.strengths}</p>
-                </div>
-              )}
-              {candidate.gaps && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Gaps</label>
-                  <p className="text-sm text-slate-700 leading-relaxed">{candidate.gaps}</p>
-                </div>
-              )}
-              {candidate.evaluation_notes && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
-                  <p className="text-sm text-slate-700 leading-relaxed">{candidate.evaluation_notes}</p>
-                </div>
+              {(candidate.strengths || candidate.gaps || candidate.evaluation_notes) ? (
+                <>
+                  {candidate.strengths && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Strengths</label>
+                      <p className="text-sm text-slate-700 leading-relaxed">{candidate.strengths}</p>
+                    </div>
+                  )}
+                  {candidate.gaps && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Gaps</label>
+                      <p className="text-sm text-slate-700 leading-relaxed">{candidate.gaps}</p>
+                    </div>
+                  )}
+                  {candidate.evaluation_notes && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+                      <p className="text-sm text-slate-700 leading-relaxed">{candidate.evaluation_notes}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-500 italic">
+                  No detailed evaluation available.{' '}
+                  <a
+                    href={`/applications?job_id=${encodeURIComponent(candidate.job_id)}&app_id=${encodeURIComponent(candidate.application_id)}`}
+                    className="text-indigo-600 hover:text-indigo-800 font-medium"
+                  >
+                    Open full application
+                  </a>
+                  {' '}to view AI evaluation details.
+                </p>
               )}
             </div>
           )}
@@ -601,10 +616,12 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 <textarea
                   value={notesText}
                   onChange={e => handleNotesChange(e.target.value)}
-                  placeholder="Add interview observations, concerns, follow-up reminders, or internal context..."
+                  placeholder="Add recruiter notes..."
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-transparent resize-vertical min-h-[80px]"
                 />
-                {notesText.length > 0 && (
+                {notesText.length === 0 ? (
+                  <p className="mt-2 text-xs text-slate-500 italic">No notes yet. Add internal recruiter notes for this candidate.</p>
+                ) : (
                   <p className="mt-1 text-xs text-slate-400">{notesText.length} characters</p>
                 )}
               </div>
