@@ -777,6 +777,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 <WorkflowActionMenu
                   applicationId={candidate.application_id}
                   currentStatus={candidate.workflow_status}
+                  candidateName={candidate.candidate_name}
                   processingStatus={candidate.processing_status}
                   isUpdating={isUpdating}
                   lang={lang}
@@ -1468,6 +1469,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                         <WorkflowActionMenu
                           applicationId={c.application_id}
                           currentStatus={c.workflow_status}
+                          candidateName={c.candidate_name}
                           processingStatus={c.processing_status}
                           isUpdating={isUpdating}
                           lang={lang}

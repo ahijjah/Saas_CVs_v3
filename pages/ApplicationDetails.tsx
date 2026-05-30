@@ -1648,6 +1648,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             <WorkflowActionMenu
               applicationId={data.application_id}
               currentStatus={currentWorkflowStatus}
+              candidateName={data.candidate_name}
               processingStatus={data.processing_status ?? 'ai_scored'}
               isUpdating={false}
               lang={lang}

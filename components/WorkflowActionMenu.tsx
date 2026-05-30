@@ -89,6 +89,7 @@ function getNoteRequirement(toStatus: WorkflowStatus, current: WorkflowStatus): 
 export interface WorkflowActionMenuProps {
   applicationId: string;
   currentStatus: WorkflowStatus;
+  candidateName?: string;
   /**
    * Only 'ai_scored' applications are recruiter-actionable.
    * Any other value renders a "System Managed" badge.
@@ -122,6 +123,7 @@ export interface WorkflowActionMenuProps {
 export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   applicationId,
   currentStatus,
+  candidateName,
   processingStatus,
   isUpdating,
   lang = 'en',
@@ -135,6 +137,7 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   const [pendingIsAdvanced, setPendingIsAdvanced] = useState(false);
   const [noteRequirement, setNoteRequirement] = useState<NoteRequirement>('optional');
   const [noteText, setNoteText] = useState('');
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
 
@@ -221,10 +224,32 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   const confirmPending = () => {
     if (!pendingStatus) return;
     if (noteRequirement === 'required' && !noteText.trim()) return;
+
+    // For advanced moves, show confirmation modal first
+    if (pendingIsAdvanced) {
+      setShowConfirmationModal(true);
+      return;
+    }
+
+    // For normal moves, execute immediately
     setOpen(false);
     setAdvancedOpen(false);
-    onTransition(applicationId, pendingStatus, noteText.trim() || undefined, pendingIsAdvanced);
+    onTransition(applicationId, pendingStatus, noteText.trim() || undefined, false);
     resetPending();
+  };
+
+  const confirmAdvancedMove = () => {
+    if (!pendingStatus) return;
+    setShowConfirmationModal(false);
+    setOpen(false);
+    setAdvancedOpen(false);
+    onTransition(applicationId, pendingStatus, noteText.trim() || undefined, true);
+    resetPending();
+  };
+
+  const cancelAdvancedMove = () => {
+    setShowConfirmationModal(false);
+    // Keep note text and pending status so user can edit
   };
 
   const cancelPending = () => {
@@ -378,6 +403,98 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Advanced Move Confirmation Modal ── */}
+      {showConfirmationModal && pendingStatus && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-amber-50 to-orange-50">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                Advanced Workflow Move
+              </h2>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-4 space-y-4">
+              {/* Warning message */}
+              <p className="text-sm text-slate-700">
+                This action bypasses the normal recruitment workflow. This should be used only for exceptional workflow corrections.
+              </p>
+
+              {/* Candidate info */}
+              {candidateName && (
+                <div className="rounded-lg bg-slate-50 p-3 text-sm">
+                  <p className="text-slate-600">
+                    <span className="font-semibold">Candidate:</span> {candidateName}
+                  </p>
+                </div>
+              )}
+
+              {/* Status transition */}
+              <div className="grid grid-cols-3 gap-2 items-center text-sm">
+                <div>
+                  <p className="text-xs font-semibold text-slate-600 uppercase mb-1">From</p>
+                  <div className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${WORKFLOW_STATUS_STYLES[currentStatus] ?? 'bg-slate-100 text-slate-700'}`}>
+                    {wfLabels[currentStatus]}
+                  </div>
+                </div>
+                <div className="flex justify-center">
+                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-600 uppercase mb-1">To</p>
+                  <div className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${WORKFLOW_STATUS_STYLES[pendingStatus] ?? 'bg-slate-100 text-slate-700'}`}>
+                    {wfLabels[pendingStatus]}
+                  </div>
+                </div>
+              </div>
+
+              {/* Reason */}
+              {noteText && (
+                <div className="rounded-lg bg-blue-50 p-3 text-sm border border-blue-200">
+                  <p className="text-xs font-semibold text-blue-700 mb-1">Reason:</p>
+                  <p className="text-blue-800">{noteText}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 py-4 border-t border-slate-200 flex gap-3">
+              <button
+                onClick={cancelAdvancedMove}
+                className="flex-1 py-2 rounded-lg text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAdvancedMove}
+                disabled={isUpdating}
+                className="flex-1 py-2 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isUpdating ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                    Confirming...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Confirm Advanced Move
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
