@@ -14,7 +14,7 @@ interface LayoutProps {
 
 const T = {
   en: {
-    jobs: 'Jobs', campaigns: 'Campaigns', settings: 'Settings', planUsage: 'Plan & Usage',
+    dashboard: 'Dashboard', jobs: 'Jobs', campaigns: 'Campaigns', settings: 'Settings', planUsage: 'Plan & Usage',
     clientOrgs: 'Client Organizations', clients: 'Clients',
     sysAdmin: 'System Admin', tenantMgmt: 'Tenant Management',
     platformControl: 'Platform Control', workspaceSection: 'Workspace', accountSection: 'Account',
@@ -46,7 +46,7 @@ const T = {
     } as Record<string, string>,
   },
   ar: {
-    jobs: 'الوظائف', campaigns: 'الحملات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
+    dashboard: 'لوحة التحكم', jobs: 'الوظائف', campaigns: 'الحملات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
     clientOrgs: 'منظمات العملاء', clients: 'العملاء',
     sysAdmin: 'مشرف النظام', tenantMgmt: 'إدارة المستأجر',
     platformControl: 'التحكم بالمنصة', workspaceSection: 'مساحة العمل', accountSection: 'الحساب',
@@ -93,6 +93,7 @@ function pathnameToMenuId(pathname: string): string {
   if (pathname.startsWith('/admin/ai-models'))          return 'admin-ai-models';
   if (pathname === '/plan-usage')          return 'plan-usage';
   if (pathname === '/client-organizations') return 'client-organizations';
+  if (pathname === '/dashboard')           return 'dashboard';
   if (pathname.startsWith('/campaigns'))   return 'campaigns';
   if (pathname === '/settings')            return 'settings';
   // /jobs, /jobs/:id, /applications all highlight the Jobs menu item
@@ -102,6 +103,7 @@ function pathnameToMenuId(pathname: string): string {
 /** Map sidebar menu item ID → route URL. */
 function menuIdToRoute(id: string): string {
   const map: Record<string, string> = {
+    'dashboard':                  '/dashboard',
     'jobs':                       '/jobs',
     'campaigns':                  '/campaigns',
     'plan-usage':                 '/plan-usage',
@@ -118,7 +120,7 @@ function menuIdToRoute(id: string): string {
     'admin-ai-usage':             '/admin/ai-usage',
     'admin-ai-models':            '/admin/ai-models',
   };
-  return map[id] || '/jobs';
+  return map[id] || '/dashboard';
 }
 
 /** Derive a human-readable page title from the current pathname + search string. */
@@ -180,7 +182,18 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
   const workspaceMenuItems = (() => {
     const items = [];
 
-    // For agency/freelancer: Clients first (if present)
+    // Dashboard (always first in workspace)
+    items.push({
+      id: 'dashboard',
+      label: t.dashboard,
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+    });
+
+    // For agency/freelancer: Clients next (if present)
     if (isAgencyOrFreelancer) {
       items.push({
         id: 'client-organizations',
