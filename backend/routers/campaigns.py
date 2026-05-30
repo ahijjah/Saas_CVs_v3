@@ -738,16 +738,16 @@ async def get_campaign_candidates(
             SELECT
                 a.application_id,
                 a.job_id,
-                a.email,
-                a.name,
+                a.candidate_name,
                 a.workflow_status,
-                a.ai_score,
-                a.updated_at,
-                j.title AS job_title
+                a.applied_at,
+                s.final_score AS ai_score,
+                j.title       AS job_title
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
+            LEFT JOIN application_scores s ON s.application_id = a.application_id
             {where_sql}
-            ORDER BY a.updated_at DESC
+            ORDER BY a.applied_at DESC
         """),
         params,
     )
@@ -755,14 +755,13 @@ async def get_campaign_candidates(
     candidates = []
     for r in rows.mappings():
         candidates.append({
-            "application_id": str(r["application_id"]),
-            "job_id":         str(r["job_id"]),
-            "name":           r["name"],
-            "email":          r["email"],
-            "job_title":      r["job_title"],
-            "workflow_status": r["workflow_status"],
-            "ai_score":       float(r["ai_score"]) if r["ai_score"] else None,
-            "updated_at":     r["updated_at"].isoformat() if r["updated_at"] else None,
+            "application_id":  str(r["application_id"]),
+            "job_id":          str(r["job_id"]),
+            "candidate_name":  r["candidate_name"],
+            "job_title":       r["job_title"],
+            "workflow_status": r["workflow_status"] or "awaiting_review",
+            "ai_score":        float(r["ai_score"]) if r["ai_score"] is not None else None,
+            "applied_at":      r["applied_at"].isoformat() if r["applied_at"] else None,
         })
 
     return {"candidates": candidates, "total": len(candidates)}

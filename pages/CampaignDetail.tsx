@@ -788,13 +788,13 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Job</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Score</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Updated</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Applied</th>
                 </tr>
               </thead>
               <tbody>
                 {candidates.map(cand => (
                   <tr key={cand.application_id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-3 text-slate-900 font-medium">{cand.name}</td>
+                    <td className="px-6 py-3 text-slate-900 font-medium">{cand.candidate_name}</td>
                     <td className="px-6 py-3 text-slate-700">{cand.job_title}</td>
                     <td className="px-6 py-3">
                       <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
@@ -814,7 +814,7 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
                     </td>
                     <td className="px-6 py-3 text-slate-700">{cand.ai_score != null ? `${(cand.ai_score * 100).toFixed(0)}%` : '—'}</td>
                     <td className="px-6 py-3 text-slate-500 text-xs">
-                      {cand.updated_at ? new Date(cand.updated_at).toLocaleDateString() : '—'}
+                      {cand.applied_at ? new Date(cand.applied_at).toLocaleDateString() : '—'}
                     </td>
                   </tr>
                 ))}
