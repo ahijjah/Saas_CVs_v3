@@ -796,7 +796,7 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
                   <tr key={cand.application_id} className="hover:bg-slate-50 transition-colors cursor-pointer">
                     <td className="px-6 py-3 text-slate-900 font-medium">
                       <button
-                        onClick={() => navigate(`/applications?app_id=${cand.application_id}`)}
+                        onClick={() => navigate(`/applications?job_id=${cand.job_id}&app_id=${cand.application_id}`)}
                         className="text-indigo-600 hover:text-indigo-800 hover:underline transition-colors text-left"
                       >
                         {cand.candidate_name}
