@@ -387,6 +387,158 @@ const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   );
 };
 
+// ── Timeline Events ───────────────────────────────────────────────────────
+
+interface TimelineEvent {
+  id: string;
+  type: 'application_submitted' | 'ai_scored' | 'workflow_transition' | 'processing_failed' | 'security_blocked' | 'duplicate_detected';
+  timestamp: string; // ISO string
+  actor: string;
+  action: string;
+  detail?: string;
+}
+
+function buildTimeline(candidate: Candidate, detail: AppDetail | null): TimelineEvent[] {
+  const events: TimelineEvent[] = [];
+
+  // Workflow history events (most important, recruiters actions)
+  if (detail?.workflow_history && Array.isArray(detail.workflow_history)) {
+    for (const h of detail.workflow_history) {
+      if (h.created_at) {
+        events.push({
+          id: h.history_id,
+          type: 'workflow_transition',
+          timestamp: h.created_at,
+          actor: h.changed_by_name || 'System',
+          action: `Moved candidate to ${h.to_status || 'unknown'}`,
+          detail: h.note || undefined,
+        });
+      }
+    }
+  }
+
+  // System events from application record
+  if (detail?.applied_at) {
+    events.push({
+      id: `submitted-${detail.applied_at}`,
+      type: 'application_submitted',
+      timestamp: detail.applied_at,
+      actor: 'System',
+      action: 'Application submitted',
+    });
+  }
+
+  if (detail?.scored_at) {
+    events.push({
+      id: `scored-${detail.scored_at}`,
+      type: 'ai_scored',
+      timestamp: detail.scored_at,
+      actor: 'AI',
+      action: 'AI evaluation completed',
+    });
+  }
+
+  // Processing failures
+  if (detail?.processing_status === 'failed' && detail?.stopped_reason) {
+    // Use updated_at or scored_at as timestamp for failure
+    const ts = candidate.updated_at || detail.scored_at || new Date().toISOString();
+    events.push({
+      id: `failed-${ts}`,
+      type: 'processing_failed',
+      timestamp: ts,
+      actor: 'System',
+      action: 'Processing failed',
+      detail: detail.stopped_reason,
+    });
+  }
+
+  if (detail?.processing_status === 'security_blocked' && detail?.security_check_status) {
+    const ts = candidate.updated_at || detail.scored_at || new Date().toISOString();
+    events.push({
+      id: `security-${ts}`,
+      type: 'security_blocked',
+      timestamp: ts,
+      actor: 'System',
+      action: 'Security block detected',
+      detail: 'This application was blocked due to security concerns.',
+    });
+  }
+
+  // Duplicate detection
+  if (detail?.duplicate_status && detail.duplicate_status !== 'not_duplicate') {
+    const ts = candidate.updated_at || detail.applied_at || new Date().toISOString();
+    events.push({
+      id: `duplicate-${ts}`,
+      type: 'duplicate_detected',
+      timestamp: ts,
+      actor: 'System',
+      action: 'Duplicate application detected',
+      detail: `Status: ${detail.duplicate_status}`,
+    });
+  }
+
+  // Sort by timestamp, newest first
+  return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
+
+function timelineEventColor(type: TimelineEvent['type']): string {
+  switch (type) {
+    case 'workflow_transition':
+      return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+    case 'ai_scored':
+      return 'bg-green-100 text-green-700 border-green-200';
+    case 'application_submitted':
+      return 'bg-blue-100 text-blue-700 border-blue-200';
+    case 'processing_failed':
+      return 'bg-red-100 text-red-700 border-red-200';
+    case 'security_blocked':
+      return 'bg-red-100 text-red-700 border-red-200';
+    case 'duplicate_detected':
+      return 'bg-amber-100 text-amber-700 border-amber-200';
+    default:
+      return 'bg-slate-100 text-slate-700 border-slate-200';
+  }
+}
+
+function timelineEventDotColor(type: TimelineEvent['type']): string {
+  switch (type) {
+    case 'workflow_transition':
+      return 'bg-indigo-400';
+    case 'ai_scored':
+      return 'bg-green-500';
+    case 'application_submitted':
+      return 'bg-blue-400';
+    case 'processing_failed':
+      return 'bg-red-500';
+    case 'security_blocked':
+      return 'bg-red-500';
+    case 'duplicate_detected':
+      return 'bg-amber-500';
+    default:
+      return 'bg-slate-400';
+  }
+}
+
+function formatTimelineTimestamp(iso: string): string {
+  try {
+    const date = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+  } catch {
+    return iso;
+  }
+}
+
 // ── CandidateDetailDrawer ───────────────────────────────────────────────────
 // Right-side slide panel showing detailed candidate information.
 // Opens when user clicks a candidate row. Reuses WorkflowActionMenu for transitions.
@@ -407,6 +559,20 @@ interface AppDetail {
   decision?: string;
   analysis?: AppAnalysis;
   recruiter_notes?: string | null;
+  workflow_history?: Array<{
+    history_id: string;
+    from_status?: string;
+    to_status: string;
+    note?: string;
+    changed_by_name?: string;
+    created_at?: string;
+  }>;
+  applied_at?: string;
+  scored_at?: string;
+  processing_status?: string;
+  stopped_reason?: string;
+  duplicate_status?: string;
+  security_check_status?: string;
 }
 
 interface CandidateDetailDrawerProps {
@@ -734,6 +900,63 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   <p className="mt-1 text-xs text-slate-400">{notesText.length} characters</p>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="h-px bg-slate-200" />
+
+          {/* Activity Timeline */}
+          {candidate.processing_status === 'ai_scored' && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900">Activity Timeline</h3>
+
+              {detailLoading && (
+                <div className="space-y-2">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="flex gap-3 opacity-50 animate-pulse">
+                      <div className="w-2 h-2 rounded-full bg-slate-300 flex-shrink-0 mt-1.5" />
+                      <div className="flex-1 space-y-1">
+                        <div className="h-3 bg-slate-200 rounded w-3/4" />
+                        <div className="h-2 bg-slate-200 rounded w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!detailLoading && detail && (() => {
+                const timeline = buildTimeline(candidate, detail);
+                return timeline.length > 0 ? (
+                  <div className="space-y-3 text-xs">
+                    {timeline.map((event, idx) => (
+                      <div key={event.id} className="relative flex gap-3">
+                        {/* Timeline dot */}
+                        <div className="flex flex-col items-center flex-shrink-0">
+                          <div className={`w-3 h-3 rounded-full ${timelineEventDotColor(event.type)}`} />
+                          {idx < timeline.length - 1 && <div className="w-0.5 h-8 bg-slate-200 mt-1" />}
+                        </div>
+
+                        {/* Event content */}
+                        <div className="flex-1 pb-2">
+                          <div className={`px-2 py-1.5 rounded border ${timelineEventColor(event.type)}`}>
+                            <div className="flex items-start justify-between gap-1">
+                              <span className="font-medium">{event.action}</span>
+                              <span className="text-xs opacity-70 flex-shrink-0">
+                                {formatTimelineTimestamp(event.timestamp)}
+                              </span>
+                            </div>
+                            {event.actor && <div className="text-xs opacity-75 mt-0.5">by {event.actor}</div>}
+                            {event.detail && <div className="text-xs opacity-75 mt-1 italic line-clamp-2">{event.detail}</div>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic">No activity recorded yet.</p>
+                );
+              })()}
             </div>
           )}
 
