@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, PassingCriteria } from '../types';
+import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, PassingCriteria, WorkflowStatus } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface JobMetaStrip {
@@ -19,6 +19,9 @@ interface ApplicationDetailsProps {
   jobMeta?: JobMetaStrip | null;
   onDownloadCV?: () => void;
   downloadingCV?: boolean;
+  token?: string;
+  onWorkflowStatusChange?: (appId: string, newStatus: WorkflowStatus, note?: string) => void;
+  onRecruiterNotesChange?: (appId: string, notes: string | null) => void;
 }
 
 const T = {
@@ -395,7 +398,7 @@ const LANG_LABELS: Record<string, { en: string; ar: string }> = {
   mixed: { en: 'Mixed',   ar: 'مختلط' },
 };
 
-export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, onBack, jobMeta, onDownloadCV, downloadingCV }) => {
+export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, onBack, jobMeta, onDownloadCV, downloadingCV, onWorkflowStatusChange, onRecruiterNotesChange }) => {
   const { lang, isAr } = useLanguage() as { lang: 'en' | 'ar'; isAr: boolean };
   const t = T[lang];
 
@@ -403,6 +406,81 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const [intelligenceExpanded, setIntelligenceExpanded] = useState(
     data.gatekeeper_passed === false
   );
+  const [noteInput, setNoteInput] = useState('');
+  const [showNoteInput, setShowNoteInput] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<WorkflowStatus | null>(null);
+  const [recruiterNotesText, setRecruiterNotesText] = useState(data.recruiter_notes ?? '');
+  const [notesDirty, setNotesDirty] = useState(false);
+
+  const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'new';
+
+  const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
+    new:                   ['in_review', 'shortlisted', 'on_hold', 'rejected_by_recruiter'],
+    in_review:             ['shortlisted', 'on_hold', 'rejected_by_recruiter', 'new'],
+    shortlisted:           ['interviewing', 'in_review', 'on_hold', 'rejected_by_recruiter'],
+    interviewing:          ['offer_made', 'shortlisted', 'on_hold', 'rejected_by_recruiter'],
+    offer_made:            ['hired', 'interviewing', 'on_hold', 'rejected_by_recruiter'],
+    hired:                 [],
+    rejected_by_recruiter: ['in_review'],
+    on_hold:               ['new', 'in_review', 'shortlisted', 'interviewing', 'offer_made', 'rejected_by_recruiter'],
+  };
+
+  const WF_LABELS: Record<WorkflowStatus, string> = {
+    new:                   'New',
+    in_review:             'In Review',
+    shortlisted:           'Shortlisted',
+    interviewing:          'Interviewing',
+    offer_made:            'Offer Made',
+    hired:                 'Hired',
+    rejected_by_recruiter: 'Rejected',
+    on_hold:               'On Hold',
+  };
+
+  const WF_STYLES: Record<WorkflowStatus, string> = {
+    new:                   'bg-slate-100 text-slate-600 border-slate-200',
+    in_review:             'bg-blue-100 text-blue-700 border-blue-200',
+    shortlisted:           'bg-indigo-100 text-indigo-700 border-indigo-200',
+    interviewing:          'bg-purple-100 text-purple-700 border-purple-200',
+    offer_made:            'bg-amber-100 text-amber-700 border-amber-200',
+    hired:                 'bg-green-100 text-green-800 border-green-200',
+    rejected_by_recruiter: 'bg-red-100 text-red-700 border-red-200',
+    on_hold:               'bg-orange-100 text-orange-700 border-orange-200',
+  };
+
+  const WF_ACTION_LABELS: Record<WorkflowStatus, string> = {
+    new:                   'Mark New',
+    in_review:             'Mark In Review',
+    shortlisted:           'Shortlist',
+    interviewing:          'Move to Interview',
+    offer_made:            'Make Offer',
+    hired:                 'Mark Hired',
+    rejected_by_recruiter: 'Reject',
+    on_hold:               'Put On Hold',
+  };
+
+  const handleTransitionClick = (target: WorkflowStatus) => {
+    if (!onWorkflowStatusChange) return;
+    if (target === 'hired' || target === 'rejected_by_recruiter') {
+      setPendingStatus(target);
+      setShowNoteInput(true);
+    } else {
+      onWorkflowStatusChange(data.application_id, target);
+    }
+  };
+
+  const confirmTransition = () => {
+    if (!pendingStatus || !onWorkflowStatusChange) return;
+    onWorkflowStatusChange(data.application_id, pendingStatus, noteInput.trim() || undefined);
+    setPendingStatus(null);
+    setNoteInput('');
+    setShowNoteInput(false);
+  };
+
+  const handleSaveNotes = () => {
+    if (!onRecruiterNotesChange) return;
+    onRecruiterNotesChange(data.application_id, recruiterNotesText.trim() || null);
+    setNotesDirty(false);
+  };
 
   const getScoreBadgeColor = (achieved: number, max: number) => {
     if (!max || max === 0) return 'bg-slate-100 text-slate-600';
@@ -1605,6 +1683,119 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 </p>
               </div>
             )}
+          </div>
+        </section>
+      )}
+
+      {/* Recruiter Workflow Panel */}
+      {onWorkflowStatusChange && (
+        <section className="bg-white rounded-3xl border border-border overflow-hidden">
+          <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
+              <span className={`w-2 h-4 bg-indigo-400 rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span>
+              Recruiter Workflow
+            </h3>
+            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${WF_STYLES[currentWorkflowStatus]}`}>
+              {WF_LABELS[currentWorkflowStatus]}
+            </span>
+          </div>
+          <div className="px-8 py-6 space-y-4">
+            {VALID_TRANSITIONS[currentWorkflowStatus].length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {VALID_TRANSITIONS[currentWorkflowStatus].map(target => (
+                  <button
+                    key={target}
+                    onClick={() => handleTransitionClick(target)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all hover:opacity-80 ${WF_STYLES[target]}`}
+                  >
+                    {WF_ACTION_LABELS[target]}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-textMuted italic">No further transitions available.</p>
+            )}
+
+            {showNoteInput && pendingStatus && (
+              <div className="mt-3 bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
+                <p className="text-xs font-bold text-textMain">
+                  Confirm: {WF_ACTION_LABELS[pendingStatus]}
+                  <span className="text-textMuted font-normal ml-1">(optional note)</span>
+                </p>
+                <textarea
+                  value={noteInput}
+                  onChange={e => setNoteInput(e.target.value)}
+                  placeholder="Add a note for this transition (optional)..."
+                  className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                  rows={2}
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={confirmTransition}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold ${WF_STYLES[pendingStatus]} hover:opacity-80 transition-all`}
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    onClick={() => { setShowNoteInput(false); setPendingStatus(null); setNoteInput(''); }}
+                    className="px-4 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Workflow History */}
+            {data.workflow_history && data.workflow_history.length > 0 && (
+              <div className="mt-4">
+                <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">History</p>
+                <div className="space-y-1.5">
+                  {data.workflow_history.map(h => (
+                    <div key={h.history_id} className="flex items-start gap-2 text-xs text-textMuted">
+                      <span className="shrink-0 mt-0.5 text-slate-300">→</span>
+                      <span>
+                        <span className="font-semibold text-textMain">{WF_LABELS[h.to_status as WorkflowStatus] || h.to_status}</span>
+                        {h.from_status && <span className="text-slate-400"> from {WF_LABELS[h.from_status as WorkflowStatus] || h.from_status}</span>}
+                        {h.changed_by_name && <span className="text-slate-400"> by {h.changed_by_name}</span>}
+                        {h.note && <span className="italic ml-1">"{h.note}"</span>}
+                        {h.created_at && <span className="text-slate-300 ml-1">· {new Date(h.created_at).toLocaleDateString()}</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Recruiter Notes */}
+      {onRecruiterNotesChange && (
+        <section className="bg-white rounded-3xl border border-border overflow-hidden">
+          <div className="px-8 py-5 border-b border-slate-100">
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
+              <span className={`w-2 h-4 bg-amber-400 rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span>
+              Recruiter Notes
+            </h3>
+          </div>
+          <div className="px-8 py-6 space-y-3">
+            <textarea
+              value={recruiterNotesText}
+              onChange={e => { setRecruiterNotesText(e.target.value); setNotesDirty(true); }}
+              placeholder="Add private recruiter notes about this candidate..."
+              className="w-full text-sm border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+              rows={4}
+            />
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveNotes}
+                disabled={!notesDirty}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 transition-all disabled:opacity-40"
+              >
+                Save Notes
+              </button>
+            </div>
           </div>
         </section>
       )}

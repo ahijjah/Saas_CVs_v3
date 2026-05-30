@@ -66,6 +66,10 @@ export const WEBHOOK_CONFIG = {
   DUPLICATE_CV_BASE_URL:        `${API_BASE}/jobs`,
   // CV file download (append /{application_id}/cv)
   CV_DOWNLOAD_BASE_URL:         `${API_BASE}/applications`,
+  // Workflow status transition (append /{application_id}/workflow-status)
+  APPLICATION_WORKFLOW_STATUS_URL: `${API_BASE}/applications`,
+  // Recruiter notes (append /{application_id}/recruiter-notes)
+  APPLICATION_RECRUITER_NOTES_URL: `${API_BASE}/applications`,
   // Public (no-auth) endpoints
   PUBLIC_JOB_BASE_URL:          `${API_BASE}/jobs/public`,   // append /{job_code}
   PUBLIC_APPLY_URL:             `${API_BASE}/applications/public`,

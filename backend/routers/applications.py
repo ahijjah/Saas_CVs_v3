@@ -24,12 +24,38 @@ router = APIRouter(prefix="/applications", tags=["applications"])
 settings = get_settings()
 
 
+WORKFLOW_STATUSES = frozenset((
+    "new", "in_review", "shortlisted", "interviewing",
+    "offer_made", "hired", "rejected_by_recruiter", "on_hold",
+))
+
+VALID_WORKFLOW_TRANSITIONS: dict[str, frozenset] = {
+    "new":                   frozenset({"in_review", "shortlisted", "on_hold", "rejected_by_recruiter"}),
+    "in_review":             frozenset({"shortlisted", "on_hold", "rejected_by_recruiter", "new"}),
+    "shortlisted":           frozenset({"interviewing", "in_review", "on_hold", "rejected_by_recruiter"}),
+    "interviewing":          frozenset({"offer_made", "shortlisted", "on_hold", "rejected_by_recruiter"}),
+    "offer_made":            frozenset({"hired", "interviewing", "on_hold", "rejected_by_recruiter"}),
+    "hired":                 frozenset(),
+    "rejected_by_recruiter": frozenset({"in_review"}),
+    "on_hold":               frozenset({"new", "in_review", "shortlisted", "interviewing", "offer_made", "rejected_by_recruiter"}),
+}
+
+
 class ScorePendingRequest(BaseModel):
     job_id: str
 
 
 class ResetStuckRequest(BaseModel):
     job_id: str
+
+
+class WorkflowStatusRequest(BaseModel):
+    workflow_status: str
+    note: str | None = None
+
+
+class RecruiterNotesRequest(BaseModel):
+    recruiter_notes: str | None
 
 
 @router.get("")
@@ -52,6 +78,8 @@ async def list_applications(
                 a.duplicate_reason,
                 a.duplicate_reference_application_id,
                 a.evaluation_exit_reason,
+                a.workflow_status,
+                a.recruiter_notes,
                 s.final_score                        AS score,
                 a.applied_at::date                   AS applied_date,
                 s.evaluation_notes                   AS summary
@@ -90,6 +118,8 @@ async def list_applications(
             "duplicate_reason":                  r["duplicate_reason"],
             "duplicate_reference_application_id": str(r["duplicate_reference_application_id"]) if r["duplicate_reference_application_id"] else None,
             "evaluation_exit_reason":            r["evaluation_exit_reason"],
+            "workflow_status":                   r["workflow_status"] or "new",
+            "recruiter_notes":                   r["recruiter_notes"],
             "score":                             float(r["score"]) if r["score"] is not None else None,
             "applied_date":                      r["applied_date"].isoformat() if r["applied_date"] else None,
             "summary":                           r["summary"],
@@ -130,6 +160,8 @@ async def get_application_details(
                 a.security_detected_patterns,
                 a.security_detected_snippets,
                 a.security_checked_at,
+                a.workflow_status,
+                a.recruiter_notes,
                 j.title AS job_title, j.job_id,
                 (SELECT af2.original_name FROM application_files af2
                  WHERE af2.application_id = a.application_id LIMIT 1) AS original_filename,
@@ -230,6 +262,29 @@ async def get_application_details(
             "display_order":    r["display_order"],
         }
         for r in ko_rows.mappings()
+    ]
+
+    # Fetch workflow history
+    wf_rows = await db.execute(
+        text("""
+            SELECT history_id, from_status, to_status, note, changed_by_name, created_at
+            FROM application_workflow_history
+            WHERE application_id = CAST(:aid AS uuid)
+            ORDER BY created_at DESC
+            LIMIT 50
+        """),
+        {"aid": application_id},
+    )
+    workflow_history = [
+        {
+            "history_id":     str(r["history_id"]),
+            "from_status":    r["from_status"],
+            "to_status":      r["to_status"],
+            "note":           r["note"],
+            "changed_by_name": r["changed_by_name"],
+            "created_at":     r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in wf_rows.mappings()
     ]
 
     # Fetch AI comparison results if available
@@ -343,6 +398,9 @@ async def get_application_details(
         "security_detected_snippets": list(app["security_detected_snippets"] or []),
         "security_checked_at":        app["security_checked_at"].isoformat() if app["security_checked_at"] else None,
         "knockout_answers":           knockout_answers,
+        "workflow_status":            app["workflow_status"] or "new",
+        "recruiter_notes":            app["recruiter_notes"],
+        "workflow_history":           workflow_history,
     }
 
 
@@ -674,6 +732,142 @@ async def reset_stuck_cvs(
         "reset": reset_count,
         "message": f"Reset {reset_count} stuck CV(s) back to pending.",
     }
+
+
+@router.patch("/{application_id}/workflow-status")
+async def update_workflow_status(
+    application_id: str,
+    body: WorkflowStatusRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Transition an application's recruiter workflow status."""
+    new_status = body.workflow_status.strip().lower()
+    if new_status not in WORKFLOW_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid workflow_status '{new_status}'.",
+        )
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT a.application_id, a.workflow_status
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE a.application_id = :aid AND a.tenant_id = :tid
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
+        """),
+        {
+            "aid":      application_id,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
+    )
+    rec = row.mappings().first()
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    current_status = rec["workflow_status"] or "new"
+    if new_status == current_status:
+        return {"workflow_status": current_status}
+
+    allowed = VALID_WORKFLOW_TRANSITIONS.get(current_status, frozenset())
+    if new_status not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Cannot transition workflow from '{current_status}' to '{new_status}'.",
+        )
+
+    await db.execute(
+        text("""
+            UPDATE applications
+            SET workflow_status = :new_status, updated_at = now()
+            WHERE application_id = CAST(:aid AS uuid) AND tenant_id = :tid
+        """),
+        {"new_status": new_status, "aid": application_id, "tid": current_user.tenant_id},
+    )
+
+    await db.execute(
+        text("""
+            INSERT INTO application_workflow_history
+                (application_id, tenant_id, changed_by, changed_by_name, from_status, to_status, note)
+            VALUES
+                (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:uid AS uuid), :uname, :from_s, :to_s, :note)
+        """),
+        {
+            "aid":    application_id,
+            "tid":    current_user.tenant_id,
+            "uid":    current_user.user_id,
+            "uname":  current_user.full_name or current_user.email,
+            "from_s": current_status,
+            "to_s":   new_status,
+            "note":   body.note,
+        },
+    )
+
+    await db.commit()
+    return {"workflow_status": new_status}
+
+
+@router.patch("/{application_id}/recruiter-notes")
+async def update_recruiter_notes(
+    application_id: str,
+    body: RecruiterNotesRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Save or clear recruiter notes for an application."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT a.application_id
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE a.application_id = :aid AND a.tenant_id = :tid
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
+        """),
+        {
+            "aid":      application_id,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
+    )
+    if not row.mappings().first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    await db.execute(
+        text("""
+            UPDATE applications
+            SET recruiter_notes = :notes, updated_at = now()
+            WHERE application_id = CAST(:aid AS uuid) AND tenant_id = :tid
+        """),
+        {"notes": body.recruiter_notes, "aid": application_id, "tid": current_user.tenant_id},
+    )
+    await db.commit()
+    return {"recruiter_notes": body.recruiter_notes}
 
 
 @router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)

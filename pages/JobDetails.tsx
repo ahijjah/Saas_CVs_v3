@@ -1525,6 +1525,40 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         </div>
       </div>
 
+      {/* Workflow status summary row */}
+      {(() => {
+        const d = details as any;
+        const shortlisted = d.applications_shortlisted || 0;
+        const interviewing = d.applications_interviewing || 0;
+        const offerMade = d.applications_offer_made || 0;
+        const hired = d.applications_hired || 0;
+        const wfRejected = d.applications_workflow_rejected || 0;
+        const onHold = d.applications_on_hold || 0;
+        if (shortlisted + interviewing + offerMade + hired + wfRejected + onHold === 0) return null;
+        const items = [
+          { filter: 'workflow_shortlisted',  label: 'Shortlisted',  count: shortlisted,  color: 'text-indigo-700',  bg: 'bg-indigo-50' },
+          { filter: 'workflow_interviewing', label: 'Interviewing', count: interviewing, color: 'text-purple-700',  bg: 'bg-purple-50' },
+          { filter: 'workflow_offer',        label: 'Offer Made',   count: offerMade,    color: 'text-amber-700',   bg: 'bg-amber-50' },
+          { filter: 'workflow_hired',        label: 'Hired',        count: hired,        color: 'text-green-800',   bg: 'bg-green-50' },
+          { filter: 'workflow_rejected',     label: 'Rejected',     count: wfRejected,   color: 'text-red-700',     bg: 'bg-red-50' },
+        ].filter(i => i.count > 0);
+        return (
+          <div className="rounded-xl border border-slate-100 bg-slate-50 px-5 py-3 flex flex-wrap items-center gap-3">
+            <span className="text-[9px] font-black text-textMuted uppercase tracking-widest shrink-0">Recruiter Pipeline</span>
+            {items.map(item => (
+              <button
+                key={item.filter}
+                onClick={() => onViewApplications(details.job_id, item.filter)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold ${item.color} ${item.bg} hover:opacity-80 transition-all`}
+              >
+                {item.label}
+                <span className="font-black">{item.count}</span>
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* AI extraction status banner ───────────────────────────────────────── */}
       {(() => {
         const cs = details.criteria_extraction_status;

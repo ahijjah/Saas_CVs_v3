@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { Application, AuthState, ApplicationFilter } from '../types';
+import { Application, AuthState, ApplicationFilter, WorkflowStatus } from '../types';
 import { ApplicationDetails } from './ApplicationDetails';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
@@ -41,6 +41,11 @@ const T = {
     filterSecurityBlocked: 'Security Blocked',
     filterDuplicateBlocked: 'Duplicate Blocked',
     filterFailedNeedsReview: 'Failed / Needs Review',
+    filterWorkflowShortlisted: 'Shortlisted',
+    filterWorkflowInterviewing: 'Interviewing',
+    filterWorkflowOffer: 'Offer Made',
+    filterWorkflowHired: 'Hired',
+    filterWorkflowRejected: 'Recruiter Rejected',
     loading: 'Loading applications...',
     noApps: 'No applications found matching this criteria.',
     appliedOn: 'Applied on',
@@ -71,6 +76,11 @@ const T = {
     filterSecurityBlocked: 'محظور أمنياً',
     filterDuplicateBlocked: 'مكرر موقوف',
     filterFailedNeedsReview: 'فشل / يحتاج مراجعة',
+    filterWorkflowShortlisted: 'مختصرون',
+    filterWorkflowInterviewing: 'مقابلة',
+    filterWorkflowOffer: 'عرض مقدم',
+    filterWorkflowHired: 'تم التعيين',
+    filterWorkflowRejected: 'مرفوض من المجنّد',
     loading: 'جارٍ تحميل الطلبات...',
     noApps: 'لا توجد طلبات مطابقة لهذه المعايير.',
     appliedOn: 'تاريخ التقديم',
@@ -90,8 +100,30 @@ const T = {
   },
 };
 
+const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
+  new:                  'New',
+  in_review:            'In Review',
+  shortlisted:          'Shortlisted',
+  interviewing:         'Interviewing',
+  offer_made:           'Offer Made',
+  hired:                'Hired',
+  rejected_by_recruiter: 'Rejected',
+  on_hold:              'On Hold',
+};
+
+const WORKFLOW_STATUS_STYLES: Record<WorkflowStatus, string> = {
+  new:                  'bg-slate-100 text-slate-500',
+  in_review:            'bg-blue-100 text-blue-700',
+  shortlisted:          'bg-indigo-100 text-indigo-700',
+  interviewing:         'bg-purple-100 text-purple-700',
+  offer_made:           'bg-amber-100 text-amber-700',
+  hired:                'bg-green-100 text-green-800',
+  rejected_by_recruiter: 'bg-red-100 text-red-700',
+  on_hold:              'bg-orange-100 text-orange-700',
+};
+
 // low_match is an internal status; it maps to 'rejected' for display purposes
-const FILTER_KEYS: ApplicationFilter[] = ['all', 'ai_scored', 'qualified', 'partial', 'rejected', 'blocked', 'security_blocked', 'duplicate_blocked', 'possible_duplicate', 'failed_needs_review'];
+const FILTER_KEYS: ApplicationFilter[] = ['all', 'ai_scored', 'qualified', 'partial', 'rejected', 'blocked', 'security_blocked', 'duplicate_blocked', 'possible_duplicate', 'failed_needs_review', 'workflow_shortlisted', 'workflow_interviewing', 'workflow_offer', 'workflow_hired', 'workflow_rejected'];
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   jobId, initialFilter, initialApplicationId, auth, onBack, addToast
@@ -133,8 +165,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     ai_scored: t.filterAiScored,
     blocked: t.filterBlocked,
     security_blocked: t.filterSecurityBlocked,
-    duplicate_blocked: (t as any).filterDuplicateBlocked,
+    duplicate_blocked: t.filterDuplicateBlocked,
     failed_needs_review: t.filterFailedNeedsReview,
+    workflow_shortlisted: t.filterWorkflowShortlisted,
+    workflow_interviewing: t.filterWorkflowInterviewing,
+    workflow_offer: t.filterWorkflowOffer,
+    workflow_hired: t.filterWorkflowHired,
+    workflow_rejected: t.filterWorkflowRejected,
   };
 
   const fetchApplications = async () => {
@@ -272,6 +309,10 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         stopped_reason:             detailsObj?.stopped_reason ?? null,
         // Knockout question answers
         knockout_answers:           detailsObj?.knockout_answers || [],
+        // Recruiter workflow fields
+        workflow_status:            detailsObj?.workflow_status || 'new',
+        recruiter_notes:            detailsObj?.recruiter_notes ?? null,
+        workflow_history:           detailsObj?.workflow_history || [],
       };
 
       setSelectedDetails(normalized);
@@ -344,8 +385,58 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     if (filter === 'qualified') return applicationsAll.filter(a => isAiScored(a) && a.status === 'qualified');
     if (filter === 'partial')   return applicationsAll.filter(a => isAiScored(a) && a.status === 'partial');
     if (filter === 'rejected')  return applicationsAll.filter(a => isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase()) === 'rejected');
+    if (filter === 'workflow_shortlisted')  return applicationsAll.filter(a => a.workflow_status === 'shortlisted');
+    if (filter === 'workflow_interviewing') return applicationsAll.filter(a => a.workflow_status === 'interviewing');
+    if (filter === 'workflow_offer')        return applicationsAll.filter(a => a.workflow_status === 'offer_made');
+    if (filter === 'workflow_hired')        return applicationsAll.filter(a => a.workflow_status === 'hired');
+    if (filter === 'workflow_rejected')     return applicationsAll.filter(a => a.workflow_status === 'rejected_by_recruiter');
     return applicationsAll.filter(a => normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
   })();
+
+  const handleWorkflowStatusChange = async (appId: string, newStatus: WorkflowStatus, note?: string) => {
+    try {
+      await apiService.patch(
+        `${WEBHOOK_CONFIG.APPLICATION_WORKFLOW_STATUS_URL}/${appId}/workflow-status`,
+        { workflow_status: newStatus, note: note || null },
+        auth.token!
+      );
+      setApplicationsAll(prev => prev.map(a =>
+        (a.application_id || a.id) === appId ? { ...a, workflow_status: newStatus } : a
+      ));
+      if (selectedDetails && selectedDetails.application_id === appId) {
+        setSelectedDetails((prev: any) => prev ? {
+          ...prev,
+          workflow_status: newStatus,
+          workflow_history: [
+            { history_id: Date.now().toString(), from_status: prev.workflow_status, to_status: newStatus, note: note || null, changed_by_name: null, created_at: new Date().toISOString() },
+            ...(prev.workflow_history || []),
+          ],
+        } : prev);
+      }
+      addToast('Workflow status updated.', 'success');
+    } catch {
+      addToast('Failed to update workflow status.', 'error');
+    }
+  };
+
+  const handleRecruiterNotesChange = async (appId: string, notes: string | null) => {
+    try {
+      await apiService.patch(
+        `${WEBHOOK_CONFIG.APPLICATION_RECRUITER_NOTES_URL}/${appId}/recruiter-notes`,
+        { recruiter_notes: notes },
+        auth.token!
+      );
+      setApplicationsAll(prev => prev.map(a =>
+        (a.application_id || a.id) === appId ? { ...a, recruiter_notes: notes } : a
+      ));
+      if (selectedDetails && selectedDetails.application_id === appId) {
+        setSelectedDetails((prev: any) => prev ? { ...prev, recruiter_notes: notes } : prev);
+      }
+      addToast('Notes saved.', 'success');
+    } catch {
+      addToast('Failed to save notes.', 'error');
+    }
+  };
 
   if (view === 'details' && selectedDetails) {
     return (
@@ -355,6 +446,9 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         jobMeta={jobMeta}
         onDownloadCV={() => handleDownloadApplicationCV(selectedDetails.application_id)}
         downloadingCV={downloadingCVId === selectedDetails.application_id}
+        token={auth.token!}
+        onWorkflowStatusChange={handleWorkflowStatusChange}
+        onRecruiterNotesChange={handleRecruiterNotesChange}
       />
     );
   }
@@ -470,6 +564,11 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${styles.pill}`}>
                     {styles.label}
                   </span>
+                  {app.workflow_status && app.workflow_status !== 'new' && (
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider ${WORKFLOW_STATUS_STYLES[app.workflow_status]}`}>
+                      {WORKFLOW_STATUS_LABELS[app.workflow_status]}
+                    </span>
+                  )}
                   {app.duplicate_status === 'possible_duplicate' && (
                     <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700">
                       {t.possibleDuplicate}

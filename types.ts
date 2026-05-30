@@ -265,6 +265,25 @@ export interface JobDetails extends Job {
 // decision='low_match' is a frontend-only display alias for evaluation_stage=1 + gatekeeper_passed=false + decision='rejected'
 export type ApplicationDecision = 'qualified' | 'partial' | 'rejected' | 'low_match';
 
+export type WorkflowStatus =
+  | 'new'
+  | 'in_review'
+  | 'shortlisted'
+  | 'interviewing'
+  | 'offer_made'
+  | 'hired'
+  | 'rejected_by_recruiter'
+  | 'on_hold';
+
+export interface WorkflowHistoryEntry {
+  history_id: string;
+  from_status: WorkflowStatus | null;
+  to_status: WorkflowStatus;
+  note: string | null;
+  changed_by_name: string | null;
+  created_at: string | null;
+}
+
 export interface Application {
   id: string;
   application_id: string;
@@ -280,6 +299,8 @@ export interface Application {
   security_check_status?: 'passed' | 'warning' | 'blocked' | null;
   applied_date: string;
   summary: string;
+  workflow_status?: WorkflowStatus;
+  recruiter_notes?: string | null;
 }
 
 export interface ScoreDimension {
@@ -392,9 +413,12 @@ export interface ApplicationDetailedAnalysis {
   security_detected_snippets?: string[];
   security_checked_at?: string | null;
   knockout_answers?: KnockoutAnswerRecord[];
+  workflow_status?: WorkflowStatus;
+  recruiter_notes?: string | null;
+  workflow_history?: WorkflowHistoryEntry[];
 }
 
-export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked';
+export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked' | 'workflow_shortlisted' | 'workflow_interviewing' | 'workflow_offer' | 'workflow_hired' | 'workflow_rejected';
 
 export interface UploadedCV {
   application_id: string;
