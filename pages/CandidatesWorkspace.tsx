@@ -291,6 +291,66 @@ function formatDate(iso: string | null): string {
   catch { return iso; }
 }
 
+// ── Workflow Grouping ────────────────────────────────────────────────────────
+// Semantically group workflow transitions based on progression order.
+
+const WORKFLOW_PROGRESSION_ORDER: WorkflowStatus[] = [
+  'awaiting_review',
+  'under_review',
+  'shortlisted',
+  'interviewing',
+  'offer_made',
+  'hired',
+];
+
+const TERMINAL_STATUSES = new Set<WorkflowStatus>(['on_hold', 'rejected', 'withdrawn']);
+
+type TransitionGroup = 'forward' | 'back_reopen' | 'pause_close' | 'other';
+
+function getTransitionGroup(currentStatus: WorkflowStatus, targetStatus: WorkflowStatus): TransitionGroup {
+  // Terminal/close statuses
+  if (TERMINAL_STATUSES.has(targetStatus)) {
+    return 'pause_close';
+  }
+
+  const currentIdx = WORKFLOW_PROGRESSION_ORDER.indexOf(currentStatus);
+  const targetIdx = WORKFLOW_PROGRESSION_ORDER.indexOf(targetStatus);
+
+  if (currentIdx === -1 || targetIdx === -1) {
+    // Status not in standard progression
+    return 'other';
+  }
+
+  if (targetIdx > currentIdx) {
+    return 'forward';
+  } else if (targetIdx < currentIdx) {
+    return 'back_reopen';
+  }
+
+  return 'other';
+}
+
+function groupTransitions(
+  currentStatus: WorkflowStatus,
+  transitions: WorkflowStatus[],
+): Record<TransitionGroup, WorkflowStatus[]> {
+  const groups: Record<TransitionGroup, WorkflowStatus[]> = {
+    forward: [],
+    back_reopen: [],
+    pause_close: [],
+    other: [],
+  };
+
+  // Filter out current status and group remaining
+  for (const target of transitions) {
+    if (target === currentStatus) continue; // Skip current status
+    const group = getTransitionGroup(currentStatus, target);
+    groups[group].push(target);
+  }
+
+  return groups;
+}
+
 // ── WorkflowActionMenu ────────────────────────────────────────────────────────
 // Compact dropdown that shows allowed workflow transitions for a candidate row.
 // Only rendered for processing_status === 'ai_scored'. Other rows get a muted
@@ -344,6 +404,19 @@ const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
     );
   }
 
+  // Group transitions, excluding current status
+  const groups = groupTransitions(currentStatus, transitions);
+  const hasOptions = Object.values(groups).some(g => g.length > 0);
+
+  // If only current status was in transitions, treat as terminal
+  if (!hasOptions) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-slate-400 bg-slate-50 border border-slate-200">
+        —
+      </span>
+    );
+  }
+
   return (
     <div ref={menuRef} className="relative" onClick={e => e.stopPropagation()}>
       <button
@@ -364,23 +437,97 @@ const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[160px]">
-          {transitions.map(toStatus => {
-            const style = WORKFLOW_STATUS_STYLES[toStatus] ?? 'bg-slate-100 text-slate-600';
-            return (
-              <button
-                key={toStatus}
-                onClick={() => {
-                  setOpen(false);
-                  onTransition(applicationId, toStatus);
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 transition-colors text-left"
-              >
-                <span className={`inline-block w-2 h-2 rounded-full ${style.split(' ')[0]}`} />
-                {wfLabels[toStatus]}
-              </button>
-            );
-          })}
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[180px]">
+          {groups.forward.length > 0 && (
+            <>
+              <div className="px-3 py-1.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Forward</div>
+              {groups.forward.map(toStatus => {
+                const style = WORKFLOW_STATUS_STYLES[toStatus] ?? 'bg-slate-100 text-slate-600';
+                return (
+                  <button
+                    key={toStatus}
+                    onClick={() => {
+                      setOpen(false);
+                      onTransition(applicationId, toStatus);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 transition-colors text-left"
+                  >
+                    <span className={`inline-block w-2 h-2 rounded-full ${style.split(' ')[0]}`} />
+                    {wfLabels[toStatus]}
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {groups.back_reopen.length > 0 && (
+            <>
+              {groups.forward.length > 0 && <div className="h-px bg-slate-100 my-1" />}
+              <div className="px-3 py-1.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Back / Reopen</div>
+              {groups.back_reopen.map(toStatus => {
+                const style = WORKFLOW_STATUS_STYLES[toStatus] ?? 'bg-slate-100 text-slate-600';
+                return (
+                  <button
+                    key={toStatus}
+                    onClick={() => {
+                      setOpen(false);
+                      onTransition(applicationId, toStatus);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 transition-colors text-left"
+                  >
+                    <span className={`inline-block w-2 h-2 rounded-full ${style.split(' ')[0]}`} />
+                    {wfLabels[toStatus]}
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {groups.pause_close.length > 0 && (
+            <>
+              {(groups.forward.length > 0 || groups.back_reopen.length > 0) && <div className="h-px bg-slate-100 my-1" />}
+              <div className="px-3 py-1.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Pause / Close</div>
+              {groups.pause_close.map(toStatus => {
+                const style = WORKFLOW_STATUS_STYLES[toStatus] ?? 'bg-slate-100 text-slate-600';
+                return (
+                  <button
+                    key={toStatus}
+                    onClick={() => {
+                      setOpen(false);
+                      onTransition(applicationId, toStatus);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 transition-colors text-left"
+                  >
+                    <span className={`inline-block w-2 h-2 rounded-full ${style.split(' ')[0]}`} />
+                    {wfLabels[toStatus]}
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {groups.other.length > 0 && (
+            <>
+              {(groups.forward.length > 0 || groups.back_reopen.length > 0 || groups.pause_close.length > 0) && <div className="h-px bg-slate-100 my-1" />}
+              <div className="px-3 py-1.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Other</div>
+              {groups.other.map(toStatus => {
+                const style = WORKFLOW_STATUS_STYLES[toStatus] ?? 'bg-slate-100 text-slate-600';
+                return (
+                  <button
+                    key={toStatus}
+                    onClick={() => {
+                      setOpen(false);
+                      onTransition(applicationId, toStatus);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 transition-colors text-left"
+                  >
+                    <span className={`inline-block w-2 h-2 rounded-full ${style.split(' ')[0]}`} />
+                    {wfLabels[toStatus]}
+                  </button>
+                );
+              })}
+            </>
+          )}
         </div>
       )}
     </div>
