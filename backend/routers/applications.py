@@ -76,8 +76,8 @@ async def list_applications(
     sort_order: str = "desc",
     page: int = 1,
     limit: int = 50,
-    current_user: CurrentUserDep = Depends(),
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(),
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """
     List applications with flexible filtering and pagination.
