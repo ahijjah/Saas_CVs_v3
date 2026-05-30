@@ -581,6 +581,7 @@ interface CandidateDetailDrawerProps {
   lang: 'en' | 'ar';
   updatingId: string | null;
   token: string | null;
+  detailVersion: number;
   onClose: () => void;
   onWorkflowUpdate: (applicationId: string, toStatus: WorkflowStatus) => void;
   onNotesUpdate: (applicationId: string, notes: string) => Promise<void>;
@@ -588,7 +589,7 @@ interface CandidateDetailDrawerProps {
 }
 
 const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
-  candidate, open, lang, updatingId, token, onClose, onWorkflowUpdate, onNotesUpdate, addToast,
+  candidate, open, lang, updatingId, token, detailVersion, onClose, onWorkflowUpdate, onNotesUpdate, addToast,
 }) => {
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
   const t = T[lang];
@@ -613,15 +614,18 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setNotesChanged(false);
   }, [candidate?.application_id]);
 
-  // Lazy-fetch full application details when drawer opens for a candidate
+  // Lazy-fetch full application details when drawer opens for a candidate.
+  // Cache key includes detailVersion so the parent can force a re-fetch after
+  // a successful workflow transition or notes save by incrementing the version.
   useEffect(() => {
     if (!candidate?.application_id || !open) return;
-    // Already loaded for this candidate
-    if (detailForRef.current === candidate.application_id) return;
+    const cacheKey = `${candidate.application_id}-${detailVersion}`;
+    // Already loaded for this exact application + version
+    if (detailForRef.current === cacheKey) return;
 
     let cancelled = false;
-    detailForRef.current = candidate.application_id;
-    setDetail(null);
+    detailForRef.current = cacheKey;
+    // Keep existing detail visible while re-fetching (no flash to empty)
     setDetailError(null);
     setDetailLoading(true);
 
@@ -637,21 +641,19 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
       // Sync notes from full detail only if recruiter hasn't made local edits
       setNotesText(prev => {
         const serverNotes = detailObj.recruiter_notes || '';
-        // If the textarea still holds the lightweight row value unchanged, update to server value
         return prev === (candidate.recruiter_notes || '') ? serverNotes : prev;
       });
     }).catch((err: any) => {
       if (cancelled) return;
       setDetailError(err?.message || 'Failed to load evaluation details');
-      detailForRef.current = null; // allow retry on reopen
+      detailForRef.current = null; // allow retry on next open
     }).finally(() => {
       if (!cancelled) setDetailLoading(false);
     });
 
     return () => { cancelled = true; };
-  // Deliberately omit notesChanged — we only want this on application_id / open changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidate?.application_id, open, token]);
+  }, [candidate?.application_id, open, token, detailVersion]);
 
   if (!candidate) return null;
 
@@ -1090,6 +1092,9 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
 
   // Workflow update: tracks the application_id currently being updated
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  // Incremented after a successful workflow or notes update for the open candidate,
+  // causing the drawer to re-fetch application details and refresh the timeline.
+  const [drawerDetailVersion, setDrawerDetailVersion] = useState(0);
 
   // Check if user is agency/freelancer
   const isAgency = auth.user?.tenant_type === 'agency' || auth.user?.tenant_type === 'individual_recruiter';
@@ -1259,6 +1264,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         auth.token,
       );
       addToastRef.current(`Moved to ${WORKFLOW_STATUS_LABELS_EN[toStatus]}`, 'success');
+      // Refresh drawer detail so timeline picks up the new workflow_history row
+      if (applicationId === selectedAppId) {
+        setDrawerDetailVersion(v => v + 1);
+      }
     } catch (err: any) {
       // Revert optimistic update on failure
       setCandidates(prevCandidates);
@@ -1284,6 +1293,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         { recruiter_notes: notes },
         auth.token,
       );
+      // Refresh drawer detail so timeline reflects latest state
+      if (applicationId === selectedAppId) {
+        setDrawerDetailVersion(v => v + 1);
+      }
     } catch (err: any) {
       // Revert optimistic update on failure
       setCandidates(prevCandidates);
@@ -1575,6 +1588,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         lang={lang}
         updatingId={updatingId}
         token={auth.token}
+        detailVersion={drawerDetailVersion}
         onClose={closeCandidate}
         onWorkflowUpdate={handleWorkflowUpdate}
         onNotesUpdate={handleNotesUpdate}
