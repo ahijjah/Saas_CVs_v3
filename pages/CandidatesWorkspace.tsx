@@ -64,6 +64,16 @@ interface Pagination {
   has_more: boolean;
 }
 
+interface Campaign {
+  campaign_id: string;
+  name: string;
+}
+
+interface ClientOrganization {
+  client_organization_id: string;
+  organization_name: string;
+}
+
 // ── Quick view definitions ────────────────────────────────────────────────────
 
 type QuickView =
@@ -153,6 +163,8 @@ const T = {
     filterWorkflow: 'Workflow Status',
     filterProcessing: 'Processing Status',
     filterAiResult: 'AI Result',
+    filterCampaign: 'Campaign',
+    filterClient: 'Client Organization',
     filterSearch: 'Search candidate…',
     clearFilters: 'Clear filters',
     allStatuses: 'All',
@@ -195,6 +207,8 @@ const T = {
     filterWorkflow: 'مرحلة التوظيف',
     filterProcessing: 'حالة المعالجة',
     filterAiResult: 'نتيجة الذكاء',
+    filterCampaign: 'الحملة',
+    filterClient: 'منظمة العميل',
     filterSearch: 'بحث عن مرشح…',
     clearFilters: 'مسح الفلاتر',
     allStatuses: 'الكل',
@@ -272,6 +286,8 @@ function buildApiParams(
   workflowFilter: string,
   processingFilter: string,
   aiResultFilter: string,
+  campaignFilter: string,
+  clientFilter: string,
   search: string,
   page: number,
 ): Record<string, string> {
@@ -295,6 +311,8 @@ function buildApiParams(
   if (workflowFilter)   p.workflow_status = workflowFilter;
   if (processingFilter) p.processing_status = processingFilter;
   if (aiResultFilter)   p.ai_decision = aiResultFilter;
+  if (campaignFilter)   p.campaign_id = campaignFilter;
+  if (clientFilter)     p.client_organization_id = clientFilter;
   if (search.trim())    p.search = search.trim();
 
   return p;
@@ -315,6 +333,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const initialWorkflow = searchParams.get('workflow_status') || '';
   const initialProcessing = searchParams.get('processing_status') || '';
   const initialAiResult = searchParams.get('ai_decision') || '';
+  const initialCampaign = searchParams.get('campaign_id') || '';
+  const initialClient = searchParams.get('client_organization_id') || '';
   const initialSearch = searchParams.get('search') || '';
   const initialPage = parseInt(searchParams.get('page') || '1', 10);
 
@@ -322,6 +342,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [workflowFilter, setWorkflowFilter] = useState(initialWorkflow);
   const [processingFilter, setProcessingFilter] = useState(initialProcessing);
   const [aiResultFilter, setAiResultFilter] = useState(initialAiResult);
+  const [campaignFilter, setCampaignFilter] = useState(initialCampaign);
+  const [clientFilter, setClientFilter] = useState(initialClient);
   const [search, setSearch] = useState(initialSearch);
   const [page, setPage] = useState(initialPage);
 
@@ -329,13 +351,70 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Campaign and client options
+  const [campaignOptions, setCampaignOptions] = useState<Campaign[]>([]);
+  const [campaignLoading, setCampaignLoading] = useState(false);
+  const [clientOptions, setClientOptions] = useState<ClientOrganization[]>([]);
+  const [clientLoading, setClientLoading] = useState(false);
+
   // Debounce search input
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
 
+  // Check if user is agency/freelancer
+  const isAgency = auth.user?.tenant_type === 'agency' || auth.user?.tenant_type === 'individual_recruiter';
+
   useEffect(() => {
     setPageTitle(t.pageTitle);
   }, [setPageTitle, t.pageTitle]);
+
+  // Fetch campaigns
+  useEffect(() => {
+    if (!auth.token) return;
+    setCampaignLoading(true);
+    const fetchCampaigns = async () => {
+      try {
+        const data = await apiService.get(WEBHOOK_CONFIG.CAMPAIGNS_URL, {}, auth.token);
+        if (Array.isArray(data)) {
+          setCampaignOptions(data);
+        } else if (data && Array.isArray(data.campaigns)) {
+          setCampaignOptions(data.campaigns);
+        } else {
+          setCampaignOptions([]);
+        }
+      } catch (err: any) {
+        addToast(err.message || 'Failed to load campaigns', 'error');
+        setCampaignOptions([]);
+      } finally {
+        setCampaignLoading(false);
+      }
+    };
+    fetchCampaigns();
+  }, [auth.token, addToast]);
+
+  // Fetch client organizations (agency/freelancer only)
+  useEffect(() => {
+    if (!auth.token || !isAgency) return;
+    setClientLoading(true);
+    const fetchClients = async () => {
+      try {
+        const data = await apiService.get(WEBHOOK_CONFIG.CLIENT_ORGANIZATIONS_URL, {}, auth.token);
+        if (Array.isArray(data)) {
+          setClientOptions(data);
+        } else if (data && Array.isArray(data.organizations)) {
+          setClientOptions(data.organizations);
+        } else {
+          setClientOptions([]);
+        }
+      } catch (err: any) {
+        addToast(err.message || 'Failed to load client organizations', 'error');
+        setClientOptions([]);
+      } finally {
+        setClientLoading(false);
+      }
+    };
+    fetchClients();
+  }, [auth.token, isAgency, addToast]);
 
   // Sync URL when filters change
   useEffect(() => {
@@ -344,10 +423,12 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (workflowFilter)           p.workflow_status = workflowFilter;
     if (processingFilter)         p.processing_status = processingFilter;
     if (aiResultFilter)           p.ai_decision = aiResultFilter;
+    if (campaignFilter)           p.campaign_id = campaignFilter;
+    if (clientFilter)             p.client_organization_id = clientFilter;
     if (debouncedSearch)          p.search = debouncedSearch;
     if (page > 1)                 p.page = String(page);
     setSearchParams(p, { replace: true });
-  }, [activeView, workflowFilter, processingFilter, aiResultFilter, debouncedSearch, page, setSearchParams]);
+  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, page, setSearchParams]);
 
   // Debounce search field
   const handleSearchChange = (value: string) => {
@@ -364,7 +445,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (!auth.token) return;
     setLoading(true);
     try {
-      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, debouncedSearch, page);
+      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, page);
       const data = await apiService.get(WEBHOOK_CONFIG.CANDIDATES_SEARCH_URL, params, auth.token);
       // Tenant-wide mode returns { candidates, pagination }
       if (data && typeof data === 'object' && Array.isArray(data.candidates)) {
@@ -385,7 +466,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     } finally {
       setLoading(false);
     }
-  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, debouncedSearch, page, addToast]);
+  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, page, addToast]);
 
   useEffect(() => {
     fetchCandidates();
@@ -397,6 +478,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setWorkflowFilter('');
     setProcessingFilter('');
     setAiResultFilter('');
+    setCampaignFilter('');
+    setClientFilter('');
     setSearch('');
     setDebouncedSearch('');
     setPage(1);
@@ -407,12 +490,14 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setWorkflowFilter('');
     setProcessingFilter('');
     setAiResultFilter('');
+    setCampaignFilter('');
+    setClientFilter('');
     setSearch('');
     setDebouncedSearch('');
     setPage(1);
   };
 
-  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || debouncedSearch;
+  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || debouncedSearch;
 
   const openCandidate = (c: Candidate) => {
     navigate(`/applications?job_id=${encodeURIComponent(c.job_id)}&app_id=${encodeURIComponent(c.application_id)}`);
@@ -494,6 +579,34 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           <option value="partial">Partial</option>
           <option value="rejected_low_match">Rejected / Low Match</option>
         </select>
+
+        {/* Campaign filter */}
+        <select
+          value={campaignFilter}
+          onChange={e => { setCampaignFilter(e.target.value); setPage(1); }}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50"
+          disabled={campaignLoading}
+        >
+          <option value="">{t.filterCampaign}</option>
+          {campaignOptions.map(c => (
+            <option key={c.campaign_id} value={c.campaign_id}>{c.name}</option>
+          ))}
+        </select>
+
+        {/* Client organization filter (agency only) */}
+        {isAgency && (
+          <select
+            value={clientFilter}
+            onChange={e => { setClientFilter(e.target.value); setPage(1); }}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50"
+            disabled={clientLoading}
+          >
+            <option value="">{t.filterClient}</option>
+            {clientOptions.map(c => (
+              <option key={c.client_organization_id} value={c.client_organization_id}>{c.organization_name}</option>
+            ))}
+          </select>
+        )}
 
         {/* Name search */}
         <input
