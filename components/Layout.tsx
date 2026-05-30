@@ -15,9 +15,9 @@ interface LayoutProps {
 const T = {
   en: {
     jobs: 'Jobs', campaigns: 'Campaigns', settings: 'Settings', planUsage: 'Plan & Usage',
-    clientOrgs: 'Client Organizations',
+    clientOrgs: 'Client Organizations', clients: 'Clients',
     sysAdmin: 'System Admin', tenantMgmt: 'Tenant Management',
-    platformControl: 'Platform Control',
+    platformControl: 'Platform Control', workspaceSection: 'Workspace', accountSection: 'Account',
     logout: 'Logout', superAdmin: 'Super Admin', usersGlobal: 'Users Global',
     platformConfig: 'Platform Config', subscriptionPlans: 'Subscription Plans',
     tenantSubscriptions: 'Tenant Subscriptions',
@@ -47,9 +47,9 @@ const T = {
   },
   ar: {
     jobs: 'الوظائف', campaigns: 'الحملات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
-    clientOrgs: 'منظمات العملاء',
+    clientOrgs: 'منظمات العملاء', clients: 'العملاء',
     sysAdmin: 'مشرف النظام', tenantMgmt: 'إدارة المستأجر',
-    platformControl: 'التحكم بالمنصة',
+    platformControl: 'التحكم بالمنصة', workspaceSection: 'مساحة العمل', accountSection: 'الحساب',
     logout: 'تسجيل الخروج', superAdmin: 'المشرف العام', usersGlobal: 'المستخدمون',
     platformConfig: 'إعدادات المنصة', subscriptionPlans: 'خطط الاشتراك',
     tenantSubscriptions: 'اشتراكات المستأجرين',
@@ -163,6 +163,7 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
   const isSuperAdmin = user?.role?.toLowerCase() === 'super_admin';
   const isTenantAdmin = user?.role?.toLowerCase() === 'admin';
   const showClientOrgs = user?.tenant_type !== 'organization';
+  const isAgencyOrFreelancer = user?.tenant_type === 'agency' || user?.tenant_type === 'individual_recruiter';
 
   const { pageTitle: contextTitle } = usePageTitle();
   const currentMenuId = pathnameToMenuId(location.pathname);
@@ -175,34 +176,78 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
 
   const isActive = (id: string) => currentMenuId === id;
 
-  const tenantMenuItems = [
-    { id: 'jobs', label: t.jobs, icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-      </svg>
-    )},
-    { id: 'campaigns', label: t.campaigns, icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
-      </svg>
-    )},
-    ...(showClientOrgs ? [{ id: 'client-organizations', label: t.clientOrgs, icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-      </svg>
-    )}] : []),
-    ...(isTenantAdmin ? [{ id: 'plan-usage', label: t.planUsage, icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-      </svg>
-    )}] : []),
-    { id: 'settings', label: t.settings, icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    )},
-  ];
+  // ── Workspace menu items (tenant-type aware ordering) ──────────────────────
+  const workspaceMenuItems = (() => {
+    const items = [];
+
+    // For agency/freelancer: Clients first (if present)
+    if (isAgencyOrFreelancer) {
+      items.push({
+        id: 'client-organizations',
+        label: t.clients,
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          </svg>
+        ),
+      });
+    }
+
+    // Campaigns (always shown)
+    items.push({
+      id: 'campaigns',
+      label: t.campaigns,
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+        </svg>
+      ),
+    });
+
+    // Jobs (always shown, core to all tenant types)
+    items.push({
+      id: 'jobs',
+      label: t.jobs,
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+      ),
+    });
+
+    return items;
+  })();
+
+  // ── Account menu items ─────────────────────────────────────────────────────
+  const accountMenuItems = (() => {
+    const items = [
+      {
+        id: 'settings',
+        label: t.settings,
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        ),
+      },
+    ];
+
+    // Plan & Usage for admins only
+    if (isTenantAdmin) {
+      items.push({
+        id: 'plan-usage',
+        label: t.planUsage,
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+          </svg>
+        ),
+      });
+    }
+
+    return items;
+  })();
 
   const adminMenuItems = [
     { id: 'admin-dashboard', label: t.superAdmin, icon: (
@@ -319,10 +364,31 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
               </div>
             </>
           )}
+
+          {/* Workspace section */}
           <div>
-            <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.tenantMgmt}</p>
+            <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.workspaceSection}</p>
             <div className="space-y-1">
-              {tenantMenuItems.map(item => (
+              {workspaceMenuItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleNavigate(item.id)}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
+                >
+                  {item.icon}<span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Visual separator between workspace and account sections */}
+          <div className="h-px bg-border" />
+
+          {/* Account section */}
+          <div>
+            <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.accountSection}</p>
+            <div className="space-y-1">
+              {accountMenuItems.map(item => (
                 <button
                   key={item.id}
                   onClick={() => handleNavigate(item.id)}
