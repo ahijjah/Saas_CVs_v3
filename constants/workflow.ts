@@ -73,6 +73,32 @@ export const VALID_WORKFLOW_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]
 
 // ── Action button labels ──────────────────────────────────────────────────────
 
+// ── Advanced Move ─────────────────────────────────────────────────────────────
+
+/**
+ * Roles permitted to perform advanced (stage-jumping) workflow moves.
+ * Backend independently enforces this — frontend uses it only to conditionally render the UI.
+ */
+export const ADVANCED_MOVE_ALLOWED_ROLES = new Set<string>(['admin', 'super_admin']);
+
+/**
+ * All recruiter-facing workflow statuses in pipeline order, used by the
+ * Advanced Move dropdown to populate every reachable target status.
+ */
+export const ALL_WORKFLOW_STATUSES: WorkflowStatus[] = [
+  'awaiting_review',
+  'under_review',
+  'shortlisted',
+  'interviewing',
+  'offer_made',
+  'hired',
+  'on_hold',
+  'rejected',
+  'withdrawn',
+];
+
+// ── Action button labels ──────────────────────────────────────────────────────
+
 export const WORKFLOW_ACTION_LABELS_EN: Record<WorkflowStatus, string> = {
   awaiting_review: 'Awaiting Review',
   under_review:    'Start Review',

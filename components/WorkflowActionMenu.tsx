@@ -7,20 +7,21 @@
  *   Pause/Close  — on_hold, rejected, withdrawn
  *   Other        — statuses outside the standard progression
  *
- * Note requirement rules:
- *   Required    — rejected, withdrawn (confirm button disabled until note entered)
+ * Note requirement rules (normal Move):
+ *   Required    — rejected, withdrawn (confirm disabled until note entered)
  *   Recommended — on_hold, Back/Reopen moves (textarea shown; can proceed without)
  *   Optional    — normal forward progression (no textarea shown)
  *
+ * Advanced Move (admin/super_admin only):
+ *   - Bypasses the VALID_WORKFLOW_TRANSITIONS graph
+ *   - Shows all statuses except current, grouped identically
+ *   - Note/reason is always required
+ *   - Visually separated with amber/warning styling
+ *   - Rendered only when advancedMoveEnabled && userRole is in ADVANCED_MOVE_ALLOWED_ROLES
+ *   - Backend independently enforces permission + required note
+ *
  * Processing gate: only processing_status === 'ai_scored' candidates are
  * recruiter-actionable. All others render a muted "System Managed" badge.
- *
- * TODO (future): tenant/platform setting allow_workflow_stage_jumping
- *   - When enabled, show an "Advanced Move" section that lists all statuses
- *     (not just backend-allowed transitions) in a separate group
- *   - Require role permission can_jump_workflow_stages
- *   - Show confirmation dialog with mandatory reason field
- *   - Write audit/timeline entry with actor, reason, and bypassed steps
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -30,6 +31,8 @@ import {
   WORKFLOW_STATUS_STYLES,
   WORKFLOW_STATUS_LABELS_EN,
   WORKFLOW_STATUS_LABELS_AR,
+  ADVANCED_MOVE_ALLOWED_ROLES,
+  ALL_WORKFLOW_STATUSES,
 } from '../constants/workflow';
 
 // ── Grouping helpers ─────────────────────────────────────────────────────────
@@ -68,27 +71,16 @@ function groupTransitions(
     forward: [], back_reopen: [], pause_close: [], other: [],
   };
   for (const t of transitions) {
-    if (t === current) continue; // never show current status as an option
+    if (t === current) continue;
     groups[getTransitionGroup(current, t)].push(t);
   }
   return groups;
 }
 
 function getNoteRequirement(toStatus: WorkflowStatus, current: WorkflowStatus): NoteRequirement {
-  // Required notes for rejected and withdrawn
-  if (toStatus === 'rejected' || toStatus === 'withdrawn') {
-    return 'required';
-  }
-  // Recommended for on_hold
-  if (toStatus === 'on_hold') {
-    return 'recommended';
-  }
-  // Recommended for back/reopen moves
-  const group = getTransitionGroup(current, toStatus);
-  if (group === 'back_reopen') {
-    return 'recommended';
-  }
-  // Optional for forward moves and other transitions
+  if (toStatus === 'rejected' || toStatus === 'withdrawn') return 'required';
+  if (toStatus === 'on_hold') return 'recommended';
+  if (getTransitionGroup(current, toStatus) === 'back_reopen') return 'recommended';
   return 'optional';
 }
 
@@ -105,36 +97,63 @@ export interface WorkflowActionMenuProps {
   isUpdating: boolean;
   lang?: 'en' | 'ar';
   /**
-   * Called after the recruiter selects a target status (and confirms note if prompted).
-   * `note` is provided when the recruiter filled in the optional note field.
+   * Role of the current user. Used to conditionally show the Advanced Move button.
+   * Backend independently enforces the permission check.
    */
-  onTransition: (applicationId: string, toStatus: WorkflowStatus, note?: string) => void;
+  userRole?: string;
+  /**
+   * When true and userRole is in ADVANCED_MOVE_ALLOWED_ROLES, the Advanced Move
+   * dropdown is rendered. Set false to disable the feature at the tenant/page level.
+   */
+  advancedMoveEnabled?: boolean;
+  /**
+   * Called after the recruiter confirms a transition.
+   * - note: present when the recruiter filled the optional/required note field.
+   * - isAdvancedMove: true when the transition bypassed normal stage progression.
+   */
+  onTransition: (
+    applicationId: string,
+    toStatus: WorkflowStatus,
+    note?: string,
+    isAdvancedMove?: boolean,
+  ) => void;
 }
 
 export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
-  applicationId, currentStatus, processingStatus, isUpdating, lang = 'en', onTransition,
+  applicationId,
+  currentStatus,
+  processingStatus,
+  isUpdating,
+  lang = 'en',
+  userRole,
+  advancedMoveEnabled,
+  onTransition,
 }) => {
   const [open, setOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<WorkflowStatus | null>(null);
+  const [pendingIsAdvanced, setPendingIsAdvanced] = useState(false);
   const [noteRequirement, setNoteRequirement] = useState<NoteRequirement>('optional');
   const [noteText, setNoteText] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
 
-  // Close dropdown when clicking outside
+  const canDoAdvancedMove =
+    !!advancedMoveEnabled && !!userRole && ADVANCED_MOVE_ALLOWED_ROLES.has(userRole);
+
+  // Close dropdowns when clicking outside
   useEffect(() => {
-    if (!open) return;
+    if (!open && !advancedOpen) return;
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setOpen(false);
-        setPendingStatus(null);
-        setNoteText('');
-        setNoteRequirement('optional');
+        setAdvancedOpen(false);
+        resetPending();
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+  }, [open, advancedOpen]);
 
   // ── Processing gate ──────────────────────────────────────────────────────
   if (processingStatus !== 'ai_scored') {
@@ -147,10 +166,9 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
 
   const transitions = VALID_WORKFLOW_TRANSITIONS[currentStatus] ?? [];
   const groups = groupTransitions(currentStatus, transitions);
-  const hasOptions = Object.values(groups).some(g => g.length > 0);
+  const hasNormalOptions = Object.values(groups).some(g => g.length > 0);
 
-  // Terminal state (e.g. hired) or all transitions filtered — no actions available
-  if (!hasOptions) {
+  if (!hasNormalOptions && !canDoAdvancedMove) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-slate-400 bg-slate-50 border border-slate-200">
         —
@@ -158,117 +176,207 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
     );
   }
 
+  // ── Handlers ─────────────────────────────────────────────────────────────
+
+  const resetPending = () => {
+    setPendingStatus(null);
+    setPendingIsAdvanced(false);
+    setNoteText('');
+    setNoteRequirement('optional');
+  };
+
+  const openNormal = () => {
+    setOpen(v => !v);
+    setAdvancedOpen(false);
+    resetPending();
+  };
+
+  const openAdvanced = () => {
+    setAdvancedOpen(v => !v);
+    setOpen(false);
+    resetPending();
+  };
+
   const selectStatus = (toStatus: WorkflowStatus) => {
     const requirement = getNoteRequirement(toStatus, currentStatus);
-    // Show note prompt for required, recommended, or on_hold transitions
-    if (requirement === 'required' || requirement === 'recommended' || toStatus === 'on_hold') {
+    if (requirement === 'required' || requirement === 'recommended') {
       setPendingStatus(toStatus);
+      setPendingIsAdvanced(false);
       setNoteRequirement(requirement);
       setNoteText('');
     } else {
-      // For optional forward moves, proceed without showing textarea
       setOpen(false);
       onTransition(applicationId, toStatus);
     }
   };
 
+  const selectAdvancedStatus = (toStatus: WorkflowStatus) => {
+    // Advanced moves always require a note
+    setPendingStatus(toStatus);
+    setPendingIsAdvanced(true);
+    setNoteRequirement('required');
+    setNoteText('');
+  };
+
   const confirmPending = () => {
     if (!pendingStatus) return;
-    // Enforce required notes
-    if (noteRequirement === 'required' && !noteText.trim()) {
-      return;
-    }
+    if (noteRequirement === 'required' && !noteText.trim()) return;
     setOpen(false);
-    onTransition(applicationId, pendingStatus, noteText.trim() || undefined);
-    setPendingStatus(null);
-    setNoteText('');
-    setNoteRequirement('optional');
+    setAdvancedOpen(false);
+    onTransition(applicationId, pendingStatus, noteText.trim() || undefined, pendingIsAdvanced);
+    resetPending();
   };
 
   const cancelPending = () => {
-    setPendingStatus(null);
-    setNoteText('');
-    setNoteRequirement('optional');
+    resetPending();
   };
+
+  // Advanced targets: all statuses except current
+  const advancedTargets = ALL_WORKFLOW_STATUSES.filter(s => s !== currentStatus);
+  const advancedGroups = groupTransitions(currentStatus, advancedTargets);
+
+  // ── Shared note confirmation panel (used by both normal and advanced dropdowns) ──
+
+  const NotePanel = () => (
+    <div className="px-3 py-2 space-y-2">
+      <p className="text-xs font-semibold text-slate-700">
+        {pendingStatus && wfLabels[pendingStatus]}
+        <span className="text-slate-400 font-normal ml-1">
+          {noteRequirement === 'required' ? '— note required' : '— note optional'}
+        </span>
+      </p>
+
+      {/* Advanced bypass warning */}
+      {pendingIsAdvanced && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium">
+          ⚠ This action bypasses normal workflow progression. A reason is required.
+        </p>
+      )}
+
+      {/* Normal note messages */}
+      {!pendingIsAdvanced && noteRequirement === 'required' && (
+        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+          A note is required for this action.
+        </p>
+      )}
+      {!pendingIsAdvanced && noteRequirement === 'recommended' && (
+        <p className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+          Adding a note is recommended for this action.
+        </p>
+      )}
+
+      <textarea
+        autoFocus
+        value={noteText}
+        onChange={e => setNoteText(e.target.value)}
+        placeholder="Reason, context, or next step…"
+        rows={2}
+        className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none placeholder-slate-400"
+      />
+
+      <div className="flex gap-1.5">
+        <button
+          onClick={confirmPending}
+          disabled={noteRequirement === 'required' && !noteText.trim()}
+          className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${
+            noteRequirement === 'required' && !noteText.trim()
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              : pendingIsAdvanced
+                ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                : pendingStatus
+                  ? (WORKFLOW_STATUS_STYLES[pendingStatus] ?? 'bg-slate-100 text-slate-700')
+                  : 'bg-slate-100 text-slate-700'
+          } disabled:hover:opacity-100`}
+        >
+          Confirm
+        </button>
+        <button
+          onClick={cancelPending}
+          className="flex-1 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div ref={menuRef} className="relative" onClick={e => e.stopPropagation()}>
-      {/* Trigger button */}
-      <button
-        disabled={isUpdating}
-        onClick={() => { setOpen(v => !v); setPendingStatus(null); setNoteText(''); setNoteRequirement('optional'); }}
-        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 bg-white hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {isUpdating ? (
-          <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin inline-block" />
-        ) : (
-          <>
-            Move
+    <div ref={menuRef} className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+
+      {/* ── Normal Move button + dropdown ── */}
+      {hasNormalOptions && (
+        <div className="relative">
+          <button
+            disabled={isUpdating}
+            onClick={openNormal}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 bg-white hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isUpdating ? (
+              <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin inline-block" />
+            ) : (
+              <>
+                Move
+                <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
+                  <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </>
+            )}
+          </button>
+
+          {open && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[190px]">
+              {pendingStatus && !pendingIsAdvanced ? (
+                <NotePanel />
+              ) : (
+                <>
+                  <GroupSection label="Forward" statuses={groups.forward} wfLabels={wfLabels} onSelect={selectStatus} prev={false} />
+                  <GroupSection label="Back / Reopen" statuses={groups.back_reopen} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0} />
+                  <GroupSection label="Pause / Close" statuses={groups.pause_close} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0 || groups.back_reopen.length > 0} />
+                  <GroupSection label="Other" statuses={groups.other} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0 || groups.back_reopen.length > 0 || groups.pause_close.length > 0} />
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Advanced Move button + dropdown (admin/super_admin only) ── */}
+      {canDoAdvancedMove && (
+        <div className="relative">
+          <button
+            disabled={isUpdating}
+            onClick={openAdvanced}
+            title="Advanced Move — bypasses normal workflow progression (admin only)"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-200 text-xs font-medium text-amber-700 bg-amber-50 hover:border-amber-400 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Advanced
             <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
               <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-          </>
-        )}
-      </button>
+          </button>
 
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[190px]">
+          {advancedOpen && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-amber-200 rounded-xl shadow-lg py-1 min-w-[220px]">
+              {/* Header banner */}
+              {!(pendingStatus && pendingIsAdvanced) && (
+                <div className="px-3 py-2 bg-amber-50 border-b border-amber-100 rounded-t-xl">
+                  <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Advanced Move</p>
+                  <p className="text-[10px] text-amber-600 mt-0.5">Bypasses normal stage progression · Reason required</p>
+                </div>
+              )}
 
-          {/* ── Note confirmation panel for transitions that require/recommend notes ── */}
-          {pendingStatus ? (
-            <div className="px-3 py-2 space-y-2">
-              <p className="text-xs font-semibold text-slate-700">
-                {wfLabels[pendingStatus]}
-                <span className="text-slate-400 font-normal ml-1">
-                  {noteRequirement === 'required' ? '— add a note (required)' : '— add a note (optional)'}
-                </span>
-              </p>
-              {noteRequirement === 'required' && (
-                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                  A note is required for this action.
-                </p>
+              {pendingStatus && pendingIsAdvanced ? (
+                <NotePanel />
+              ) : (
+                <>
+                  <GroupSection label="Forward" statuses={advancedGroups.forward} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={false} />
+                  <GroupSection label="Back / Reopen" statuses={advancedGroups.back_reopen} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={advancedGroups.forward.length > 0} />
+                  <GroupSection label="Pause / Close" statuses={advancedGroups.pause_close} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={advancedGroups.forward.length > 0 || advancedGroups.back_reopen.length > 0} />
+                  <GroupSection label="Other" statuses={advancedGroups.other} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={advancedGroups.forward.length > 0 || advancedGroups.back_reopen.length > 0 || advancedGroups.pause_close.length > 0} />
+                </>
               )}
-              {noteRequirement === 'recommended' && (
-                <p className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-1">
-                  Adding a note is recommended for this action.
-                </p>
-              )}
-              <textarea
-                autoFocus
-                value={noteText}
-                onChange={e => setNoteText(e.target.value)}
-                placeholder="Reason, context, or next step…"
-                rows={2}
-                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none placeholder-slate-400"
-              />
-              <div className="flex gap-1.5">
-                <button
-                  onClick={confirmPending}
-                  disabled={noteRequirement === 'required' && !noteText.trim()}
-                  className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                    noteRequirement === 'required' && !noteText.trim()
-                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                      : WORKFLOW_STATUS_STYLES[pendingStatus] ?? 'bg-slate-100 text-slate-700'
-                  } hover:opacity-80 disabled:hover:opacity-100`}
-                >
-                  Confirm
-                </button>
-                <button
-                  onClick={cancelPending}
-                  className="flex-1 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
             </div>
-          ) : (
-            <>
-              <GroupSection label="Forward" statuses={groups.forward} wfLabels={wfLabels} onSelect={selectStatus} prev={false} />
-              <GroupSection label="Back / Reopen" statuses={groups.back_reopen} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0} />
-              <GroupSection label="Pause / Close" statuses={groups.pause_close} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0 || groups.back_reopen.length > 0} />
-              <GroupSection label="Other" statuses={groups.other} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0 || groups.back_reopen.length > 0 || groups.pause_close.length > 0} />
-            </>
           )}
         </div>
       )}
@@ -283,7 +391,7 @@ interface GroupSectionProps {
   statuses: WorkflowStatus[];
   wfLabels: Record<WorkflowStatus, string>;
   onSelect: (status: WorkflowStatus) => void;
-  prev: boolean; // whether a previous group was rendered (controls divider)
+  prev: boolean;
 }
 
 const GroupSection: React.FC<GroupSectionProps> = ({ label, statuses, wfLabels, onSelect, prev }) => {

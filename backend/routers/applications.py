@@ -53,6 +53,7 @@ class ResetStuckRequest(BaseModel):
 class WorkflowStatusRequest(BaseModel):
     workflow_status: str
     note: str | None = None
+    advanced_move: bool = False
 
 
 class RecruiterNotesRequest(BaseModel):
@@ -451,7 +452,8 @@ async def get_application_details(
     # Fetch workflow history
     wf_rows = await db.execute(
         text("""
-            SELECT history_id, from_status, to_status, note, changed_by_name, created_at
+            SELECT history_id, from_status, to_status, note, changed_by_name,
+                   created_at, is_advanced_move
             FROM application_workflow_history
             WHERE application_id = CAST(:aid AS uuid)
             ORDER BY created_at DESC
@@ -461,12 +463,13 @@ async def get_application_details(
     )
     workflow_history = [
         {
-            "history_id":     str(r["history_id"]),
-            "from_status":    r["from_status"],
-            "to_status":      r["to_status"],
-            "note":           r["note"],
+            "history_id":      str(r["history_id"]),
+            "from_status":     r["from_status"],
+            "to_status":       r["to_status"],
+            "note":            r["note"],
             "changed_by_name": r["changed_by_name"],
-            "created_at":     r["created_at"].isoformat() if r["created_at"] else None,
+            "created_at":      r["created_at"].isoformat() if r["created_at"] else None,
+            "is_advanced_move": bool(r["is_advanced_move"]),
         }
         for r in wf_rows.mappings()
     ]
@@ -967,12 +970,30 @@ async def update_workflow_status(
     if new_status == current_status:
         return {"workflow_status": current_status}
 
-    allowed = VALID_WORKFLOW_TRANSITIONS.get(current_status, frozenset())
-    if new_status not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Cannot transition workflow from '{current_status}' to '{new_status}'.",
-        )
+    is_advanced = bool(body.advanced_move)
+
+    if is_advanced:
+        # Advanced move: privileged stage-jump — validate permission and require a note
+        actor_role = (current_user.role or "").lower()
+        if actor_role not in ("admin", "super_admin"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Advanced workflow moves require admin or super_admin role.",
+            )
+        if not body.note or not body.note.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A note/reason is required for advanced workflow moves.",
+            )
+        # No transition-graph check — advanced move intentionally bypasses it
+    else:
+        # Normal move: enforce the state-machine graph
+        allowed = VALID_WORKFLOW_TRANSITIONS.get(current_status, frozenset())
+        if new_status not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Cannot transition workflow from '{current_status}' to '{new_status}'.",
+            )
 
     await db.execute(
         text("""
@@ -986,9 +1007,11 @@ async def update_workflow_status(
     await db.execute(
         text("""
             INSERT INTO application_workflow_history
-                (application_id, tenant_id, changed_by, changed_by_name, from_status, to_status, note)
+                (application_id, tenant_id, changed_by, changed_by_name,
+                 from_status, to_status, note, is_advanced_move)
             VALUES
-                (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:uid AS uuid), :uname, :from_s, :to_s, :note)
+                (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:uid AS uuid), :uname,
+                 :from_s, :to_s, :note, :is_adv)
         """),
         {
             "aid":    application_id,
@@ -998,6 +1021,7 @@ async def update_workflow_status(
             "from_s": current_status,
             "to_s":   new_status,
             "note":   body.note,
+            "is_adv": is_advanced,
         },
     )
 

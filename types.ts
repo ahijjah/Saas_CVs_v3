@@ -283,6 +283,7 @@ export interface WorkflowHistoryEntry {
   note: string | null;
   changed_by_name: string | null;
   created_at: string | null;
+  is_advanced_move?: boolean;
 }
 
 export interface Application {

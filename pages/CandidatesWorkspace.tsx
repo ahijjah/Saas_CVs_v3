@@ -301,6 +301,7 @@ interface TimelineEvent {
   actor: string;
   action: string;
   detail?: string;
+  isAdvancedMove?: boolean;
 }
 
 function buildTimeline(candidate: Candidate, detail: AppDetail | null): TimelineEvent[] {
@@ -315,8 +316,11 @@ function buildTimeline(candidate: Candidate, detail: AppDetail | null): Timeline
           type: 'workflow_transition',
           timestamp: h.created_at,
           actor: h.changed_by_name || 'System',
-          action: `Moved candidate to ${h.to_status || 'unknown'}`,
+          action: h.is_advanced_move
+            ? `Advanced Move → ${WORKFLOW_STATUS_LABELS_EN[h.to_status as WorkflowStatus] || h.to_status}`
+            : `Moved to ${WORKFLOW_STATUS_LABELS_EN[h.to_status as WorkflowStatus] || h.to_status}`,
           detail: h.note || undefined,
+          isAdvancedMove: h.is_advanced_move,
         });
       }
     }
@@ -471,6 +475,7 @@ interface AppDetail {
     note?: string;
     changed_by_name?: string;
     created_at?: string;
+    is_advanced_move?: boolean;
   }>;
   applied_at?: string;
   scored_at?: string;
@@ -487,14 +492,17 @@ interface CandidateDetailDrawerProps {
   updatingId: string | null;
   token: string | null;
   detailVersion: number;
+  userRole?: string;
+  advancedMoveEnabled?: boolean;
   onClose: () => void;
-  onWorkflowUpdate: (applicationId: string, toStatus: WorkflowStatus) => void;
+  onWorkflowUpdate: (applicationId: string, toStatus: WorkflowStatus, note?: string, isAdvancedMove?: boolean) => void;
   onNotesUpdate: (applicationId: string, notes: string) => Promise<void>;
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
 const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
-  candidate, open, lang, updatingId, token, detailVersion, onClose, onWorkflowUpdate, onNotesUpdate, addToast,
+  candidate, open, lang, updatingId, token, detailVersion, userRole, advancedMoveEnabled,
+  onClose, onWorkflowUpdate, onNotesUpdate, addToast,
 }) => {
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
   const t = T[lang];
@@ -772,6 +780,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   processingStatus={candidate.processing_status}
                   isUpdating={isUpdating}
                   lang={lang}
+                  userRole={userRole}
+                  advancedMoveEnabled={advancedMoveEnabled}
                   onTransition={onWorkflowUpdate}
                 />
               </div>
@@ -840,15 +850,22 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                       <div key={event.id} className="relative flex gap-3">
                         {/* Timeline dot */}
                         <div className="flex flex-col items-center flex-shrink-0">
-                          <div className={`w-3 h-3 rounded-full ${timelineEventDotColor(event.type)}`} />
+                          <div className={`w-3 h-3 rounded-full ${event.isAdvancedMove ? 'bg-amber-500' : timelineEventDotColor(event.type)}`} />
                           {idx < timeline.length - 1 && <div className="w-0.5 h-8 bg-slate-200 mt-1" />}
                         </div>
 
                         {/* Event content */}
                         <div className="flex-1 pb-2">
-                          <div className={`px-2 py-1.5 rounded border ${timelineEventColor(event.type)}`}>
+                          <div className={`px-2 py-1.5 rounded border ${event.isAdvancedMove ? 'bg-amber-50 text-amber-800 border-amber-200' : timelineEventColor(event.type)}`}>
                             <div className="flex items-start justify-between gap-1">
-                              <span className="font-medium">{event.action}</span>
+                              <span className="font-medium">
+                                {event.action}
+                                {event.isAdvancedMove && (
+                                  <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-amber-200 text-amber-800 px-1 py-0.5 rounded">
+                                    Advanced
+                                  </span>
+                                )}
+                              </span>
                               <span className="text-xs opacity-70 flex-shrink-0">
                                 {formatTimelineTimestamp(event.timestamp)}
                               </span>
@@ -1150,7 +1167,12 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   };
 
   // Optimistic workflow status update
-  const handleWorkflowUpdate = async (applicationId: string, toStatus: WorkflowStatus, note?: string) => {
+  const handleWorkflowUpdate = async (
+    applicationId: string,
+    toStatus: WorkflowStatus,
+    note?: string,
+    isAdvancedMove?: boolean,
+  ) => {
     if (updatingId) return; // prevent concurrent updates
     setUpdatingId(applicationId);
 
@@ -1165,10 +1187,14 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     try {
       await apiService.patch(
         `${WEBHOOK_CONFIG.APPLICATION_WORKFLOW_STATUS_URL}/${applicationId}/workflow-status`,
-        { workflow_status: toStatus, note: note || null },
+        { workflow_status: toStatus, note: note || null, advanced_move: isAdvancedMove || false },
         auth.token,
       );
-      addToastRef.current(`Moved to ${WORKFLOW_STATUS_LABELS_EN[toStatus]}`, 'success');
+      const label = WORKFLOW_STATUS_LABELS_EN[toStatus];
+      addToastRef.current(
+        isAdvancedMove ? `Advanced Move → ${label}` : `Moved to ${label}`,
+        'success',
+      );
       // Refresh drawer detail so timeline picks up the new workflow_history row
       if (applicationId === selectedAppId) {
         setDrawerDetailVersion(v => v + 1);
@@ -1445,6 +1471,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                           processingStatus={c.processing_status}
                           isUpdating={isUpdating}
                           lang={lang}
+                          userRole={auth.user?.role}
+                          advancedMoveEnabled={true}
                           onTransition={handleWorkflowUpdate}
                         />
                         <button
@@ -1494,6 +1522,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         updatingId={updatingId}
         token={auth.token}
         detailVersion={drawerDetailVersion}
+        userRole={auth.user?.role}
+        advancedMoveEnabled={true}
         onClose={closeCandidate}
         onWorkflowUpdate={handleWorkflowUpdate}
         onNotesUpdate={handleNotesUpdate}

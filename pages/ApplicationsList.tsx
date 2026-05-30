@@ -396,18 +396,18 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   // ── Workflow / notes callbacks ─────────────────────────────────────────────
 
-  const handleWorkflowStatusChange = async (appId: string, newStatus: WorkflowStatus, note?: string) => {
+  const handleWorkflowStatusChange = async (appId: string, newStatus: WorkflowStatus, note?: string, isAdvancedMove?: boolean) => {
     try {
-      await apiService.patch(`${WEBHOOK_CONFIG.APPLICATION_WORKFLOW_STATUS_URL}/${appId}/workflow-status`, { workflow_status: newStatus, note: note || null }, auth.token!);
+      await apiService.patch(`${WEBHOOK_CONFIG.APPLICATION_WORKFLOW_STATUS_URL}/${appId}/workflow-status`, { workflow_status: newStatus, note: note || null, advanced_move: isAdvancedMove || false }, auth.token!);
       setApplicationsAll(prev => prev.map(a => (a.application_id || a.id) === appId ? { ...a, workflow_status: newStatus } : a));
       if (selectedDetails?.application_id === appId) {
         setSelectedDetails((prev: any) => prev ? {
           ...prev,
           workflow_status: newStatus,
-          workflow_history: [{ history_id: Date.now().toString(), from_status: prev.workflow_status, to_status: newStatus, note: note || null, changed_by_name: null, created_at: new Date().toISOString() }, ...(prev.workflow_history || [])],
+          workflow_history: [{ history_id: Date.now().toString(), from_status: prev.workflow_status, to_status: newStatus, note: note || null, changed_by_name: null, created_at: new Date().toISOString(), is_advanced_move: isAdvancedMove || false }, ...(prev.workflow_history || [])],
         } : prev);
       }
-      addToast('Workflow status updated.', 'success');
+      addToast(isAdvancedMove ? `Advanced Move → ${newStatus}` : 'Workflow status updated.', 'success');
     } catch { addToast('Failed to update workflow status.', 'error'); }
   };
 
@@ -504,6 +504,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         onDownloadCV={() => handleDownloadApplicationCV(selectedDetails.application_id)}
         downloadingCV={downloadingCVId === selectedDetails.application_id}
         token={auth.token!}
+        userRole={auth.user?.role}
+        advancedMoveEnabled={true}
         onWorkflowStatusChange={handleWorkflowStatusChange}
         onRecruiterNotesChange={handleRecruiterNotesChange}
       />

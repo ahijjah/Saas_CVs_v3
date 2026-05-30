@@ -26,7 +26,9 @@ interface ApplicationDetailsProps {
   onDownloadCV?: () => void;
   downloadingCV?: boolean;
   token?: string;
-  onWorkflowStatusChange?: (appId: string, newStatus: WorkflowStatus, note?: string) => void;
+  userRole?: string;
+  advancedMoveEnabled?: boolean;
+  onWorkflowStatusChange?: (appId: string, newStatus: WorkflowStatus, note?: string, isAdvancedMove?: boolean) => void;
   onRecruiterNotesChange?: (appId: string, notes: string | null) => void;
 }
 
@@ -404,7 +406,7 @@ const LANG_LABELS: Record<string, { en: string; ar: string }> = {
   mixed: { en: 'Mixed',   ar: 'مختلط' },
 };
 
-export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, onBack, jobMeta, onDownloadCV, downloadingCV, onWorkflowStatusChange, onRecruiterNotesChange }) => {
+export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, onBack, jobMeta, onDownloadCV, downloadingCV, token, userRole, advancedMoveEnabled, onWorkflowStatusChange, onRecruiterNotesChange }) => {
   const { lang, isAr } = useLanguage() as { lang: 'en' | 'ar'; isAr: boolean };
   const t = T[lang];
 
@@ -1649,7 +1651,9 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
               processingStatus={data.processing_status ?? 'ai_scored'}
               isUpdating={false}
               lang={lang}
-              onTransition={(appId, toStatus, note) => onWorkflowStatusChange(appId, toStatus, note)}
+              userRole={userRole}
+              advancedMoveEnabled={advancedMoveEnabled}
+              onTransition={(appId, toStatus, note, isAdvancedMove) => onWorkflowStatusChange(appId, toStatus, note, isAdvancedMove)}
             />
 
             {/* Workflow History */}
@@ -1662,6 +1666,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                       <span className="shrink-0 mt-0.5 text-slate-300">→</span>
                       <span>
                         <span className="font-semibold text-textMain">{WF_LABELS[h.to_status as WorkflowStatus] || h.to_status}</span>
+                        {h.is_advanced_move && (
+                          <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 px-1 py-0.5 rounded border border-amber-200">
+                            Advanced
+                          </span>
+                        )}
                         {h.from_status && <span className="text-slate-400"> from {WF_LABELS[h.from_status as WorkflowStatus] || h.from_status}</span>}
                         {h.changed_by_name && <span className="text-slate-400"> by {h.changed_by_name}</span>}
                         {h.note && <span className="italic ml-1">"{h.note}"</span>}
