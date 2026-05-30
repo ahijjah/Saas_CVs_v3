@@ -3,110 +3,231 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { Application, AuthState, ApplicationFilter, WorkflowStatus } from '../types';
+import { Application, ApplicationFilter, AuthState, WorkflowStatus } from '../types';
 import { ApplicationDetails } from './ApplicationDetails';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
 
+// ── Multi-dimensional filter types ────────────────────────────────────────────
+
+type ProcessingFilter =
+  | 'all'
+  | 'pending'
+  | 'ai_scored'
+  | 'stopped'
+  | 'security_blocked'
+  | 'duplicate_blocked'
+  | 'extraction_failed'
+  | 'processing_failed';
+
+type AiResultFilter = 'all' | 'qualified' | 'partial' | 'rejected_low_match' | 'not_scored';
+
+type WorkflowFilter =
+  | 'all'
+  | 'new'
+  | 'ai_processed'
+  | 'under_review'
+  | 'shortlisted'
+  | 'interviewing'
+  | 'offer_made'
+  | 'hired'
+  | 'rejected'
+  | 'withdrawn'
+  | 'on_hold';
+
+type FlagKey = 'possible_duplicate' | 'has_notes';
+
+interface AppFilters {
+  processing: ProcessingFilter;
+  aiResult:   AiResultFilter;
+  workflow:   WorkflowFilter;
+  flags:      Set<FlagKey>;
+}
+
+const DEFAULT_FILTERS: AppFilters = {
+  processing: 'all',
+  aiResult:   'all',
+  workflow:   'all',
+  flags:      new Set(),
+};
+
+// Map legacy single-dimension ApplicationFilter → multi-dim initial state
+function fromLegacyFilter(f: ApplicationFilter): AppFilters {
+  const base = { ...DEFAULT_FILTERS, flags: new Set<FlagKey>() };
+  switch (f) {
+    case 'ai_scored':          return { ...base, processing: 'ai_scored' };
+    case 'qualified':          return { ...base, processing: 'ai_scored', aiResult: 'qualified' };
+    case 'partial':            return { ...base, processing: 'ai_scored', aiResult: 'partial' };
+    case 'rejected':
+    case 'low_match':          return { ...base, processing: 'ai_scored', aiResult: 'rejected_low_match' };
+    case 'security_blocked':   return { ...base, processing: 'security_blocked' };
+    case 'duplicate_blocked':  return { ...base, processing: 'duplicate_blocked' };
+    case 'failed_needs_review': return { ...base, processing: 'processing_failed' };
+    case 'blocked':            return { ...base, processing: 'stopped' };
+    case 'possible_duplicate': return { ...base, flags: new Set<FlagKey>(['possible_duplicate']) };
+    case 'workflow_ai_processed':  return { ...base, workflow: 'ai_processed' };
+    case 'workflow_under_review':  return { ...base, workflow: 'under_review' };
+    case 'workflow_shortlisted':   return { ...base, workflow: 'shortlisted' };
+    case 'workflow_interviewing':  return { ...base, workflow: 'interviewing' };
+    case 'workflow_offer':         return { ...base, workflow: 'offer_made' };
+    case 'workflow_hired':         return { ...base, workflow: 'hired' };
+    case 'workflow_rejected':      return { ...base, workflow: 'rejected' };
+    case 'workflow_withdrawn':     return { ...base, workflow: 'withdrawn' };
+    case 'workflow_on_hold':       return { ...base, workflow: 'on_hold' };
+    default:                   return base;
+  }
+}
+
+function isFiltersDefault(f: AppFilters): boolean {
+  return f.processing === 'all' && f.aiResult === 'all' && f.workflow === 'all' && f.flags.size === 0;
+}
+
+// ── Props & interfaces ────────────────────────────────────────────────────────
+
 interface ApplicationsListProps {
-  jobId: string;
-  initialFilter: ApplicationFilter;
-  initialApplicationId?: string | null;
-  auth: AuthState;
-  onBack: () => void;
-  addToast: (msg: string, type: 'success' | 'error') => void;
+  jobId:                   string;
+  initialFilter:           ApplicationFilter;
+  initialApplicationId?:   string | null;
+  auth:                    AuthState;
+  onBack:                  () => void;
+  addToast:                (msg: string, type: 'success' | 'error') => void;
 }
 
 interface JobMeta {
-  job_title: string;
-  job_client: string | null;
-  job_code: string;
-  job_status: string;
-  job_type: string | null;
-  location: string | null;
+  job_title:       string;
+  job_client:      string | null;
+  job_code:        string;
+  job_status:      string;
+  job_type:        string | null;
+  location:        string | null;
   client_org_name: string | null;
 }
 
+// ── Translations ──────────────────────────────────────────────────────────────
+
 const T = {
   en: {
-    backToCampaigns: 'Back to Job',
-    filterAll: 'All',
-    filterQualified: 'Qualified',
-    filterPartial: 'Partial',
-    filterRejected: 'Rejected',
-    filterLowMatch: 'Low Match',
-    filterPossibleDuplicate: 'Possible Duplicates',
-    filterAiScored: 'AI Scored',
-    filterBlocked: 'Blocked',
-    filterSecurityBlocked: 'Security Blocked',
-    filterDuplicateBlocked: 'Duplicate Blocked',
-    filterFailedNeedsReview: 'Failed / Needs Review',
-    filterWorkflowAiProcessed: 'AI Processed',
-    filterWorkflowUnderReview: 'Under Review',
-    filterWorkflowShortlisted: 'Shortlisted',
-    filterWorkflowInterviewing: 'Interviewing',
-    filterWorkflowOffer: 'Offer Made',
-    filterWorkflowHired: 'Hired',
-    filterWorkflowRejected: 'Rejected',
-    filterWorkflowWithdrawn: 'Withdrawn',
-    filterWorkflowOnHold: 'On Hold',
-    loading: 'Loading applications...',
-    noApps: 'No applications found matching this criteria.',
-    appliedOn: 'Applied on',
-    viewAnalysis: 'View full analysis →',
+    backToJob:        'Back to Job',
+    filterPanelTitle: 'Filters',
+    clearAll:         'Clear all',
+    showing:          'Showing',
+    of:               'of',
+    results:          'results',
+    // Dimension labels
+    dimProcessing: 'Processing Outcome',
+    dimAiResult:   'AI Result',
+    dimWorkflow:   'Recruitment Workflow',
+    dimFlags:      'Flags',
+    // Processing options
+    procAll:               'All Outcomes',
+    procPending:           'Pending / Processing',
+    procAiScored:          'AI Scored',
+    procStopped:           'Stopped Before AI',
+    procSecurityBlocked:   'Security Blocked',
+    procDuplicateBlocked:  'Duplicate Blocked',
+    procExtractionFailed:  'Extraction Failed',
+    procProcessingFailed:  'Processing Failed',
+    // AI Result options
+    aiAll:               'All AI Results',
+    aiQualified:         'Qualified',
+    aiPartial:           'Partial',
+    aiRejectedLowMatch:  'Rejected / Low Match',
+    aiNotScored:         'Not Scored',
+    // Workflow options
+    wfAll:          'All Workflow',
+    wfNew:          'New',
+    wfAiProcessed:  'AI Processed',
+    wfUnderReview:  'Under Review',
+    wfShortlisted:  'Shortlisted',
+    wfInterviewing: 'Interviewing',
+    wfOfferMade:    'Offer Made',
+    wfHired:        'Hired',
+    wfRejected:     'Rejected',
+    wfWithdrawn:    'Withdrawn',
+    wfOnHold:       'On Hold',
+    // Flag labels
+    flagPossibleDuplicate: 'Possible Duplicate',
+    flagHasNotes:          'Has Recruiter Notes',
+    // Card
+    loading:       'Loading applications...',
+    noApps:        'No applications match the selected filters.',
+    appliedOn:     'Applied on',
+    viewAnalysis:  'View full analysis →',
     loadingAnalysis: 'Loading analysis...',
-    pts: 'PTS',
+    pts:           'PTS',
     possibleDuplicate: 'Possible Duplicate',
-    statusFailed: 'Failed',
-    statusPending: 'Pending',
+    statusFailed:     'Failed',
     statusProcessing: 'Processing',
-    exitReason: 'Reason:',
-    duplicateOf: 'Duplicate of another submission',
-    viewCV: 'View CV',
+    exitReason:    'Reason:',
+    duplicateOf:   'Duplicate of another submission',
+    viewCV:        'View CV',
     downloadingCV: 'Downloading…',
-    client: 'Client',
-    general: 'General',
+    client:        'Client',
+    general:       'General',
+    // AI decision labels (card pill)
+    decQualified:  'Qualified',
+    decPartial:    'Partial',
+    decRejected:   'Rejected',
   },
   ar: {
-    backToCampaigns: 'العودة إلى الوظيفة',
-    filterAll: 'الكل',
-    filterQualified: 'مؤهلون',
-    filterPartial: 'جزئيون',
-    filterRejected: 'مرفوضون',
-    filterLowMatch: 'تطابق منخفض',
-    filterPossibleDuplicate: 'مكررات محتملة',
-    filterAiScored: 'مُقيَّم بالذكاء الاصطناعي',
-    filterBlocked: 'موقوف',
-    filterSecurityBlocked: 'محظور أمنياً',
-    filterDuplicateBlocked: 'مكرر موقوف',
-    filterFailedNeedsReview: 'فشل / يحتاج مراجعة',
-    filterWorkflowAiProcessed: 'معالج بالذكاء',
-    filterWorkflowUnderReview: 'قيد المراجعة',
-    filterWorkflowShortlisted: 'مختصرون',
-    filterWorkflowInterviewing: 'مقابلة',
-    filterWorkflowOffer: 'عرض مقدم',
-    filterWorkflowHired: 'تم التعيين',
-    filterWorkflowRejected: 'مرفوض',
-    filterWorkflowWithdrawn: 'منسحب',
-    filterWorkflowOnHold: 'متوقف مؤقتاً',
-    loading: 'جارٍ تحميل الطلبات...',
-    noApps: 'لا توجد طلبات مطابقة لهذه المعايير.',
-    appliedOn: 'تاريخ التقديم',
-    viewAnalysis: '← عرض التحليل الكامل',
-    loadingAnalysis: 'جارٍ تحميل التحليل...',
-    pts: 'نقطة',
+    backToJob:        'العودة إلى الوظيفة',
+    filterPanelTitle: 'الفلاتر',
+    clearAll:         'مسح الكل',
+    showing:          'عرض',
+    of:               'من',
+    results:          'نتائج',
+    dimProcessing: 'نتيجة المعالجة',
+    dimAiResult:   'نتيجة الذكاء الاصطناعي',
+    dimWorkflow:   'سير التوظيف',
+    dimFlags:      'العلامات',
+    procAll:               'جميع النتائج',
+    procPending:           'معلق / قيد المعالجة',
+    procAiScored:          'تم التقييم بالذكاء الاصطناعي',
+    procStopped:           'توقف قبل الذكاء الاصطناعي',
+    procSecurityBlocked:   'محظور أمنياً',
+    procDuplicateBlocked:  'مكرر موقوف',
+    procExtractionFailed:  'فشل الاستخراج',
+    procProcessingFailed:  'فشل المعالجة',
+    aiAll:               'جميع نتائج الذكاء',
+    aiQualified:         'مؤهل',
+    aiPartial:           'جزئي',
+    aiRejectedLowMatch:  'مرفوض / تطابق منخفض',
+    aiNotScored:         'لم يُقيَّم',
+    wfAll:          'جميع المراحل',
+    wfNew:          'جديد',
+    wfAiProcessed:  'معالج بالذكاء',
+    wfUnderReview:  'قيد المراجعة',
+    wfShortlisted:  'مختار',
+    wfInterviewing: 'مقابلة',
+    wfOfferMade:    'عرض مقدم',
+    wfHired:        'تم التعيين',
+    wfRejected:     'مرفوض',
+    wfWithdrawn:    'منسحب',
+    wfOnHold:       'متوقف مؤقتاً',
+    flagPossibleDuplicate: 'مكرر محتمل',
+    flagHasNotes:          'له ملاحظات',
+    loading:          'جارٍ تحميل الطلبات...',
+    noApps:           'لا توجد طلبات مطابقة للفلاتر المحددة.',
+    appliedOn:        'تاريخ التقديم',
+    viewAnalysis:     '← عرض التحليل الكامل',
+    loadingAnalysis:  'جارٍ تحميل التحليل...',
+    pts:              'نقطة',
     possibleDuplicate: 'مكرر محتمل',
-    statusFailed: 'فشل',
-    statusPending: 'قيد الانتظار',
+    statusFailed:     'فشل',
     statusProcessing: 'قيد المعالجة',
-    exitReason: 'السبب:',
-    duplicateOf: 'مكرر لطلب آخر',
-    viewCV: 'عرض السيرة',
-    downloadingCV: 'جارٍ التحميل…',
-    client: 'العميل',
-    general: 'عام',
+    exitReason:       'السبب:',
+    duplicateOf:      'مكرر لطلب آخر',
+    viewCV:           'عرض السيرة',
+    downloadingCV:    'جارٍ التحميل…',
+    client:           'العميل',
+    general:          'عام',
+    decQualified:     'مؤهل',
+    decPartial:       'جزئي',
+    decRejected:      'مرفوض',
   },
 };
+
+// ── Workflow display constants ─────────────────────────────────────────────────
 
 const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
   new:            'New',
@@ -134,11 +255,42 @@ const WORKFLOW_STATUS_STYLES: Record<WorkflowStatus, string> = {
   on_hold:        'bg-yellow-100 text-yellow-700',
 };
 
-// low_match is an internal status; it maps to 'rejected' for display purposes
-const FILTER_KEYS: ApplicationFilter[] = ['all', 'ai_scored', 'qualified', 'partial', 'rejected', 'blocked', 'security_blocked', 'duplicate_blocked', 'possible_duplicate', 'failed_needs_review', 'workflow_ai_processed', 'workflow_under_review', 'workflow_shortlisted', 'workflow_interviewing', 'workflow_offer', 'workflow_hired', 'workflow_rejected', 'workflow_withdrawn', 'workflow_on_hold'];
+// ── Filter select component ────────────────────────────────────────────────────
+
+interface FilterSelectProps {
+  label:    string;
+  value:    string;
+  active:   boolean;
+  onChange: (v: string) => void;
+  options:  { value: string; label: string }[];
+}
+
+const FilterSelect: React.FC<FilterSelectProps> = ({ label, value, active, onChange, options }) => (
+  <div className="flex-1 min-w-[160px]">
+    <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${active ? 'text-primary' : 'text-textMuted'}`}>
+      {label}
+    </p>
+    <div className={`relative rounded-lg border transition-colors ${active ? 'border-primary/40 bg-primary/5' : 'border-border bg-white'}`}>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={`w-full appearance-none text-xs font-bold px-3 py-2 pr-7 rounded-lg bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 ${active ? 'text-primary' : 'text-textMain'}`}
+      >
+        {options.map(o => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <svg className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${active ? 'text-primary' : 'text-textMuted'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
+      </svg>
+    </div>
+  </div>
+);
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({
-  jobId, initialFilter, initialApplicationId, auth, onBack, addToast
+  jobId, initialFilter, initialApplicationId, auth, onBack, addToast,
 }) => {
   const { lang } = useLanguage();
   const t = T[lang];
@@ -158,51 +310,26 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     setPageTitle(null);
     setSearchParams(prev => { const p = new URLSearchParams(prev); p.delete('app_id'); return p; }, { replace: true });
   };
-  const [applicationsAll, setApplicationsAll] = useState<Application[]>([]);
-  const [selectedDetails, setSelectedDetails] = useState<any | null>(null);
-  const [filter, setFilter] = useState<ApplicationFilter>(initialFilter);
-  const [loading, setLoading] = useState(true);
-  const [detailsLoading, setDetailsLoading] = useState(false);
-  const fetchInFlightRef = useRef<string | null>(null);
-  const [jobMeta, setJobMeta] = useState<JobMeta | null>(null);
-  const [downloadingCVId, setDownloadingCVId] = useState<string | null>(null);
 
-  const filterLabels: Record<ApplicationFilter, string> = {
-    all: t.filterAll,
-    qualified: t.filterQualified,
-    partial: t.filterPartial,
-    rejected: t.filterRejected,
-    low_match: t.filterLowMatch,
-    possible_duplicate: t.filterPossibleDuplicate,
-    ai_scored: t.filterAiScored,
-    blocked: t.filterBlocked,
-    security_blocked: t.filterSecurityBlocked,
-    duplicate_blocked: t.filterDuplicateBlocked,
-    failed_needs_review: t.filterFailedNeedsReview,
-    workflow_ai_processed: t.filterWorkflowAiProcessed,
-    workflow_under_review: t.filterWorkflowUnderReview,
-    workflow_shortlisted: t.filterWorkflowShortlisted,
-    workflow_interviewing: t.filterWorkflowInterviewing,
-    workflow_offer: t.filterWorkflowOffer,
-    workflow_hired: t.filterWorkflowHired,
-    workflow_rejected: t.filterWorkflowRejected,
-    workflow_withdrawn: t.filterWorkflowWithdrawn,
-    workflow_on_hold: t.filterWorkflowOnHold,
-  };
+  const [applicationsAll, setApplicationsAll]     = useState<Application[]>([]);
+  const [selectedDetails, setSelectedDetails]     = useState<any | null>(null);
+  const [filters, setFilters]                     = useState<AppFilters>(() => fromLegacyFilter(initialFilter));
+  const [loading, setLoading]                     = useState(true);
+  const [detailsLoading, setDetailsLoading]       = useState(false);
+  const fetchInFlightRef                          = useRef<string | null>(null);
+  const [jobMeta, setJobMeta]                     = useState<JobMeta | null>(null);
+  const [downloadingCVId, setDownloadingCVId]     = useState<string | null>(null);
+
+  // ── Data fetching ──────────────────────────────────────────────────────────
 
   const fetchApplications = async () => {
     setLoading(true);
     try {
-      const data = await apiService.get(
-        WEBHOOK_CONFIG.GET_APPLICATIONS_WEBHOOK_URL,
-        { job_id: jobId },
-        auth.token!
-      );
-      const arr = Array.isArray(data) ? data : [];
-      setApplicationsAll(arr);
+      const data = await apiService.get(WEBHOOK_CONFIG.GET_APPLICATIONS_WEBHOOK_URL, { job_id: jobId }, auth.token!);
+      setApplicationsAll(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("[ApplicationsList] Fetch error:", err);
-      addToast("Failed to fetch applications.", "error");
+      console.error('[ApplicationsList] Fetch error:', err);
+      addToast('Failed to fetch applications.', 'error');
       setApplicationsAll([]);
     } finally {
       setLoading(false);
@@ -211,24 +338,10 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   const fetchJobMeta = async () => {
     try {
-      const data = await apiService.get(
-        WEBHOOK_CONFIG.GET_JOBS_WEBHOOK_URL,
-        {},
-        auth.token!
-      );
+      const data = await apiService.get(WEBHOOK_CONFIG.GET_JOBS_WEBHOOK_URL, {}, auth.token!);
       const jobs: any[] = Array.isArray(data) ? data : [];
       const job = jobs.find(j => j.job_id === jobId);
-      if (job) {
-        setJobMeta({
-          job_title: job.job_title,
-          job_client: job.job_client,
-          job_code: job.job_code,
-          job_status: job.job_status,
-          job_type: job.job_type || null,
-          location: job.location || null,
-          client_org_name: job.client_org_name || null,
-        });
-      }
+      if (job) setJobMeta({ job_title: job.job_title, job_client: job.job_client, job_code: job.job_code, job_status: job.job_status, job_type: job.job_type || null, location: job.location || null, client_org_name: job.client_org_name || null });
     } catch { /* non-critical */ }
   };
 
@@ -241,11 +354,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
       const blob = await resp.blob();
       const objUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = objUrl;
-      a.download = 'cv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      a.href = objUrl; a.download = 'cv';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(objUrl), 10000);
     } catch {
       addToast('Could not download CV.', 'error');
@@ -260,32 +370,22 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     fetchInFlightRef.current = appId;
     setDetailsLoading(true);
     try {
-      const detailsRaw = await apiService.get(
-        WEBHOOK_CONFIG.APPLICATION_DETAILS_WEBHOOK_URL,
-        { application_id: appId },
-        auth.token!
-      );
-
+      const detailsRaw = await apiService.get(WEBHOOK_CONFIG.APPLICATION_DETAILS_WEBHOOK_URL, { application_id: appId }, auth.token!);
       if (fetchInFlightRef.current !== appId) return;
-
       const detailsObj = Array.isArray(detailsRaw) ? detailsRaw[0] : detailsRaw;
+      if (!detailsObj) throw new Error('Application data not found');
 
-      if (!detailsObj) {
-        throw new Error("Application data not found");
-      }
-
-      const normalized = {
+      setSelectedDetails({
         application_id:        detailsObj?.application_id,
         candidate_name:        detailsObj?.candidate_name,
         overall_score:         Number(detailsObj?.overall_score || detailsObj?.score || 0),
-        decision:              (detailsObj?.decision || detailsObj?.status || "").toLowerCase(),
+        decision:              (detailsObj?.decision || detailsObj?.status || '').toLowerCase(),
         scores:                detailsObj?.scores,
         analysis:              detailsObj?.analysis || {},
         raw_ai_response:       detailsObj?.raw_ai_response,
         summary:               detailsObj?.analysis?.summary,
         strengths:             detailsObj?.analysis?.strengths || detailsObj?.raw_ai_response?.evidence_skills,
         risks:                 detailsObj?.analysis?.gaps_identified || detailsObj?.analysis?.risks,
-        // Intelligence pipeline fields
         cv_language:           detailsObj?.cv_language,
         local_similarity_score: detailsObj?.local_similarity_score,
         skill_match_ratio:     detailsObj?.skill_match_ratio,
@@ -294,26 +394,22 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         missing_skills:        detailsObj?.missing_skills || [],
         red_flags:             detailsObj?.red_flags || detailsObj?.analysis?.red_flags || [],
         reasoning:             detailsObj?.reasoning || {},
-        // Duplicate detection fields
         duplicate_status:                   detailsObj?.duplicate_status,
         duplicate_reference_application_id: detailsObj?.duplicate_reference_application_id,
         duplicate_similarity_score:         detailsObj?.duplicate_similarity_score,
         duplicate_reason:                   detailsObj?.duplicate_reason,
         duplicate_checked_at:               detailsObj?.duplicate_checked_at,
         duplicate_reference:                detailsObj?.duplicate_reference,
-        // Intake metadata
-        submission_source:   detailsObj?.submission_source,
-        applied_at:          detailsObj?.applied_at,
+        submission_source:    detailsObj?.submission_source,
+        applied_at:           detailsObj?.applied_at,
         email_sender_address: detailsObj?.email_sender_address,
         submitted_by_user_id: detailsObj?.submitted_by_user_id,
-        submitted_by_name:   detailsObj?.submitted_by_name,
-        submitted_by_email:  detailsObj?.submitted_by_email,
-        original_filename:   detailsObj?.original_filename,
-        // Processing / evaluation state
-        processing_status:        detailsObj?.processing_status,
-        evaluation_stage:         detailsObj?.evaluation_stage,
-        evaluation_exit_reason:   detailsObj?.evaluation_exit_reason,
-        // Security check fields
+        submitted_by_name:    detailsObj?.submitted_by_name,
+        submitted_by_email:   detailsObj?.submitted_by_email,
+        original_filename:    detailsObj?.original_filename,
+        processing_status:       detailsObj?.processing_status,
+        evaluation_stage:        detailsObj?.evaluation_stage,
+        evaluation_exit_reason:  detailsObj?.evaluation_exit_reason,
         security_check_status:      detailsObj?.security_check_status,
         security_risk_level:        detailsObj?.security_risk_level,
         security_risk_score:        detailsObj?.security_risk_score,
@@ -321,142 +417,123 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         security_detected_patterns: detailsObj?.security_detected_patterns || [],
         security_detected_snippets: detailsObj?.security_detected_snippets || [],
         security_checked_at:        detailsObj?.security_checked_at,
-        // Stopped reason (Phase 2 field — null for historical rows)
-        stopped_reason:             detailsObj?.stopped_reason ?? null,
-        // Knockout question answers
-        knockout_answers:           detailsObj?.knockout_answers || [],
-        // Recruiter workflow fields
-        workflow_status:            detailsObj?.workflow_status || 'new',
-        recruiter_notes:            detailsObj?.recruiter_notes ?? null,
-        workflow_history:           detailsObj?.workflow_history || [],
-      };
-
-      setSelectedDetails(normalized);
+        stopped_reason:   detailsObj?.stopped_reason ?? null,
+        knockout_answers: detailsObj?.knockout_answers || [],
+        workflow_status:  detailsObj?.workflow_status || 'new',
+        recruiter_notes:  detailsObj?.recruiter_notes ?? null,
+        workflow_history: detailsObj?.workflow_history || [],
+      });
       enterDetailView(appId);
     } catch (err: any) {
       if (fetchInFlightRef.current === appId) {
-        console.error("[ApplicationsList] Details fetch error:", err);
-        addToast(err.message || "Failed to load application analysis.", "error");
+        console.error('[ApplicationsList] Details fetch error:', err);
+        addToast(err.message || 'Failed to load application analysis.', 'error');
       }
     } finally {
-      if (fetchInFlightRef.current === appId) {
-        fetchInFlightRef.current = null;
-        setDetailsLoading(false);
-      }
+      if (fetchInFlightRef.current === appId) { fetchInFlightRef.current = null; setDetailsLoading(false); }
     }
   };
 
-  useEffect(() => {
-    fetchApplications();
-    fetchJobMeta();
-  }, [jobId]);
+  // ── Workflow / notes callbacks ─────────────────────────────────────────────
 
-  // Keep context title in sync when language switches while in detail view
+  const handleWorkflowStatusChange = async (appId: string, newStatus: WorkflowStatus, note?: string) => {
+    try {
+      await apiService.patch(`${WEBHOOK_CONFIG.APPLICATION_WORKFLOW_STATUS_URL}/${appId}/workflow-status`, { workflow_status: newStatus, note: note || null }, auth.token!);
+      setApplicationsAll(prev => prev.map(a => (a.application_id || a.id) === appId ? { ...a, workflow_status: newStatus } : a));
+      if (selectedDetails?.application_id === appId) {
+        setSelectedDetails((prev: any) => prev ? {
+          ...prev,
+          workflow_status: newStatus,
+          workflow_history: [{ history_id: Date.now().toString(), from_status: prev.workflow_status, to_status: newStatus, note: note || null, changed_by_name: null, created_at: new Date().toISOString() }, ...(prev.workflow_history || [])],
+        } : prev);
+      }
+      addToast('Workflow status updated.', 'success');
+    } catch { addToast('Failed to update workflow status.', 'error'); }
+  };
+
+  const handleRecruiterNotesChange = async (appId: string, notes: string | null) => {
+    try {
+      await apiService.patch(`${WEBHOOK_CONFIG.APPLICATION_RECRUITER_NOTES_URL}/${appId}/recruiter-notes`, { recruiter_notes: notes }, auth.token!);
+      setApplicationsAll(prev => prev.map(a => (a.application_id || a.id) === appId ? { ...a, recruiter_notes: notes } : a));
+      if (selectedDetails?.application_id === appId) {
+        setSelectedDetails((prev: any) => prev ? { ...prev, recruiter_notes: notes } : prev);
+      }
+      addToast('Notes saved.', 'success');
+    } catch { addToast('Failed to save notes.', 'error'); }
+  };
+
+  // ── Effects ────────────────────────────────────────────────────────────────
+
+  useEffect(() => { fetchApplications(); fetchJobMeta(); }, [jobId]);
+
   useEffect(() => {
-    if (view === 'details') {
-      setPageTitle(lang === 'ar' ? 'تفاصيل الطلب' : 'Application Details');
-    }
+    if (view === 'details') setPageTitle(lang === 'ar' ? 'تفاصيل الطلب' : 'Application Details');
   }, [lang, view]);
 
-  // Clear context title on unmount so other pages are unaffected
   useEffect(() => () => { setPageTitle(null); }, []);
 
-  // Auto-open a specific application when navigated from JobDetails duplicate section
   useEffect(() => {
     if (!initialApplicationId || loading || applicationsAll.length === 0) return;
-    const target = applicationsAll.find(
-      (a) => (a.application_id || a.id) === initialApplicationId
-    );
+    const target = applicationsAll.find(a => (a.application_id || a.id) === initialApplicationId);
     if (target) handleViewAnalysis(target);
   }, [initialApplicationId, loading, applicationsAll]);
 
-  // low_match is treated as rejected for all display/filter purposes
-  const normaliseStatus = (s: string) => s === 'low_match' ? 'rejected' : s;
-  // Classification based on processing_status (primary) and flags (secondary)
-  const isAiScored = (a: Application) => a.processing_status === 'scored';
-  // stopped_reason-first; fall back to security_check_status for historical rows (stopped_reason=null)
+  // ── Classification predicates ──────────────────────────────────────────────
+
+  const normaliseStatus  = (s: string) => s === 'low_match' ? 'rejected' : s;
+  const isAiScored       = (a: Application) => a.processing_status === 'scored';
+  const isPending        = (a: Application) => ['pending', 'queued', 'processing'].includes(a.processing_status ?? '');
   const isSecurityBlocked = (a: Application) =>
     a.processing_status === 'failed' && (
       a.stopped_reason === 'security_blocked' ||
       (a.stopped_reason == null && a.security_check_status === 'blocked')
     );
-  const isDuplicateBlocked = (a: Application) =>
-    a.processing_status === 'failed' && a.stopped_reason === 'duplicate_blocked';
-  const isFailedNeedsReview = (a: Application) =>
+  const isDuplicateBlocked  = (a: Application) => a.processing_status === 'failed' && a.stopped_reason === 'duplicate_blocked';
+  const isExtractionFailed  = (a: Application) => a.processing_status === 'failed' && a.stopped_reason === 'extraction_failed';
+  const isProcessingFailed  = (a: Application) =>
     a.processing_status === 'failed' &&
-    a.stopped_reason !== 'security_blocked' &&
-    a.stopped_reason !== 'duplicate_blocked' &&
-    !(a.stopped_reason == null && a.security_check_status === 'blocked');
-  // possible_duplicate is a flag only — an app can have any processing_status
-  const isPossibleDuplicate = (a: Application) => a.duplicate_status === 'possible_duplicate';
+    !isSecurityBlocked(a) &&
+    !isDuplicateBlocked(a) &&
+    !isExtractionFailed(a);
+  const isStoppedBeforeAi   = (a: Application) => a.processing_status === 'failed';
 
-  const filteredApplications = (() => {
-    if (filter === 'all') return applicationsAll;
-    if (filter === 'ai_scored')          return applicationsAll.filter(isAiScored);
-    if (filter === 'security_blocked')   return applicationsAll.filter(isSecurityBlocked);
-    if (filter === 'duplicate_blocked')  return applicationsAll.filter(isDuplicateBlocked);
-    if (filter === 'failed_needs_review') return applicationsAll.filter(isFailedNeedsReview);
-    if (filter === 'blocked')            return applicationsAll.filter(a => a.processing_status === 'failed');
-    if (filter === 'possible_duplicate') return applicationsAll.filter(isPossibleDuplicate);
-    if (filter === 'qualified') return applicationsAll.filter(a => isAiScored(a) && a.status === 'qualified');
-    if (filter === 'partial')   return applicationsAll.filter(a => isAiScored(a) && a.status === 'partial');
-    if (filter === 'rejected')  return applicationsAll.filter(a => isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase()) === 'rejected');
-    if (filter === 'workflow_ai_processed')  return applicationsAll.filter(a => a.workflow_status === 'ai_processed');
-    if (filter === 'workflow_under_review')  return applicationsAll.filter(a => a.workflow_status === 'under_review');
-    if (filter === 'workflow_shortlisted')   return applicationsAll.filter(a => a.workflow_status === 'shortlisted');
-    if (filter === 'workflow_interviewing')  return applicationsAll.filter(a => a.workflow_status === 'interviewing');
-    if (filter === 'workflow_offer')         return applicationsAll.filter(a => a.workflow_status === 'offer_made');
-    if (filter === 'workflow_hired')         return applicationsAll.filter(a => a.workflow_status === 'hired');
-    if (filter === 'workflow_rejected')      return applicationsAll.filter(a => a.workflow_status === 'rejected');
-    if (filter === 'workflow_withdrawn')     return applicationsAll.filter(a => a.workflow_status === 'withdrawn');
-    if (filter === 'workflow_on_hold')       return applicationsAll.filter(a => a.workflow_status === 'on_hold');
-    return applicationsAll.filter(a => normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
-  })();
+  // ── Combined filter predicate ──────────────────────────────────────────────
 
-  const handleWorkflowStatusChange = async (appId: string, newStatus: WorkflowStatus, note?: string) => {
-    try {
-      await apiService.patch(
-        `${WEBHOOK_CONFIG.APPLICATION_WORKFLOW_STATUS_URL}/${appId}/workflow-status`,
-        { workflow_status: newStatus, note: note || null },
-        auth.token!
-      );
-      setApplicationsAll(prev => prev.map(a =>
-        (a.application_id || a.id) === appId ? { ...a, workflow_status: newStatus } : a
-      ));
-      if (selectedDetails && selectedDetails.application_id === appId) {
-        setSelectedDetails((prev: any) => prev ? {
-          ...prev,
-          workflow_status: newStatus,
-          workflow_history: [
-            { history_id: Date.now().toString(), from_status: prev.workflow_status, to_status: newStatus, note: note || null, changed_by_name: null, created_at: new Date().toISOString() },
-            ...(prev.workflow_history || []),
-          ],
-        } : prev);
-      }
-      addToast('Workflow status updated.', 'success');
-    } catch {
-      addToast('Failed to update workflow status.', 'error');
+  const matchesFilters = (a: Application): boolean => {
+    // Dimension 1: Processing Outcome
+    switch (filters.processing) {
+      case 'pending':           if (!isPending(a))          return false; break;
+      case 'ai_scored':         if (!isAiScored(a))         return false; break;
+      case 'stopped':           if (!isStoppedBeforeAi(a))  return false; break;
+      case 'security_blocked':  if (!isSecurityBlocked(a))  return false; break;
+      case 'duplicate_blocked': if (!isDuplicateBlocked(a)) return false; break;
+      case 'extraction_failed': if (!isExtractionFailed(a)) return false; break;
+      case 'processing_failed': if (!isProcessingFailed(a)) return false; break;
     }
+
+    // Dimension 2: AI Result (only meaningful for scored apps, but filter still applies)
+    switch (filters.aiResult) {
+      case 'qualified':
+        if (!(isAiScored(a) && a.status === 'qualified')) return false; break;
+      case 'partial':
+        if (!(isAiScored(a) && a.status === 'partial')) return false; break;
+      case 'rejected_low_match':
+        if (!(isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase()) === 'rejected')) return false; break;
+      case 'not_scored':
+        if (isAiScored(a)) return false; break;
+    }
+
+    // Dimension 3: Workflow
+    if (filters.workflow !== 'all' && a.workflow_status !== filters.workflow) return false;
+
+    // Dimension 4: Flags (all selected flags must match — AND logic)
+    if (filters.flags.has('possible_duplicate') && a.duplicate_status !== 'possible_duplicate') return false;
+    if (filters.flags.has('has_notes') && !a.recruiter_notes) return false;
+
+    return true;
   };
 
-  const handleRecruiterNotesChange = async (appId: string, notes: string | null) => {
-    try {
-      await apiService.patch(
-        `${WEBHOOK_CONFIG.APPLICATION_RECRUITER_NOTES_URL}/${appId}/recruiter-notes`,
-        { recruiter_notes: notes },
-        auth.token!
-      );
-      setApplicationsAll(prev => prev.map(a =>
-        (a.application_id || a.id) === appId ? { ...a, recruiter_notes: notes } : a
-      ));
-      if (selectedDetails && selectedDetails.application_id === appId) {
-        setSelectedDetails((prev: any) => prev ? { ...prev, recruiter_notes: notes } : prev);
-      }
-      addToast('Notes saved.', 'success');
-    } catch {
-      addToast('Failed to save notes.', 'error');
-    }
-  };
+  // ── Detail view ────────────────────────────────────────────────────────────
 
   if (view === 'details' && selectedDetails) {
     return (
@@ -473,98 +550,207 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     );
   }
 
-  const getStatusStyles = (app: Application) => {
+  // ── Derived state for list view ────────────────────────────────────────────
+
+  const filteredApplications = applicationsAll.filter(matchesFilters);
+  const isDefault = isFiltersDefault(filters);
+
+  const updateFilters = (patch: Partial<Omit<AppFilters, 'flags'>>) =>
+    setFilters(prev => ({ ...prev, ...patch }));
+
+  const toggleFlag = (key: FlagKey) =>
+    setFilters(prev => {
+      const next = new Set(prev.flags);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return { ...prev, flags: next };
+    });
+
+  const clearFilters = () => setFilters({ ...DEFAULT_FILTERS, flags: new Set() });
+
+  const getAiDecisionStyles = (app: Application) => {
     const ps = app.processing_status ?? '';
-    if (ps === 'failed')     return { pill: 'bg-red-100 text-red-700',    badge: 'bg-slate-400', label: t.statusFailed,    scoreDisplay: '—' };
-    if (ps === 'pending' || ps === 'queued' || ps === 'processing')
-                             return { pill: 'bg-blue-100 text-blue-700',  badge: 'bg-blue-300',  label: t.statusProcessing, scoreDisplay: '…' };
+    if (isStoppedBeforeAi(app)) return { pill: 'bg-red-100 text-red-700', badge: 'bg-slate-400', label: t.statusFailed, score: '—' };
+    if (isPending(app))          return { pill: 'bg-blue-100 text-blue-700', badge: 'bg-blue-300', label: t.statusProcessing, score: '…' };
     const s = normaliseStatus((app.status ?? '').toLowerCase().trim());
-    if (s === 'qualified')   return { pill: 'bg-green-100 text-green-800', badge: 'bg-success',  label: t.filterQualified,  scoreDisplay: app.score != null ? String(app.score) : '—' };
-    if (s === 'partial')     return { pill: 'bg-amber-100 text-amber-800', badge: 'bg-warning',  label: t.filterPartial,    scoreDisplay: app.score != null ? String(app.score) : '—' };
-    return                          { pill: 'bg-red-100 text-red-800',     badge: 'bg-error',    label: t.filterRejected,   scoreDisplay: app.score != null ? String(app.score) : '—' };
+    if (s === 'qualified') return { pill: 'bg-green-100 text-green-800', badge: 'bg-success',  label: t.decQualified, score: app.score != null ? String(app.score) : '—' };
+    if (s === 'partial')   return { pill: 'bg-amber-100 text-amber-800', badge: 'bg-warning',  label: t.decPartial,   score: app.score != null ? String(app.score) : '—' };
+    return                        { pill: 'bg-red-100   text-red-800',   badge: 'bg-error',    label: t.decRejected,  score: app.score != null ? String(app.score) : '—' };
   };
 
+  // ── Filter select option lists ─────────────────────────────────────────────
+
+  const processingOptions = [
+    { value: 'all',               label: t.procAll               },
+    { value: 'pending',           label: t.procPending           },
+    { value: 'ai_scored',         label: t.procAiScored          },
+    { value: 'stopped',           label: t.procStopped           },
+    { value: 'security_blocked',  label: t.procSecurityBlocked   },
+    { value: 'duplicate_blocked', label: t.procDuplicateBlocked  },
+    { value: 'extraction_failed', label: t.procExtractionFailed  },
+    { value: 'processing_failed', label: t.procProcessingFailed  },
+  ];
+
+  const aiResultOptions = [
+    { value: 'all',              label: t.aiAll              },
+    { value: 'qualified',        label: t.aiQualified        },
+    { value: 'partial',          label: t.aiPartial          },
+    { value: 'rejected_low_match', label: t.aiRejectedLowMatch },
+    { value: 'not_scored',       label: t.aiNotScored        },
+  ];
+
+  const workflowOptions = [
+    { value: 'all',          label: t.wfAll          },
+    { value: 'new',          label: t.wfNew          },
+    { value: 'ai_processed', label: t.wfAiProcessed  },
+    { value: 'under_review', label: t.wfUnderReview  },
+    { value: 'shortlisted',  label: t.wfShortlisted  },
+    { value: 'interviewing', label: t.wfInterviewing },
+    { value: 'offer_made',   label: t.wfOfferMade    },
+    { value: 'hired',        label: t.wfHired        },
+    { value: 'rejected',     label: t.wfRejected     },
+    { value: 'withdrawn',    label: t.wfWithdrawn    },
+    { value: 'on_hold',      label: t.wfOnHold       },
+  ];
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <button onClick={onBack} className="flex items-center text-primary hover:underline text-sm font-medium gap-1">
+    <div className="space-y-5">
+
+      {/* ── Top bar: back + job meta ── */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <button onClick={onBack} className="flex items-center text-primary hover:underline text-sm font-medium gap-1 shrink-0">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
-          {t.backToCampaigns}
+          {t.backToJob}
         </button>
 
-        <div className="flex bg-slate-100 p-1 rounded-lg">
-          {FILTER_KEYS.map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
-                filter === f ? 'bg-white text-primary shadow-sm' : 'text-textMuted hover:text-textMain'
-              }`}
-            >
-              {filterLabels[f]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Job metadata header */}
-      {jobMeta && (
-        <div className="bg-white rounded-xl border border-border px-5 py-4 flex flex-wrap items-center gap-x-6 gap-y-2 shadow-sm">
-          <div className="min-w-0">
-            <p className="text-xs font-black text-textMuted uppercase tracking-widest mb-0.5">{jobMeta.job_code}</p>
-            <h2 className="text-base font-bold text-textMain truncate">{jobMeta.job_title}</h2>
-          </div>
-          {jobMeta.client_org_name !== undefined && (
-            <div className="shrink-0">
-              <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-0.5">{t.client}</p>
+        {jobMeta && (
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 ml-2">
+            <div>
+              <span className="text-[9px] font-black text-textMuted uppercase tracking-widest mr-2">{jobMeta.job_code}</span>
+              <span className="text-sm font-bold text-textMain">{jobMeta.job_title}</span>
+            </div>
+            {jobMeta.client_org_name !== undefined && (
               <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${jobMeta.client_org_name ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
                 {jobMeta.client_org_name || t.general}
               </span>
-            </div>
-          )}
-          {jobMeta.job_type && (
-            <div className="shrink-0">
-              <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-0.5">Type</p>
-              <p className="text-xs font-bold text-textMain">{jobMeta.job_type}</p>
-            </div>
-          )}
-          {jobMeta.location && (
-            <div className="shrink-0">
-              <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-0.5">Location</p>
-              <p className="text-xs font-bold text-textMain">{jobMeta.location}</p>
-            </div>
-          )}
-          <div className="shrink-0 ml-auto">
+            )}
+            {jobMeta.job_type && <span className="text-xs text-textMuted">{jobMeta.job_type}</span>}
+            {jobMeta.location && <span className="text-xs text-textMuted">{jobMeta.location}</span>}
             <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
               jobMeta.job_status === 'Active' ? 'bg-green-100 text-green-800' :
               jobMeta.job_status === 'Closed' ? 'bg-slate-100 text-slate-800' :
               'bg-amber-100 text-amber-800'
             }`}>{jobMeta.job_status}</span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
+      {/* ── Multi-dimensional filter panel ── */}
+      <div className="bg-white rounded-xl border border-border shadow-sm px-5 py-4 space-y-4">
+
+        {/* Row 1: three filter selects */}
+        <div className="flex flex-wrap gap-3">
+          <FilterSelect
+            label={t.dimProcessing}
+            value={filters.processing}
+            active={filters.processing !== 'all'}
+            onChange={v => updateFilters({ processing: v as ProcessingFilter })}
+            options={processingOptions}
+          />
+          <FilterSelect
+            label={t.dimAiResult}
+            value={filters.aiResult}
+            active={filters.aiResult !== 'all'}
+            onChange={v => updateFilters({ aiResult: v as AiResultFilter })}
+            options={aiResultOptions}
+          />
+          <FilterSelect
+            label={t.dimWorkflow}
+            value={filters.workflow}
+            active={filters.workflow !== 'all'}
+            onChange={v => updateFilters({ workflow: v as WorkflowFilter })}
+            options={workflowOptions}
+          />
+        </div>
+
+        {/* Row 2: flags + result count + clear */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[9px] font-black text-textMuted uppercase tracking-widest shrink-0">{t.dimFlags}:</span>
+            {(['possible_duplicate', 'has_notes'] as FlagKey[]).map(key => (
+              <button
+                key={key}
+                onClick={() => toggleFlag(key)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition-all ${
+                  filters.flags.has(key)
+                    ? 'bg-primary/10 border-primary/40 text-primary'
+                    : 'bg-slate-50 border-border text-textMuted hover:border-slate-300 hover:text-textMain'
+                }`}
+              >
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  {key === 'possible_duplicate'
+                    ? <path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm0 3a1 1 0 011 1v4a1 1 0 11-2 0V6a1 1 0 011-1zm0 8a1 1 0 100-2 1 1 0 000 2z" />
+                    : <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                  }
+                </svg>
+                {key === 'possible_duplicate' ? t.flagPossibleDuplicate : t.flagHasNotes}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3 ml-auto">
+            {!loading && (
+              <span className="text-xs text-textMuted">
+                <span className={`font-black ${!isDefault ? 'text-primary' : 'text-textMain'}`}>{filteredApplications.length}</span>
+                {' '}{t.of}{' '}{applicationsAll.length}{' '}{t.results}
+              </span>
+            )}
+            {!isDefault && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1 text-xs font-bold text-textMuted hover:text-red-600 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                {t.clearAll}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Application cards ── */}
       <div className="grid grid-cols-1 gap-4">
         {loading ? (
           <div className="p-12 text-center text-textMuted flex flex-col items-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4" />
             {t.loading}
           </div>
         ) : filteredApplications.length === 0 ? (
           <div className="bg-white p-12 rounded-xl border border-border text-center text-textMuted">
             {t.noApps}
+            {!isDefault && (
+              <div className="mt-4">
+                <button onClick={clearFilters} className="text-primary hover:underline text-sm font-semibold">{t.clearAll}</button>
+              </div>
+            )}
           </div>
         ) : (
-          filteredApplications.map((app) => {
-            const styles = getStatusStyles(app);
-            const isTerminal = !app.processing_status || app.processing_status === 'scored' || app.processing_status === 'failed' || app.processing_status === 'low_match';
+          filteredApplications.map(app => {
+            const styles  = getAiDecisionStyles(app);
+            const isTerminal = !app.processing_status || app.processing_status === 'scored' || app.processing_status === 'failed';
+            const wfStatus = app.workflow_status as WorkflowStatus | undefined;
             return (
               <div key={app.id || app.application_id} className="bg-white p-6 rounded-xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between hover:border-primary/30 transition-all">
-                <div className="flex items-center gap-6">
-                  <div className={`w-14 h-14 aspect-square shrink-0 flex-none rounded-full flex flex-col items-center justify-center font-bold text-white shadow-sm ${styles.badge}`}>
-                    <span className="text-lg leading-none">{styles.scoreDisplay}</span>
+
+                {/* Left: score badge + info */}
+                <div className="flex items-center gap-5">
+                  <div className={`w-14 h-14 shrink-0 rounded-full flex flex-col items-center justify-center font-bold text-white shadow-sm ${styles.badge}`}>
+                    <span className="text-lg leading-none">{styles.score}</span>
                     {app.score != null && isTerminal && <span className="text-[10px] opacity-80 uppercase leading-none mt-0.5">{t.pts}</span>}
                   </div>
                   <div>
@@ -580,20 +766,25 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                   </div>
                 </div>
 
+                {/* Right: status badges + actions */}
                 <div className="mt-4 md:mt-0 flex flex-col items-end gap-2">
+                  {/* AI decision pill */}
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${styles.pill}`}>
                     {styles.label}
                   </span>
-                  {app.workflow_status && app.workflow_status !== 'new' && (
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider ${WORKFLOW_STATUS_STYLES[app.workflow_status]}`}>
-                      {WORKFLOW_STATUS_LABELS[app.workflow_status]}
+                  {/* Workflow status pill (hidden when 'new') */}
+                  {wfStatus && wfStatus !== 'new' && (
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider ${WORKFLOW_STATUS_STYLES[wfStatus]}`}>
+                      {WORKFLOW_STATUS_LABELS[wfStatus]}
                     </span>
                   )}
+                  {/* Flags */}
                   {app.duplicate_status === 'possible_duplicate' && (
                     <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700">
                       {t.possibleDuplicate}
                     </span>
                   )}
+                  {/* Actions */}
                   {isTerminal && (
                     <button
                       disabled={detailsLoading}
@@ -608,7 +799,9 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                     onClick={() => handleDownloadApplicationCV(app.application_id || app.id)}
                     className="flex items-center gap-1 text-[11px] font-bold text-textMuted hover:text-primary transition-colors disabled:opacity-50"
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
                     {downloadingCVId === (app.application_id || app.id) ? t.downloadingCV : t.viewCV}
                   </button>
                 </div>
