@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { Job, AuthState } from '../types';
@@ -18,8 +19,12 @@ const isSuperAdmin = (auth: AuthState) =>
 
 const T = {
   en: {
-    title: 'Active Recruitment Campaigns',
+    title: 'Jobs',
     sub: 'Overview of your open roles and candidate pipeline',
+    filterByCampaign: 'Filter by campaign',
+    allCampaigns: 'All campaigns',
+    noCampaign: 'No campaign',
+    campaignCleared: 'Campaign filter cleared',
     addJob: 'Add New Job',
     refresh: 'Refresh',
     loading: 'Loading jobs...',
@@ -55,8 +60,12 @@ const T = {
     analysisBlocked: 'Analysis Blocked',
   },
   ar: {
-    title: 'حملات التوظيف النشطة',
+    title: 'الوظائف',
     sub: 'نظرة عامة على وظائفك المفتوحة وخط أنابيب المرشحين',
+    filterByCampaign: 'تصفية حسب الحملة',
+    allCampaigns: 'جميع الحملات',
+    noCampaign: 'بدون حملة',
+    campaignCleared: 'تم مسح تصفية الحملة',
     addJob: 'إضافة وظيفة جديدة',
     refresh: 'تحديث',
     loading: 'جارٍ تحميل الوظائف...',
@@ -108,6 +117,18 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [tenantFilter, setTenantFilter] = useState('');
   const [clientOrgFilter, setClientOrgFilter] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Campaign filter is driven by the ?campaign=<id> query param (set when arriving
+  // from the Campaigns page "View jobs" action, or via the dropdown below).
+  const campaignFilter = searchParams.get('campaign') || '';
+  const setCampaignFilter = (id: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set('campaign', id);
+      else next.delete('campaign');
+      return next;
+    });
+  };
   const superAdmin = isSuperAdmin(auth);
   const tenantType = auth.user?.tenant_type ?? '';
   const isAgencyTenant = !superAdmin && (
@@ -189,10 +210,24 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
     : [];
   const hasGeneralJobs = isAgencyTenant && jobs.some(j => !j.client_org_name);
 
+  // Campaign filter options: distinct (id, name) pairs across the loaded jobs.
+  const campaignOptions = Array.from(
+    jobs.reduce((map, j) => {
+      if (j.campaign_id && j.campaign_name && !map.has(j.campaign_id)) {
+        map.set(j.campaign_id, j.campaign_name);
+      }
+      return map;
+    }, new Map<string, string>())
+  ).map(([id, name]) => ({ id, name }));
+  // The active campaign may not appear in any loaded job (e.g. an empty campaign);
+  // keep the dropdown selectable by showing its id if its name is unknown.
+  const activeCampaignKnown = campaignOptions.some(c => c.id === campaignFilter);
+
   const filteredJobs = jobs.filter(j => {
     if (tenantFilter && j.tenant_name !== tenantFilter) return false;
     if (clientOrgFilter === '__general__') return !j.client_org_name;
     if (clientOrgFilter && j.client_org_name !== clientOrgFilter) return false;
+    if (campaignFilter && j.campaign_id !== campaignFilter) return false;
     return true;
   });
 
@@ -226,6 +261,21 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
               {hasGeneralJobs && <option value="__general__">General</option>}
               {clientOrgOptions.map(co => (
                 <option key={co} value={co}>{co}</option>
+              ))}
+            </select>
+          )}
+          {(campaignOptions.length > 0 || campaignFilter) && (
+            <select
+              value={campaignFilter}
+              onChange={e => setCampaignFilter(e.target.value)}
+              className="w-full sm:w-48 border border-border rounded-xl px-3 py-2 text-sm text-textMain bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">{t.allCampaigns}</option>
+              {campaignFilter && !activeCampaignKnown && (
+                <option value={campaignFilter}>{campaignFilter}</option>
+              )}
+              {campaignOptions.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           )}
@@ -344,6 +394,17 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                           {!isAgencyTenant && job.client_org_name && (
                             <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700">
                               {job.client_org_name}
+                            </span>
+                          )}
+                          {job.campaign_name && (
+                            <span
+                              className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-50 text-violet-700"
+                              title={job.campaign_name}
+                            >
+                              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                              </svg>
+                              {job.campaign_name}
                             </span>
                           )}
                         </div>
@@ -471,6 +532,17 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                           </button>
                           {job.job_client && (
                             <div className="text-xs text-textMuted whitespace-nowrap">{job.job_client}</div>
+                          )}
+                          {job.campaign_name && (
+                            <span
+                              className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-50 text-violet-700"
+                              title={job.campaign_name}
+                            >
+                              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                              </svg>
+                              {job.campaign_name}
+                            </span>
                           )}
                         </td>
                         {isAgencyTenant && (

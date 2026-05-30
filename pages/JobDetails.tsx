@@ -1415,6 +1415,17 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               {(details as any).client_org_name == null && details.job_client && (
                 <span className="text-[10px] text-textMuted">{details.job_client}</span>
               )}
+              {(details as any).campaign_name && (
+                <>
+                  <span className="text-[10px] text-textMuted">·</span>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-violet-600" title={(details as any).campaign_name}>
+                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                    </svg>
+                    {(details as any).campaign_name}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>

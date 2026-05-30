@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { User, ClientOrganization, KnockoutQuestion, PassingCriteria } from '../types';
+import { User, ClientOrganization, Campaign, KnockoutQuestion, PassingCriteria } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
@@ -26,6 +26,7 @@ interface FormData {
   application_deadline: string;
   vacancies_count: string;
   client_organization_id: string;
+  campaign_id: string;
 }
 
 const T = {
@@ -38,6 +39,9 @@ const T = {
     clientOrgGeneral: 'General (No specific client)',
     clientOrgRequired: 'Please select a client or General.',
     noClientsWarning: 'No client organizations found. You can create a General job or add clients first.',
+    campaign: 'Campaign (optional)',
+    campaignNone: 'No campaign (standalone job)',
+    campaignHint: 'Only campaigns matching this job’s client are shown.',
     department: 'Department / Client',
     jobLocation: 'Location',
     jobType: 'Job Type',
@@ -96,6 +100,9 @@ const T = {
     clientOrgGeneral: 'عام (بدون عميل محدد)',
     clientOrgRequired: 'يرجى اختيار عميل أو عام.',
     noClientsWarning: 'لا توجد منظمات عملاء. يمكنك إنشاء وظيفة عامة أو إضافة عملاء أولاً.',
+    campaign: 'الحملة (اختياري)',
+    campaignNone: 'بدون حملة (وظيفة مستقلة)',
+    campaignHint: 'تُعرض فقط الحملات المطابقة لعميل هذه الوظيفة.',
     department: 'القسم / العميل',
     jobLocation: 'الموقع',
     jobType: 'نوع الوظيفة',
@@ -237,6 +244,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const [loading, setLoading] = useState(false);
   const [clientOrgs, setClientOrgs] = useState<ClientOrganization[]>([]);
   const [clientOrgsLoading, setClientOrgsLoading] = useState(false);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [showKnockout, setShowKnockout] = useState(false);
   type LocalQuestion = Partial<KnockoutQuestion> & {
     optionsText: string;        // raw textarea value for single_choice options
@@ -258,6 +266,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     application_deadline: '',
     vacancies_count: '',
     client_organization_id: '',
+    campaign_id: '',
   });
 
   useEffect(() => {
@@ -272,6 +281,17 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       .finally(() => setClientOrgsLoading(false));
   }, [token, isAgencyTenant]);
 
+  // Load active campaigns for the optional grouping selector (all tenant types).
+  useEffect(() => {
+    if (!token) return;
+    apiService.get(WEBHOOK_CONFIG.CAMPAIGNS_URL, {}, token)
+      .then((data: any) => {
+        const list: Campaign[] = data?.campaigns ?? [];
+        setCampaigns(list.filter(c => c.status === 'active'));
+      })
+      .catch(() => {});
+  }, [token]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -279,8 +299,10 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
   const handleClientOrgChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const orgId = e.target.value;
+    // Changing the client invalidates any previously-selected campaign (a campaign
+    // is bound to a single client), so reset campaign_id.
     if (orgId === '__general__') {
-      setFormData(prev => ({ ...prev, client_organization_id: '__general__', client: '' }));
+      setFormData(prev => ({ ...prev, client_organization_id: '__general__', client: '', campaign_id: '' }));
       return;
     }
     const org = clientOrgs.find(o => o.client_organization_id === orgId);
@@ -288,8 +310,19 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       ...prev,
       client_organization_id: orgId,
       client: org ? org.organization_name : '',
+      campaign_id: '',
     }));
   };
+
+  // Effective client for campaign matching: a real client id, or null = public job.
+  const effectiveClientId = isAgencyTenant
+    ? (formData.client_organization_id && formData.client_organization_id !== '__general__'
+        ? formData.client_organization_id : null)
+    : null;
+  // Public campaigns hold public jobs; client campaigns hold that client's jobs.
+  const eligibleCampaigns = campaigns.filter(
+    c => (c.client_organization_id || null) === effectiveClientId
+  );
 
   const addKnockoutQuestion = () => {
     if (knockoutQuestions.length >= MAX_KNOCKOUT) return;
@@ -325,6 +358,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       const payload: Record<string, string | number | null> = { title, description };
 
       if (!isGeneral && formData.client_organization_id) payload.client_organization_id = formData.client_organization_id;
+      if (formData.campaign_id) payload.campaign_id = formData.campaign_id;
       if (!isAgencyTenant && formData.client.trim()) payload.department = formData.client.trim();
       if (formData.job_location.trim()) payload.location = formData.job_location.trim();
       if (formData.job_type) payload.job_type = formData.job_type;
@@ -467,6 +501,25 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 </div>
               )}
             </div>
+
+            {/* Optional campaign grouping */}
+            {eligibleCampaigns.length > 0 && (
+              <div className="space-y-1.5">
+                <label className={labelCls}>{(t as any).campaign}</label>
+                <select
+                  name="campaign_id"
+                  value={formData.campaign_id}
+                  onChange={handleChange}
+                  className={selectCls}
+                >
+                  <option value="">{(t as any).campaignNone}</option>
+                  {eligibleCampaigns.map(c => (
+                    <option key={c.campaign_id} value={c.campaign_id}>{c.name}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-textMuted">{(t as any).campaignHint}</p>
+              </div>
+            )}
 
             {/* Row 2: Job Type + Work Mode + Experience Level */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">

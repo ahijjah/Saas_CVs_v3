@@ -36,6 +36,7 @@ import { AIUsagePage } from './pages/AIUsage';
 import { AIModelsPage } from './pages/AIModels';
 import { PublicJobApply } from './pages/PublicJobApply';
 import { ClientOrganizationsPage } from './pages/ClientOrganizations';
+import { CampaignsPage } from './pages/Campaigns';
 import { PlanSelectionPage } from './pages/PlanSelection';
 import { PaymentSimulationPage } from './pages/PaymentSimulation';
 import { ToastContainer, ToastType } from './components/Toast';
@@ -392,6 +393,7 @@ const AppInner: React.FC = () => {
             element={<ApplicationsRoute auth={auth} addToast={addToast} />}
           />
           <Route path="/settings" element={<Settings {...sharedAuth} />} />
+          <Route path="/campaigns" element={<CampaignsPage {...sharedAuth} />} />
           <Route path="/client-organizations" element={<ClientOrganizationsPage {...sharedAuth} />} />
           <Route
             path="/plan-usage"

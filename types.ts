@@ -118,6 +118,30 @@ export interface ClientOrganization {
   assigned_users_count?: number;
 }
 
+export interface Campaign {
+  campaign_id: string;
+  tenant_id: string;
+  client_organization_id?: string | null;
+  client_org_name?: string | null;
+  name: string;
+  description?: string | null;
+  status: 'active' | 'archived';
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  jobs_total?: number;
+  jobs_active?: number;
+}
+
+export interface CampaignJobRef {
+  job_id: string;
+  job_code: string;
+  job_title: string;
+  job_status: string;
+  client_organization_id?: string | null;
+  created_at?: string;
+}
+
 export interface AgencyUserClient {
   assignment_id: string;
   user_id: string;
@@ -149,6 +173,8 @@ export interface Job {
   restrict_forwarding_sender_to_tenant_email?: boolean;
   client_organization_id?: string | null;
   client_org_name?: string | null;
+  campaign_id?: string | null;
+  campaign_name?: string | null;
   vacancies_count?: number | null;
   applications_total: number;
   applications_qualified: number;

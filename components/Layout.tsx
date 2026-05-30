@@ -14,7 +14,7 @@ interface LayoutProps {
 
 const T = {
   en: {
-    campaigns: 'Campaigns', settings: 'Settings', planUsage: 'Plan & Usage',
+    jobs: 'Jobs', campaigns: 'Campaigns', settings: 'Settings', planUsage: 'Plan & Usage',
     clientOrgs: 'Client Organizations',
     sysAdmin: 'System Admin', tenantMgmt: 'Tenant Management',
     platformControl: 'Platform Control',
@@ -25,8 +25,9 @@ const T = {
     aiUsage: 'AI Usage & Cost', aiModels: 'AI Models',
     organization: 'Organization', langBtn: 'عربي',
     pageTitles: {
-      '/jobs':                        'Campaigns',
+      '/jobs':                        'Jobs',
       '/jobs/:id':                    'Job Details',
+      '/campaigns':                   'Campaigns',
       '/applications':                'Applications',
       '/applications/details':        'Application Details',
       '/settings':                    'Settings',
@@ -45,7 +46,7 @@ const T = {
     } as Record<string, string>,
   },
   ar: {
-    campaigns: 'الحملات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
+    jobs: 'الوظائف', campaigns: 'الحملات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
     clientOrgs: 'منظمات العملاء',
     sysAdmin: 'مشرف النظام', tenantMgmt: 'إدارة المستأجر',
     platformControl: 'التحكم بالمنصة',
@@ -56,8 +57,9 @@ const T = {
     aiUsage: 'استخدام الذكاء الاصطناعي والتكلفة', aiModels: 'نماذج الذكاء الاصطناعي',
     organization: 'المنظمة', langBtn: 'English',
     pageTitles: {
-      '/jobs':                        'الحملات',
+      '/jobs':                        'الوظائف',
       '/jobs/:id':                    'تفاصيل الوظيفة',
+      '/campaigns':                   'الحملات',
       '/applications':                'الطلبات',
       '/applications/details':        'تفاصيل الطلب',
       '/settings':                    'الإعدادات',
@@ -91,8 +93,9 @@ function pathnameToMenuId(pathname: string): string {
   if (pathname.startsWith('/admin/ai-models'))          return 'admin-ai-models';
   if (pathname === '/plan-usage')          return 'plan-usage';
   if (pathname === '/client-organizations') return 'client-organizations';
+  if (pathname.startsWith('/campaigns'))   return 'campaigns';
   if (pathname === '/settings')            return 'settings';
-  // /jobs, /jobs/:id, /applications all highlight the Campaigns menu item
+  // /jobs, /jobs/:id, /applications all highlight the Jobs menu item
   return 'jobs';
 }
 
@@ -100,6 +103,7 @@ function pathnameToMenuId(pathname: string): string {
 function menuIdToRoute(id: string): string {
   const map: Record<string, string> = {
     'jobs':                       '/jobs',
+    'campaigns':                  '/campaigns',
     'plan-usage':                 '/plan-usage',
     'client-organizations':       '/client-organizations',
     'settings':                   '/settings',
@@ -138,6 +142,7 @@ function pathnameToTitle(pathname: string, search: string, titles: Record<string
     if (new URLSearchParams(search).has('app_id')) return titles['/applications/details'] || 'Application Details';
     return titles['/applications'] || '';
   }
+  if (pathname.startsWith('/campaigns'))                  return titles['/campaigns'] || '';
   if (pathname.startsWith('/jobs'))                       return titles['/jobs'] || '';
   return pathname.split('/').filter(Boolean).pop()?.replace(/-/g, ' ') || '';
 }
@@ -171,9 +176,14 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
   const isActive = (id: string) => currentMenuId === id;
 
   const tenantMenuItems = [
-    { id: 'jobs', label: t.campaigns, icon: (
+    { id: 'jobs', label: t.jobs, icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+    )},
+    { id: 'campaigns', label: t.campaigns, icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
       </svg>
     )},
     ...(showClientOrgs ? [{ id: 'client-organizations', label: t.clientOrgs, icon: (
