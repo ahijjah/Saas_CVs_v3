@@ -61,71 +61,252 @@ class RecruiterNotesRequest(BaseModel):
 
 @router.get("")
 async def list_applications(
-    job_id: str,
-    current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    job_id: str | None = None,
+    workflow_status: str | None = None,
+    processing_status: str | None = None,
+    ai_decision: str | None = None,
+    possible_duplicate: bool | None = None,
+    has_notes: bool | None = None,
+    applied_after: str | None = None,
+    applied_before: str | None = None,
+    search: str | None = None,
+    campaign_id: str | None = None,
+    client_organization_id: str | None = None,
+    sort_by: str = "applied_at",
+    sort_order: str = "desc",
+    page: int = 1,
+    limit: int = 50,
+    current_user: CurrentUserDep = Depends(),
+    db: Annotated[AsyncSession, Depends(get_db)] = Depends(),
 ):
+    """
+    List applications with flexible filtering and pagination.
+
+    Backward compatible mode:
+    - If job_id provided: returns applications for that job (existing behavior)
+    - If job_id not provided: returns all tenant applications (new global search)
+
+    Supports multi-dimensional filtering:
+    - workflow_status: awaiting_review, under_review, interviewing, etc.
+    - processing_status: ai_scored, pending, failed, security_blocked, etc.
+    - ai_decision: qualified, partial, rejected_low_match, not_scored
+    - possible_duplicate: true/false
+    - has_notes: true/false
+    - date range: applied_after, applied_before (ISO format)
+    - search: candidate name substring match
+    - campaign_id: filter by campaign (tenant-wide mode only)
+    - client_organization_id: agency/freelancer client filter
+
+    Supports pagination and sorting.
+
+    Access control:
+    - Respects RLS tenant isolation
+    - Respects agency/freelancer client scoping
+    """
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    rows = await db.execute(
-        text("""
-            SELECT
-                a.application_id,
-                a.candidate_name,
-                a.decision                           AS status,
-                a.processing_status,
-                a.stopped_reason,
-                a.duplicate_status,
-                a.duplicate_reason,
-                a.duplicate_reference_application_id,
-                a.evaluation_exit_reason,
-                a.workflow_status,
-                a.recruiter_notes,
-                s.final_score                        AS score,
-                a.applied_at::date                   AS applied_date,
-                s.evaluation_notes                   AS summary
-            FROM applications a
-            JOIN jobs j ON j.job_id = a.job_id
-            LEFT JOIN application_scores s ON s.application_id = a.application_id
-            WHERE a.job_id = :jid AND a.tenant_id = :tid
-              AND (
-                :is_admin = TRUE
-                OR j.client_organization_id IS NULL
-                OR EXISTS (
-                    SELECT 1 FROM agency_user_clients auc
-                    WHERE auc.user_id = CAST(:uid AS uuid)
-                      AND auc.client_organization_id = j.client_organization_id
-                      AND auc.tenant_id = CAST(:tid AS uuid)
-                )
-              )
-            ORDER BY a.applied_at DESC
-        """),
-        {
-            "jid":      job_id,
-            "tid":      current_user.tenant_id,
-            "uid":      current_user.user_id,
-            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
-        },
-    )
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    # Validate pagination
+    page = max(1, page)
+    limit = max(1, min(limit, 500))  # Cap at 500 per page for safety
+    offset = (page - 1) * limit
+
+    # Validate sorting
+    valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
+    sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
+    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+
+    # Build WHERE clause dynamically
+    where_parts = [
+        "a.tenant_id = CAST(:tid AS uuid)",
+    ]
+    params = {
+        "tid": current_user.tenant_id,
+        "uid": current_user.user_id,
+        "is_admin": is_admin,
+    }
+
+    # Mode 1: Job-scoped (backward compatible) - job_id required
+    if job_id:
+        where_parts.append("a.job_id = CAST(:jid AS uuid)")
+        params["jid"] = job_id
+
+    # Workflow status filter
+    if workflow_status:
+        where_parts.append("a.workflow_status = :wf_status")
+        params["wf_status"] = workflow_status
+
+    # Processing status filter (e.g., pending, ai_scored, failed, security_blocked)
+    if processing_status:
+        where_parts.append("a.processing_status = :proc_status")
+        params["proc_status"] = processing_status
+
+    # AI decision filter (maps to 'decision' column)
+    if ai_decision:
+        where_parts.append("a.decision = :ai_dec")
+        params["ai_dec"] = ai_decision
+
+    # Possible duplicate flag
+    if possible_duplicate is not None:
+        if possible_duplicate:
+            where_parts.append("a.duplicate_status IN ('possible_duplicate', 'confirmed_duplicate')")
+        else:
+            where_parts.append("a.duplicate_status IS NULL OR a.duplicate_status = 'not_duplicate'")
+
+    # Has notes filter
+    if has_notes is not None:
+        if has_notes:
+            where_parts.append("a.recruiter_notes IS NOT NULL AND a.recruiter_notes != ''")
+        else:
+            where_parts.append("(a.recruiter_notes IS NULL OR a.recruiter_notes = '')")
+
+    # Date range filters
+    if applied_after:
+        where_parts.append("a.applied_at >= CAST(:applied_after AS timestamp)")
+        params["applied_after"] = applied_after
+
+    if applied_before:
+        where_parts.append("a.applied_at < CAST(:applied_before AS timestamp) + INTERVAL '1 day'")
+        params["applied_before"] = applied_before
+
+    # Candidate name search (LIKE, case-insensitive)
+    if search:
+        where_parts.append("a.candidate_name ILIKE :search")
+        params["search"] = f"%{search}%"
+
+    # Campaign filter (tenant-wide mode only; ignored if job_id provided)
+    if campaign_id and not job_id:
+        where_parts.append("""
+            EXISTS (
+                SELECT 1 FROM job_campaigns jc
+                WHERE jc.campaign_id = CAST(:campaign_id AS uuid)
+                  AND jc.tenant_id = CAST(:tid AS uuid)
+                  AND a.job_id = jc.job_id
+            )
+        """)
+        params["campaign_id"] = campaign_id
+
+    # Client organization filter (agency/freelancer scoping)
+    if client_organization_id and not job_id:
+        where_parts.append("j.client_organization_id = CAST(:client_org_id AS uuid)")
+        params["client_org_id"] = client_organization_id
+
+    # Always enforce access control: admin OR no client OR assigned via agency_user_clients
+    where_parts.append("""
+        (
+            :is_admin = TRUE
+            OR j.client_organization_id IS NULL
+            OR EXISTS (
+                SELECT 1 FROM agency_user_clients auc
+                WHERE auc.user_id = CAST(:uid AS uuid)
+                  AND auc.client_organization_id = j.client_organization_id
+                  AND auc.tenant_id = CAST(:tid AS uuid)
+            )
+        )
+    """)
+
+    where_clause = " AND ".join(where_parts)
+
+    # Map sort_by to actual column
+    sort_column = {
+        "applied_at": "a.applied_at",
+        "updated_at": "a.updated_at",
+        "score": "s.final_score",
+        "candidate_name": "a.candidate_name",
+    }.get(sort_by, "a.applied_at")
+
+    # Count total for pagination
+    count_query = f"""
+        SELECT COUNT(*) as total
+        FROM applications a
+        JOIN jobs j ON j.job_id = a.job_id
+        WHERE {where_clause}
+    """
+    count_result = await db.execute(text(count_query), params)
+    total = count_result.scalar() or 0
+
+    # Fetch applications with job and campaign metadata
+    data_query = f"""
+        SELECT
+            a.application_id,
+            a.candidate_name,
+            a.job_id,
+            j.job_title,
+            j.job_code,
+            j.campaign_id,
+            jc.name                             AS campaign_name,
+            j.client_organization_id,
+            co.name                             AS client_org_name,
+            a.decision                          AS status,
+            a.processing_status,
+            a.stopped_reason,
+            a.duplicate_status,
+            a.duplicate_reason,
+            a.duplicate_reference_application_id,
+            a.evaluation_exit_reason,
+            a.workflow_status,
+            a.recruiter_notes,
+            a.applied_at,
+            a.updated_at,
+            s.final_score                       AS score,
+            s.evaluation_notes                  AS summary
+        FROM applications a
+        JOIN jobs j ON j.job_id = a.job_id
+        LEFT JOIN application_scores s ON s.application_id = a.application_id
+        LEFT JOIN job_campaigns jc ON jc.campaign_id = j.campaign_id
+        LEFT JOIN client_organizations co ON co.organization_id = j.client_organization_id
+        WHERE {where_clause}
+        ORDER BY {sort_column} {sort_order}
+        LIMIT :limit OFFSET :offset
+    """
+
+    params["limit"] = limit
+    params["offset"] = offset
+
+    rows = await db.execute(text(data_query), params)
+
     apps = []
     for r in rows.mappings():
         apps.append({
-            "application_id":                    str(r["application_id"]),
-            "candidate_name":                    r["candidate_name"],
-            "status":                            r["status"],
-            "processing_status":                 r["processing_status"],
-            "stopped_reason":                    r["stopped_reason"],
-            "duplicate_status":                  r["duplicate_status"] or "not_duplicate",
-            "duplicate_reason":                  r["duplicate_reason"],
+            "application_id": str(r["application_id"]),
+            "candidate_name": r["candidate_name"],
+            "job_id": str(r["job_id"]),
+            "job_title": r["job_title"],
+            "job_code": r["job_code"],
+            "campaign_id": str(r["campaign_id"]) if r["campaign_id"] else None,
+            "campaign_name": r["campaign_name"],
+            "client_organization_id": str(r["client_organization_id"]) if r["client_organization_id"] else None,
+            "client_org_name": r["client_org_name"],
+            "status": r["status"],
+            "processing_status": r["processing_status"],
+            "stopped_reason": r["stopped_reason"],
+            "duplicate_status": r["duplicate_status"] or "not_duplicate",
+            "duplicate_reason": r["duplicate_reason"],
             "duplicate_reference_application_id": str(r["duplicate_reference_application_id"]) if r["duplicate_reference_application_id"] else None,
-            "evaluation_exit_reason":            r["evaluation_exit_reason"],
-            "workflow_status":                   r["workflow_status"] or "awaiting_review",
-            "recruiter_notes":                   r["recruiter_notes"],
-            "score":                             float(r["score"]) if r["score"] is not None else None,
-            "applied_date":                      r["applied_date"].isoformat() if r["applied_date"] else None,
-            "summary":                           r["summary"],
+            "evaluation_exit_reason": r["evaluation_exit_reason"],
+            "workflow_status": r["workflow_status"] or "awaiting_review",
+            "recruiter_notes": r["recruiter_notes"],
+            "applied_at": r["applied_at"].isoformat() if r["applied_at"] else None,
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            "score": float(r["score"]) if r["score"] is not None else None,
+            "summary": r["summary"],
         })
-    return apps
+
+    # Backward compatibility mode: if job_id provided, return array (existing behavior)
+    if job_id:
+        return apps
+
+    # New tenant-wide mode: return object with pagination metadata
+    return {
+        "candidates": apps,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "has_more": (offset + limit) < total,
+        },
+    }
 
 
 @router.get("/details")
