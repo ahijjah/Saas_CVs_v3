@@ -322,8 +322,8 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
       const campClient = campaign.client_organization_id || null;
       const eligible = allJobs.filter(j => {
         const jobClient = j.client_organization_id || null;
-        if (jobClient !== campClient) return false;
-        if (j.campaign_id === campaignId) return false; // already linked
+        if (jobClient !== campClient) return false;   // wrong client
+        if (j.campaign_id) return false;              // already in any campaign
         return true;
       });
       setLinkableJobs(eligible);
