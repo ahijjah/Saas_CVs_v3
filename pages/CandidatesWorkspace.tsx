@@ -328,6 +328,11 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [searchParams, setSearchParams] = useSearchParams();
   const { setPageTitle } = usePageTitle();
 
+  // Stable ref so addToast never appears in dependency arrays (avoids infinite loops
+  // caused by parent components re-creating the function on every render).
+  const addToastRef = useRef(addToast);
+  useEffect(() => { addToastRef.current = addToast; });
+
   // Derive initial state from URL
   const initialView = (searchParams.get('view') as QuickView) || 'all';
   const initialWorkflow = searchParams.get('workflow_status') || '';
@@ -368,7 +373,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setPageTitle(t.pageTitle);
   }, [setPageTitle, t.pageTitle]);
 
-  // Fetch campaigns
+  // Fetch campaigns once on mount
   useEffect(() => {
     if (!auth.token) return;
     setCampaignLoading(true);
@@ -383,16 +388,16 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           setCampaignOptions([]);
         }
       } catch (err: any) {
-        addToast(err.message || 'Failed to load campaigns', 'error');
+        addToastRef.current(err.message || 'Failed to load campaigns', 'error');
         setCampaignOptions([]);
       } finally {
         setCampaignLoading(false);
       }
     };
     fetchCampaigns();
-  }, [auth.token, addToast]);
+  }, [auth.token]); // addToast intentionally omitted — using ref to avoid loop
 
-  // Fetch client organizations (agency/freelancer only)
+  // Fetch client organizations once on mount (agency/freelancer only)
   useEffect(() => {
     if (!auth.token || !isAgency) return;
     setClientLoading(true);
@@ -401,20 +406,20 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         const data = await apiService.get(WEBHOOK_CONFIG.CLIENT_ORGANIZATIONS_URL, {}, auth.token);
         if (Array.isArray(data)) {
           setClientOptions(data);
-        } else if (data && Array.isArray(data.organizations)) {
-          setClientOptions(data.organizations);
+        } else if (data && Array.isArray(data.client_organizations)) {
+          setClientOptions(data.client_organizations);
         } else {
           setClientOptions([]);
         }
       } catch (err: any) {
-        addToast(err.message || 'Failed to load client organizations', 'error');
+        addToastRef.current(err.message || 'Failed to load client organizations', 'error');
         setClientOptions([]);
       } finally {
         setClientLoading(false);
       }
     };
     fetchClients();
-  }, [auth.token, isAgency, addToast]);
+  }, [auth.token, isAgency]); // addToast intentionally omitted — using ref to avoid loop
 
   // Sync URL when filters change
   useEffect(() => {
@@ -460,13 +465,14 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         setPagination(null);
       }
     } catch (err: any) {
-      addToast(err.message || 'Failed to load candidates', 'error');
+      addToastRef.current(err.message || 'Failed to load candidates', 'error');
       setCandidates([]);
       setPagination(null);
     } finally {
       setLoading(false);
     }
-  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, page, addToast]);
+  // addToast intentionally omitted — using ref to avoid infinite loop
+  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchCandidates();
