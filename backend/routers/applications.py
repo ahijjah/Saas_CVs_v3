@@ -137,10 +137,19 @@ async def list_applications(
         where_parts.append("a.workflow_status = :wf_status")
         params["wf_status"] = workflow_status
 
-    # Processing status filter (e.g., pending, ai_scored, failed, security_blocked)
+    # Processing status filter
+    # Special alias 'failed_or_blocked' expands to all non-recoverable system states
+    # so the frontend can send a single param without multi-value URL encoding.
+    FAILED_OR_BLOCKED_STATUSES = (
+        "'failed', 'security_blocked', 'duplicate_blocked', "
+        "'extraction_failed', 'processing_failed', 'stopped'"
+    )
     if processing_status:
-        where_parts.append("a.processing_status = :proc_status")
-        params["proc_status"] = processing_status
+        if processing_status == 'failed_or_blocked':
+            where_parts.append(f"a.processing_status IN ({FAILED_OR_BLOCKED_STATUSES})")
+        else:
+            where_parts.append("a.processing_status = :proc_status")
+            params["proc_status"] = processing_status
 
     # AI decision filter (maps to 'decision' column)
     if ai_decision:

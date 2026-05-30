@@ -10,11 +10,11 @@
  * Navigation: clicking a row opens the job-scoped application detail:
  *   /applications?job_id=<job_id>&app_id=<application_id>
  *
- * TODO: Blocked/failed/pre-AI applications should later be separated from
- * recruiter workflow queues and should not remain as awaiting_review.
- * Currently they appear in the awaiting_review view because that is their
- * workflow_status default. A future status like 'blocked' or 'ai_failed'
- * should be introduced so recruiters only see actionable items.
+ * Phase 4 separation: failed/blocked/pre-AI applications are excluded from
+ * recruiter-operational views at the query level. The Awaiting Review quick
+ * view always adds processing_status=ai_scored so only recruiter-actionable
+ * candidates appear. Failed/Blocked uses the 'failed_or_blocked' backend alias
+ * that expands to all system-stopped processing statuses.
  */
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
@@ -98,7 +98,8 @@ const QUICK_VIEWS: QuickViewDef[] = [
     id: 'awaiting_review',
     labelEn: 'Awaiting Review',
     labelAr: 'في انتظار المراجعة',
-    params: { workflow_status: 'awaiting_review' },
+    // Only recruiter-actionable: must be ai_scored, not failed/blocked
+    params: { workflow_status: 'awaiting_review', processing_status: 'ai_scored' },
   },
   {
     id: 'under_review',
@@ -116,8 +117,6 @@ const QUICK_VIEWS: QuickViewDef[] = [
     id: 'in_process',
     labelEn: 'In Process',
     labelAr: 'قيد المعالجة',
-    // Multiple statuses handled by UI; backend gets workflow_status if passed,
-    // or no filter for the broader in_process view below (handled separately).
     params: {},
   },
   {
@@ -130,7 +129,8 @@ const QUICK_VIEWS: QuickViewDef[] = [
     id: 'failed_blocked',
     labelEn: 'Failed / Blocked',
     labelAr: 'فشل / محظور',
-    params: { processing_status: 'failed' },
+    // 'failed_or_blocked' is a backend alias that expands to all system-stopped statuses
+    params: { processing_status: 'failed_or_blocked' },
   },
   {
     id: 'recent',
@@ -299,11 +299,13 @@ function buildApiParams(
   };
 
   // Quick view overrides specific params
-  if (view === 'awaiting_review') p.workflow_status = 'awaiting_review';
+  // awaiting_review: recruiter-actionable only (ai_scored excludes failed/blocked)
+  if (view === 'awaiting_review')   { p.workflow_status = 'awaiting_review'; p.processing_status = 'ai_scored'; }
   else if (view === 'under_review') p.workflow_status = 'under_review';
   else if (view === 'interviewing') p.workflow_status = 'interviewing';
   else if (view === 'hired')        p.workflow_status = 'hired';
-  else if (view === 'failed_blocked') { p.processing_status = 'failed'; }
+  // failed_or_blocked: backend alias for all system-stopped processing statuses
+  else if (view === 'failed_blocked') { p.processing_status = 'failed_or_blocked'; }
   else if (view === 'recent')       { p.sort_by = 'applied_at'; p.sort_order = 'desc'; }
   // in_process: applied by manual workflowFilter below
 

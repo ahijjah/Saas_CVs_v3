@@ -48,11 +48,18 @@ async def get_dashboard_summary(
     params = {"tid": current_user.tenant_id}
 
     # ── Workflow distribution + total applications ─────────────────────────────
+    # IMPORTANT: awaiting_review counts ONLY recruiter-actionable candidates
+    # (processing_status = 'ai_scored'). Failed/blocked apps carry
+    # workflow_status = 'awaiting_review' as a DB default but must never appear
+    # in recruiter queues — they are separated here at the query level.
     apps_row = await db.execute(
         text("""
             SELECT
                 COUNT(a.application_id)                                                        AS total_applications,
-                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'awaiting_review')  AS awaiting_review,
+                COUNT(a.application_id) FILTER (
+                    WHERE a.workflow_status = 'awaiting_review'
+                      AND a.processing_status = 'ai_scored'
+                )                                                                              AS awaiting_review,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'under_review')     AS under_review,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'interviewing')     AS interviewing,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'offer_made')       AS offer_made,
@@ -79,15 +86,15 @@ async def get_dashboard_summary(
     ar = apps_row.mappings().first()
 
     # ── Failed / blocked AI processing count ──────────────────────────────────
-    # "Needs attention": applications where AI scoring failed or is stuck
+    # Counts ALL system-stopped/failed applications regardless of workflow_status.
+    # These are never recruiter-actionable and form their own operational category.
     failed_row = await db.execute(
         text("""
             SELECT
-                COUNT(*) FILTER (WHERE a.processing_status = 'failed') AS failed,
-                COUNT(*) FILTER (
-                    WHERE a.processing_status IN ('queued', 'processing')
-                      AND a.updated_at < NOW() - INTERVAL '30 minutes'
-                )                                                        AS stuck
+                COUNT(*) FILTER (WHERE a.processing_status IN (
+                    'failed', 'security_blocked', 'duplicate_blocked',
+                    'extraction_failed', 'processing_failed', 'stopped'
+                ))                                                        AS failed_or_blocked
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             WHERE j.tenant_id = CAST(:tid AS uuid)
@@ -118,9 +125,7 @@ async def get_dashboard_summary(
     )
     cr = campaigns_row.mappings().first()
 
-    failed_count  = int(fr["failed"]) if fr else 0
-    stuck_count   = int(fr["stuck"])  if fr else 0
-    failed_or_blocked = failed_count + stuck_count
+    failed_or_blocked = int(fr["failed_or_blocked"]) if fr else 0
 
     return {
         "kpis": {
