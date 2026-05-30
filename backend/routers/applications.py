@@ -237,7 +237,7 @@ async def list_applications(
             j.campaign_id,
             jc.name                             AS campaign_name,
             j.client_organization_id,
-            co.name                             AS client_org_name,
+            co.organization_name                AS client_org_name,
             a.decision                          AS status,
             a.processing_status,
             a.stopped_reason,
@@ -255,7 +255,7 @@ async def list_applications(
         JOIN jobs j ON j.job_id = a.job_id
         LEFT JOIN application_scores s ON s.application_id = a.application_id
         LEFT JOIN job_campaigns jc ON jc.campaign_id = j.campaign_id
-        LEFT JOIN client_organizations co ON co.organization_id = j.client_organization_id
+        LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
         WHERE {where_clause}
         ORDER BY {sort_column} {sort_order}
         LIMIT :limit OFFSET :offset
