@@ -20,7 +20,7 @@ Status lifecycle
   Transitions are validated in campaign_service.validate_status_transition().
   Campaign status NEVER cascades to linked jobs.
 """
-from datetime import date
+import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -42,7 +42,7 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 # ── Date parsing helpers ──────────────────────────────────────────────────────
 
-def _parse_iso_date(date_str: str | None) -> date | None:
+def _parse_iso_date(date_str: str | None) -> datetime.date | None:
     """
     Parse ISO date string (YYYY-MM-DD) to Python date object.
     Returns None if input is None or empty string.
@@ -51,7 +51,7 @@ def _parse_iso_date(date_str: str | None) -> date | None:
     if not date_str or not date_str.strip():
         return None
     try:
-        return date.fromisoformat(date_str.strip())
+        return datetime.date.fromisoformat(date_str.strip())
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -589,6 +589,108 @@ async def transition_campaign_status(
     )
     await db.commit()
     return {"success": True, "status": new_status}
+
+
+# ── Summary (KPI aggregation for the Overview tab) ───────────────────────────
+
+@router.get("/{campaign_id}/summary")
+async def get_campaign_summary(
+    campaign_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Aggregated KPI summary for the Campaign Overview tab.
+
+    Returns workflow distribution across all applications in all linked jobs,
+    plus job counts and time-open. Intentionally separate from GET /{id} to
+    keep the base response cheap.
+
+    Fill rate = hired / target_hire_count (not qualified).
+    Time open = days since start_date (fallback: created_at).
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    campaign = await fetch_campaign(db, campaign_id, current_user.tenant_id)
+    if not campaign:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
+
+    # Respect same client-scoping as GET /{id}
+    client_ids = await _accessible_client_ids(current_user, db)
+    if client_ids is not None and campaign["client_organization_id"] is not None:
+        if str(campaign["client_organization_id"]) not in client_ids:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
+
+    # ── Job counts ────────────────────────────────────────────────────────────
+    jobs_row = await db.execute(
+        text("""
+            SELECT
+                COUNT(*)                                                      AS jobs_total,
+                COUNT(*) FILTER (WHERE LOWER(status) = 'active')             AS jobs_active
+            FROM jobs
+            WHERE campaign_id = CAST(:cid AS uuid)
+              AND tenant_id   = CAST(:tid AS uuid)
+        """),
+        {"cid": campaign_id, "tid": current_user.tenant_id},
+    )
+    jr = jobs_row.mappings().first()
+
+    # ── Application aggregates ────────────────────────────────────────────────
+    apps_row = await db.execute(
+        text("""
+            SELECT
+                COUNT(a.application_id)                                                       AS total_applications,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'awaiting_review')  AS awaiting_review,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'under_review')     AS under_review,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'shortlisted')      AS shortlisted,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'interviewing')     AS interviewing,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'offer_made')       AS offer_made,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'hired')            AS hired,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'rejected')         AS rejected,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'withdrawn')        AS withdrawn,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'on_hold')          AS on_hold
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE j.campaign_id = CAST(:cid AS uuid)
+              AND j.tenant_id   = CAST(:tid AS uuid)
+        """),
+        {"cid": campaign_id, "tid": current_user.tenant_id},
+    )
+    ar = apps_row.mappings().first()
+
+    # ── Derived metrics ───────────────────────────────────────────────────────
+    hired_count = int(ar["hired"]) if ar else 0
+    target = campaign.get("target_hire_count")
+
+    fill_rate_pct: float | None = None
+    if target and target > 0:
+        fill_rate_pct = round(min(100.0, hired_count / target * 100), 1)
+
+    # time_open: days since start_date (fallback: created_at)
+    ref = campaign.get("start_date") or campaign.get("created_at")
+    time_open_days: int | None = None
+    if ref is not None:
+        ref_date = ref.date() if hasattr(ref, "date") else ref
+        time_open_days = (datetime.date.today() - ref_date).days
+
+    return {
+        "campaign_id":        campaign_id,
+        "jobs_total":         int(jr["jobs_total"])  if jr else 0,
+        "active_jobs":        int(jr["jobs_active"]) if jr else 0,
+        "total_applications": int(ar["total_applications"]) if ar else 0,
+        "awaiting_review":    int(ar["awaiting_review"])    if ar else 0,
+        "under_review":       int(ar["under_review"])       if ar else 0,
+        "shortlisted":        int(ar["shortlisted"])        if ar else 0,
+        "interviewing":       int(ar["interviewing"])       if ar else 0,
+        "offer_made":         int(ar["offer_made"])         if ar else 0,
+        "hired":              hired_count,
+        "rejected":           int(ar["rejected"])           if ar else 0,
+        "withdrawn":          int(ar["withdrawn"])          if ar else 0,
+        "on_hold":            int(ar["on_hold"])            if ar else 0,
+        "target_hire_count":  target,
+        "fill_rate_pct":      fill_rate_pct,
+        "time_open_days":     time_open_days,
+    }
 
 
 # ── Delete (admin only — not a normal UI action) ──────────────────────────────

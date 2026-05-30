@@ -2,6 +2,13 @@
 import React, { useState } from 'react';
 import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, PassingCriteria, WorkflowStatus } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import {
+  WORKFLOW_STATUS_STYLES_BORDERED,
+  WORKFLOW_STATUS_LABELS_EN,
+  WORKFLOW_STATUS_LABELS_AR,
+  VALID_WORKFLOW_TRANSITIONS,
+  WORKFLOW_ACTION_LABELS_EN,
+} from '../constants/workflow';
 
 interface JobMetaStrip {
   job_title: string;
@@ -414,53 +421,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
 
   const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'awaiting_review';
 
-  const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-    awaiting_review: ['under_review', 'on_hold', 'rejected', 'withdrawn'],
-    under_review:    ['shortlisted', 'on_hold', 'rejected', 'withdrawn'],
-    shortlisted:     ['interviewing', 'under_review', 'on_hold', 'rejected', 'withdrawn'],
-    interviewing:    ['offer_made', 'shortlisted', 'on_hold', 'rejected', 'withdrawn'],
-    offer_made:      ['hired', 'interviewing', 'on_hold', 'rejected', 'withdrawn'],
-    hired:           [],
-    rejected:        ['awaiting_review', 'under_review'],
-    withdrawn:       ['awaiting_review', 'under_review'],
-    on_hold:         ['awaiting_review', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'rejected', 'withdrawn'],
-  };
-
-  const WF_LABELS: Record<WorkflowStatus, string> = {
-    awaiting_review: 'Awaiting Review',
-    under_review:    'Under Review',
-    shortlisted:     'Shortlisted',
-    interviewing:    'Interviewing',
-    offer_made:      'Offer Made',
-    hired:           'Hired',
-    rejected:        'Rejected',
-    withdrawn:       'Withdrawn',
-    on_hold:         'On Hold',
-  };
-
-  const WF_STYLES: Record<WorkflowStatus, string> = {
-    awaiting_review: 'bg-sky-100 text-sky-700 border-sky-200',
-    under_review:    'bg-blue-100 text-blue-700 border-blue-200',
-    shortlisted:     'bg-indigo-100 text-indigo-700 border-indigo-200',
-    interviewing:    'bg-purple-100 text-purple-700 border-purple-200',
-    offer_made:      'bg-amber-100 text-amber-700 border-amber-200',
-    hired:           'bg-green-100 text-green-800 border-green-200',
-    rejected:        'bg-red-100 text-red-700 border-red-200',
-    withdrawn:       'bg-orange-100 text-orange-700 border-orange-200',
-    on_hold:         'bg-yellow-100 text-yellow-700 border-yellow-200',
-  };
-
-  const WF_ACTION_LABELS: Record<WorkflowStatus, string> = {
-    awaiting_review: 'Awaiting Review',
-    under_review:    'Start Review',
-    shortlisted:     'Shortlist',
-    interviewing:    'Move to Interview',
-    offer_made:      'Make Offer',
-    hired:           'Mark Hired',
-    rejected:        'Reject',
-    withdrawn:       'Mark Withdrawn',
-    on_hold:         'Put On Hold',
-  };
+  // WF constants imported from constants/workflow.ts
+  const VALID_TRANSITIONS = VALID_WORKFLOW_TRANSITIONS;
+  const WF_LABELS = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
+  const WF_STYLES = WORKFLOW_STATUS_STYLES_BORDERED;
+  const WF_ACTION_LABELS = WORKFLOW_ACTION_LABELS_EN;
 
   const handleTransitionClick = (target: WorkflowStatus) => {
     if (!onWorkflowStatusChange) return;

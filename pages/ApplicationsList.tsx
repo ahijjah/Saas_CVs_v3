@@ -7,6 +7,11 @@ import { Application, ApplicationFilter, AuthState, WorkflowStatus } from '../ty
 import { ApplicationDetails } from './ApplicationDetails';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
+import {
+  WORKFLOW_STATUS_STYLES,
+  WORKFLOW_STATUS_LABELS_EN,
+  WORKFLOW_STATUS_LABELS_AR,
+} from '../constants/workflow';
 
 // ── Multi-dimensional filter types ────────────────────────────────────────────
 
@@ -133,16 +138,7 @@ const T = {
     aiRejectedLowMatch:  'Rejected / Low Match',
     aiNotScored:         'Not Scored',
     // Workflow options
-    wfAll:             'All Workflow',
-    wfAwaitingReview:  'Awaiting Review',
-    wfUnderReview:     'Under Review',
-    wfShortlisted:  'Shortlisted',
-    wfInterviewing: 'Interviewing',
-    wfOfferMade:    'Offer Made',
-    wfHired:        'Hired',
-    wfRejected:     'Rejected',
-    wfWithdrawn:    'Withdrawn',
-    wfOnHold:       'On Hold',
+    wfAll: 'All Workflow',
     // Flag labels
     flagPossibleDuplicate: 'Possible Duplicate',
     flagHasNotes:          'Has Recruiter Notes',
@@ -191,16 +187,7 @@ const T = {
     aiPartial:           'جزئي',
     aiRejectedLowMatch:  'مرفوض / تطابق منخفض',
     aiNotScored:         'لم يُقيَّم',
-    wfAll:             'جميع المراحل',
-    wfAwaitingReview:  'في انتظار المراجعة',
-    wfUnderReview:     'قيد المراجعة',
-    wfShortlisted:  'مختار',
-    wfInterviewing: 'مقابلة',
-    wfOfferMade:    'عرض مقدم',
-    wfHired:        'تم التعيين',
-    wfRejected:     'مرفوض',
-    wfWithdrawn:    'منسحب',
-    wfOnHold:       'متوقف مؤقتاً',
+    wfAll: 'جميع المراحل',
     flagPossibleDuplicate: 'مكرر محتمل',
     flagHasNotes:          'له ملاحظات',
     loading:          'جارٍ تحميل الطلبات...',
@@ -226,29 +213,7 @@ const T = {
 
 // ── Workflow display constants ─────────────────────────────────────────────────
 
-const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
-  awaiting_review: 'Awaiting Review',
-  under_review:    'Under Review',
-  shortlisted:     'Shortlisted',
-  interviewing:    'Interviewing',
-  offer_made:      'Offer Made',
-  hired:           'Hired',
-  rejected:        'Rejected',
-  withdrawn:       'Withdrawn',
-  on_hold:         'On Hold',
-};
-
-const WORKFLOW_STATUS_STYLES: Record<WorkflowStatus, string> = {
-  awaiting_review: 'bg-sky-100 text-sky-700',
-  under_review:   'bg-blue-100 text-blue-700',
-  shortlisted:    'bg-indigo-100 text-indigo-700',
-  interviewing:   'bg-purple-100 text-purple-700',
-  offer_made:     'bg-amber-100 text-amber-700',
-  hired:          'bg-green-100 text-green-800',
-  rejected:       'bg-red-100 text-red-700',
-  withdrawn:      'bg-orange-100 text-orange-700',
-  on_hold:        'bg-yellow-100 text-yellow-700',
-};
+// WORKFLOW_STATUS_LABELS and WORKFLOW_STATUS_STYLES are imported from constants/workflow.ts
 
 // ── Filter select component ────────────────────────────────────────────────────
 
@@ -593,17 +558,18 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     { value: 'not_scored',       label: t.aiNotScored        },
   ];
 
+  const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
   const workflowOptions = [
-    { value: 'all',             label: t.wfAll             },
-    { value: 'awaiting_review', label: t.wfAwaitingReview  },
-    { value: 'under_review',    label: t.wfUnderReview     },
-    { value: 'shortlisted',     label: t.wfShortlisted     },
-    { value: 'interviewing',    label: t.wfInterviewing    },
-    { value: 'offer_made',      label: t.wfOfferMade       },
-    { value: 'hired',           label: t.wfHired           },
-    { value: 'rejected',        label: t.wfRejected        },
-    { value: 'withdrawn',       label: t.wfWithdrawn       },
-    { value: 'on_hold',         label: t.wfOnHold          },
+    { value: 'all',             label: t.wfAll                      },
+    { value: 'awaiting_review', label: wfLabels.awaiting_review     },
+    { value: 'under_review',    label: wfLabels.under_review        },
+    { value: 'shortlisted',     label: wfLabels.shortlisted         },
+    { value: 'interviewing',    label: wfLabels.interviewing        },
+    { value: 'offer_made',      label: wfLabels.offer_made          },
+    { value: 'hired',           label: wfLabels.hired               },
+    { value: 'rejected',        label: wfLabels.rejected            },
+    { value: 'withdrawn',       label: wfLabels.withdrawn           },
+    { value: 'on_hold',         label: wfLabels.on_hold             },
   ];
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -769,7 +735,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                   {/* Workflow status pill */}
                   {wfStatus && (
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider ${WORKFLOW_STATUS_STYLES[wfStatus]}`}>
-                      {WORKFLOW_STATUS_LABELS[wfStatus]}
+                      {wfLabels[wfStatus]}
                     </span>
                   )}
                   {/* Flags */}
