@@ -211,7 +211,7 @@ async def list_applications(
     # Map sort_by to actual column
     sort_column = {
         "applied_at": "a.applied_at",
-        "updated_at": "a.updated_at",
+        "updated_at": "a.scored_at",
         "score": "s.final_score",
         "candidate_name": "a.candidate_name",
     }.get(sort_by, "a.applied_at")
@@ -232,7 +232,7 @@ async def list_applications(
             a.application_id,
             a.candidate_name,
             a.job_id,
-            j.job_title,
+            j.title                             AS job_title,
             j.job_code,
             j.campaign_id,
             jc.name                             AS campaign_name,
@@ -248,7 +248,7 @@ async def list_applications(
             a.workflow_status,
             a.recruiter_notes,
             a.applied_at,
-            a.updated_at,
+            a.scored_at                         AS updated_at,
             s.final_score                       AS score,
             s.evaluation_notes                  AS summary
         FROM applications a
