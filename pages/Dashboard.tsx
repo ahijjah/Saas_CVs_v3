@@ -51,14 +51,13 @@ const T = {
     activeCampaigns: 'Active Campaigns',
     activeJobs: 'Active Jobs',
     totalApplications: 'Total Applications',
-    awaitingReview: 'Awaiting Review',
     inProcess: 'In Recruitment Process',
     hiredThisMonth: 'Hired This Month',
     attAwaitingReview: 'Awaiting Review',
-    attUnderReview: 'Under Review',
-    attInterviewing: 'Interviews Scheduled',
     attFailedBlocked: 'Failed / Blocked',
     attNone: 'All caught up — nothing needs immediate attention.',
+    openJobs: 'Open related jobs',
+    openCampaigns: 'Open campaigns',
     underReview: 'Under Review',
     interviewing: 'Interviewing',
     offerMade: 'Offer Made',
@@ -80,14 +79,13 @@ const T = {
     activeCampaigns: 'الحملات النشطة',
     activeJobs: 'الوظائف النشطة',
     totalApplications: 'إجمالي الطلبات',
-    awaitingReview: 'في انتظار المراجعة',
     inProcess: 'في عملية التوظيف',
     hiredThisMonth: 'تم التعيين هذا الشهر',
     attAwaitingReview: 'في انتظار المراجعة',
-    attUnderReview: 'قيد المراجعة',
-    attInterviewing: 'مقابلات مجدولة',
     attFailedBlocked: 'فشل / محظور',
     attNone: 'كل شيء على ما يرام — لا يوجد شيء يحتاج إلى انتباه فوري.',
+    openJobs: 'فتح الوظائف ذات الصلة',
+    openCampaigns: 'فتح الحملات',
     underReview: 'قيد المراجعة',
     interviewing: 'مقابلة',
     offerMade: 'تم تقديم العرض',
@@ -110,8 +108,8 @@ interface OverviewCardProps {
 const OverviewCard: React.FC<OverviewCardProps> = ({ label, value, color, onClick }) => (
   <div
     onClick={onClick}
-    className={`bg-white rounded-xl border border-slate-200 p-5 flex flex-col items-center justify-center text-center min-h-[100px] ${
-      onClick ? 'cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors' : ''
+    className={`bg-white rounded-xl border border-slate-200 p-5 flex flex-col items-center justify-center text-center min-h-[100px] transition-all ${
+      onClick ? 'cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 hover:shadow-md' : ''
     }`}
   >
     <p className={`text-3xl font-bold ${color}`}>{value}</p>
@@ -126,23 +124,29 @@ interface AttentionCardProps {
   bgColor: string;
   borderColor: string;
   description: string;
+  helperText: string;
   onClick?: () => void;
 }
 
 const AttentionCard: React.FC<AttentionCardProps> = ({
-  label, value, color, bgColor, borderColor, description, onClick,
+  label, value, color, bgColor, borderColor, description, helperText, onClick,
 }) => (
   <div
     onClick={onClick}
-    className={`rounded-xl border ${borderColor} ${bgColor} p-4 flex items-center gap-4 ${
-      onClick ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''
+    className={`rounded-xl border ${borderColor} ${bgColor} p-4 transition-all ${
+      onClick ? 'cursor-pointer hover:opacity-80 hover:shadow-md' : ''
     }`}
   >
-    <div className={`text-3xl font-bold ${color} min-w-[3rem] text-center tabular-nums`}>{value}</div>
-    <div>
-      <p className={`text-sm font-semibold ${color}`}>{label}</p>
-      <p className="text-xs text-slate-500 mt-0.5 leading-tight">{description}</p>
+    <div className="flex items-center gap-4">
+      <div className={`text-3xl font-bold ${color} min-w-[3rem] text-center tabular-nums`}>{value}</div>
+      <div className="flex-1">
+        <p className={`text-sm font-semibold ${color}`}>{label}</p>
+        <p className="text-xs text-slate-500 mt-0.5 leading-tight">{description}</p>
+      </div>
     </div>
+    {onClick && (
+      <p className="text-xs text-slate-400 mt-3 italic">{helperText}</p>
+    )}
   </div>
 );
 
@@ -257,33 +261,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
       label: t.attAwaitingReview,
       value: kpis.awaiting_review,
       description: 'Applications scored by AI, ready for your review.',
+      helperText: t.openJobs,
       color: 'text-sky-700',
       bgColor: 'bg-sky-50',
       borderColor: 'border-sky-200',
-      onClick: () => navigate('/jobs'),
-    },
-    kpis.under_review > 0 && {
-      label: t.attUnderReview,
-      value: kpis.under_review,
-      description: 'Candidates actively being evaluated.',
-      color: 'text-blue-700',
-      bgColor: 'bg-blue-50',
-      borderColor: 'border-blue-200',
-      onClick: () => navigate('/jobs'),
-    },
-    kpis.interviewing > 0 && {
-      label: t.attInterviewing,
-      value: kpis.interviewing,
-      description: 'Candidates in the interview stage.',
-      color: 'text-purple-700',
-      bgColor: 'bg-purple-50',
-      borderColor: 'border-purple-200',
       onClick: () => navigate('/jobs'),
     },
     kpis.failed_or_blocked > 0 && {
       label: t.attFailedBlocked,
       value: kpis.failed_or_blocked,
       description: 'Applications where AI scoring failed or is stuck. May need manual review.',
+      helperText: t.openJobs,
       color: 'text-red-700',
       bgColor: 'bg-red-50',
       borderColor: 'border-red-200',
@@ -299,7 +287,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
           {t.sectionOverview}
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div className={`grid gap-4 ${showCampaigns ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'}`}>
           {showCampaigns && (
             <OverviewCard
               label={t.activeCampaigns}
@@ -318,12 +306,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
             label={t.totalApplications}
             value={kpis.total_applications}
             color="text-slate-800"
-          />
-          <OverviewCard
-            label={t.awaitingReview}
-            value={kpis.awaiting_review}
-            color="text-sky-700"
-            onClick={() => navigate('/jobs')}
           />
           <OverviewCard
             label={t.inProcess}
