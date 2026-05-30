@@ -2,7 +2,7 @@
 Dashboard router — operational recruiter workspace KPIs and metrics.
 
 Provides tenant-scoped aggregated data for the recruiter dashboard.
-Answers: "What needs my attention now?"
+Answers: "What needs my attention now?" and "What is the current workload?"
 
 Authorization:
 - All authenticated users can access their tenant's dashboard
@@ -26,29 +26,6 @@ from database import get_db, set_rls_context
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
-async def _accessible_client_ids(current_user, db: AsyncSession) -> list[str] | None:
-    """
-    Return list of client org IDs accessible by this user, or None (= all).
-
-    Currently always returns None (unrestricted tenant-level access) because
-    CurrentUser does not yet carry tenant_type. When auth model is extended,
-    restore agency non-admin filtering here using the pattern in campaigns.py.
-
-    TODO: restore agency client scoping once tenant_type is on CurrentUser.
-    """
-    # Future: if current_user.tenant_type not in ('agency', 'individual_recruiter'):
-    #     return None
-    # if (current_user.role or '').lower() == 'admin':
-    #     return None
-    # result = await db.execute(
-    #     text("SELECT client_organization_id::text FROM agency_user_clients "
-    #          "WHERE user_id = CAST(:uid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
-    #     {"uid": current_user.user_id, "tid": current_user.tenant_id},
-    # )
-    # return [str(row[0]) for row in result.fetchall()]
-    return None
-
-
 @router.get("/summary")
 async def get_dashboard_summary(
     current_user: CurrentUserDep,
@@ -57,8 +34,12 @@ async def get_dashboard_summary(
     """
     Dashboard KPI summary for the tenant.
 
-    Returns workflow distribution (all 9 statuses), active job/campaign counts.
-    Single lightweight call for all dashboard metrics — no pagination.
+    Returns:
+    - Workflow distribution across all 9 statuses
+    - Derived totals (total_applications, in_recruitment_process)
+    - Failed/blocked processing count (AI scoring failures)
+    - Active job/campaign counts
+    - Single lightweight call — no pagination, no heavy analytics.
 
     Scoped to current user's tenant via RLS.
     """
@@ -66,10 +47,11 @@ async def get_dashboard_summary(
 
     params = {"tid": current_user.tenant_id}
 
-    # ── Workflow distribution across all tenant jobs ───────────────────────────
+    # ── Workflow distribution + total applications ─────────────────────────────
     apps_row = await db.execute(
         text("""
             SELECT
+                COUNT(a.application_id)                                                        AS total_applications,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'awaiting_review')  AS awaiting_review,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'under_review')     AS under_review,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'interviewing')     AS interviewing,
@@ -78,6 +60,9 @@ async def get_dashboard_summary(
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'rejected')         AS rejected,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'withdrawn')        AS withdrawn,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'on_hold')          AS on_hold,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status IN (
+                    'under_review', 'interviewing', 'offer_made'
+                ))                                                                             AS in_recruitment_process,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status IN (
                     'under_review', 'interviewing', 'offer_made'
                 ))                                                                             AS under_review_total,
@@ -92,6 +77,24 @@ async def get_dashboard_summary(
         params,
     )
     ar = apps_row.mappings().first()
+
+    # ── Failed / blocked AI processing count ──────────────────────────────────
+    # "Needs attention": applications where AI scoring failed or is stuck
+    failed_row = await db.execute(
+        text("""
+            SELECT
+                COUNT(*) FILTER (WHERE a.processing_status = 'failed') AS failed,
+                COUNT(*) FILTER (
+                    WHERE a.processing_status IN ('queued', 'processing')
+                      AND a.updated_at < NOW() - INTERVAL '30 minutes'
+                )                                                        AS stuck
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE j.tenant_id = CAST(:tid AS uuid)
+        """),
+        params,
+    )
+    fr = failed_row.mappings().first()
 
     # ── Active job count ───────────────────────────────────────────────────────
     jobs_row = await db.execute(
@@ -115,19 +118,30 @@ async def get_dashboard_summary(
     )
     cr = campaigns_row.mappings().first()
 
+    failed_count  = int(fr["failed"]) if fr else 0
+    stuck_count   = int(fr["stuck"])  if fr else 0
+    failed_or_blocked = failed_count + stuck_count
+
     return {
         "kpis": {
-            "awaiting_review":   int(ar["awaiting_review"])    if ar else 0,
-            "under_review":      int(ar["under_review"])       if ar else 0,
-            "interviewing":      int(ar["interviewing"])       if ar else 0,
-            "offer_made":        int(ar["offer_made"])         if ar else 0,
-            "hired":             int(ar["hired"])              if ar else 0,
-            "rejected":          int(ar["rejected"])           if ar else 0,
-            "withdrawn":         int(ar["withdrawn"])          if ar else 0,
-            "on_hold":           int(ar["on_hold"])            if ar else 0,
-            "under_review_total": int(ar["under_review_total"]) if ar else 0,
-            "hired_this_month":  int(ar["hired_this_month"])  if ar else 0,
-            "active_jobs":       int(jr["active_jobs"])        if jr else 0,
-            "active_campaigns":  int(cr["active_campaigns"])   if cr else 0,
+            # Workspace overview
+            "total_applications":    int(ar["total_applications"])    if ar else 0,
+            "in_recruitment_process": int(ar["in_recruitment_process"]) if ar else 0,
+            "hired_this_month":      int(ar["hired_this_month"])      if ar else 0,
+            "active_jobs":           int(jr["active_jobs"])           if jr else 0,
+            "active_campaigns":      int(cr["active_campaigns"])      if cr else 0,
+            # Needs attention
+            "awaiting_review":       int(ar["awaiting_review"])       if ar else 0,
+            "failed_or_blocked":     failed_or_blocked,
+            # Full pipeline breakdown
+            "under_review":          int(ar["under_review"])          if ar else 0,
+            "interviewing":          int(ar["interviewing"])          if ar else 0,
+            "offer_made":            int(ar["offer_made"])            if ar else 0,
+            "hired":                 int(ar["hired"])                 if ar else 0,
+            "rejected":              int(ar["rejected"])              if ar else 0,
+            "withdrawn":             int(ar["withdrawn"])             if ar else 0,
+            "on_hold":               int(ar["on_hold"])               if ar else 0,
+            # Legacy alias (kept for compatibility)
+            "under_review_total":    int(ar["under_review_total"])    if ar else 0,
         },
     }

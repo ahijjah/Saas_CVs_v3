@@ -12,68 +12,102 @@ interface DashboardProps {
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
+interface DashboardKpis {
+  // Workspace overview
+  total_applications: number;
+  in_recruitment_process: number;
+  hired_this_month: number;
+  active_jobs: number;
+  active_campaigns: number;
+  // Needs attention
+  awaiting_review: number;
+  failed_or_blocked: number;
+  // Pipeline breakdown
+  under_review: number;
+  interviewing: number;
+  offer_made: number;
+  hired: number;
+  rejected: number;
+  withdrawn: number;
+  on_hold: number;
+  under_review_total: number;
+}
+
 interface DashboardSummary {
-  kpis: {
-    awaiting_review: number;
-    under_review: number;
-    interviewing: number;
-    offer_made: number;
-    hired: number;
-    rejected: number;
-    withdrawn: number;
-    on_hold: number;
-    under_review_total: number;
-    hired_this_month: number;
-    active_jobs: number;
-    active_campaigns: number;
-  };
+  kpis: DashboardKpis;
 }
 
 const T = {
   en: {
     dashboard: 'Dashboard',
     loading: 'Loading dashboard…',
-    awaitingReview: 'Awaiting Review',
-    underReview: 'Under Review',
-    interviewing: 'Interviewing',
-    hired: 'Hired',
-    hiredThisMonth: 'Hired This Month',
-    rejected: 'Rejected',
-    activeJobs: 'Active Jobs',
-    activeCampaigns: 'Active Campaigns',
     gettingStarted: 'Get Started',
     noJobs: 'No jobs yet. Create your first job to start recruiting.',
     createFirstJob: 'Create First Job',
     createCampaign: 'Create Campaign',
-    viewAllApplications: 'View All Jobs',
+    sectionOverview: 'Workspace Overview',
+    sectionAttention: 'Needs Attention',
+    sectionPipeline: 'Recruitment Pipeline',
+    activeCampaigns: 'Active Campaigns',
+    activeJobs: 'Active Jobs',
+    totalApplications: 'Total Applications',
+    awaitingReview: 'Awaiting Review',
+    inProcess: 'In Recruitment Process',
+    hiredThisMonth: 'Hired This Month',
+    attAwaitingReview: 'Awaiting Review',
+    attUnderReview: 'Under Review',
+    attInterviewing: 'Interviews Scheduled',
+    attFailedBlocked: 'Failed / Blocked',
+    attNone: 'All caught up — nothing needs immediate attention.',
+    underReview: 'Under Review',
+    interviewing: 'Interviewing',
+    offerMade: 'Offer Made',
+    hired: 'Hired',
+    rejected: 'Rejected',
+    withdrawn: 'Withdrawn',
+    onHold: 'On Hold',
   },
   ar: {
     dashboard: 'لوحة التحكم',
     loading: 'جارٍ تحميل لوحة التحكم…',
-    awaitingReview: 'في انتظار المراجعة',
-    underReview: 'قيد المراجعة',
-    interviewing: 'مقابلة',
-    hired: 'تم التعيين',
-    hiredThisMonth: 'تم التعيين هذا الشهر',
-    rejected: 'مرفوض',
-    activeJobs: 'الوظائف النشطة',
-    activeCampaigns: 'الحملات النشطة',
     gettingStarted: 'ابدأ الآن',
     noJobs: 'لا توجد وظائف حتى الآن. أنشئ وظيفتك الأولى لبدء التوظيف.',
     createFirstJob: 'إنشاء أول وظيفة',
     createCampaign: 'إنشاء حملة',
-    viewAllApplications: 'عرض جميع الوظائف',
+    sectionOverview: 'نظرة عامة على مساحة العمل',
+    sectionAttention: 'يحتاج إلى انتباه',
+    sectionPipeline: 'خط التوظيف',
+    activeCampaigns: 'الحملات النشطة',
+    activeJobs: 'الوظائف النشطة',
+    totalApplications: 'إجمالي الطلبات',
+    awaitingReview: 'في انتظار المراجعة',
+    inProcess: 'في عملية التوظيف',
+    hiredThisMonth: 'تم التعيين هذا الشهر',
+    attAwaitingReview: 'في انتظار المراجعة',
+    attUnderReview: 'قيد المراجعة',
+    attInterviewing: 'مقابلات مجدولة',
+    attFailedBlocked: 'فشل / محظور',
+    attNone: 'كل شيء على ما يرام — لا يوجد شيء يحتاج إلى انتباه فوري.',
+    underReview: 'قيد المراجعة',
+    interviewing: 'مقابلة',
+    offerMade: 'تم تقديم العرض',
+    hired: 'تم التعيين',
+    rejected: 'مرفوض',
+    withdrawn: 'منسحب',
+    onHold: 'معلق',
   },
 };
 
-interface KpiCardProps {
+// ── Card primitives ────────────────────────────────────────────────────────
+
+interface OverviewCardProps {
   label: string;
   value: number;
-  color?: string;
+  color: string;
   onClick?: () => void;
 }
 
-const KpiCard: React.FC<KpiCardProps> = ({ label, value, color = 'text-slate-800', onClick }) => (
+const OverviewCard: React.FC<OverviewCardProps> = ({ label, value, color, onClick }) => (
   <div
     onClick={onClick}
     className={`bg-white rounded-xl border border-slate-200 p-5 flex flex-col items-center justify-center text-center min-h-[100px] ${
@@ -84,6 +118,59 @@ const KpiCard: React.FC<KpiCardProps> = ({ label, value, color = 'text-slate-800
     <p className="text-xs text-slate-500 mt-2 leading-tight">{label}</p>
   </div>
 );
+
+interface AttentionCardProps {
+  label: string;
+  value: number;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  description: string;
+  onClick?: () => void;
+}
+
+const AttentionCard: React.FC<AttentionCardProps> = ({
+  label, value, color, bgColor, borderColor, description, onClick,
+}) => (
+  <div
+    onClick={onClick}
+    className={`rounded-xl border ${borderColor} ${bgColor} p-4 flex items-center gap-4 ${
+      onClick ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''
+    }`}
+  >
+    <div className={`text-3xl font-bold ${color} min-w-[3rem] text-center tabular-nums`}>{value}</div>
+    <div>
+      <p className={`text-sm font-semibold ${color}`}>{label}</p>
+      <p className="text-xs text-slate-500 mt-0.5 leading-tight">{description}</p>
+    </div>
+  </div>
+);
+
+interface PipelineRowProps {
+  label: string;
+  value: number;
+  total: number;
+  color: string;
+  barColor: string;
+}
+
+const PipelineRow: React.FC<PipelineRowProps> = ({ label, value, total, color, barColor }) => {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-xs text-slate-500 w-36 shrink-0 text-right">{label}</span>
+      <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
+        <div
+          className={`h-2 rounded-full ${barColor} transition-all duration-500`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className={`text-sm font-semibold ${color} w-8 text-right tabular-nums`}>{value}</span>
+    </div>
+  );
+};
+
+// ── Main component ─────────────────────────────────────────────────────────
 
 export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
   const { lang } = useLanguage();
@@ -127,14 +214,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
 
   if (!summary) {
     return (
-      <div className="text-center py-16 text-slate-400 text-sm">
-        {t.loading}
-      </div>
+      <div className="text-center py-16 text-slate-400 text-sm">{t.loading}</div>
     );
   }
 
-  // Show getting started if no jobs
-  if (summary.kpis.active_jobs === 0 && Object.values(summary.kpis).every(v => v === 0)) {
+  const kpis = summary.kpis;
+  const isEmpty = kpis.active_jobs === 0 && kpis.total_applications === 0;
+
+  if (isEmpty) {
     return (
       <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-4">
@@ -159,81 +246,135 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
     );
   }
 
+  const showCampaigns = isAgency || kpis.active_campaigns > 0;
+
+  const pipelineTotal =
+    kpis.awaiting_review + kpis.under_review + kpis.interviewing +
+    kpis.offer_made + kpis.hired + kpis.rejected + kpis.withdrawn + kpis.on_hold;
+
+  const attentionItems: AttentionCardProps[] = [
+    kpis.awaiting_review > 0 && {
+      label: t.attAwaitingReview,
+      value: kpis.awaiting_review,
+      description: 'Applications scored by AI, ready for your review.',
+      color: 'text-sky-700',
+      bgColor: 'bg-sky-50',
+      borderColor: 'border-sky-200',
+      onClick: () => navigate('/jobs'),
+    },
+    kpis.under_review > 0 && {
+      label: t.attUnderReview,
+      value: kpis.under_review,
+      description: 'Candidates actively being evaluated.',
+      color: 'text-blue-700',
+      bgColor: 'bg-blue-50',
+      borderColor: 'border-blue-200',
+      onClick: () => navigate('/jobs'),
+    },
+    kpis.interviewing > 0 && {
+      label: t.attInterviewing,
+      value: kpis.interviewing,
+      description: 'Candidates in the interview stage.',
+      color: 'text-purple-700',
+      bgColor: 'bg-purple-50',
+      borderColor: 'border-purple-200',
+      onClick: () => navigate('/jobs'),
+    },
+    kpis.failed_or_blocked > 0 && {
+      label: t.attFailedBlocked,
+      value: kpis.failed_or_blocked,
+      description: 'Applications where AI scoring failed or is stuck. May need manual review.',
+      color: 'text-red-700',
+      bgColor: 'bg-red-50',
+      borderColor: 'border-red-200',
+      onClick: () => navigate('/jobs'),
+    },
+  ].filter(Boolean) as AttentionCardProps[];
+
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
-      {/* KPI Cards Grid */}
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">Key Metrics</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Workflow Status KPIs */}
-          <KpiCard
-            label={t.awaitingReview}
-            value={summary.kpis.awaiting_review}
-            color="text-sky-700"
-          />
-          <KpiCard
-            label={t.underReview}
-            value={summary.kpis.under_review}
-            color="text-blue-700"
-          />
-          <KpiCard
-            label={t.interviewing}
-            value={summary.kpis.interviewing}
-            color="text-purple-600"
-          />
+    <div className="space-y-8 max-w-5xl mx-auto">
 
-          {/* Outcomes */}
-          <KpiCard
-            label={t.hiredThisMonth}
-            value={summary.kpis.hired_this_month}
-            color="text-green-700"
-          />
-          <KpiCard
-            label={t.rejected}
-            value={summary.kpis.rejected}
-            color="text-red-600"
-          />
-
-          {/* Operational KPIs */}
-          <KpiCard
-            label={t.activeJobs}
-            value={summary.kpis.active_jobs}
-            color="text-emerald-600"
-            onClick={() => navigate('/jobs')}
-          />
-
-          {/* Show campaigns only if tenant uses them */}
-          {isAgency || summary.kpis.active_campaigns > 0 ? (
-            <KpiCard
+      {/* ── Section A: Workspace Overview ────────────────────────────────── */}
+      <section>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
+          {t.sectionOverview}
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          {showCampaigns && (
+            <OverviewCard
               label={t.activeCampaigns}
-              value={summary.kpis.active_campaigns}
+              value={kpis.active_campaigns}
               color="text-indigo-600"
               onClick={() => navigate('/campaigns')}
             />
-          ) : null}
-        </div>
-      </div>
-
-      {/* Quick Actions Card */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">Quick Actions</h3>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => navigate('/jobs')}
-            className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
-          >
-            {t.viewAllApplications}
-          </button>
-          {(isAgency || summary.kpis.active_campaigns > 0) && (
-            <button
-              onClick={() => navigate('/campaigns')}
-              className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
-            >
-              {t.activeCampaigns}
-            </button>
           )}
+          <OverviewCard
+            label={t.activeJobs}
+            value={kpis.active_jobs}
+            color="text-emerald-600"
+            onClick={() => navigate('/jobs')}
+          />
+          <OverviewCard
+            label={t.totalApplications}
+            value={kpis.total_applications}
+            color="text-slate-800"
+          />
+          <OverviewCard
+            label={t.awaitingReview}
+            value={kpis.awaiting_review}
+            color="text-sky-700"
+            onClick={() => navigate('/jobs')}
+          />
+          <OverviewCard
+            label={t.inProcess}
+            value={kpis.in_recruitment_process}
+            color="text-blue-700"
+            onClick={() => navigate('/jobs')}
+          />
+          <OverviewCard
+            label={t.hiredThisMonth}
+            value={kpis.hired_this_month}
+            color="text-green-700"
+          />
         </div>
-      </div>
+      </section>
+
+      {/* ── Section B: Needs Attention ───────────────────────────────────── */}
+      <section>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
+          {t.sectionAttention}
+        </h2>
+        {attentionItems.length === 0 ? (
+          <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-4 text-sm text-green-700">
+            {t.attNone}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {attentionItems.map((item, i) => (
+              <AttentionCard key={i} {...item} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── Section C: Recruitment Pipeline ─────────────────────────────── */}
+      <section>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
+          {t.sectionPipeline}
+        </h2>
+        <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+          <PipelineRow label={t.awaitingReview} value={kpis.awaiting_review} total={pipelineTotal} color="text-sky-700"    barColor="bg-sky-400" />
+          <PipelineRow label={t.underReview}    value={kpis.under_review}    total={pipelineTotal} color="text-blue-700"   barColor="bg-blue-400" />
+          <PipelineRow label={t.interviewing}   value={kpis.interviewing}    total={pipelineTotal} color="text-purple-700" barColor="bg-purple-400" />
+          <PipelineRow label={t.offerMade}      value={kpis.offer_made}      total={pipelineTotal} color="text-amber-700"  barColor="bg-amber-400" />
+          <PipelineRow label={t.hired}          value={kpis.hired}           total={pipelineTotal} color="text-green-700"  barColor="bg-green-400" />
+          <div className="border-t border-slate-100 my-1" />
+          <PipelineRow label={t.rejected}       value={kpis.rejected}        total={pipelineTotal} color="text-red-500"    barColor="bg-red-300" />
+          <PipelineRow label={t.withdrawn}      value={kpis.withdrawn}       total={pipelineTotal} color="text-slate-400"  barColor="bg-slate-300" />
+          <PipelineRow label={t.onHold}         value={kpis.on_hold}         total={pipelineTotal} color="text-orange-500" barColor="bg-orange-300" />
+        </div>
+      </section>
+
     </div>
   );
 };
