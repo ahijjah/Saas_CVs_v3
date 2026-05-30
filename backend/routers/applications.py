@@ -836,7 +836,7 @@ async def get_queue_status(
                 COUNT(*) FILTER (WHERE processing_status = 'pending')    AS pending,
                 COUNT(*) FILTER (WHERE processing_status = 'queued')     AS queued,
                 COUNT(*) FILTER (WHERE processing_status = 'processing') AS processing,
-                COUNT(*) FILTER (WHERE processing_status = 'scored') AS completed,
+                COUNT(*) FILTER (WHERE processing_status = 'ai_scored') AS completed,
                 COUNT(*) FILTER (WHERE processing_status = 'failed')     AS failed,
                 COUNT(*) FILTER (
                     WHERE processing_status IN ('queued', 'processing')

@@ -720,7 +720,7 @@ async def _score_cv_async(
                             gatekeeper_passed      = false,
                             evaluation_stage       = 1,
                             evaluation_exit_reason = :reason,
-                            processing_status      = 'scored',
+                            processing_status      = 'ai_scored',
                             decision               = 'rejected',
                             scored_at              = now()
                         WHERE application_id = :aid
@@ -974,7 +974,7 @@ async def _score_cv_async(
                 text("""
                     UPDATE applications SET
                         decision                 = :decision,
-                        processing_status        = 'scored',
+                        processing_status        = 'ai_scored',
                         evaluation_stage         = 3,
                         qualified_threshold_used = :qt,
                         partial_threshold_used   = :pt,
