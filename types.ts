@@ -267,12 +267,14 @@ export type ApplicationDecision = 'qualified' | 'partial' | 'rejected' | 'low_ma
 
 export type WorkflowStatus =
   | 'new'
+  | 'ai_processed'
   | 'under_review'
   | 'shortlisted'
   | 'interviewing'
   | 'offer_made'
   | 'hired'
-  | 'rejected_by_recruiter'
+  | 'rejected'
+  | 'withdrawn'
   | 'on_hold';
 
 export interface WorkflowHistoryEntry {
@@ -418,7 +420,7 @@ export interface ApplicationDetailedAnalysis {
   workflow_history?: WorkflowHistoryEntry[];
 }
 
-export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked' | 'workflow_shortlisted' | 'workflow_interviewing' | 'workflow_offer' | 'workflow_hired' | 'workflow_rejected';
+export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked' | 'workflow_ai_processed' | 'workflow_under_review' | 'workflow_shortlisted' | 'workflow_interviewing' | 'workflow_offer' | 'workflow_hired' | 'workflow_rejected' | 'workflow_withdrawn' | 'workflow_on_hold';
 
 export interface UploadedCV {
   application_id: string;

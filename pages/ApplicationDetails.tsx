@@ -415,52 +415,60 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'new';
 
   const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-    new:                   ['under_review', 'shortlisted', 'on_hold', 'rejected_by_recruiter'],
-    under_review:          ['shortlisted', 'on_hold', 'rejected_by_recruiter', 'new'],
-    shortlisted:           ['interviewing', 'under_review', 'on_hold', 'rejected_by_recruiter'],
-    interviewing:          ['offer_made', 'shortlisted', 'on_hold', 'rejected_by_recruiter'],
-    offer_made:            ['hired', 'interviewing', 'on_hold', 'rejected_by_recruiter'],
-    hired:                 [],
-    rejected_by_recruiter: ['under_review'],
-    on_hold:               ['new', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'rejected_by_recruiter'],
+    new:            ['ai_processed', 'on_hold'],
+    ai_processed:   ['under_review', 'on_hold'],
+    under_review:   ['shortlisted', 'on_hold', 'rejected', 'withdrawn'],
+    shortlisted:    ['interviewing', 'under_review', 'on_hold', 'rejected', 'withdrawn'],
+    interviewing:   ['offer_made', 'shortlisted', 'on_hold', 'rejected', 'withdrawn'],
+    offer_made:     ['hired', 'interviewing', 'on_hold', 'rejected', 'withdrawn'],
+    hired:          [],
+    rejected:       ['under_review'],
+    withdrawn:      ['under_review'],
+    on_hold:        ['new', 'ai_processed', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'rejected', 'withdrawn'],
   };
 
   const WF_LABELS: Record<WorkflowStatus, string> = {
-    new:                   'New',
-    under_review:          'Under Review',
-    shortlisted:           'Shortlisted',
-    interviewing:          'Interviewing',
-    offer_made:            'Offer Made',
-    hired:                 'Hired',
-    rejected_by_recruiter: 'Rejected',
-    on_hold:               'On Hold',
+    new:            'New',
+    ai_processed:   'AI Processed',
+    under_review:   'Under Review',
+    shortlisted:    'Shortlisted',
+    interviewing:   'Interviewing',
+    offer_made:     'Offer Made',
+    hired:          'Hired',
+    rejected:       'Rejected',
+    withdrawn:      'Withdrawn',
+    on_hold:        'On Hold',
   };
 
   const WF_STYLES: Record<WorkflowStatus, string> = {
-    new:                   'bg-slate-100 text-slate-600 border-slate-200',
-    under_review:          'bg-blue-100 text-blue-700 border-blue-200',
-    shortlisted:           'bg-indigo-100 text-indigo-700 border-indigo-200',
-    interviewing:          'bg-purple-100 text-purple-700 border-purple-200',
-    offer_made:            'bg-amber-100 text-amber-700 border-amber-200',
-    hired:                 'bg-green-100 text-green-800 border-green-200',
-    rejected_by_recruiter: 'bg-red-100 text-red-700 border-red-200',
-    on_hold:               'bg-orange-100 text-orange-700 border-orange-200',
+    new:            'bg-slate-100 text-slate-600 border-slate-200',
+    ai_processed:   'bg-sky-100 text-sky-700 border-sky-200',
+    under_review:   'bg-blue-100 text-blue-700 border-blue-200',
+    shortlisted:    'bg-indigo-100 text-indigo-700 border-indigo-200',
+    interviewing:   'bg-purple-100 text-purple-700 border-purple-200',
+    offer_made:     'bg-amber-100 text-amber-700 border-amber-200',
+    hired:          'bg-green-100 text-green-800 border-green-200',
+    rejected:       'bg-red-100 text-red-700 border-red-200',
+    withdrawn:      'bg-orange-100 text-orange-700 border-orange-200',
+    on_hold:        'bg-yellow-100 text-yellow-700 border-yellow-200',
   };
 
   const WF_ACTION_LABELS: Record<WorkflowStatus, string> = {
-    new:                   'Mark New',
-    under_review:          'Mark Under Review',
-    shortlisted:           'Shortlist',
-    interviewing:          'Move to Interview',
-    offer_made:            'Make Offer',
-    hired:                 'Mark Hired',
-    rejected_by_recruiter: 'Reject',
-    on_hold:               'Put On Hold',
+    new:            'Start Processing',
+    ai_processed:   'Begin Review',
+    under_review:   'Under Review',
+    shortlisted:    'Shortlist',
+    interviewing:   'Move to Interview',
+    offer_made:     'Make Offer',
+    hired:          'Mark Hired',
+    rejected:       'Reject',
+    withdrawn:      'Mark Withdrawn',
+    on_hold:        'Put On Hold',
   };
 
   const handleTransitionClick = (target: WorkflowStatus) => {
     if (!onWorkflowStatusChange) return;
-    if (target === 'hired' || target === 'rejected_by_recruiter') {
+    if (target === 'hired' || target === 'rejected' || target === 'withdrawn') {
       setPendingStatus(target);
       setShowNoteInput(true);
     } else {

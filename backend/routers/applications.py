@@ -25,19 +25,21 @@ settings = get_settings()
 
 
 WORKFLOW_STATUSES = frozenset((
-    "new", "under_review", "shortlisted", "interviewing",
-    "offer_made", "hired", "rejected_by_recruiter", "on_hold",
+    "new", "ai_processed", "under_review", "shortlisted", "interviewing",
+    "offer_made", "hired", "rejected", "withdrawn", "on_hold",
 ))
 
 VALID_WORKFLOW_TRANSITIONS: dict[str, frozenset] = {
-    "new":                   frozenset({"under_review", "shortlisted", "on_hold", "rejected_by_recruiter"}),
-    "under_review":          frozenset({"shortlisted", "on_hold", "rejected_by_recruiter", "new"}),
-    "shortlisted":           frozenset({"interviewing", "under_review", "on_hold", "rejected_by_recruiter"}),
-    "interviewing":          frozenset({"offer_made", "shortlisted", "on_hold", "rejected_by_recruiter"}),
-    "offer_made":            frozenset({"hired", "interviewing", "on_hold", "rejected_by_recruiter"}),
-    "hired":                 frozenset(),
-    "rejected_by_recruiter": frozenset({"under_review"}),
-    "on_hold":               frozenset({"new", "under_review", "shortlisted", "interviewing", "offer_made", "rejected_by_recruiter"}),
+    "new":            frozenset({"ai_processed", "on_hold"}),
+    "ai_processed":   frozenset({"under_review", "on_hold"}),
+    "under_review":   frozenset({"shortlisted", "on_hold", "rejected", "withdrawn"}),
+    "shortlisted":    frozenset({"interviewing", "under_review", "on_hold", "rejected", "withdrawn"}),
+    "interviewing":   frozenset({"offer_made", "shortlisted", "on_hold", "rejected", "withdrawn"}),
+    "offer_made":     frozenset({"hired", "interviewing", "on_hold", "rejected", "withdrawn"}),
+    "hired":          frozenset(),
+    "rejected":       frozenset({"under_review"}),
+    "withdrawn":      frozenset({"under_review"}),
+    "on_hold":        frozenset({"new", "ai_processed", "under_review", "shortlisted", "interviewing", "offer_made", "rejected", "withdrawn"}),
 }
 
 

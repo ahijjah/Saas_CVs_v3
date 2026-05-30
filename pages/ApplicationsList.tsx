@@ -41,11 +41,15 @@ const T = {
     filterSecurityBlocked: 'Security Blocked',
     filterDuplicateBlocked: 'Duplicate Blocked',
     filterFailedNeedsReview: 'Failed / Needs Review',
+    filterWorkflowAiProcessed: 'AI Processed',
+    filterWorkflowUnderReview: 'Under Review',
     filterWorkflowShortlisted: 'Shortlisted',
     filterWorkflowInterviewing: 'Interviewing',
     filterWorkflowOffer: 'Offer Made',
     filterWorkflowHired: 'Hired',
-    filterWorkflowRejected: 'Recruiter Rejected',
+    filterWorkflowRejected: 'Rejected',
+    filterWorkflowWithdrawn: 'Withdrawn',
+    filterWorkflowOnHold: 'On Hold',
     loading: 'Loading applications...',
     noApps: 'No applications found matching this criteria.',
     appliedOn: 'Applied on',
@@ -76,11 +80,15 @@ const T = {
     filterSecurityBlocked: 'محظور أمنياً',
     filterDuplicateBlocked: 'مكرر موقوف',
     filterFailedNeedsReview: 'فشل / يحتاج مراجعة',
+    filterWorkflowAiProcessed: 'معالج بالذكاء',
+    filterWorkflowUnderReview: 'قيد المراجعة',
     filterWorkflowShortlisted: 'مختصرون',
     filterWorkflowInterviewing: 'مقابلة',
     filterWorkflowOffer: 'عرض مقدم',
     filterWorkflowHired: 'تم التعيين',
-    filterWorkflowRejected: 'مرفوض من المجنّد',
+    filterWorkflowRejected: 'مرفوض',
+    filterWorkflowWithdrawn: 'منسحب',
+    filterWorkflowOnHold: 'متوقف مؤقتاً',
     loading: 'جارٍ تحميل الطلبات...',
     noApps: 'لا توجد طلبات مطابقة لهذه المعايير.',
     appliedOn: 'تاريخ التقديم',
@@ -101,29 +109,33 @@ const T = {
 };
 
 const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
-  new:                  'New',
-  under_review:         'Under Review',
-  shortlisted:          'Shortlisted',
-  interviewing:         'Interviewing',
-  offer_made:           'Offer Made',
-  hired:                'Hired',
-  rejected_by_recruiter: 'Rejected',
-  on_hold:              'On Hold',
+  new:            'New',
+  ai_processed:   'AI Processed',
+  under_review:   'Under Review',
+  shortlisted:    'Shortlisted',
+  interviewing:   'Interviewing',
+  offer_made:     'Offer Made',
+  hired:          'Hired',
+  rejected:       'Rejected',
+  withdrawn:      'Withdrawn',
+  on_hold:        'On Hold',
 };
 
 const WORKFLOW_STATUS_STYLES: Record<WorkflowStatus, string> = {
-  new:                  'bg-slate-100 text-slate-500',
-  under_review:         'bg-blue-100 text-blue-700',
-  shortlisted:          'bg-indigo-100 text-indigo-700',
-  interviewing:         'bg-purple-100 text-purple-700',
-  offer_made:           'bg-amber-100 text-amber-700',
-  hired:                'bg-green-100 text-green-800',
-  rejected_by_recruiter: 'bg-red-100 text-red-700',
-  on_hold:              'bg-orange-100 text-orange-700',
+  new:            'bg-slate-100 text-slate-500',
+  ai_processed:   'bg-sky-100 text-sky-700',
+  under_review:   'bg-blue-100 text-blue-700',
+  shortlisted:    'bg-indigo-100 text-indigo-700',
+  interviewing:   'bg-purple-100 text-purple-700',
+  offer_made:     'bg-amber-100 text-amber-700',
+  hired:          'bg-green-100 text-green-800',
+  rejected:       'bg-red-100 text-red-700',
+  withdrawn:      'bg-orange-100 text-orange-700',
+  on_hold:        'bg-yellow-100 text-yellow-700',
 };
 
 // low_match is an internal status; it maps to 'rejected' for display purposes
-const FILTER_KEYS: ApplicationFilter[] = ['all', 'ai_scored', 'qualified', 'partial', 'rejected', 'blocked', 'security_blocked', 'duplicate_blocked', 'possible_duplicate', 'failed_needs_review', 'workflow_shortlisted', 'workflow_interviewing', 'workflow_offer', 'workflow_hired', 'workflow_rejected'];
+const FILTER_KEYS: ApplicationFilter[] = ['all', 'ai_scored', 'qualified', 'partial', 'rejected', 'blocked', 'security_blocked', 'duplicate_blocked', 'possible_duplicate', 'failed_needs_review', 'workflow_ai_processed', 'workflow_under_review', 'workflow_shortlisted', 'workflow_interviewing', 'workflow_offer', 'workflow_hired', 'workflow_rejected', 'workflow_withdrawn', 'workflow_on_hold'];
 
 export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   jobId, initialFilter, initialApplicationId, auth, onBack, addToast
@@ -167,11 +179,15 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     security_blocked: t.filterSecurityBlocked,
     duplicate_blocked: t.filterDuplicateBlocked,
     failed_needs_review: t.filterFailedNeedsReview,
+    workflow_ai_processed: t.filterWorkflowAiProcessed,
+    workflow_under_review: t.filterWorkflowUnderReview,
     workflow_shortlisted: t.filterWorkflowShortlisted,
     workflow_interviewing: t.filterWorkflowInterviewing,
     workflow_offer: t.filterWorkflowOffer,
     workflow_hired: t.filterWorkflowHired,
     workflow_rejected: t.filterWorkflowRejected,
+    workflow_withdrawn: t.filterWorkflowWithdrawn,
+    workflow_on_hold: t.filterWorkflowOnHold,
   };
 
   const fetchApplications = async () => {
@@ -385,11 +401,15 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     if (filter === 'qualified') return applicationsAll.filter(a => isAiScored(a) && a.status === 'qualified');
     if (filter === 'partial')   return applicationsAll.filter(a => isAiScored(a) && a.status === 'partial');
     if (filter === 'rejected')  return applicationsAll.filter(a => isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase()) === 'rejected');
-    if (filter === 'workflow_shortlisted')  return applicationsAll.filter(a => a.workflow_status === 'shortlisted');
-    if (filter === 'workflow_interviewing') return applicationsAll.filter(a => a.workflow_status === 'interviewing');
-    if (filter === 'workflow_offer')        return applicationsAll.filter(a => a.workflow_status === 'offer_made');
-    if (filter === 'workflow_hired')        return applicationsAll.filter(a => a.workflow_status === 'hired');
-    if (filter === 'workflow_rejected')     return applicationsAll.filter(a => a.workflow_status === 'rejected_by_recruiter');
+    if (filter === 'workflow_ai_processed')  return applicationsAll.filter(a => a.workflow_status === 'ai_processed');
+    if (filter === 'workflow_under_review')  return applicationsAll.filter(a => a.workflow_status === 'under_review');
+    if (filter === 'workflow_shortlisted')   return applicationsAll.filter(a => a.workflow_status === 'shortlisted');
+    if (filter === 'workflow_interviewing')  return applicationsAll.filter(a => a.workflow_status === 'interviewing');
+    if (filter === 'workflow_offer')         return applicationsAll.filter(a => a.workflow_status === 'offer_made');
+    if (filter === 'workflow_hired')         return applicationsAll.filter(a => a.workflow_status === 'hired');
+    if (filter === 'workflow_rejected')      return applicationsAll.filter(a => a.workflow_status === 'rejected');
+    if (filter === 'workflow_withdrawn')     return applicationsAll.filter(a => a.workflow_status === 'withdrawn');
+    if (filter === 'workflow_on_hold')       return applicationsAll.filter(a => a.workflow_status === 'on_hold');
     return applicationsAll.filter(a => normaliseStatus((a.status ?? '').toLowerCase().trim()) === filter);
   })();
 
