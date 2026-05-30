@@ -265,7 +265,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
       color: 'text-sky-700',
       bgColor: 'bg-sky-50',
       borderColor: 'border-sky-200',
-      onClick: () => navigate('/jobs'),
+      onClick: () => navigate('/candidates?view=awaiting_review'),
     },
     kpis.failed_or_blocked > 0 && {
       label: t.attFailedBlocked,
@@ -275,7 +275,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
       color: 'text-red-700',
       bgColor: 'bg-red-50',
       borderColor: 'border-red-200',
-      onClick: () => navigate('/jobs'),
+      onClick: () => navigate('/candidates?view=failed_blocked'),
     },
   ].filter(Boolean) as AttentionCardProps[];
 
@@ -311,7 +311,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
             label={t.inProcess}
             value={kpis.in_recruitment_process}
             color="text-blue-700"
-            onClick={() => navigate('/jobs')}
+            onClick={() => navigate('/candidates?view=in_process')}
           />
           <OverviewCard
             label={t.hiredThisMonth}

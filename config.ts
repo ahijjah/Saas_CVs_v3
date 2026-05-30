@@ -8,6 +8,7 @@ export const WEBHOOK_CONFIG = {
   GET_JOB_DETAILS_WEBHOOK_URL:   `${API_BASE}/jobs/details`,
   CREATE_JOB_WEBHOOK_URL:        `${API_BASE}/jobs`,
   GET_APPLICATIONS_WEBHOOK_URL:  `${API_BASE}/applications`,
+  CANDIDATES_SEARCH_URL:         `${API_BASE}/applications`,  // tenant-wide mode (no job_id)
   APPLICATION_DETAILS_WEBHOOK_URL: `${API_BASE}/applications/details`,
   GET_PROFILE_WEBHOOK_URL:       `${API_BASE}/auth/me`,
   UPDATE_PROFILE_WEBHOOK_URL:    `${API_BASE}/auth/me`,

@@ -39,6 +39,7 @@ import { PublicJobApply } from './pages/PublicJobApply';
 import { ClientOrganizationsPage } from './pages/ClientOrganizations';
 import { CampaignsPage } from './pages/Campaigns';
 import { CampaignDetailPage } from './pages/CampaignDetail';
+import { CandidatesWorkspace } from './pages/CandidatesWorkspace';
 import { PlanSelectionPage } from './pages/PlanSelection';
 import { PaymentSimulationPage } from './pages/PaymentSimulation';
 import { ToastContainer, ToastType } from './components/Toast';
@@ -393,6 +394,7 @@ const AppInner: React.FC = () => {
             element={<ApplicationsRoute auth={auth} addToast={addToast} />}
           />
           <Route path="/settings" element={<Settings {...sharedAuth} />} />
+          <Route path="/candidates" element={<CandidatesWorkspace {...sharedAuth} />} />
           <Route path="/campaigns" element={<CampaignsPage {...sharedAuth} />} />
           <Route path="/campaigns/:campaignId" element={<CampaignDetailPage {...sharedAuth} />} />
           <Route path="/client-organizations" element={<ClientOrganizationsPage {...sharedAuth} />} />
