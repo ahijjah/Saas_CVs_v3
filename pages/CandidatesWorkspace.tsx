@@ -398,15 +398,48 @@ interface CandidateDetailDrawerProps {
   updatingId: string | null;
   onClose: () => void;
   onWorkflowUpdate: (applicationId: string, toStatus: WorkflowStatus) => void;
+  onNotesUpdate: (applicationId: string, notes: string) => Promise<void>;
+  addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
 const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
-  candidate, open, lang, updatingId, onClose, onWorkflowUpdate,
+  candidate, open, lang, updatingId, onClose, onWorkflowUpdate, onNotesUpdate, addToast,
 }) => {
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
   const t = T[lang];
+  const addToastRef = useRef(addToast);
+  useEffect(() => { addToastRef.current = addToast; });
+
+  const [notesText, setNotesText] = useState('');
+  const [notesChanged, setNotesChanged] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
 
   if (!candidate) return null;
+
+  // Initialize notes text when candidate changes
+  useEffect(() => {
+    setNotesText(candidate.recruiter_notes || '');
+    setNotesChanged(false);
+  }, [candidate.application_id]);
+
+  const handleNotesChange = (value: string) => {
+    setNotesText(value);
+    setNotesChanged(value !== (candidate.recruiter_notes || ''));
+  };
+
+  const handleSaveNotes = async () => {
+    if (!notesChanged || savingNotes) return;
+    setSavingNotes(true);
+    try {
+      await onNotesUpdate(candidate.application_id, notesText);
+      setNotesChanged(false);
+      addToastRef.current('Notes saved successfully', 'success');
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to save notes', 'error');
+    } finally {
+      setSavingNotes(false);
+    }
+  };
 
   const wfStyle = WORKFLOW_STATUS_STYLES[candidate.workflow_status] ?? 'bg-slate-100 text-slate-600';
   const wfLabel = wfLabels[candidate.workflow_status] ?? candidate.workflow_status;
@@ -545,12 +578,36 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   onTransition={onWorkflowUpdate}
                 />
               </div>
-              {candidate.recruiter_notes && (
-                <div className="mt-3 pt-3 border-t border-slate-200">
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Recruiter Notes</label>
-                  <p className="text-sm text-slate-700 leading-relaxed">{candidate.recruiter_notes}</p>
+              <div className="mt-3 pt-3 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-medium text-slate-600 uppercase">Recruiter Notes</label>
+                  {notesChanged && (
+                    <button
+                      onClick={handleSaveNotes}
+                      disabled={savingNotes}
+                      className="px-2 py-1 rounded text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1"
+                    >
+                      {savingNotes ? (
+                        <>
+                          <span className="w-2.5 h-2.5 border border-white border-t-transparent rounded-full animate-spin inline-block" />
+                          Saving...
+                        </>
+                      ) : (
+                        'Save'
+                      )}
+                    </button>
+                  )}
                 </div>
-              )}
+                <textarea
+                  value={notesText}
+                  onChange={e => handleNotesChange(e.target.value)}
+                  placeholder="Add interview observations, concerns, follow-up reminders, or internal context..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-transparent resize-vertical min-h-[80px]"
+                />
+                {notesText.length > 0 && (
+                  <p className="mt-1 text-xs text-slate-400">{notesText.length} characters</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -862,6 +919,29 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     }
   };
 
+  // Update recruiter notes for a candidate
+  const handleNotesUpdate = async (applicationId: string, notes: string) => {
+    // Update local state immediately (optimistic)
+    const prevCandidates = candidates;
+    setCandidates(prev =>
+      prev.map(c =>
+        c.application_id === applicationId ? { ...c, recruiter_notes: notes } : c
+      )
+    );
+
+    try {
+      await apiService.patch(
+        `${WEBHOOK_CONFIG.APPLICATION_WORKFLOW_STATUS_URL}/${applicationId}/recruiter-notes`,
+        { recruiter_notes: notes },
+        auth.token,
+      );
+    } catch (err: any) {
+      // Revert optimistic update on failure
+      setCandidates(prevCandidates);
+      throw err;
+    }
+  };
+
   // Find selected candidate for drawer
   const selectedCandidate = candidates.find(c => c.application_id === selectedAppId) || null;
 
@@ -1147,6 +1227,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         updatingId={updatingId}
         onClose={closeCandidate}
         onWorkflowUpdate={handleWorkflowUpdate}
+        onNotesUpdate={handleNotesUpdate}
+        addToast={addToast}
       />
     </div>
   );
