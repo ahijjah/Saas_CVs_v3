@@ -61,6 +61,8 @@ class RecruiterNotesRequest(BaseModel):
 
 @router.get("")
 async def list_applications(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
     job_id: str | None = None,
     workflow_status: str | None = None,
     processing_status: str | None = None,
@@ -76,8 +78,6 @@ async def list_applications(
     sort_order: str = "desc",
     page: int = 1,
     limit: int = 50,
-    current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """
     List applications with flexible filtering and pagination.
