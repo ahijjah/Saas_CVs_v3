@@ -7,9 +7,10 @@
  *   Pause/Close  — on_hold, rejected, withdrawn
  *   Other        — statuses outside the standard progression
  *
- * For Pause/Close transitions an optional inline note input is shown
- * before the recruiter confirms, allowing context to be stored in
- * application_workflow_history.note.
+ * Note requirement rules:
+ *   Required    — rejected, withdrawn (confirm button disabled until note entered)
+ *   Recommended — on_hold, Back/Reopen moves (textarea shown; can proceed without)
+ *   Optional    — normal forward progression (no textarea shown)
  *
  * Processing gate: only processing_status === 'ai_scored' candidates are
  * recruiter-actionable. All others render a muted "System Managed" badge.
@@ -47,6 +48,7 @@ const WORKFLOW_PROGRESSION_ORDER: WorkflowStatus[] = [
 const TERMINAL_STATUSES = new Set<WorkflowStatus>(['on_hold', 'rejected', 'withdrawn']);
 
 type TransitionGroup = 'forward' | 'back_reopen' | 'pause_close' | 'other';
+type NoteRequirement = 'required' | 'recommended' | 'optional';
 
 function getTransitionGroup(current: WorkflowStatus, target: WorkflowStatus): TransitionGroup {
   if (TERMINAL_STATUSES.has(target)) return 'pause_close';
@@ -70,6 +72,24 @@ function groupTransitions(
     groups[getTransitionGroup(current, t)].push(t);
   }
   return groups;
+}
+
+function getNoteRequirement(toStatus: WorkflowStatus, current: WorkflowStatus): NoteRequirement {
+  // Required notes for rejected and withdrawn
+  if (toStatus === 'rejected' || toStatus === 'withdrawn') {
+    return 'required';
+  }
+  // Recommended for on_hold
+  if (toStatus === 'on_hold') {
+    return 'recommended';
+  }
+  // Recommended for back/reopen moves
+  const group = getTransitionGroup(current, toStatus);
+  if (group === 'back_reopen') {
+    return 'recommended';
+  }
+  // Optional for forward moves and other transitions
+  return 'optional';
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -96,6 +116,7 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<WorkflowStatus | null>(null);
+  const [noteRequirement, setNoteRequirement] = useState<NoteRequirement>('optional');
   const [noteText, setNoteText] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
@@ -108,6 +129,7 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
         setOpen(false);
         setPendingStatus(null);
         setNoteText('');
+        setNoteRequirement('optional');
       }
     };
     document.addEventListener('mousedown', handler);
@@ -137,11 +159,14 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   }
 
   const selectStatus = (toStatus: WorkflowStatus) => {
-    // Pause/Close statuses prompt for an optional note before confirming
-    if (TERMINAL_STATUSES.has(toStatus)) {
+    const requirement = getNoteRequirement(toStatus, currentStatus);
+    // Show note prompt for required, recommended, or on_hold transitions
+    if (requirement === 'required' || requirement === 'recommended' || toStatus === 'on_hold') {
       setPendingStatus(toStatus);
+      setNoteRequirement(requirement);
       setNoteText('');
     } else {
+      // For optional forward moves, proceed without showing textarea
       setOpen(false);
       onTransition(applicationId, toStatus);
     }
@@ -149,15 +174,21 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
 
   const confirmPending = () => {
     if (!pendingStatus) return;
+    // Enforce required notes
+    if (noteRequirement === 'required' && !noteText.trim()) {
+      return;
+    }
     setOpen(false);
     onTransition(applicationId, pendingStatus, noteText.trim() || undefined);
     setPendingStatus(null);
     setNoteText('');
+    setNoteRequirement('optional');
   };
 
   const cancelPending = () => {
     setPendingStatus(null);
     setNoteText('');
+    setNoteRequirement('optional');
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -166,7 +197,7 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
       {/* Trigger button */}
       <button
         disabled={isUpdating}
-        onClick={() => { setOpen(v => !v); setPendingStatus(null); setNoteText(''); }}
+        onClick={() => { setOpen(v => !v); setPendingStatus(null); setNoteText(''); setNoteRequirement('optional'); }}
         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 bg-white hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isUpdating ? (
@@ -184,13 +215,25 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
       {open && (
         <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[190px]">
 
-          {/* ── Note confirmation panel for Pause/Close ── */}
+          {/* ── Note confirmation panel for transitions that require/recommend notes ── */}
           {pendingStatus ? (
             <div className="px-3 py-2 space-y-2">
               <p className="text-xs font-semibold text-slate-700">
                 {wfLabels[pendingStatus]}
-                <span className="text-slate-400 font-normal ml-1">— add a note (optional)</span>
+                <span className="text-slate-400 font-normal ml-1">
+                  {noteRequirement === 'required' ? '— add a note (required)' : '— add a note (optional)'}
+                </span>
               </p>
+              {noteRequirement === 'required' && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  A note is required for this action.
+                </p>
+              )}
+              {noteRequirement === 'recommended' && (
+                <p className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+                  Adding a note is recommended for this action.
+                </p>
+              )}
               <textarea
                 autoFocus
                 value={noteText}
@@ -202,7 +245,12 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
               <div className="flex gap-1.5">
                 <button
                   onClick={confirmPending}
-                  className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${WORKFLOW_STATUS_STYLES[pendingStatus] ?? 'bg-slate-100 text-slate-700'} hover:opacity-80`}
+                  disabled={noteRequirement === 'required' && !noteText.trim()}
+                  className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                    noteRequirement === 'required' && !noteText.trim()
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : WORKFLOW_STATUS_STYLES[pendingStatus] ?? 'bg-slate-100 text-slate-700'
+                  } hover:opacity-80 disabled:hover:opacity-100`}
                 >
                   Confirm
                 </button>
