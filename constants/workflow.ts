@@ -73,10 +73,11 @@ export const VALID_WORKFLOW_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]
 
 // ── Action button labels ──────────────────────────────────────────────────────
 
-// ── Advanced Move ─────────────────────────────────────────────────────────────
+// ── Exceptional Move ──────────────────────────────────────────────────────────
 
 /**
- * Roles permitted to perform advanced (stage-jumping) workflow moves.
+ * Roles permitted to perform exceptional (stage-jumping) workflow moves.
+ * For exceptional operational corrections only — not routine workflow.
  * Backend independently enforces this — frontend uses it only to conditionally render the UI.
  */
 export const ADVANCED_MOVE_ALLOWED_ROLES = new Set<string>(['admin', 'super_admin']);

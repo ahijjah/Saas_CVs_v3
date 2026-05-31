@@ -986,26 +986,26 @@ async def update_workflow_status(
         if not tenant or not tenant["allow_advanced_workflow_move"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Advanced workflow moves are disabled for this tenant.",
+                detail="Exceptional workflow moves are disabled for this tenant.",
             )
 
         # Check job-level setting
         if not rec["allow_advanced_workflow_move"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Advanced workflow moves are disabled for this job.",
+                detail="Exceptional workflow moves are disabled for this job.",
             )
 
         actor_role = (current_user.role or "").lower()
         if actor_role not in ("admin", "super_admin"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Advanced workflow moves require admin or super_admin role.",
+                detail="Exceptional workflow moves require admin or super_admin role.",
             )
         if not body.note or not body.note.strip():
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="A note/reason is required for advanced workflow moves.",
+                detail="A note/reason is required for exceptional workflow moves.",
             )
         # Target must still be a valid workflow status, but no transition-graph check
     else:
@@ -1234,7 +1234,7 @@ async def bulk_update_workflow_status(
     if body.advanced_move:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Advanced moves are not supported in bulk operations.",
+            detail="Exceptional moves are not supported in bulk operations.",
         )
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)

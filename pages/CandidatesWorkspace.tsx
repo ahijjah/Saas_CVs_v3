@@ -379,7 +379,7 @@ function buildTimeline(candidate: Candidate, detail: AppDetail | null): Timeline
           timestamp: h.created_at,
           actor: h.changed_by_name || 'System',
           action: h.is_advanced_move
-            ? `Advanced Move → ${WORKFLOW_STATUS_LABELS_EN[h.to_status as WorkflowStatus] || h.to_status}`
+            ? `Exceptional Move → ${WORKFLOW_STATUS_LABELS_EN[h.to_status as WorkflowStatus] || h.to_status}`
             : `Moved to ${WORKFLOW_STATUS_LABELS_EN[h.to_status as WorkflowStatus] || h.to_status}`,
           detail: h.note || undefined,
           isAdvancedMove: h.is_advanced_move,
@@ -925,7 +925,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                                 {event.action}
                                 {event.isAdvancedMove && (
                                   <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-amber-200 text-amber-800 px-1 py-0.5 rounded">
-                                    Advanced
+                                    Exceptional
                                   </span>
                                 )}
                               </span>
@@ -1229,10 +1229,11 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === candidates.length) {
+    const eligible = candidates.filter(c => c.processing_status === 'ai_scored');
+    if (selectedIds.size === eligible.length && eligible.length > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(candidates.map(c => c.application_id)));
+      setSelectedIds(new Set(eligible.map(c => c.application_id)));
     }
   };
 
@@ -1408,7 +1409,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       );
       const label = WORKFLOW_STATUS_LABELS_EN[toStatus];
       addToastRef.current(
-        isAdvancedMove ? `Advanced Move → ${label}` : `Moved to ${label}`,
+        isAdvancedMove ? `Exceptional Move → ${label}` : `Moved to ${label}`,
         'success',
       );
       // Refresh drawer detail so timeline picks up the new workflow_history row
@@ -1768,12 +1769,19 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="px-3 py-3 text-center w-10">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.size > 0 && selectedIds.size === candidates.length}
-                    onChange={toggleSelectAll}
-                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-2 focus:ring-indigo-300 cursor-pointer"
-                  />
+                  {(() => {
+                    const eligibleCount = candidates.filter(c => c.processing_status === 'ai_scored').length;
+                    return (
+                      <input
+                        type="checkbox"
+                        checked={eligibleCount > 0 && selectedIds.size === eligibleCount}
+                        onChange={toggleSelectAll}
+                        disabled={eligibleCount === 0}
+                        title={eligibleCount === 0 ? 'No eligible candidates on this page' : 'Select all eligible candidates'}
+                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-2 focus:ring-indigo-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      />
+                    );
+                  })()}
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colCandidate}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colJob}</th>
@@ -1790,18 +1798,21 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 const wfStyle = WORKFLOW_STATUS_STYLES[c.workflow_status] ?? 'bg-slate-100 text-slate-600';
                 const wfLabel = wfLabels[c.workflow_status] ?? c.workflow_status;
                 const isUpdating = updatingId === c.application_id;
+                const isBulkEligible = c.processing_status === 'ai_scored';
                 return (
                   <tr
                     key={c.application_id}
                     className={`hover:bg-slate-50 transition-colors ${isUpdating ? 'opacity-70' : ''} ${selectedIds.has(c.application_id) ? 'bg-indigo-50' : ''}`}
                   >
-                    {/* Checkbox */}
+                    {/* Checkbox — disabled for system-managed (non-ai_scored) rows */}
                     <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedIds.has(c.application_id)}
-                        onChange={() => toggleSelected(c.application_id)}
-                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-2 focus:ring-indigo-300 cursor-pointer"
+                        onChange={() => isBulkEligible && toggleSelected(c.application_id)}
+                        disabled={!isBulkEligible}
+                        title={!isBulkEligible ? 'System-managed candidates cannot be selected for bulk workflow actions' : undefined}
+                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-2 focus:ring-indigo-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                       />
                     </td>
                     {/* Candidate name — click navigates to detail */}

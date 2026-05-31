@@ -1669,7 +1669,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                         <span className="font-semibold text-textMain">{WF_LABELS[h.to_status as WorkflowStatus] || h.to_status}</span>
                         {h.is_advanced_move && (
                           <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 px-1 py-0.5 rounded border border-amber-200">
-                            Advanced
+                            Exceptional
                           </span>
                         )}
                         {h.from_status && <span className="text-slate-400"> from {WF_LABELS[h.from_status as WorkflowStatus] || h.from_status}</span>}

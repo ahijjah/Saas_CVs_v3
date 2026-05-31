@@ -12,11 +12,12 @@
  *   Recommended — on_hold, Back/Reopen moves (textarea shown; can proceed without)
  *   Optional    — normal forward progression (no textarea shown)
  *
- * Advanced Move (admin/super_admin only):
+ * Exceptional Move (admin/super_admin only):
  *   - Bypasses the VALID_WORKFLOW_TRANSITIONS graph
+ *   - For exceptional operational corrections only — not routine workflow
  *   - Shows all statuses except current, grouped identically
  *   - Note/reason is always required
- *   - Visually separated with amber/warning styling
+ *   - Visually demoted: small muted text link below primary Move button
  *   - Rendered only when advancedMoveEnabled && userRole is in ADVANCED_MOVE_ALLOWED_ROLES
  *   - Backend independently enforces permission + required note
  *
@@ -271,10 +272,10 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
         </span>
       </p>
 
-      {/* Advanced bypass warning */}
+      {/* Exceptional move governance warning */}
       {pendingIsAdvanced && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium">
-          ⚠ This action bypasses normal workflow progression. A reason is required.
+          ⚠ Exceptional move — bypasses standard workflow. A reason is required.
         </p>
       )}
 
@@ -366,28 +367,29 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
         </div>
       )}
 
-      {/* ── Advanced Move button + dropdown (admin/super_admin only) ── */}
+      {/* ── Exceptional Move trigger (admin/super_admin only — visually demoted) ── */}
       {canDoAdvancedMove && (
         <div className="relative">
+          {/* Intentionally subtle: text link style, not a button, so it doesn't compete with Move */}
           <button
             disabled={isUpdating}
             onClick={openAdvanced}
-            title="Advanced Move — bypasses normal workflow progression (admin only)"
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-200 text-xs font-medium text-amber-700 bg-amber-50 hover:border-amber-400 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Exceptional Move — use only for exceptional operational corrections. Bypasses standard recruitment workflow."
+            className="inline-flex items-center gap-0.5 text-[10px] text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed underline underline-offset-2"
           >
-            Advanced
-            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
+            Exceptional
+            <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none">
               <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
 
           {advancedOpen && (
-            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-amber-200 rounded-xl shadow-lg py-1 min-w-[220px]">
+            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-amber-200 rounded-xl shadow-lg py-1 min-w-[230px]">
               {/* Header banner */}
               {!(pendingStatus && pendingIsAdvanced) && (
                 <div className="px-3 py-2 bg-amber-50 border-b border-amber-100 rounded-t-xl">
-                  <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Advanced Move</p>
-                  <p className="text-[10px] text-amber-600 mt-0.5">Bypasses normal stage progression · Reason required</p>
+                  <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Exceptional Move</p>
+                  <p className="text-[10px] text-amber-600 mt-0.5">Use only for exceptional corrections · Bypasses standard workflow</p>
                 </div>
               )}
 
@@ -406,7 +408,7 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
         </div>
       )}
 
-      {/* ── Advanced Move Confirmation Modal ── */}
+      {/* ── Exceptional Move Confirmation Modal ── */}
       {showConfirmationModal && pendingStatus && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30">
           <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
@@ -416,15 +418,15 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
                 <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                 </svg>
-                Advanced Workflow Move
+                Exceptional Workflow Move
               </h2>
             </div>
 
             {/* Body */}
             <div className="px-6 py-4 space-y-4">
-              {/* Warning message */}
+              {/* Governance warning */}
               <p className="text-sm text-slate-700">
-                This action bypasses the normal recruitment workflow. This should be used only for exceptional workflow corrections.
+                This action bypasses the standard recruitment workflow and should only be used for exceptional operational corrections.
               </p>
 
               {/* Candidate info */}
@@ -489,7 +491,7 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    Confirm Advanced Move
+                    Confirm Exceptional Move
                   </>
                 )}
               </button>
