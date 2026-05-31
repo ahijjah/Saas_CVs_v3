@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { format, subDays } from 'date-fns';
 import {
   FunnelMetricsResponse,
   RecruiterProductivityResponse,
@@ -15,9 +14,9 @@ interface AnalyticsDashboardProps {
 
 const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast }) => {
   const [dateFrom, setDateFrom] = useState<string>(
-    subDays(new Date(), 30).toISOString().split('T')[0]
+    new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   );
-  const [dateTo, setDateTo] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [dateTo, setDateTo] = useState<string>(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
 
   const [funnelMetrics, setFunnelMetrics] = useState<FunnelMetricsResponse | null>(null);
@@ -238,4 +237,4 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
   );
 };
 
-export default AnalyticsDashboard;
+export { AnalyticsDashboard };
