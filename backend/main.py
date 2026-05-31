@@ -7,7 +7,8 @@ from config import get_settings
 from database import engine
 from routers import (
     admin, ai_models, ai_prompts, ai_usage, applications, audit_logs, auth, campaigns,
-    client_organizations, dashboard, jobs, platform_config, platform_secrets, public, saved_views, subscription_plans, tenant,
+    client_organizations, comments, dashboard, jobs, platform_config, platform_secrets,
+    public, saved_views, subscription_plans, tenant,
 )
 
 settings = get_settings()
@@ -40,6 +41,7 @@ app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(jobs.router)
 app.include_router(applications.router)
+app.include_router(comments.router)
 app.include_router(client_organizations.router)
 app.include_router(campaigns.router)
 app.include_router(saved_views.router)

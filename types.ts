@@ -287,6 +287,26 @@ export interface WorkflowHistoryEntry {
   is_advanced_move?: boolean;
 }
 
+export interface CandidateComment {
+  comment_id: string;
+  application_id: string;
+  user_id: string;
+  author_name: string;
+  author_email: string;
+  comment_text: string;
+  mentions: string[];
+  created_at: string | null;
+  updated_at: string | null;
+  is_own: boolean;
+}
+
+export interface AssignableUser {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: string;
+}
+
 export interface Application {
   id: string;
   application_id: string;

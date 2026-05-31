@@ -61,6 +61,47 @@ class RecruiterNotesRequest(BaseModel):
     recruiter_notes: str | None
 
 
+class AssignmentRequest(BaseModel):
+    assigned_user_id: str | None = None  # None = unassign
+
+
+class BulkAssignmentRequest(BaseModel):
+    application_ids:  list[str]
+    assigned_user_id: str | None = None  # None = unassign all
+
+
+@router.get("/assignable-users")
+async def get_assignable_users(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Return active users in the tenant for use in assignment dropdowns.
+    Accessible to all authenticated users (not just admin).
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    rows = await db.execute(
+        text("""
+            SELECT user_id, email, COALESCE(full_name, email) AS full_name, role
+            FROM users
+            WHERE tenant_id = CAST(:tid AS uuid)
+              AND status IN ('active', 'pending_email_verification')
+            ORDER BY full_name ASC
+        """),
+        {"tid": current_user.tenant_id},
+    )
+    users = [
+        {
+            "user_id":   str(r["user_id"]),
+            "email":     r["email"],
+            "full_name": r["full_name"],
+            "role":      r["role"],
+        }
+        for r in rows.mappings()
+    ]
+    return {"users": users}
+
+
 @router.get("")
 async def list_applications(
     current_user: CurrentUserDep,
@@ -76,6 +117,7 @@ async def list_applications(
     search: str | None = None,
     campaign_id: str | None = None,
     client_organization_id: str | None = None,
+    assigned_to: str | None = None,
     sort_by: str = "applied_at",
     sort_order: str = "desc",
     page: int = 1,
@@ -196,6 +238,15 @@ async def list_applications(
         where_parts.append("j.client_organization_id = CAST(:client_org_id AS uuid)")
         params["client_org_id"] = client_organization_id
 
+    # Assignment filter
+    if assigned_to == "me":
+        where_parts.append("a.assigned_user_id = CAST(:uid AS uuid)")
+    elif assigned_to == "unassigned":
+        where_parts.append("a.assigned_user_id IS NULL")
+    elif assigned_to:
+        where_parts.append("a.assigned_user_id = CAST(:assigned_to_id AS uuid)")
+        params["assigned_to_id"] = assigned_to
+
     # Always enforce access control: admin OR no client OR assigned via agency_user_clients
     where_parts.append("""
         (
@@ -255,12 +306,16 @@ async def list_applications(
             a.scored_at                         AS updated_at,
             s.final_score                       AS score,
             s.evaluation_notes                  AS summary,
-            j.allow_advanced_workflow_move      AS job_allow_advanced_workflow_move
+            j.allow_advanced_workflow_move      AS job_allow_advanced_workflow_move,
+            a.assigned_user_id,
+            a.assigned_at,
+            COALESCE(au.full_name, au.email)    AS assigned_user_name
         FROM applications a
         JOIN jobs j ON j.job_id = a.job_id
         LEFT JOIN application_scores s ON s.application_id = a.application_id
         LEFT JOIN job_campaigns jc ON jc.campaign_id = j.campaign_id
         LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
+        LEFT JOIN users au ON au.user_id = a.assigned_user_id
         WHERE {where_clause}
         ORDER BY {sort_column} {sort_order}
         LIMIT :limit OFFSET :offset
@@ -297,6 +352,9 @@ async def list_applications(
             "score": float(r["score"]) if r["score"] is not None else None,
             "summary": r["summary"],
             "job_allow_advanced_workflow_move": bool(r["job_allow_advanced_workflow_move"]),
+            "assigned_user_id":   str(r["assigned_user_id"]) if r["assigned_user_id"] else None,
+            "assigned_user_name": r["assigned_user_name"],
+            "assigned_at":        r["assigned_at"].isoformat() if r["assigned_at"] else None,
         })
 
     # Backward compatibility mode: if job_id provided, return array (existing behavior)
@@ -1203,6 +1261,143 @@ async def download_cv(
         filename=rec["original_name"] or full_path.name,
         media_type=rec["mime_type"] or "application/octet-stream",
     )
+
+
+@router.patch("/bulk-assignment")
+async def bulk_update_assignment(
+    body: BulkAssignmentRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Bulk assign (or unassign) candidates to a recruiter."""
+    if not body.application_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one application_id is required.",
+        )
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    # Verify target user exists in tenant (if assigning, not unassigning)
+    if body.assigned_user_id:
+        target_user = await db.execute(
+            text("""
+                SELECT user_id FROM users
+                WHERE user_id   = CAST(:target_uid AS uuid)
+                  AND tenant_id = CAST(:tid AS uuid)
+                  AND status    = 'active'
+            """),
+            {"target_uid": body.assigned_user_id, "tid": current_user.tenant_id},
+        )
+        if not target_user.first():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Target user not found or not active in this tenant.",
+            )
+
+        # Permission: recruiter can only assign to self
+        if not is_admin and body.assigned_user_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Recruiters can only assign candidates to themselves.",
+            )
+
+    await db.execute(
+        text("""
+            UPDATE applications
+               SET assigned_user_id = CAST(:target_uid AS uuid),
+                   assigned_at      = CASE WHEN CAST(:target_uid AS uuid) IS NOT NULL THEN now() ELSE NULL END,
+                   assigned_by      = CASE WHEN CAST(:target_uid AS uuid) IS NOT NULL THEN CAST(:uid AS uuid) ELSE NULL END
+             WHERE application_id = ANY(CAST(:aids AS uuid[]))
+               AND tenant_id      = CAST(:tid AS uuid)
+        """),
+        {
+            "target_uid": body.assigned_user_id,
+            "uid":        current_user.user_id,
+            "aids":       body.application_ids,
+            "tid":        current_user.tenant_id,
+        },
+    )
+    await db.commit()
+    return {"success": True, "updated_count": len(body.application_ids)}
+
+
+@router.patch("/{application_id}/assignment")
+async def update_assignment(
+    application_id: str,
+    body: AssignmentRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Assign or unassign a single candidate to a recruiter."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    if body.assigned_user_id:
+        target_user = await db.execute(
+            text("""
+                SELECT user_id FROM users
+                WHERE user_id   = CAST(:target_uid AS uuid)
+                  AND tenant_id = CAST(:tid AS uuid)
+                  AND status    = 'active'
+            """),
+            {"target_uid": body.assigned_user_id, "tid": current_user.tenant_id},
+        )
+        if not target_user.first():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Target user not found or not active in this tenant.",
+            )
+
+        if not is_admin and body.assigned_user_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Recruiters can only assign candidates to themselves.",
+            )
+
+    result = await db.execute(
+        text("""
+            UPDATE applications
+               SET assigned_user_id = CAST(:target_uid AS uuid),
+                   assigned_at      = CASE WHEN CAST(:target_uid AS uuid) IS NOT NULL THEN now() ELSE NULL END,
+                   assigned_by      = CASE WHEN CAST(:target_uid AS uuid) IS NOT NULL THEN CAST(:uid AS uuid) ELSE NULL END
+             WHERE application_id = CAST(:aid AS uuid)
+               AND tenant_id      = CAST(:tid AS uuid)
+            RETURNING application_id, assigned_user_id, assigned_at
+        """),
+        {
+            "target_uid": body.assigned_user_id,
+            "uid":        current_user.user_id,
+            "aid":        application_id,
+            "tid":        current_user.tenant_id,
+        },
+    )
+
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found.")
+
+    # Fetch assignee name if assigned
+    assigned_user_name = None
+    if body.assigned_user_id:
+        u_row = await db.execute(
+            text("SELECT COALESCE(full_name, email) AS name FROM users WHERE user_id = CAST(:uid AS uuid)"),
+            {"uid": body.assigned_user_id},
+        )
+        u = u_row.first()
+        if u:
+            assigned_user_name = u[0]
+
+    await db.commit()
+    return {
+        "success": True,
+        "assigned_user_id":   body.assigned_user_id,
+        "assigned_user_name": assigned_user_name,
+        "assigned_at":        row[2].isoformat() if row[2] else None,
+    }
 
 
 @router.patch("/bulk-workflow-status")

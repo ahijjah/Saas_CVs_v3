@@ -26,7 +26,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { AuthState, WorkflowStatus } from '../types';
+import { AuthState, WorkflowStatus, CandidateComment, AssignableUser } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import {
@@ -68,6 +68,9 @@ interface Candidate {
   gaps?: string | null;
   evaluation_notes?: string | null;
   job_allow_advanced_workflow_move?: boolean;
+  assigned_user_id?: string | null;
+  assigned_user_name?: string | null;
+  assigned_at?: string | null;
 }
 
 interface Pagination {
@@ -85,13 +88,18 @@ interface SavedViewFilters {
   campaignFilter?:   string;
   clientFilter?:     string;
   search?:           string;
+  assignedFilter?:   string;
 }
 
 interface SavedView {
-  saved_view_id: string;
-  name:          string;
-  filters:       SavedViewFilters;
-  created_at:    string;
+  saved_view_id:   string;
+  name:            string;
+  filters:         SavedViewFilters;
+  visibility_type: 'private' | 'tenant_shared';
+  created_by:      string | null;
+  created_by_name: string | null;
+  is_own:          boolean;
+  created_at:      string;
 }
 
 interface Campaign {
@@ -241,6 +249,36 @@ const T = {
     bulkConfirm: 'Move',
     bulkCancel: 'Cancel',
     bulkUpdated: '{updated} candidates moved, {skipped} skipped.',
+    bulkMixedStateWarning: 'Selected candidates are currently in multiple workflow stages. Some moves may be treated as backward transitions.',
+    // Assignment
+    colAssigned: 'Assigned',
+    filterAssigned: 'Assignment',
+    assignedToMe: 'Assigned to me',
+    unassigned: 'Unassigned',
+    anyAssignment: 'Any Assignment',
+    assignTo: 'Assign to…',
+    bulkAssign: 'Assign',
+    bulkAssignTitle: 'Bulk Assign Candidates',
+    bulkAssignMessage: 'Assign {count} candidates to:',
+    unassignOption: 'Unassign',
+    assignSelf: 'Assign to myself',
+    assignedTo: 'Assigned to',
+    assignmentUpdated: 'Assignment updated',
+    // Shared views
+    sharedView: 'Shared',
+    privateView: 'Private',
+    makeShared: 'Make shared (admin)',
+    savedViewShared: 'Shared view saved',
+    // Discussion / comments
+    discussion: 'Discussion',
+    addComment: 'Add comment…',
+    submitComment: 'Post',
+    editComment: 'Edit',
+    deleteComment: 'Delete',
+    noComments: 'No comments yet. Start a discussion.',
+    commentPosted: 'Comment posted',
+    commentDeleted: 'Comment deleted',
+    commentUpdated: 'Comment updated',
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -304,6 +342,36 @@ const T = {
     bulkConfirm: 'نقل',
     bulkCancel: 'إلغاء',
     bulkUpdated: '{updated} مرشح تم نقله، {skipped} تم تخطيه.',
+    bulkMixedStateWarning: 'المرشحون المحددون في مراحل توظيف متعددة. قد تُعدّ بعض التحويلات رجوعاً للوراء.',
+    // Assignment
+    colAssigned: 'المسؤول',
+    filterAssigned: 'التعيين',
+    assignedToMe: 'معيّن لي',
+    unassigned: 'غير معيّن',
+    anyAssignment: 'أي تعيين',
+    assignTo: 'تعيين إلى…',
+    bulkAssign: 'تعيين',
+    bulkAssignTitle: 'تعيين المرشحين بكميات كبيرة',
+    bulkAssignMessage: 'تعيين {count} مرشح إلى:',
+    unassignOption: 'إلغاء التعيين',
+    assignSelf: 'تعيين لي',
+    assignedTo: 'معيّن إلى',
+    assignmentUpdated: 'تم تحديث التعيين',
+    // Shared views
+    sharedView: 'مشترك',
+    privateView: 'خاص',
+    makeShared: 'جعله مشتركاً (مشرف)',
+    savedViewShared: 'تم حفظ العرض المشترك',
+    // Discussion / comments
+    discussion: 'نقاش',
+    addComment: 'أضف تعليقاً…',
+    submitComment: 'نشر',
+    editComment: 'تعديل',
+    deleteComment: 'حذف',
+    noComments: 'لا تعليقات حتى الآن. ابدأ نقاشاً.',
+    commentPosted: 'تم نشر التعليق',
+    commentDeleted: 'تم حذف التعليق',
+    commentUpdated: 'تم تحديث التعليق',
   },
 };
 
@@ -555,16 +623,21 @@ interface CandidateDetailDrawerProps {
   token: string | null;
   detailVersion: number;
   userRole?: string;
+  currentUserId?: string;
   advancedMoveEnabled?: boolean;
+  assignableUsers: AssignableUser[];
+  isAdmin: boolean;
   onClose: () => void;
   onWorkflowUpdate: (applicationId: string, toStatus: WorkflowStatus, note?: string, isAdvancedMove?: boolean) => void;
   onNotesUpdate: (applicationId: string, notes: string) => Promise<void>;
+  onAssign: (applicationId: string, userId: string | null) => Promise<void>;
   addToast: (msg: string, type: 'success' | 'error') => void;
 }
 
 const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
-  candidate, open, lang, updatingId, token, detailVersion, userRole, advancedMoveEnabled,
-  onClose, onWorkflowUpdate, onNotesUpdate, addToast,
+  candidate, open, lang, updatingId, token, detailVersion, userRole, currentUserId,
+  advancedMoveEnabled, assignableUsers, isAdmin,
+  onClose, onWorkflowUpdate, onNotesUpdate, onAssign, addToast,
 }) => {
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
   const t = T[lang];
@@ -580,6 +653,18 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [detailError, setDetailError] = useState<string | null>(null);
   // Tracks which application_id detail is loaded for, to avoid stale data
   const detailForRef = useRef<string | null>(null);
+
+  // Discussion (comments) state
+  const [activeTab, setActiveTab] = useState<'overview' | 'discussion'>('overview');
+  const [comments, setComments] = useState<CandidateComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [postingComment, setPostingComment] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+
+  // Assignment state
+  const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
 
   // Must come before any early return — Rules of Hooks
 
@@ -630,6 +715,35 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate?.application_id, open, token, detailVersion]);
 
+  // Load comments when switching to Discussion tab or when candidate changes
+  useEffect(() => {
+    if (!candidate?.application_id || !open || !token || activeTab !== 'discussion') return;
+    let cancelled = false;
+    setCommentsLoading(true);
+    apiService.get(
+      `${WEBHOOK_CONFIG.APPLICATION_COMMENTS_URL}/${candidate.application_id}/comments`,
+      {},
+      token,
+    ).then((data: any) => {
+      if (!cancelled && data?.comments) setComments(data.comments);
+    }).catch(() => {
+      if (!cancelled) setComments([]);
+    }).finally(() => {
+      if (!cancelled) setCommentsLoading(false);
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidate?.application_id, open, token, activeTab]);
+
+  // Reset tab and comments when candidate changes
+  useEffect(() => {
+    setActiveTab('overview');
+    setComments([]);
+    setNewComment('');
+    setEditingCommentId(null);
+    setAssignDropdownOpen(false);
+  }, [candidate?.application_id]);
+
   if (!candidate) return null;
 
   const handleNotesChange = (value: string) => {
@@ -649,6 +763,70 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     } finally {
       setSavingNotes(false);
     }
+  };
+
+  const handlePostComment = async () => {
+    const text = newComment.trim();
+    if (!text || postingComment) return;
+    setPostingComment(true);
+    try {
+      const data: any = await apiService.post(
+        `${WEBHOOK_CONFIG.APPLICATION_COMMENTS_URL}/${candidate.application_id}/comments`,
+        { comment_text: text },
+        token!,
+      );
+      if (data?.comment) {
+        setComments(prev => [...prev, data.comment]);
+        setNewComment('');
+        addToastRef.current(T[lang].commentPosted, 'success');
+      }
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to post comment', 'error');
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  const handleEditComment = async (commentId: string) => {
+    const text = editingText.trim();
+    if (!text) return;
+    try {
+      const data: any = await apiService.patch(
+        `${WEBHOOK_CONFIG.APPLICATION_COMMENTS_URL}/${candidate.application_id}/comments/${commentId}`,
+        { comment_text: text },
+        token!,
+      );
+      if (data?.comment) {
+        setComments(prev => prev.map(c => c.comment_id === commentId ? data.comment : c));
+        setEditingCommentId(null);
+        addToastRef.current(T[lang].commentUpdated, 'success');
+      }
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to update comment', 'error');
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      await apiService.delete(
+        `${WEBHOOK_CONFIG.APPLICATION_COMMENTS_URL}/${candidate.application_id}/comments/${commentId}`,
+        token!,
+      );
+      setComments(prev => prev.filter(c => c.comment_id !== commentId));
+      addToastRef.current(T[lang].commentDeleted, 'success');
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to delete comment', 'error');
+    }
+  };
+
+  // Render @mentions in comment text as highlighted spans
+  const renderCommentText = (text: string) => {
+    const parts = text.split(/(@\w[\w.\- ]*)/g);
+    return parts.map((part, i) =>
+      part.startsWith('@')
+        ? <span key={i} className="text-indigo-600 font-medium">{part}</span>
+        : <span key={i}>{part}</span>
+    );
   };
 
   const wfStyle = WORKFLOW_STATUS_STYLES[candidate.workflow_status] ?? 'bg-slate-100 text-slate-600';
@@ -677,13 +855,22 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
       >
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold text-slate-900">{candidate.candidate_name || '—'}</h2>
-            <p className="text-xs text-slate-500 mt-1">{candidate.job_title || '—'}</p>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-semibold text-slate-900 truncate">{candidate.candidate_name || '—'}</h2>
+            <p className="text-xs text-slate-500 mt-0.5 truncate">{candidate.job_title || '—'}</p>
+            {/* Assignee chip */}
+            {candidate.assigned_user_name && (
+              <div className="flex items-center gap-1 mt-1.5">
+                <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold flex items-center justify-center">
+                  {candidate.assigned_user_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                </div>
+                <span className="text-[10px] text-emerald-700">{candidate.assigned_user_name}</span>
+              </div>
+            )}
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors"
+            className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
           >
             <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -691,6 +878,128 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           </button>
         </div>
 
+        {/* Tab navigation */}
+        <div className="sticky top-[88px] bg-white border-b border-slate-200 px-6 flex gap-4">
+          {(['overview', 'discussion'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`py-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                activeTab === tab
+                  ? 'border-indigo-500 text-indigo-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {tab === 'overview' ? 'Overview' : t.discussion}
+              {tab === 'discussion' && comments.length > 0 && (
+                <span className="ml-1.5 bg-indigo-100 text-indigo-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  {comments.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Discussion Tab */}
+        {activeTab === 'discussion' && (
+          <div className="px-6 py-4 space-y-4">
+            {commentsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 py-4">
+                <span className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin inline-block" />
+                Loading discussion…
+              </div>
+            ) : comments.length === 0 ? (
+              <p className="text-sm text-slate-400 italic py-4">{t.noComments}</p>
+            ) : (
+              <div className="space-y-4">
+                {comments.map(comment => (
+                  <div key={comment.comment_id} className="group">
+                    <div className="flex items-start gap-2">
+                      <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                        {comment.author_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-semibold text-slate-800">{comment.author_name}</span>
+                          <span className="text-[10px] text-slate-400">{formatTimelineTimestamp(comment.created_at || '')}</span>
+                          {comment.updated_at !== comment.created_at && (
+                            <span className="text-[10px] text-slate-400 italic">(edited)</span>
+                          )}
+                        </div>
+                        {editingCommentId === comment.comment_id ? (
+                          <div className="space-y-2">
+                            <textarea
+                              value={editingText}
+                              onChange={e => setEditingText(e.target.value)}
+                              className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                              rows={3}
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleEditComment(comment.comment_id)}
+                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                              >Save</button>
+                              <button
+                                onClick={() => setEditingCommentId(null)}
+                                className="text-xs text-slate-400 hover:text-slate-600"
+                              >Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded-lg px-3 py-2">
+                            {renderCommentText(comment.comment_text)}
+                          </div>
+                        )}
+                        {(comment.is_own || isAdmin) && editingCommentId !== comment.comment_id && (
+                          <div className="flex gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {comment.is_own && (
+                              <button
+                                onClick={() => { setEditingCommentId(comment.comment_id); setEditingText(comment.comment_text); }}
+                                className="text-[10px] text-slate-400 hover:text-indigo-600"
+                              >{t.editComment}</button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteComment(comment.comment_id)}
+                              className="text-[10px] text-slate-400 hover:text-red-500"
+                            >{t.deleteComment}</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add comment */}
+            <div className="border-t border-slate-200 pt-4 space-y-2">
+              <textarea
+                value={newComment}
+                onChange={e => setNewComment(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handlePostComment();
+                }}
+                placeholder={t.addComment}
+                rows={3}
+                maxLength={2000}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400">{newComment.length}/2000 · Ctrl+Enter to post</span>
+                <button
+                  onClick={handlePostComment}
+                  disabled={!newComment.trim() || postingComment}
+                  className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                >
+                  {postingComment ? '…' : t.submitComment}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Overview Tab */}
+        {activeTab === 'overview' && (
         <div className="px-6 py-4 space-y-6">
           {/* Key metrics */}
           <div className="grid grid-cols-2 gap-4">
@@ -722,6 +1031,75 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 {procLabel}
               </span>
             </div>
+          </div>
+
+          {/* Assignment section */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-medium text-slate-500 uppercase">{t.assignedTo}</label>
+              <div className="relative">
+                <button
+                  onClick={() => setAssignDropdownOpen(v => !v)}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                >
+                  {candidate.assigned_user_name ? 'Reassign' : t.assignTo}
+                </button>
+                {assignDropdownOpen && (
+                  <div className="absolute right-0 top-6 z-50 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[180px]">
+                    {/* Unassign option */}
+                    <button
+                      onClick={async () => {
+                        await onAssign(candidate.application_id, null);
+                        setAssignDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      {t.unassignOption}
+                    </button>
+                    {/* Self-assign shortcut */}
+                    {currentUserId && (
+                      <button
+                        onClick={async () => {
+                          await onAssign(candidate.application_id, currentUserId);
+                          setAssignDropdownOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs text-indigo-600 font-medium hover:bg-indigo-50 transition-colors"
+                      >
+                        {t.assignSelf}
+                      </button>
+                    )}
+                    {/* Admin: list all assignable users */}
+                    {isAdmin && assignableUsers.map(u => (
+                      <button
+                        key={u.user_id}
+                        onClick={async () => {
+                          await onAssign(candidate.application_id, u.user_id);
+                          setAssignDropdownOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        {u.full_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {candidate.assigned_user_name ? (
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center">
+                  {candidate.assigned_user_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-800">{candidate.assigned_user_name}</p>
+                  {candidate.assigned_at && (
+                    <p className="text-xs text-slate-400">{formatDate(candidate.assigned_at)}</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 italic">No recruiter assigned.</p>
+            )}
           </div>
 
           {/* Job and campaign */}
@@ -980,6 +1358,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
             View Full Application →
           </a>
         </div>
+        )} {/* end Overview tab */}
       </div>
     </>
   );
@@ -994,6 +1373,7 @@ function buildApiParams(
   campaignFilter: string,
   clientFilter: string,
   search: string,
+  assignedFilter: string,
   page: number,
 ): Record<string, string> {
   const p: Record<string, string> = {
@@ -1021,6 +1401,7 @@ function buildApiParams(
   if (campaignFilter)   p.campaign_id = campaignFilter;
   if (clientFilter)     p.client_organization_id = clientFilter;
   if (search.trim())    p.search = search.trim();
+  if (assignedFilter)   p.assigned_to = assignedFilter;
 
   return p;
 }
@@ -1058,6 +1439,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [campaignFilter, setCampaignFilter] = useState(initialCampaign);
   const [clientFilter, setClientFilter] = useState(initialClient);
   const [search, setSearch] = useState(initialSearch);
+  const [assignedFilter, setAssignedFilter] = useState(searchParams.get('assigned_to') || '');
   const [page, setPage] = useState(initialPage);
   const [selectedAppId, setSelectedAppId] = useState(initialAppId);
 
@@ -1086,6 +1468,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
   const [savingView, setSavingView] = useState(false);
+  const [makeViewShared, setMakeViewShared] = useState(false);
 
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1095,9 +1478,17 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [bulkResult, setBulkResult] = useState<any>(null);
   const [bulkResultOpen, setBulkResultOpen] = useState(false);
+  // Bulk assign
+  const [bulkAssignTarget, setBulkAssignTarget] = useState('');
+  const [showBulkAssignConfirm, setShowBulkAssignConfirm] = useState(false);
+  const [bulkAssignProcessing, setBulkAssignProcessing] = useState(false);
+
+  // Assignable users (fetched once on mount for assignment dropdowns)
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
 
   // Check if user is agency/freelancer
   const isAgency = auth.user?.tenant_type === 'agency' || auth.user?.tenant_type === 'individual_recruiter';
+  const isAdmin = auth.user?.role === 'admin' || auth.user?.role === 'super_admin';
 
   useEffect(() => {
     setPageTitle(t.pageTitle);
@@ -1161,6 +1552,16 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       .catch(() => {}); // non-critical — silent fail
   }, [auth.token]);
 
+  // Fetch assignable users once on mount
+  useEffect(() => {
+    if (!auth.token) return;
+    apiService.get(WEBHOOK_CONFIG.ASSIGNABLE_USERS_URL, {}, auth.token)
+      .then((data: any) => {
+        if (data && Array.isArray(data.users)) setAssignableUsers(data.users);
+      })
+      .catch(() => {}); // non-critical
+  }, [auth.token]);
+
   const handleApplySavedView = (view: SavedView) => {
     const f = view.filters;
     setActiveView((f.activeView as QuickView) || 'all');
@@ -1171,6 +1572,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setClientFilter(f.clientFilter || '');
     setSearch(f.search || '');
     setDebouncedSearch(f.search || '');
+    setAssignedFilter(f.assignedFilter || '');
     setPage(1);
     clearSelection();
     addToastRef.current(t.savedViewApplied, 'success');
@@ -1189,10 +1591,11 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       if (campaignFilter)   filters.campaignFilter   = campaignFilter;
       if (clientFilter)     filters.clientFilter     = clientFilter;
       if (debouncedSearch)  filters.search           = debouncedSearch;
+      if (assignedFilter)   filters.assignedFilter   = assignedFilter;
 
       const data: any = await apiService.post(
         WEBHOOK_CONFIG.CANDIDATE_SAVED_VIEWS_URL,
-        { name, filters },
+        { name, filters, visibility_type: makeViewShared ? 'tenant_shared' : 'private' },
         auth.token!,
       );
       if (data?.saved_view) {
@@ -1200,7 +1603,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       }
       setSaveViewName('');
       setShowSaveDialog(false);
-      addToastRef.current(t.savedViewSaved, 'success');
+      setMakeViewShared(false);
+      addToastRef.current(makeViewShared ? t.savedViewShared : t.savedViewSaved, 'success');
     } catch (err: any) {
       addToastRef.current(err.message || 'Failed to save view', 'error');
     } finally {
@@ -1243,6 +1647,50 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setSelectedIds(new Set());
     setBulkTargetStatus('');
     setBulkNote('');
+    setBulkAssignTarget('');
+  };
+
+  const handleBulkAssign = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkAssignProcessing(true);
+    try {
+      await apiService.patch(
+        WEBHOOK_CONFIG.BULK_ASSIGNMENT_URL,
+        {
+          application_ids: Array.from(selectedIds),
+          assigned_user_id: bulkAssignTarget || null,
+        },
+        auth.token!,
+      );
+      addToastRef.current(t.assignmentUpdated, 'success');
+      setShowBulkAssignConfirm(false);
+      clearSelection();
+      fetchCandidates();
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to update assignment', 'error');
+    } finally {
+      setBulkAssignProcessing(false);
+    }
+  };
+
+  const handleAssignCandidate = async (applicationId: string, userId: string | null) => {
+    try {
+      const data: any = await apiService.patch(
+        `${WEBHOOK_CONFIG.APPLICATION_ASSIGNMENT_URL}/${applicationId}/assignment`,
+        { assigned_user_id: userId },
+        auth.token!,
+      );
+      setCandidates(prev =>
+        prev.map(c =>
+          c.application_id === applicationId
+            ? { ...c, assigned_user_id: data.assigned_user_id, assigned_user_name: data.assigned_user_name, assigned_at: data.assigned_at }
+            : c
+        )
+      );
+      addToastRef.current(t.assignmentUpdated, 'success');
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to update assignment', 'error');
+    }
   };
 
   const getNoteRequirement = (status: string): 'required' | 'recommended' | 'none' => {
@@ -1308,10 +1756,11 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (campaignFilter)           p.campaign_id = campaignFilter;
     if (clientFilter)             p.client_organization_id = clientFilter;
     if (debouncedSearch)          p.search = debouncedSearch;
+    if (assignedFilter)           p.assigned_to = assignedFilter;
     if (page > 1)                 p.page = String(page);
     if (selectedAppId)            p.app_id = selectedAppId;
     setSearchParams(p, { replace: true });
-  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, page, selectedAppId, setSearchParams]);
+  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, selectedAppId, setSearchParams]);
 
   // Debounce search field
   const handleSearchChange = (value: string) => {
@@ -1328,7 +1777,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (!auth.token) return;
     setLoading(true);
     try {
-      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, page);
+      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page);
       const data = await apiService.get(WEBHOOK_CONFIG.CANDIDATES_SEARCH_URL, params, auth.token);
       // Tenant-wide mode returns { candidates, pagination }
       if (data && typeof data === 'object' && Array.isArray(data.candidates)) {
@@ -1350,7 +1799,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       setLoading(false);
     }
   // addToast intentionally omitted — using ref to avoid infinite loop
-  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchCandidates();
@@ -1366,6 +1815,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setClientFilter('');
     setSearch('');
     setDebouncedSearch('');
+    setAssignedFilter('');
     setPage(1);
     clearSelection();
   };
@@ -1379,11 +1829,12 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setClientFilter('');
     setSearch('');
     setDebouncedSearch('');
+    setAssignedFilter('');
     setPage(1);
     clearSelection();
   };
 
-  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || debouncedSearch;
+  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || debouncedSearch || assignedFilter;
 
   const openCandidate = (c: Candidate) => {
     setSelectedAppId(c.application_id);
@@ -1501,30 +1952,47 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       {(savedViews.length > 0 || hasManualFilters || activeView !== 'all') && (
         <div className="flex flex-wrap gap-2 items-center">
           {/* User-saved view chips */}
-          {savedViews.map(view => (
-            <div
-              key={view.saved_view_id}
-              className="group flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition-colors"
-            >
-              <button
-                onClick={() => handleApplySavedView(view)}
-                className="max-w-[140px] truncate"
-                title={view.name}
+          {savedViews.map(view => {
+            const isShared = view.visibility_type === 'tenant_shared';
+            const canDelete = view.is_own || isAdmin;
+            return (
+              <div
+                key={view.saved_view_id}
+                className={`group flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  isShared
+                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                    : 'bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                }`}
               >
-                {view.name}
-              </button>
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  if (window.confirm(t.savedViewDeleteConfirm)) handleDeleteSavedView(view.saved_view_id);
-                }}
-                className="ml-0.5 text-indigo-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0"
-                title="Delete"
-              >
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
-              </button>
-            </div>
-          ))}
+                {isShared && (
+                  <span className="text-emerald-500" title={t.sharedView}>
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z"/></svg>
+                  </span>
+                )}
+                <button
+                  onClick={() => handleApplySavedView(view)}
+                  className="max-w-[140px] truncate"
+                  title={`${view.name}${isShared ? ` (${t.sharedView})` : ''}`}
+                >
+                  {view.name}
+                </button>
+                {canDelete && (
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (window.confirm(t.savedViewDeleteConfirm)) handleDeleteSavedView(view.saved_view_id);
+                    }}
+                    className={`ml-0.5 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 ${
+                      isShared ? 'text-emerald-400 hover:text-red-500' : 'text-indigo-400 hover:text-red-500'
+                    }`}
+                    title="Delete"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                  </button>
+                )}
+              </div>
+            );
+          })}
 
           {/* Save Current View */}
           {(hasManualFilters || activeView !== 'all') && !showSaveDialog && (
@@ -1547,12 +2015,23 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 onChange={e => setSaveViewName(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter') handleSaveView();
-                  if (e.key === 'Escape') { setShowSaveDialog(false); setSaveViewName(''); }
+                  if (e.key === 'Escape') { setShowSaveDialog(false); setSaveViewName(''); setMakeViewShared(false); }
                 }}
                 placeholder={t.saveViewPlaceholder}
                 className="text-xs outline-none w-36 text-slate-700 placeholder:text-slate-400 bg-transparent"
                 maxLength={100}
               />
+              {isAdmin && (
+                <label className="flex items-center gap-1 text-xs text-slate-500 cursor-pointer select-none" title={t.makeShared}>
+                  <input
+                    type="checkbox"
+                    checked={makeViewShared}
+                    onChange={e => setMakeViewShared(e.target.checked)}
+                    className="w-3 h-3 text-emerald-600 rounded"
+                  />
+                  <span className="text-emerald-600">Shared</span>
+                </label>
+              )}
               <button
                 onClick={handleSaveView}
                 disabled={savingView || !saveViewName.trim()}
@@ -1561,7 +2040,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 {savingView ? '…' : t.saveViewConfirm}
               </button>
               <button
-                onClick={() => { setShowSaveDialog(false); setSaveViewName(''); }}
+                onClick={() => { setShowSaveDialog(false); setSaveViewName(''); setMakeViewShared(false); }}
                 className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
               >
                 {t.saveViewCancel}
@@ -1644,6 +2123,20 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           </select>
         )}
 
+        {/* Assigned filter */}
+        <select
+          value={assignedFilter}
+          onChange={e => { setAssignedFilter(e.target.value); setPage(1); }}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+        >
+          <option value="">{t.filterAssigned}</option>
+          <option value="me">{t.assignedToMe}</option>
+          <option value="unassigned">{t.unassigned}</option>
+          {isAdmin && assignableUsers.map(u => (
+            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
+          ))}
+        </select>
+
         {/* Name search */}
         <input
           type="text"
@@ -1678,9 +2171,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
             {t.bulkSelect.replace('{count}', String(selectedIds.size))}
           </span>
 
+          {/* Bulk workflow move */}
           <select
             value={bulkTargetStatus}
-            onChange={e => setBulkTargetStatus(e.target.value)}
+            onChange={e => { setBulkTargetStatus(e.target.value); setBulkAssignTarget(''); }}
             className="text-sm border border-indigo-300 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
           >
             <option value="">{t.bulkMove}…</option>
@@ -1699,9 +2193,35 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
             </button>
           )}
 
+          {/* Divider */}
+          <span className="text-indigo-300 select-none">|</span>
+
+          {/* Bulk assign */}
+          <select
+            value={bulkAssignTarget}
+            onChange={e => { setBulkAssignTarget(e.target.value); setBulkTargetStatus(''); }}
+            className="text-sm border border-indigo-300 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          >
+            <option value="">{t.bulkAssign}…</option>
+            <option value="__unassign__">{t.unassignOption}</option>
+            {assignableUsers.map(u => (
+              <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
+            ))}
+          </select>
+
+          {bulkAssignTarget && (
+            <button
+              onClick={() => setShowBulkAssignConfirm(true)}
+              disabled={bulkAssignProcessing}
+              className="px-4 py-1.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+            >
+              {bulkAssignProcessing ? '…' : t.bulkAssign}
+            </button>
+          )}
+
           <button
             onClick={clearSelection}
-            disabled={bulkProcessing}
+            disabled={bulkProcessing || bulkAssignProcessing}
             className="ml-auto text-sm text-indigo-600 hover:text-indigo-800 font-semibold disabled:opacity-50 transition-colors"
           >
             {t.bulkClear}
@@ -1709,8 +2229,58 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         </div>
       )}
 
+      {/* Bulk Assign Confirmation Modal */}
+      {showBulkAssignConfirm && selectedIds.size > 0 && bulkAssignTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-lg max-w-sm w-full mx-4 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-emerald-50 to-emerald-100">
+              <h2 className="text-lg font-bold text-emerald-900">{t.bulkAssignTitle}</h2>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-sm text-slate-700">
+                {t.bulkAssignMessage.replace('{count}', String(selectedIds.size))}{' '}
+                <strong>
+                  {bulkAssignTarget === '__unassign__'
+                    ? t.unassignOption
+                    : (assignableUsers.find(u => u.user_id === bulkAssignTarget)?.full_name || bulkAssignTarget)}
+                </strong>
+              </p>
+            </div>
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowBulkAssignConfirm(false)}
+                disabled={bulkAssignProcessing}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {t.bulkCancel}
+              </button>
+              <button
+                onClick={() => {
+                  const finalTarget = bulkAssignTarget === '__unassign__' ? null : bulkAssignTarget;
+                  setBulkAssignTarget(finalTarget || '__unassign__');
+                  handleBulkAssign();
+                }}
+                disabled={bulkAssignProcessing}
+                className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {bulkAssignProcessing ? '…' : t.bulkAssign}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bulk Confirmation Modal */}
-      {showBulkConfirm && selectedIds.size > 0 && bulkTargetStatus && (
+      {showBulkConfirm && selectedIds.size > 0 && bulkTargetStatus && (() => {
+        // Detect mixed workflow states across selected candidates
+        const selectedCandidates = candidates.filter(c => selectedIds.has(c.application_id));
+        const statusCounts = selectedCandidates.reduce<Record<string, number>>((acc, c) => {
+          acc[c.workflow_status] = (acc[c.workflow_status] || 0) + 1;
+          return acc;
+        }, {});
+        const isMixed = Object.keys(statusCounts).length > 1;
+
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-lg max-w-sm w-full mx-4 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-indigo-100">
@@ -1721,6 +2291,25 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 {t.bulkConfirmMessage.replace('{count}', String(selectedIds.size))}{' '}
                 <strong>{wfLabels[bulkTargetStatus as WorkflowStatus]}</strong>
               </p>
+
+              {/* Mixed workflow state warning */}
+              {isMixed && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <p className="text-xs text-amber-800 font-medium">{t.bulkMixedStateWarning}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(statusCounts).map(([st, count]) => (
+                      <span key={st} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                        {wfLabels[st as WorkflowStatus] || st}: {count}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {(() => {
                 const noteReq = getNoteRequirement(bulkTargetStatus);
@@ -1761,7 +2350,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Bulk Result Modal */}
       {bulkResultOpen && bulkResult && (
@@ -1892,6 +2482,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiMatch}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiResult}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colWorkflow}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden xl:table-cell">{t.colAssigned}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">{t.colProcessing}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">{t.colApplied}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colActions}</th>
@@ -1961,6 +2552,20 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${wfStyle}`}>
                         {wfLabel}
                       </span>
+                    </td>
+
+                    {/* Assigned to */}
+                    <td className="px-4 py-3 hidden xl:table-cell" onClick={e => e.stopPropagation()}>
+                      {c.assigned_user_name ? (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                            {c.assigned_user_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                          </div>
+                          <span className="text-xs text-slate-600 truncate max-w-[80px]">{c.assigned_user_name}</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
                     </td>
 
                     {/* Processing status */}
@@ -2037,10 +2642,14 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         token={auth.token}
         detailVersion={drawerDetailVersion}
         userRole={auth.user?.role}
+        currentUserId={auth.user?.user_id || auth.user?.sub}
         advancedMoveEnabled={auth.user?.allow_advanced_workflow_move && selectedCandidate?.job_allow_advanced_workflow_move}
+        assignableUsers={assignableUsers}
+        isAdmin={isAdmin}
         onClose={closeCandidate}
         onWorkflowUpdate={handleWorkflowUpdate}
         onNotesUpdate={handleNotesUpdate}
+        onAssign={handleAssignCandidate}
         addToast={addToast}
       />
     </div>

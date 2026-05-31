@@ -83,6 +83,14 @@ export const WEBHOOK_CONFIG = {
   CAMPAIGNS_URL:                `${API_BASE}/campaigns`,
   // Candidate saved views — append /{saved_view_id} for patch/delete
   CANDIDATE_SAVED_VIEWS_URL:    `${API_BASE}/candidate-saved-views`,
+  // Recruiter assignment — append /{application_id}/assignment
+  APPLICATION_ASSIGNMENT_URL:   `${API_BASE}/applications`,
+  // Bulk assignment
+  BULK_ASSIGNMENT_URL:          `${API_BASE}/applications/bulk-assignment`,
+  // Assignable users (team members for assignment dropdown)
+  ASSIGNABLE_USERS_URL:         `${API_BASE}/applications/assignable-users`,
+  // Candidate comments — append /{application_id}/comments[/{comment_id}]
+  APPLICATION_COMMENTS_URL:     `${API_BASE}/applications`,
   // Admin fair-usage controls (append /{tenant_id}/fair-usage)
   ADMIN_FAIR_USAGE_BASE_URL:    `${API_BASE}/admin/tenants`,
   // Tenant self-service: subscription
