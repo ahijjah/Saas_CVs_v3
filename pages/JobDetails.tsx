@@ -122,6 +122,7 @@ const T = {
     confirmFwdCvEmail: 'Send confirmation to candidate email on forwarding',
     confirmFwdSenderEmail: 'Send confirmation to forwarding sender',
     confirmPlatformEmail: 'Send confirmation to candidate email on platform email',
+    allowAdvancedWorkflowMove: 'Allow advanced workflow moves for this job',
     viewApplications: 'View Applications',
     editCriteria: 'Edit Criteria',
     saveCriteria: 'Save Criteria',
@@ -352,6 +353,7 @@ const T = {
     confirmFwdCvEmail: 'إرسال تأكيد لبريد المرشح عند إعادة التوجيه',
     confirmFwdSenderEmail: 'إرسال تأكيد لمُرسل الإعادة',
     confirmPlatformEmail: 'إرسال تأكيد لبريد المرشح عبر البريد المخصص',
+    allowAdvancedWorkflowMove: 'السماح بنقلات سير عمل متقدمة لهذه الوظيفة',
     viewApplications: 'عرض الطلبات',
     editCriteria: 'تعديل المعايير',
     saveCriteria: 'حفظ المعايير',
@@ -837,7 +839,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
          | 'send_confirmation_to_cv_email_for_forwarding'
          | 'send_confirmation_to_sender_for_forwarding'
          | 'send_confirmation_to_cv_email_for_platform_email'
-         | 'enable_ai_comparison',
+         | 'enable_ai_comparison'
+         | 'allow_advanced_workflow_move',
     value: boolean,
   ) => {
     if (!details) return;
@@ -1989,6 +1992,77 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         </div>
 
       </section>}
+
+      {/* D.5. Job Settings ────────────────────────────────────────────────── */}
+      <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+        <div className="px-6 py-4 border-b border-border">
+          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            {t.confirmationSettings}
+          </h3>
+        </div>
+        <div className="px-6 py-5 space-y-3">
+          {/* Send confirmation on upload */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-border">
+            <label className="text-sm font-semibold text-textMain cursor-pointer flex-1">{t.confirmUpload}</label>
+            <button
+              onClick={() => canEdit && handleSettingsToggle('send_confirmation_to_cv_email_for_upload', !(details as any).send_confirmation_to_cv_email_for_upload)}
+              disabled={!canEdit}
+              className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none disabled:opacity-50 ${(details as any).send_confirmation_to_cv_email_for_upload ? 'bg-primary' : 'bg-slate-300'}`}
+            >
+              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${(details as any).send_confirmation_to_cv_email_for_upload ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+            </button>
+          </div>
+
+          {/* Send confirmation on forwarding (CV email) */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-border">
+            <label className="text-sm font-semibold text-textMain cursor-pointer flex-1">{t.confirmFwdCvEmail}</label>
+            <button
+              onClick={() => canEdit && handleSettingsToggle('send_confirmation_to_cv_email_for_forwarding', !(details as any).send_confirmation_to_cv_email_for_forwarding)}
+              disabled={!canEdit}
+              className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none disabled:opacity-50 ${(details as any).send_confirmation_to_cv_email_for_forwarding ? 'bg-primary' : 'bg-slate-300'}`}
+            >
+              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${(details as any).send_confirmation_to_cv_email_for_forwarding ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+            </button>
+          </div>
+
+          {/* Send confirmation on forwarding (sender email) */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-border">
+            <label className="text-sm font-semibold text-textMain cursor-pointer flex-1">{t.confirmFwdSenderEmail}</label>
+            <button
+              onClick={() => canEdit && handleSettingsToggle('send_confirmation_to_sender_for_forwarding', !(details as any).send_confirmation_to_sender_for_forwarding)}
+              disabled={!canEdit}
+              className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none disabled:opacity-50 ${(details as any).send_confirmation_to_sender_for_forwarding ? 'bg-primary' : 'bg-slate-300'}`}
+            >
+              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${(details as any).send_confirmation_to_sender_for_forwarding ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+            </button>
+          </div>
+
+          {/* Send confirmation on platform email */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-border">
+            <label className="text-sm font-semibold text-textMain cursor-pointer flex-1">{t.confirmPlatformEmail}</label>
+            <button
+              onClick={() => canEdit && handleSettingsToggle('send_confirmation_to_cv_email_for_platform_email', !(details as any).send_confirmation_to_cv_email_for_platform_email)}
+              disabled={!canEdit}
+              className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none disabled:opacity-50 ${(details as any).send_confirmation_to_cv_email_for_platform_email ? 'bg-primary' : 'bg-slate-300'}`}
+            >
+              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${(details as any).send_confirmation_to_cv_email_for_platform_email ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+            </button>
+          </div>
+
+          {/* Allow advanced workflow moves */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-border">
+            <label className="text-sm font-semibold text-textMain cursor-pointer flex-1">{t.allowAdvancedWorkflowMove}</label>
+            <button
+              onClick={() => canEdit && handleSettingsToggle('allow_advanced_workflow_move', !(details as any).allow_advanced_workflow_move)}
+              disabled={!canEdit}
+              className={`shrink-0 relative w-10 h-5 rounded-full transition-colors focus:outline-none disabled:opacity-50 ${(details as any).allow_advanced_workflow_move ? 'bg-primary' : 'bg-slate-300'}`}
+            >
+              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${(details as any).allow_advanced_workflow_move ? (isAr ? '-translate-x-5' : 'translate-x-5') : (isAr ? '-translate-x-0.5' : 'translate-x-0.5')}`} />
+            </button>
+          </div>
+        </div>
+      </section>
 
       {/* E. Intake Channels ────────────────────────────────────────────────── */}
       <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">

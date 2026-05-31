@@ -71,6 +71,7 @@ class UpdateJobSettingsRequest(BaseModel):
     send_confirmation_to_sender_for_forwarding:       bool | None = None
     send_confirmation_to_cv_email_for_platform_email: bool | None = None
     enable_ai_comparison:                             bool | None = None
+    allow_advanced_workflow_move:                     bool | None = None
 
 
 class UpdateCriteriaContentRequest(BaseModel):
@@ -546,7 +547,8 @@ async def get_job_details(
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'withdrawn')      AS applications_withdrawn,
                 COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'on_hold')        AS applications_on_hold,
                 t.forwarding_email AS tenant_forwarding_email,
-                t.job_application_controls_enabled
+                t.job_application_controls_enabled,
+                j.allow_advanced_workflow_move
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
             JOIN tenants t ON t.tenant_id = j.tenant_id
@@ -685,6 +687,7 @@ async def get_job_details(
             "campaign_id":            str(job["campaign_id"]) if job["campaign_id"] else None,
             "campaign_name":          job["campaign_name"],
             "job_application_controls_enabled": bool(job["job_application_controls_enabled"]),
+            "allow_advanced_workflow_move": bool(job["allow_advanced_workflow_move"]),
             "qualified_threshold":      job["qualified_threshold"],
             "partial_threshold":        job["partial_threshold"],
             "max_applications":               job["max_applications"],
@@ -796,6 +799,11 @@ async def update_job_settings(
     # enable_ai_comparison is a super_admin-only field; ignore silently for others
     if is_super_admin and body.enable_ai_comparison is not None:
         updates["enable_ai_comparison"] = body.enable_ai_comparison
+
+    # allow_advanced_workflow_move is admin/super_admin-only
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    if is_admin and body.allow_advanced_workflow_move is not None:
+        updates["allow_advanced_workflow_move"] = body.allow_advanced_workflow_move
 
     if not updates:
         return {"success": True, "message": "No changes"}

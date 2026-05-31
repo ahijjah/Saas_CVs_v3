@@ -253,7 +253,8 @@ async def list_applications(
             a.applied_at,
             a.scored_at                         AS updated_at,
             s.final_score                       AS score,
-            s.evaluation_notes                  AS summary
+            s.evaluation_notes                  AS summary,
+            j.allow_advanced_workflow_move      AS job_allow_advanced_workflow_move
         FROM applications a
         JOIN jobs j ON j.job_id = a.job_id
         LEFT JOIN application_scores s ON s.application_id = a.application_id
@@ -294,6 +295,7 @@ async def list_applications(
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
             "score": float(r["score"]) if r["score"] is not None else None,
             "summary": r["summary"],
+            "job_allow_advanced_workflow_move": bool(r["job_allow_advanced_workflow_move"]),
         })
 
     # Backward compatibility mode: if job_id provided, return array (existing behavior)
@@ -940,7 +942,7 @@ async def update_workflow_status(
 
     row = await db.execute(
         text("""
-            SELECT a.application_id, a.workflow_status
+            SELECT a.application_id, a.workflow_status, a.job_id, j.allow_advanced_workflow_move
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             WHERE a.application_id = :aid AND a.tenant_id = :tid
@@ -973,7 +975,7 @@ async def update_workflow_status(
     is_advanced = body.advanced_move
 
     if is_advanced:
-        # Advanced move: privileged stage-jump — validate permission, tenant setting, and require a note
+        # Advanced move: privileged stage-jump — validate permission, tenant setting, job setting, and require a note
         # Check tenant setting
         tenant_row = await db.execute(
             text("SELECT allow_advanced_workflow_move FROM tenants WHERE tenant_id = :tid"),
@@ -984,6 +986,13 @@ async def update_workflow_status(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Advanced workflow moves are disabled for this tenant.",
+            )
+
+        # Check job-level setting
+        if not rec["allow_advanced_workflow_move"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Advanced workflow moves are disabled for this job.",
             )
 
         actor_role = (current_user.role or "").lower()

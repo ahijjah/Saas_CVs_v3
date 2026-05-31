@@ -67,6 +67,7 @@ interface Candidate {
   strengths?: string | null;
   gaps?: string | null;
   evaluation_notes?: string | null;
+  job_allow_advanced_workflow_move?: boolean;
 }
 
 interface Pagination {
@@ -1474,7 +1475,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                           isUpdating={isUpdating}
                           lang={lang}
                           userRole={auth.user?.role}
-                          advancedMoveEnabled={auth.user?.allow_advanced_workflow_move}
+                          advancedMoveEnabled={auth.user?.allow_advanced_workflow_move && c.job_allow_advanced_workflow_move}
                           onTransition={handleWorkflowUpdate}
                         />
                         <button
@@ -1525,7 +1526,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         token={auth.token}
         detailVersion={drawerDetailVersion}
         userRole={auth.user?.role}
-        advancedMoveEnabled={auth.user?.allow_advanced_workflow_move}
+        advancedMoveEnabled={auth.user?.allow_advanced_workflow_move && selectedCandidate?.job_allow_advanced_workflow_move}
         onClose={closeCandidate}
         onWorkflowUpdate={handleWorkflowUpdate}
         onNotesUpdate={handleNotesUpdate}

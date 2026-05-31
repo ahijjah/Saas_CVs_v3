@@ -197,7 +197,8 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
             SELECT u.user_id, u.tenant_id, u.email, u.full_name, u.role, u.status,
                    u.password_hash, u.must_change_password,
                    t.cv_ingestion_mode, t.status AS tenant_status,
-                   t.subscription_status, t.name AS tenant_name, t.tenant_type
+                   t.subscription_status, t.name AS tenant_name, t.tenant_type,
+                   t.allow_advanced_workflow_move
             FROM users u
             JOIN tenants t ON t.tenant_id = u.tenant_id
             WHERE u.email = :email
@@ -246,6 +247,7 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
             "tenant_type": user["tenant_type"] or "organization",
             "subscription_status": user["subscription_status"] or "active",
             "must_change_password": bool(user["must_change_password"]),
+            "allow_advanced_workflow_move": bool(user["allow_advanced_workflow_move"]),
         },
         "cv_ingestion_mode": user["cv_ingestion_mode"],
         "message": "Login successful",
