@@ -1075,6 +1075,87 @@ async def update_workflow_status(
                 detail=f"Cannot transition workflow from '{current_status}' to '{new_status}'.",
             )
 
+    # ── Workflow policy enforcement ────────────────────────────────────────────
+    import json as _json
+    _pol_row = await db.execute(
+        text("SELECT policies FROM tenant_workflow_policies WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": current_user.tenant_id},
+    )
+    _pol_rec = _pol_row.mappings().first()
+    _pol: dict = {}
+    if _pol_rec and _pol_rec["policies"]:
+        _raw = _pol_rec["policies"]
+        _pol = _json.loads(_raw) if isinstance(_raw, str) else dict(_raw)
+
+    if new_status == "rejected":
+        if _pol.get("require_rejection_reason") and not (body.note and body.note.strip()):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A rejection reason is required by your organisation's policy.",
+            )
+
+    if new_status == "offer_made" and _pol.get("require_interview_before_offer"):
+        _iv_row = await db.execute(
+            text("""
+                SELECT COUNT(*) AS cnt FROM candidate_interviews
+                WHERE application_id = CAST(:aid AS uuid)
+                  AND tenant_id = CAST(:tid AS uuid)
+                  AND status = 'completed'
+            """),
+            {"aid": application_id, "tid": current_user.tenant_id},
+        )
+        if (_iv_row.scalar() or 0) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Policy requires at least one completed interview before making an offer.",
+            )
+        if _pol.get("require_interview_feedback"):
+            _fb_row = await db.execute(
+                text("""
+                    SELECT COUNT(*) AS cnt
+                    FROM candidate_interviews ci
+                    JOIN candidate_interview_feedback cif ON cif.interview_id = ci.interview_id
+                    WHERE ci.application_id = CAST(:aid AS uuid)
+                      AND ci.tenant_id = CAST(:tid AS uuid)
+                      AND ci.status = 'completed'
+                """),
+                {"aid": application_id, "tid": current_user.tenant_id},
+            )
+            if (_fb_row.scalar() or 0) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Policy requires interview feedback before making an offer.",
+                )
+
+    if new_status == "hired" and _pol.get("require_approval_before_hire"):
+        _stages = _pol.get("required_approval_stages", [])
+        if _stages:
+            _ap_row = await db.execute(
+                text("""
+                    SELECT COUNT(*) AS cnt FROM candidate_approvals
+                    WHERE application_id = CAST(:aid AS uuid)
+                      AND tenant_id = CAST(:tid AS uuid)
+                      AND decision != 'approved'
+                """),
+                {"aid": application_id, "tid": current_user.tenant_id},
+            )
+            pending_or_rejected = _ap_row.scalar() or 0
+            _ap_total = await db.execute(
+                text("""
+                    SELECT COUNT(*) AS cnt FROM candidate_approvals
+                    WHERE application_id = CAST(:aid AS uuid)
+                      AND tenant_id = CAST(:tid AS uuid)
+                """),
+                {"aid": application_id, "tid": current_user.tenant_id},
+            )
+            total = _ap_total.scalar() or 0
+            if total == 0 or pending_or_rejected > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Policy requires all approval stages to be approved before hiring.",
+                )
+    # ──────────────────────────────────────────────────────────────────────────
+
     await db.execute(
         text("""
             UPDATE applications
@@ -1433,6 +1514,31 @@ async def bulk_update_workflow_status(
         )
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    # ── Bulk workflow policy gate ──────────────────────────────────────────────
+    import json as _json
+    _pol_row = await db.execute(
+        text("SELECT policies FROM tenant_workflow_policies WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": current_user.tenant_id},
+    )
+    _pol_rec = _pol_row.mappings().first()
+    _pol: dict = {}
+    if _pol_rec and _pol_rec["policies"]:
+        _raw = _pol_rec["policies"]
+        _pol = _json.loads(_raw) if isinstance(_raw, str) else dict(_raw)
+
+    if new_status == "rejected":
+        if not _pol.get("allow_bulk_reject", True):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bulk rejection is disabled by your organisation's policy.",
+            )
+        if _pol.get("require_rejection_reason") and not (body.note and body.note.strip()):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A rejection reason is required by your organisation's policy.",
+            )
+    # ──────────────────────────────────────────────────────────────────────────
 
     # Fetch all applications with current status; skip system-managed
     rows = await db.execute(

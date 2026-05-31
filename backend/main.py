@@ -6,9 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import get_settings
 from database import engine
 from routers import (
-    admin, ai_models, ai_prompts, ai_usage, applications, audit_logs, auth, campaigns,
-    client_organizations, comments, dashboard, jobs, platform_config, platform_secrets,
-    public, saved_views, subscription_plans, tenant,
+    admin, ai_models, ai_prompts, ai_usage, applications, approvals, audit_logs, auth,
+    campaigns, client_organizations, comments, dashboard, interviews, jobs, platform_config,
+    platform_secrets, public, saved_views, subscription_plans, tenant, workflow_policies,
 )
 
 settings = get_settings()
@@ -42,6 +42,8 @@ app.include_router(dashboard.router)
 app.include_router(jobs.router)
 app.include_router(applications.router)
 app.include_router(comments.router)
+app.include_router(interviews.router)
+app.include_router(approvals.router)
 app.include_router(client_organizations.router)
 app.include_router(campaigns.router)
 app.include_router(saved_views.router)
@@ -49,6 +51,7 @@ app.include_router(admin.router)
 app.include_router(platform_config.router)
 app.include_router(subscription_plans.router)
 app.include_router(tenant.router)
+app.include_router(workflow_policies.router)
 app.include_router(platform_secrets.router)
 app.include_router(ai_models.router)
 app.include_router(ai_prompts.router)

@@ -102,6 +102,20 @@ const T = {
     clientOrgsTitle: 'Client Organizations',
     clientOrgsSub: 'Manage client organizations and user assignments',
     clientOrgsLink: 'Go to Client Organizations',
+    // Recruitment Policies
+    policiesTitle: 'Recruitment Pipeline Policies',
+    policiesSub: 'Governance rules for workflow transitions and approval gates',
+    policiesLoading: 'Loading policies…',
+    policiesSaved: 'Policies saved',
+    savePolicies: 'Save Policies',
+    savingPolicies: 'Saving…',
+    requireInterviewBeforeOffer: 'Require completed interview before making an offer',
+    requireApprovalBeforeHire: 'Require all approval stages before hiring',
+    requireRejectionReason: 'Require a reason when rejecting a candidate',
+    allowBulkReject: 'Allow bulk rejection of candidates',
+    requireInterviewFeedback: 'Require interview feedback before making an offer',
+    requiredApprovalStages: 'Required Approval Stages',
+    approvalStagesHint: 'Enter stage names, one per line (e.g. Legal Review, Finance Sign-off)',
   },
   ar: {
     loading: 'جارٍ تحميل الملف الشخصي...',
@@ -191,6 +205,20 @@ const T = {
     clientOrgsTitle: 'منظمات العملاء',
     clientOrgsSub: 'إدارة منظمات العملاء وتعيينات المستخدمين',
     clientOrgsLink: 'انتقل إلى منظمات العملاء',
+    // Recruitment Policies
+    policiesTitle: 'سياسات خط أنابيب التوظيف',
+    policiesSub: 'قواعد الحوكمة لتحولات سير العمل وبوابات الموافقة',
+    policiesLoading: 'جارٍ تحميل السياسات…',
+    policiesSaved: 'تم حفظ السياسات',
+    savePolicies: 'حفظ السياسات',
+    savingPolicies: 'جارٍ الحفظ…',
+    requireInterviewBeforeOffer: 'طلب مقابلة مكتملة قبل تقديم عرض',
+    requireApprovalBeforeHire: 'طلب اكتمال مراحل الموافقة قبل التوظيف',
+    requireRejectionReason: 'طلب سبب عند رفض مرشح',
+    allowBulkReject: 'السماح برفض المرشحين بالجملة',
+    requireInterviewFeedback: 'طلب تقييم المقابلة قبل تقديم عرض',
+    requiredApprovalStages: 'مراحل الموافقة المطلوبة',
+    approvalStagesHint: 'أدخل أسماء المراحل، مرحلة لكل سطر',
   },
 };
 
@@ -236,6 +264,18 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editUserForm, setEditUserForm] = useState({ full_name: '', role: '' });
   const [savingEditUser, setSavingEditUser] = useState(false);
+
+  // Recruitment Policies state
+  const [policiesLoading, setPoliciesLoading] = useState(false);
+  const [savingPolicies, setSavingPolicies] = useState(false);
+  const [policiesForm, setPoliciesForm] = useState({
+    require_interview_before_offer: false,
+    require_approval_before_hire: false,
+    require_rejection_reason: false,
+    allow_bulk_reject: true,
+    require_interview_feedback: false,
+    required_approval_stages: '',
+  });
 
   const role = (auth.user?.role || '').toLowerCase();
   const isSuperAdmin = role === 'super_admin';
@@ -292,6 +332,53 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   useEffect(() => {
     if (isTenantAdmin) fetchTenantUsers();
   }, [fetchTenantUsers, isTenantAdmin]);
+
+  useEffect(() => {
+    if (!isTenantAdmin || !auth.token) return;
+    setPoliciesLoading(true);
+    apiService.get(WEBHOOK_CONFIG.WORKFLOW_POLICIES_URL, {}, auth.token)
+      .then((data: any) => {
+        if (data?.policies) {
+          const p = data.policies;
+          setPoliciesForm({
+            require_interview_before_offer: !!p.require_interview_before_offer,
+            require_approval_before_hire:   !!p.require_approval_before_hire,
+            require_rejection_reason:       !!p.require_rejection_reason,
+            allow_bulk_reject:              p.allow_bulk_reject !== false,
+            require_interview_feedback:     !!p.require_interview_feedback,
+            required_approval_stages: Array.isArray(p.required_approval_stages)
+              ? p.required_approval_stages.join('\n')
+              : '',
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setPoliciesLoading(false));
+  }, [isTenantAdmin, auth.token]);
+
+  const handleSavePolicies = async () => {
+    if (savingPolicies) return;
+    setSavingPolicies(true);
+    try {
+      const stages = policiesForm.required_approval_stages
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean);
+      await apiService.patch(WEBHOOK_CONFIG.WORKFLOW_POLICIES_URL, {
+        require_interview_before_offer: policiesForm.require_interview_before_offer,
+        require_approval_before_hire:   policiesForm.require_approval_before_hire,
+        require_rejection_reason:       policiesForm.require_rejection_reason,
+        allow_bulk_reject:              policiesForm.allow_bulk_reject,
+        require_interview_feedback:     policiesForm.require_interview_feedback,
+        required_approval_stages:       stages,
+      }, auth.token!);
+      addToast(t.policiesSaved, 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to save policies', 'error');
+    } finally {
+      setSavingPolicies(false);
+    }
+  };
 
   const handleCancelEdit = () => {
     if (profile) {
@@ -934,6 +1021,83 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                   )}
                 </div>
               ))
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── Recruitment Pipeline Policies ──────────────────────────────────────── */}
+      {isTenantAdmin && (
+        <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="px-8 py-6 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-textMain">{t.policiesTitle}</h3>
+                <p className="text-xs text-textMuted">{t.policiesSub}</p>
+              </div>
+            </div>
+          </div>
+          <div className="px-8 py-6 space-y-5">
+            {policiesLoading ? (
+              <p className="text-sm text-slate-400">{t.policiesLoading}</p>
+            ) : (
+              <>
+                {/* Toggle rows */}
+                {([
+                  ['require_interview_before_offer', t.requireInterviewBeforeOffer],
+                  ['require_approval_before_hire',   t.requireApprovalBeforeHire],
+                  ['require_rejection_reason',       t.requireRejectionReason],
+                  ['allow_bulk_reject',              t.allowBulkReject],
+                  ['require_interview_feedback',     t.requireInterviewFeedback],
+                ] as [keyof typeof policiesForm, string][]).map(([key, label]) => (
+                  <label key={key} className="flex items-center justify-between gap-4 cursor-pointer select-none">
+                    <span className="text-sm text-textMain">{label}</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={(policiesForm[key] as boolean)}
+                      onClick={() => setPoliciesForm(p => ({ ...p, [key]: !p[key] }))}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+                        policiesForm[key] ? 'bg-amber-500' : 'bg-slate-200'
+                      }`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                        policiesForm[key] ? 'translate-x-4' : 'translate-x-1'
+                      }`} />
+                    </button>
+                  </label>
+                ))}
+
+                {/* Required approval stages */}
+                <div>
+                  <label className="block text-sm font-semibold text-textMain mb-1">
+                    {t.requiredApprovalStages}
+                  </label>
+                  <p className="text-xs text-textMuted mb-2">{t.approvalStagesHint}</p>
+                  <textarea
+                    value={policiesForm.required_approval_stages}
+                    onChange={e => setPoliciesForm(p => ({ ...p, required_approval_stages: e.target.value }))}
+                    rows={4}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                    placeholder={'Hiring Manager Review\nLegal Review\nFinance Sign-off'}
+                  />
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={handleSavePolicies}
+                    disabled={savingPolicies}
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-sm transition-colors disabled:opacity-40"
+                  >
+                    {savingPolicies ? t.savingPolicies : t.savePolicies}
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </section>

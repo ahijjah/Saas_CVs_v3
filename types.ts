@@ -665,3 +665,77 @@ export interface AuditLog {
   ip_address: string;
   created_at: string | null;
 }
+
+// ─── Group B — Interviews ─────────────────────────────────────────────────────
+
+export type InterviewType = 'phone_screen' | 'technical' | 'hr' | 'panel' | 'final' | 'other';
+export type InterviewStatus = 'scheduled' | 'completed' | 'cancelled' | 'no_show';
+export type InterviewRecommendation = 'strong_yes' | 'yes' | 'neutral' | 'no' | 'strong_no';
+
+export interface CandidateInterview {
+  interview_id: string;
+  application_id: string;
+  interview_type: InterviewType;
+  scheduled_at: string | null;
+  duration_min: number | null;
+  location: string | null;
+  interviewers: string[];
+  status: InterviewStatus;
+  notes: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  feedback_count: number;
+}
+
+export interface InterviewFeedback {
+  feedback_id: string;
+  interview_id: string;
+  reviewer_id: string;
+  reviewer_name: string | null;
+  overall_rating: number | null;
+  recommendation: InterviewRecommendation | null;
+  scorecard: Record<string, any>;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  is_own: boolean;
+}
+
+// ─── Group B — Approvals ──────────────────────────────────────────────────────
+
+export type ApprovalDecision = 'pending' | 'approved' | 'rejected' | 'needs_revision';
+
+export interface CandidateApproval {
+  approval_id: string;
+  application_id: string;
+  approval_stage: string;
+  stage_order: number;
+  approver_id: string | null;
+  approver_name: string | null;
+  decision: ApprovalDecision;
+  comment: string | null;
+  decided_at: string | null;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+// ─── Group B — Workflow Policies ──────────────────────────────────────────────
+
+export interface WorkflowPolicies {
+  require_interview_before_offer: boolean;
+  require_approval_before_hire: boolean;
+  require_rejection_reason: boolean;
+  allow_bulk_reject: boolean;
+  require_interview_feedback: boolean;
+  required_approval_stages: string[];
+}
+
+export interface WorkflowPoliciesResponse {
+  policies: WorkflowPolicies;
+  updated_at: string | null;
+  updated_by_name: string | null;
+}

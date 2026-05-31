@@ -26,7 +26,10 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { AuthState, WorkflowStatus, CandidateComment, AssignableUser } from '../types';
+import {
+  AuthState, WorkflowStatus, CandidateComment, AssignableUser,
+  CandidateInterview, InterviewFeedback, CandidateApproval,
+} from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import {
@@ -279,6 +282,54 @@ const T = {
     commentPosted: 'Comment posted',
     commentDeleted: 'Comment deleted',
     commentUpdated: 'Comment updated',
+    // Interviews tab
+    interviews: 'Interviews',
+    noInterviews: 'No interviews scheduled yet.',
+    scheduleInterview: 'Schedule Interview',
+    editInterview: 'Edit Interview',
+    cancelInterview: 'Cancel',
+    saveInterview: 'Save',
+    interviewType: 'Type',
+    scheduledAt: 'Scheduled At',
+    durationMin: 'Duration (min)',
+    location: 'Location',
+    interviewStatus: 'Status',
+    interviewNotes: 'Notes',
+    interviewers: 'Interviewers (comma-separated)',
+    interviewTypeLabels: {
+      phone_screen: 'Phone Screen', technical: 'Technical', hr: 'HR',
+      panel: 'Panel', final: 'Final', other: 'Other',
+    } as Record<string, string>,
+    interviewStatusLabels: {
+      scheduled: 'Scheduled', completed: 'Completed', cancelled: 'Cancelled', no_show: 'No Show',
+    } as Record<string, string>,
+    addFeedback: 'Add Feedback',
+    feedbackRating: 'Overall Rating',
+    feedbackRecommendation: 'Recommendation',
+    feedbackNotes: 'Feedback Notes',
+    recommendationLabels: {
+      strong_yes: 'Strong Yes', yes: 'Yes', neutral: 'Neutral', no: 'No', strong_no: 'Strong No',
+    } as Record<string, string>,
+    interviewCreated: 'Interview scheduled',
+    interviewUpdated: 'Interview updated',
+    interviewDeleted: 'Interview deleted',
+    feedbackSubmitted: 'Feedback submitted',
+    // Approvals tab
+    approvalsTab: 'Approvals',
+    noApprovals: 'No approval stages yet.',
+    initiateApprovals: 'Initiate Approval Chain',
+    addApprovalStage: 'Add Stage',
+    approve: 'Approve',
+    reject: 'Reject',
+    needsRevision: 'Needs Revision',
+    approvalDecisionComment: 'Comment (optional)',
+    approvalLabels: {
+      pending: 'Pending', approved: 'Approved', rejected: 'Rejected', needs_revision: 'Needs Revision',
+    } as Record<string, string>,
+    approvalUpdated: 'Approval updated',
+    approvalInitiated: 'Approval chain initiated',
+    approvalStageAdded: 'Approval stage added',
+    approvalStageDeleted: 'Approval stage deleted',
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -372,6 +423,54 @@ const T = {
     commentPosted: 'تم نشر التعليق',
     commentDeleted: 'تم حذف التعليق',
     commentUpdated: 'تم تحديث التعليق',
+    // Interviews tab
+    interviews: 'المقابلات',
+    noInterviews: 'لم يتم جدولة أي مقابلات بعد.',
+    scheduleInterview: 'جدولة مقابلة',
+    editInterview: 'تعديل المقابلة',
+    cancelInterview: 'إلغاء',
+    saveInterview: 'حفظ',
+    interviewType: 'النوع',
+    scheduledAt: 'موعد المقابلة',
+    durationMin: 'المدة (دقيقة)',
+    location: 'الموقع',
+    interviewStatus: 'الحالة',
+    interviewNotes: 'ملاحظات',
+    interviewers: 'المحاورون (مفصولون بفاصلة)',
+    interviewTypeLabels: {
+      phone_screen: 'هاتفي', technical: 'تقني', hr: 'موارد بشرية',
+      panel: 'لجنة', final: 'نهائي', other: 'آخر',
+    } as Record<string, string>,
+    interviewStatusLabels: {
+      scheduled: 'مجدول', completed: 'مكتمل', cancelled: 'ملغي', no_show: 'غائب',
+    } as Record<string, string>,
+    addFeedback: 'إضافة تقييم',
+    feedbackRating: 'التقييم العام',
+    feedbackRecommendation: 'التوصية',
+    feedbackNotes: 'ملاحظات التقييم',
+    recommendationLabels: {
+      strong_yes: 'نعم بقوة', yes: 'نعم', neutral: 'محايد', no: 'لا', strong_no: 'لا بشدة',
+    } as Record<string, string>,
+    interviewCreated: 'تم جدولة المقابلة',
+    interviewUpdated: 'تم تحديث المقابلة',
+    interviewDeleted: 'تم حذف المقابلة',
+    feedbackSubmitted: 'تم إرسال التقييم',
+    // Approvals tab
+    approvalsTab: 'الموافقات',
+    noApprovals: 'لا توجد مراحل موافقة بعد.',
+    initiateApprovals: 'بدء سلسلة الموافقة',
+    addApprovalStage: 'إضافة مرحلة',
+    approve: 'موافقة',
+    reject: 'رفض',
+    needsRevision: 'يحتاج مراجعة',
+    approvalDecisionComment: 'تعليق (اختياري)',
+    approvalLabels: {
+      pending: 'معلق', approved: 'موافق عليه', rejected: 'مرفوض', needs_revision: 'يحتاج مراجعة',
+    } as Record<string, string>,
+    approvalUpdated: 'تم تحديث الموافقة',
+    approvalInitiated: 'تم بدء سلسلة الموافقة',
+    approvalStageAdded: 'تمت إضافة مرحلة الموافقة',
+    approvalStageDeleted: 'تم حذف مرحلة الموافقة',
   },
 };
 
@@ -654,8 +753,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   // Tracks which application_id detail is loaded for, to avoid stale data
   const detailForRef = useRef<string | null>(null);
 
-  // Discussion (comments) state
-  const [activeTab, setActiveTab] = useState<'overview' | 'discussion'>('overview');
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'overview' | 'discussion' | 'interviews' | 'approvals'>('overview');
   const [comments, setComments] = useState<CandidateComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
@@ -672,6 +771,41 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 
   // Assignment state
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
+
+  // Interviews state
+  const [interviews, setInterviews] = useState<CandidateInterview[]>([]);
+  const [interviewsLoading, setInterviewsLoading] = useState(false);
+  const [showInterviewForm, setShowInterviewForm] = useState(false);
+  const [editingInterviewId, setEditingInterviewId] = useState<string | null>(null);
+  const [interviewForm, setInterviewForm] = useState({
+    interview_type: 'phone_screen',
+    scheduled_at: '',
+    duration_min: '',
+    location: '',
+    interviewers: '',
+    status: 'scheduled',
+    notes: '',
+  });
+  const [savingInterview, setSavingInterview] = useState(false);
+  const [expandedFeedbackId, setExpandedFeedbackId] = useState<string | null>(null);
+  const [interviewFeedback, setInterviewFeedback] = useState<Record<string, InterviewFeedback[]>>({});
+  const [feedbackForm, setFeedbackForm] = useState({
+    overall_rating: '',
+    recommendation: '',
+    notes: '',
+  });
+  const [showFeedbackForm, setShowFeedbackForm] = useState<string | null>(null);
+  const [savingFeedback, setSavingFeedback] = useState(false);
+
+  // Approvals state
+  const [approvals, setApprovals] = useState<CandidateApproval[]>([]);
+  const [approvalsLoading, setApprovalsLoading] = useState(false);
+  const [initiatingApprovals, setInitiatingApprovals] = useState(false);
+  const [decidingApprovalId, setDecidingApprovalId] = useState<string | null>(null);
+  const [approvalDecision, setApprovalDecision] = useState<{ decision: string; comment: string }>({ decision: '', comment: '' });
+  const [showAddApprovalForm, setShowAddApprovalForm] = useState(false);
+  const [newApprovalStage, setNewApprovalStage] = useState('');
+  const [addingApproval, setAddingApproval] = useState(false);
 
   // Must come before any early return — Rules of Hooks
 
@@ -742,7 +876,47 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate?.application_id, open, token, activeTab]);
 
-  // Reset tab and comments when candidate changes
+  // Load interviews when switching to Interviews tab
+  useEffect(() => {
+    if (!candidate?.application_id || !open || !token || activeTab !== 'interviews') return;
+    let cancelled = false;
+    setInterviewsLoading(true);
+    apiService.get(
+      `${WEBHOOK_CONFIG.APPLICATION_INTERVIEWS_URL}/${candidate.application_id}/interviews`,
+      {},
+      token,
+    ).then((data: any) => {
+      if (!cancelled && data?.interviews) setInterviews(data.interviews);
+    }).catch(() => {
+      if (!cancelled) setInterviews([]);
+    }).finally(() => {
+      if (!cancelled) setInterviewsLoading(false);
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidate?.application_id, open, token, activeTab]);
+
+  // Load approvals when switching to Approvals tab
+  useEffect(() => {
+    if (!candidate?.application_id || !open || !token || activeTab !== 'approvals') return;
+    let cancelled = false;
+    setApprovalsLoading(true);
+    apiService.get(
+      `${WEBHOOK_CONFIG.APPLICATION_APPROVALS_URL}/${candidate.application_id}/approvals`,
+      {},
+      token,
+    ).then((data: any) => {
+      if (!cancelled && data?.approvals) setApprovals(data.approvals);
+    }).catch(() => {
+      if (!cancelled) setApprovals([]);
+    }).finally(() => {
+      if (!cancelled) setApprovalsLoading(false);
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidate?.application_id, open, token, activeTab]);
+
+  // Reset tab and all tab data when candidate changes
   useEffect(() => {
     setActiveTab('overview');
     setComments([]);
@@ -751,6 +925,15 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setAssignDropdownOpen(false);
     setShowMentionDropdown(false);
     setMentionQuery('');
+    setInterviews([]);
+    setShowInterviewForm(false);
+    setEditingInterviewId(null);
+    setExpandedFeedbackId(null);
+    setInterviewFeedback({});
+    setShowFeedbackForm(null);
+    setApprovals([]);
+    setDecidingApprovalId(null);
+    setShowAddApprovalForm(false);
   }, [candidate?.application_id]);
 
   if (!candidate) return null;
@@ -906,6 +1089,197 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     }
   };
 
+  // Interview handlers
+  const handleSaveInterview = async () => {
+    if (savingInterview) return;
+    setSavingInterview(true);
+    try {
+      const payload: Record<string, any> = {
+        interview_type: interviewForm.interview_type,
+        status: interviewForm.status,
+        scheduled_at: interviewForm.scheduled_at || null,
+        duration_min: interviewForm.duration_min ? parseInt(interviewForm.duration_min) : null,
+        location: interviewForm.location || null,
+        interviewers: interviewForm.interviewers
+          ? interviewForm.interviewers.split(',').map(s => s.trim()).filter(Boolean)
+          : [],
+        notes: interviewForm.notes || null,
+      };
+      let data: any;
+      if (editingInterviewId) {
+        data = await apiService.patch(
+          `${WEBHOOK_CONFIG.APPLICATION_INTERVIEWS_URL}/${candidate.application_id}/interviews/${editingInterviewId}`,
+          payload, token!,
+        );
+        if (data?.interview) {
+          setInterviews(prev => prev.map(i => i.interview_id === editingInterviewId ? data.interview : i));
+          addToastRef.current(T[lang].interviewUpdated, 'success');
+        }
+      } else {
+        data = await apiService.post(
+          `${WEBHOOK_CONFIG.APPLICATION_INTERVIEWS_URL}/${candidate.application_id}/interviews`,
+          payload, token!,
+        );
+        if (data?.interview) {
+          setInterviews(prev => [...prev, data.interview]);
+          addToastRef.current(T[lang].interviewCreated, 'success');
+        }
+      }
+      setShowInterviewForm(false);
+      setEditingInterviewId(null);
+      setInterviewForm({ interview_type: 'phone_screen', scheduled_at: '', duration_min: '', location: '', interviewers: '', status: 'scheduled', notes: '' });
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to save interview', 'error');
+    } finally {
+      setSavingInterview(false);
+    }
+  };
+
+  const handleDeleteInterview = async (interviewId: string) => {
+    try {
+      await apiService.delete(
+        `${WEBHOOK_CONFIG.APPLICATION_INTERVIEWS_URL}/${candidate.application_id}/interviews/${interviewId}`,
+        token!,
+      );
+      setInterviews(prev => prev.filter(i => i.interview_id !== interviewId));
+      addToastRef.current(T[lang].interviewDeleted, 'success');
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to delete interview', 'error');
+    }
+  };
+
+  const handleLoadFeedback = async (interviewId: string) => {
+    if (expandedFeedbackId === interviewId) {
+      setExpandedFeedbackId(null);
+      return;
+    }
+    setExpandedFeedbackId(interviewId);
+    if (interviewFeedback[interviewId]) return;
+    try {
+      const data: any = await apiService.get(
+        `${WEBHOOK_CONFIG.APPLICATION_INTERVIEWS_URL}/${candidate.application_id}/interviews/${interviewId}/feedback`,
+        {}, token,
+      );
+      if (data?.feedback) setInterviewFeedback(prev => ({ ...prev, [interviewId]: data.feedback }));
+    } catch {
+      setInterviewFeedback(prev => ({ ...prev, [interviewId]: [] }));
+    }
+  };
+
+  const handleSubmitFeedback = async (interviewId: string) => {
+    if (savingFeedback) return;
+    setSavingFeedback(true);
+    try {
+      const data: any = await apiService.post(
+        `${WEBHOOK_CONFIG.APPLICATION_INTERVIEWS_URL}/${candidate.application_id}/interviews/${interviewId}/feedback`,
+        {
+          overall_rating: feedbackForm.overall_rating ? parseInt(feedbackForm.overall_rating) : null,
+          recommendation: feedbackForm.recommendation || null,
+          notes: feedbackForm.notes || null,
+          scorecard: {},
+        },
+        token!,
+      );
+      if (data?.feedback) {
+        setInterviewFeedback(prev => {
+          const existing = prev[interviewId] || [];
+          const idx = existing.findIndex(f => f.feedback_id === data.feedback.feedback_id);
+          return {
+            ...prev,
+            [interviewId]: idx >= 0
+              ? existing.map(f => f.feedback_id === data.feedback.feedback_id ? data.feedback : f)
+              : [...existing, data.feedback],
+          };
+        });
+        setInterviews(prev => prev.map(i =>
+          i.interview_id === interviewId ? { ...i, feedback_count: i.feedback_count + 1 } : i
+        ));
+        addToastRef.current(T[lang].feedbackSubmitted, 'success');
+        setShowFeedbackForm(null);
+        setFeedbackForm({ overall_rating: '', recommendation: '', notes: '' });
+      }
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to submit feedback', 'error');
+    } finally {
+      setSavingFeedback(false);
+    }
+  };
+
+  // Approval handlers
+  const handleInitiateApprovals = async () => {
+    if (initiatingApprovals) return;
+    setInitiatingApprovals(true);
+    try {
+      const data: any = await apiService.post(
+        `${WEBHOOK_CONFIG.APPLICATION_APPROVALS_URL}/${candidate.application_id}/approvals/initiate`,
+        { approver_ids: {} },
+        token!,
+      );
+      if (data?.approvals) {
+        setApprovals(data.approvals);
+        addToastRef.current(T[lang].approvalInitiated, 'success');
+      }
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to initiate approvals', 'error');
+    } finally {
+      setInitiatingApprovals(false);
+    }
+  };
+
+  const handleDecideApproval = async (approvalId: string) => {
+    if (!approvalDecision.decision) return;
+    try {
+      const data: any = await apiService.patch(
+        `${WEBHOOK_CONFIG.APPLICATION_APPROVALS_URL}/${candidate.application_id}/approvals/${approvalId}`,
+        { decision: approvalDecision.decision, comment: approvalDecision.comment || null },
+        token!,
+      );
+      if (data?.approval) {
+        setApprovals(prev => prev.map(a => a.approval_id === approvalId ? data.approval : a));
+        addToastRef.current(T[lang].approvalUpdated, 'success');
+        setDecidingApprovalId(null);
+        setApprovalDecision({ decision: '', comment: '' });
+      }
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to update approval', 'error');
+    }
+  };
+
+  const handleDeleteApproval = async (approvalId: string) => {
+    try {
+      await apiService.delete(
+        `${WEBHOOK_CONFIG.APPLICATION_APPROVALS_URL}/${candidate.application_id}/approvals/${approvalId}`,
+        token!,
+      );
+      setApprovals(prev => prev.filter(a => a.approval_id !== approvalId));
+      addToastRef.current(T[lang].approvalStageDeleted, 'success');
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to delete approval stage', 'error');
+    }
+  };
+
+  const handleAddApprovalStage = async () => {
+    if (!newApprovalStage.trim() || addingApproval) return;
+    setAddingApproval(true);
+    try {
+      const data: any = await apiService.post(
+        `${WEBHOOK_CONFIG.APPLICATION_APPROVALS_URL}/${candidate.application_id}/approvals`,
+        { approval_stage: newApprovalStage.trim(), stage_order: approvals.length },
+        token!,
+      );
+      if (data?.approval) {
+        setApprovals(prev => [...prev, data.approval]);
+        addToastRef.current(T[lang].approvalStageAdded, 'success');
+        setNewApprovalStage('');
+        setShowAddApprovalForm(false);
+      }
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to add approval stage', 'error');
+    } finally {
+      setAddingApproval(false);
+    }
+  };
+
   const wfStyle = WORKFLOW_STATUS_STYLES[candidate.workflow_status] ?? 'bg-slate-100 text-slate-600';
   const wfLabel = wfLabels[candidate.workflow_status] ?? candidate.workflow_status;
   const procStyle = processingStyle(candidate.processing_status);
@@ -956,21 +1330,26 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
         </div>
 
         {/* Tab navigation */}
-        <div className="sticky top-[88px] bg-white border-b border-slate-200 px-6 flex gap-4">
-          {(['overview', 'discussion'] as const).map(tab => (
+        <div className="sticky top-[88px] bg-white border-b border-slate-200 px-6 flex gap-1 overflow-x-auto">
+          {([
+            { key: 'overview', label: 'Overview', badge: null },
+            { key: 'interviews', label: t.interviews, badge: interviews.length > 0 ? interviews.length : null },
+            { key: 'approvals', label: t.approvalsTab, badge: approvals.length > 0 ? approvals.length : null },
+            { key: 'discussion', label: t.discussion, badge: comments.length > 0 ? comments.length : null },
+          ] as const).map(({ key, label, badge }) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`py-2.5 text-xs font-semibold border-b-2 transition-colors ${
-                activeTab === tab
+              key={key}
+              onClick={() => setActiveTab(key as any)}
+              className={`py-2.5 px-1 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${
+                activeTab === key
                   ? 'border-indigo-500 text-indigo-700'
                   : 'border-transparent text-slate-500 hover:text-slate-700'
               }`}
             >
-              {tab === 'overview' ? 'Overview' : t.discussion}
-              {tab === 'discussion' && comments.length > 0 && (
+              {label}
+              {badge !== null && (
                 <span className="ml-1.5 bg-indigo-100 text-indigo-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  {comments.length}
+                  {badge}
                 </span>
               )}
             </button>
@@ -1099,6 +1478,490 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Interviews Tab */}
+        {activeTab === 'interviews' && (
+          <div className="px-6 py-4 space-y-4">
+            {interviewsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 py-4">
+                <span className="w-3.5 h-3.5 border-2 border-violet-300 border-t-transparent rounded-full animate-spin inline-block" />
+                Loading interviews…
+              </div>
+            ) : (
+              <>
+                {interviews.length === 0 && !showInterviewForm && (
+                  <p className="text-sm text-slate-400 italic py-2">{t.noInterviews}</p>
+                )}
+                {interviews.map(iv => (
+                  <div key={iv.interview_id} className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 bg-slate-50">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          iv.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                          iv.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                          iv.status === 'no_show' ? 'bg-orange-100 text-orange-700' :
+                          'bg-violet-100 text-violet-700'
+                        }`}>
+                          {t.interviewStatusLabels[iv.status] || iv.status}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-700 truncate">
+                          {t.interviewTypeLabels[iv.interview_type] || iv.interview_type}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingInterviewId(iv.interview_id);
+                            setInterviewForm({
+                              interview_type: iv.interview_type,
+                              scheduled_at: iv.scheduled_at ? iv.scheduled_at.substring(0, 16) : '',
+                              duration_min: iv.duration_min?.toString() || '',
+                              location: iv.location || '',
+                              interviewers: (iv.interviewers || []).join(', '),
+                              status: iv.status,
+                              notes: iv.notes || '',
+                            });
+                            setShowInterviewForm(true);
+                          }}
+                          className="text-slate-400 hover:text-slate-600 p-1"
+                          title={t.editInterview}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleDeleteInterview(iv.interview_id)}
+                            className="text-slate-400 hover:text-red-500 p-1"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="px-4 py-3 space-y-1.5 text-xs text-slate-600">
+                      {iv.scheduled_at && (
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-20 flex-shrink-0">{t.scheduledAt}:</span>
+                          <span>{new Date(iv.scheduled_at).toLocaleString()}</span>
+                        </div>
+                      )}
+                      {iv.duration_min && (
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-20 flex-shrink-0">{t.durationMin}:</span>
+                          <span>{iv.duration_min} min</span>
+                        </div>
+                      )}
+                      {iv.location && (
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-20 flex-shrink-0">{t.location}:</span>
+                          <span>{iv.location}</span>
+                        </div>
+                      )}
+                      {iv.interviewers && iv.interviewers.length > 0 && (
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-20 flex-shrink-0">{t.interviewers.split(' (')[0]}:</span>
+                          <span>{iv.interviewers.join(', ')}</span>
+                        </div>
+                      )}
+                      {iv.notes && (
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-20 flex-shrink-0">{t.interviewNotes}:</span>
+                          <span className="break-words">{iv.notes}</span>
+                        </div>
+                      )}
+                      {iv.created_by_name && (
+                        <div className="flex gap-2 pt-1 border-t border-slate-100">
+                          <span className="text-slate-400 w-20 flex-shrink-0">By:</span>
+                          <span className="text-slate-500">{iv.created_by_name}</span>
+                        </div>
+                      )}
+                    </div>
+                    {/* Feedback section */}
+                    <div className="border-t border-slate-100">
+                      <button
+                        onClick={() => handleLoadFeedback(iv.interview_id)}
+                        className="w-full px-4 py-2 text-xs text-slate-500 hover:text-violet-600 hover:bg-violet-50 transition-colors flex items-center gap-1.5"
+                      >
+                        <svg className={`w-3 h-3 transition-transform ${expandedFeedbackId === iv.interview_id ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                        {t.addFeedback} ({iv.feedback_count})
+                      </button>
+                      {expandedFeedbackId === iv.interview_id && (
+                        <div className="px-4 pb-3 space-y-3">
+                          {(interviewFeedback[iv.interview_id] || []).map(fb => (
+                            <div key={fb.feedback_id} className="bg-slate-50 rounded-lg p-3 text-xs">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="font-semibold text-slate-700">{fb.reviewer_name || 'Reviewer'}</span>
+                                {fb.overall_rating && (
+                                  <span className="flex items-center gap-0.5">
+                                    {[1,2,3,4,5].map(s => (
+                                      <span key={s} className={`w-2.5 h-2.5 rounded-full ${s <= fb.overall_rating! ? 'bg-amber-400' : 'bg-slate-200'}`} />
+                                    ))}
+                                  </span>
+                                )}
+                              </div>
+                              {fb.recommendation && (
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  fb.recommendation === 'strong_yes' ? 'bg-emerald-100 text-emerald-700' :
+                                  fb.recommendation === 'yes' ? 'bg-green-100 text-green-700' :
+                                  fb.recommendation === 'no' ? 'bg-red-100 text-red-700' :
+                                  fb.recommendation === 'strong_no' ? 'bg-rose-100 text-rose-700' :
+                                  'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {t.recommendationLabels[fb.recommendation] || fb.recommendation}
+                                </span>
+                              )}
+                              {fb.notes && <p className="mt-1.5 text-slate-600">{fb.notes}</p>}
+                            </div>
+                          ))}
+                          {showFeedbackForm === iv.interview_id ? (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 w-24">{t.feedbackRating}:</span>
+                                <div className="flex gap-1">
+                                  {[1,2,3,4,5].map(s => (
+                                    <button
+                                      key={s}
+                                      onClick={() => setFeedbackForm(f => ({ ...f, overall_rating: s.toString() }))}
+                                      className={`w-6 h-6 rounded-full text-xs font-bold transition-colors ${
+                                        parseInt(feedbackForm.overall_rating) >= s ? 'bg-amber-400 text-white' : 'bg-slate-200 text-slate-500 hover:bg-amber-200'
+                                      }`}
+                                    >
+                                      {s}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 w-24">{t.feedbackRecommendation}:</span>
+                                <select
+                                  value={feedbackForm.recommendation}
+                                  onChange={e => setFeedbackForm(f => ({ ...f, recommendation: e.target.value }))}
+                                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400"
+                                >
+                                  <option value="">—</option>
+                                  {(['strong_yes','yes','neutral','no','strong_no'] as const).map(r => (
+                                    <option key={r} value={r}>{t.recommendationLabels[r]}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <textarea
+                                value={feedbackForm.notes}
+                                onChange={e => setFeedbackForm(f => ({ ...f, notes: e.target.value }))}
+                                placeholder={t.feedbackNotes}
+                                rows={2}
+                                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400 resize-none"
+                              />
+                              <div className="flex gap-2 justify-end">
+                                <button onClick={() => setShowFeedbackForm(null)} className="px-3 py-1 text-xs text-slate-500 hover:text-slate-700">
+                                  {t.cancelInterview}
+                                </button>
+                                <button
+                                  onClick={() => handleSubmitFeedback(iv.interview_id)}
+                                  disabled={savingFeedback}
+                                  className="px-3 py-1.5 text-xs font-semibold bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-40"
+                                >
+                                  {savingFeedback ? '…' : t.feedbackSubmitted.split(' ')[0]}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setShowFeedbackForm(iv.interview_id);
+                                setFeedbackForm({ overall_rating: '', recommendation: '', notes: '' });
+                              }}
+                              className="text-xs text-violet-600 hover:text-violet-800 font-medium"
+                            >
+                              + {t.addFeedback}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Interview form */}
+                {showInterviewForm && (
+                  <div className="border border-violet-200 rounded-xl p-4 space-y-3 bg-violet-50">
+                    <p className="text-xs font-semibold text-violet-700">
+                      {editingInterviewId ? t.editInterview : t.scheduleInterview}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-slate-500 uppercase tracking-wide">{t.interviewType}</label>
+                        <select
+                          value={interviewForm.interview_type}
+                          onChange={e => setInterviewForm(f => ({ ...f, interview_type: e.target.value }))}
+                          className="w-full mt-0.5 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400"
+                        >
+                          {(['phone_screen','technical','hr','panel','final','other'] as const).map(it => (
+                            <option key={it} value={it}>{t.interviewTypeLabels[it]}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 uppercase tracking-wide">{t.interviewStatus}</label>
+                        <select
+                          value={interviewForm.status}
+                          onChange={e => setInterviewForm(f => ({ ...f, status: e.target.value }))}
+                          className="w-full mt-0.5 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400"
+                        >
+                          {(['scheduled','completed','cancelled','no_show'] as const).map(s => (
+                            <option key={s} value={s}>{t.interviewStatusLabels[s]}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-slate-500 uppercase tracking-wide">{t.scheduledAt}</label>
+                        <input
+                          type="datetime-local"
+                          value={interviewForm.scheduled_at}
+                          onChange={e => setInterviewForm(f => ({ ...f, scheduled_at: e.target.value }))}
+                          className="w-full mt-0.5 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 uppercase tracking-wide">{t.durationMin}</label>
+                        <input
+                          type="number"
+                          value={interviewForm.duration_min}
+                          onChange={e => setInterviewForm(f => ({ ...f, duration_min: e.target.value }))}
+                          className="w-full mt-0.5 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400"
+                          placeholder="60"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase tracking-wide">{t.location}</label>
+                      <input
+                        value={interviewForm.location}
+                        onChange={e => setInterviewForm(f => ({ ...f, location: e.target.value }))}
+                        className="w-full mt-0.5 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400"
+                        placeholder="Zoom / Office / Phone"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase tracking-wide">{t.interviewers}</label>
+                      <input
+                        value={interviewForm.interviewers}
+                        onChange={e => setInterviewForm(f => ({ ...f, interviewers: e.target.value }))}
+                        className="w-full mt-0.5 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400"
+                        placeholder="Ali, Sarah"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase tracking-wide">{t.interviewNotes}</label>
+                      <textarea
+                        value={interviewForm.notes}
+                        onChange={e => setInterviewForm(f => ({ ...f, notes: e.target.value }))}
+                        rows={2}
+                        className="w-full mt-0.5 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400 resize-none"
+                      />
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => {
+                          setShowInterviewForm(false);
+                          setEditingInterviewId(null);
+                        }}
+                        className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700"
+                      >
+                        {t.cancelInterview}
+                      </button>
+                      <button
+                        onClick={handleSaveInterview}
+                        disabled={savingInterview}
+                        className="px-4 py-1.5 text-xs font-semibold bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-40"
+                      >
+                        {savingInterview ? '…' : t.saveInterview}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!showInterviewForm && (
+                  <button
+                    onClick={() => {
+                      setEditingInterviewId(null);
+                      setInterviewForm({ interview_type: 'phone_screen', scheduled_at: '', duration_min: '', location: '', interviewers: '', status: 'scheduled', notes: '' });
+                      setShowInterviewForm(true);
+                    }}
+                    className="w-full py-2 text-xs font-semibold text-violet-600 hover:text-violet-800 border border-dashed border-violet-300 rounded-xl hover:border-violet-500 transition-colors"
+                  >
+                    + {t.scheduleInterview}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Approvals Tab */}
+        {activeTab === 'approvals' && (
+          <div className="px-6 py-4 space-y-3">
+            {approvalsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 py-4">
+                <span className="w-3.5 h-3.5 border-2 border-amber-300 border-t-transparent rounded-full animate-spin inline-block" />
+                Loading approvals…
+              </div>
+            ) : (
+              <>
+                {approvals.length === 0 && (
+                  <p className="text-sm text-slate-400 italic py-2">{t.noApprovals}</p>
+                )}
+
+                {/* Approval chain */}
+                <div className="space-y-2">
+                  {approvals.map((ap, idx) => (
+                    <div key={ap.approval_id} className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                            {idx + 1}
+                          </span>
+                          <div>
+                            <p className="text-xs font-semibold text-slate-700">{ap.approval_stage}</p>
+                            {ap.approver_name && (
+                              <p className="text-[10px] text-slate-400">{ap.approver_name}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            ap.decision === 'approved' ? 'bg-emerald-100 text-emerald-700' :
+                            ap.decision === 'rejected' ? 'bg-red-100 text-red-700' :
+                            ap.decision === 'needs_revision' ? 'bg-amber-100 text-amber-700' :
+                            'bg-slate-100 text-slate-500'
+                          }`}>
+                            {t.approvalLabels[ap.decision] || ap.decision}
+                          </span>
+                          {isAdmin && (
+                            <button
+                              onClick={() => handleDeleteApproval(ap.approval_id)}
+                              className="text-slate-300 hover:text-red-500 p-0.5"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {ap.comment && (
+                        <div className="px-4 py-2 text-xs text-slate-500 italic border-t border-slate-100">
+                          "{ap.comment}"
+                        </div>
+                      )}
+                      {ap.decided_at && (
+                        <div className="px-4 pb-2 text-[10px] text-slate-400">
+                          Decided {new Date(ap.decided_at).toLocaleDateString()}
+                          {ap.approver_name && ` by ${ap.approver_name}`}
+                        </div>
+                      )}
+                      {/* Decision action for this stage */}
+                      {decidingApprovalId === ap.approval_id ? (
+                        <div className="px-4 pb-3 pt-1 space-y-2 border-t border-slate-100">
+                          <select
+                            value={approvalDecision.decision}
+                            onChange={e => setApprovalDecision(d => ({ ...d, decision: e.target.value }))}
+                            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
+                          >
+                            <option value="">— Select decision —</option>
+                            <option value="approved">{t.approve}</option>
+                            <option value="rejected">{t.reject}</option>
+                            <option value="needs_revision">{t.needsRevision}</option>
+                          </select>
+                          <input
+                            value={approvalDecision.comment}
+                            onChange={e => setApprovalDecision(d => ({ ...d, comment: e.target.value }))}
+                            placeholder={t.approvalDecisionComment}
+                            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => setDecidingApprovalId(null)} className="px-3 py-1 text-xs text-slate-500">
+                              {t.cancelInterview}
+                            </button>
+                            <button
+                              onClick={() => handleDecideApproval(ap.approval_id)}
+                              disabled={!approvalDecision.decision}
+                              className="px-3 py-1.5 text-xs font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-40"
+                            >
+                              Submit
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        ap.decision === 'pending' && (
+                          <button
+                            onClick={() => {
+                              setDecidingApprovalId(ap.approval_id);
+                              setApprovalDecision({ decision: '', comment: '' });
+                            }}
+                            className="w-full px-4 py-2 text-xs text-amber-600 hover:text-amber-800 hover:bg-amber-50 transition-colors border-t border-slate-100 text-left"
+                          >
+                            + Decide on this stage
+                          </button>
+                        )
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Admin: add stage manually */}
+                {isAdmin && (
+                  <>
+                    {showAddApprovalForm ? (
+                      <div className="flex gap-2 items-center">
+                        <input
+                          value={newApprovalStage}
+                          onChange={e => setNewApprovalStage(e.target.value)}
+                          placeholder="Stage name (e.g. Legal Review)"
+                          className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400"
+                          onKeyDown={e => { if (e.key === 'Enter') handleAddApprovalStage(); }}
+                        />
+                        <button
+                          onClick={handleAddApprovalStage}
+                          disabled={addingApproval || !newApprovalStage.trim()}
+                          className="px-3 py-1.5 text-xs font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-40"
+                        >
+                          {addingApproval ? '…' : 'Add'}
+                        </button>
+                        <button onClick={() => setShowAddApprovalForm(false)} className="text-slate-400 hover:text-slate-600 text-xs px-1">
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowAddApprovalForm(true)}
+                        className="w-full py-2 text-xs font-semibold text-amber-600 hover:text-amber-800 border border-dashed border-amber-300 rounded-xl hover:border-amber-500 transition-colors"
+                      >
+                        + {t.addApprovalStage}
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {/* Initiate chain from policy */}
+                <button
+                  onClick={handleInitiateApprovals}
+                  disabled={initiatingApprovals}
+                  className="w-full py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 border border-dashed border-slate-300 rounded-xl hover:border-slate-500 transition-colors disabled:opacity-40"
+                >
+                  {initiatingApprovals ? '…' : t.initiateApprovals}
+                </button>
+              </>
+            )}
           </div>
         )}
 

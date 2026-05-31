@@ -91,6 +91,12 @@ export const WEBHOOK_CONFIG = {
   ASSIGNABLE_USERS_URL:         `${API_BASE}/applications/assignable-users`,
   // Candidate comments — append /{application_id}/comments[/{comment_id}]
   APPLICATION_COMMENTS_URL:     `${API_BASE}/applications`,
+  // Interviews — append /{application_id}/interviews[/{interview_id}[/feedback[/{feedback_id}]]]
+  APPLICATION_INTERVIEWS_URL:   `${API_BASE}/applications`,
+  // Approvals — append /{application_id}/approvals[/{approval_id}] or /initiate
+  APPLICATION_APPROVALS_URL:    `${API_BASE}/applications`,
+  // Workflow policies (tenant-level governance)
+  WORKFLOW_POLICIES_URL:        `${API_BASE}/tenant/workflow-policies`,
   // Admin fair-usage controls (append /{tenant_id}/fair-usage)
   ADMIN_FAIR_USAGE_BASE_URL:    `${API_BASE}/admin/tenants`,
   // Tenant self-service: subscription
