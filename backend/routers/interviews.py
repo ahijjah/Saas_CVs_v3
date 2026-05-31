@@ -167,7 +167,7 @@ async def create_interview(
                  scheduled_at, duration_min, location, interviewers, status, notes, created_by)
             VALUES
                 (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:jid AS uuid), :itype,
-                 :scheduled_at, :duration_min, :location, :interviewers, :status, :notes,
+                 :scheduled_at, :duration_min, :location, CAST(:interviewers AS text[]), :status, :notes,
                  CAST(:uid AS uuid))
             RETURNING *
         """),
@@ -179,7 +179,7 @@ async def create_interview(
             "scheduled_at": body.scheduled_at,
             "duration_min": body.duration_min,
             "location":     body.location,
-            "interviewers": body.interviewers,
+            "interviewers": body.interviewers or [],
             "status":       body.status,
             "notes":        body.notes,
             "uid":          current_user.user_id,
@@ -235,7 +235,7 @@ async def update_interview(
     if body.location is not None:
         sets.append("location = :location"); params["location"] = body.location
     if body.interviewers is not None:
-        sets.append("interviewers = :interviewers"); params["interviewers"] = body.interviewers
+        sets.append("interviewers = CAST(:interviewers AS text[])"); params["interviewers"] = body.interviewers
     if body.status is not None:
         if body.status not in VALID_INTERVIEW_STATUSES:
             raise HTTPException(status_code=422, detail=f"Invalid status '{body.status}'.")

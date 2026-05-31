@@ -50,7 +50,7 @@ async def get_workflow_policies(
 
     row = await db.execute(
         text("""
-            SELECT policies, updated_at,
+            SELECT p.policies, p.updated_at,
                    COALESCE(u.full_name, u.email) AS updated_by_name
             FROM tenant_workflow_policies p
             LEFT JOIN users u ON u.user_id = p.updated_by

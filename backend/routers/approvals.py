@@ -156,7 +156,7 @@ async def initiate_approvals(
                      approver_id, requested_by)
                 VALUES
                     (CAST(:aid AS uuid), CAST(:tid AS uuid), :stage, :order,
-                     CAST(:appr AS uuid) NULLIF (CAST(:appr AS text), ''),
+                     CASE WHEN :appr IS NULL THEN NULL ELSE CAST(:appr AS uuid) END,
                      CAST(:uid AS uuid))
                 RETURNING *
             """),
@@ -165,7 +165,7 @@ async def initiate_approvals(
                 "tid":   current_user.tenant_id,
                 "stage": stage_name,
                 "order": order,
-                "appr":  approver_id or "",
+                "appr":  approver_id,
                 "uid":   current_user.user_id,
             },
         )
@@ -199,7 +199,7 @@ async def create_approval_stage(
                  approver_id, requested_by)
             VALUES
                 (CAST(:aid AS uuid), CAST(:tid AS uuid), :stage, :order,
-                 CAST(:appr AS uuid) NULLIF (CAST(:appr AS text), ''),
+                 CASE WHEN :appr IS NULL THEN NULL ELSE CAST(:appr AS uuid) END,
                  CAST(:uid AS uuid))
             RETURNING *
         """),
@@ -208,7 +208,7 @@ async def create_approval_stage(
             "tid":   current_user.tenant_id,
             "stage": body.approval_stage,
             "order": body.stage_order,
-            "appr":  body.approver_id or "",
+            "appr":  body.approver_id,
             "uid":   current_user.user_id,
         },
     )
