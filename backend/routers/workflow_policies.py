@@ -18,7 +18,20 @@ DEFAULT_POLICIES = {
     "allow_bulk_reject":              True,
     "require_interview_feedback":     False,
     "required_approval_stages":       [],
+    "sla_thresholds": {
+        "review_days": 14,
+        "interview_feedback_days": 7,
+        "approval_days": 10,
+        "offer_response_days": 5,
+    },
 }
+
+
+class SLAThresholds(BaseModel):
+    review_days:               int = 14
+    interview_feedback_days:   int = 7
+    approval_days:             int = 10
+    offer_response_days:       int = 5
 
 
 class WorkflowPoliciesRequest(BaseModel):
@@ -28,6 +41,7 @@ class WorkflowPoliciesRequest(BaseModel):
     allow_bulk_reject:              bool | None = None
     require_interview_feedback:     bool | None = None
     required_approval_stages:       list[str] | None = Field(None, max_length=20)
+    sla_thresholds:                 SLAThresholds | None = None
 
 
 def _parse_policies(raw) -> dict:

@@ -739,3 +739,73 @@ export interface WorkflowPoliciesResponse {
   updated_at: string | null;
   updated_by_name: string | null;
 }
+
+// ─── Group C — Analytics & SLA Monitoring ─────────────────────────────────
+
+export interface FunnelStageMetric {
+  workflow_status: WorkflowStatus;
+  stage_count: number;
+  conversion_from_previous: number | null;
+  percentage_of_pipeline: number;
+  avg_days_in_stage: number | null;
+  median_days_in_stage: number | null;
+}
+
+export interface FunnelMetricsResponse {
+  stages: FunnelStageMetric[];
+  total_applications: number;
+  date_range: {
+    from: string;
+    to: string;
+  };
+  filters: Record<string, any>;
+}
+
+export interface RecruiterProductivityMetric {
+  user_id: string;
+  recruiter_name: string;
+  total_applications_assigned: number;
+  applications_in_review: number;
+  workflow_moves_made: number;
+  interviews_completed: number;
+  feedback_provided: number;
+  approvals_decided: number;
+  avg_days_assigned: number | null;
+}
+
+export interface RecruiterProductivityResponse {
+  recruiters: RecruiterProductivityMetric[];
+  date_range: {
+    from: string;
+    to: string;
+  };
+}
+
+export interface AgingMetric {
+  application_id: string;
+  candidate_name: string;
+  job_id: string;
+  job_title: string;
+  workflow_status: WorkflowStatus;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  days_in_status: number;
+  sla_status: 'green' | 'amber' | 'red';
+  pending_approvals: number;
+}
+
+export interface AgingMetricsResponse {
+  metrics: AgingMetric[];
+  total_count: number;
+  red_count: number;
+  amber_count: number;
+  green_count: number;
+  filters: Record<string, any>;
+}
+
+export interface SLAThresholds {
+  review_days: number;
+  interview_feedback_days: number;
+  approval_days: number;
+  offer_response_days: number;
+}

@@ -103,6 +103,10 @@ export const WEBHOOK_CONFIG = {
   ACTIVATE_TRIAL_URL:           `${API_BASE}/tenant/subscription/activate-trial`,
   SELECT_PLAN_URL:              `${API_BASE}/tenant/subscription/select-plan`,
   SIMULATE_PAYMENT_URL:         `${API_BASE}/tenant/subscription/simulate-payment`,
+  // Analytics & SLA Monitoring
+  ANALYTICS_FUNNEL_URL:         `${API_BASE}/analytics/funnel`,
+  ANALYTICS_RECRUITER_PRODUCTIVITY_URL: `${API_BASE}/analytics/recruiter-productivity`,
+  ANALYTICS_AGING_URL:          `${API_BASE}/analytics/aging`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

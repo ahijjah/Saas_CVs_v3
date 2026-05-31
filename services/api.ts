@@ -124,3 +124,52 @@ export const apiService = {
     return this.post(WEBHOOK_CONFIG.FORGOT_PASSWORD_WEBHOOK_URL, { email });
   }
 };
+
+export class APIService {
+  token: string | null;
+
+  constructor(token: string | null = null) {
+    this.token = token;
+  }
+
+  async getFunnelMetrics(filters: {
+    job_id?: string;
+    campaign_id?: string;
+    recruiter_id?: string;
+    date_from?: string;
+    date_to?: string;
+  }) {
+    const params: Record<string, string> = {};
+    if (filters.date_from) params.date_from = filters.date_from;
+    if (filters.date_to) params.date_to = filters.date_to;
+    if (filters.job_id) params.job_id = filters.job_id;
+    if (filters.campaign_id) params.campaign_id = filters.campaign_id;
+    if (filters.recruiter_id) params.recruiter_id = filters.recruiter_id;
+
+    return apiService.get(WEBHOOK_CONFIG.ANALYTICS_FUNNEL_URL, params, this.token);
+  }
+
+  async getRecruiterProductivity(filters: {
+    recruiter_id?: string;
+    date_from?: string;
+    date_to?: string;
+  }) {
+    const params: Record<string, string> = {};
+    if (filters.date_from) params.date_from = filters.date_from;
+    if (filters.date_to) params.date_to = filters.date_to;
+    if (filters.recruiter_id) params.recruiter_id = filters.recruiter_id;
+
+    return apiService.get(WEBHOOK_CONFIG.ANALYTICS_RECRUITER_PRODUCTIVITY_URL, params, this.token);
+  }
+
+  async getAgingMetrics(filters: {
+    workflow_status?: string;
+    days_threshold?: number;
+  }) {
+    const params: Record<string, string> = {};
+    if (filters.workflow_status) params.workflow_status = filters.workflow_status;
+    if (filters.days_threshold !== undefined) params.days_threshold = String(filters.days_threshold);
+
+    return apiService.get(WEBHOOK_CONFIG.ANALYTICS_AGING_URL, params, this.token);
+  }
+};

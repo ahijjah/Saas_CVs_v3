@@ -40,6 +40,7 @@ import { ClientOrganizationsPage } from './pages/ClientOrganizations';
 import { CampaignsPage } from './pages/Campaigns';
 import { CampaignDetailPage } from './pages/CampaignDetail';
 import { CandidatesWorkspace } from './pages/CandidatesWorkspace';
+import { AnalyticsDashboard } from './pages/AnalyticsDashboard';
 import { PlanSelectionPage } from './pages/PlanSelection';
 import { PaymentSimulationPage } from './pages/PaymentSimulation';
 import { ToastContainer, ToastType } from './components/Toast';
@@ -395,6 +396,7 @@ const AppInner: React.FC = () => {
           />
           <Route path="/settings" element={<Settings {...sharedAuth} />} />
           <Route path="/candidates" element={<CandidatesWorkspace {...sharedAuth} />} />
+          <Route path="/analytics" element={<AnalyticsDashboard {...sharedAuth} />} />
           <Route path="/campaigns" element={<CampaignsPage {...sharedAuth} />} />
           <Route path="/campaigns/:campaignId" element={<CampaignDetailPage {...sharedAuth} />} />
           <Route path="/client-organizations" element={<ClientOrganizationsPage {...sharedAuth} />} />
