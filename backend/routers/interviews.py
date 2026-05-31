@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -42,22 +43,57 @@ class FeedbackRequest(BaseModel):
     notes:          str | None = None
 
 
+def _to_pg_text_array(items: list[str]) -> str:
+    """Convert a Python list of strings to a PostgreSQL TEXT[] literal.
+
+    asyncpg cannot reliably infer the array element type for a Python list
+    when the parameter appears in a CAST expression in raw SQL text().
+    Passing a pre-formatted array literal string eliminates the ambiguity.
+    e.g. ["Alice", "Bob Smith"] → '{"Alice","Bob Smith"}'
+    """
+    if not items:
+        return "{}"
+
+    def _escape(s: str) -> str:
+        return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    return "{" + ",".join(_escape(s) for s in items) + "}"
+
+
+def _parse_scheduled_at(value: str | None) -> datetime | None:
+    """Parse ISO-8601 datetime string from the frontend into a Python datetime.
+
+    asyncpg encodes TIMESTAMPTZ parameters using the datetime codec, which
+    expects a Python datetime object, not a raw string.
+    The HTML datetime-local input emits format "YYYY-MM-DDTHH:MM" (no timezone).
+    """
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid scheduled_at format '{value}'. Use ISO 8601 (e.g. 2025-01-15T10:00).",
+        )
+
+
 def _serialize_interview(row: dict) -> dict:
     return {
-        "interview_id":   str(row["interview_id"]),
-        "application_id": str(row["application_id"]),
-        "interview_type": row["interview_type"],
-        "scheduled_at":   row["scheduled_at"].isoformat() if row["scheduled_at"] else None,
-        "duration_min":   row["duration_min"],
-        "location":       row["location"],
-        "interviewers":   list(row["interviewers"] or []),
-        "status":         row["status"],
-        "notes":          row["notes"],
-        "created_by":     str(row["created_by"]) if row["created_by"] else None,
+        "interview_id":    str(row["interview_id"]),
+        "application_id":  str(row["application_id"]),
+        "interview_type":  row["interview_type"],
+        "scheduled_at":    row["scheduled_at"].isoformat() if row["scheduled_at"] else None,
+        "duration_min":    row["duration_min"],
+        "location":        row["location"],
+        "interviewers":    list(row["interviewers"] or []),
+        "status":          row["status"],
+        "notes":           row["notes"],
+        "created_by":      str(row["created_by"]) if row["created_by"] else None,
         "created_by_name": row.get("created_by_name"),
-        "created_at":     row["created_at"].isoformat() if row["created_at"] else None,
-        "updated_at":     row["updated_at"].isoformat() if row["updated_at"] else None,
-        "feedback_count": row.get("feedback_count", 0),
+        "created_at":      row["created_at"].isoformat() if row["created_at"] else None,
+        "updated_at":      row["updated_at"].isoformat() if row["updated_at"] else None,
+        "feedback_count":  int(row.get("feedback_count") or 0),
     }
 
 
@@ -92,7 +128,7 @@ async def _check_application_access(
             SELECT a.application_id, a.job_id
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
-            WHERE a.application_id = :aid
+            WHERE a.application_id = CAST(:aid AS uuid)
               AND a.tenant_id = CAST(:tid AS uuid)
               AND (
                 :is_admin = TRUE
@@ -129,7 +165,9 @@ async def list_interviews(
 
     rows = await db.execute(
         text("""
-            SELECT i.*,
+            SELECT i.interview_id, i.application_id, i.interview_type, i.scheduled_at,
+                   i.duration_min, i.location, i.interviewers, i.status, i.notes,
+                   i.created_by, i.created_at, i.updated_at,
                    COALESCE(u.full_name, u.email) AS created_by_name,
                    COUNT(f.feedback_id)            AS feedback_count
             FROM candidate_interviews i
@@ -137,12 +175,14 @@ async def list_interviews(
             LEFT JOIN candidate_interview_feedback f ON f.interview_id = i.interview_id
             WHERE i.application_id = CAST(:aid AS uuid)
               AND i.tenant_id = CAST(:tid AS uuid)
-            GROUP BY i.interview_id, u.full_name, u.email
+            GROUP BY i.interview_id, i.application_id, i.interview_type, i.scheduled_at,
+                     i.duration_min, i.location, i.interviewers, i.status, i.notes,
+                     i.created_by, i.created_at, i.updated_at, u.full_name, u.email
             ORDER BY i.scheduled_at ASC NULLS LAST, i.created_at ASC
         """),
         {"aid": application_id, "tid": current_user.tenant_id},
     )
-    return {"interviews": [_serialize_interview(r) for r in rows.mappings()]}
+    return {"interviews": [_serialize_interview(dict(r)) for r in rows.mappings()]}
 
 
 @router.post("/{application_id}/interviews", status_code=status.HTTP_201_CREATED)
@@ -152,45 +192,55 @@ async def create_interview(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, current_user.role)
-    app_rec = await _check_application_access(application_id, current_user, db)
-
     if body.interview_type not in VALID_INTERVIEW_TYPES:
         raise HTTPException(status_code=422, detail=f"Invalid interview_type '{body.interview_type}'.")
     if body.status not in VALID_INTERVIEW_STATUSES:
         raise HTTPException(status_code=422, detail=f"Invalid status '{body.status}'.")
 
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+    app_rec = await _check_application_access(application_id, current_user, db)
+
+    # asyncpg requires Python datetime for TIMESTAMPTZ parameters — not raw strings.
+    scheduled_at = _parse_scheduled_at(body.scheduled_at)
+
+    # asyncpg cannot reliably bind a Python list for TEXT[] in raw text() SQL.
+    # Pass a pre-formatted PostgreSQL array literal instead.
+    interviewers_pg = _to_pg_text_array(body.interviewers or [])
+
     row = await db.execute(
         text("""
             INSERT INTO candidate_interviews
                 (application_id, tenant_id, job_id, interview_type,
-                 scheduled_at, duration_min, location, interviewers, status, notes, created_by)
+                 scheduled_at, duration_min, location, interviewers,
+                 status, notes, created_by)
             VALUES
                 (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:jid AS uuid), :itype,
-                 :scheduled_at, :duration_min, :location, CAST(:interviewers AS text[]), :status, :notes,
-                 CAST(:uid AS uuid))
-            RETURNING *
+                 :scheduled_at, :duration_min, :location, CAST(:interviewers AS text[]),
+                 :status, :notes, CAST(:uid AS uuid))
+            RETURNING
+                interview_id, application_id, tenant_id, job_id, interview_type,
+                scheduled_at, duration_min, location, interviewers,
+                status, notes, created_by, created_at, updated_at
         """),
         {
             "aid":          application_id,
             "tid":          current_user.tenant_id,
             "jid":          str(app_rec["job_id"]),
             "itype":        body.interview_type,
-            "scheduled_at": body.scheduled_at,
+            "scheduled_at": scheduled_at,
             "duration_min": body.duration_min,
             "location":     body.location,
-            "interviewers": body.interviewers or [],
+            "interviewers": interviewers_pg,
             "status":       body.status,
             "notes":        body.notes,
             "uid":          current_user.user_id,
         },
     )
     await db.commit()
-    rec = row.mappings().first()
-    result = dict(rec)
-    result["created_by_name"] = current_user.full_name or current_user.email
-    result["feedback_count"] = 0
-    return {"interview": _serialize_interview(result)}
+    rec = dict(row.mappings().first())
+    rec["created_by_name"] = current_user.full_name or current_user.email
+    rec["feedback_count"] = 0
+    return {"interview": _serialize_interview(rec)}
 
 
 @router.patch("/{application_id}/interviews/{interview_id}")
@@ -227,28 +277,44 @@ async def update_interview(
     if body.interview_type is not None:
         if body.interview_type not in VALID_INTERVIEW_TYPES:
             raise HTTPException(status_code=422, detail=f"Invalid interview_type '{body.interview_type}'.")
-        sets.append("interview_type = :itype"); params["itype"] = body.interview_type
+        sets.append("interview_type = :itype")
+        params["itype"] = body.interview_type
+
     if body.scheduled_at is not None:
-        sets.append("scheduled_at = :scheduled_at"); params["scheduled_at"] = body.scheduled_at
+        sets.append("scheduled_at = :scheduled_at")
+        params["scheduled_at"] = _parse_scheduled_at(body.scheduled_at)
+
     if body.duration_min is not None:
-        sets.append("duration_min = :duration_min"); params["duration_min"] = body.duration_min
+        sets.append("duration_min = :duration_min")
+        params["duration_min"] = body.duration_min
+
     if body.location is not None:
-        sets.append("location = :location"); params["location"] = body.location
+        sets.append("location = :location")
+        params["location"] = body.location
+
     if body.interviewers is not None:
-        sets.append("interviewers = CAST(:interviewers AS text[])"); params["interviewers"] = body.interviewers
+        sets.append("interviewers = CAST(:interviewers AS text[])")
+        params["interviewers"] = _to_pg_text_array(body.interviewers)
+
     if body.status is not None:
         if body.status not in VALID_INTERVIEW_STATUSES:
             raise HTTPException(status_code=422, detail=f"Invalid status '{body.status}'.")
-        sets.append("status = :status"); params["status"] = body.status
+        sets.append("status = :status")
+        params["status"] = body.status
+
     if body.notes is not None:
-        sets.append("notes = :notes"); params["notes"] = body.notes
+        sets.append("notes = :notes")
+        params["notes"] = body.notes
 
     updated = await db.execute(
         text(f"""
             UPDATE candidate_interviews
             SET {', '.join(sets)}
             WHERE interview_id = CAST(:iid AS uuid) AND tenant_id = CAST(:tid AS uuid)
-            RETURNING *
+            RETURNING
+                interview_id, application_id, tenant_id, job_id, interview_type,
+                scheduled_at, duration_min, location, interviewers,
+                status, notes, created_by, created_at, updated_at
         """),
         params,
     )
@@ -287,7 +353,10 @@ async def delete_interview(
         raise HTTPException(status_code=403, detail="Only the creator or admin can delete this interview.")
 
     await db.execute(
-        text("DELETE FROM candidate_interviews WHERE interview_id = CAST(:iid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+        text("""
+            DELETE FROM candidate_interviews
+            WHERE interview_id = CAST(:iid AS uuid) AND tenant_id = CAST(:tid AS uuid)
+        """),
         {"iid": interview_id, "tid": current_user.tenant_id},
     )
     await db.commit()
@@ -307,7 +376,10 @@ async def list_feedback(
 
     rows = await db.execute(
         text("""
-            SELECT f.*, COALESCE(u.full_name, u.email) AS reviewer_name
+            SELECT f.feedback_id, f.interview_id, f.application_id, f.tenant_id,
+                   f.reviewer_id, f.overall_rating, f.recommendation, f.scorecard,
+                   f.notes, f.created_at, f.updated_at,
+                   COALESCE(u.full_name, u.email) AS reviewer_name
             FROM candidate_interview_feedback f
             LEFT JOIN users u ON u.user_id = f.reviewer_id
             WHERE f.interview_id = CAST(:iid AS uuid)
@@ -355,7 +427,9 @@ async def submit_feedback(
                 scorecard      = EXCLUDED.scorecard,
                 notes          = EXCLUDED.notes,
                 updated_at     = now()
-            RETURNING *
+            RETURNING
+                feedback_id, interview_id, application_id, tenant_id, reviewer_id,
+                overall_rating, recommendation, scorecard, notes, created_at, updated_at
         """),
         {
             "iid":            interview_id,
@@ -417,7 +491,9 @@ async def update_feedback(
                 notes          = :notes,
                 updated_at     = now()
             WHERE feedback_id = CAST(:fid AS uuid) AND tenant_id = CAST(:tid AS uuid)
-            RETURNING *
+            RETURNING
+                feedback_id, interview_id, application_id, tenant_id, reviewer_id,
+                overall_rating, recommendation, scorecard, notes, created_at, updated_at
         """),
         {
             "fid":            feedback_id,
