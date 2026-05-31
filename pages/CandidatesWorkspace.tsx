@@ -663,6 +663,13 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
 
+  // @mention autocomplete state
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionMatches, setMentionMatches] = useState<AssignableUser[]>([]);
+  const [selectedMentionIdx, setSelectedMentionIdx] = useState(0);
+  const [atPosition, setAtPosition] = useState(-1);
+
   // Assignment state
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
 
@@ -742,6 +749,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setNewComment('');
     setEditingCommentId(null);
     setAssignDropdownOpen(false);
+    setShowMentionDropdown(false);
+    setMentionQuery('');
   }, [candidate?.application_id]);
 
   if (!candidate) return null;
@@ -827,6 +836,74 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
         ? <span key={i} className="text-indigo-600 font-medium">{part}</span>
         : <span key={i}>{part}</span>
     );
+  };
+
+  // Handle @mention detection in comment input
+  const handleNewCommentChange = (text: string) => {
+    setNewComment(text);
+
+    // Detect mention pattern: @ followed by word chars at end of string
+    const mentionMatch = text.match(/@(\w*)$/);
+
+    if (mentionMatch) {
+      const query = mentionMatch[1].toLowerCase();
+      const matches = assignableUsers.filter(u =>
+        u.full_name.toLowerCase().includes(query) ||
+        u.email.toLowerCase().includes(query)
+      );
+
+      if (query.length >= 1 && matches.length > 0) {
+        setMentionMatches(matches);
+        setShowMentionDropdown(true);
+        setMentionQuery(query);
+        setAtPosition(text.lastIndexOf('@'));
+        setSelectedMentionIdx(0);
+      } else if (query.length >= 1) {
+        // Query typed but no matches
+        setShowMentionDropdown(false);
+      } else {
+        // Just @ typed
+        setShowMentionDropdown(true);
+        setMentionMatches(assignableUsers);
+        setMentionQuery('');
+        setAtPosition(text.lastIndexOf('@'));
+        setSelectedMentionIdx(0);
+      }
+    } else {
+      setShowMentionDropdown(false);
+    }
+  };
+
+  const insertMention = (user: AssignableUser) => {
+    const beforeMention = newComment.substring(0, atPosition);
+    const afterMention = newComment.substring(atPosition + 1 + mentionQuery.length);
+    setNewComment(beforeMention + '@' + user.full_name + ' ' + afterMention);
+    setShowMentionDropdown(false);
+    setMentionQuery('');
+  };
+
+  const handleCommentKeydown = (e: React.KeyboardEvent) => {
+    if (showMentionDropdown && mentionMatches.length > 0) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedMentionIdx(prev => (prev > 0 ? prev - 1 : mentionMatches.length - 1));
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedMentionIdx(prev => (prev < mentionMatches.length - 1 ? prev + 1 : 0));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        insertMention(mentionMatches[selectedMentionIdx]);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowMentionDropdown(false);
+      }
+      return;
+    }
+
+    // Normal comment submission
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      handlePostComment();
+    }
   };
 
   const wfStyle = WORKFLOW_STATUS_STYLES[candidate.workflow_status] ?? 'bg-slate-100 text-slate-600';
@@ -971,21 +1048,48 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               </div>
             )}
 
-            {/* Add comment */}
-            <div className="border-t border-slate-200 pt-4 space-y-2">
-              <textarea
-                value={newComment}
-                onChange={e => setNewComment(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handlePostComment();
-                }}
-                placeholder={t.addComment}
-                rows={3}
-                maxLength={2000}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
-              />
+            {/* Add comment with @mention autocomplete */}
+            <div className="border-t border-slate-200 pt-4 space-y-2 relative">
+              <div className="relative">
+                <textarea
+                  value={newComment}
+                  onChange={e => handleNewCommentChange(e.target.value)}
+                  onKeyDown={handleCommentKeydown}
+                  placeholder={t.addComment}
+                  rows={3}
+                  maxLength={2000}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                />
+
+                {/* @mention dropdown */}
+                {showMentionDropdown && mentionMatches.length > 0 && (
+                  <div className="absolute bottom-full mb-1 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg max-h-[180px] overflow-y-auto z-50">
+                    {mentionMatches.map((user, idx) => (
+                      <button
+                        key={user.user_id}
+                        onClick={() => insertMention(user)}
+                        onMouseEnter={() => setSelectedMentionIdx(idx)}
+                        className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${
+                          idx === selectedMentionIdx
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+                          {user.full_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{user.full_name}</p>
+                          <p className="text-slate-400 truncate text-[10px]">{user.email}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-400">{newComment.length}/2000 · Ctrl+Enter to post</span>
+                <span className="text-[10px] text-slate-400">{newComment.length}/2000 · Ctrl+Enter to post · @ for mentions</span>
                 <button
                   onClick={handlePostComment}
                   disabled={!newComment.trim() || postingComment}
@@ -1680,13 +1784,32 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         { assigned_user_id: userId },
         auth.token!,
       );
-      setCandidates(prev =>
-        prev.map(c =>
-          c.application_id === applicationId
-            ? { ...c, assigned_user_id: data.assigned_user_id, assigned_user_name: data.assigned_user_name, assigned_at: data.assigned_at }
-            : c
-        )
+
+      // Update candidates list with new assignment
+      let updatedCandidates = candidates.map(c =>
+        c.application_id === applicationId
+          ? { ...c, assigned_user_id: data.assigned_user_id, assigned_user_name: data.assigned_user_name, assigned_at: data.assigned_at }
+          : c
       );
+
+      // Apply active filter to remove rows that no longer match
+      const currentUserId = auth.user?.user_id || auth.user?.sub;
+      if (assignedFilter === 'me') {
+        updatedCandidates = updatedCandidates.filter(c => c.assigned_user_id === currentUserId);
+      } else if (assignedFilter === 'unassigned') {
+        updatedCandidates = updatedCandidates.filter(c => !c.assigned_user_id);
+      } else if (assignedFilter) {
+        // Specific user filter
+        updatedCandidates = updatedCandidates.filter(c => c.assigned_user_id === assignedFilter);
+      }
+
+      setCandidates(updatedCandidates);
+
+      // If drawer is open on this candidate and it's no longer visible, close it
+      if (selectedAppId === applicationId && !updatedCandidates.find(c => c.application_id === applicationId)) {
+        closeCandidate();
+      }
+
       addToastRef.current(t.assignmentUpdated, 'success');
     } catch (err: any) {
       addToastRef.current(err.message || 'Failed to update assignment', 'error');
