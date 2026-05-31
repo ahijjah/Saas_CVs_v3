@@ -1093,6 +1093,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
   const [bulkNote, setBulkNote] = useState('');
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [bulkResult, setBulkResult] = useState<any>(null);
+  const [bulkResultOpen, setBulkResultOpen] = useState(false);
 
   // Check if user is agency/freelancer
   const isAgency = auth.user?.tenant_type === 'agency' || auth.user?.tenant_type === 'individual_recruiter';
@@ -1272,6 +1274,14 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       );
 
       if (data?.updated_count >= 0) {
+        // Store result and show modal
+        setBulkResult({
+          ...data,
+          targetStatus: bulkTargetStatus,
+        });
+        setBulkResultOpen(true);
+
+        // Still show lightweight toast
         const msg = t.bulkUpdated
           .replace('{updated}', String(data.updated_count))
           .replace('{skipped}', String(data.skipped_count));
@@ -1747,6 +1757,100 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 transition-colors"
               >
                 {bulkProcessing ? '…' : t.bulkConfirm}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Result Modal */}
+      {bulkResultOpen && bulkResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-lg max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-900">Bulk Action Results</h2>
+              <button
+                onClick={() => setBulkResultOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-4 space-y-6">
+              {/* Summary */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg bg-green-50 border border-green-200 p-4">
+                  <p className="text-xs font-semibold text-green-700 uppercase mb-1">Updated Successfully</p>
+                  <p className="text-2xl font-bold text-green-700">{bulkResult.updated_count}</p>
+                </div>
+                {bulkResult.skipped_count > 0 && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 p-4">
+                    <p className="text-xs font-semibold text-amber-700 uppercase mb-1">Skipped</p>
+                    <p className="text-2xl font-bold text-amber-700">{bulkResult.skipped_count}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Updated candidates section */}
+              {bulkResult.updated_count > 0 && (
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 mb-3">Candidates Updated to {wfLabels[bulkResult.targetStatus as WorkflowStatus]}</h3>
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto bg-slate-50 rounded-lg p-3">
+                    {(bulkResult.updated_candidates || []).map((c: any) => (
+                      <div key={c.application_id} className="text-sm text-slate-700 flex items-start gap-2">
+                        <span className="text-green-600 font-bold mt-0.5">✓</span>
+                        <div className="flex-1">
+                          <p className="font-medium">{c.candidate_name}</p>
+                          <p className="text-xs text-slate-500">{c.application_id}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Skipped candidates section */}
+              {bulkResult.skipped_count > 0 && (
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 mb-3">Candidates Skipped</h3>
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto bg-amber-50 rounded-lg p-3 border border-amber-200">
+                    {(bulkResult.skipped_candidates || []).map((c: any) => (
+                      <div
+                        key={c.application_id}
+                        onClick={() => {
+                          const candidate = candidates.find(ca => ca.application_id === c.application_id);
+                          if (candidate) {
+                            openCandidate(candidate);
+                            setBulkResultOpen(false);
+                          }
+                        }}
+                        className="text-sm text-slate-700 flex items-start gap-2 p-2 hover:bg-amber-100 rounded cursor-pointer transition-colors"
+                      >
+                        <span className="text-amber-600 font-bold mt-0.5">—</span>
+                        <div className="flex-1">
+                          <p className="font-medium">{c.candidate_name}</p>
+                          <p className="text-xs text-amber-700">{c.reason}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{c.application_id}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setBulkResultOpen(false)}
+                className="px-4 py-2 text-sm font-semibold bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Close
               </button>
             </div>
           </div>

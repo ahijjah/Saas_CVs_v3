@@ -1336,11 +1336,47 @@ async def bulk_update_workflow_status(
 
     await db.commit()
 
+    # Fetch candidate names for updated and skipped candidates
+    all_ids = to_update + list(skipped_reasons.keys())
+    updated_candidates = []
+    skipped_candidates = []
+
+    if all_ids:
+        rows = await db.execute(
+            text("""
+                SELECT a.application_id, a.candidate_name, a.workflow_status
+                FROM applications a
+                WHERE a.application_id = ANY(CAST(:aids AS uuid[]))
+                  AND a.tenant_id = CAST(:tid AS uuid)
+            """),
+            {"aids": all_ids, "tid": current_user.tenant_id},
+        )
+        candidates_by_id = {str(r["application_id"]): r for r in rows.mappings()}
+
+        for aid in to_update:
+            if aid in candidates_by_id:
+                c = candidates_by_id[aid]
+                updated_candidates.append({
+                    "application_id": aid,
+                    "candidate_name": c["candidate_name"],
+                    "workflow_status": c["workflow_status"],
+                })
+
+        for aid, reason in skipped_reasons.items():
+            if aid in candidates_by_id:
+                c = candidates_by_id[aid]
+                skipped_candidates.append({
+                    "application_id": aid,
+                    "candidate_name": c["candidate_name"],
+                    "reason": reason,
+                })
+
     return {
         "success": True,
         "updated_count": len(to_update),
         "skipped_count": len(skipped_reasons),
-        "skipped_reasons": skipped_reasons,
+        "updated_candidates": updated_candidates,
+        "skipped_candidates": skipped_candidates,
     }
 
 
