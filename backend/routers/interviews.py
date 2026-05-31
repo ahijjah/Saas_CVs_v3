@@ -43,23 +43,6 @@ class FeedbackRequest(BaseModel):
     notes:          str | None = None
 
 
-def _to_pg_text_array(items: list[str]) -> str:
-    """Convert a Python list of strings to a PostgreSQL TEXT[] literal.
-
-    asyncpg cannot reliably infer the array element type for a Python list
-    when the parameter appears in a CAST expression in raw SQL text().
-    Passing a pre-formatted array literal string eliminates the ambiguity.
-    e.g. ["Alice", "Bob Smith"] → '{"Alice","Bob Smith"}'
-    """
-    if not items:
-        return "{}"
-
-    def _escape(s: str) -> str:
-        return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-    return "{" + ",".join(_escape(s) for s in items) + "}"
-
-
 def _parse_scheduled_at(value: str | None) -> datetime | None:
     """Parse ISO-8601 datetime string from the frontend into a Python datetime.
 
@@ -203,10 +186,6 @@ async def create_interview(
     # asyncpg requires Python datetime for TIMESTAMPTZ parameters — not raw strings.
     scheduled_at = _parse_scheduled_at(body.scheduled_at)
 
-    # asyncpg cannot reliably bind a Python list for TEXT[] in raw text() SQL.
-    # Pass a pre-formatted PostgreSQL array literal instead.
-    interviewers_pg = _to_pg_text_array(body.interviewers or [])
-
     row = await db.execute(
         text("""
             INSERT INTO candidate_interviews
@@ -230,7 +209,7 @@ async def create_interview(
             "scheduled_at": scheduled_at,
             "duration_min": body.duration_min,
             "location":     body.location,
-            "interviewers": interviewers_pg,
+            "interviewers": body.interviewers or [],
             "status":       body.status,
             "notes":        body.notes,
             "uid":          current_user.user_id,
@@ -294,7 +273,7 @@ async def update_interview(
 
     if body.interviewers is not None:
         sets.append("interviewers = CAST(:interviewers AS text[])")
-        params["interviewers"] = _to_pg_text_array(body.interviewers)
+        params["interviewers"] = body.interviewers
 
     if body.status is not None:
         if body.status not in VALID_INTERVIEW_STATUSES:
