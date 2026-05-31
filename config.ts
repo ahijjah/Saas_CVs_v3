@@ -81,6 +81,8 @@ export const WEBHOOK_CONFIG = {
   MY_CLIENT_ASSIGNMENTS_URL:    `${API_BASE}/client-organizations/my/assignments`,
   // Campaigns (optional job grouping layer) — append /{campaign_id} for detail/update/delete
   CAMPAIGNS_URL:                `${API_BASE}/campaigns`,
+  // Candidate saved views — append /{saved_view_id} for patch/delete
+  CANDIDATE_SAVED_VIEWS_URL:    `${API_BASE}/candidate-saved-views`,
   // Admin fair-usage controls (append /{tenant_id}/fair-usage)
   ADMIN_FAIR_USAGE_BASE_URL:    `${API_BASE}/admin/tenants`,
   // Tenant self-service: subscription

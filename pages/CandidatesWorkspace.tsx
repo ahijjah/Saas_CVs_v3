@@ -77,6 +77,23 @@ interface Pagination {
   has_more: boolean;
 }
 
+interface SavedViewFilters {
+  activeView?:       string;
+  workflowFilter?:   string;
+  processingFilter?: string;
+  aiResultFilter?:   string;
+  campaignFilter?:   string;
+  clientFilter?:     string;
+  search?:           string;
+}
+
+interface SavedView {
+  saved_view_id: string;
+  name:          string;
+  filters:       SavedViewFilters;
+  created_at:    string;
+}
+
 interface Campaign {
   campaign_id: string;
   name: string;
@@ -202,6 +219,16 @@ const T = {
     procStopped: 'Stopped',
     procQueued: 'Queued',
     procProcessing: 'Processing',
+    // Saved views
+    savedViews: 'Saved Views',
+    saveView: 'Save View',
+    saveViewPlaceholder: 'View name…',
+    saveViewConfirm: 'Save',
+    saveViewCancel: 'Cancel',
+    savedViewApplied: 'View applied',
+    savedViewDeleted: 'View deleted',
+    savedViewSaved: 'View saved',
+    savedViewDeleteConfirm: 'Delete this saved view?',
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -243,6 +270,16 @@ const T = {
     procStopped: 'موقوف',
     procQueued: 'في الانتظار',
     procProcessing: 'جارٍ المعالجة',
+    // Saved views
+    savedViews: 'العروض المحفوظة',
+    saveView: 'حفظ العرض',
+    saveViewPlaceholder: 'اسم العرض…',
+    saveViewConfirm: 'حفظ',
+    saveViewCancel: 'إلغاء',
+    savedViewApplied: 'تم تطبيق العرض',
+    savedViewDeleted: 'تم حذف العرض',
+    savedViewSaved: 'تم حفظ العرض',
+    savedViewDeleteConfirm: 'هل تريد حذف هذا العرض؟',
   },
 };
 
@@ -1020,6 +1057,12 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   // causing the drawer to re-fetch application details and refresh the timeline.
   const [drawerDetailVersion, setDrawerDetailVersion] = useState(0);
 
+  // Saved views
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveViewName, setSaveViewName] = useState('');
+  const [savingView, setSavingView] = useState(false);
+
   // Check if user is agency/freelancer
   const isAgency = auth.user?.tenant_type === 'agency' || auth.user?.tenant_type === 'individual_recruiter';
 
@@ -1074,6 +1117,75 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     };
     fetchClients();
   }, [auth.token, isAgency]); // addToast intentionally omitted — using ref to avoid loop
+
+  // Fetch saved views once on mount
+  useEffect(() => {
+    if (!auth.token) return;
+    apiService.get(WEBHOOK_CONFIG.CANDIDATE_SAVED_VIEWS_URL, {}, auth.token)
+      .then((data: any) => {
+        if (data && Array.isArray(data.saved_views)) setSavedViews(data.saved_views);
+      })
+      .catch(() => {}); // non-critical — silent fail
+  }, [auth.token]);
+
+  const handleApplySavedView = (view: SavedView) => {
+    const f = view.filters;
+    setActiveView((f.activeView as QuickView) || 'all');
+    setWorkflowFilter(f.workflowFilter || '');
+    setProcessingFilter(f.processingFilter || '');
+    setAiResultFilter(f.aiResultFilter || '');
+    setCampaignFilter(f.campaignFilter || '');
+    setClientFilter(f.clientFilter || '');
+    setSearch(f.search || '');
+    setDebouncedSearch(f.search || '');
+    setPage(1);
+    addToastRef.current(t.savedViewApplied, 'success');
+  };
+
+  const handleSaveView = async () => {
+    const name = saveViewName.trim();
+    if (!name) return;
+    setSavingView(true);
+    try {
+      const filters: SavedViewFilters = {};
+      if (activeView && activeView !== 'all') filters.activeView = activeView;
+      if (workflowFilter)   filters.workflowFilter   = workflowFilter;
+      if (processingFilter) filters.processingFilter = processingFilter;
+      if (aiResultFilter)   filters.aiResultFilter   = aiResultFilter;
+      if (campaignFilter)   filters.campaignFilter   = campaignFilter;
+      if (clientFilter)     filters.clientFilter     = clientFilter;
+      if (debouncedSearch)  filters.search           = debouncedSearch;
+
+      const data: any = await apiService.post(
+        WEBHOOK_CONFIG.CANDIDATE_SAVED_VIEWS_URL,
+        { name, filters },
+        auth.token!,
+      );
+      if (data?.saved_view) {
+        setSavedViews(prev => [...prev, data.saved_view]);
+      }
+      setSaveViewName('');
+      setShowSaveDialog(false);
+      addToastRef.current(t.savedViewSaved, 'success');
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to save view', 'error');
+    } finally {
+      setSavingView(false);
+    }
+  };
+
+  const handleDeleteSavedView = async (viewId: string) => {
+    try {
+      await apiService.delete(
+        `${WEBHOOK_CONFIG.CANDIDATE_SAVED_VIEWS_URL}/${viewId}`,
+        auth.token!,
+      );
+      setSavedViews(prev => prev.filter(v => v.saved_view_id !== viewId));
+      addToastRef.current(t.savedViewDeleted, 'success');
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to delete view', 'error');
+    }
+  };
 
   // Sync URL when filters change
   useEffect(() => {
@@ -1271,6 +1383,80 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           </button>
         ))}
       </div>
+
+      {/* Saved Views Row */}
+      {(savedViews.length > 0 || hasManualFilters || activeView !== 'all') && (
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* User-saved view chips */}
+          {savedViews.map(view => (
+            <div
+              key={view.saved_view_id}
+              className="group flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition-colors"
+            >
+              <button
+                onClick={() => handleApplySavedView(view)}
+                className="max-w-[140px] truncate"
+                title={view.name}
+              >
+                {view.name}
+              </button>
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  if (window.confirm(t.savedViewDeleteConfirm)) handleDeleteSavedView(view.saved_view_id);
+                }}
+                className="ml-0.5 text-indigo-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0"
+                title="Delete"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+          ))}
+
+          {/* Save Current View */}
+          {(hasManualFilters || activeView !== 'all') && !showSaveDialog && (
+            <button
+              onClick={() => setShowSaveDialog(true)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-slate-300 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors bg-white"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>
+              {t.saveView}
+            </button>
+          )}
+
+          {/* Inline save dialog */}
+          {showSaveDialog && (
+            <div className="flex items-center gap-2 bg-white border border-indigo-300 rounded-full px-3 py-1 shadow-sm">
+              <input
+                autoFocus
+                type="text"
+                value={saveViewName}
+                onChange={e => setSaveViewName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleSaveView();
+                  if (e.key === 'Escape') { setShowSaveDialog(false); setSaveViewName(''); }
+                }}
+                placeholder={t.saveViewPlaceholder}
+                className="text-xs outline-none w-36 text-slate-700 placeholder:text-slate-400 bg-transparent"
+                maxLength={100}
+              />
+              <button
+                onClick={handleSaveView}
+                disabled={savingView || !saveViewName.trim()}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-40 transition-colors"
+              >
+                {savingView ? '…' : t.saveViewConfirm}
+              </button>
+              <button
+                onClick={() => { setShowSaveDialog(false); setSaveViewName(''); }}
+                className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                {t.saveViewCancel}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex flex-wrap gap-3 items-center">
