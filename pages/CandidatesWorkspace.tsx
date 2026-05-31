@@ -229,6 +229,18 @@ const T = {
     savedViewDeleted: 'View deleted',
     savedViewSaved: 'View saved',
     savedViewDeleteConfirm: 'Delete this saved view?',
+    // Bulk actions
+    bulkSelect: '{count} selected',
+    bulkMove: 'Move',
+    bulkClear: 'Clear',
+    bulkConfirmTitle: 'Bulk Move Candidates',
+    bulkConfirmMessage: 'Move {count} candidates to:',
+    bulkNoteRequired: 'Note required for {status}',
+    bulkNoteRecommended: 'Note recommended for {status}',
+    bulkNotePlaceholder: 'Reason for bulk move…',
+    bulkConfirm: 'Move',
+    bulkCancel: 'Cancel',
+    bulkUpdated: '{updated} candidates moved, {skipped} skipped.',
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -280,6 +292,18 @@ const T = {
     savedViewDeleted: 'تم حذف العرض',
     savedViewSaved: 'تم حفظ العرض',
     savedViewDeleteConfirm: 'هل تريد حذف هذا العرض؟',
+    // Bulk actions
+    bulkSelect: '{count} محدد',
+    bulkMove: 'نقل',
+    bulkClear: 'مسح',
+    bulkConfirmTitle: 'نقل المرشحين بكميات كبيرة',
+    bulkConfirmMessage: 'نقل {count} مرشح إلى:',
+    bulkNoteRequired: 'ملاحظة مطلوبة لـ {status}',
+    bulkNoteRecommended: 'ملاحظة موصى بها لـ {status}',
+    bulkNotePlaceholder: 'سبب النقل بكميات كبيرة…',
+    bulkConfirm: 'نقل',
+    bulkCancel: 'إلغاء',
+    bulkUpdated: '{updated} مرشح تم نقله، {skipped} تم تخطيه.',
   },
 };
 
@@ -1063,6 +1087,13 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [saveViewName, setSaveViewName] = useState('');
   const [savingView, setSavingView] = useState(false);
 
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkTargetStatus, setBulkTargetStatus] = useState('');
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false);
+  const [bulkNote, setBulkNote] = useState('');
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+
   // Check if user is agency/freelancer
   const isAgency = auth.user?.tenant_type === 'agency' || auth.user?.tenant_type === 'individual_recruiter';
 
@@ -1139,6 +1170,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setSearch(f.search || '');
     setDebouncedSearch(f.search || '');
     setPage(1);
+    clearSelection();
     addToastRef.current(t.savedViewApplied, 'success');
   };
 
@@ -1184,6 +1216,74 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       addToastRef.current(t.savedViewDeleted, 'success');
     } catch (err: any) {
       addToastRef.current(err.message || 'Failed to delete view', 'error');
+    }
+  };
+
+  // Bulk selection handlers
+  const toggleSelected = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === candidates.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(candidates.map(c => c.application_id)));
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setBulkTargetStatus('');
+    setBulkNote('');
+  };
+
+  const getNoteRequirement = (status: string): 'required' | 'recommended' | 'none' => {
+    if (status === 'rejected' || status === 'withdrawn') return 'required';
+    if (status === 'on_hold') return 'recommended';
+    return 'none';
+  };
+
+  const handleBulkMove = async () => {
+    if (!bulkTargetStatus || selectedIds.size === 0) return;
+
+    const noteReq = getNoteRequirement(bulkTargetStatus);
+    if (noteReq === 'required' && !bulkNote.trim()) {
+      addToastRef.current(`Note required for ${bulkTargetStatus}`, 'error');
+      return;
+    }
+
+    setBulkProcessing(true);
+    try {
+      const data: any = await apiService.patch(
+        `${WEBHOOK_CONFIG.CANDIDATES_SEARCH_URL}/bulk-workflow-status`,
+        {
+          workflow_status: bulkTargetStatus,
+          note: bulkNote || null,
+          advanced_move: false,
+          application_ids: Array.from(selectedIds),
+        },
+        auth.token!,
+      );
+
+      if (data?.updated_count >= 0) {
+        const msg = t.bulkUpdated
+          .replace('{updated}', String(data.updated_count))
+          .replace('{skipped}', String(data.skipped_count));
+        addToastRef.current(msg, data.skipped_count > 0 ? 'warning' : 'success');
+      }
+
+      setShowBulkConfirm(false);
+      clearSelection();
+      fetchCandidates(); // refresh list
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to update candidates', 'error');
+    } finally {
+      setBulkProcessing(false);
     }
   };
 
@@ -1256,6 +1356,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setSearch('');
     setDebouncedSearch('');
     setPage(1);
+    clearSelection();
   };
 
   // Clear all manual filters
@@ -1268,6 +1369,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setSearch('');
     setDebouncedSearch('');
     setPage(1);
+    clearSelection();
   };
 
   const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || debouncedSearch;
@@ -1558,6 +1660,98 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         )}
       </div>
 
+      {/* Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-0 z-20 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex flex-wrap gap-3 items-center shadow-sm">
+          <span className="text-sm font-semibold text-indigo-900">
+            {t.bulkSelect.replace('{count}', String(selectedIds.size))}
+          </span>
+
+          <select
+            value={bulkTargetStatus}
+            onChange={e => setBulkTargetStatus(e.target.value)}
+            className="text-sm border border-indigo-300 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          >
+            <option value="">{t.bulkMove}…</option>
+            {(Object.keys(WORKFLOW_STATUS_LABELS_EN) as WorkflowStatus[]).map(s => (
+              <option key={s} value={s}>{wfLabels[s]}</option>
+            ))}
+          </select>
+
+          {bulkTargetStatus && (
+            <button
+              onClick={() => setShowBulkConfirm(true)}
+              disabled={bulkProcessing}
+              className="px-4 py-1.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {bulkProcessing ? '…' : t.bulkConfirm}
+            </button>
+          )}
+
+          <button
+            onClick={clearSelection}
+            disabled={bulkProcessing}
+            className="ml-auto text-sm text-indigo-600 hover:text-indigo-800 font-semibold disabled:opacity-50 transition-colors"
+          >
+            {t.bulkClear}
+          </button>
+        </div>
+      )}
+
+      {/* Bulk Confirmation Modal */}
+      {showBulkConfirm && selectedIds.size > 0 && bulkTargetStatus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-lg max-w-sm w-full mx-4 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-indigo-100">
+              <h2 className="text-lg font-bold text-indigo-900">{t.bulkConfirmTitle}</h2>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <p className="text-sm text-slate-700">
+                {t.bulkConfirmMessage.replace('{count}', String(selectedIds.size))}{' '}
+                <strong>{wfLabels[bulkTargetStatus as WorkflowStatus]}</strong>
+              </p>
+
+              {(() => {
+                const noteReq = getNoteRequirement(bulkTargetStatus);
+                if (noteReq === 'none') return null;
+                return (
+                  <div className="space-y-2">
+                    <label className={`text-xs font-semibold ${noteReq === 'required' ? 'text-red-600' : 'text-amber-600'}`}>
+                      {noteReq === 'required'
+                        ? t.bulkNoteRequired.replace('{status}', bulkTargetStatus)
+                        : t.bulkNoteRecommended.replace('{status}', bulkTargetStatus)}
+                    </label>
+                    <textarea
+                      value={bulkNote}
+                      onChange={e => setBulkNote(e.target.value)}
+                      placeholder={t.bulkNotePlaceholder}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                    />
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowBulkConfirm(false)}
+                disabled={bulkProcessing}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {t.bulkCancel}
+              </button>
+              <button
+                onClick={handleBulkMove}
+                disabled={bulkProcessing || (getNoteRequirement(bulkTargetStatus) === 'required' && !bulkNote.trim())}
+                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {bulkProcessing ? '…' : t.bulkConfirm}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Candidate Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         {loading ? (
@@ -1573,6 +1767,14 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="px-3 py-3 text-center w-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size > 0 && selectedIds.size === candidates.length}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-2 focus:ring-indigo-300 cursor-pointer"
+                  />
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colCandidate}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colJob}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiMatch}</th>
@@ -1591,11 +1793,19 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 return (
                   <tr
                     key={c.application_id}
-                    onClick={() => openCandidate(c)}
-                    className={`hover:bg-slate-50 cursor-pointer transition-colors ${isUpdating ? 'opacity-70' : ''}`}
+                    className={`hover:bg-slate-50 transition-colors ${isUpdating ? 'opacity-70' : ''} ${selectedIds.has(c.application_id) ? 'bg-indigo-50' : ''}`}
                   >
+                    {/* Checkbox */}
+                    <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(c.application_id)}
+                        onChange={() => toggleSelected(c.application_id)}
+                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-2 focus:ring-indigo-300 cursor-pointer"
+                      />
+                    </td>
                     {/* Candidate name — click navigates to detail */}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 cursor-pointer" onClick={() => openCandidate(c)}>
                       <div className="font-medium text-slate-900 leading-tight">{c.candidate_name || '—'}</div>
                       {c.client_org_name && (
                         <div className="text-xs text-slate-400 mt-0.5">{c.client_org_name}</div>

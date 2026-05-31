@@ -54,6 +54,7 @@ class WorkflowStatusRequest(BaseModel):
     workflow_status: str
     note: str | None = None
     advanced_move: bool = False
+    application_ids: list[str] | None = None  # for bulk operations
 
 
 class RecruiterNotesRequest(BaseModel):
@@ -1202,6 +1203,145 @@ async def download_cv(
         filename=rec["original_name"] or full_path.name,
         media_type=rec["mime_type"] or "application/octet-stream",
     )
+
+
+@router.patch("/bulk-workflow-status")
+async def bulk_update_workflow_status(
+    body: WorkflowStatusRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Bulk transition workflow status for multiple applications.
+
+    - Only supports normal (non-advanced) moves for now
+    - Skips system-managed or invalid candidates safely
+    - Returns summary: updated_count, skipped_count, skipped_reasons
+    """
+    application_ids = (body.application_ids or []) if hasattr(body, 'application_ids') else []
+    if not application_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one application_id is required.",
+        )
+
+    new_status = body.workflow_status.strip().lower()
+    if new_status not in WORKFLOW_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid workflow_status '{new_status}'.",
+        )
+
+    if body.advanced_move:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Advanced moves are not supported in bulk operations.",
+        )
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    # Fetch all applications with current status; skip system-managed
+    rows = await db.execute(
+        text("""
+            SELECT a.application_id, a.workflow_status, a.processing_status
+            FROM applications a
+            WHERE a.application_id = ANY(CAST(:aids AS uuid[]))
+              AND a.tenant_id = CAST(:tid AS uuid)
+              AND a.processing_status = 'ai_scored'
+        """),
+        {"aids": application_ids, "tid": current_user.tenant_id},
+    )
+    valid_apps = {str(r["application_id"]): r["workflow_status"] for r in rows.mappings()}
+
+    # Check for access permissions and client org restrictions
+    rows = await db.execute(
+        text("""
+            SELECT DISTINCT a.application_id
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE a.application_id = ANY(CAST(:aids AS uuid[]))
+              AND a.tenant_id = CAST(:tid AS uuid)
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
+        """),
+        {
+            "aids":     application_ids,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
+    )
+    accessible_ids = {str(r["application_id"]) for r in rows.mappings()}
+
+    # Build update list: only valid, accessible, non-draft, with valid transitions
+    to_update: list[str] = []
+    skipped_reasons: dict[str, str] = {}
+
+    for aid in application_ids:
+        if aid not in valid_apps:
+            skipped_reasons[aid] = "Not ai_scored or not found"
+            continue
+        if aid not in accessible_ids:
+            skipped_reasons[aid] = "No access to candidate's job/client"
+            continue
+
+        current_status = valid_apps[aid]
+        allowed = VALID_WORKFLOW_TRANSITIONS.get(current_status, frozenset())
+        if new_status not in allowed:
+            skipped_reasons[aid] = f"Invalid transition from {current_status}"
+            continue
+
+        to_update.append(aid)
+
+    # Batch update workflow status
+    if to_update:
+        await db.execute(
+            text("""
+                UPDATE applications
+                SET workflow_status = :new_status, updated_at = now()
+                WHERE application_id = ANY(CAST(:aids AS uuid[]))
+                  AND tenant_id = CAST(:tid AS uuid)
+            """),
+            {"new_status": new_status, "aids": to_update, "tid": current_user.tenant_id},
+        )
+
+        # Batch insert workflow history (one per candidate)
+        for aid in to_update:
+            await db.execute(
+                text("""
+                    INSERT INTO application_workflow_history
+                        (application_id, tenant_id, changed_by, changed_by_name,
+                         from_status, to_status, note, is_advanced_move)
+                    VALUES
+                        (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:uid AS uuid), :uname,
+                         :from_s, :to_s, :note, FALSE)
+                """),
+                {
+                    "aid":   aid,
+                    "tid":   current_user.tenant_id,
+                    "uid":   current_user.user_id,
+                    "uname": current_user.full_name or current_user.email,
+                    "from_s": valid_apps[aid],
+                    "to_s":   new_status,
+                    "note":   body.note,
+                },
+            )
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "updated_count": len(to_update),
+        "skipped_count": len(skipped_reasons),
+        "skipped_reasons": skipped_reasons,
+    }
 
 
 # Import here to avoid circular import
