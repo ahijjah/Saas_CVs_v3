@@ -2177,13 +2177,21 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 )}
 
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => onCreateAndAddTag(newTagName).then(() => { setNewTagName(''); setShowTagCreator(false); })}
-                    disabled={!newTagName.trim()}
-                    className="flex-1 px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50"
-                  >
-                    Create & Add
-                  </button>
+                  {(() => {
+                    const trimmed = newTagName.trim();
+                    const existingTag = allTags.find(t => t.tag_name.toLowerCase() === trimmed.toLowerCase());
+                    const isAlreadyAdded = existingTag && candidateTags.some(t => t.tag_id === existingTag.tag_id);
+
+                    return (
+                      <button
+                        onClick={() => onCreateAndAddTag(newTagName).then(() => { setNewTagName(''); setShowTagCreator(false); })}
+                        disabled={!trimmed || isAlreadyAdded}
+                        className="flex-1 px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50"
+                      >
+                        {existingTag ? 'Add Tag' : 'Create & Add'}
+                      </button>
+                    );
+                  })()}
                   <button
                     onClick={() => {
                       setShowTagCreator(false);
@@ -3072,15 +3080,61 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const handleCreateAndAddTag = async (name: string) => {
     if (!selectedCandidate || !name.trim()) return;
 
+    const trimmedName = name.trim();
     const api = new APIService(auth.token!);
+
+    // Check if exact match exists (case-insensitive)
+    const existingTag = allTags.find(t => t.tag_name.toLowerCase() === trimmedName.toLowerCase());
+
+    if (existingTag) {
+      // Tag already exists, just add it (unless already on candidate)
+      if (candidateTags.some(t => t.tag_id === existingTag.tag_id)) {
+        addToastRef.current('Tag already added to candidate', 'error');
+        return;
+      }
+
+      try {
+        await api.addTagsToApplication(selectedCandidate.application_id, [existingTag.tag_id]);
+        await loadCandidateTags(selectedCandidate.application_id);
+        addToastRef.current('Tag already exists, added existing tag', 'success');
+      } catch (error: any) {
+        addToastRef.current(error.message || 'Failed to add tag', 'error');
+      }
+      return;
+    }
+
+    // Tag doesn't exist, try to create it
     try {
-      const newTag: any = await api.createTag(name);
+      const newTag: any = await api.createTag(trimmedName);
       await api.addTagsToApplication(selectedCandidate.application_id, [newTag.tag_id]);
       setAllTags(prev => [...prev, newTag]);
       await loadCandidateTags(selectedCandidate.application_id);
       addToastRef.current('Tag created and added', 'success');
     } catch (error: any) {
-      addToastRef.current(error.message || 'Failed to create tag', 'error');
+      // If 409 (conflict), the tag was created between our check and the POST
+      if (error?.status === 409 || error?.message?.includes('409')) {
+        // Refetch tags to find the one that was created
+        try {
+          const data: any = await api.listTags();
+          const freshTags = data?.tags || [];
+          setAllTags(freshTags);
+
+          const createdTag = freshTags.find(t => t.tag_name.toLowerCase() === trimmedName.toLowerCase());
+          if (createdTag && !candidateTags.some(t => t.tag_id === createdTag.tag_id)) {
+            await api.addTagsToApplication(selectedCandidate.application_id, [createdTag.tag_id]);
+            await loadCandidateTags(selectedCandidate.application_id);
+            addToastRef.current('Tag already exists, added existing tag', 'success');
+          } else if (createdTag) {
+            addToastRef.current('Tag already added to candidate', 'error');
+          } else {
+            addToastRef.current('Failed to find or add tag', 'error');
+          }
+        } catch (refetchError: any) {
+          addToastRef.current(refetchError.message || 'Failed to add tag', 'error');
+        }
+      } else {
+        addToastRef.current(error.message || 'Failed to create tag', 'error');
+      }
     }
   };
 
