@@ -84,6 +84,8 @@ async def add_tags_to_application(
     if not body.tag_ids:
         raise HTTPException(status_code=400, detail="tag_ids cannot be empty")
 
+    tag_ids = [str(tid) for tid in body.tag_ids]
+
     # Verify application exists and belongs to this tenant
     app_check = await db.execute(
         text("""
@@ -97,31 +99,38 @@ async def add_tags_to_application(
     if not app_check.scalars().first():
         raise HTTPException(status_code=404, detail="Application not found")
 
-    # Verify all tags exist and belong to this tenant
+    # Verify all tags exist and belong to this tenant.
+    # Use per-element parameters — asyncpg cannot bind a Python list into ARRAY[].
+    tag_params: dict = {"tid": current_user.tenant_id}
+    tag_placeholders: list[str] = []
+    for i, tid in enumerate(tag_ids):
+        key = f"tag_id_{i}"
+        tag_params[key] = tid
+        tag_placeholders.append(f"CAST(:{key} AS uuid)")
+
     tag_check = await db.execute(
-        text("""
-            SELECT COUNT(*) as cnt FROM candidate_tags
+        text(f"""
+            SELECT COUNT(*) FROM candidate_tags
             WHERE tenant_id = CAST(:tid AS uuid)
-              AND tag_id = ANY(ARRAY[:tag_ids]::uuid[])
+              AND tag_id IN ({', '.join(tag_placeholders)})
         """),
-        {"tid": current_user.tenant_id, "tag_ids": [str(tid) for tid in body.tag_ids]},
+        tag_params,
     )
-    if tag_check.scalar() != len(body.tag_ids):
+    if (tag_check.scalar() or 0) != len(tag_ids):
         raise HTTPException(status_code=400, detail="One or more tags not found")
 
-    # Insert tags (ignore duplicates)
-    insert_stmt = """
-        INSERT INTO application_candidate_tags (application_id, tag_id)
-        SELECT CAST(:app_id AS uuid), CAST(tag_id AS uuid)
-        FROM (SELECT CAST(unnest AS uuid) as tag_id FROM unnest(ARRAY[:tag_ids]::text[]))
-        ON CONFLICT DO NOTHING
-    """
-    await db.execute(
-        text(insert_stmt),
-        {"app_id": application_id, "tag_ids": [str(tid) for tid in body.tag_ids]},
-    )
-    await db.commit()
+    # Insert tags one at a time — ON CONFLICT DO NOTHING handles duplicates.
+    for tid in tag_ids:
+        await db.execute(
+            text("""
+                INSERT INTO application_candidate_tags (application_id, tag_id)
+                VALUES (CAST(:app_id AS uuid), CAST(:tag_id AS uuid))
+                ON CONFLICT DO NOTHING
+            """),
+            {"app_id": application_id, "tag_id": tid},
+        )
 
+    await db.commit()
     return {"status": "tags added"}
 
 
