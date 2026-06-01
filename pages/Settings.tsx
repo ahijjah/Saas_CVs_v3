@@ -116,6 +116,11 @@ const T = {
     requireInterviewFeedback: 'Require interview feedback before making an offer',
     requiredApprovalStages: 'Required Approval Stages',
     approvalStagesHint: 'Enter stage names, one per line (e.g. Legal Review, Finance Sign-off)',
+    slaThresholds: 'SLA Thresholds (Days)',
+    reviewDays: 'Time to Review',
+    interviewFeedbackDays: 'Time to Provide Interview Feedback',
+    approvalDays: 'Time to Complete Approvals',
+    offerResponseDays: 'Time to Respond to Offer',
   },
   ar: {
     loading: 'جارٍ تحميل الملف الشخصي...',
@@ -219,6 +224,11 @@ const T = {
     requireInterviewFeedback: 'طلب تقييم المقابلة قبل تقديم عرض',
     requiredApprovalStages: 'مراحل الموافقة المطلوبة',
     approvalStagesHint: 'أدخل أسماء المراحل، مرحلة لكل سطر',
+    slaThresholds: 'حدود اتفاقية مستوى الخدمة (بالأيام)',
+    reviewDays: 'الوقت المتاح للمراجعة',
+    interviewFeedbackDays: 'الوقت المتاح لتقديم تقييم المقابلة',
+    approvalDays: 'الوقت المتاح لإكمال الموافقات',
+    offerResponseDays: 'الوقت المتاح للرد على العرض',
   },
 };
 
@@ -275,6 +285,10 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     allow_bulk_reject: true,
     require_interview_feedback: false,
     required_approval_stages: '',
+    review_days: 14,
+    interview_feedback_days: 7,
+    approval_days: 10,
+    offer_response_days: 5,
   });
 
   const role = (auth.user?.role || '').toLowerCase();
@@ -340,6 +354,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
       .then((data: any) => {
         if (data?.policies) {
           const p = data.policies;
+          const sla = p.sla_thresholds || {};
           setPoliciesForm({
             require_interview_before_offer: !!p.require_interview_before_offer,
             require_approval_before_hire:   !!p.require_approval_before_hire,
@@ -349,6 +364,10 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
             required_approval_stages: Array.isArray(p.required_approval_stages)
               ? p.required_approval_stages.join('\n')
               : '',
+            review_days:           sla.review_days ?? 14,
+            interview_feedback_days: sla.interview_feedback_days ?? 7,
+            approval_days:         sla.approval_days ?? 10,
+            offer_response_days:   sla.offer_response_days ?? 5,
           });
         }
       })
@@ -371,6 +390,12 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         allow_bulk_reject:              policiesForm.allow_bulk_reject,
         require_interview_feedback:     policiesForm.require_interview_feedback,
         required_approval_stages:       stages,
+        sla_thresholds: {
+          review_days:           policiesForm.review_days,
+          interview_feedback_days: policiesForm.interview_feedback_days,
+          approval_days:         policiesForm.approval_days,
+          offer_response_days:   policiesForm.offer_response_days,
+        },
       }, auth.token!);
       addToast(t.policiesSaved, 'success');
     } catch (err: any) {
@@ -1086,6 +1111,72 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                     className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
                     placeholder={'Hiring Manager Review\nLegal Review\nFinance Sign-off'}
                   />
+                </div>
+
+                {/* SLA Thresholds */}
+                <div>
+                  <label className="block text-sm font-semibold text-textMain mb-3">
+                    {(t as any).slaThresholds || 'SLA Thresholds'}
+                  </label>
+                  <p className="text-xs text-textMuted mb-4">Set the SLA response time limits (in days) for different stages of the recruitment process.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-textMain mb-1.5">
+                        {(t as any).reviewDays || 'Review Days'}
+                      </label>
+                      <input
+                        type="number"
+                        value={policiesForm.review_days}
+                        onChange={e => setPoliciesForm(p => ({ ...p, review_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                        min="1"
+                        max="90"
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                      <p className="text-xs text-textMuted mt-1">Time for initial review before shortlisting</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-textMain mb-1.5">
+                        {(t as any).interviewFeedbackDays || 'Interview Feedback Days'}
+                      </label>
+                      <input
+                        type="number"
+                        value={policiesForm.interview_feedback_days}
+                        onChange={e => setPoliciesForm(p => ({ ...p, interview_feedback_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                        min="1"
+                        max="90"
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                      <p className="text-xs text-textMuted mt-1">Time to provide interview feedback</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-textMain mb-1.5">
+                        {(t as any).approvalDays || 'Approval Days'}
+                      </label>
+                      <input
+                        type="number"
+                        value={policiesForm.approval_days}
+                        onChange={e => setPoliciesForm(p => ({ ...p, approval_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                        min="1"
+                        max="90"
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                      <p className="text-xs text-textMuted mt-1">Time for approval decision</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-textMain mb-1.5">
+                        {(t as any).offerResponseDays || 'Offer Response Days'}
+                      </label>
+                      <input
+                        type="number"
+                        value={policiesForm.offer_response_days}
+                        onChange={e => setPoliciesForm(p => ({ ...p, offer_response_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                        min="1"
+                        max="90"
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                      <p className="text-xs text-textMuted mt-1">Time for candidate to respond to offer</p>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex justify-end pt-2">

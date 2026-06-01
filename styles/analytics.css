@@ -228,6 +228,49 @@ tbody tr:hover {
   border-top: 1px solid #f3f4f6;
 }
 
+/* Pagination Controls */
+.pagination-controls {
+  padding: 16px;
+  border-top: 1px solid #f3f4f6;
+  background: #fafafa;
+  display: flex;
+  justify-content: center;
+}
+
+.pagination-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.pagination-btn {
+  padding: 6px 12px;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .sla-alert-zones {

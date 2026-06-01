@@ -22,12 +22,15 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
   const [funnelMetrics, setFunnelMetrics] = useState<FunnelMetricsResponse | null>(null);
   const [recruiterMetrics, setRecruiterMetrics] = useState<RecruiterProductivityResponse | null>(null);
   const [agingMetrics, setAgingMetrics] = useState<AgingMetricsResponse | null>(null);
+  const [agingCurrentPage, setAgingCurrentPage] = useState(1);
+  const pageSize = 10;
 
   const api = new APIService(auth.token);
 
   const loadAnalytics = async () => {
     try {
       setLoading(true);
+      setAgingCurrentPage(1);
 
       const [funnel, productivity, aging] = await Promise.all([
         api.getFunnelMetrics({ date_from: dateFrom, date_to: dateTo }),
@@ -209,27 +212,66 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
               </tr>
             </thead>
             <tbody>
-              {agingMetrics?.metrics.slice(0, 10).map((metric) => (
-                <tr key={metric.application_id}>
-                  <td>{metric.candidate_name}</td>
-                  <td>{metric.job_title}</td>
-                  <td>{metric.workflow_status.replace(/_/g, ' ')}</td>
-                  <td>{metric.assigned_user_name || '—'}</td>
-                  <td>{metric.days_in_status.toFixed(1)}d</td>
-                  <td>
-                    <span className={`sla-badge ${metric.sla_status}`}>
-                      {metric.sla_status.toUpperCase()}
-                    </span>
+              {agingMetrics && agingMetrics.metrics.length > 0 ? (
+                (() => {
+                  const startIdx = (agingCurrentPage - 1) * pageSize;
+                  const endIdx = startIdx + pageSize;
+                  const paginatedMetrics = agingMetrics.metrics.slice(startIdx, endIdx);
+                  return paginatedMetrics.map((metric) => (
+                    <tr key={metric.application_id}>
+                      <td>{metric.candidate_name}</td>
+                      <td>{metric.job_title}</td>
+                      <td>{metric.workflow_status.replace(/_/g, ' ')}</td>
+                      <td>{metric.assigned_user_name || '—'}</td>
+                      <td>{metric.days_in_status.toFixed(1)}d</td>
+                      <td>
+                        <span className={`sla-badge ${metric.sla_status}`}>
+                          {metric.sla_status.toUpperCase()}
+                        </span>
+                      </td>
+                    </tr>
+                  ));
+                })()
+              ) : (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+                    No candidates on track
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
 
-        {(agingMetrics?.total_count || 0) > 10 && (
-          <div className="table-note">
-            Showing 10 of {agingMetrics?.total_count} candidates
+        {agingMetrics && agingMetrics.total_count > 0 && (
+          <div className="pagination-controls">
+            <div className="pagination-info">
+              {agingMetrics.total_count > pageSize ? (
+                <>
+                  <button
+                    onClick={() => setAgingCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={agingCurrentPage === 1}
+                    className="pagination-btn"
+                  >
+                    ← Previous
+                  </button>
+                  <span className="pagination-text">
+                    Page {agingCurrentPage} of {Math.ceil(agingMetrics.total_count / pageSize)}
+                  </span>
+                  <button
+                    onClick={() => setAgingCurrentPage(p => Math.min(Math.ceil(agingMetrics.total_count / pageSize), p + 1))}
+                    disabled={agingCurrentPage === Math.ceil(agingMetrics.total_count / pageSize)}
+                    className="pagination-btn"
+                  >
+                    Next →
+                  </button>
+                </>
+              ) : (
+                <span className="pagination-text">
+                  Showing all {agingMetrics.total_count} candidate{agingMetrics.total_count !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </section>
