@@ -94,21 +94,29 @@ async def get_funnel_metrics(
     """Get recruitment funnel metrics with conversion rates and time-per-stage."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Parse dates with defaults
     try:
-        if date_from:
-            df = datetime.fromisoformat(date_from)
-        else:
-            df = datetime.now().replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-        if date_to:
-            dt = datetime.fromisoformat(date_to)
-        else:
-            dt = datetime.now()
+        df = datetime.fromisoformat(date_from) if date_from else datetime.now().replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        dt = datetime.fromisoformat(date_to) if date_to else datetime.now()
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid date format. Use ISO 8601.")
 
+    # Build optional WHERE fragments — only when values are provided to avoid
+    # asyncpg AmbiguousParameterError on nullable params used in IS NULL checks.
+    extra_where = ""
+    params: dict = {
+        "tid":       current_user.tenant_id,
+        "date_from": df,
+        "date_to":   dt,
+    }
+    if job_id:
+        extra_where += " AND a.job_id = CAST(:job_id AS uuid)"
+        params["job_id"] = job_id
+    if campaign_id:
+        extra_where += " AND a.campaign_id = CAST(:campaign_id AS uuid)"
+        params["campaign_id"] = campaign_id
+
     rows = await db.execute(
-        text("""
+        text(f"""
             WITH stage_counts AS (
               SELECT
                 a.workflow_status,
@@ -122,10 +130,9 @@ async def get_funnel_metrics(
               FROM applications a
               JOIN jobs j ON j.job_id = a.job_id
               WHERE j.tenant_id = CAST(:tid AS uuid)
-                AND (:job_id IS NULL OR a.job_id = CAST(:job_id AS uuid))
-                AND (:campaign_id IS NULL OR a.campaign_id = CAST(:campaign_id AS uuid))
                 AND a.created_at >= :date_from
                 AND a.created_at <= :date_to
+                {extra_where}
               GROUP BY a.workflow_status
             )
             SELECT
@@ -157,39 +164,28 @@ async def get_funnel_metrics(
                 ELSE 7
               END
         """),
-        {
-            "tid": current_user.tenant_id,
-            "job_id": job_id,
-            "campaign_id": campaign_id,
-            "date_from": df,
-            "date_to": dt,
-        },
+        params,
     )
 
     stages = []
     total_count = 0
     for row in rows.mappings():
         r = dict(row)
-        metric = FunnelStageMetric(
+        stages.append(FunnelStageMetric(
             workflow_status=r["workflow_status"],
             stage_count=r["stage_count"],
             conversion_from_previous=r["conversion_from_previous"],
             percentage_of_pipeline=r["percentage_of_pipeline"],
             avg_days_in_stage=r["avg_days_in_stage"],
             median_days_in_stage=r["median_days_in_stage"],
-        )
-        stages.append(metric)
+        ))
         total_count += r["stage_count"]
 
     return FunnelMetricsResponse(
         stages=stages,
         total_applications=total_count,
         date_range={"from": df.isoformat(), "to": dt.isoformat()},
-        filters={
-            "job_id": job_id,
-            "campaign_id": campaign_id,
-            "recruiter_id": recruiter_id,
-        },
+        filters={"job_id": job_id, "campaign_id": campaign_id, "recruiter_id": recruiter_id},
     )
 
 
@@ -204,21 +200,24 @@ async def get_recruiter_productivity(
     """Get recruiter productivity metrics (reviews, moves, feedback, approvals)."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Parse dates
     try:
-        if date_from:
-            df = datetime.fromisoformat(date_from)
-        else:
-            df = (datetime.now() - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
-        if date_to:
-            dt = datetime.fromisoformat(date_to)
-        else:
-            dt = datetime.now()
+        df = datetime.fromisoformat(date_from) if date_from else (datetime.now() - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
+        dt = datetime.fromisoformat(date_to) if date_to else datetime.now()
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid date format. Use ISO 8601.")
 
+    extra_where = ""
+    params: dict = {
+        "tid":       current_user.tenant_id,
+        "date_from": df,
+        "date_to":   dt,
+    }
+    if recruiter_id:
+        extra_where = " AND u.user_id = CAST(:recruiter_id AS uuid)"
+        params["recruiter_id"] = recruiter_id
+
     rows = await db.execute(
-        text("""
+        text(f"""
             SELECT
               u.user_id,
               COALESCE(u.full_name, u.email) as recruiter_name,
@@ -245,24 +244,19 @@ async def get_recruiter_productivity(
             LEFT JOIN candidate_interview_feedback cif ON cif.interview_id = ci.interview_id
             LEFT JOIN candidate_approvals ca ON ca.application_id = a.application_id
             WHERE u.tenant_id = CAST(:tid AS uuid)
-              AND (:recruiter_id IS NULL OR u.user_id = CAST(:recruiter_id AS uuid))
               AND a.created_at >= :date_from
               AND a.created_at <= :date_to
+              {extra_where}
             GROUP BY u.user_id, u.full_name, u.email
             ORDER BY workflow_moves_made DESC, interviews_completed DESC
         """),
-        {
-            "tid": current_user.tenant_id,
-            "recruiter_id": recruiter_id,
-            "date_from": df,
-            "date_to": dt,
-        },
+        params,
     )
 
     recruiters = []
     for row in rows.mappings():
         r = dict(row)
-        metric = RecruiterProductivityMetric(
+        recruiters.append(RecruiterProductivityMetric(
             user_id=str(r["user_id"]),
             recruiter_name=r["recruiter_name"],
             total_applications_assigned=r["total_applications_assigned"],
@@ -272,8 +266,7 @@ async def get_recruiter_productivity(
             feedback_provided=r["feedback_provided"],
             approvals_decided=r["approvals_decided"],
             avg_days_assigned=r["avg_days_assigned"],
-        )
-        recruiters.append(metric)
+        ))
 
     return RecruiterProductivityResponse(
         recruiters=recruiters,
@@ -293,10 +286,7 @@ async def get_aging_metrics(
 
     # Fetch SLA thresholds
     pol_row = await db.execute(
-        text("""
-            SELECT policies FROM tenant_workflow_policies
-            WHERE tenant_id = CAST(:tid AS uuid)
-        """),
+        text("SELECT policies FROM tenant_workflow_policies WHERE tenant_id = CAST(:tid AS uuid)"),
         {"tid": current_user.tenant_id},
     )
     pol_rec = pol_row.mappings().first()
@@ -307,11 +297,20 @@ async def get_aging_metrics(
         if "sla_thresholds" in policies:
             sla_thresholds.update(policies["sla_thresholds"])
 
-    # Use review_days as default aging threshold for MVP
     review_days = sla_thresholds.get("review_days", 14)
 
+    extra_where = ""
+    params: dict = {
+        "tid":            current_user.tenant_id,
+        "days_threshold": days_threshold,
+        "review_days":    review_days,
+    }
+    if workflow_status:
+        extra_where = " AND a.workflow_status = :workflow_status"
+        params["workflow_status"] = workflow_status
+
     rows = await db.execute(
-        text("""
+        text(f"""
             WITH aging_data AS (
               SELECT
                 a.application_id,
@@ -332,8 +331,8 @@ async def get_aging_metrics(
               LEFT JOIN users u ON u.user_id = a.assigned_user_id
               LEFT JOIN candidate_approvals ca ON ca.application_id = a.application_id
               WHERE j.tenant_id = CAST(:tid AS uuid)
-                AND (:workflow_status IS NULL OR a.workflow_status = :workflow_status)
                 AND a.workflow_status NOT IN ('hired', 'rejected', 'withdrawn')
+                {extra_where}
               GROUP BY a.application_id, a.candidate_name, a.job_id, j.title,
                        a.workflow_status, a.assigned_user_id, u.full_name, u.email
             )
@@ -356,12 +355,7 @@ async def get_aging_metrics(
             WHERE days_in_status >= CAST(:days_threshold AS numeric)
             ORDER BY days_in_status DESC, application_id
         """),
-        {
-            "tid": current_user.tenant_id,
-            "workflow_status": workflow_status,
-            "days_threshold": days_threshold,
-            "review_days": review_days,
-        },
+        params,
     )
 
     metrics = []
