@@ -12,6 +12,12 @@ interface AnalyticsDashboardProps {
   addToast: (message: string, type: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
+const SLA_LABELS: Record<string, string> = {
+  green: 'On Track',
+  amber: 'Approaching SLA',
+  red: 'Overdue',
+};
+
 const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast }) => {
   const [dateFrom, setDateFrom] = useState<string>(
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
@@ -226,7 +232,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
                       <td>{metric.days_in_status.toFixed(1)}d</td>
                       <td>
                         <span className={`sla-badge ${metric.sla_status}`}>
-                          {metric.sla_status.toUpperCase()}
+                          {SLA_LABELS[metric.sla_status] ?? metric.sla_status.toUpperCase()}
                         </span>
                       </td>
                     </tr>
