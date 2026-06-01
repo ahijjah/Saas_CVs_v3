@@ -29,7 +29,9 @@ import { WEBHOOK_CONFIG } from '../config';
 import {
   AuthState, WorkflowStatus, CandidateComment, AssignableUser,
   CandidateInterview, InterviewFeedback, CandidateApproval, CandidateTag,
+  MessageTemplate, CandidateCommunication,
 } from '../types';
+import { APIService } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import {
@@ -334,6 +336,25 @@ const T = {
     approvalInitiated: 'Approval chain initiated',
     approvalStageAdded: 'Approval stage added',
     approvalStageDeleted: 'Approval stage deleted',
+    // Communication tab
+    communicationTab: 'Communication',
+    noCommunications: 'No communications logged yet.',
+    newCommunication: 'New Message',
+    chooseTemplate: 'Choose template…',
+    commSubject: 'Subject',
+    commBody: 'Message',
+    saveDraft: 'Save Draft',
+    logCommunication: 'Log as Sent',
+    commSaved: 'Communication logged.',
+    commCategories: {
+      interview_invitation: 'Interview Invitation',
+      rejection: 'Rejection',
+      shortlisted: 'Shortlisted',
+      offer: 'Offer',
+      request_info: 'Request Info',
+      talent_pool: 'Talent Pool',
+      general: 'General',
+    } as Record<string, string>,
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -475,6 +496,25 @@ const T = {
     approvalInitiated: 'تم بدء سلسلة الموافقة',
     approvalStageAdded: 'تمت إضافة مرحلة الموافقة',
     approvalStageDeleted: 'تم حذف مرحلة الموافقة',
+    // Communication tab
+    communicationTab: 'التواصل',
+    noCommunications: 'لم يتم تسجيل أي رسائل بعد.',
+    newCommunication: 'رسالة جديدة',
+    chooseTemplate: 'اختر قالباً…',
+    commSubject: 'الموضوع',
+    commBody: 'الرسالة',
+    saveDraft: 'حفظ كمسودة',
+    logCommunication: 'تسجيل كمُرسَل',
+    commSaved: 'تم تسجيل الرسالة.',
+    commCategories: {
+      interview_invitation: 'دعوة مقابلة',
+      rejection: 'رفض',
+      shortlisted: 'قائمة مختصرة',
+      offer: 'عرض',
+      request_info: 'طلب معلومات',
+      talent_pool: 'مجموعة مواهب',
+      general: 'عام',
+    } as Record<string, string>,
   },
 };
 
@@ -769,7 +809,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const detailForRef = useRef<string | null>(null);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'overview' | 'discussion' | 'interviews' | 'approvals'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'discussion' | 'interviews' | 'approvals' | 'communication'>('overview');
   const [comments, setComments] = useState<CandidateComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
@@ -821,6 +861,14 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [showAddApprovalForm, setShowAddApprovalForm] = useState(false);
   const [newApprovalStage, setNewApprovalStage] = useState('');
   const [addingApproval, setAddingApproval] = useState(false);
+
+  // Communication state
+  const [communications, setCommunications] = useState<CandidateCommunication[]>([]);
+  const [commsLoading, setCommsLoading] = useState(false);
+  const [showCommForm, setShowCommForm] = useState(false);
+  const [commForm, setCommForm] = useState({ subject: '', body: '', template_id: '' });
+  const [savingComm, setSavingComm] = useState(false);
+  const [commTemplates, setCommTemplates] = useState<MessageTemplate[]>([]);
 
   // Must come before any early return — Rules of Hooks
 
@@ -931,6 +979,29 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate?.application_id, open, token, activeTab]);
 
+  // Load communications and templates when switching to Communication tab
+  useEffect(() => {
+    if (!candidate?.application_id || !open || !token || activeTab !== 'communication') return;
+    let cancelled = false;
+    setCommsLoading(true);
+    const api = new APIService(token);
+    Promise.all([
+      api.listCommunications(candidate.application_id),
+      api.listTemplates({ active_only: true }),
+    ]).then(([commsData, templatesData]: any[]) => {
+      if (!cancelled) {
+        setCommunications(commsData?.communications || []);
+        setCommTemplates(templatesData?.templates || []);
+      }
+    }).catch(() => {
+      if (!cancelled) setCommunications([]);
+    }).finally(() => {
+      if (!cancelled) setCommsLoading(false);
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidate?.application_id, open, token, activeTab]);
+
   // Tag/talent pool local UI state
   const [showTagCreator, setShowTagCreator] = useState(false);
   const [newTagName, setNewTagName] = useState('');
@@ -955,6 +1026,9 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setApprovals([]);
     setDecidingApprovalId(null);
     setShowAddApprovalForm(false);
+    setCommunications([]);
+    setShowCommForm(false);
+    setCommForm({ subject: '', body: '', template_id: '' });
     setShowTagCreator(false);
     setNewTagName('');
     setShowReuseModal(false);
@@ -1361,6 +1435,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
             { key: 'interviews', label: t.interviews, badge: interviews.length > 0 ? interviews.length : null },
             { key: 'approvals', label: t.approvalsTab, badge: approvals.length > 0 ? approvals.length : null },
             { key: 'discussion', label: t.discussion, badge: comments.length > 0 ? comments.length : null },
+            { key: 'communication', label: t.communicationTab, badge: communications.length > 0 ? communications.length : null },
           ] as const).map(({ key, label, badge }) => (
             <button
               key={key}
@@ -1986,6 +2061,177 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   {initiatingApprovals ? '…' : t.initiateApprovals}
                 </button>
               </>
+            )}
+          </div>
+        )}
+
+        {/* Communication Tab */}
+        {activeTab === 'communication' && (
+          <div className="px-6 py-4 space-y-4">
+            {/* New communication button */}
+            {!showCommForm && (
+              <button
+                onClick={() => { setShowCommForm(true); setCommForm({ subject: '', body: '', template_id: '' }); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+                {t.newCommunication}
+              </button>
+            )}
+
+            {/* Compose form */}
+            {showCommForm && (
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+                {/* Template chooser */}
+                {commTemplates.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">{t.chooseTemplate}</label>
+                    <select
+                      value={commForm.template_id}
+                      onChange={e => {
+                        const tpl = commTemplates.find(t => t.template_id === e.target.value);
+                        setCommForm(f => ({
+                          ...f,
+                          template_id: e.target.value,
+                          subject: tpl ? tpl.subject : f.subject,
+                          body: tpl ? tpl.body : f.body,
+                        }));
+                      }}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    >
+                      <option value="">{t.chooseTemplate}</option>
+                      {commTemplates.map(tpl => (
+                        <option key={tpl.template_id} value={tpl.template_id}>
+                          {tpl.name} ({(t.commCategories as Record<string, string>)[tpl.category] || tpl.category})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">{t.commSubject}</label>
+                  <input
+                    type="text"
+                    value={commForm.subject}
+                    onChange={e => setCommForm(f => ({ ...f, subject: e.target.value }))}
+                    placeholder="Subject…"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">{t.commBody}</label>
+                  <textarea
+                    value={commForm.body}
+                    onChange={e => setCommForm(f => ({ ...f, body: e.target.value }))}
+                    rows={6}
+                    placeholder="Message…"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-y"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      if (savingComm || !candidate) return;
+                      setSavingComm(true);
+                      try {
+                        const api = new APIService(token);
+                        const result = await api.logCommunication(candidate.application_id, {
+                          subject: commForm.subject || undefined,
+                          body: commForm.body || undefined,
+                          status: 'logged',
+                          template_id: commForm.template_id || undefined,
+                        });
+                        setCommunications(prev => [result, ...prev]);
+                        setShowCommForm(false);
+                        addToast(t.commSaved, 'success');
+                      } catch (err: any) {
+                        addToast(err.message || 'Failed to log communication.', 'error');
+                      } finally {
+                        setSavingComm(false);
+                      }
+                    }}
+                    disabled={savingComm || (!commForm.subject && !commForm.body)}
+                    className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {savingComm ? '…' : t.logCommunication}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (savingComm || !candidate) return;
+                      setSavingComm(true);
+                      try {
+                        const api = new APIService(token);
+                        const result = await api.logCommunication(candidate.application_id, {
+                          subject: commForm.subject || undefined,
+                          body: commForm.body || undefined,
+                          status: 'draft',
+                          template_id: commForm.template_id || undefined,
+                        });
+                        setCommunications(prev => [result, ...prev]);
+                        setShowCommForm(false);
+                        addToast(t.commSaved, 'success');
+                      } catch (err: any) {
+                        addToast(err.message || 'Failed to save draft.', 'error');
+                      } finally {
+                        setSavingComm(false);
+                      }
+                    }}
+                    disabled={savingComm || (!commForm.subject && !commForm.body)}
+                    className="flex-1 px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {t.saveDraft}
+                  </button>
+                  <button
+                    onClick={() => setShowCommForm(false)}
+                    className="px-3 py-2 text-xs text-slate-500 hover:text-slate-700"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* History list */}
+            {commsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 py-4">
+                <span className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin inline-block" />
+                Loading…
+              </div>
+            ) : communications.length === 0 ? (
+              <p className="text-sm text-slate-400 italic py-4">{t.noCommunications}</p>
+            ) : (
+              <div className="space-y-3">
+                {communications.map(comm => (
+                  <div key={comm.communication_id} className="bg-white border border-slate-200 rounded-xl p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {comm.template_category && (
+                          <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700">
+                            {(t.commCategories as Record<string, string>)[comm.template_category] || comm.template_category}
+                          </span>
+                        )}
+                        <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${comm.status === 'logged' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {comm.status}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 ml-2 flex-shrink-0">
+                        {new Date(comm.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    {comm.subject && (
+                      <p className="text-sm font-semibold text-slate-800 mb-1">{comm.subject}</p>
+                    )}
+                    {comm.body && (
+                      <p className="text-xs text-slate-600 whitespace-pre-wrap line-clamp-3">{comm.body}</p>
+                    )}
+                    {comm.created_by_name && (
+                      <p className="text-[10px] text-slate-400 mt-2">by {comm.created_by_name}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}

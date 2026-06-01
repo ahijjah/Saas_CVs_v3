@@ -852,3 +852,29 @@ export interface TalentPoolResponse {
   skip: number;
   limit: number;
 }
+
+export interface MessageTemplate {
+  template_id: string;
+  name: string;
+  category: string;
+  subject: string;
+  body: string;
+  language: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by_name: string | null;
+}
+
+export interface CandidateCommunication {
+  communication_id: string;
+  channel: string;
+  direction: string;
+  subject: string | null;
+  body: string | null;
+  status: string;
+  created_at: string;
+  template_name: string | null;
+  template_category: string | null;
+  created_by_name: string | null;
+}

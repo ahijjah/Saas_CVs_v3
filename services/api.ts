@@ -227,4 +227,35 @@ export class APIService {
     const url = `${WEBHOOK_CONFIG.TALENT_POOL_URL.replace('/applications/talent-pool', '')}/applications/${applicationId}/reuse-to-job`;
     return apiService.post(url, { target_job_id: targetJobId }, this.token);
   }
+
+  // ── Communication Templates ───────────────────────────────────────────────
+
+  async listTemplates(params: { category?: string; active_only?: boolean } = {}) {
+    const p: Record<string, string> = {};
+    if (params.category) p.category = params.category;
+    if (params.active_only === false) p.active_only = 'false';
+    return apiService.get(WEBHOOK_CONFIG.COMMUNICATION_TEMPLATES_URL, p, this.token);
+  }
+
+  async createTemplate(data: { name: string; category: string; subject: string; body: string; language?: string; is_active?: boolean }) {
+    return apiService.post(WEBHOOK_CONFIG.COMMUNICATION_TEMPLATES_URL, data, this.token);
+  }
+
+  async updateTemplate(templateId: string, data: Partial<{ name: string; category: string; subject: string; body: string; language: string; is_active: boolean }>) {
+    return apiService.patch(`${WEBHOOK_CONFIG.COMMUNICATION_TEMPLATES_URL}/${templateId}`, data, this.token);
+  }
+
+  async deleteTemplate(templateId: string) {
+    return apiService.delete(`${WEBHOOK_CONFIG.COMMUNICATION_TEMPLATES_URL}/${templateId}`, this.token);
+  }
+
+  // ── Candidate Communications ──────────────────────────────────────────────
+
+  async listCommunications(applicationId: string) {
+    return apiService.get(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/communications`, {}, this.token);
+  }
+
+  async logCommunication(applicationId: string, data: { subject?: string; body?: string; status?: string; template_id?: string }) {
+    return apiService.post(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/communications/log`, data, this.token);
+  }
 };

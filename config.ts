@@ -111,6 +111,9 @@ export const WEBHOOK_CONFIG = {
   // Candidate tags & talent pool
   TAGS_URL:                     `${API_BASE}/tags`,
   TALENT_POOL_URL:              `${API_BASE}/applications/talent-pool`,
+  // Communication templates & history
+  COMMUNICATION_TEMPLATES_URL:  `${API_BASE}/communication/templates`,
+  COMMUNICATION_BASE_URL:       `${API_BASE}/applications`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';
