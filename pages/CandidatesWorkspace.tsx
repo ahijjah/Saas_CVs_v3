@@ -2563,6 +2563,7 @@ function buildApiParams(
   if (tagFilter.length > 0) p.tag_ids = tagFilter.join(',');
   if (talentPoolOnly)   p.talent_pool_only = 'true';
 
+  console.debug('[buildApiParams]', { tagFilter, talentPoolOnly, params: p });
   return p;
 }
 
@@ -3251,6 +3252,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setSearch('');
     setDebouncedSearch('');
     setAssignedFilter('');
+    setTagFilter([]);
+    setTalentPoolOnly(false);
     setPage(1);
     clearSelection();
   };
