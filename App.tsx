@@ -40,6 +40,7 @@ import { ClientOrganizationsPage } from './pages/ClientOrganizations';
 import { CampaignsPage } from './pages/Campaigns';
 import { CampaignDetailPage } from './pages/CampaignDetail';
 import { CandidatesWorkspace } from './pages/CandidatesWorkspace';
+import { TalentPool } from './pages/TalentPool';
 import { AnalyticsDashboard } from './pages/AnalyticsDashboard';
 import { PlanSelectionPage } from './pages/PlanSelection';
 import { PaymentSimulationPage } from './pages/PaymentSimulation';
@@ -396,6 +397,7 @@ const AppInner: React.FC = () => {
           />
           <Route path="/settings" element={<Settings {...sharedAuth} />} />
           <Route path="/candidates" element={<CandidatesWorkspace {...sharedAuth} />} />
+          <Route path="/talent-pool" element={<TalentPool {...sharedAuth} />} />
           <Route path="/analytics" element={<AnalyticsDashboard {...sharedAuth} />} />
           <Route path="/campaigns" element={<CampaignsPage {...sharedAuth} />} />
           <Route path="/campaigns/:campaignId" element={<CampaignDetailPage {...sharedAuth} />} />

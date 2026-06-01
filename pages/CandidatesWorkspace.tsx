@@ -92,6 +92,8 @@ interface SavedViewFilters {
   clientFilter?:     string;
   search?:           string;
   assignedFilter?:   string;
+  tagFilter?:        string[];
+  talentPoolOnly?:   boolean;
 }
 
 interface SavedView {

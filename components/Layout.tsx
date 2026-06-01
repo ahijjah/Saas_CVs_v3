@@ -14,7 +14,7 @@ interface LayoutProps {
 
 const T = {
   en: {
-    dashboard: 'Dashboard', jobs: 'Jobs', campaigns: 'Campaigns', candidates: 'Candidates', analytics: 'Analytics', settings: 'Settings', planUsage: 'Plan & Usage',
+    dashboard: 'Dashboard', jobs: 'Jobs', campaigns: 'Campaigns', candidates: 'Candidates', talentPool: 'Talent Pool', analytics: 'Analytics', settings: 'Settings', planUsage: 'Plan & Usage',
     clientOrgs: 'Client Organizations', clients: 'Clients',
     sysAdmin: 'System Admin', tenantMgmt: 'Tenant Management',
     platformControl: 'Platform Control', workspaceSection: 'Workspace', accountSection: 'Account',
@@ -29,6 +29,7 @@ const T = {
       '/jobs/:id':                    'Job Details',
       '/campaigns':                   'Campaigns',
       '/candidates':                  'Candidates',
+      '/talent-pool':                 'Talent Pool',
       '/analytics':                   'Analytics',
       '/applications':                'Applications',
       '/applications/details':        'Application Details',
@@ -48,7 +49,7 @@ const T = {
     } as Record<string, string>,
   },
   ar: {
-    dashboard: 'لوحة التحكم', jobs: 'الوظائف', campaigns: 'الحملات', candidates: 'المرشحون', analytics: 'التحليلات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
+    dashboard: 'لوحة التحكم', jobs: 'الوظائف', campaigns: 'الحملات', candidates: 'المرشحون', talentPool: 'مجمع المواهب', analytics: 'التحليلات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
     clientOrgs: 'منظمات العملاء', clients: 'العملاء',
     sysAdmin: 'مشرف النظام', tenantMgmt: 'إدارة المستأجر',
     platformControl: 'التحكم بالمنصة', workspaceSection: 'مساحة العمل', accountSection: 'الحساب',
@@ -63,6 +64,7 @@ const T = {
       '/jobs/:id':                    'تفاصيل الوظيفة',
       '/campaigns':                   'الحملات',
       '/candidates':                  'المرشحون',
+      '/talent-pool':                 'مجمع المواهب',
       '/analytics':                   'التحليلات',
       '/applications':                'الطلبات',
       '/applications/details':        'تفاصيل الطلب',
@@ -99,6 +101,7 @@ function pathnameToMenuId(pathname: string): string {
   if (pathname === '/client-organizations') return 'client-organizations';
   if (pathname === '/dashboard')           return 'dashboard';
   if (pathname === '/candidates')          return 'candidates';
+  if (pathname === '/talent-pool')         return 'talent-pool';
   if (pathname === '/analytics')           return 'analytics';
   if (pathname.startsWith('/campaigns'))   return 'campaigns';
   if (pathname === '/settings')            return 'settings';
@@ -111,6 +114,7 @@ function menuIdToRoute(id: string): string {
   const map: Record<string, string> = {
     'dashboard':                  '/dashboard',
     'candidates':                 '/candidates',
+    'talent-pool':                '/talent-pool',
     'analytics':                  '/analytics',
     'jobs':                       '/jobs',
     'campaigns':                  '/campaigns',
@@ -208,6 +212,17 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      ),
+    });
+
+    // Talent Pool
+    items.push({
+      id: 'talent-pool',
+      label: t.talentPool || 'Talent Pool',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12a2 2 0 100-4 2 2 0 000 4zm0 0a3 3 0 103-3 3 3 0 00-3 3zm6 0h5v2a5 5 0 01-5 5h-4a5 5 0 01-5-5v-2h1M15 9a2 2 0 100-4 2 2 0 000 4z" />
         </svg>
       ),
     });
