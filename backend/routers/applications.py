@@ -118,6 +118,8 @@ async def list_applications(
     campaign_id: str | None = None,
     client_organization_id: str | None = None,
     assigned_to: str | None = None,
+    tag_ids: str | None = None,
+    talent_pool_only: bool = False,
     sort_by: str = "applied_at",
     sort_order: str = "desc",
     page: int = 1,
@@ -247,6 +249,28 @@ async def list_applications(
         where_parts.append("a.assigned_user_id = CAST(:assigned_to_id AS uuid)")
         params["assigned_to_id"] = assigned_to
 
+    # Tag filter (tenant-wide mode only; ignored if job_id provided)
+    if tag_ids and not job_id:
+        tag_list = [tid.strip() for tid in tag_ids.split(',') if tid.strip()]
+        if tag_list:
+            tag_params: dict = {}
+            tag_placeholders: list[str] = []
+            for i, tid in enumerate(tag_list):
+                key = f"tag_id_{i}"
+                tag_params[key] = tid
+                tag_placeholders.append(f"CAST(:{key} AS uuid)")
+            params.update(tag_params)
+            where_parts.append(f"""
+                a.application_id IN (
+                    SELECT DISTINCT application_id FROM application_candidate_tags
+                    WHERE tag_id IN ({', '.join(tag_placeholders)})
+                )
+            """)
+
+    # Talent pool filter (tenant-wide mode only; ignored if job_id provided)
+    if talent_pool_only and not job_id:
+        where_parts.append("a.is_talent_pool = TRUE")
+
     # Always enforce access control: admin OR no client OR assigned via agency_user_clients
     where_parts.append("""
         (
@@ -304,6 +328,7 @@ async def list_applications(
             a.recruiter_notes,
             a.applied_at,
             a.scored_at                         AS updated_at,
+            a.is_talent_pool,
             s.final_score                       AS score,
             s.evaluation_notes                  AS summary,
             j.allow_advanced_workflow_move      AS job_allow_advanced_workflow_move,
@@ -355,6 +380,7 @@ async def list_applications(
             "assigned_user_id":   str(r["assigned_user_id"]) if r["assigned_user_id"] else None,
             "assigned_user_name": r["assigned_user_name"],
             "assigned_at":        r["assigned_at"].isoformat() if r["assigned_at"] else None,
+            "is_talent_pool":     bool(r["is_talent_pool"]) if r["is_talent_pool"] is not None else False,
         })
 
     # Backward compatibility mode: if job_id provided, return array (existing behavior)
