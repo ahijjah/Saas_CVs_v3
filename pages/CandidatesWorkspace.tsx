@@ -730,6 +730,15 @@ interface CandidateDetailDrawerProps {
   advancedMoveEnabled?: boolean;
   assignableUsers: AssignableUser[];
   isAdmin: boolean;
+  // Tag & talent pool props
+  candidateTags: CandidateTag[];
+  allTags: CandidateTag[];
+  availableJobs: any[];
+  onAddTag: (tagId: string) => Promise<void>;
+  onRemoveTag: (tagId: string) => Promise<void>;
+  onCreateAndAddTag: (name: string) => Promise<void>;
+  onToggleTalentPool: () => Promise<void>;
+  onReuseCandidate: (targetJobId: string) => Promise<void>;
   onClose: () => void;
   onWorkflowUpdate: (applicationId: string, toStatus: WorkflowStatus, note?: string, isAdvancedMove?: boolean) => void;
   onNotesUpdate: (applicationId: string, notes: string) => Promise<void>;
@@ -740,6 +749,8 @@ interface CandidateDetailDrawerProps {
 const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   candidate, open, lang, updatingId, token, detailVersion, userRole, currentUserId,
   advancedMoveEnabled, assignableUsers, isAdmin,
+  candidateTags, allTags, availableJobs,
+  onAddTag, onRemoveTag, onCreateAndAddTag, onToggleTalentPool, onReuseCandidate,
   onClose, onWorkflowUpdate, onNotesUpdate, onAssign, addToast,
 }) => {
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
@@ -920,6 +931,12 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate?.application_id, open, token, activeTab]);
 
+  // Tag/talent pool local UI state
+  const [showTagCreator, setShowTagCreator] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [showReuseModal, setShowReuseModal] = useState(false);
+  const [reuseTargetJob, setReuseTargetJob] = useState('');
+
   // Reset tab and all tab data when candidate changes
   useEffect(() => {
     setActiveTab('overview');
@@ -938,6 +955,10 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setApprovals([]);
     setDecidingApprovalId(null);
     setShowAddApprovalForm(false);
+    setShowTagCreator(false);
+    setNewTagName('');
+    setShowReuseModal(false);
+    setReuseTargetJob('');
   }, [candidate?.application_id]);
 
   if (!candidate) return null;
@@ -2096,123 +2117,119 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           </div>
 
           {/* Tags Section */}
-          {selectedCandidate && (
-            <div className="mt-6 pt-6 border-t">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-gray-900 text-sm">Tags</h3>
-                <button
-                  onClick={() => setShowTagCreator(!showTagCreator)}
-                  className="text-xs text-blue-600 hover:underline"
-                >
-                  {showTagCreator ? 'Cancel' : '+ Add'}
-                </button>
-              </div>
-
-              {/* Tag Chips */}
-              {candidateTags.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {candidateTags.map(tag => (
-                    <TagChip
-                      key={tag.tag_id}
-                      tag={tag}
-                      onRemove={handleRemoveTagFromCandidate}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {candidateTags.length === 0 && !showTagCreator && (
-                <p className="text-xs text-gray-400 mb-3">No tags yet</p>
-              )}
-
-              {/* Tag Creator */}
-              {showTagCreator && (
-                <div className="p-3 bg-gray-50 rounded-lg mb-3">
-                  <input
-                    type="text"
-                    placeholder="Tag name…"
-                    value={newTagName}
-                    onChange={(e) => setNewTagName(e.target.value)}
-                    className="w-full px-2 py-1 border rounded text-sm mb-2"
-                  />
-
-                  {/* Existing tags autocomplete */}
-                  {newTagName && (
-                    <div className="mb-2 space-y-1 max-h-24 overflow-y-auto">
-                      {allTags
-                        .filter(tag =>
-                          tag.tag_name.toLowerCase().includes(newTagName.toLowerCase()) &&
-                          !candidateTags.some(t => t.tag_id === tag.tag_id)
-                        )
-                        .map(tag => (
-                          <button
-                            key={tag.tag_id}
-                            onClick={() => handleAddTagToCandidate(tag.tag_id)}
-                            className="block w-full text-left px-2 py-1 text-xs rounded hover:bg-gray-100"
-                          >
-                            {tag.tag_name}
-                          </button>
-                        ))}
-                    </div>
-                  )}
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleCreateAndAddTag}
-                      disabled={!newTagName.trim()}
-                      className="flex-1 px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50"
-                    >
-                      Create & Add
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowTagCreator(false);
-                        setNewTagName('');
-                      }}
-                      className="flex-1 px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded"
-                    >
-                      Done
-                    </button>
-                  </div>
-                </div>
-              )}
+          <div className="mt-6 pt-6 border-t">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900 text-sm">Tags</h3>
+              <button
+                onClick={() => setShowTagCreator(!showTagCreator)}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                {showTagCreator ? 'Cancel' : '+ Add'}
+              </button>
             </div>
-          )}
+
+            {/* Tag Chips */}
+            {candidateTags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {candidateTags.map(tag => (
+                  <TagChip
+                    key={tag.tag_id}
+                    tag={tag}
+                    onRemove={onRemoveTag}
+                  />
+                ))}
+              </div>
+            )}
+
+            {candidateTags.length === 0 && !showTagCreator && (
+              <p className="text-xs text-gray-400 mb-3">No tags yet</p>
+            )}
+
+            {/* Tag Creator */}
+            {showTagCreator && (
+              <div className="p-3 bg-gray-50 rounded-lg mb-3">
+                <input
+                  type="text"
+                  placeholder="Tag name…"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  className="w-full px-2 py-1 border rounded text-sm mb-2"
+                />
+
+                {/* Existing tags autocomplete */}
+                {newTagName && (
+                  <div className="mb-2 space-y-1 max-h-24 overflow-y-auto">
+                    {allTags
+                      .filter(tag =>
+                        tag.tag_name.toLowerCase().includes(newTagName.toLowerCase()) &&
+                        !candidateTags.some(t => t.tag_id === tag.tag_id)
+                      )
+                      .map(tag => (
+                        <button
+                          key={tag.tag_id}
+                          onClick={() => onAddTag(tag.tag_id)}
+                          className="block w-full text-left px-2 py-1 text-xs rounded hover:bg-gray-100"
+                        >
+                          {tag.tag_name}
+                        </button>
+                      ))}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onCreateAndAddTag(newTagName).then(() => { setNewTagName(''); setShowTagCreator(false); })}
+                    disabled={!newTagName.trim()}
+                    className="flex-1 px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50"
+                  >
+                    Create & Add
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowTagCreator(false);
+                      setNewTagName('');
+                    }}
+                    className="flex-1 px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Talent Pool Section */}
-          {selectedCandidate && (
-            <div className="mt-6 pt-6 border-t">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900 text-sm">Talent Pool</h3>
-                <button
-                  onClick={handleToggleTalentPool}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    (selectedCandidate as any).is_talent_pool
-                      ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {(selectedCandidate as any).is_talent_pool ? '✓ In Pool' : 'Add to Pool'}
-                </button>
-              </div>
-
-              {(selectedCandidate as any).is_talent_pool && (
-                <button
-                  onClick={() => setShowReuseModal(true)}
-                  className="mt-3 text-xs text-blue-600 hover:underline font-medium"
-                >
-                  → Add to another job
-                </button>
-              )}
+          <div className="mt-6 pt-6 border-t">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 text-sm">Talent Pool</h3>
+              <button
+                onClick={onToggleTalentPool}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  candidate.is_talent_pool
+                    ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {candidate.is_talent_pool ? '✓ In Pool' : 'Add to Pool'}
+              </button>
             </div>
-          )}
+
+            {candidate.is_talent_pool && (
+              <button
+                onClick={() => setShowReuseModal(true)}
+                className="mt-3 text-xs text-blue-600 hover:underline font-medium"
+              >
+                → Add to another job
+              </button>
+            )}
+          </div>
 
           {/* Reuse Candidate Modal */}
-          {showReuseModal && selectedCandidate && (
+          {showReuseModal && (
             <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
               <div className="bg-white rounded-lg p-6 max-w-md w-full">
                 <h3 className="font-bold text-lg mb-4">
-                  Add {selectedCandidate.candidate_name} to Another Job
+                  Add {candidate.candidate_name} to Another Job
                 </h3>
 
                 <div className="mb-4">
@@ -2239,14 +2256,14 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                       setShowReuseModal(false);
                       setReuseTargetJob('');
                     }}
-                    className="btn-secondary flex-1 px-4 py-2 rounded text-sm text-slate-700 bg-slate-100 hover:bg-slate-200"
+                    className="flex-1 px-4 py-2 rounded text-sm text-slate-700 bg-slate-100 hover:bg-slate-200"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={handleReuseCandidate}
+                    onClick={() => onReuseCandidate(reuseTargetJob).then(() => { setShowReuseModal(false); setReuseTargetJob(''); })}
                     disabled={!reuseTargetJob}
-                    className="btn-primary flex-1 px-4 py-2 rounded text-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                    className="flex-1 px-4 py-2 rounded text-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
                   >
                     Add
                   </button>
@@ -2630,14 +2647,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   // Tags
   const [allTags, setAllTags] = useState<CandidateTag[]>([]);
   const [candidateTags, setCandidateTags] = useState<CandidateTag[]>([]);
-  const [showTagCreator, setShowTagCreator] = useState(false);
-  const [newTagName, setNewTagName] = useState('');
   const [bulkTagMode, setBulkTagMode] = useState<'add' | 'remove' | null>(null);
   const [bulkTagSelection, setBulkTagSelection] = useState<Set<string>>(new Set());
 
   // Talent pool
-  const [showReuseModal, setShowReuseModal] = useState(false);
-  const [reuseTargetJob, setReuseTargetJob] = useState('');
   const [availableJobs, setAvailableJobs] = useState<any[]>([]);
 
   // Check if user is agency/freelancer
@@ -3056,17 +3069,15 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     }
   };
 
-  const handleCreateAndAddTag = async () => {
-    if (!selectedCandidate || !newTagName.trim()) return;
+  const handleCreateAndAddTag = async (name: string) => {
+    if (!selectedCandidate || !name.trim()) return;
 
     const api = new APIService(auth.token!);
     try {
-      const newTag: any = await api.createTag(newTagName);
+      const newTag: any = await api.createTag(name);
       await api.addTagsToApplication(selectedCandidate.application_id, [newTag.tag_id]);
       setAllTags(prev => [...prev, newTag]);
       await loadCandidateTags(selectedCandidate.application_id);
-      setNewTagName('');
-      setShowTagCreator(false);
       addToastRef.current('Tag created and added', 'success');
     } catch (error: any) {
       addToastRef.current(error.message || 'Failed to create tag', 'error');
@@ -3077,13 +3088,15 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (!selectedCandidate) return;
 
     const api = new APIService(auth.token!);
-    const newStatus = !(selectedCandidate as any).is_talent_pool;
+    const newStatus = !selectedCandidate.is_talent_pool;
     try {
       await api.toggleTalentPool(selectedCandidate.application_id, newStatus);
-      setSelectedCandidate(prev =>
-        prev
-          ? { ...prev, is_talent_pool: newStatus }
-          : null
+      setCandidates(prev =>
+        prev.map(c =>
+          c.application_id === selectedCandidate.application_id
+            ? { ...c, is_talent_pool: newStatus }
+            : c
+        )
       );
       addToastRef.current(
         newStatus ? 'Added to talent pool' : 'Removed from talent pool',
@@ -3094,21 +3107,19 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     }
   };
 
-  const handleReuseCandidate = async () => {
-    if (!selectedCandidate || !reuseTargetJob) return;
+  const handleReuseCandidate = async (targetJobId: string) => {
+    if (!selectedCandidate || !targetJobId) return;
 
     const api = new APIService(auth.token!);
     try {
       const response: any = await api.reuseCandidate(
         selectedCandidate.application_id,
-        reuseTargetJob
+        targetJobId
       );
       addToastRef.current(
         `${response.candidate_name} added to target job`,
         'success'
       );
-      setShowReuseModal(false);
-      setReuseTargetJob('');
     } catch (error: any) {
       addToastRef.current(error.message || 'Failed to reuse candidate', 'error');
     }
@@ -4162,6 +4173,14 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         advancedMoveEnabled={auth.user?.allow_advanced_workflow_move && selectedCandidate?.job_allow_advanced_workflow_move}
         assignableUsers={assignableUsers}
         isAdmin={isAdmin}
+        candidateTags={candidateTags}
+        allTags={allTags}
+        availableJobs={availableJobs}
+        onAddTag={handleAddTagToCandidate}
+        onRemoveTag={handleRemoveTagFromCandidate}
+        onCreateAndAddTag={handleCreateAndAddTag}
+        onToggleTalentPool={handleToggleTalentPool}
+        onReuseCandidate={handleReuseCandidate}
         onClose={closeCandidate}
         onWorkflowUpdate={handleWorkflowUpdate}
         onNotesUpdate={handleNotesUpdate}
