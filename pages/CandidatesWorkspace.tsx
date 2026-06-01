@@ -75,6 +75,7 @@ interface Candidate {
   assigned_user_id?: string | null;
   assigned_user_name?: string | null;
   assigned_at?: string | null;
+  is_talent_pool?: boolean;
 }
 
 interface Pagination {
@@ -2094,6 +2095,166 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
             )}
           </div>
 
+          {/* Tags Section */}
+          {selectedCandidate && (
+            <div className="mt-6 pt-6 border-t">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-gray-900 text-sm">Tags</h3>
+                <button
+                  onClick={() => setShowTagCreator(!showTagCreator)}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  {showTagCreator ? 'Cancel' : '+ Add'}
+                </button>
+              </div>
+
+              {/* Tag Chips */}
+              {candidateTags.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {candidateTags.map(tag => (
+                    <TagChip
+                      key={tag.tag_id}
+                      tag={tag}
+                      onRemove={handleRemoveTagFromCandidate}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {candidateTags.length === 0 && !showTagCreator && (
+                <p className="text-xs text-gray-400 mb-3">No tags yet</p>
+              )}
+
+              {/* Tag Creator */}
+              {showTagCreator && (
+                <div className="p-3 bg-gray-50 rounded-lg mb-3">
+                  <input
+                    type="text"
+                    placeholder="Tag name…"
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    className="w-full px-2 py-1 border rounded text-sm mb-2"
+                  />
+
+                  {/* Existing tags autocomplete */}
+                  {newTagName && (
+                    <div className="mb-2 space-y-1 max-h-24 overflow-y-auto">
+                      {allTags
+                        .filter(tag =>
+                          tag.tag_name.toLowerCase().includes(newTagName.toLowerCase()) &&
+                          !candidateTags.some(t => t.tag_id === tag.tag_id)
+                        )
+                        .map(tag => (
+                          <button
+                            key={tag.tag_id}
+                            onClick={() => handleAddTagToCandidate(tag.tag_id)}
+                            className="block w-full text-left px-2 py-1 text-xs rounded hover:bg-gray-100"
+                          >
+                            {tag.tag_name}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCreateAndAddTag}
+                      disabled={!newTagName.trim()}
+                      className="flex-1 px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50"
+                    >
+                      Create & Add
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowTagCreator(false);
+                        setNewTagName('');
+                      }}
+                      className="flex-1 px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Talent Pool Section */}
+          {selectedCandidate && (
+            <div className="mt-6 pt-6 border-t">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900 text-sm">Talent Pool</h3>
+                <button
+                  onClick={handleToggleTalentPool}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    (selectedCandidate as any).is_talent_pool
+                      ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {(selectedCandidate as any).is_talent_pool ? '✓ In Pool' : 'Add to Pool'}
+                </button>
+              </div>
+
+              {(selectedCandidate as any).is_talent_pool && (
+                <button
+                  onClick={() => setShowReuseModal(true)}
+                  className="mt-3 text-xs text-blue-600 hover:underline font-medium"
+                >
+                  → Add to another job
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Reuse Candidate Modal */}
+          {showReuseModal && selectedCandidate && (
+            <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md w-full">
+                <h3 className="font-bold text-lg mb-4">
+                  Add {selectedCandidate.candidate_name} to Another Job
+                </h3>
+
+                <div className="mb-4">
+                  <label className="text-xs font-semibold text-gray-600 mb-2 block">
+                    Target Job
+                  </label>
+                  <select
+                    value={reuseTargetJob}
+                    onChange={(e) => setReuseTargetJob(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  >
+                    <option value="">Select a job…</option>
+                    {availableJobs.map(job => (
+                      <option key={job.job_id} value={job.job_id}>
+                        {job.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowReuseModal(false);
+                      setReuseTargetJob('');
+                    }}
+                    className="btn-secondary flex-1 px-4 py-2 rounded text-sm text-slate-700 bg-slate-100 hover:bg-slate-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleReuseCandidate}
+                    disabled={!reuseTargetJob}
+                    className="btn-primary flex-1 px-4 py-2 rounded text-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Divider */}
           <div className="h-px bg-slate-200" />
 
@@ -2345,6 +2506,8 @@ function buildApiParams(
   search: string,
   assignedFilter: string,
   page: number,
+  tagFilter: string[] = [],
+  talentPoolOnly: boolean = false,
 ): Record<string, string> {
   const p: Record<string, string> = {
     limit: '50',
@@ -2372,6 +2535,8 @@ function buildApiParams(
   if (clientFilter)     p.client_organization_id = clientFilter;
   if (search.trim())    p.search = search.trim();
   if (assignedFilter)   p.assigned_to = assignedFilter;
+  if (tagFilter.length > 0) p.tag_ids = tagFilter.join(',');
+  if (talentPoolOnly)   p.talent_pool_only = 'true';
 
   return p;
 }
@@ -2401,6 +2566,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const initialSearch = searchParams.get('search') || '';
   const initialPage = parseInt(searchParams.get('page') || '1', 10);
   const initialAppId = searchParams.get('app_id') || '';
+  const initialTagFilter = searchParams.get('tags')?.split(',').filter(Boolean) || [];
+  const initialTalentPoolOnly = searchParams.get('talent_pool') === 'true';
 
   const [activeView, setActiveView] = useState<QuickView>(initialView);
   const [workflowFilter, setWorkflowFilter] = useState(initialWorkflow);
@@ -2412,6 +2579,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [assignedFilter, setAssignedFilter] = useState(searchParams.get('assigned_to') || '');
   const [page, setPage] = useState(initialPage);
   const [selectedAppId, setSelectedAppId] = useState(initialAppId);
+
+  // Initialize tagFilter and talentPoolOnly from URL params
+  const [tagFilter, setTagFilter] = useState<string[]>(initialTagFilter);
+  const [talentPoolOnly, setTalentPoolOnly] = useState(initialTalentPoolOnly);
 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -2458,8 +2629,6 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
 
   // Tags
   const [allTags, setAllTags] = useState<CandidateTag[]>([]);
-  const [tagFilter, setTagFilter] = useState<string[]>([]);
-  const [talentPoolOnly, setTalentPoolOnly] = useState(false);
   const [candidateTags, setCandidateTags] = useState<CandidateTag[]>([]);
   const [showTagCreator, setShowTagCreator] = useState(false);
   const [newTagName, setNewTagName] = useState('');
@@ -2548,6 +2717,15 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       .catch(() => {}); // non-critical
   }, [auth.token]);
 
+  // Load tags for selected candidate when drawer opens
+  useEffect(() => {
+    if (!selectedAppId || !auth.token) {
+      setCandidateTags([]);
+      return;
+    }
+    loadCandidateTags(selectedAppId);
+  }, [selectedAppId, auth.token]);
+
   // Fetch assignable users once on mount
   useEffect(() => {
     if (!auth.token) return;
@@ -2556,6 +2734,17 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         if (data && Array.isArray(data.users)) setAssignableUsers(data.users);
       })
       .catch(() => {}); // non-critical
+  }, [auth.token]);
+
+  // Load available jobs for reuse candidate modal
+  useEffect(() => {
+    if (!auth.token) return;
+    apiService.get(WEBHOOK_CONFIG.JOBS_URL, {}, auth.token)
+      .then((data: any) => {
+        if (Array.isArray(data)) setAvailableJobs(data);
+        else if (data?.jobs) setAvailableJobs(data.jobs);
+      })
+      .catch(() => {});
   }, [auth.token]);
 
   const handleApplySavedView = (view: SavedView) => {
@@ -2590,6 +2779,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       if (clientFilter)     filters.clientFilter     = clientFilter;
       if (debouncedSearch)  filters.search           = debouncedSearch;
       if (assignedFilter)   filters.assignedFilter   = assignedFilter;
+      if (tagFilter.length > 0) filters.tagFilter = tagFilter;
+      if (talentPoolOnly) filters.talentPoolOnly = talentPoolOnly;
 
       const data: any = await apiService.post(
         WEBHOOK_CONFIG.CANDIDATE_SAVED_VIEWS_URL,
@@ -2936,8 +3127,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (assignedFilter)           p.assigned_to = assignedFilter;
     if (page > 1)                 p.page = String(page);
     if (selectedAppId)            p.app_id = selectedAppId;
+    if (tagFilter.length > 0)     p.tags = tagFilter.join(',');
+    if (talentPoolOnly)           p.talent_pool = 'true';
     setSearchParams(p, { replace: true });
-  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, selectedAppId, setSearchParams]);
+  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, selectedAppId, tagFilter, talentPoolOnly, setSearchParams]);
 
   // Debounce search field
   const handleSearchChange = (value: string) => {
@@ -2954,7 +3147,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (!auth.token) return;
     setLoading(true);
     try {
-      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page);
+      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly);
       const data = await apiService.get(WEBHOOK_CONFIG.CANDIDATES_SEARCH_URL, params, auth.token);
       // Tenant-wide mode returns { candidates, pagination }
       if (data && typeof data === 'object' && Array.isArray(data.candidates)) {
@@ -2976,7 +3169,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       setLoading(false);
     }
   // addToast intentionally omitted — using ref to avoid infinite loop
-  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchCandidates();
@@ -3007,11 +3200,13 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setSearch('');
     setDebouncedSearch('');
     setAssignedFilter('');
+    setTagFilter([]);
+    setTalentPoolOnly(false);
     setPage(1);
     clearSelection();
   };
 
-  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || debouncedSearch || assignedFilter;
+  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || debouncedSearch || assignedFilter || tagFilter.length > 0 || talentPoolOnly;
 
   const openCandidate = (c: Candidate) => {
     setSelectedAppId(c.application_id);
@@ -3314,6 +3509,59 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           ))}
         </select>
 
+        {/* Tag Filter */}
+        <div className="border-l pl-3">
+          <label className="text-xs font-semibold text-gray-600 mb-2 block">Tags</label>
+          <div className="flex flex-wrap gap-1 mb-2 max-h-24 overflow-y-auto">
+            {allTags.map(tag => (
+              <button
+                key={tag.tag_id}
+                onClick={() => {
+                  setTagFilter(prev =>
+                    prev.includes(tag.tag_id)
+                      ? prev.filter(id => id !== tag.tag_id)
+                      : [...prev, tag.tag_id]
+                  );
+                  setPage(1);
+                }}
+                className={`px-2 py-1 text-xs rounded-full transition-all ${
+                  tagFilter.includes(tag.tag_id)
+                    ? 'ring-2 ring-offset-1'
+                    : 'opacity-60 hover:opacity-80'
+                }`}
+                style={{ backgroundColor: tag.color || '#3b82f6', color: '#fff' }}
+              >
+                {tag.tag_name}
+              </button>
+            ))}
+          </div>
+          {tagFilter.length > 0 && (
+            <button
+              onClick={() => {
+                setTagFilter([]);
+                setPage(1);
+              }}
+              className="text-xs text-blue-600 hover:underline"
+            >
+              Clear tags
+            </button>
+          )}
+        </div>
+
+        {/* Talent Pool Filter */}
+        <label className="flex items-center gap-2 mt-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={talentPoolOnly}
+            onChange={(e) => {
+              setTalentPoolOnly(e.target.checked);
+              setPage(1);
+            }}
+            className="w-4 h-4 rounded"
+          />
+          <span className="text-xs font-medium text-gray-700">Talent Pool Only</span>
+        </label>
+
         {/* Name search */}
         <input
           type="text"
@@ -3395,6 +3643,29 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
               {bulkAssignProcessing ? '…' : t.bulkAssign}
             </button>
           )}
+
+          {/* Divider */}
+          <span className="text-indigo-300 select-none">|</span>
+
+          {/* Bulk Tag Actions */}
+          <button
+            onClick={() => {
+              setBulkTagMode('add');
+              setBulkTagSelection(new Set());
+            }}
+            className="px-4 py-1.5 bg-violet-600 text-white text-sm font-semibold rounded-lg hover:bg-violet-700 transition-colors"
+          >
+            + Add Tags
+          </button>
+          <button
+            onClick={() => {
+              setBulkTagMode('remove');
+              setBulkTagSelection(new Set());
+            }}
+            className="px-4 py-1.5 bg-violet-600 text-white text-sm font-semibold rounded-lg hover:bg-violet-700 transition-colors"
+          >
+            - Remove Tags
+          </button>
 
           <button
             onClick={clearSelection}
@@ -3624,6 +3895,69 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         </div>
       )}
 
+      {/* Bulk Tag Modal */}
+      {bulkTagMode && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="font-bold text-lg mb-4">
+              {bulkTagMode === 'add' ? 'Add Tags to' : 'Remove Tags from'} {selectedIds.size} Candidates
+            </h3>
+
+            <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
+              {allTags.map(tag => (
+                <label key={tag.tag_id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={bulkTagSelection.has(tag.tag_id)}
+                    onChange={(e) => {
+                      const newSelection = new Set(bulkTagSelection);
+                      if (e.target.checked) {
+                        newSelection.add(tag.tag_id);
+                      } else {
+                        newSelection.delete(tag.tag_id);
+                      }
+                      setBulkTagSelection(newSelection);
+                    }}
+                    className="w-4 h-4"
+                  />
+                  <span
+                    className="px-2 py-1 rounded-full text-xs text-white"
+                    style={{ backgroundColor: tag.color || '#3b82f6' }}
+                  >
+                    {tag.tag_name}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setBulkTagMode(null);
+                  setBulkTagSelection(new Set());
+                }}
+                className="btn-secondary flex-1 px-4 py-2 rounded text-sm text-slate-700 bg-slate-100 hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (bulkTagMode === 'add') {
+                    handleBulkAddTags();
+                  } else {
+                    handleBulkRemoveTags();
+                  }
+                }}
+                disabled={bulkTagSelection.size === 0}
+                className="btn-primary flex-1 px-4 py-2 rounded text-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {bulkTagMode === 'add' ? 'Add' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Candidate Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         {loading ? (
@@ -3692,6 +4026,11 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       <div className="font-medium text-slate-900 leading-tight">{c.candidate_name || '—'}</div>
                       {c.client_org_name && (
                         <div className="text-xs text-slate-400 mt-0.5">{c.client_org_name}</div>
+                      )}
+                      {(c as any).is_talent_pool && (
+                        <span className="inline-block mt-1 px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
+                          Talent Pool
+                        </span>
                       )}
                     </td>
 
