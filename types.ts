@@ -827,3 +827,28 @@ export interface InsightsResponse {
   insights: RecruitmentInsight[];
   generated_at: string;
 }
+
+export interface CandidateTag {
+  tag_id: string;
+  tag_name: string;
+  color: string | null;
+}
+
+export interface TalentPoolCandidate {
+  application_id: string;
+  candidate_name: string;
+  candidate_email: string;
+  workflow_status: WorkflowStatus;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  created_at: string;
+  job_title: string;
+  job_id: string;
+}
+
+export interface TalentPoolResponse {
+  candidates: TalentPoolCandidate[];
+  total: number;
+  skip: number;
+  limit: number;
+}

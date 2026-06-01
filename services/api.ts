@@ -176,4 +176,55 @@ export class APIService {
   async getInsights() {
     return apiService.get(WEBHOOK_CONFIG.ANALYTICS_INSIGHTS_URL, {}, this.token);
   }
+
+  // ── Candidate Tags ────────────────────────────────────────────────────────
+
+  async getApplicationTags(applicationId: string) {
+    const url = `${WEBHOOK_CONFIG.TAGS_URL.replace('/tags', '')}/applications/${applicationId}/tags`;
+    return apiService.get(url, {}, this.token);
+  }
+
+  async addTagsToApplication(applicationId: string, tagIds: string[]) {
+    const url = `${WEBHOOK_CONFIG.TAGS_URL.replace('/tags', '')}/applications/${applicationId}/tags`;
+    return apiService.post(url, { tag_ids: tagIds }, this.token);
+  }
+
+  async removeTagFromApplication(applicationId: string, tagId: string) {
+    const url = `${WEBHOOK_CONFIG.TAGS_URL.replace('/tags', '')}/applications/${applicationId}/tags/${tagId}`;
+    return apiService.delete(url, this.token);
+  }
+
+  async listTags(search?: string) {
+    const params: Record<string, string> = {};
+    if (search) params.search = search;
+    return apiService.get(WEBHOOK_CONFIG.TAGS_URL, params, this.token);
+  }
+
+  async createTag(tagName: string, color?: string) {
+    return apiService.post(WEBHOOK_CONFIG.TAGS_URL, { tag_name: tagName, color }, this.token);
+  }
+
+  async deleteTag(tagId: string) {
+    return apiService.delete(`${WEBHOOK_CONFIG.TAGS_URL}/${tagId}`, this.token);
+  }
+
+  // ── Talent Pool ───────────────────────────────────────────────────────────
+
+  async getTalentPool(skip: number = 0, limit: number = 50) {
+    const params: Record<string, string> = {
+      skip: String(skip),
+      limit: String(limit),
+    };
+    return apiService.get(WEBHOOK_CONFIG.TALENT_POOL_URL, params, this.token);
+  }
+
+  async toggleTalentPool(applicationId: string, isTalentPool: boolean) {
+    const url = `${WEBHOOK_CONFIG.TALENT_POOL_URL.replace('/applications/talent-pool', '')}/applications/${applicationId}/talent-pool`;
+    return apiService.post(url, { is_talent_pool: isTalentPool }, this.token);
+  }
+
+  async reuseCandidate(applicationId: string, targetJobId: string) {
+    const url = `${WEBHOOK_CONFIG.TALENT_POOL_URL.replace('/applications/talent-pool', '')}/applications/${applicationId}/reuse-to-job`;
+    return apiService.post(url, { target_job_id: targetJobId }, this.token);
+  }
 };
