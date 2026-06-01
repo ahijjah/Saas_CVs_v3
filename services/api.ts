@@ -258,4 +258,8 @@ export class APIService {
   async logCommunication(applicationId: string, data: { subject?: string; body?: string; status?: string; template_id?: string }) {
     return apiService.post(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/communications/log`, data, this.token);
   }
+
+  async sendCommunication(applicationId: string, data: { subject: string; body: string; to_email?: string; template_id?: string }) {
+    return apiService.post(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/communications/send`, data, this.token);
+  }
 };

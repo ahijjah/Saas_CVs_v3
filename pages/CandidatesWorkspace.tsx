@@ -869,6 +869,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [commForm, setCommForm] = useState({ subject: '', body: '', template_id: '' });
   const [savingComm, setSavingComm] = useState(false);
   const [commTemplates, setCommTemplates] = useState<MessageTemplate[]>([]);
+  const [showSendConfirm, setShowSendConfirm] = useState(false);
 
   // Must come before any early return — Rules of Hooks
 
@@ -2130,7 +2131,14 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-y"
                   />
                 </div>
-                <div className="flex gap-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setShowSendConfirm(true)}
+                    disabled={savingComm || (!commForm.subject && !commForm.body) || !candidate}
+                    className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    Send Email
+                  </button>
                   <button
                     onClick={async () => {
                       if (savingComm || !candidate) return;
@@ -2153,7 +2161,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                       }
                     }}
                     disabled={savingComm || (!commForm.subject && !commForm.body)}
-                    className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
                   >
                     {savingComm ? '…' : t.logCommunication}
                   </button>
@@ -2179,16 +2187,72 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                       }
                     }}
                     disabled={savingComm || (!commForm.subject && !commForm.body)}
-                    className="flex-1 px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                    className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
                   >
                     {t.saveDraft}
                   </button>
-                  <button
-                    onClick={() => setShowCommForm(false)}
-                    className="px-3 py-2 text-xs text-slate-500 hover:text-slate-700"
-                  >
-                    ✕
-                  </button>
+                </div>
+                <button
+                  onClick={() => setShowCommForm(false)}
+                  className="w-full px-3 py-2 text-xs text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* Send confirmation dialog */}
+            {showSendConfirm && candidate && (
+              <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-lg">
+                  <h3 className="font-bold text-lg mb-4">Send Email to {candidate.candidate_name}</h3>
+                  <div className="bg-slate-50 rounded-lg p-4 mb-4 space-y-2">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase">To</p>
+                      <p className="text-sm text-slate-800 break-all">{candidate.candidate_email || '(no email)'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase">Subject</p>
+                      <p className="text-sm text-slate-800">{commForm.subject || '(no subject)'}</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 mb-4">This email will be sent immediately and recorded in the communication history.</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowSendConfirm(false)}
+                      className="flex-1 px-4 py-2 rounded text-sm text-slate-700 bg-slate-100 hover:bg-slate-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (savingComm || !candidate) return;
+                        setSavingComm(true);
+                        try {
+                          const api = new APIService(token);
+                          const result = await api.sendCommunication(candidate.application_id, {
+                            subject: commForm.subject,
+                            body: commForm.body,
+                            to_email: candidate.candidate_email || undefined,
+                            template_id: commForm.template_id || undefined,
+                          });
+                          setCommunications(prev => [result, ...prev]);
+                          setShowCommForm(false);
+                          setShowSendConfirm(false);
+                          setCommForm({ subject: '', body: '', template_id: '' });
+                          addToast('Email sent successfully.', 'success');
+                        } catch (err: any) {
+                          addToast(err.message || 'Failed to send email.', 'error');
+                        } finally {
+                          setSavingComm(false);
+                        }
+                      }}
+                      disabled={savingComm}
+                      className="flex-1 px-4 py-2 rounded text-sm text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                    >
+                      {savingComm ? 'Sending…' : 'Send'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -2212,7 +2276,11 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                             {(t.commCategories as Record<string, string>)[comm.template_category] || comm.template_category}
                           </span>
                         )}
-                        <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${comm.status === 'logged' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                        <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${
+                          comm.status === 'sent' ? 'bg-green-100 text-green-700' :
+                          comm.status === 'failed' ? 'bg-red-100 text-red-700' :
+                          'bg-amber-100 text-amber-700'
+                        }`}>
                           {comm.status}
                         </span>
                       </div>
@@ -2225,6 +2293,9 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                     )}
                     {comm.body && (
                       <p className="text-xs text-slate-600 whitespace-pre-wrap line-clamp-3">{comm.body}</p>
+                    )}
+                    {comm.error_message && (
+                      <p className="text-[10px] text-red-600 mt-2 bg-red-50 rounded px-2 py-1">{comm.error_message}</p>
                     )}
                     {comm.created_by_name && (
                       <p className="text-[10px] text-slate-400 mt-2">by {comm.created_by_name}</p>

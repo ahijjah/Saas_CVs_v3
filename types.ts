@@ -873,6 +873,7 @@ export interface CandidateCommunication {
   subject: string | null;
   body: string | null;
   status: string;
+  error_message?: string | null;
   created_at: string;
   template_name: string | null;
   template_category: string | null;

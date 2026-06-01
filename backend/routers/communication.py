@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
 from database import get_db, set_rls_context
+from services.email_service import _send
 
 template_router = APIRouter(prefix="/communication/templates", tags=["communication"])
 comm_router = APIRouter(prefix="/applications", tags=["communication"])
@@ -38,6 +39,13 @@ class CommunicationLog(BaseModel):
     subject: str | None = None
     body: str | None = None
     status: str = "draft"
+    template_id: str | None = None
+
+
+class CommunicationSend(BaseModel):
+    subject: str
+    body: str
+    to_email: str | None = None
     template_id: str | None = None
 
 
@@ -267,7 +275,7 @@ async def list_communications(
         text("""
             SELECT
                 c.communication_id, c.channel, c.direction, c.subject,
-                c.body, c.status, c.created_at,
+                c.body, c.status, c.error_message, c.created_at,
                 t.name AS template_name, t.category AS template_category,
                 COALESCE(u.full_name, u.email) AS created_by_name
             FROM candidate_communications c
@@ -343,6 +351,90 @@ async def log_communication(
     row = result.mappings().first()
     await db.commit()
 
+    r = dict(row)
+    r["communication_id"] = str(r["communication_id"])
+    r["created_at"] = r["created_at"].isoformat() if r["created_at"] else None
+    return r
+
+
+@comm_router.post("/{application_id}/communications/send")
+async def send_email_to_candidate(
+    application_id: str,
+    body: CommunicationSend,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Send an email to a candidate and log as sent in communication history."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    # Fetch application info to get candidate details and verify tenant
+    app_check = await db.execute(
+        text("""
+            SELECT a.application_id, a.candidate_name, a.candidate_email
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE a.application_id = CAST(:app_id AS uuid)
+              AND j.tenant_id = CAST(:tid AS uuid)
+        """),
+        {"app_id": application_id, "tid": current_user.tenant_id},
+    )
+    app_row = app_check.mappings().first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # Determine recipient email
+    to_email = body.to_email or app_row["candidate_email"]
+    if not to_email:
+        raise HTTPException(status_code=400, detail="Candidate email address is missing")
+
+    # Build plain text version from HTML (simple strip-tags fallback)
+    text_body = body.body.replace("<br/>", "\n").replace("<br>", "\n").replace("<p>", "").replace("</p>", "\n")
+    # Remove HTML tags (very basic)
+    import re
+    text_body = re.sub(r"<[^>]+>", "", text_body).strip()
+
+    # Try to send the email
+    error_message: str | None = None
+    try:
+        await _send(to_email, body.subject, body.body, text_body)
+        status = "sent"
+    except Exception as e:
+        status = "failed"
+        error_message = str(e)
+
+    # Create communication record
+    result = await db.execute(
+        text("""
+            INSERT INTO candidate_communications
+                (tenant_id, application_id, candidate_email, candidate_name,
+                 channel, direction, subject, body, status, error_message, template_id, created_by)
+            VALUES
+                (CAST(:tid AS uuid), CAST(:app_id AS uuid), :candidate_email, :candidate_name,
+                 'email', 'outbound', :subject, :body, :status, :error_message,
+                 CAST(:template_id AS uuid), CAST(:uid AS uuid))
+            RETURNING communication_id, channel, direction, subject, body, status, error_message, created_at
+        """),
+        {
+            "tid": current_user.tenant_id,
+            "app_id": application_id,
+            "candidate_email": app_row["candidate_email"],
+            "candidate_name": app_row["candidate_name"],
+            "subject": body.subject,
+            "body": body.body,
+            "status": status,
+            "error_message": error_message,
+            "template_id": body.template_id,
+            "uid": current_user.user_id,
+        },
+    )
+    row = result.mappings().first()
+    await db.commit()
+
+    # If send failed, return error to client
+    if status == "failed":
+        raise HTTPException(status_code=500, detail=f"Email send failed: {error_message}")
+
+    # Return success response
     r = dict(row)
     r["communication_id"] = str(r["communication_id"])
     r["created_at"] = r["created_at"].isoformat() if r["created_at"] else None
