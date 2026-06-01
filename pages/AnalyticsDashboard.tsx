@@ -29,6 +29,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
   const [recruiterMetrics, setRecruiterMetrics] = useState<RecruiterProductivityResponse | null>(null);
   const [agingMetrics, setAgingMetrics] = useState<AgingMetricsResponse | null>(null);
   const [agingCurrentPage, setAgingCurrentPage] = useState(1);
+  const [slaFilter, setSlaFilter] = useState<string | null>(null);
   const pageSize = 10;
 
   const api = new APIService(auth.token);
@@ -57,6 +58,10 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
   useEffect(() => {
     loadAnalytics();
   }, [dateFrom, dateTo]);
+
+  useEffect(() => {
+    setAgingCurrentPage(1);
+  }, [slaFilter]);
 
   if (loading) {
     return <div className="analytics-loading">Loading analytics...</div>;
@@ -191,19 +196,51 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
       <section className="analytics-section">
         <h2>SLA Monitoring</h2>
         <div className="sla-alert-zones">
-          <div className="alert-zone red">
+          <div
+            className={`alert-zone red ${slaFilter === 'red' ? 'active' : ''}`}
+            onClick={() => setSlaFilter(slaFilter === 'red' ? null : 'red')}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="zone-count">{agingMetrics?.red_count || 0}</div>
             <div className="zone-label">Overdue</div>
           </div>
-          <div className="alert-zone amber">
+          <div
+            className={`alert-zone amber ${slaFilter === 'amber' ? 'active' : ''}`}
+            onClick={() => setSlaFilter(slaFilter === 'amber' ? null : 'amber')}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="zone-count">{agingMetrics?.amber_count || 0}</div>
             <div className="zone-label">Approaching</div>
           </div>
-          <div className="alert-zone green">
+          <div
+            className={`alert-zone green ${slaFilter === 'green' ? 'active' : ''}`}
+            onClick={() => setSlaFilter(slaFilter === 'green' ? null : 'green')}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="zone-count">{agingMetrics?.green_count || 0}</div>
             <div className="zone-label">On Track</div>
           </div>
         </div>
+
+        {slaFilter && (
+          <div className="sla-filter-status">
+            <span>
+              Showing{' '}
+              {slaFilter === 'red'
+                ? 'Overdue'
+                : slaFilter === 'amber'
+                ? 'Approaching SLA'
+                : 'On Track'}{' '}
+              candidates
+            </span>
+            <button
+              onClick={() => setSlaFilter(null)}
+              className="clear-filter-btn"
+            >
+              Clear filter
+            </button>
+          </div>
+        )}
 
         <div className="aging-table">
           <table>
@@ -220,9 +257,12 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
             <tbody>
               {agingMetrics && agingMetrics.metrics.length > 0 ? (
                 (() => {
+                  const filteredMetrics = slaFilter
+                    ? agingMetrics.metrics.filter(m => m.sla_status === slaFilter)
+                    : agingMetrics.metrics;
                   const startIdx = (agingCurrentPage - 1) * pageSize;
                   const endIdx = startIdx + pageSize;
-                  const paginatedMetrics = agingMetrics.metrics.slice(startIdx, endIdx);
+                  const paginatedMetrics = filteredMetrics.slice(startIdx, endIdx);
                   return paginatedMetrics.map((metric) => (
                     <tr key={metric.application_id}>
                       <td>{metric.candidate_name}</td>
@@ -241,7 +281,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
               ) : (
                 <tr>
                   <td colSpan={6} style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
-                    No candidates on track
+                    No candidates {slaFilter ? 'with this SLA status' : 'on track'}
                   </td>
                 </tr>
               )}
@@ -249,34 +289,40 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
           </table>
         </div>
 
-        {agingMetrics && agingMetrics.total_count > 0 && (
+        {agingMetrics && agingMetrics.metrics.length > 0 && (
           <div className="pagination-controls">
             <div className="pagination-info">
-              {agingMetrics.total_count > pageSize ? (
-                <>
-                  <button
-                    onClick={() => setAgingCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={agingCurrentPage === 1}
-                    className="pagination-btn"
-                  >
-                    ← Previous
-                  </button>
+              {(() => {
+                const filteredMetrics = slaFilter
+                  ? agingMetrics.metrics.filter(m => m.sla_status === slaFilter)
+                  : agingMetrics.metrics;
+                const totalFiltered = filteredMetrics.length;
+                return totalFiltered > pageSize ? (
+                  <>
+                    <button
+                      onClick={() => setAgingCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={agingCurrentPage === 1}
+                      className="pagination-btn"
+                    >
+                      ← Previous
+                    </button>
+                    <span className="pagination-text">
+                      Page {agingCurrentPage} of {Math.ceil(totalFiltered / pageSize)}
+                    </span>
+                    <button
+                      onClick={() => setAgingCurrentPage(p => Math.min(Math.ceil(totalFiltered / pageSize), p + 1))}
+                      disabled={agingCurrentPage === Math.ceil(totalFiltered / pageSize)}
+                      className="pagination-btn"
+                    >
+                      Next →
+                    </button>
+                  </>
+                ) : (
                   <span className="pagination-text">
-                    Page {agingCurrentPage} of {Math.ceil(agingMetrics.total_count / pageSize)}
+                    Showing all {totalFiltered} candidate{totalFiltered !== 1 ? 's' : ''}
                   </span>
-                  <button
-                    onClick={() => setAgingCurrentPage(p => Math.min(Math.ceil(agingMetrics.total_count / pageSize), p + 1))}
-                    disabled={agingCurrentPage === Math.ceil(agingMetrics.total_count / pageSize)}
-                    className="pagination-btn"
-                  >
-                    Next →
-                  </button>
-                </>
-              ) : (
-                <span className="pagination-text">
-                  Showing all {agingMetrics.total_count} candidate{agingMetrics.total_count !== 1 ? 's' : ''}
-                </span>
-              )}
+                );
+              })()}
             </div>
           </div>
         )}

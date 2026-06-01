@@ -169,6 +169,19 @@ tbody tr:hover {
   text-align: center;
   color: white;
   font-weight: 600;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.alert-zone:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+}
+
+.alert-zone.active {
+  outline: 3px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
 }
 
 .alert-zone.red {
@@ -269,6 +282,47 @@ tbody tr:hover {
   font-size: 13px;
   font-weight: 500;
   color: #6b7280;
+}
+
+/* SLA Filter Status */
+.sla-filter-status {
+  padding: 12px 16px;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sla-filter-status span {
+  font-size: 13px;
+  font-weight: 500;
+  color: #92400e;
+}
+
+.clear-filter-btn {
+  padding: 4px 10px;
+  background: white;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #92400e;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.clear-filter-btn:hover {
+  background: #fffbeb;
+  border-color: #f59e0b;
+}
+
+.clear-filter-btn:active {
+  transform: scale(0.98);
 }
 
 /* Responsive */
