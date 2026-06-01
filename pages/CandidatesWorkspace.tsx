@@ -24,11 +24,11 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { apiService } from '../services/api';
+import { apiService, APIService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import {
   AuthState, WorkflowStatus, CandidateComment, AssignableUser,
-  CandidateInterview, InterviewFeedback, CandidateApproval,
+  CandidateInterview, InterviewFeedback, CandidateApproval, CandidateTag,
 } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
@@ -39,6 +39,7 @@ import {
   VALID_WORKFLOW_TRANSITIONS,
 } from '../constants/workflow';
 import { WorkflowActionMenu } from '../components/WorkflowActionMenu';
+import { TagChip } from '../components/TagChip';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -2455,6 +2456,21 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   // Assignable users (fetched once on mount for assignment dropdowns)
   const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
 
+  // Tags
+  const [allTags, setAllTags] = useState<CandidateTag[]>([]);
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [talentPoolOnly, setTalentPoolOnly] = useState(false);
+  const [candidateTags, setCandidateTags] = useState<CandidateTag[]>([]);
+  const [showTagCreator, setShowTagCreator] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [bulkTagMode, setBulkTagMode] = useState<'add' | 'remove' | null>(null);
+  const [bulkTagSelection, setBulkTagSelection] = useState<Set<string>>(new Set());
+
+  // Talent pool
+  const [showReuseModal, setShowReuseModal] = useState(false);
+  const [reuseTargetJob, setReuseTargetJob] = useState('');
+  const [availableJobs, setAvailableJobs] = useState<any[]>([]);
+
   // Check if user is agency/freelancer
   const isAgency = auth.user?.tenant_type === 'agency' || auth.user?.tenant_type === 'individual_recruiter';
   const isAdmin = auth.user?.role === 'admin' || auth.user?.role === 'super_admin';
@@ -2521,6 +2537,17 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       .catch(() => {}); // non-critical — silent fail
   }, [auth.token]);
 
+  // Fetch tags once on mount
+  useEffect(() => {
+    if (!auth.token) return;
+    const api = new APIService(auth.token);
+    api.listTags()
+      .then((data: any) => {
+        if (data && Array.isArray(data.tags)) setAllTags(data.tags);
+      })
+      .catch(() => {}); // non-critical
+  }, [auth.token]);
+
   // Fetch assignable users once on mount
   useEffect(() => {
     if (!auth.token) return;
@@ -2542,6 +2569,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setSearch(f.search || '');
     setDebouncedSearch(f.search || '');
     setAssignedFilter(f.assignedFilter || '');
+    setTagFilter(f.tagFilter || []);
+    setTalentPoolOnly(f.talentPoolOnly || false);
     setPage(1);
     clearSelection();
     addToastRef.current(t.savedViewApplied, 'success');
@@ -2731,6 +2760,166 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       addToastRef.current(err.message || 'Failed to update candidates', 'error');
     } finally {
       setBulkProcessing(false);
+    }
+  };
+
+  // ── Tag operations ─────────────────────────────────────────────────────────
+
+  const handleBulkAddTags = async () => {
+    if (bulkTagSelection.size === 0 || selectedIds.size === 0) return;
+
+    let successful = 0, failed = 0;
+    const api = new APIService(auth.token!);
+
+    setBulkProcessing(true);
+    try {
+      for (const appId of Array.from(selectedIds)) {
+        try {
+          await api.addTagsToApplication(appId, Array.from(bulkTagSelection));
+          successful++;
+        } catch (error) {
+          failed++;
+        }
+      }
+
+      clearSelection();
+      setBulkTagMode(null);
+      setBulkTagSelection(new Set());
+      fetchCandidates(); // refresh list
+      const msg = `${successful} tagged${failed > 0 ? `, ${failed} failed` : ''}`;
+      addToastRef.current(msg, failed === 0 ? 'success' : 'warning');
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to add tags', 'error');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleBulkRemoveTags = async () => {
+    if (bulkTagSelection.size === 0 || selectedIds.size === 0) return;
+
+    let successful = 0, failed = 0;
+    const api = new APIService(auth.token!);
+
+    setBulkProcessing(true);
+    try {
+      for (const appId of Array.from(selectedIds)) {
+        for (const tagId of Array.from(bulkTagSelection)) {
+          try {
+            await api.removeTagFromApplication(appId, tagId);
+            successful++;
+          } catch (error) {
+            failed++;
+          }
+        }
+      }
+
+      clearSelection();
+      setBulkTagMode(null);
+      setBulkTagSelection(new Set());
+      fetchCandidates(); // refresh list
+      const msg = `${successful} tags removed${failed > 0 ? `, ${failed} failed` : ''}`;
+      addToastRef.current(msg, failed === 0 ? 'success' : 'warning');
+    } catch (err: any) {
+      addToastRef.current(err.message || 'Failed to remove tags', 'error');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const loadCandidateTags = async (appId: string) => {
+    const api = new APIService(auth.token!);
+    try {
+      const response: any = await api.getApplicationTags(appId);
+      if (response.tags && Array.isArray(response.tags)) {
+        setCandidateTags(response.tags);
+      }
+    } catch (error) {
+      setCandidateTags([]);
+    }
+  };
+
+  const handleAddTagToCandidate = async (tagId: string) => {
+    if (!selectedCandidate) return;
+
+    const api = new APIService(auth.token!);
+    try {
+      await api.addTagsToApplication(selectedCandidate.application_id, [tagId]);
+      await loadCandidateTags(selectedCandidate.application_id);
+      addToastRef.current('Tag added', 'success');
+    } catch (error: any) {
+      addToastRef.current(error.message || 'Failed to add tag', 'error');
+    }
+  };
+
+  const handleRemoveTagFromCandidate = async (tagId: string) => {
+    if (!selectedCandidate) return;
+
+    const api = new APIService(auth.token!);
+    try {
+      await api.removeTagFromApplication(selectedCandidate.application_id, tagId);
+      await loadCandidateTags(selectedCandidate.application_id);
+      addToastRef.current('Tag removed', 'success');
+    } catch (error: any) {
+      addToastRef.current(error.message || 'Failed to remove tag', 'error');
+    }
+  };
+
+  const handleCreateAndAddTag = async () => {
+    if (!selectedCandidate || !newTagName.trim()) return;
+
+    const api = new APIService(auth.token!);
+    try {
+      const newTag: any = await api.createTag(newTagName);
+      await api.addTagsToApplication(selectedCandidate.application_id, [newTag.tag_id]);
+      setAllTags(prev => [...prev, newTag]);
+      await loadCandidateTags(selectedCandidate.application_id);
+      setNewTagName('');
+      setShowTagCreator(false);
+      addToastRef.current('Tag created and added', 'success');
+    } catch (error: any) {
+      addToastRef.current(error.message || 'Failed to create tag', 'error');
+    }
+  };
+
+  const handleToggleTalentPool = async () => {
+    if (!selectedCandidate) return;
+
+    const api = new APIService(auth.token!);
+    const newStatus = !(selectedCandidate as any).is_talent_pool;
+    try {
+      await api.toggleTalentPool(selectedCandidate.application_id, newStatus);
+      setSelectedCandidate(prev =>
+        prev
+          ? { ...prev, is_talent_pool: newStatus }
+          : null
+      );
+      addToastRef.current(
+        newStatus ? 'Added to talent pool' : 'Removed from talent pool',
+        'success'
+      );
+    } catch (error: any) {
+      addToastRef.current(error.message || 'Failed to update talent pool', 'error');
+    }
+  };
+
+  const handleReuseCandidate = async () => {
+    if (!selectedCandidate || !reuseTargetJob) return;
+
+    const api = new APIService(auth.token!);
+    try {
+      const response: any = await api.reuseCandidate(
+        selectedCandidate.application_id,
+        reuseTargetJob
+      );
+      addToastRef.current(
+        `${response.candidate_name} added to target job`,
+        'success'
+      );
+      setShowReuseModal(false);
+      setReuseTargetJob('');
+    } catch (error: any) {
+      addToastRef.current(error.message || 'Failed to reuse candidate', 'error');
     }
   };
 
