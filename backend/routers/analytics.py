@@ -88,8 +88,8 @@ async def get_funnel_metrics(
     recruiter_id: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    current_user: CurrentUserDep = Depends(),
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(),
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Get recruitment funnel metrics with conversion rates and time-per-stage."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
@@ -198,8 +198,8 @@ async def get_recruiter_productivity(
     recruiter_id: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    current_user: CurrentUserDep = Depends(),
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(),
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Get recruiter productivity metrics (reviews, moves, feedback, approvals)."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
@@ -285,8 +285,8 @@ async def get_recruiter_productivity(
 async def get_aging_metrics(
     workflow_status: str | None = None,
     days_threshold: int = 0,
-    current_user: CurrentUserDep = Depends(),
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(),
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Get SLA aging metrics with breach status (green/amber/red)."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
