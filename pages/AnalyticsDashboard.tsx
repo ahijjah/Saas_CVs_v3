@@ -3,6 +3,8 @@ import {
   FunnelMetricsResponse,
   RecruiterProductivityResponse,
   AgingMetricsResponse,
+  InsightsResponse,
+  RecruitmentInsight,
 } from '../types';
 import { APIService } from '../services/api';
 import '../styles/analytics.css';
@@ -30,6 +32,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
   const [agingMetrics, setAgingMetrics] = useState<AgingMetricsResponse | null>(null);
   const [agingCurrentPage, setAgingCurrentPage] = useState(1);
   const [slaFilter, setSlaFilter] = useState<string | null>(null);
+  const [insights, setInsights] = useState<InsightsResponse | null>(null);
   const pageSize = 10;
 
   const api = new APIService(auth.token);
@@ -39,15 +42,17 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
       setLoading(true);
       setAgingCurrentPage(1);
 
-      const [funnel, productivity, aging] = await Promise.all([
+      const [funnel, productivity, aging, insightsData] = await Promise.all([
         api.getFunnelMetrics({ date_from: dateFrom, date_to: dateTo }),
         api.getRecruiterProductivity({ date_from: dateFrom, date_to: dateTo }),
         api.getAgingMetrics({ days_threshold: 0 }),
+        api.getInsights(),
       ]);
 
       setFunnelMetrics(funnel);
       setRecruiterMetrics(productivity);
       setAgingMetrics(aging);
+      setInsights(insightsData);
     } catch (error: any) {
       addToast(error.message || 'Failed to load analytics', 'error');
     } finally {
@@ -324,6 +329,47 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
                 );
               })()}
             </div>
+          </div>
+        )}
+      </section>
+
+      {/* ── Operational Insights ─────────────────────────────────────────── */}
+      <section className="analytics-section">
+        <div className="insights-header">
+          <h2>Operational Insights</h2>
+          <span className="insights-label">Rule-based insight</span>
+        </div>
+
+        {!insights || insights.insights.length === 0 ? (
+          <div className="insights-empty">
+            <svg className="insights-empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p>No significant recruitment insights detected.</p>
+          </div>
+        ) : (
+          <div className="insights-list">
+            {insights.insights.map((insight: RecruitmentInsight) => (
+              <div key={insight.insight_id} className={`insight-card insight-${insight.severity}`}>
+                <div className="insight-card-header">
+                  <span className={`insight-severity-badge severity-${insight.severity}`}>
+                    {insight.severity.toUpperCase()}
+                  </span>
+                  <span className="insight-title">{insight.title}</span>
+                </div>
+                <p className="insight-description">{insight.description}</p>
+                <p className="insight-action">
+                  <strong>Suggested action:</strong> {insight.suggested_action}
+                </p>
+                {insight.metric_value !== null && insight.threshold !== null && (
+                  <div className="insight-metric">
+                    <span>Value: <strong>{insight.metric_value}</strong></span>
+                    <span>Threshold: <strong>{insight.threshold}</strong></span>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </section>

@@ -78,6 +78,24 @@ class SLAThresholds(BaseModel):
     offer_response_days: int = 5
 
 
+class RecruitmentInsight(BaseModel):
+    insight_id: str
+    type: str
+    severity: str           # info | warning | critical
+    title: str
+    description: str
+    metric_value: float | None
+    threshold: float | None
+    suggested_action: str
+    related_entity_type: str | None
+    related_entity_id: str | None
+
+
+class InsightsResponse(BaseModel):
+    insights: list[RecruitmentInsight]
+    generated_at: str
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────
 
 
@@ -393,4 +411,192 @@ async def get_aging_metrics(
         amber_count=amber_count,
         green_count=green_count,
         filters={"workflow_status": workflow_status, "days_threshold": days_threshold},
+    )
+
+
+@router.get("/insights")
+async def get_insights(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Return rule-based operational recruitment insights derived from SQL aggregations."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    # Load SLA thresholds from tenant policy (fallback to defaults)
+    pol_row = await db.execute(
+        text("SELECT policies FROM tenant_workflow_policies WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": current_user.tenant_id},
+    )
+    pol_rec = pol_row.mappings().first()
+    sla = {"review_days": 14, "interview_feedback_days": 7, "approval_days": 10, "offer_response_days": 5}
+    if pol_rec and pol_rec["policies"]:
+        raw = pol_rec["policies"]
+        policies = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        if "sla_thresholds" in policies:
+            sla.update(policies["sla_thresholds"])
+
+    review_days = sla["review_days"]
+    interview_days = sla["interview_feedback_days"]
+
+    # ── Single aggregation query for all rule inputs ────────────────────────
+    agg = await db.execute(
+        text("""
+            SELECT
+              COUNT(*) FILTER (WHERE a.workflow_status NOT IN ('hired','rejected','withdrawn'))
+                AS active_total,
+              COUNT(*) FILTER (WHERE a.workflow_status = 'shortlisted')
+                AS shortlisted,
+              COUNT(*) FILTER (WHERE a.workflow_status = 'rejected')
+                AS rejected,
+              COUNT(*) AS grand_total,
+              COUNT(*) FILTER (
+                WHERE a.workflow_status NOT IN ('hired','rejected','withdrawn')
+                  AND EXTRACT(EPOCH FROM (NOW() - COALESCE(a.updated_at, a.created_at))) / 86400
+                      > CAST(:review_days AS numeric)
+              ) AS sla_overdue,
+              COUNT(*) FILTER (
+                WHERE a.workflow_status IN ('awaiting_review','under_review')
+              ) AS in_review_queue,
+              COUNT(*) FILTER (
+                WHERE a.workflow_status = 'interviewing'
+                  AND EXTRACT(EPOCH FROM (NOW() - COALESCE(a.updated_at, a.created_at))) / 86400
+                      > CAST(:interview_days AS numeric)
+              ) AS interview_aging
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE j.tenant_id = CAST(:tid AS uuid)
+        """),
+        {"tid": current_user.tenant_id, "review_days": review_days, "interview_days": interview_days},
+    )
+    row = dict(agg.mappings().first() or {})
+
+    active_total   = int(row.get("active_total", 0) or 0)
+    shortlisted    = int(row.get("shortlisted", 0) or 0)
+    rejected       = int(row.get("rejected", 0) or 0)
+    grand_total    = int(row.get("grand_total", 0) or 0)
+    sla_overdue    = int(row.get("sla_overdue", 0) or 0)
+    in_review_queue = int(row.get("in_review_queue", 0) or 0)
+    interview_aging = int(row.get("interview_aging", 0) or 0)
+
+    # Recruiter workload: find max/min assigned among active recruiters
+    rec_rows = await db.execute(
+        text("""
+            SELECT u.user_id, COUNT(a.application_id) AS assigned
+            FROM users u
+            JOIN applications a ON a.assigned_user_id = u.user_id
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE j.tenant_id = CAST(:tid AS uuid)
+              AND a.workflow_status NOT IN ('hired','rejected','withdrawn')
+            GROUP BY u.user_id
+            HAVING COUNT(a.application_id) > 0
+        """),
+        {"tid": current_user.tenant_id},
+    )
+    workloads = [int(r["assigned"]) for r in rec_rows.mappings()]
+
+    insights: list[RecruitmentInsight] = []
+
+    # ── Rule A: SLA Overdue ──────────────────────────────────────────────────
+    if sla_overdue > 0:
+        insights.append(RecruitmentInsight(
+            insight_id="sla_overdue",
+            type="sla_bottleneck",
+            severity="critical" if sla_overdue >= 5 else "warning",
+            title="Overdue Candidates Detected",
+            description=f"{sla_overdue} candidate{'s are' if sla_overdue != 1 else ' is'} overdue based on your SLA threshold of {review_days} days.",
+            metric_value=float(sla_overdue),
+            threshold=float(review_days),
+            suggested_action="Review and reassign overdue candidates, or update SLA thresholds in Settings.",
+            related_entity_type="sla_status",
+            related_entity_id="red",
+        ))
+
+    # ── Rule B: Low Shortlist Rate ───────────────────────────────────────────
+    SHORTLIST_THRESHOLD = 0.15
+    if grand_total >= 10:
+        shortlist_rate = shortlisted / grand_total
+        if shortlist_rate < SHORTLIST_THRESHOLD:
+            insights.append(RecruitmentInsight(
+                insight_id="low_shortlist_rate",
+                type="low_shortlist_rate",
+                severity="warning",
+                title="Low Shortlist Rate",
+                description=f"Only {shortlist_rate:.1%} of applications have been shortlisted (threshold: {SHORTLIST_THRESHOLD:.0%}).",
+                metric_value=round(shortlist_rate * 100, 1),
+                threshold=SHORTLIST_THRESHOLD * 100,
+                suggested_action="Review job requirements or screening criteria to improve candidate quality.",
+                related_entity_type=None,
+                related_entity_id=None,
+            ))
+
+    # ── Rule C: High Rejection Rate ──────────────────────────────────────────
+    REJECTION_THRESHOLD = 0.60
+    if grand_total >= 10:
+        rejection_rate = rejected / grand_total
+        if rejection_rate > REJECTION_THRESHOLD:
+            insights.append(RecruitmentInsight(
+                insight_id="high_rejection_rate",
+                type="high_rejection_rate",
+                severity="critical" if rejection_rate > 0.80 else "warning",
+                title="High Rejection Rate",
+                description=f"{rejection_rate:.1%} of applications have been rejected (threshold: {REJECTION_THRESHOLD:.0%}).",
+                metric_value=round(rejection_rate * 100, 1),
+                threshold=REJECTION_THRESHOLD * 100,
+                suggested_action="Revisit sourcing channels or job descriptions to attract better-fit candidates.",
+                related_entity_type=None,
+                related_entity_id=None,
+            ))
+
+    # ── Rule D: Review Queue Bottleneck ──────────────────────────────────────
+    REVIEW_QUEUE_THRESHOLD = 20
+    if in_review_queue >= REVIEW_QUEUE_THRESHOLD:
+        insights.append(RecruitmentInsight(
+            insight_id="review_bottleneck",
+            type="review_bottleneck",
+            severity="warning" if in_review_queue < 40 else "critical",
+            title="Review Queue Building Up",
+            description=f"{in_review_queue} candidates are currently in the review queue (awaiting review or under review).",
+            metric_value=float(in_review_queue),
+            threshold=float(REVIEW_QUEUE_THRESHOLD),
+            suggested_action="Assign additional reviewers or prioritise the review queue to avoid SLA breaches.",
+            related_entity_type="workflow_status",
+            related_entity_id="under_review",
+        ))
+
+    # ── Rule E: Interview Bottleneck ─────────────────────────────────────────
+    if interview_aging > 0:
+        insights.append(RecruitmentInsight(
+            insight_id="interview_bottleneck",
+            type="interview_bottleneck",
+            severity="warning",
+            title="Interview Stage Has Aging Candidates",
+            description=f"{interview_aging} candidate{'s have' if interview_aging != 1 else ' has'} been in the interview stage for more than {interview_days} days.",
+            metric_value=float(interview_aging),
+            threshold=float(interview_days),
+            suggested_action="Chase interview feedback or reschedule overdue interviews.",
+            related_entity_type="workflow_status",
+            related_entity_id="interviewing",
+        ))
+
+    # ── Rule F: Recruiter Workload Imbalance ─────────────────────────────────
+    if len(workloads) >= 2:
+        max_load = max(workloads)
+        min_load = min(workloads)
+        if min_load > 0 and (max_load / min_load) >= 3:
+            insights.append(RecruitmentInsight(
+                insight_id="workload_imbalance",
+                type="workload_imbalance",
+                severity="info",
+                title="Recruiter Workload Imbalance",
+                description=f"The busiest recruiter has {max_load} active candidates vs {min_load} for the least loaded recruiter (ratio {max_load / min_load:.1f}×).",
+                metric_value=round(max_load / min_load, 1),
+                threshold=3.0,
+                suggested_action="Consider redistributing open applications to balance recruiter workload.",
+                related_entity_type=None,
+                related_entity_id=None,
+            ))
+
+    return InsightsResponse(
+        insights=insights,
+        generated_at=datetime.utcnow().isoformat(),
     )

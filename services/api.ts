@@ -172,4 +172,8 @@ export class APIService {
 
     return apiService.get(WEBHOOK_CONFIG.ANALYTICS_AGING_URL, params, this.token);
   }
+
+  async getInsights() {
+    return apiService.get(WEBHOOK_CONFIG.ANALYTICS_INSIGHTS_URL, {}, this.token);
+  }
 };

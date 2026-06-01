@@ -107,6 +107,7 @@ export const WEBHOOK_CONFIG = {
   ANALYTICS_FUNNEL_URL:         `${API_BASE}/analytics/funnel`,
   ANALYTICS_RECRUITER_PRODUCTIVITY_URL: `${API_BASE}/analytics/recruiter-productivity`,
   ANALYTICS_AGING_URL:          `${API_BASE}/analytics/aging`,
+  ANALYTICS_INSIGHTS_URL:       `${API_BASE}/analytics/insights`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

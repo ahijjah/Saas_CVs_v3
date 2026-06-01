@@ -342,21 +342,131 @@ tbody tr:hover {
   }
 }
 
-@media (max-width: 640px) {
-  .analytics-dashboard {
-    padding: 16px;
-  }
+/* Insights */
+.insights-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
 
-  .kpi-cards {
-    grid-template-columns: 1fr 1fr;
-  }
+.insights-header h2 {
+  margin: 0;
+}
 
-  table {
-    font-size: 12px;
-  }
+.insights-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border-radius: 4px;
+}
 
-  th,
-  td {
-    padding: 8px 12px;
-  }
+.insights-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 24px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.insights-empty-icon {
+  width: 40px;
+  height: 40px;
+  color: #10b981;
+}
+
+.insights-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.insight-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid;
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.insight-critical {
+  border-left-color: #ef4444;
+  background: #fff8f8;
+}
+
+.insight-warning {
+  border-left-color: #f59e0b;
+  background: #fffdf7;
+}
+
+.insight-info {
+  border-left-color: #3b82f6;
+  background: #f8faff;
+}
+
+.insight-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.insight-severity-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.severity-critical {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.severity-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.severity-info {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.insight-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.insight-description {
+  font-size: 13px;
+  color: #4b5563;
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.insight-action {
+  font-size: 13px;
+  color: #374151;
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.insight-metric {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #6b7280;
 }

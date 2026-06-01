@@ -809,3 +809,21 @@ export interface SLAThresholds {
   approval_days: number;
   offer_response_days: number;
 }
+
+export interface RecruitmentInsight {
+  insight_id: string;
+  type: string;
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  description: string;
+  metric_value: number | null;
+  threshold: number | null;
+  suggested_action: string;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+}
+
+export interface InsightsResponse {
+  insights: RecruitmentInsight[];
+  generated_at: string;
+}
