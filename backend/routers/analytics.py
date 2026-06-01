@@ -122,8 +122,8 @@ async def get_funnel_metrics(
               FROM applications a
               JOIN jobs j ON j.job_id = a.job_id
               WHERE j.tenant_id = CAST(:tid AS uuid)
-                AND (COALESCE(:job_id::uuid, NULL) IS NULL OR a.job_id = CAST(:job_id AS uuid))
-                AND (COALESCE(:campaign_id::uuid, NULL) IS NULL OR a.campaign_id = CAST(:campaign_id AS uuid))
+                AND (:job_id IS NULL OR a.job_id = CAST(:job_id AS uuid))
+                AND (:campaign_id IS NULL OR a.campaign_id = CAST(:campaign_id AS uuid))
                 AND a.created_at >= :date_from
                 AND a.created_at <= :date_to
               GROUP BY a.workflow_status
@@ -245,7 +245,7 @@ async def get_recruiter_productivity(
             LEFT JOIN candidate_interview_feedback cif ON cif.interview_id = ci.interview_id
             LEFT JOIN candidate_approvals ca ON ca.application_id = a.application_id
             WHERE u.tenant_id = CAST(:tid AS uuid)
-              AND (COALESCE(:recruiter_id::uuid, NULL) IS NULL OR u.user_id = CAST(:recruiter_id AS uuid))
+              AND (:recruiter_id IS NULL OR u.user_id = CAST(:recruiter_id AS uuid))
               AND a.created_at >= :date_from
               AND a.created_at <= :date_to
             GROUP BY u.user_id, u.full_name, u.email
@@ -332,8 +332,7 @@ async def get_aging_metrics(
               LEFT JOIN users u ON u.user_id = a.assigned_user_id
               LEFT JOIN candidate_approvals ca ON ca.application_id = a.application_id
               WHERE j.tenant_id = CAST(:tid AS uuid)
-                AND (COALESCE(:workflow_status::varchar, NULL) IS NULL
-                     OR a.workflow_status = :workflow_status)
+                AND (:workflow_status IS NULL OR a.workflow_status = :workflow_status)
                 AND a.workflow_status NOT IN ('hired', 'rejected', 'withdrawn')
               GROUP BY a.application_id, a.candidate_name, a.job_id, j.title,
                        a.workflow_status, a.assigned_user_id, u.full_name, u.email
