@@ -10,6 +10,7 @@ from routers import (
     campaigns, client_organizations, comments, dashboard, interviews, jobs, platform_config,
     platform_secrets, public, saved_views, subscription_plans, tenant, workflow_policies,
 )
+from routers.candidate_tags import app_router as candidate_tags_app, tag_router as candidate_tags_tags
 
 settings = get_settings()
 
@@ -58,6 +59,8 @@ app.include_router(ai_models.router)
 app.include_router(ai_prompts.router)
 app.include_router(ai_usage.router)
 app.include_router(audit_logs.router)
+app.include_router(candidate_tags_app)
+app.include_router(candidate_tags_tags)
 
 
 @app.get("/health")
