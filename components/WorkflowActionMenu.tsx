@@ -1,6 +1,10 @@
 /**
  * WorkflowActionMenu — shared grouped workflow transition dropdown.
  *
+ * Dropdowns are rendered via React portal into document.body with fixed
+ * coordinates derived from getBoundingClientRect(), so they are never
+ * clipped by any parent overflow or z-index constraint.
+ *
  * Displays allowed transitions for a candidate, grouped into:
  *   Forward      — candidate moves to a later recruitment stage
  *   Back/Reopen  — candidate moves back to an earlier stage
@@ -25,7 +29,8 @@
  * recruiter-actionable. All others render a muted "System Managed" badge.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { WorkflowStatus } from '../types';
 import {
   VALID_WORKFLOW_TRANSITIONS,
@@ -85,6 +90,34 @@ function getNoteRequirement(toStatus: WorkflowStatus, current: WorkflowStatus): 
   return 'optional';
 }
 
+// ── Portal position calculator ────────────────────────────────────────────────
+
+interface MenuPos {
+  top: number;
+  left: number;
+  minWidth: number;
+  maxHeight: number;
+}
+
+function calcMenuPos(btn: HTMLElement, menuMinWidth: number): MenuPos {
+  const rect = btn.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  // Align right edge of menu with right edge of button by default
+  let left = rect.right - menuMinWidth;
+  const top = rect.bottom + 4;
+
+  // Keep inside viewport horizontally
+  if (left < 8) left = 8;
+  if (left + menuMinWidth > vw - 8) left = vw - 8 - menuMinWidth;
+
+  // Available height below the button (leave 16px breathing room)
+  const maxHeight = Math.max(150, vh - top - 16);
+
+  return { top, left, minWidth: menuMinWidth, maxHeight };
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export interface WorkflowActionMenuProps {
@@ -139,17 +172,30 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   const [noteRequirement, setNoteRequirement] = useState<NoteRequirement>('optional');
   const [noteText, setNoteText] = useState('');
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<MenuPos | null>(null);
+  const [advancedMenuPos, setAdvancedMenuPos] = useState<MenuPos | null>(null);
+
+  // Refs for the trigger buttons and the portal menu divs
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const normalBtnRef = useRef<HTMLButtonElement>(null);
+  const advancedBtnRef = useRef<HTMLButtonElement>(null);
+  const menuDropRef = useRef<HTMLDivElement>(null);
+  const advancedMenuDropRef = useRef<HTMLDivElement>(null);
+
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
 
   const canDoAdvancedMove =
     !!advancedMoveEnabled && !!userRole && ADVANCED_MOVE_ALLOWED_ROLES.has(userRole);
 
-  // Close dropdowns when clicking outside
+  // Close dropdowns when clicking outside — must check both trigger and portal divs
   useEffect(() => {
     if (!open && !advancedOpen) return;
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inWrapper = wrapperRef.current?.contains(target);
+      const inMenu = menuDropRef.current?.contains(target);
+      const inAdvancedMenu = advancedMenuDropRef.current?.contains(target);
+      if (!inWrapper && !inMenu && !inAdvancedMenu) {
         setOpen(false);
         setAdvancedOpen(false);
         resetPending();
@@ -157,6 +203,25 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, [open, advancedOpen]);
+
+  // Reposition on scroll/resize while a menu is open
+  useEffect(() => {
+    if (!open && !advancedOpen) return;
+    const reposition = () => {
+      if (open && normalBtnRef.current) {
+        setMenuPos(calcMenuPos(normalBtnRef.current, 200));
+      }
+      if (advancedOpen && advancedBtnRef.current) {
+        setAdvancedMenuPos(calcMenuPos(advancedBtnRef.current, 240));
+      }
+    };
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => {
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    };
   }, [open, advancedOpen]);
 
   // ── Processing gate ──────────────────────────────────────────────────────
@@ -190,14 +255,34 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   };
 
   const openNormal = () => {
-    setOpen(v => !v);
+    if (open) {
+      setOpen(false);
+      setMenuPos(null);
+      resetPending();
+      return;
+    }
+    if (normalBtnRef.current) {
+      setMenuPos(calcMenuPos(normalBtnRef.current, 200));
+    }
+    setOpen(true);
     setAdvancedOpen(false);
+    setAdvancedMenuPos(null);
     resetPending();
   };
 
   const openAdvanced = () => {
-    setAdvancedOpen(v => !v);
+    if (advancedOpen) {
+      setAdvancedOpen(false);
+      setAdvancedMenuPos(null);
+      resetPending();
+      return;
+    }
+    if (advancedBtnRef.current) {
+      setAdvancedMenuPos(calcMenuPos(advancedBtnRef.current, 240));
+    }
+    setAdvancedOpen(true);
     setOpen(false);
+    setMenuPos(null);
     resetPending();
   };
 
@@ -210,12 +295,12 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
       setNoteText('');
     } else {
       setOpen(false);
+      setMenuPos(null);
       onTransition(applicationId, toStatus);
     }
   };
 
   const selectAdvancedStatus = (toStatus: WorkflowStatus) => {
-    // Advanced moves always require a note
     setPendingStatus(toStatus);
     setPendingIsAdvanced(true);
     setNoteRequirement('required');
@@ -226,15 +311,15 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
     if (!pendingStatus) return;
     if (noteRequirement === 'required' && !noteText.trim()) return;
 
-    // For advanced moves, show confirmation modal first
     if (pendingIsAdvanced) {
       setShowConfirmationModal(true);
       return;
     }
 
-    // For normal moves, execute immediately
     setOpen(false);
+    setMenuPos(null);
     setAdvancedOpen(false);
+    setAdvancedMenuPos(null);
     onTransition(applicationId, pendingStatus, noteText.trim() || undefined, false);
     resetPending();
   };
@@ -243,14 +328,15 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
     if (!pendingStatus) return;
     setShowConfirmationModal(false);
     setOpen(false);
+    setMenuPos(null);
     setAdvancedOpen(false);
+    setAdvancedMenuPos(null);
     onTransition(applicationId, pendingStatus, noteText.trim() || undefined, true);
     resetPending();
   };
 
   const cancelAdvancedMove = () => {
     setShowConfirmationModal(false);
-    // Keep note text and pending status so user can edit
   };
 
   const cancelPending = () => {
@@ -261,7 +347,7 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   const advancedTargets = ALL_WORKFLOW_STATUSES.filter(s => s !== currentStatus);
   const advancedGroups = groupTransitions(currentStatus, advancedTargets);
 
-  // ── Shared note confirmation panel (used by both normal and advanced dropdowns) ──
+  // ── Shared note confirmation panel ────────────────────────────────────────
 
   const NotePanel = () => (
     <div className="px-3 py-2 space-y-2">
@@ -272,14 +358,12 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
         </span>
       </p>
 
-      {/* Exceptional move governance warning */}
       {pendingIsAdvanced && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium">
           ⚠ Exceptional move — bypasses standard workflow. A reason is required.
         </p>
       )}
 
-      {/* Normal note messages */}
       {!pendingIsAdvanced && noteRequirement === 'required' && (
         <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
           A note is required for this action.
@@ -328,91 +412,112 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div ref={menuRef} className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+    <div ref={wrapperRef} className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
 
-      {/* ── Normal Move button + dropdown ── */}
+      {/* ── Normal Move button ── */}
       {hasNormalOptions && (
-        <div className="relative">
-          <button
-            disabled={isUpdating}
-            onClick={openNormal}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 bg-white hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isUpdating ? (
-              <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin inline-block" />
-            ) : (
-              <>
-                Move
-                <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
-                  <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </>
-            )}
-          </button>
-
-          {open && (
-            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[190px]">
-              {pendingStatus && !pendingIsAdvanced ? (
-                <NotePanel />
-              ) : (
-                <>
-                  <GroupSection label="Forward" statuses={groups.forward} wfLabels={wfLabels} onSelect={selectStatus} prev={false} />
-                  <GroupSection label="Back / Reopen" statuses={groups.back_reopen} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0} />
-                  <GroupSection label="Pause / Close" statuses={groups.pause_close} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0 || groups.back_reopen.length > 0} />
-                  <GroupSection label="Other" statuses={groups.other} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0 || groups.back_reopen.length > 0 || groups.pause_close.length > 0} />
-                </>
-              )}
-            </div>
+        <button
+          ref={normalBtnRef}
+          disabled={isUpdating}
+          onClick={openNormal}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 bg-white hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isUpdating ? (
+            <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin inline-block" />
+          ) : (
+            <>
+              Move
+              <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
+                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </>
           )}
-        </div>
+        </button>
       )}
 
-      {/* ── Exceptional Move trigger (admin/super_admin only — visually demoted) ── */}
+      {/* ── Exceptional Move trigger ── */}
       {canDoAdvancedMove && (
-        <div className="relative">
-          {/* Intentionally subtle: text link style, not a button, so it doesn't compete with Move */}
-          <button
-            disabled={isUpdating}
-            onClick={openAdvanced}
-            title="Exceptional Move — use only for exceptional operational corrections. Bypasses standard recruitment workflow."
-            className="inline-flex items-center gap-0.5 text-[10px] text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed underline underline-offset-2"
-          >
-            Exceptional
-            <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none">
-              <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
+        <button
+          ref={advancedBtnRef}
+          disabled={isUpdating}
+          onClick={openAdvanced}
+          title="Exceptional Move — use only for exceptional operational corrections. Bypasses standard recruitment workflow."
+          className="inline-flex items-center gap-0.5 text-[10px] text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed underline underline-offset-2"
+        >
+          Exceptional
+          <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none">
+            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
 
-          {advancedOpen && (
-            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-amber-200 rounded-xl shadow-lg py-1 min-w-[230px]">
-              {/* Header banner */}
-              {!(pendingStatus && pendingIsAdvanced) && (
-                <div className="px-3 py-2 bg-amber-50 border-b border-amber-100 rounded-t-xl">
-                  <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Exceptional Move</p>
-                  <p className="text-[10px] text-amber-600 mt-0.5">Use only for exceptional corrections · Bypasses standard workflow</p>
-                </div>
-              )}
+      {/* ── Normal Move dropdown portal ── */}
+      {open && menuPos && createPortal(
+        <div
+          ref={menuDropRef}
+          style={{
+            position: 'fixed',
+            top: menuPos.top,
+            left: menuPos.left,
+            minWidth: menuPos.minWidth,
+            maxHeight: menuPos.maxHeight,
+            zIndex: 9999,
+          }}
+          className="bg-white border border-slate-200 rounded-xl shadow-lg py-1 overflow-y-auto"
+        >
+          {pendingStatus && !pendingIsAdvanced ? (
+            <NotePanel />
+          ) : (
+            <>
+              <GroupSection label="Forward" statuses={groups.forward} wfLabels={wfLabels} onSelect={selectStatus} prev={false} />
+              <GroupSection label="Back / Reopen" statuses={groups.back_reopen} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0} />
+              <GroupSection label="Pause / Close" statuses={groups.pause_close} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0 || groups.back_reopen.length > 0} />
+              <GroupSection label="Other" statuses={groups.other} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0 || groups.back_reopen.length > 0 || groups.pause_close.length > 0} />
+            </>
+          )}
+        </div>,
+        document.body,
+      )}
 
-              {pendingStatus && pendingIsAdvanced ? (
-                <NotePanel />
-              ) : (
-                <>
-                  <GroupSection label="Forward" statuses={advancedGroups.forward} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={false} />
-                  <GroupSection label="Back / Reopen" statuses={advancedGroups.back_reopen} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={advancedGroups.forward.length > 0} />
-                  <GroupSection label="Pause / Close" statuses={advancedGroups.pause_close} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={advancedGroups.forward.length > 0 || advancedGroups.back_reopen.length > 0} />
-                  <GroupSection label="Other" statuses={advancedGroups.other} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={advancedGroups.forward.length > 0 || advancedGroups.back_reopen.length > 0 || advancedGroups.pause_close.length > 0} />
-                </>
-              )}
+      {/* ── Exceptional Move dropdown portal ── */}
+      {advancedOpen && advancedMenuPos && createPortal(
+        <div
+          ref={advancedMenuDropRef}
+          style={{
+            position: 'fixed',
+            top: advancedMenuPos.top,
+            left: advancedMenuPos.left,
+            minWidth: advancedMenuPos.minWidth,
+            maxHeight: advancedMenuPos.maxHeight,
+            zIndex: 9999,
+          }}
+          className="bg-white border border-amber-200 rounded-xl shadow-lg py-1 overflow-y-auto"
+        >
+          {!(pendingStatus && pendingIsAdvanced) && (
+            <div className="px-3 py-2 bg-amber-50 border-b border-amber-100 rounded-t-xl">
+              <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Exceptional Move</p>
+              <p className="text-[10px] text-amber-600 mt-0.5">Use only for exceptional corrections · Bypasses standard workflow</p>
             </div>
           )}
-        </div>
+
+          {pendingStatus && pendingIsAdvanced ? (
+            <NotePanel />
+          ) : (
+            <>
+              <GroupSection label="Forward" statuses={advancedGroups.forward} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={false} />
+              <GroupSection label="Back / Reopen" statuses={advancedGroups.back_reopen} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={advancedGroups.forward.length > 0} />
+              <GroupSection label="Pause / Close" statuses={advancedGroups.pause_close} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={advancedGroups.forward.length > 0 || advancedGroups.back_reopen.length > 0} />
+              <GroupSection label="Other" statuses={advancedGroups.other} wfLabels={wfLabels} onSelect={selectAdvancedStatus} prev={advancedGroups.forward.length > 0 || advancedGroups.back_reopen.length > 0 || advancedGroups.pause_close.length > 0} />
+            </>
+          )}
+        </div>,
+        document.body,
       )}
 
       {/* ── Exceptional Move Confirmation Modal ── */}
-      {showConfirmationModal && pendingStatus && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30">
+      {showConfirmationModal && pendingStatus && createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/30">
           <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
-            {/* Header */}
             <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-amber-50 to-orange-50">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
@@ -422,14 +527,11 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
               </h2>
             </div>
 
-            {/* Body */}
             <div className="px-6 py-4 space-y-4">
-              {/* Governance warning */}
               <p className="text-sm text-slate-700">
                 This action bypasses the standard recruitment workflow and should only be used for exceptional operational corrections.
               </p>
 
-              {/* Candidate info */}
               {candidateName && (
                 <div className="rounded-lg bg-slate-50 p-3 text-sm">
                   <p className="text-slate-600">
@@ -438,7 +540,6 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
                 </div>
               )}
 
-              {/* Status transition */}
               <div className="grid grid-cols-3 gap-2 items-center text-sm">
                 <div>
                   <p className="text-xs font-semibold text-slate-600 uppercase mb-1">From</p>
@@ -459,7 +560,6 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
                 </div>
               </div>
 
-              {/* Reason */}
               {noteText && (
                 <div className="rounded-lg bg-blue-50 p-3 text-sm border border-blue-200">
                   <p className="text-xs font-semibold text-blue-700 mb-1">Reason:</p>
@@ -468,7 +568,6 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
               )}
             </div>
 
-            {/* Actions */}
             <div className="px-6 py-4 border-t border-slate-200 flex gap-3">
               <button
                 onClick={cancelAdvancedMove}
@@ -497,7 +596,8 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
