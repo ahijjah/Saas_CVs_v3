@@ -9,8 +9,17 @@
 -- is unambiguous (failed processing AND a non-null stopped_reason AND a non-null
 -- workflow_status that was incorrectly set on ingestion).
 
+BEGIN;
+
+-- First, make workflow_status nullable to allow NULL values
+ALTER TABLE applications
+ALTER COLUMN workflow_status DROP NOT NULL;
+
+-- Then clean up polluted records (applications stopped before AI scoring)
 UPDATE applications
 SET workflow_status = NULL
 WHERE processing_status = 'failed'
   AND stopped_reason IS NOT NULL
   AND workflow_status IS NOT NULL;
+
+COMMIT;
