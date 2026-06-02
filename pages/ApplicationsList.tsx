@@ -18,12 +18,16 @@ import {
 type ProcessingFilter =
   | 'all'
   | 'pending'
+  | 'in_progress'
   | 'ai_scored'
-  | 'stopped'
+  | 'stopped_before_ai';
+
+type StopReasonFilter =
+  | 'all'
   | 'security_blocked'
   | 'duplicate_blocked'
   | 'extraction_failed'
-  | 'processing_failed';
+  | 'processing_error';
 
 type AiResultFilter = 'all' | 'qualified' | 'partial' | 'rejected_low_match' | 'not_scored';
 
@@ -43,6 +47,7 @@ type FlagKey = 'possible_duplicate' | 'has_notes';
 
 interface AppFilters {
   processing: ProcessingFilter;
+  stopReason: StopReasonFilter;
   aiResult:   AiResultFilter;
   workflow:   WorkflowFilter;
   flags:      Set<FlagKey>;
@@ -50,6 +55,7 @@ interface AppFilters {
 
 const DEFAULT_FILTERS: AppFilters = {
   processing: 'all',
+  stopReason: 'all',
   aiResult:   'all',
   workflow:   'all',
   flags:      new Set(),
@@ -64,10 +70,10 @@ function fromLegacyFilter(f: ApplicationFilter): AppFilters {
     case 'partial':            return { ...base, processing: 'ai_scored', aiResult: 'partial' };
     case 'rejected':
     case 'low_match':          return { ...base, processing: 'ai_scored', aiResult: 'rejected_low_match' };
-    case 'security_blocked':   return { ...base, processing: 'security_blocked' };
-    case 'duplicate_blocked':  return { ...base, processing: 'duplicate_blocked' };
-    case 'failed_needs_review': return { ...base, processing: 'processing_failed' };
-    case 'blocked':            return { ...base, processing: 'stopped' };
+    case 'security_blocked':   return { ...base, processing: 'stopped_before_ai', stopReason: 'security_blocked' };
+    case 'duplicate_blocked':  return { ...base, processing: 'stopped_before_ai', stopReason: 'duplicate_blocked' };
+    case 'failed_needs_review': return { ...base, processing: 'stopped_before_ai', stopReason: 'processing_error' };
+    case 'blocked':            return { ...base, processing: 'stopped_before_ai' };
     case 'possible_duplicate': return { ...base, flags: new Set<FlagKey>(['possible_duplicate']) };
     case 'workflow_awaiting_review': return { ...base, workflow: 'awaiting_review' };
     case 'workflow_under_review':  return { ...base, workflow: 'under_review' };
@@ -83,7 +89,7 @@ function fromLegacyFilter(f: ApplicationFilter): AppFilters {
 }
 
 function isFiltersDefault(f: AppFilters): boolean {
-  return f.processing === 'all' && f.aiResult === 'all' && f.workflow === 'all' && f.flags.size === 0;
+  return f.processing === 'all' && f.stopReason === 'all' && f.aiResult === 'all' && f.workflow === 'all' && f.flags.size === 0;
 }
 
 // ── Props & interfaces ────────────────────────────────────────────────────────
@@ -118,19 +124,23 @@ const T = {
     of:               'of',
     results:          'results',
     // Dimension labels
-    dimProcessing: 'Processing Outcome',
+    dimProcessing: 'Processing Status',
+    dimStopReason: 'Stop Reason',
     dimAiResult:   'AI Result',
     dimWorkflow:   'Recruitment Workflow',
     dimFlags:      'Flags',
-    // Processing options
-    procAll:               'All Outcomes',
-    procPending:           'Pending / Processing',
-    procAiScored:          'AI Scored',
-    procStopped:           'Stopped Before AI',
-    procSecurityBlocked:   'Security Blocked',
-    procDuplicateBlocked:  'Duplicate Blocked',
-    procExtractionFailed:  'Extraction Failed',
-    procProcessingFailed:  'Processing Failed',
+    // Processing options (simplified, recruiter-facing)
+    procAll:          'All',
+    procPending:      'Pending',
+    procInProgress:   'In Progress',
+    procAiScored:     'AI Scored',
+    procStoppedBeforeAi: 'Stopped Before AI',
+    // Stop Reason options (optional detail under Stopped Before AI)
+    stopReasonAll:              'All Stop Reasons',
+    stopReasonSecurity:         'Security Blocked',
+    stopReasonDuplicate:        'Duplicate Blocked',
+    stopReasonExtraction:       'Extraction Failed',
+    stopReasonProcessingError:  'System Processing Error',
     // AI Result options
     aiAll:               'All AI Results',
     aiQualified:         'Qualified',
@@ -170,18 +180,21 @@ const T = {
     showing:          'عرض',
     of:               'من',
     results:          'نتائج',
-    dimProcessing: 'نتيجة المعالجة',
+    dimProcessing: 'حالة المعالجة',
+    dimStopReason: 'سبب الوقف',
     dimAiResult:   'نتيجة الذكاء الاصطناعي',
     dimWorkflow:   'سير التوظيف',
     dimFlags:      'العلامات',
-    procAll:               'جميع النتائج',
-    procPending:           'معلق / قيد المعالجة',
-    procAiScored:          'تم التقييم بالذكاء الاصطناعي',
-    procStopped:           'توقف قبل الذكاء الاصطناعي',
-    procSecurityBlocked:   'محظور أمنياً',
-    procDuplicateBlocked:  'مكرر موقوف',
-    procExtractionFailed:  'فشل الاستخراج',
-    procProcessingFailed:  'فشل المعالجة',
+    procAll:          'الكل',
+    procPending:      'معلق',
+    procInProgress:   'قيد المعالجة',
+    procAiScored:     'تم التقييم بالذكاء الاصطناعي',
+    procStoppedBeforeAi: 'توقف قبل الذكاء الاصطناعي',
+    stopReasonAll:              'جميع الأسباب',
+    stopReasonSecurity:         'محظور أمنياً',
+    stopReasonDuplicate:        'مكرر موقوف',
+    stopReasonExtraction:       'فشل الاستخراج',
+    stopReasonProcessingError:  'خطأ في المعالجة',
     aiAll:               'جميع نتائج الذكاء',
     aiQualified:         'مؤهل',
     aiPartial:           'جزئي',
@@ -442,36 +455,49 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
 
   const normaliseStatus  = (s: string) => s === 'low_match' ? 'rejected' : s;
   const isAiScored       = (a: Application) => a.processing_status === 'ai_scored';
-  const isPending        = (a: Application) => ['pending', 'queued', 'processing'].includes(a.processing_status ?? '');
+  // Pending = submitted but not yet queued
+  const isPending        = (a: Application) => a.processing_status === 'pending';
+  // In Progress = actively in the scoring pipeline
+  const isInProgress     = (a: Application) => ['queued', 'processing'].includes(a.processing_status ?? '');
+  // Stopped Before AI = failed at any pre-AI gate
+  const isStoppedBeforeAi = (a: Application) => a.processing_status === 'failed';
+  // Stop reason sub-predicates
   const isSecurityBlocked = (a: Application) =>
     a.processing_status === 'failed' && (
       a.stopped_reason === 'security_blocked' ||
       (a.stopped_reason == null && a.security_check_status === 'blocked')
     );
-  const isDuplicateBlocked  = (a: Application) => a.processing_status === 'failed' && a.stopped_reason === 'duplicate_blocked';
-  const isExtractionFailed  = (a: Application) => a.processing_status === 'failed' && a.stopped_reason === 'extraction_failed';
-  const isProcessingFailed  = (a: Application) =>
+  const isDuplicateBlocked   = (a: Application) => a.processing_status === 'failed' && a.stopped_reason === 'duplicate_blocked';
+  const isExtractionFailed   = (a: Application) => a.processing_status === 'failed' && a.stopped_reason === 'extraction_failed';
+  const isProcessingError    = (a: Application) =>
     a.processing_status === 'failed' &&
     !isSecurityBlocked(a) &&
     !isDuplicateBlocked(a) &&
     !isExtractionFailed(a);
-  const isStoppedBeforeAi   = (a: Application) => a.processing_status === 'failed';
 
   // ── Combined filter predicate ──────────────────────────────────────────────
 
   const matchesFilters = (a: Application): boolean => {
-    // Dimension 1: Processing Outcome
+    // Dimension 1: Processing Status (high-level outcome)
     switch (filters.processing) {
-      case 'pending':           if (!isPending(a))          return false; break;
-      case 'ai_scored':         if (!isAiScored(a))         return false; break;
-      case 'stopped':           if (!isStoppedBeforeAi(a))  return false; break;
-      case 'security_blocked':  if (!isSecurityBlocked(a))  return false; break;
-      case 'duplicate_blocked': if (!isDuplicateBlocked(a)) return false; break;
-      case 'extraction_failed': if (!isExtractionFailed(a)) return false; break;
-      case 'processing_failed': if (!isProcessingFailed(a)) return false; break;
+      case 'pending':          if (!isPending(a))         return false; break;
+      case 'in_progress':      if (!isInProgress(a))      return false; break;
+      case 'ai_scored':        if (!isAiScored(a))         return false; break;
+      case 'stopped_before_ai': if (!isStoppedBeforeAi(a)) return false; break;
     }
 
-    // Dimension 2: AI Result (only meaningful for scored apps, but filter still applies)
+    // Dimension 1b: Stop Reason (only meaningful when processing = stopped_before_ai)
+    if (filters.stopReason !== 'all') {
+      if (!isStoppedBeforeAi(a)) return false;
+      switch (filters.stopReason) {
+        case 'security_blocked':   if (!isSecurityBlocked(a))  return false; break;
+        case 'duplicate_blocked':  if (!isDuplicateBlocked(a)) return false; break;
+        case 'extraction_failed':  if (!isExtractionFailed(a)) return false; break;
+        case 'processing_error':   if (!isProcessingError(a))  return false; break;
+      }
+    }
+
+    // Dimension 2: AI Result (only meaningful for ai_scored apps)
     switch (filters.aiResult) {
       case 'qualified':
         if (!(isAiScored(a) && a.status === 'qualified')) return false; break;
@@ -483,7 +509,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         if (isAiScored(a)) return false; break;
     }
 
-    // Dimension 3: Workflow
+    // Dimension 3: Workflow (recruiter pipeline state, independent of processing)
     if (filters.workflow !== 'all' && a.workflow_status !== filters.workflow) return false;
 
     // Dimension 4: Flags (all selected flags must match — AND logic)
@@ -527,12 +553,12 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
       return { ...prev, flags: next };
     });
 
-  const clearFilters = () => setFilters({ ...DEFAULT_FILTERS, flags: new Set() });
+  const clearFilters = () => setFilters({ ...DEFAULT_FILTERS, flags: new Set<FlagKey>() });
 
   const getAiDecisionStyles = (app: Application) => {
     const ps = app.processing_status ?? '';
-    if (isStoppedBeforeAi(app)) return { pill: 'bg-red-100 text-red-700', badge: 'bg-slate-400', label: t.statusFailed, score: '—' };
-    if (isPending(app))          return { pill: 'bg-blue-100 text-blue-700', badge: 'bg-blue-300', label: t.statusProcessing, score: '…' };
+    if (isStoppedBeforeAi(app))             return { pill: 'bg-red-100 text-red-700', badge: 'bg-slate-400', label: t.statusFailed, score: '—' };
+    if (isPending(app) || isInProgress(app)) return { pill: 'bg-blue-100 text-blue-700', badge: 'bg-blue-300', label: t.statusProcessing, score: '…' };
     const s = normaliseStatus((app.status ?? '').toLowerCase().trim());
     if (s === 'qualified') return { pill: 'bg-green-100 text-green-800', badge: 'bg-success',  label: t.decQualified, score: app.score != null ? String(app.score) : '—' };
     if (s === 'partial')   return { pill: 'bg-amber-100 text-amber-800', badge: 'bg-warning',  label: t.decPartial,   score: app.score != null ? String(app.score) : '—' };
@@ -542,14 +568,19 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   // ── Filter select option lists ─────────────────────────────────────────────
 
   const processingOptions = [
-    { value: 'all',               label: t.procAll               },
-    { value: 'pending',           label: t.procPending           },
-    { value: 'ai_scored',         label: t.procAiScored          },
-    { value: 'stopped',           label: t.procStopped           },
-    { value: 'security_blocked',  label: t.procSecurityBlocked   },
-    { value: 'duplicate_blocked', label: t.procDuplicateBlocked  },
-    { value: 'extraction_failed', label: t.procExtractionFailed  },
-    { value: 'processing_failed', label: t.procProcessingFailed  },
+    { value: 'all',              label: t.procAll             },
+    { value: 'pending',          label: t.procPending         },
+    { value: 'in_progress',      label: t.procInProgress      },
+    { value: 'ai_scored',        label: t.procAiScored        },
+    { value: 'stopped_before_ai', label: t.procStoppedBeforeAi },
+  ];
+
+  const stopReasonOptions = [
+    { value: 'all',               label: t.stopReasonAll             },
+    { value: 'security_blocked',  label: t.stopReasonSecurity        },
+    { value: 'duplicate_blocked', label: t.stopReasonDuplicate       },
+    { value: 'extraction_failed', label: t.stopReasonExtraction      },
+    { value: 'processing_error',  label: t.stopReasonProcessingError },
   ];
 
   const aiResultOptions = [
@@ -613,15 +644,24 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
       {/* ── Multi-dimensional filter panel ── */}
       <div className="bg-white rounded-xl border border-border shadow-sm px-5 py-4 space-y-4">
 
-        {/* Row 1: three filter selects */}
+        {/* Row 1: four filter selects */}
         <div className="flex flex-wrap gap-3">
           <FilterSelect
             label={t.dimProcessing}
             value={filters.processing}
             active={filters.processing !== 'all'}
-            onChange={v => updateFilters({ processing: v as ProcessingFilter })}
+            onChange={v => updateFilters({ processing: v as ProcessingFilter, stopReason: 'all' })}
             options={processingOptions}
           />
+          {filters.processing === 'stopped_before_ai' && (
+            <FilterSelect
+              label={t.dimStopReason}
+              value={filters.stopReason}
+              active={filters.stopReason !== 'all'}
+              onChange={v => updateFilters({ stopReason: v as StopReasonFilter })}
+              options={stopReasonOptions}
+            />
+          )}
           <FilterSelect
             label={t.dimAiResult}
             value={filters.aiResult}

@@ -229,7 +229,10 @@ const T = {
     decNotScored: 'Not Scored',
     // Processing labels
     procPending: 'Pending',
+    procInProgress: 'In Progress',
     procAiScored: 'AI Scored',
+    procStoppedBeforeAi: 'Stopped Before AI',
+    // Legacy labels kept for existing saved-view backward compat
     procFailed: 'Failed',
     procSecurityBlocked: 'Security Blocked',
     procDuplicateBlocked: 'Duplicate Blocked',
@@ -389,7 +392,10 @@ const T = {
     decRejected: 'مرفوض',
     decNotScored: 'غير مقيَّم',
     procPending: 'معلق',
+    procInProgress: 'قيد المعالجة',
     procAiScored: 'مقيَّم بالذكاء',
+    procStoppedBeforeAi: 'توقف قبل الذكاء',
+    // Legacy labels kept for backward compat
     procFailed: 'فشل',
     procSecurityBlocked: 'محظور أمنياً',
     procDuplicateBlocked: 'مكرر موقوف',
@@ -547,16 +553,18 @@ function processingStyle(status: string): string {
 
 function processingLabel(status: string, t: typeof T['en']): string {
   const map: Record<string, string> = {
+    // Primary display labels
     ai_scored:          t.procAiScored,
-    failed:             t.procFailed,
-    processing_failed:  t.procProcessingFailed,
-    extraction_failed:  t.procExtractionFailed,
+    pending:            t.procPending,
+    queued:             t.procInProgress,
+    processing:         t.procInProgress,
+    // All failed sub-types map to the same recruiter-facing label
+    failed:             t.procStoppedBeforeAi,
     security_blocked:   t.procSecurityBlocked,
     duplicate_blocked:  t.procDuplicateBlocked,
-    stopped:            t.procStopped,
-    queued:             t.procQueued,
-    processing:         t.procProcessing,
-    pending:            t.procPending,
+    extraction_failed:  t.procExtractionFailed,
+    processing_failed:  t.procProcessingFailed,
+    stopped:            t.procStoppedBeforeAi,
   };
   return map[status] ?? status;
 }
@@ -4279,16 +4287,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
         >
           <option value="">{t.filterProcessing}</option>
-          <option value="pending">Pending</option>
-          <option value="ai_scored">AI Scored</option>
-          <option value="failed">Failed</option>
-          <option value="processing_failed">Processing Failed</option>
-          <option value="extraction_failed">Extraction Failed</option>
-          <option value="security_blocked">Security Blocked</option>
-          <option value="duplicate_blocked">Duplicate Blocked</option>
-          <option value="stopped">Stopped</option>
-          <option value="queued">Queued</option>
-          <option value="processing">Processing</option>
+          <option value="pending">{t.procPending}</option>
+          <option value="in_progress">{t.procInProgress}</option>
+          <option value="ai_scored">{t.procAiScored}</option>
+          <option value="stopped_before_ai">{t.procStoppedBeforeAi}</option>
         </select>
 
         {/* AI result filter */}

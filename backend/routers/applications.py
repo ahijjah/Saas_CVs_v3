@@ -185,15 +185,20 @@ async def list_applications(
         params["wf_status"] = workflow_status
 
     # Processing status filter
-    # Special alias 'failed_or_blocked' expands to all non-recoverable system states
-    # so the frontend can send a single param without multi-value URL encoding.
-    FAILED_OR_BLOCKED_STATUSES = (
-        "'failed', 'security_blocked', 'duplicate_blocked', "
-        "'extraction_failed', 'processing_failed', 'stopped'"
-    )
+    # Aliases for recruiter-facing simplified filter values:
+    #   in_progress      → queued | processing (actively in the scoring pipeline)
+    #   stopped_before_ai → failed AND stopped_reason IS NOT NULL (pre-AI gate failures)
+    #   failed_or_blocked → legacy alias for all non-recoverable system states
     if processing_status:
-        if processing_status == 'failed_or_blocked':
-            where_parts.append(f"a.processing_status IN ({FAILED_OR_BLOCKED_STATUSES})")
+        if processing_status == 'in_progress':
+            where_parts.append("a.processing_status IN ('queued', 'processing')")
+        elif processing_status == 'stopped_before_ai':
+            where_parts.append("a.processing_status = 'failed' AND a.stopped_reason IS NOT NULL")
+        elif processing_status == 'failed_or_blocked':
+            # Legacy alias: all failed/stopped states (backward compat with old quick-views)
+            where_parts.append(
+                "a.processing_status = 'failed'"
+            )
         else:
             where_parts.append("a.processing_status = :proc_status")
             params["proc_status"] = processing_status
@@ -373,7 +378,14 @@ async def list_applications(
             "duplicate_reason": r["duplicate_reason"],
             "duplicate_reference_application_id": str(r["duplicate_reference_application_id"]) if r["duplicate_reference_application_id"] else None,
             "evaluation_exit_reason": r["evaluation_exit_reason"],
-            "workflow_status": r["workflow_status"] or "awaiting_review",
+            # Only AI-scored applications enter the recruiter workflow queue.
+            # Stopped-before-AI applications (processing_status = 'failed') must not
+            # masquerade as 'awaiting_review' — return their actual DB value (None/null).
+            "workflow_status": (
+                r["workflow_status"] or "awaiting_review"
+                if r["processing_status"] == "ai_scored"
+                else r["workflow_status"]
+            ),
             "recruiter_notes": r["recruiter_notes"],
             "applied_at": r["applied_at"].isoformat() if r["applied_at"] else None,
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
