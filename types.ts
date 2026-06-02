@@ -370,7 +370,6 @@ export interface ApplicationDetailedAnalysis {
   preferred_contact_email?: string | null;
   preferred_contact_source?: string | null;
   preferred_contact_confidence?: number | null;
-  preferred_contact_locked?: boolean;
   submitted_by_user_id?: string | null;
   submitted_by_name?: string | null;
   submitted_by_email?: string | null;

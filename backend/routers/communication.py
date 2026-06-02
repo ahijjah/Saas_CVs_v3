@@ -60,8 +60,6 @@ class CommunicationUpdate(BaseModel):
 
 class PreferredContactUpdate(BaseModel):
     preferred_contact_email: str | None = None
-    preferred_contact_source: str = "manual_override"
-    preferred_contact_locked: bool = True
 
 
 VALID_CATEGORIES = {"interview_invitation", "rejection", "shortlisted", "offer", "request_info", "talent_pool", "general"}
@@ -525,16 +523,13 @@ async def update_preferred_contact(
         text("""
             UPDATE applications SET
                 preferred_contact_email = :email,
-                preferred_contact_source = :source,
-                preferred_contact_locked = :locked
+                preferred_contact_source = 'manual_override'
             WHERE application_id = CAST(:app_id AS uuid)
-            RETURNING preferred_contact_email, preferred_contact_source, preferred_contact_locked
+            RETURNING preferred_contact_email, preferred_contact_source
         """),
         {
             "app_id": application_id,
             "email": body.preferred_contact_email,
-            "source": body.preferred_contact_source,
-            "locked": body.preferred_contact_locked,
         },
     )
     row = result.mappings().first()
@@ -543,7 +538,6 @@ async def update_preferred_contact(
     return {
         "preferred_contact_email": row["preferred_contact_email"],
         "preferred_contact_source": row["preferred_contact_source"],
-        "preferred_contact_locked": bool(row["preferred_contact_locked"]),
     }
 
 

@@ -277,8 +277,6 @@ export class APIService {
 
   async updatePreferredContact(applicationId: string, data: {
     preferred_contact_email?: string | null;
-    preferred_contact_source?: string;
-    preferred_contact_locked?: boolean;
   }) {
     return apiService.patch(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/preferred-contact`, data, this.token);
   }

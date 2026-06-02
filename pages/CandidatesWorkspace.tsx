@@ -80,7 +80,6 @@ interface Candidate {
   is_talent_pool?: boolean;
   preferred_contact_email?: string | null;
   preferred_contact_source?: string | null;
-  preferred_contact_locked?: boolean;
 }
 
 interface Pagination {
@@ -764,7 +763,6 @@ interface AppDetail {
   email_sender_address?: string | null;
   preferred_contact_email?: string | null;
   preferred_contact_source?: string | null;
-  preferred_contact_locked?: boolean;
 }
 
 interface CandidateDetailDrawerProps {
@@ -887,9 +885,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   // Preferred contact local state — shadows candidate prop after recruiter saves
   const [showPrefContactEdit, setShowPrefContactEdit] = useState(false);
   const [prefContactEmailInput, setPrefContactEmailInput] = useState('');
-  const [prefContactLock, setPrefContactLock] = useState(true);
   const [savingPrefContact, setSavingPrefContact] = useState(false);
-  const [localPreferred, setLocalPreferred] = useState<{ email: string | null; source: string | null; locked: boolean } | null>(null);
+  const [localPreferred, setLocalPreferred] = useState<{ email: string | null; source: string | null } | null>(null);
 
   // Must come before any early return — Rules of Hooks
 
@@ -1055,7 +1052,6 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setDeletingCommId(null);
     setShowPrefContactEdit(false);
     setPrefContactEmailInput('');
-    setPrefContactLock(true);
     setLocalPreferred(null);
     setShowTagCreator(false);
     setNewTagName('');
@@ -2099,13 +2095,12 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           const effectivePreferred = localPreferred ?? {
             email: candidate.preferred_contact_email ?? null,
             source: candidate.preferred_contact_source ?? null,
-            locked: candidate.preferred_contact_locked ?? false,
           };
           const sourceLabels: Record<string, string> = {
             manual_upload: 'Manual Upload', email_forwarding: 'Email Fwd',
             platform_email: 'Platform Email', public_apply: 'Application',
             cv_extracted: 'CV Extracted', email_sender: 'Email Sender',
-            manual_override: 'Manual',
+            manual_override: 'Manual Override',
           };
           return (
           <div className="px-6 py-4 space-y-4">
@@ -2114,7 +2109,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Preferred Contact Email</p>
                 <button
-                  onClick={() => { setPrefContactEmailInput(effectivePreferred.email || ''); setPrefContactLock(effectivePreferred.locked); setShowPrefContactEdit(v => !v); }}
+                  onClick={() => { setPrefContactEmailInput(effectivePreferred.email || ''); setShowPrefContactEdit(v => !v); }}
                   className="text-xs text-indigo-600 hover:underline"
                 >
                   {showPrefContactEdit ? 'Cancel' : 'Edit'}
@@ -2128,9 +2123,6 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                       <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700">
                         {sourceLabels[effectivePreferred.source] || effectivePreferred.source}
                       </span>
-                    )}
-                    {effectivePreferred.locked && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-700">Locked</span>
                     )}
                   </div>
                 ) : (
@@ -2151,15 +2143,6 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                     placeholder="email@example.com"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   />
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={prefContactLock}
-                      onChange={e => setPrefContactLock(e.target.checked)}
-                      className="rounded border-slate-300 text-indigo-600"
-                    />
-                    <span className="text-xs text-slate-600">Lock as preferred contact (prevent automatic updates)</span>
-                  </label>
                   <div className="flex gap-2">
                     <button
                       onClick={async () => {
@@ -2169,10 +2152,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                           const api = new APIService(token);
                           const result = await api.updatePreferredContact(candidate.application_id, {
                             preferred_contact_email: prefContactEmailInput.trim() || null,
-                            preferred_contact_source: 'manual_override',
-                            preferred_contact_locked: prefContactLock,
                           });
-                          setLocalPreferred({ email: result.preferred_contact_email, source: result.preferred_contact_source, locked: result.preferred_contact_locked });
+                          setLocalPreferred({ email: result.preferred_contact_email, source: result.preferred_contact_source });
                           setShowPrefContactEdit(false);
                           addToast('Preferred contact email updated.', 'success');
                         } catch (err: any) {
@@ -3052,11 +3033,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   <p className="text-slate-700 break-all">{candidate.preferred_contact_email || detail?.preferred_contact_email}</p>
                   {(candidate.preferred_contact_source || detail?.preferred_contact_source) && (
                     <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700">
-                      {{ manual_upload: 'Manual Upload', email_forwarding: 'Email Fwd', platform_email: 'Platform Email', public_apply: 'Application', cv_extracted: 'CV Extracted', email_sender: 'Email Sender', manual_override: 'Manual' }[candidate.preferred_contact_source || detail?.preferred_contact_source || ''] || (candidate.preferred_contact_source || detail?.preferred_contact_source)}
+                      {{ manual_upload: 'Manual Upload', email_forwarding: 'Email Fwd', platform_email: 'Platform Email', public_apply: 'Application', cv_extracted: 'CV Extracted', email_sender: 'Email Sender', manual_override: 'Manual Override' }[candidate.preferred_contact_source || detail?.preferred_contact_source || ''] || (candidate.preferred_contact_source || detail?.preferred_contact_source)}
                     </span>
-                  )}
-                  {(candidate.preferred_contact_locked || detail?.preferred_contact_locked) && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-700">Locked</span>
                   )}
                 </div>
               </div>
