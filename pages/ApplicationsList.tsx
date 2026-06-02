@@ -236,24 +236,26 @@ interface FilterSelectProps {
   active:   boolean;
   onChange: (v: string) => void;
   options:  { value: string; label: string }[];
+  disabled?: boolean;
 }
 
-const FilterSelect: React.FC<FilterSelectProps> = ({ label, value, active, onChange, options }) => (
+const FilterSelect: React.FC<FilterSelectProps> = ({ label, value, active, onChange, options, disabled = false }) => (
   <div className="flex-1 min-w-[160px]">
-    <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${active ? 'text-primary' : 'text-textMuted'}`}>
+    <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${disabled ? 'text-textMuted/50' : active ? 'text-primary' : 'text-textMuted'}`}>
       {label}
     </p>
-    <div className={`relative rounded-lg border transition-colors ${active ? 'border-primary/40 bg-primary/5' : 'border-border bg-white'}`}>
+    <div className={`relative rounded-lg border transition-colors ${disabled ? 'border-border/50 bg-slate-50' : active ? 'border-primary/40 bg-primary/5' : 'border-border bg-white'}`}>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className={`w-full appearance-none text-xs font-bold px-3 py-2 pr-7 rounded-lg bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 ${active ? 'text-primary' : 'text-textMain'}`}
+        disabled={disabled}
+        className={`w-full appearance-none text-xs font-bold px-3 py-2 pr-7 rounded-lg bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed ${disabled ? 'text-textMuted/50' : active ? 'text-primary' : 'text-textMain'}`}
       >
         {options.map(o => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
-      <svg className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${active ? 'text-primary' : 'text-textMuted'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${disabled ? 'text-textMuted/30' : active ? 'text-primary' : 'text-textMuted'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
       </svg>
     </div>
@@ -543,8 +545,14 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   const filteredApplications = applicationsAll.filter(matchesFilters);
   const isDefault = isFiltersDefault(filters);
 
-  const updateFilters = (patch: Partial<Omit<AppFilters, 'flags'>>) =>
+  const updateFilters = (patch: Partial<Omit<AppFilters, 'flags'>>) => {
+    // If processing status changes to something other than 'all' or 'ai_scored',
+    // disable and reset AI Result (it only applies to ai_scored apps)
+    if (patch.processing !== undefined && patch.processing !== 'all' && patch.processing !== 'ai_scored') {
+      patch.aiResult = 'all';
+    }
     setFilters(prev => ({ ...prev, ...patch }));
+  };
 
   const toggleFlag = (key: FlagKey) =>
     setFilters(prev => {
@@ -668,6 +676,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
             active={filters.aiResult !== 'all'}
             onChange={v => updateFilters({ aiResult: v as AiResultFilter })}
             options={aiResultOptions}
+            disabled={filters.processing !== 'all' && filters.processing !== 'ai_scored'}
           />
           <FilterSelect
             label={t.dimWorkflow}

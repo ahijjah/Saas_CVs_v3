@@ -4283,7 +4283,16 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         {/* Processing filter */}
         <select
           value={processingFilter}
-          onChange={e => { setProcessingFilter(e.target.value); setPage(1); }}
+          onChange={e => {
+            const newProcessing = e.target.value;
+            // If changing to pending, in_progress, or stopped_before_ai, reset AI Result filter
+            // (AI Result only applies to ai_scored apps)
+            if (newProcessing && newProcessing !== 'ai_scored') {
+              setAiResultFilter('');
+            }
+            setProcessingFilter(newProcessing);
+            setPage(1);
+          }}
           className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
         >
           <option value="">{t.filterProcessing}</option>
@@ -4297,7 +4306,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         <select
           value={aiResultFilter}
           onChange={e => { setAiResultFilter(e.target.value); setPage(1); }}
-          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          disabled={processingFilter !== '' && processingFilter !== 'ai_scored'}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <option value="">{t.filterAiResult}</option>
           <option value="qualified">Qualified</option>
