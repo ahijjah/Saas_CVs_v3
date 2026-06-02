@@ -148,6 +148,7 @@ async def get_funnel_metrics(
               FROM applications a
               JOIN jobs j ON j.job_id = a.job_id
               WHERE j.tenant_id = CAST(:tid AS uuid)
+                AND a.workflow_status IS NOT NULL
                 AND a.created_at >= :date_from
                 AND a.created_at <= :date_to
                 {extra_where}
@@ -262,6 +263,7 @@ async def get_recruiter_productivity(
             LEFT JOIN candidate_interview_feedback cif ON cif.interview_id = ci.interview_id
             LEFT JOIN candidate_approvals ca ON ca.application_id = a.application_id
             WHERE u.tenant_id = CAST(:tid AS uuid)
+              AND a.workflow_status IS NOT NULL
               AND a.created_at >= :date_from
               AND a.created_at <= :date_to
               {extra_where}
@@ -349,6 +351,7 @@ async def get_aging_metrics(
               LEFT JOIN users u ON u.user_id = a.assigned_user_id
               LEFT JOIN candidate_approvals ca ON ca.application_id = a.application_id
               WHERE j.tenant_id = CAST(:tid AS uuid)
+                AND a.workflow_status IS NOT NULL
                 AND a.workflow_status NOT IN ('hired', 'rejected', 'withdrawn')
                 {extra_where}
               GROUP BY a.application_id, a.candidate_name, a.job_id, j.title,
@@ -465,6 +468,7 @@ async def get_insights(
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             WHERE j.tenant_id = CAST(:tid AS uuid)
+              AND a.workflow_status IS NOT NULL
         """),
         {"tid": current_user.tenant_id, "review_days": review_days, "interview_days": interview_days},
     )
@@ -486,6 +490,7 @@ async def get_insights(
             JOIN applications a ON a.assigned_user_id = u.user_id
             JOIN jobs j ON j.job_id = a.job_id
             WHERE j.tenant_id = CAST(:tid AS uuid)
+              AND a.workflow_status IS NOT NULL
               AND a.workflow_status NOT IN ('hired','rejected','withdrawn')
             GROUP BY u.user_id
             HAVING COUNT(a.application_id) > 0
