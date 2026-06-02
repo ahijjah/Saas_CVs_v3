@@ -262,4 +262,16 @@ export class APIService {
   async sendCommunication(applicationId: string, data: { subject: string; body: string; to_email?: string; template_id?: string }) {
     return apiService.post(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/communications/send`, data, this.token);
   }
+
+  async updateCommunication(applicationId: string, communicationId: string, data: { subject?: string; body?: string; template_id?: string }) {
+    return apiService.patch(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/communications/${communicationId}`, data, this.token);
+  }
+
+  async sendExistingCommunication(applicationId: string, communicationId: string) {
+    return apiService.post(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/communications/${communicationId}/send`, {}, this.token);
+  }
+
+  async deleteCommunication(applicationId: string, communicationId: string) {
+    return apiService.delete(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/communications/${communicationId}`, this.token);
+  }
 };

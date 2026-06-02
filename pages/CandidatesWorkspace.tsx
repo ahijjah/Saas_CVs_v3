@@ -870,6 +870,10 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [savingComm, setSavingComm] = useState(false);
   const [commTemplates, setCommTemplates] = useState<MessageTemplate[]>([]);
   const [showSendConfirm, setShowSendConfirm] = useState(false);
+  // When non-null, we're editing or sending an existing record (not creating a new one)
+  const [editingCommId, setEditingCommId] = useState<string | null>(null);
+  const [sendingCommId, setSendingCommId] = useState<string | null>(null);
+  const [deletingCommId, setDeletingCommId] = useState<string | null>(null);
 
   // Must come before any early return — Rules of Hooks
 
@@ -1030,6 +1034,9 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setCommunications([]);
     setShowCommForm(false);
     setCommForm({ subject: '', body: '', template_id: '' });
+    setEditingCommId(null);
+    setSendingCommId(null);
+    setDeletingCommId(null);
     setShowTagCreator(false);
     setNewTagName('');
     setShowReuseModal(false);
@@ -2072,7 +2079,11 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
             {/* New communication button */}
             {!showCommForm && (
               <button
-                onClick={() => { setShowCommForm(true); setCommForm({ subject: '', body: '', template_id: '' }); }}
+                onClick={() => {
+                  setEditingCommId(null);
+                  setCommForm({ subject: '', body: '', template_id: '' });
+                  setShowCommForm(true);
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2085,6 +2096,9 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
             {/* Compose form */}
             {showCommForm && (
               <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+                <p className="text-xs font-bold text-slate-700">
+                  {editingCommId ? 'Edit Draft' : t.newCommunication}
+                </p>
                 {/* Template chooser */}
                 {commTemplates.length > 0 && (
                   <div>
@@ -2145,17 +2159,28 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                       setSavingComm(true);
                       try {
                         const api = new APIService(token);
-                        const result = await api.logCommunication(candidate.application_id, {
-                          subject: commForm.subject || undefined,
-                          body: commForm.body || undefined,
-                          status: 'logged',
-                          template_id: commForm.template_id || undefined,
-                        });
-                        setCommunications(prev => [result, ...prev]);
+                        if (editingCommId) {
+                          // Update existing draft in-place
+                          const updated = await api.updateCommunication(candidate.application_id, editingCommId, {
+                            subject: commForm.subject || undefined,
+                            body: commForm.body || undefined,
+                            template_id: commForm.template_id || undefined,
+                          });
+                          setCommunications(prev => prev.map(c => c.communication_id === editingCommId ? { ...c, ...updated } : c));
+                          setEditingCommId(null);
+                        } else {
+                          const result = await api.logCommunication(candidate.application_id, {
+                            subject: commForm.subject || undefined,
+                            body: commForm.body || undefined,
+                            status: 'logged',
+                            template_id: commForm.template_id || undefined,
+                          });
+                          setCommunications(prev => [result, ...prev]);
+                        }
                         setShowCommForm(false);
-                        addToast(t.commSaved, 'success');
+                        addToast(editingCommId ? 'Draft updated.' : t.commSaved, 'success');
                       } catch (err: any) {
-                        addToast(err.message || 'Failed to log communication.', 'error');
+                        addToast(err.message || 'Failed to save.', 'error');
                       } finally {
                         setSavingComm(false);
                       }
@@ -2163,7 +2188,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                     disabled={savingComm || (!commForm.subject && !commForm.body)}
                     className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
                   >
-                    {savingComm ? '…' : t.logCommunication}
+                    {savingComm ? '…' : editingCommId ? 'Update Draft' : t.logCommunication}
                   </button>
                   <button
                     onClick={async () => {
@@ -2171,15 +2196,25 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                       setSavingComm(true);
                       try {
                         const api = new APIService(token);
-                        const result = await api.logCommunication(candidate.application_id, {
-                          subject: commForm.subject || undefined,
-                          body: commForm.body || undefined,
-                          status: 'draft',
-                          template_id: commForm.template_id || undefined,
-                        });
-                        setCommunications(prev => [result, ...prev]);
+                        if (editingCommId) {
+                          const updated = await api.updateCommunication(candidate.application_id, editingCommId, {
+                            subject: commForm.subject || undefined,
+                            body: commForm.body || undefined,
+                            template_id: commForm.template_id || undefined,
+                          });
+                          setCommunications(prev => prev.map(c => c.communication_id === editingCommId ? { ...c, ...updated } : c));
+                          setEditingCommId(null);
+                        } else {
+                          const result = await api.logCommunication(candidate.application_id, {
+                            subject: commForm.subject || undefined,
+                            body: commForm.body || undefined,
+                            status: 'draft',
+                            template_id: commForm.template_id || undefined,
+                          });
+                          setCommunications(prev => [result, ...prev]);
+                        }
                         setShowCommForm(false);
-                        addToast(t.commSaved, 'success');
+                        addToast(editingCommId ? 'Draft saved.' : 'Draft saved.', 'success');
                       } catch (err: any) {
                         addToast(err.message || 'Failed to save draft.', 'error');
                       } finally {
@@ -2193,7 +2228,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   </button>
                 </div>
                 <button
-                  onClick={() => setShowCommForm(false)}
+                  onClick={() => { setShowCommForm(false); setEditingCommId(null); }}
                   className="w-full px-3 py-2 text-xs text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50"
                 >
                   Cancel
@@ -2201,7 +2236,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               </div>
             )}
 
-            {/* Send confirmation dialog */}
+            {/* Send confirmation dialog — handles both new compose and existing draft/failed send */}
             {showSendConfirm && candidate && (
               <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-lg">
@@ -2219,7 +2254,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   <p className="text-xs text-slate-500 mb-4">This email will be sent immediately and recorded in the communication history.</p>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => setShowSendConfirm(false)}
+                      onClick={() => { setShowSendConfirm(false); setSendingCommId(null); }}
                       className="flex-1 px-4 py-2 rounded text-sm text-slate-700 bg-slate-100 hover:bg-slate-200"
                     >
                       Cancel
@@ -2230,19 +2265,40 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                         setSavingComm(true);
                         try {
                           const api = new APIService(token);
-                          const result = await api.sendCommunication(candidate.application_id, {
-                            subject: commForm.subject,
-                            body: commForm.body,
-                            to_email: candidate.candidate_email || undefined,
-                            template_id: commForm.template_id || undefined,
-                          });
-                          setCommunications(prev => [result, ...prev]);
+                          if (sendingCommId) {
+                            // Send an existing draft/failed record in-place (no new record)
+                            const updated = await api.sendExistingCommunication(candidate.application_id, sendingCommId);
+                            setCommunications(prev => prev.map(c => c.communication_id === sendingCommId ? { ...c, ...updated } : c));
+                          } else {
+                            // New send from compose form
+                            const result = await api.sendCommunication(candidate.application_id, {
+                              subject: commForm.subject,
+                              body: commForm.body,
+                              to_email: candidate.candidate_email || undefined,
+                              template_id: commForm.template_id || undefined,
+                            });
+                            if (editingCommId) {
+                              // We were editing a draft and chose "Send Email" — the draft was replaced by sending
+                              // Remove the old draft, the send endpoint created a new record
+                              setCommunications(prev => [result, ...prev.filter(c => c.communication_id !== editingCommId)]);
+                              setEditingCommId(null);
+                            } else {
+                              setCommunications(prev => [result, ...prev]);
+                            }
+                          }
                           setShowCommForm(false);
                           setShowSendConfirm(false);
+                          setSendingCommId(null);
                           setCommForm({ subject: '', body: '', template_id: '' });
                           addToast('Email sent successfully.', 'success');
                         } catch (err: any) {
                           addToast(err.message || 'Failed to send email.', 'error');
+                          // On failure, update the sending record's status to failed in local state
+                          if (sendingCommId) {
+                            setCommunications(prev => prev.map(c =>
+                              c.communication_id === sendingCommId ? { ...c, status: 'failed' } : c
+                            ));
+                          }
                         } finally {
                           setSavingComm(false);
                         }
@@ -2267,41 +2323,109 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               <p className="text-sm text-slate-400 italic py-4">{t.noCommunications}</p>
             ) : (
               <div className="space-y-3">
-                {communications.map(comm => (
-                  <div key={comm.communication_id} className="bg-white border border-slate-200 rounded-xl p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {comm.template_category && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700">
-                            {(t.commCategories as Record<string, string>)[comm.template_category] || comm.template_category}
+                {communications.map(comm => {
+                  const isDraft = comm.status === 'draft';
+                  const isFailed = comm.status === 'failed';
+                  const isActionable = isDraft || isFailed;
+                  return (
+                    <div key={comm.communication_id} className={`bg-white rounded-xl p-4 border ${isDraft ? 'border-amber-200' : isFailed ? 'border-red-200' : 'border-slate-200'}`}>
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {comm.template_category && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700">
+                              {(t.commCategories as Record<string, string>)[comm.template_category] || comm.template_category}
+                            </span>
+                          )}
+                          <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${
+                            comm.status === 'sent' ? 'bg-green-100 text-green-700' :
+                            comm.status === 'failed' ? 'bg-red-100 text-red-700' :
+                            comm.status === 'draft' ? 'bg-amber-100 text-amber-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {comm.status}
                           </span>
-                        )}
-                        <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${
-                          comm.status === 'sent' ? 'bg-green-100 text-green-700' :
-                          comm.status === 'failed' ? 'bg-red-100 text-red-700' :
-                          'bg-amber-100 text-amber-700'
-                        }`}>
-                          {comm.status}
+                        </div>
+                        <span className="text-[10px] text-slate-400 ml-2 flex-shrink-0">
+                          {new Date(comm.created_at).toLocaleDateString()}
                         </span>
                       </div>
-                      <span className="text-[10px] text-slate-400 ml-2 flex-shrink-0">
-                        {new Date(comm.created_at).toLocaleDateString()}
-                      </span>
+                      {comm.subject && (
+                        <p className="text-sm font-semibold text-slate-800 mb-1">{comm.subject}</p>
+                      )}
+                      {comm.body && (
+                        <p className="text-xs text-slate-600 whitespace-pre-wrap line-clamp-3">{comm.body}</p>
+                      )}
+                      {comm.error_message && (
+                        <p className="text-[10px] text-red-600 mt-2 bg-red-50 rounded px-2 py-1">{comm.error_message}</p>
+                      )}
+                      {comm.created_by_name && (
+                        <p className="text-[10px] text-slate-400 mt-2">by {comm.created_by_name}</p>
+                      )}
+                      {/* Action buttons for draft and failed records */}
+                      {isActionable && (
+                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                          {/* Edit (draft only) */}
+                          {isDraft && (
+                            <button
+                              onClick={() => {
+                                setEditingCommId(comm.communication_id);
+                                setCommForm({
+                                  subject: comm.subject || '',
+                                  body: comm.body || '',
+                                  template_id: '',
+                                });
+                                setShowCommForm(true);
+                              }}
+                              className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                            >
+                              Edit
+                            </button>
+                          )}
+                          {/* Send / Retry */}
+                          <button
+                            onClick={() => {
+                              // Load content into form for subject display in confirm dialog
+                              setCommForm({
+                                subject: comm.subject || '',
+                                body: comm.body || '',
+                                template_id: '',
+                              });
+                              setSendingCommId(comm.communication_id);
+                              setShowSendConfirm(true);
+                            }}
+                            disabled={deletingCommId === comm.communication_id}
+                            className="text-xs font-medium text-green-600 hover:text-green-800 disabled:opacity-40"
+                          >
+                            {isFailed ? 'Retry Send' : 'Send Email'}
+                          </button>
+                          {/* Delete (draft only) */}
+                          {isDraft && (
+                            <button
+                              onClick={async () => {
+                                if (deletingCommId || !candidate) return;
+                                setDeletingCommId(comm.communication_id);
+                                try {
+                                  const api = new APIService(token);
+                                  await api.deleteCommunication(candidate.application_id, comm.communication_id);
+                                  setCommunications(prev => prev.filter(c => c.communication_id !== comm.communication_id));
+                                  addToast('Draft deleted.', 'success');
+                                } catch (err: any) {
+                                  addToast(err.message || 'Failed to delete draft.', 'error');
+                                } finally {
+                                  setDeletingCommId(null);
+                                }
+                              }}
+                              disabled={deletingCommId === comm.communication_id}
+                              className="text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-40 ml-auto"
+                            >
+                              {deletingCommId === comm.communication_id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {comm.subject && (
-                      <p className="text-sm font-semibold text-slate-800 mb-1">{comm.subject}</p>
-                    )}
-                    {comm.body && (
-                      <p className="text-xs text-slate-600 whitespace-pre-wrap line-clamp-3">{comm.body}</p>
-                    )}
-                    {comm.error_message && (
-                      <p className="text-[10px] text-red-600 mt-2 bg-red-50 rounded px-2 py-1">{comm.error_message}</p>
-                    )}
-                    {comm.created_by_name && (
-                      <p className="text-[10px] text-slate-400 mt-2">by {comm.created_by_name}</p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

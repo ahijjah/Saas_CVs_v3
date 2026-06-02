@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Annotated
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -46,6 +47,12 @@ class CommunicationSend(BaseModel):
     subject: str
     body: str
     to_email: str | None = None
+    template_id: str | None = None
+
+
+class CommunicationUpdate(BaseModel):
+    subject: str | None = None
+    body: str | None = None
     template_id: str | None = None
 
 
@@ -389,8 +396,6 @@ async def send_email_to_candidate(
 
     # Build plain text version from HTML (simple strip-tags fallback)
     text_body = body.body.replace("<br/>", "\n").replace("<br>", "\n").replace("<p>", "").replace("</p>", "\n")
-    # Remove HTML tags (very basic)
-    import re
     text_body = re.sub(r"<[^>]+>", "", text_body).strip()
 
     # Try to send the email
@@ -439,3 +444,166 @@ async def send_email_to_candidate(
     r["communication_id"] = str(r["communication_id"])
     r["created_at"] = r["created_at"].isoformat() if r["created_at"] else None
     return r
+
+
+def _strip_html(html: str) -> str:
+    """Very basic HTML-to-text for plain text email parts."""
+    text = html.replace("<br/>", "\n").replace("<br>", "\n").replace("<p>", "").replace("</p>", "\n")
+    return re.sub(r"<[^>]+>", "", text).strip()
+
+
+async def _verify_comm_ownership(
+    db: AsyncSession,
+    application_id: str,
+    communication_id: str,
+    tenant_id: str,
+    allowed_statuses: list[str] | None = None,
+) -> dict:
+    """Return communication record or raise 404/403. Optionally restrict by status."""
+    row = await db.execute(
+        text("""
+            SELECT c.communication_id, c.subject, c.body, c.status, c.template_id,
+                   c.candidate_email, c.candidate_name, c.error_message, c.created_at
+            FROM candidate_communications c
+            JOIN applications a ON a.application_id = c.application_id
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE c.communication_id = CAST(:cid AS uuid)
+              AND c.application_id = CAST(:app_id AS uuid)
+              AND j.tenant_id = CAST(:tid AS uuid)
+        """),
+        {"cid": communication_id, "app_id": application_id, "tid": tenant_id},
+    )
+    comm = row.mappings().first()
+    if not comm:
+        raise HTTPException(status_code=404, detail="Communication not found")
+    if allowed_statuses and comm["status"] not in allowed_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"This action is only allowed on {' or '.join(allowed_statuses)} communications",
+        )
+    return dict(comm)
+
+
+@comm_router.patch("/{application_id}/communications/{communication_id}")
+async def update_communication(
+    application_id: str,
+    communication_id: str,
+    body: CommunicationUpdate,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Edit a draft communication. Only draft records can be updated."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    await _verify_comm_ownership(
+        db, application_id, communication_id, current_user.tenant_id,
+        allowed_statuses=["draft"],
+    )
+
+    set_parts: list[str] = []
+    params: dict = {"cid": communication_id}
+
+    if body.subject is not None:
+        set_parts.append("subject = :subject")
+        params["subject"] = body.subject
+    if body.body is not None:
+        set_parts.append("body = :body")
+        params["body"] = body.body
+    if body.template_id is not None:
+        set_parts.append("template_id = CAST(:template_id AS uuid)")
+        params["template_id"] = body.template_id
+
+    if not set_parts:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = await db.execute(
+        text(f"""
+            UPDATE candidate_communications
+            SET {', '.join(set_parts)}
+            WHERE communication_id = CAST(:cid AS uuid)
+            RETURNING communication_id, subject, body, status, error_message, created_at
+        """),
+        params,
+    )
+    row = result.mappings().first()
+    await db.commit()
+
+    r = dict(row)
+    r["communication_id"] = str(r["communication_id"])
+    r["created_at"] = r["created_at"].isoformat() if r["created_at"] else None
+    return r
+
+
+@comm_router.post("/{application_id}/communications/{communication_id}/send")
+async def send_existing_communication(
+    application_id: str,
+    communication_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Send an existing draft or failed communication. Updates the record in-place — no duplicate created."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    comm = await _verify_comm_ownership(
+        db, application_id, communication_id, current_user.tenant_id,
+        allowed_statuses=["draft", "failed"],
+    )
+
+    to_email = comm["candidate_email"]
+    if not to_email:
+        raise HTTPException(status_code=400, detail="Candidate email address is missing")
+
+    subject = comm["subject"] or "(no subject)"
+    html_body = comm["body"] or ""
+    text_body = _strip_html(html_body)
+
+    error_message: str | None = None
+    try:
+        await _send(to_email, subject, html_body, text_body)
+        new_status = "sent"
+    except Exception as e:
+        new_status = "failed"
+        error_message = str(e)
+
+    result = await db.execute(
+        text("""
+            UPDATE candidate_communications
+            SET status = :status, error_message = :error_message
+            WHERE communication_id = CAST(:cid AS uuid)
+            RETURNING communication_id, subject, body, status, error_message, created_at
+        """),
+        {"cid": communication_id, "status": new_status, "error_message": error_message},
+    )
+    row = result.mappings().first()
+    await db.commit()
+
+    if new_status == "failed":
+        raise HTTPException(status_code=500, detail=f"Email send failed: {error_message}")
+
+    r = dict(row)
+    r["communication_id"] = str(r["communication_id"])
+    r["created_at"] = r["created_at"].isoformat() if r["created_at"] else None
+    return r
+
+
+@comm_router.delete("/{application_id}/communications/{communication_id}")
+async def delete_communication(
+    application_id: str,
+    communication_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Delete a draft communication. Sent, logged, and failed records are preserved for audit."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    await _verify_comm_ownership(
+        db, application_id, communication_id, current_user.tenant_id,
+        allowed_statuses=["draft"],
+    )
+
+    await db.execute(
+        text("DELETE FROM candidate_communications WHERE communication_id = CAST(:cid AS uuid)"),
+        {"cid": communication_id},
+    )
+    await db.commit()
+    return {"status": "communication deleted"}
