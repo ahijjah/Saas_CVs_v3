@@ -14,7 +14,7 @@ interface LayoutProps {
 
 const T = {
   en: {
-    dashboard: 'Dashboard', jobs: 'Jobs', campaigns: 'Campaigns', candidates: 'Candidates', talentPool: 'Talent Pool', analytics: 'Analytics', settings: 'Settings', planUsage: 'Plan & Usage',
+    dashboard: 'Home', jobs: 'Jobs', campaigns: 'Campaigns', candidates: 'Candidates', talentPool: 'Talent Pool', analytics: 'Analytics', settings: 'Settings', planUsage: 'Plan & Usage',
     clientOrgs: 'Client Organizations', clients: 'Clients',
     sysAdmin: 'System Admin', tenantMgmt: 'Tenant Management',
     platformControl: 'Platform Control', workspaceSection: 'Workspace', accountSection: 'Account',
@@ -49,7 +49,7 @@ const T = {
     } as Record<string, string>,
   },
   ar: {
-    dashboard: 'لوحة التحكم', jobs: 'الوظائف', campaigns: 'الحملات', candidates: 'المرشحون', talentPool: 'مجمع المواهب', analytics: 'التحليلات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
+    dashboard: 'الرئيسية', jobs: 'الوظائف', campaigns: 'الحملات', candidates: 'المرشحون', talentPool: 'مجمع المواهب', analytics: 'التحليلات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
     clientOrgs: 'منظمات العملاء', clients: 'العملاء',
     sysAdmin: 'مشرف النظام', tenantMgmt: 'إدارة المستأجر',
     platformControl: 'التحكم بالمنصة', workspaceSection: 'مساحة العمل', accountSection: 'الحساب',

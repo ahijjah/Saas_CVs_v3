@@ -39,8 +39,8 @@ interface DashboardSummary {
 
 const T = {
   en: {
-    dashboard: 'Dashboard',
-    loading: 'Loading dashboard…',
+    dashboard: 'Home',
+    loading: 'Loading…',
     gettingStarted: 'Get Started',
     noJobs: 'No jobs yet. Create your first job to start recruiting.',
     createFirstJob: 'Create First Job',
@@ -67,8 +67,8 @@ const T = {
     onHold: 'On Hold',
   },
   ar: {
-    dashboard: 'لوحة التحكم',
-    loading: 'جارٍ تحميل لوحة التحكم…',
+    dashboard: 'الرئيسية',
+    loading: 'جارٍ التحميل…',
     gettingStarted: 'ابدأ الآن',
     noJobs: 'لا توجد وظائف حتى الآن. أنشئ وظيفتك الأولى لبدء التوظيف.',
     createFirstJob: 'إنشاء أول وظيفة',

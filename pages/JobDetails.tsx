@@ -19,7 +19,7 @@ const T = {
   en: {
     loading: 'Syncing campaign data...',
     syncError: 'Sync Error',
-    returnDashboard: 'Return to Dashboard',
+    returnDashboard: 'Return to Home',
     reviewPortal: 'Review Portal',
     metaLabels: ['Client', 'Type', 'Location', 'Posted', 'Closing'],
     kpiTotalLabel: 'Total Received',
@@ -250,7 +250,7 @@ const T = {
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
     syncError: 'خطأ في المزامنة',
-    returnDashboard: 'العودة إلى لوحة التحكم',
+    returnDashboard: 'العودة إلى الرئيسية',
     reviewPortal: 'بوابة المراجعة',
     metaLabels: ['العميل', 'النوع', 'الموقع', 'تاريخ النشر', 'تاريخ الإغلاق'],
     kpiTotalLabel: 'إجمالي الوارد',
