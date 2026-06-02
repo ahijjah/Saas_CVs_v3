@@ -1534,7 +1534,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 
       {/* Drawer panel */}
       <div
-        className={`fixed right-0 top-0 bottom-0 w-full sm:w-96 bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto transition-transform duration-300 ${
+        className={`fixed right-0 top-0 bottom-0 w-full md:w-[760px] bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto transition-transform duration-300 ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
