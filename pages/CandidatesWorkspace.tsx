@@ -1539,7 +1539,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
         }`}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
+        <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-semibold text-slate-900 truncate">{candidate.candidate_name || '—'}</h2>
             <p className="text-xs text-slate-500 mt-0.5 truncate">{candidate.job_title || '—'}</p>
@@ -1564,7 +1564,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
         </div>
 
         {/* Tab navigation */}
-        <div className="sticky top-[88px] bg-white border-b border-slate-200 px-6 flex gap-1 overflow-x-auto">
+        <div className="sticky top-[88px] z-10 bg-white border-b border-slate-200 px-6 flex gap-1 overflow-x-auto">
           {([
             { key: 'overview', label: 'Overview', badge: null },
             { key: 'interviews', label: t.interviews, badge: interviews.length > 0 ? interviews.length : null },
