@@ -16,6 +16,7 @@ import { PageTitleProvider } from './context/PageTitleContext';
 import { AuthPage } from './pages/Auth';
 import { LandingPage } from './pages/LandingPage';
 import { Layout } from './components/Layout';
+import { Dashboard } from './pages/Dashboard';
 import { JobsDashboard } from './pages/JobsDashboard';
 import { JobDetails } from './pages/JobDetails';
 import { ApplicationsList } from './pages/ApplicationsList';
@@ -33,8 +34,14 @@ import { PlatformSecretsPage } from './pages/PlatformSecrets';
 import { AIPromptsPage } from './pages/AIPrompts';
 import AuditLogs from './pages/AuditLogs';
 import { AIUsagePage } from './pages/AIUsage';
+import { AIModelsPage } from './pages/AIModels';
 import { PublicJobApply } from './pages/PublicJobApply';
 import { ClientOrganizationsPage } from './pages/ClientOrganizations';
+import { CampaignsPage } from './pages/Campaigns';
+import { CampaignDetailPage } from './pages/CampaignDetail';
+import { CandidatesWorkspace } from './pages/CandidatesWorkspace';
+import { TalentPool } from './pages/TalentPool';
+import { AnalyticsDashboard } from './pages/AnalyticsDashboard';
 import { PlanSelectionPage } from './pages/PlanSelection';
 import { PaymentSimulationPage } from './pages/PaymentSimulation';
 import { ToastContainer, ToastType } from './components/Toast';
@@ -196,12 +203,12 @@ const AppInner: React.FC = () => {
 
   const role = auth.user?.role?.toLowerCase() || '';
   const isSuperAdmin = role === 'super_admin';
-  const defaultHome = isSuperAdmin ? '/admin/dashboard' : '/jobs';
+  const defaultHome = isSuperAdmin ? '/admin/dashboard' : '/dashboard';
 
   const getPostLoginRoute = (userRole: string, subscriptionStatus?: string): string => {
     if (userRole === 'super_admin') return '/admin/dashboard';
     if (!subscriptionStatus || PLAN_GATE_STATUSES.has(subscriptionStatus)) return '/plan-selection';
-    if (subscriptionStatus === 'trial' || subscriptionStatus === 'active' || subscriptionStatus === 'cancelled_pending_expiry') return '/jobs';
+    if (subscriptionStatus === 'trial' || subscriptionStatus === 'active' || subscriptionStatus === 'cancelled_pending_expiry') return '/dashboard';
     return '/plan-usage';
   };
 
@@ -330,12 +337,6 @@ const AppInner: React.FC = () => {
             }
           />
 
-          {/* /dashboard — smart redirect */}
-          <Route
-            path="/dashboard"
-            element={<Navigate to={defaultHome} replace />}
-          />
-
           {/* All remaining authenticated routes gated behind MustChangePasswordGuard */}
           <Route element={<MustChangePasswordGuard mustChange={!!auth.user?.must_change_password} />}>
 
@@ -364,6 +365,10 @@ const AppInner: React.FC = () => {
           {/* Tenant routes — blocked for pending_* and billing-lapsed tenants */}
           <Route element={<TenantAccessGuard subscriptionStatus={auth.user?.subscription_status} />}>
           <Route
+            path="/dashboard"
+            element={<Dashboard auth={auth} addToast={addToast} />}
+          />
+          <Route
             path="/jobs"
             element={
               <JobsDashboard
@@ -391,6 +396,11 @@ const AppInner: React.FC = () => {
             element={<ApplicationsRoute auth={auth} addToast={addToast} />}
           />
           <Route path="/settings" element={<Settings {...sharedAuth} />} />
+          <Route path="/candidates" element={<CandidatesWorkspace {...sharedAuth} />} />
+          <Route path="/talent-pool" element={<TalentPool {...sharedAuth} />} />
+          <Route path="/analytics" element={<AnalyticsDashboard {...sharedAuth} />} />
+          <Route path="/campaigns" element={<CampaignsPage {...sharedAuth} />} />
+          <Route path="/campaigns/:campaignId" element={<CampaignDetailPage {...sharedAuth} />} />
           <Route path="/client-organizations" element={<ClientOrganizationsPage {...sharedAuth} />} />
           <Route
             path="/plan-usage"
@@ -398,7 +408,7 @@ const AppInner: React.FC = () => {
               role === 'admin' ? (
                 <PlanUsagePage {...sharedAuth} />
               ) : (
-                <Navigate to={isSuperAdmin ? '/admin/dashboard' : '/jobs'} replace />
+                <Navigate to={isSuperAdmin ? '/admin/dashboard' : '/dashboard'} replace />
               )
             }
           />
@@ -415,6 +425,7 @@ const AppInner: React.FC = () => {
             <Route path="/admin/ai-prompts" element={<AIPromptsPage {...sharedAuth} />} />
             <Route path="/admin/audit-logs" element={<AuditLogs />} />
             <Route path="/admin/ai-usage" element={<AIUsagePage {...sharedAuth} />} />
+            <Route path="/admin/ai-models" element={<AIModelsPage {...sharedAuth} />} />
           </Route>
 
           {/* 404 inside layout */}

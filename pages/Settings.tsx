@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiService } from '../services/api';
+import { apiService, APIService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { AuthState, UserProfile, TenantUser } from '../types';
+import { AuthState, UserProfile, TenantUser, MessageTemplate, AutomationRule } from '../types';
 import { ToastType } from '../components/Toast';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -102,6 +102,77 @@ const T = {
     clientOrgsTitle: 'Client Organizations',
     clientOrgsSub: 'Manage client organizations and user assignments',
     clientOrgsLink: 'Go to Client Organizations',
+    // Recruitment Policies
+    policiesTitle: 'Recruitment Pipeline Policies',
+    policiesSub: 'Governance rules for workflow transitions and approval gates',
+    policiesLoading: 'Loading policies…',
+    policiesSaved: 'Policies saved',
+    savePolicies: 'Save Policies',
+    savingPolicies: 'Saving…',
+    requireInterviewBeforeOffer: 'Require completed interview before making an offer',
+    requireApprovalBeforeHire: 'Require all approval stages before hiring',
+    requireRejectionReason: 'Require a reason when rejecting a candidate',
+    allowBulkReject: 'Allow bulk rejection of candidates',
+    requireInterviewFeedback: 'Require interview feedback before making an offer',
+    requiredApprovalStages: 'Required Approval Stages',
+    approvalStagesHint: 'Enter stage names, one per line (e.g. Legal Review, Finance Sign-off)',
+    slaThresholds: 'SLA Thresholds (Days)',
+    reviewDays: 'Time to Review',
+    interviewFeedbackDays: 'Time to Provide Interview Feedback',
+    approvalDays: 'Time to Complete Approvals',
+    offerResponseDays: 'Time to Respond to Offer',
+    // Communication Templates
+    templatesTitle: 'Communication Templates',
+    templatesSub: 'Manage reusable message templates for candidate communication',
+    addTemplate: 'Add Template',
+    editTemplate: 'Edit',
+    deleteTemplate: 'Delete',
+    noTemplates: 'No templates yet.',
+    templateName: 'Template Name',
+    templateCategory: 'Category',
+    templateSubject: 'Subject',
+    templateBody: 'Body',
+    templateLanguage: 'Language',
+    templateActive: 'Active',
+    saveTemplate: 'Save Template',
+    savingTemplate: 'Saving...',
+    cancelTemplate: 'Cancel',
+    categories: {
+      interview_invitation: 'Interview Invitation',
+      rejection: 'Rejection',
+      shortlisted: 'Shortlisted',
+      offer: 'Offer',
+      request_info: 'Request Info',
+      talent_pool: 'Talent Pool',
+      general: 'General',
+    },
+    // Communication Automation Rules
+    automationTitle: 'Communication Automation',
+    automationSub: 'Auto-create drafts or send emails when recruitment events occur',
+    addAutomationRule: 'Add Rule',
+    noAutomationRules: 'No automation rules yet.',
+    automationEventType: 'Event',
+    automationMode: 'Mode',
+    automationTemplate: 'Template',
+    automationActive: 'Active',
+    saveRule: 'Save Rule',
+    savingRule: 'Saving...',
+    cancelRule: 'Cancel',
+    deleteRule: 'Delete',
+    autoSendWarning: 'Auto-send will immediately email candidates when the event triggers. Ensure templates are reviewed before enabling.',
+    eventTypes: {
+      workflow_shortlisted: 'Candidate Shortlisted',
+      workflow_rejected: 'Candidate Rejected',
+      offer_made: 'Offer Made',
+      interview_scheduled: 'Interview Scheduled',
+      interview_completed: 'Interview Completed',
+      talent_pool_added: 'Added to Talent Pool',
+    } as Record<string, string>,
+    modes: {
+      disabled: 'Disabled',
+      draft_only: 'Create Draft',
+      auto_send: 'Auto-Send',
+    } as Record<string, string>,
   },
   ar: {
     loading: 'جارٍ تحميل الملف الشخصي...',
@@ -191,6 +262,77 @@ const T = {
     clientOrgsTitle: 'منظمات العملاء',
     clientOrgsSub: 'إدارة منظمات العملاء وتعيينات المستخدمين',
     clientOrgsLink: 'انتقل إلى منظمات العملاء',
+    // Recruitment Policies
+    policiesTitle: 'سياسات خط أنابيب التوظيف',
+    policiesSub: 'قواعد الحوكمة لتحولات سير العمل وبوابات الموافقة',
+    policiesLoading: 'جارٍ تحميل السياسات…',
+    policiesSaved: 'تم حفظ السياسات',
+    savePolicies: 'حفظ السياسات',
+    savingPolicies: 'جارٍ الحفظ…',
+    requireInterviewBeforeOffer: 'طلب مقابلة مكتملة قبل تقديم عرض',
+    requireApprovalBeforeHire: 'طلب اكتمال مراحل الموافقة قبل التوظيف',
+    requireRejectionReason: 'طلب سبب عند رفض مرشح',
+    allowBulkReject: 'السماح برفض المرشحين بالجملة',
+    requireInterviewFeedback: 'طلب تقييم المقابلة قبل تقديم عرض',
+    requiredApprovalStages: 'مراحل الموافقة المطلوبة',
+    approvalStagesHint: 'أدخل أسماء المراحل، مرحلة لكل سطر',
+    slaThresholds: 'حدود اتفاقية مستوى الخدمة (بالأيام)',
+    reviewDays: 'الوقت المتاح للمراجعة',
+    interviewFeedbackDays: 'الوقت المتاح لتقديم تقييم المقابلة',
+    approvalDays: 'الوقت المتاح لإكمال الموافقات',
+    offerResponseDays: 'الوقت المتاح للرد على العرض',
+    // Communication Templates
+    templatesTitle: 'قوالب التواصل',
+    templatesSub: 'إدارة قوالب الرسائل القابلة لإعادة الاستخدام للتواصل مع المرشحين',
+    addTemplate: 'إضافة قالب',
+    editTemplate: 'تعديل',
+    deleteTemplate: 'حذف',
+    noTemplates: 'لا توجد قوالب بعد.',
+    templateName: 'اسم القالب',
+    templateCategory: 'الفئة',
+    templateSubject: 'الموضوع',
+    templateBody: 'النص',
+    templateLanguage: 'اللغة',
+    templateActive: 'نشط',
+    saveTemplate: 'حفظ القالب',
+    savingTemplate: 'جارٍ الحفظ...',
+    cancelTemplate: 'إلغاء',
+    categories: {
+      interview_invitation: 'دعوة مقابلة',
+      rejection: 'رفض',
+      shortlisted: 'في القائمة المختصرة',
+      offer: 'عرض',
+      request_info: 'طلب معلومات',
+      talent_pool: 'مجموعة المواهب',
+      general: 'عام',
+    },
+    // Communication Automation Rules
+    automationTitle: 'أتمتة التواصل',
+    automationSub: 'إنشاء مسودات تلقائية أو إرسال رسائل عند حدوث أحداث التوظيف',
+    addAutomationRule: 'إضافة قاعدة',
+    noAutomationRules: 'لا توجد قواعد أتمتة بعد.',
+    automationEventType: 'الحدث',
+    automationMode: 'الوضع',
+    automationTemplate: 'القالب',
+    automationActive: 'نشط',
+    saveRule: 'حفظ القاعدة',
+    savingRule: 'جارٍ الحفظ...',
+    cancelRule: 'إلغاء',
+    deleteRule: 'حذف',
+    autoSendWarning: 'الإرسال التلقائي سيرسل بريداً إلكترونياً فورياً عند وقوع الحدث. تأكد من مراجعة القوالب قبل التفعيل.',
+    eventTypes: {
+      workflow_shortlisted: 'تأهيل المرشح',
+      workflow_rejected: 'رفض المرشح',
+      offer_made: 'تقديم عرض',
+      interview_scheduled: 'جدولة مقابلة',
+      interview_completed: 'إكمال مقابلة',
+      talent_pool_added: 'إضافة إلى مجموعة المواهب',
+    } as Record<string, string>,
+    modes: {
+      disabled: 'معطّل',
+      draft_only: 'إنشاء مسودة',
+      auto_send: 'إرسال تلقائي',
+    } as Record<string, string>,
   },
 };
 
@@ -236,6 +378,48 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editUserForm, setEditUserForm] = useState({ full_name: '', role: '' });
   const [savingEditUser, setSavingEditUser] = useState(false);
+
+  // Recruitment Policies state
+  const [policiesLoading, setPoliciesLoading] = useState(false);
+  const [savingPolicies, setSavingPolicies] = useState(false);
+  const [policiesForm, setPoliciesForm] = useState({
+    require_interview_before_offer: false,
+    require_approval_before_hire: false,
+    require_rejection_reason: false,
+    allow_bulk_reject: true,
+    require_interview_feedback: false,
+    required_approval_stages: '',
+    review_days: 14,
+    interview_feedback_days: 7,
+    approval_days: 10,
+    offer_response_days: 5,
+  });
+
+  // Communication Templates state
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [showTemplateForm, setShowTemplateForm] = useState(false);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [templateForm, setTemplateForm] = useState({
+    name: '', category: 'general', subject: '', body: '', language: 'en', is_active: true,
+  });
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
+
+  // Communication Automation Rules state
+  const [automationRules, setAutomationRules] = useState<AutomationRule[]>([]);
+  const [automationLoading, setAutomationLoading] = useState(false);
+  const [showRuleForm, setShowRuleForm] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [ruleForm, setRuleForm] = useState({
+    event_type: 'workflow_shortlisted',
+    template_id: '',
+    mode: 'draft_only',
+    is_active: true,
+    delay_minutes: 0,
+  });
+  const [savingRule, setSavingRule] = useState(false);
+  const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
 
   const role = (auth.user?.role || '').toLowerCase();
   const isSuperAdmin = role === 'super_admin';
@@ -292,6 +476,202 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   useEffect(() => {
     if (isTenantAdmin) fetchTenantUsers();
   }, [fetchTenantUsers, isTenantAdmin]);
+
+  // Fetch communication templates when admin loads page
+  const fetchTemplates = useCallback(async () => {
+    if (!isTenantAdmin || !auth.token) return;
+    setTemplatesLoading(true);
+    try {
+      const api = new APIService(auth.token);
+      const data = await api.listTemplates({ active_only: false });
+      setTemplates(data?.templates || []);
+    } catch {
+      // non-fatal
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }, [isTenantAdmin, auth.token]);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
+  const handleSaveTemplate = async () => {
+    if (savingTemplate) return;
+    if (!templateForm.name.trim() || !templateForm.subject.trim() || !templateForm.body.trim()) {
+      addToast('Name, subject, and body are required.', 'error');
+      return;
+    }
+    setSavingTemplate(true);
+    try {
+      const api = new APIService(auth.token);
+      if (editingTemplateId) {
+        const updated = await api.updateTemplate(editingTemplateId, templateForm);
+        setTemplates(prev => prev.map(t => t.template_id === editingTemplateId ? updated : t));
+      } else {
+        const created = await api.createTemplate(templateForm);
+        setTemplates(prev => [...prev, created]);
+      }
+      setShowTemplateForm(false);
+      setEditingTemplateId(null);
+      setTemplateForm({ name: '', category: 'general', subject: '', body: '', language: 'en', is_active: true });
+      addToast(editingTemplateId ? 'Template updated.' : 'Template created.', 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to save template.', 'error');
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (templateId: string) => {
+    if (deletingTemplateId) return;
+    setDeletingTemplateId(templateId);
+    try {
+      const api = new APIService(auth.token);
+      await api.deleteTemplate(templateId);
+      setTemplates(prev => prev.filter(t => t.template_id !== templateId));
+      addToast('Template deleted.', 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to delete template.', 'error');
+    } finally {
+      setDeletingTemplateId(null);
+    }
+  };
+
+  const startEditTemplate = (tpl: MessageTemplate) => {
+    setEditingTemplateId(tpl.template_id);
+    setTemplateForm({
+      name: tpl.name,
+      category: tpl.category,
+      subject: tpl.subject,
+      body: tpl.body,
+      language: tpl.language,
+      is_active: tpl.is_active,
+    });
+    setShowTemplateForm(true);
+  };
+
+  const fetchAutomationRules = useCallback(async () => {
+    if (!isTenantAdmin || !auth.token) return;
+    setAutomationLoading(true);
+    try {
+      const api = new APIService(auth.token);
+      const data = await api.listAutomationRules();
+      setAutomationRules(data?.rules || []);
+    } catch {
+      // non-fatal
+    } finally {
+      setAutomationLoading(false);
+    }
+  }, [isTenantAdmin, auth.token]);
+
+  useEffect(() => {
+    fetchAutomationRules();
+  }, [fetchAutomationRules]);
+
+  const handleSaveRule = async () => {
+    if (savingRule) return;
+    setSavingRule(true);
+    try {
+      const api = new APIService(auth.token);
+      const payload = {
+        event_type: ruleForm.event_type,
+        template_id: ruleForm.template_id || null,
+        mode: ruleForm.mode,
+        is_active: ruleForm.is_active,
+        delay_minutes: ruleForm.delay_minutes,
+      };
+      if (editingRuleId) {
+        const updated = await api.updateAutomationRule(editingRuleId, payload);
+        setAutomationRules(prev => prev.map(r => r.rule_id === editingRuleId ? updated : r));
+        addToast('Automation rule updated.', 'success');
+      } else {
+        const created = await api.createAutomationRule(payload);
+        setAutomationRules(prev => [...prev, created]);
+        addToast('Automation rule created.', 'success');
+      }
+      setShowRuleForm(false);
+      setEditingRuleId(null);
+      setRuleForm({ event_type: 'workflow_shortlisted', template_id: '', mode: 'draft_only', is_active: true, delay_minutes: 0 });
+    } catch (err: any) {
+      addToast(err.message || 'Failed to save rule.', 'error');
+    } finally {
+      setSavingRule(false);
+    }
+  };
+
+  const handleDeleteRule = async (ruleId: string) => {
+    if (deletingRuleId) return;
+    setDeletingRuleId(ruleId);
+    try {
+      const api = new APIService(auth.token);
+      await api.deleteAutomationRule(ruleId);
+      setAutomationRules(prev => prev.filter(r => r.rule_id !== ruleId));
+      addToast('Automation rule deleted.', 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to delete rule.', 'error');
+    } finally {
+      setDeletingRuleId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!isTenantAdmin || !auth.token) return;
+    setPoliciesLoading(true);
+    apiService.get(WEBHOOK_CONFIG.WORKFLOW_POLICIES_URL, {}, auth.token)
+      .then((data: any) => {
+        if (data?.policies) {
+          const p = data.policies;
+          const sla = p.sla_thresholds || {};
+          setPoliciesForm({
+            require_interview_before_offer: !!p.require_interview_before_offer,
+            require_approval_before_hire:   !!p.require_approval_before_hire,
+            require_rejection_reason:       !!p.require_rejection_reason,
+            allow_bulk_reject:              p.allow_bulk_reject !== false,
+            require_interview_feedback:     !!p.require_interview_feedback,
+            required_approval_stages: Array.isArray(p.required_approval_stages)
+              ? p.required_approval_stages.join('\n')
+              : '',
+            review_days:           sla.review_days ?? 14,
+            interview_feedback_days: sla.interview_feedback_days ?? 7,
+            approval_days:         sla.approval_days ?? 10,
+            offer_response_days:   sla.offer_response_days ?? 5,
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setPoliciesLoading(false));
+  }, [isTenantAdmin, auth.token]);
+
+  const handleSavePolicies = async () => {
+    if (savingPolicies) return;
+    setSavingPolicies(true);
+    try {
+      const stages = policiesForm.required_approval_stages
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean);
+      await apiService.patch(WEBHOOK_CONFIG.WORKFLOW_POLICIES_URL, {
+        require_interview_before_offer: policiesForm.require_interview_before_offer,
+        require_approval_before_hire:   policiesForm.require_approval_before_hire,
+        require_rejection_reason:       policiesForm.require_rejection_reason,
+        allow_bulk_reject:              policiesForm.allow_bulk_reject,
+        require_interview_feedback:     policiesForm.require_interview_feedback,
+        required_approval_stages:       stages,
+        sla_thresholds: {
+          review_days:           policiesForm.review_days,
+          interview_feedback_days: policiesForm.interview_feedback_days,
+          approval_days:         policiesForm.approval_days,
+          offer_response_days:   policiesForm.offer_response_days,
+        },
+      }, auth.token!);
+      addToast(t.policiesSaved, 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to save policies', 'error');
+    } finally {
+      setSavingPolicies(false);
+    }
+  };
 
   const handleCancelEdit = () => {
     if (profile) {
@@ -934,6 +1314,487 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                   )}
                 </div>
               ))
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── Recruitment Pipeline Policies ──────────────────────────────────────── */}
+      {isTenantAdmin && (
+        <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="px-8 py-6 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-textMain">{t.policiesTitle}</h3>
+                <p className="text-xs text-textMuted">{t.policiesSub}</p>
+              </div>
+            </div>
+          </div>
+          <div className="px-8 py-6 space-y-5">
+            {policiesLoading ? (
+              <p className="text-sm text-slate-400">{t.policiesLoading}</p>
+            ) : (
+              <>
+                {/* Toggle rows */}
+                {([
+                  ['require_interview_before_offer', t.requireInterviewBeforeOffer],
+                  ['require_approval_before_hire',   t.requireApprovalBeforeHire],
+                  ['require_rejection_reason',       t.requireRejectionReason],
+                  ['allow_bulk_reject',              t.allowBulkReject],
+                  ['require_interview_feedback',     t.requireInterviewFeedback],
+                ] as [keyof typeof policiesForm, string][]).map(([key, label]) => (
+                  <label key={key} className="flex items-center justify-between gap-4 cursor-pointer select-none">
+                    <span className="text-sm text-textMain">{label}</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={(policiesForm[key] as boolean)}
+                      onClick={() => setPoliciesForm(p => ({ ...p, [key]: !p[key] }))}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+                        policiesForm[key] ? 'bg-amber-500' : 'bg-slate-200'
+                      }`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                        policiesForm[key] ? 'translate-x-4' : 'translate-x-1'
+                      }`} />
+                    </button>
+                  </label>
+                ))}
+
+                {/* Required approval stages */}
+                <div>
+                  <label className="block text-sm font-semibold text-textMain mb-1">
+                    {t.requiredApprovalStages}
+                  </label>
+                  <p className="text-xs text-textMuted mb-2">{t.approvalStagesHint}</p>
+                  <textarea
+                    value={policiesForm.required_approval_stages}
+                    onChange={e => setPoliciesForm(p => ({ ...p, required_approval_stages: e.target.value }))}
+                    rows={4}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                    placeholder={'Hiring Manager Review\nLegal Review\nFinance Sign-off'}
+                  />
+                </div>
+
+                {/* SLA Thresholds */}
+                <div>
+                  <label className="block text-sm font-semibold text-textMain mb-3">
+                    {(t as any).slaThresholds || 'SLA Thresholds'}
+                  </label>
+                  <p className="text-xs text-textMuted mb-4">Set the SLA response time limits (in days) for different stages of the recruitment process.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-textMain mb-1.5">
+                        {(t as any).reviewDays || 'Review Days'}
+                      </label>
+                      <input
+                        type="number"
+                        value={policiesForm.review_days}
+                        onChange={e => setPoliciesForm(p => ({ ...p, review_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                        min="1"
+                        max="90"
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                      <p className="text-xs text-textMuted mt-1">Time for initial review before shortlisting</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-textMain mb-1.5">
+                        {(t as any).interviewFeedbackDays || 'Interview Feedback Days'}
+                      </label>
+                      <input
+                        type="number"
+                        value={policiesForm.interview_feedback_days}
+                        onChange={e => setPoliciesForm(p => ({ ...p, interview_feedback_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                        min="1"
+                        max="90"
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                      <p className="text-xs text-textMuted mt-1">Time to provide interview feedback</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-textMain mb-1.5">
+                        {(t as any).approvalDays || 'Approval Days'}
+                      </label>
+                      <input
+                        type="number"
+                        value={policiesForm.approval_days}
+                        onChange={e => setPoliciesForm(p => ({ ...p, approval_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                        min="1"
+                        max="90"
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                      <p className="text-xs text-textMuted mt-1">Time for approval decision</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-textMain mb-1.5">
+                        {(t as any).offerResponseDays || 'Offer Response Days'}
+                      </label>
+                      <input
+                        type="number"
+                        value={policiesForm.offer_response_days}
+                        onChange={e => setPoliciesForm(p => ({ ...p, offer_response_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                        min="1"
+                        max="90"
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                      <p className="text-xs text-textMuted mt-1">Time for candidate to respond to offer</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={handleSavePolicies}
+                    disabled={savingPolicies}
+                    className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-sm transition-colors disabled:opacity-40"
+                  >
+                    {savingPolicies ? t.savingPolicies : t.savePolicies}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── Communication Templates ───────────────────────────────────────────── */}
+      {!isSuperAdmin && isTenantAdmin && (
+        <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="px-8 py-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-textMain">{t.templatesTitle}</h3>
+                  <p className="text-xs text-textMuted">{t.templatesSub}</p>
+                </div>
+              </div>
+              {!showTemplateForm && (
+                <button
+                  onClick={() => {
+                    setEditingTemplateId(null);
+                    setTemplateForm({ name: '', category: 'general', subject: '', body: '', language: 'en', is_active: true });
+                    setShowTemplateForm(true);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  {t.addTemplate}
+                </button>
+              )}
+            </div>
+
+            {/* Template form */}
+            {showTemplateForm && (
+              <div className="bg-slate-50 rounded-xl p-5 mb-4 border border-slate-200 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-textMain mb-1">{t.templateName} *</label>
+                    <input
+                      type="text"
+                      value={templateForm.name}
+                      onChange={e => setTemplateForm(f => ({ ...f, name: e.target.value }))}
+                      placeholder="e.g. Interview Invitation"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-textMain mb-1">{t.templateCategory}</label>
+                    <select
+                      value={templateForm.category}
+                      onChange={e => setTemplateForm(f => ({ ...f, category: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    >
+                      {Object.entries((t as any).categories).map(([key, label]) => (
+                        <option key={key} value={key}>{label as string}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-textMain mb-1">{t.templateSubject} *</label>
+                  <input
+                    type="text"
+                    value={templateForm.subject}
+                    onChange={e => setTemplateForm(f => ({ ...f, subject: e.target.value }))}
+                    placeholder="Email subject line…"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-textMain mb-1">{t.templateBody} *</label>
+                  <textarea
+                    value={templateForm.body}
+                    onChange={e => setTemplateForm(f => ({ ...f, body: e.target.value }))}
+                    rows={6}
+                    placeholder="Message body…"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-y"
+                  />
+                </div>
+                <div className="flex items-center gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-textMain mb-1">{t.templateLanguage}</label>
+                    <select
+                      value={templateForm.language}
+                      onChange={e => setTemplateForm(f => ({ ...f, language: e.target.value }))}
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    >
+                      <option value="en">English</option>
+                      <option value="ar">العربية</option>
+                    </select>
+                  </div>
+                  <label className="flex items-center gap-2 mt-4 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={templateForm.is_active}
+                      onChange={e => setTemplateForm(f => ({ ...f, is_active: e.target.checked }))}
+                      className="w-4 h-4 rounded"
+                    />
+                    <span className="text-xs font-medium text-textMain">{t.templateActive}</span>
+                  </label>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handleSaveTemplate}
+                    disabled={savingTemplate}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-40"
+                  >
+                    {savingTemplate ? t.savingTemplate : t.saveTemplate}
+                  </button>
+                  <button
+                    onClick={() => { setShowTemplateForm(false); setEditingTemplateId(null); }}
+                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition-colors"
+                  >
+                    {t.cancelTemplate}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Template list */}
+            {templatesLoading ? (
+              <div className="text-xs text-textMuted py-3">Loading templates…</div>
+            ) : templates.length === 0 && !showTemplateForm ? (
+              <p className="text-xs text-textMuted italic py-2">{t.noTemplates}</p>
+            ) : (
+              <div className="space-y-2">
+                {templates.map(tpl => (
+                  <div key={tpl.template_id} className={`flex items-start justify-between p-4 rounded-xl border ${tpl.is_active ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-semibold text-textMain">{tpl.name}</span>
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-teal-100 text-teal-700">
+                          {(t as any).categories[tpl.category] || tpl.category}
+                        </span>
+                        {!tpl.is_active && (
+                          <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-slate-200 text-slate-500">Inactive</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-textMuted truncate">{tpl.subject}</p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                      <button
+                        onClick={() => startEditTemplate(tpl)}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                      >
+                        {t.editTemplate}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTemplate(tpl.template_id)}
+                        disabled={deletingTemplateId === tpl.template_id}
+                        className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-40"
+                      >
+                        {t.deleteTemplate}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── Communication Automation Rules ───────────────────────────────────── */}
+      {!isSuperAdmin && isTenantAdmin && (
+        <section className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="px-8 py-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center text-violet-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-textMain">{t.automationTitle}</h3>
+                  <p className="text-xs text-textMuted">{t.automationSub}</p>
+                </div>
+              </div>
+              {!showRuleForm && (
+                <button
+                  onClick={() => {
+                    setEditingRuleId(null);
+                    setRuleForm({ event_type: 'workflow_shortlisted', template_id: '', mode: 'draft_only', is_active: true, delay_minutes: 0 });
+                    setShowRuleForm(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  {t.addAutomationRule}
+                </button>
+              )}
+            </div>
+
+            {/* Rule form */}
+            {showRuleForm && (
+              <div className="mb-6 p-5 rounded-xl border border-violet-200 bg-violet-50 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-textMain mb-1">{t.automationEventType}</label>
+                    <select
+                      value={ruleForm.event_type}
+                      onChange={e => setRuleForm(f => ({ ...f, event_type: e.target.value }))}
+                      disabled={!!editingRuleId}
+                      className="w-full border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:bg-slate-100"
+                    >
+                      {Object.entries((t as any).eventTypes as Record<string, string>).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-textMain mb-1">{t.automationMode}</label>
+                    <select
+                      value={ruleForm.mode}
+                      onChange={e => setRuleForm(f => ({ ...f, mode: e.target.value }))}
+                      className="w-full border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400"
+                    >
+                      {Object.entries((t as any).modes as Record<string, string>).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-textMain mb-1">{t.automationTemplate}</label>
+                  <select
+                    value={ruleForm.template_id}
+                    onChange={e => setRuleForm(f => ({ ...f, template_id: e.target.value }))}
+                    className="w-full border border-border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400"
+                  >
+                    <option value="">— No template —</option>
+                    {templates.filter(tpl => tpl.is_active).map(tpl => (
+                      <option key={tpl.template_id} value={tpl.template_id}>{tpl.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="ruleActive"
+                    checked={ruleForm.is_active}
+                    onChange={e => setRuleForm(f => ({ ...f, is_active: e.target.checked }))}
+                    className="rounded"
+                  />
+                  <label htmlFor="ruleActive" className="text-xs text-textMain">{t.automationActive}</label>
+                </div>
+                {ruleForm.mode === 'auto_send' && (
+                  <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <svg className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    </svg>
+                    <p className="text-xs text-amber-700">{t.autoSendWarning}</p>
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleSaveRule}
+                    disabled={savingRule}
+                    className="px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-xs font-bold rounded-lg transition-colors"
+                  >
+                    {savingRule ? t.savingRule : t.saveRule}
+                  </button>
+                  <button
+                    onClick={() => { setShowRuleForm(false); setEditingRuleId(null); }}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
+                  >
+                    {t.cancelRule}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Rules list */}
+            {automationLoading ? (
+              <div className="text-xs text-textMuted py-3">Loading rules…</div>
+            ) : automationRules.length === 0 && !showRuleForm ? (
+              <p className="text-xs text-textMuted italic py-2">{t.noAutomationRules}</p>
+            ) : (
+              <div className="space-y-2">
+                {automationRules.map(rule => (
+                  <div key={rule.rule_id} className={`flex items-center justify-between p-4 rounded-xl border ${rule.is_active ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-sm font-semibold text-textMain">
+                          {(t as any).eventTypes[rule.event_type] || rule.event_type}
+                        </span>
+                        <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${
+                          rule.mode === 'auto_send' ? 'bg-amber-100 text-amber-700' :
+                          rule.mode === 'draft_only' ? 'bg-violet-100 text-violet-700' :
+                          'bg-slate-100 text-slate-500'
+                        }`}>
+                          {(t as any).modes[rule.mode] || rule.mode}
+                        </span>
+                        {!rule.is_active && (
+                          <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-slate-200 text-slate-500">Inactive</span>
+                        )}
+                      </div>
+                      {rule.template_name && (
+                        <p className="text-xs text-textMuted">{rule.template_name}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                      <button
+                        onClick={() => {
+                          setEditingRuleId(rule.rule_id);
+                          setRuleForm({
+                            event_type: rule.event_type,
+                            template_id: rule.template_id || '',
+                            mode: rule.mode,
+                            is_active: rule.is_active,
+                            delay_minutes: rule.delay_minutes,
+                          });
+                          setShowRuleForm(true);
+                        }}
+                        className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRule(rule.rule_id)}
+                        disabled={deletingRuleId === rule.rule_id}
+                        className="px-3 py-1.5 text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {deletingRuleId === rule.rule_id ? 'Deleting…' : t.deleteRule}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </section>

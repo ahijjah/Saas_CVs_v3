@@ -34,6 +34,7 @@ class CreateJobRequest(BaseModel):
     qualified_threshold: int | None = None
     partial_threshold: int | None = None
     client_organization_id: str | None = None  # NULL = General job for agency tenants
+    campaign_id: str | None = None  # NULL = standalone job (optional campaign grouping)
     vacancies_count: int | None = None
     knockout_questions: list[dict] | None = None
 
@@ -70,6 +71,7 @@ class UpdateJobSettingsRequest(BaseModel):
     send_confirmation_to_sender_for_forwarding:       bool | None = None
     send_confirmation_to_cv_email_for_platform_email: bool | None = None
     enable_ai_comparison:                             bool | None = None
+    allow_advanced_workflow_move:                     bool | None = None
 
 
 class UpdateCriteriaContentRequest(BaseModel):
@@ -99,6 +101,7 @@ class UpdateJobMetadataRequest(BaseModel):
     auto_close_when_limit_reached: bool | None = None
     description: str | None = None  # full job description text
     knockout_questions: list[dict] | None = None  # None = don't touch; [] = clear all
+    campaign_id: str | None = None  # set to link to a campaign; empty/null = detach (standalone)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -171,6 +174,7 @@ async def list_jobs(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
     client_organization_id: str | None = None,
+    campaign_id: str | None = None,
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
@@ -211,7 +215,18 @@ async def list_jobs(
         extra_filters.append("j.client_organization_id = CAST(:filter_cid AS uuid)")
         params["filter_cid"] = client_organization_id
 
-    extra_sql = (" AND " + " AND ".join(extra_filters)) if extra_filters else ""
+    # Optional campaign filter (group jobs by campaign)
+    if campaign_id:
+        extra_filters.append("j.campaign_id = CAST(:filter_campaign AS uuid)")
+        params["filter_campaign"] = campaign_id
+
+    if extra_filters:
+        joined = " AND ".join(extra_filters)
+        # base_where already starts with WHERE for non-super-admins; otherwise this
+        # is the first predicate and must introduce its own WHERE.
+        extra_sql = (" AND " + joined) if base_where else (" WHERE " + joined)
+    else:
+        extra_sql = ""
 
     rows = await db.execute(
         text(f"""
@@ -227,6 +242,8 @@ async def list_jobs(
                 j.created_at,
                 j.client_organization_id,
                 co.organization_name AS client_org_name,
+                j.campaign_id,
+                camp.name AS campaign_name,
                 t.name AS tenant_name,
                 jc.criteria_extraction_status,
                 COUNT(a.application_id)                                                                          AS applications_total,
@@ -260,11 +277,12 @@ async def list_jobs(
             FROM jobs j
             JOIN tenants t ON t.tenant_id = j.tenant_id
             LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
+            LEFT JOIN job_campaigns camp ON camp.campaign_id = j.campaign_id
             LEFT JOIN job_criteria jc ON jc.job_id = j.job_id
             LEFT JOIN applications a ON a.job_id = j.job_id
             {base_where}
             {extra_sql}
-            GROUP BY j.job_id, t.name, co.organization_name, jc.criteria_extraction_status
+            GROUP BY j.job_id, t.name, co.organization_name, camp.name, jc.criteria_extraction_status
             ORDER BY j.created_at DESC
         """),
         params,
@@ -282,6 +300,8 @@ async def list_jobs(
             "tenant_name":        r["tenant_name"],
             "client_organization_id": str(r["client_organization_id"]) if r["client_organization_id"] else None,
             "client_org_name":    r["client_org_name"],
+            "campaign_id":        str(r["campaign_id"]) if r["campaign_id"] else None,
+            "campaign_name":      r["campaign_name"],
             "receive_cv_via_forwarding_email": r["receive_cv_via_forwarding_email"],
             "receive_cv_via_platform_email":   r["receive_cv_via_platform_email"],
             "criteria_extraction_status":      r["criteria_extraction_status"] or "pending",
@@ -349,6 +369,16 @@ async def create_job(
                 detail="Client organisation not found or inactive.",
             )
 
+    # Optional campaign grouping: validate the job aligns with the campaign client.
+    if body.campaign_id:
+        from services.campaign_service import validate_job_campaign_link
+        await validate_job_campaign_link(
+            db,
+            tenant_id=current_user.tenant_id,
+            campaign_id=body.campaign_id,
+            job_client_organization_id=body.client_organization_id,
+        )
+
     # Enforce campaign limit via centralized subscription service
     campaign_check = await can_create_campaign(current_user.tenant_id, db)
     if not campaign_check["allowed"]:
@@ -372,11 +402,11 @@ async def create_job(
                               job_type, work_mode, experience_level,
                               duration, application_deadline, description,
                               qualified_threshold, partial_threshold, job_code, status,
-                              client_organization_id, vacancies_count)
+                              client_organization_id, campaign_id, vacancies_count)
             VALUES (:tid, :uid, :title, :dept, :location, :job_type, :work_mode, :experience_level,
                     :duration, CAST(NULLIF(:application_deadline, '') AS DATE), :desc,
                     :qt, :pt, :job_code, 'active',
-                    CAST(:coid AS uuid), :vacancies_count)
+                    CAST(:coid AS uuid), CAST(:campaign_id AS uuid), :vacancies_count)
             RETURNING job_id
         """),
         {
@@ -395,6 +425,7 @@ async def create_job(
             "pt":                 body.partial_threshold,
             "job_code":           job_code,
             "coid":               body.client_organization_id,
+            "campaign_id":        body.campaign_id,
             "vacancies_count":    max(1, body.vacancies_count) if body.vacancies_count else 1,
         },
     )
@@ -468,6 +499,8 @@ async def get_job_details(
                 j.created_at, j.updated_at,
                 j.client_organization_id,
                 co.organization_name AS client_org_name,
+                j.campaign_id,
+                camp.name AS campaign_name,
                 cu.full_name AS created_by_name,
                 uu.full_name AS updated_by_name,
                 COUNT(a.application_id)                                                                          AS applications_total,
@@ -503,12 +536,24 @@ async def get_job_details(
                 COUNT(a.application_id) FILTER (
                     WHERE a.processing_status IN ('pending', 'queued', 'processing')
                 ) AS applications_in_progress,
+                -- Workflow status counts
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'awaiting_review') AS applications_awaiting_review,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'under_review')   AS applications_under_review,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'shortlisted')    AS applications_shortlisted,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'interviewing')   AS applications_interviewing,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'offer_made')     AS applications_offer_made,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'hired')          AS applications_hired,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'rejected')       AS applications_rejected_workflow,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'withdrawn')      AS applications_withdrawn,
+                COUNT(a.application_id) FILTER (WHERE a.workflow_status = 'on_hold')        AS applications_on_hold,
                 t.forwarding_email AS tenant_forwarding_email,
-                t.job_application_controls_enabled
+                t.job_application_controls_enabled,
+                j.allow_advanced_workflow_move
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
             JOIN tenants t ON t.tenant_id = j.tenant_id
             LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
+            LEFT JOIN job_campaigns camp ON camp.campaign_id = j.campaign_id
             LEFT JOIN users cu ON cu.user_id = j.created_by
             LEFT JOIN users uu ON uu.user_id = j.updated_by
             WHERE j.job_id = :jid AND j.tenant_id = :tid
@@ -522,7 +567,7 @@ async def get_job_details(
                       AND auc.tenant_id = CAST(:tid AS uuid)
                 )
               )
-            GROUP BY j.job_id, t.tenant_id, co.organization_name, cu.full_name, uu.full_name
+            GROUP BY j.job_id, t.tenant_id, co.organization_name, camp.name, cu.full_name, uu.full_name
         """),
         {
             "jid":      job_id,
@@ -628,9 +673,21 @@ async def get_job_details(
             "applications_duplicate_blocked":   int(job["applications_duplicate_blocked"]),
             "applications_possible_duplicate":  int(job["applications_possible_duplicate"]),
             "applications_failed_needs_review": int(job["applications_failed_needs_review"]),
+            "applications_awaiting_review":     int(job["applications_awaiting_review"]),
+            "applications_under_review":        int(job["applications_under_review"]),
+            "applications_shortlisted":         int(job["applications_shortlisted"]),
+            "applications_interviewing":        int(job["applications_interviewing"]),
+            "applications_offer_made":          int(job["applications_offer_made"]),
+            "applications_hired":               int(job["applications_hired"]),
+            "applications_rejected_workflow":   int(job["applications_rejected_workflow"]),
+            "applications_withdrawn":           int(job["applications_withdrawn"]),
+            "applications_on_hold":             int(job["applications_on_hold"]),
             "client_organization_id": str(job["client_organization_id"]) if job["client_organization_id"] else None,
             "client_org_name":        job["client_org_name"],
+            "campaign_id":            str(job["campaign_id"]) if job["campaign_id"] else None,
+            "campaign_name":          job["campaign_name"],
             "job_application_controls_enabled": bool(job["job_application_controls_enabled"]),
+            "allow_advanced_workflow_move": bool(job["allow_advanced_workflow_move"]),
             "qualified_threshold":      job["qualified_threshold"],
             "partial_threshold":        job["partial_threshold"],
             "max_applications":               job["max_applications"],
@@ -742,6 +799,11 @@ async def update_job_settings(
     # enable_ai_comparison is a super_admin-only field; ignore silently for others
     if is_super_admin and body.enable_ai_comparison is not None:
         updates["enable_ai_comparison"] = body.enable_ai_comparison
+
+    # allow_advanced_workflow_move is admin/super_admin-only
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    if is_admin and body.allow_advanced_workflow_move is not None:
+        updates["allow_advanced_workflow_move"] = body.allow_advanced_workflow_move
 
     if not updates:
         return {"success": True, "message": "No changes"}
@@ -1225,11 +1287,16 @@ async def update_job_metadata(
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     job_row = await db.execute(
-        text("SELECT job_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
+        text("SELECT job_id, client_organization_id FROM jobs WHERE job_id = :jid AND tenant_id = :tid"),
         {"jid": job_id, "tid": current_user.tenant_id},
     )
-    if not job_row.first():
+    existing_job = job_row.mappings().first()
+    if not existing_job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    job_client_org_id = (
+        str(existing_job["client_organization_id"])
+        if existing_job["client_organization_id"] else None
+    )
 
     # If application controls are being updated, verify the feature is enabled for this tenant
     controls_fields = {"max_applications", "auto_close_when_limit_reached"}
@@ -1296,6 +1363,20 @@ async def update_job_metadata(
             )
         updates["status"] = s
 
+    # Campaign link (optional grouping). Explicit presence in the request body is
+    # required to change it: a value links/moves the job; empty/null detaches it.
+    if "campaign_id" in body.model_fields_set:
+        new_campaign = (body.campaign_id or "").strip() or None
+        if new_campaign is not None:
+            from services.campaign_service import validate_job_campaign_link
+            await validate_job_campaign_link(
+                db,
+                tenant_id=current_user.tenant_id,
+                campaign_id=new_campaign,
+                job_client_organization_id=job_client_org_id,
+            )
+        updates["campaign_id"] = new_campaign
+
     # Handle knockout_questions separately (None = leave alone, [] = clear all)
     if body.knockout_questions is not None:
         from services.knockout_questions_service import save_job_knockout_questions
@@ -1306,7 +1387,11 @@ async def update_job_metadata(
 
     if updates:
         updates["updated_by"] = current_user.user_id
-        set_sql = ", ".join(f"{k} = :{k}" for k in updates) + ", updated_at = NOW()"
+        set_parts = [
+            "campaign_id = CAST(:campaign_id AS uuid)" if k == "campaign_id" else f"{k} = :{k}"
+            for k in updates
+        ]
+        set_sql = ", ".join(set_parts) + ", updated_at = NOW()"
         updates["jid"] = job_id
         try:
             await db.execute(

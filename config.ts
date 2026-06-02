@@ -8,6 +8,7 @@ export const WEBHOOK_CONFIG = {
   GET_JOB_DETAILS_WEBHOOK_URL:   `${API_BASE}/jobs/details`,
   CREATE_JOB_WEBHOOK_URL:        `${API_BASE}/jobs`,
   GET_APPLICATIONS_WEBHOOK_URL:  `${API_BASE}/applications`,
+  CANDIDATES_SEARCH_URL:         `${API_BASE}/applications`,  // tenant-wide mode (no job_id)
   APPLICATION_DETAILS_WEBHOOK_URL: `${API_BASE}/applications/details`,
   GET_PROFILE_WEBHOOK_URL:       `${API_BASE}/auth/me`,
   UPDATE_PROFILE_WEBHOOK_URL:    `${API_BASE}/auth/me`,
@@ -35,6 +36,8 @@ export const WEBHOOK_CONFIG = {
   // Tenant user management
   TENANT_USERS_URL:          `${API_BASE}/tenant/users`,
   TENANT_USAGE_URL:          `${API_BASE}/tenant/usage`,
+  // Dashboard
+  DASHBOARD_SUMMARY_URL:     `${API_BASE}/dashboard/summary`,
   // Platform Control (super_admin)
   PLATFORM_CONFIG_URL:          `${API_BASE}/admin/platform-config`,
   SUBSCRIPTION_PLANS_URL:       `${API_BASE}/admin/subscription-plans`,
@@ -51,6 +54,11 @@ export const WEBHOOK_CONFIG = {
   // Platform Control — AI Usage & Cost
   AI_USAGE_URL:                 `${API_BASE}/admin/ai-usage`,
   AI_PRICING_URL:               `${API_BASE}/admin/ai-usage/pricing`,
+  // Platform Control — AI Models
+  AI_MODELS_URL:                `${API_BASE}/admin/ai-models`,
+  AI_MODELS_REGISTRY_URL:       `${API_BASE}/admin/ai-models/registry`,
+  AI_STAGE_DEFAULTS_URL:        `${API_BASE}/admin/ai-models/stage-defaults`,
+  AI_PROVIDER_SECRETS_URL:      `${API_BASE}/admin/ai-models/provider-secrets-status`,
   // Job settings
   JOB_SETTINGS_BASE_URL:        `${API_BASE}/jobs`,
   UPDATE_JOB_URL:            `${API_BASE}/jobs`,
@@ -61,18 +69,53 @@ export const WEBHOOK_CONFIG = {
   DUPLICATE_CV_BASE_URL:        `${API_BASE}/jobs`,
   // CV file download (append /{application_id}/cv)
   CV_DOWNLOAD_BASE_URL:         `${API_BASE}/applications`,
+  // Workflow status transition (append /{application_id}/workflow-status)
+  APPLICATION_WORKFLOW_STATUS_URL: `${API_BASE}/applications`,
+  // Recruiter notes (append /{application_id}/recruiter-notes)
+  APPLICATION_RECRUITER_NOTES_URL: `${API_BASE}/applications`,
   // Public (no-auth) endpoints
   PUBLIC_JOB_BASE_URL:          `${API_BASE}/jobs/public`,   // append /{job_code}
   PUBLIC_APPLY_URL:             `${API_BASE}/applications/public`,
   // Client organisations (agency/individual_recruiter tenants)
   CLIENT_ORGANIZATIONS_URL:     `${API_BASE}/client-organizations`,
   MY_CLIENT_ASSIGNMENTS_URL:    `${API_BASE}/client-organizations/my/assignments`,
+  // Campaigns (optional job grouping layer) — append /{campaign_id} for detail/update/delete
+  CAMPAIGNS_URL:                `${API_BASE}/campaigns`,
+  // Candidate saved views — append /{saved_view_id} for patch/delete
+  CANDIDATE_SAVED_VIEWS_URL:    `${API_BASE}/candidate-saved-views`,
+  // Recruiter assignment — append /{application_id}/assignment
+  APPLICATION_ASSIGNMENT_URL:   `${API_BASE}/applications`,
+  // Bulk assignment
+  BULK_ASSIGNMENT_URL:          `${API_BASE}/applications/bulk-assignment`,
+  // Assignable users (team members for assignment dropdown)
+  ASSIGNABLE_USERS_URL:         `${API_BASE}/applications/assignable-users`,
+  // Candidate comments — append /{application_id}/comments[/{comment_id}]
+  APPLICATION_COMMENTS_URL:     `${API_BASE}/applications`,
+  // Interviews — append /{application_id}/interviews[/{interview_id}[/feedback[/{feedback_id}]]]
+  APPLICATION_INTERVIEWS_URL:   `${API_BASE}/applications`,
+  // Approvals — append /{application_id}/approvals[/{approval_id}] or /initiate
+  APPLICATION_APPROVALS_URL:    `${API_BASE}/applications`,
+  // Workflow policies (tenant-level governance)
+  WORKFLOW_POLICIES_URL:        `${API_BASE}/tenant/workflow-policies`,
   // Admin fair-usage controls (append /{tenant_id}/fair-usage)
   ADMIN_FAIR_USAGE_BASE_URL:    `${API_BASE}/admin/tenants`,
   // Tenant self-service: subscription
   ACTIVATE_TRIAL_URL:           `${API_BASE}/tenant/subscription/activate-trial`,
   SELECT_PLAN_URL:              `${API_BASE}/tenant/subscription/select-plan`,
   SIMULATE_PAYMENT_URL:         `${API_BASE}/tenant/subscription/simulate-payment`,
+  // Analytics & SLA Monitoring
+  ANALYTICS_FUNNEL_URL:         `${API_BASE}/analytics/funnel`,
+  ANALYTICS_RECRUITER_PRODUCTIVITY_URL: `${API_BASE}/analytics/recruiter-productivity`,
+  ANALYTICS_AGING_URL:          `${API_BASE}/analytics/aging`,
+  ANALYTICS_INSIGHTS_URL:       `${API_BASE}/analytics/insights`,
+  // Candidate tags & talent pool
+  TAGS_URL:                     `${API_BASE}/tags`,
+  TALENT_POOL_URL:              `${API_BASE}/applications/talent-pool`,
+  // Communication templates & history
+  COMMUNICATION_TEMPLATES_URL:  `${API_BASE}/communication/templates`,
+  COMMUNICATION_BASE_URL:       `${API_BASE}/applications`,
+  // Communication automation rules (admin only)
+  COMMUNICATION_AUTOMATION_RULES_URL: `${API_BASE}/communication/automation-rules`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

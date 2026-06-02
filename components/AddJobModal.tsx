@@ -2,9 +2,16 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { User, ClientOrganization, KnockoutQuestion, PassingCriteria } from '../types';
+import { User, ClientOrganization, Campaign, KnockoutQuestion, PassingCriteria } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
+
+interface PrefilledCampaign {
+  campaign_id: string;
+  name: string;
+  client_organization_id: string | null;
+  client_org_name: string | null;
+}
 
 interface AddJobModalProps {
   onClose: () => void;
@@ -12,6 +19,8 @@ interface AddJobModalProps {
   token: string;
   user: User | null;
   addToast: (msg: string, type: 'success' | 'error') => void;
+  /** When set, locks campaign and client fields to the given campaign context. */
+  prefilledCampaign?: PrefilledCampaign;
 }
 
 interface FormData {
@@ -26,6 +35,7 @@ interface FormData {
   application_deadline: string;
   vacancies_count: string;
   client_organization_id: string;
+  campaign_id: string;
 }
 
 const T = {
@@ -38,6 +48,9 @@ const T = {
     clientOrgGeneral: 'General (No specific client)',
     clientOrgRequired: 'Please select a client or General.',
     noClientsWarning: 'No client organizations found. You can create a General job or add clients first.',
+    campaign: 'Campaign (optional)',
+    campaignNone: 'No campaign (standalone job)',
+    campaignHint: 'Only campaigns matching this job’s client are shown.',
     department: 'Department / Client',
     jobLocation: 'Location',
     jobType: 'Job Type',
@@ -96,6 +109,9 @@ const T = {
     clientOrgGeneral: 'عام (بدون عميل محدد)',
     clientOrgRequired: 'يرجى اختيار عميل أو عام.',
     noClientsWarning: 'لا توجد منظمات عملاء. يمكنك إنشاء وظيفة عامة أو إضافة عملاء أولاً.',
+    campaign: 'الحملة (اختياري)',
+    campaignNone: 'بدون حملة (وظيفة مستقلة)',
+    campaignHint: 'تُعرض فقط الحملات المطابقة لعميل هذه الوظيفة.',
     department: 'القسم / العميل',
     jobLocation: 'الموقع',
     jobType: 'نوع الوظيفة',
@@ -225,7 +241,7 @@ function DescriptionQualityIndicator({
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
-export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, token, user, addToast }) => {
+export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, token, user, addToast, prefilledCampaign }) => {
   const { lang } = useLanguage();
   const t = T[lang];
 
@@ -237,6 +253,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const [loading, setLoading] = useState(false);
   const [clientOrgs, setClientOrgs] = useState<ClientOrganization[]>([]);
   const [clientOrgsLoading, setClientOrgsLoading] = useState(false);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [showKnockout, setShowKnockout] = useState(false);
   type LocalQuestion = Partial<KnockoutQuestion> & {
     optionsText: string;        // raw textarea value for single_choice options
@@ -246,10 +263,18 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   };
   const [knockoutQuestions, setKnockoutQuestions] = useState<LocalQuestion[]>([]);
 
+  // Derive initial client/campaign from prefilledCampaign prop if provided
+  const initClientOrgId = prefilledCampaign
+    ? (prefilledCampaign.client_organization_id ?? '__general__')
+    : '';
+  const initClient = prefilledCampaign
+    ? (prefilledCampaign.client_org_name ?? '')
+    : '';
+
   const [formData, setFormData] = useState<FormData>({
     job_title: '',
     job_description: '',
-    client: '',
+    client: initClient,
     job_location: '',
     job_type: '',
     work_mode: '',
@@ -257,7 +282,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     job_duration: '',
     application_deadline: '',
     vacancies_count: '',
-    client_organization_id: '',
+    client_organization_id: initClientOrgId,
+    campaign_id: prefilledCampaign?.campaign_id ?? '',
   });
 
   useEffect(() => {
@@ -272,6 +298,18 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       .finally(() => setClientOrgsLoading(false));
   }, [token, isAgencyTenant]);
 
+  // Load linkable campaigns (draft + active) for the grouping selector.
+  useEffect(() => {
+    if (!token) return;
+    apiService.get(WEBHOOK_CONFIG.CAMPAIGNS_URL, {}, token)
+      .then((data: any) => {
+        const list: Campaign[] = data?.campaigns ?? [];
+        // draft and active campaigns can receive new jobs; on_hold/closed/cancelled cannot
+        setCampaigns(list.filter(c => c.status === 'active' || c.status === 'draft'));
+      })
+      .catch(() => {});
+  }, [token]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -279,8 +317,10 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
 
   const handleClientOrgChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const orgId = e.target.value;
+    // Changing the client invalidates any previously-selected campaign (a campaign
+    // is bound to a single client), so reset campaign_id.
     if (orgId === '__general__') {
-      setFormData(prev => ({ ...prev, client_organization_id: '__general__', client: '' }));
+      setFormData(prev => ({ ...prev, client_organization_id: '__general__', client: '', campaign_id: '' }));
       return;
     }
     const org = clientOrgs.find(o => o.client_organization_id === orgId);
@@ -288,8 +328,19 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       ...prev,
       client_organization_id: orgId,
       client: org ? org.organization_name : '',
+      campaign_id: '',
     }));
   };
+
+  // Effective client for campaign matching: a real client id, or null = public job.
+  const effectiveClientId = isAgencyTenant
+    ? (formData.client_organization_id && formData.client_organization_id !== '__general__'
+        ? formData.client_organization_id : null)
+    : null;
+  // Public campaigns hold public jobs; client campaigns hold that client's jobs.
+  const eligibleCampaigns = campaigns.filter(
+    c => (c.client_organization_id || null) === effectiveClientId
+  );
 
   const addKnockoutQuestion = () => {
     if (knockoutQuestions.length >= MAX_KNOCKOUT) return;
@@ -325,6 +376,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       const payload: Record<string, string | number | null> = { title, description };
 
       if (!isGeneral && formData.client_organization_id) payload.client_organization_id = formData.client_organization_id;
+      if (formData.campaign_id) payload.campaign_id = formData.campaign_id;
       if (!isAgencyTenant && formData.client.trim()) payload.department = formData.client.trim();
       if (formData.job_location.trim()) payload.location = formData.job_location.trim();
       if (formData.job_type) payload.job_type = formData.job_type;
@@ -441,7 +493,16 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               {isAgencyTenant ? (
                 <div className="space-y-1.5">
                   <label className={labelCls}>{t.clientOrg} <span className="text-error">*</span></label>
-                  {clientOrgsLoading ? (
+                  {prefilledCampaign ? (
+                    /* Client is locked to the campaign's client — show as read-only badge */
+                    <div className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-700 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                      <span>{prefilledCampaign.client_org_name || t.clientOrgGeneral}</span>
+                      <span className="ml-auto text-[11px] text-slate-400">{(t as any).campaignHint}</span>
+                    </div>
+                  ) : clientOrgsLoading ? (
                     <div className="w-full px-4 py-2.5 border border-border rounded-lg text-sm text-textMuted bg-slate-50">Loading clients…</div>
                   ) : (
                     <select value={formData.client_organization_id} onChange={handleClientOrgChange} className={selectCls}>
@@ -467,6 +528,38 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                 </div>
               )}
             </div>
+
+            {/* Campaign grouping — locked badge when coming from Campaign Detail, selector otherwise */}
+            {prefilledCampaign ? (
+              <div className="space-y-1.5">
+                <label className={labelCls}>{(t as any).campaign}</label>
+                <div className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-700 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-violet-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                  </svg>
+                  <span className="font-medium text-violet-700">{prefilledCampaign.name}</span>
+                  <svg className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+              </div>
+            ) : eligibleCampaigns.length > 0 ? (
+              <div className="space-y-1.5">
+                <label className={labelCls}>{(t as any).campaign}</label>
+                <select
+                  name="campaign_id"
+                  value={formData.campaign_id}
+                  onChange={handleChange}
+                  className={selectCls}
+                >
+                  <option value="">{(t as any).campaignNone}</option>
+                  {eligibleCampaigns.map(c => (
+                    <option key={c.campaign_id} value={c.campaign_id}>{c.name}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-textMuted">{(t as any).campaignHint}</p>
+              </div>
+            ) : null}
 
             {/* Row 2: Job Type + Work Mode + Experience Level */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">

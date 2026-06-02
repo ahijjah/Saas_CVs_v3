@@ -18,10 +18,29 @@ from services.application_intake_service import (
     IntakeValidationError,
     process_cv_intake,
 )
+from services.communication_events import process_communication_event
 from workers.cv_score import score_cv_task
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 settings = get_settings()
+
+
+WORKFLOW_STATUSES = frozenset((
+    "awaiting_review", "under_review", "shortlisted", "interviewing",
+    "offer_made", "hired", "rejected", "withdrawn", "on_hold",
+))
+
+VALID_WORKFLOW_TRANSITIONS: dict[str, frozenset] = {
+    "awaiting_review": frozenset({"under_review", "on_hold", "rejected", "withdrawn"}),
+    "under_review":    frozenset({"shortlisted", "on_hold", "rejected", "withdrawn"}),
+    "shortlisted":     frozenset({"interviewing", "under_review", "on_hold", "rejected", "withdrawn"}),
+    "interviewing":    frozenset({"offer_made", "shortlisted", "on_hold", "rejected", "withdrawn"}),
+    "offer_made":      frozenset({"hired", "interviewing", "on_hold", "rejected", "withdrawn"}),
+    "hired":           frozenset(),
+    "rejected":        frozenset({"awaiting_review", "under_review"}),
+    "withdrawn":       frozenset({"awaiting_review", "under_review"}),
+    "on_hold":         frozenset({"awaiting_review", "under_review", "shortlisted", "interviewing", "offer_made", "rejected", "withdrawn"}),
+}
 
 
 class ScorePendingRequest(BaseModel):
@@ -32,69 +51,357 @@ class ResetStuckRequest(BaseModel):
     job_id: str
 
 
-@router.get("")
-async def list_applications(
-    job_id: str,
+class WorkflowStatusRequest(BaseModel):
+    workflow_status: str
+    note: str | None = None
+    advanced_move: bool = False
+    application_ids: list[str] | None = None  # for bulk operations
+
+
+class RecruiterNotesRequest(BaseModel):
+    recruiter_notes: str | None
+
+
+class AssignmentRequest(BaseModel):
+    assigned_user_id: str | None = None  # None = unassign
+
+
+class BulkAssignmentRequest(BaseModel):
+    application_ids:  list[str]
+    assigned_user_id: str | None = None  # None = unassign all
+
+
+@router.get("/assignable-users")
+async def get_assignable_users(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    """Return active users in the tenant for use in assignment dropdowns.
+    Accessible to all authenticated users (not just admin).
+    """
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     rows = await db.execute(
         text("""
-            SELECT
-                a.application_id,
-                a.candidate_name,
-                a.decision                           AS status,
-                a.processing_status,
-                a.stopped_reason,
-                a.duplicate_status,
-                a.duplicate_reason,
-                a.duplicate_reference_application_id,
-                a.evaluation_exit_reason,
-                s.final_score                        AS score,
-                a.applied_at::date                   AS applied_date,
-                s.evaluation_notes                   AS summary
-            FROM applications a
-            JOIN jobs j ON j.job_id = a.job_id
-            LEFT JOIN application_scores s ON s.application_id = a.application_id
-            WHERE a.job_id = :jid AND a.tenant_id = :tid
-              AND (
-                :is_admin = TRUE
-                OR j.client_organization_id IS NULL
-                OR EXISTS (
-                    SELECT 1 FROM agency_user_clients auc
-                    WHERE auc.user_id = CAST(:uid AS uuid)
-                      AND auc.client_organization_id = j.client_organization_id
-                      AND auc.tenant_id = CAST(:tid AS uuid)
-                )
-              )
-            ORDER BY a.applied_at DESC
+            SELECT user_id, email, COALESCE(full_name, email) AS full_name, role
+            FROM users
+            WHERE tenant_id = CAST(:tid AS uuid)
+              AND status IN ('active', 'pending_email_verification')
+            ORDER BY full_name ASC
         """),
-        {
-            "jid":      job_id,
-            "tid":      current_user.tenant_id,
-            "uid":      current_user.user_id,
-            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
-        },
+        {"tid": current_user.tenant_id},
     )
+    users = [
+        {
+            "user_id":   str(r["user_id"]),
+            "email":     r["email"],
+            "full_name": r["full_name"],
+            "role":      r["role"],
+        }
+        for r in rows.mappings()
+    ]
+    return {"users": users}
+
+
+@router.get("")
+async def list_applications(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    job_id: str | None = None,
+    workflow_status: str | None = None,
+    processing_status: str | None = None,
+    ai_decision: str | None = None,
+    possible_duplicate: bool | None = None,
+    has_notes: bool | None = None,
+    applied_after: str | None = None,
+    applied_before: str | None = None,
+    search: str | None = None,
+    campaign_id: str | None = None,
+    client_organization_id: str | None = None,
+    assigned_to: str | None = None,
+    tag_ids: str | None = None,
+    talent_pool_only: bool = False,
+    sort_by: str = "applied_at",
+    sort_order: str = "desc",
+    page: int = 1,
+    limit: int = 50,
+):
+    """
+    List applications with flexible filtering and pagination.
+
+    Backward compatible mode:
+    - If job_id provided: returns applications for that job (existing behavior)
+    - If job_id not provided: returns all tenant applications (new global search)
+
+    Supports multi-dimensional filtering:
+    - workflow_status: awaiting_review, under_review, interviewing, etc.
+    - processing_status: ai_scored, pending, failed, security_blocked, etc.
+    - ai_decision: qualified, partial, rejected_low_match, not_scored
+    - possible_duplicate: true/false
+    - has_notes: true/false
+    - date range: applied_after, applied_before (ISO format)
+    - search: candidate name substring match
+    - campaign_id: filter by campaign (tenant-wide mode only)
+    - client_organization_id: agency/freelancer client filter
+
+    Supports pagination and sorting.
+
+    Access control:
+    - Respects RLS tenant isolation
+    - Respects agency/freelancer client scoping
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    # Validate pagination
+    page = max(1, page)
+    limit = max(1, min(limit, 500))  # Cap at 500 per page for safety
+    offset = (page - 1) * limit
+
+    # Validate sorting
+    valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
+    sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
+    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+
+    # Build WHERE clause dynamically
+    where_parts = [
+        "a.tenant_id = CAST(:tid AS uuid)",
+    ]
+    params = {
+        "tid": current_user.tenant_id,
+        "uid": current_user.user_id,
+        "is_admin": is_admin,
+    }
+
+    # Mode 1: Job-scoped (backward compatible) - job_id required
+    if job_id:
+        where_parts.append("a.job_id = CAST(:jid AS uuid)")
+        params["jid"] = job_id
+
+    # Workflow status filter
+    if workflow_status:
+        where_parts.append("a.workflow_status = :wf_status")
+        params["wf_status"] = workflow_status
+
+    # Processing status filter
+    # Special alias 'failed_or_blocked' expands to all non-recoverable system states
+    # so the frontend can send a single param without multi-value URL encoding.
+    FAILED_OR_BLOCKED_STATUSES = (
+        "'failed', 'security_blocked', 'duplicate_blocked', "
+        "'extraction_failed', 'processing_failed', 'stopped'"
+    )
+    if processing_status:
+        if processing_status == 'failed_or_blocked':
+            where_parts.append(f"a.processing_status IN ({FAILED_OR_BLOCKED_STATUSES})")
+        else:
+            where_parts.append("a.processing_status = :proc_status")
+            params["proc_status"] = processing_status
+
+    # AI decision filter (maps to 'decision' column)
+    if ai_decision:
+        where_parts.append("a.decision = :ai_dec")
+        params["ai_dec"] = ai_decision
+
+    # Possible duplicate flag
+    if possible_duplicate is not None:
+        if possible_duplicate:
+            where_parts.append("a.duplicate_status IN ('possible_duplicate', 'confirmed_duplicate')")
+        else:
+            where_parts.append("a.duplicate_status IS NULL OR a.duplicate_status = 'not_duplicate'")
+
+    # Has notes filter
+    if has_notes is not None:
+        if has_notes:
+            where_parts.append("a.recruiter_notes IS NOT NULL AND a.recruiter_notes != ''")
+        else:
+            where_parts.append("(a.recruiter_notes IS NULL OR a.recruiter_notes = '')")
+
+    # Date range filters
+    if applied_after:
+        where_parts.append("a.applied_at >= CAST(:applied_after AS timestamp)")
+        params["applied_after"] = applied_after
+
+    if applied_before:
+        where_parts.append("a.applied_at < CAST(:applied_before AS timestamp) + INTERVAL '1 day'")
+        params["applied_before"] = applied_before
+
+    # Candidate name search (LIKE, case-insensitive)
+    if search:
+        where_parts.append("a.candidate_name ILIKE :search")
+        params["search"] = f"%{search}%"
+
+    # Campaign filter (tenant-wide mode only; ignored if job_id provided)
+    if campaign_id and not job_id:
+        where_parts.append("j.campaign_id = CAST(:campaign_id AS uuid)")
+        params["campaign_id"] = campaign_id
+
+    # Client organization filter (agency/freelancer scoping)
+    if client_organization_id and not job_id:
+        where_parts.append("j.client_organization_id = CAST(:client_org_id AS uuid)")
+        params["client_org_id"] = client_organization_id
+
+    # Assignment filter
+    if assigned_to == "me":
+        where_parts.append("a.assigned_user_id = CAST(:uid AS uuid)")
+    elif assigned_to == "unassigned":
+        where_parts.append("a.assigned_user_id IS NULL")
+    elif assigned_to:
+        where_parts.append("a.assigned_user_id = CAST(:assigned_to_id AS uuid)")
+        params["assigned_to_id"] = assigned_to
+
+    # Tag filter (tenant-wide mode only; ignored if job_id provided)
+    if tag_ids and not job_id:
+        tag_list = [tid.strip() for tid in tag_ids.split(',') if tid.strip()]
+        if tag_list:
+            tag_params: dict = {}
+            tag_placeholders: list[str] = []
+            for i, tid in enumerate(tag_list):
+                key = f"tag_id_{i}"
+                tag_params[key] = tid
+                tag_placeholders.append(f"CAST(:{key} AS uuid)")
+            params.update(tag_params)
+            where_parts.append(f"""
+                a.application_id IN (
+                    SELECT DISTINCT application_id FROM application_candidate_tags
+                    WHERE tag_id IN ({', '.join(tag_placeholders)})
+                )
+            """)
+
+    # Talent pool filter (tenant-wide mode only; ignored if job_id provided)
+    if talent_pool_only and not job_id:
+        where_parts.append("a.is_talent_pool = TRUE")
+
+    # Always enforce access control: admin OR no client OR assigned via agency_user_clients
+    where_parts.append("""
+        (
+            :is_admin = TRUE
+            OR j.client_organization_id IS NULL
+            OR EXISTS (
+                SELECT 1 FROM agency_user_clients auc
+                WHERE auc.user_id = CAST(:uid AS uuid)
+                  AND auc.client_organization_id = j.client_organization_id
+                  AND auc.tenant_id = CAST(:tid AS uuid)
+            )
+        )
+    """)
+
+    where_clause = " AND ".join(where_parts)
+
+    # Map sort_by to actual column
+    sort_column = {
+        "applied_at": "a.applied_at",
+        "updated_at": "a.scored_at",
+        "score": "s.final_score",
+        "candidate_name": "a.candidate_name",
+    }.get(sort_by, "a.applied_at")
+
+    # Count total for pagination
+    count_query = f"""
+        SELECT COUNT(*) as total
+        FROM applications a
+        JOIN jobs j ON j.job_id = a.job_id
+        WHERE {where_clause}
+    """
+    count_result = await db.execute(text(count_query), params)
+    total = count_result.scalar() or 0
+
+    # Fetch applications with job and campaign metadata
+    data_query = f"""
+        SELECT
+            a.application_id,
+            a.candidate_name,
+            a.job_id,
+            j.title                             AS job_title,
+            j.job_code,
+            j.campaign_id,
+            jc.name                             AS campaign_name,
+            j.client_organization_id,
+            co.organization_name                AS client_org_name,
+            a.decision                          AS status,
+            a.processing_status,
+            a.stopped_reason,
+            a.duplicate_status,
+            a.duplicate_reason,
+            a.duplicate_reference_application_id,
+            a.evaluation_exit_reason,
+            a.workflow_status,
+            a.recruiter_notes,
+            a.applied_at,
+            a.scored_at                         AS updated_at,
+            a.is_talent_pool,
+            s.final_score                       AS score,
+            s.evaluation_notes                  AS summary,
+            j.allow_advanced_workflow_move      AS job_allow_advanced_workflow_move,
+            a.assigned_user_id,
+            a.assigned_at,
+            COALESCE(au.full_name, au.email)    AS assigned_user_name,
+            a.preferred_contact_email,
+            a.preferred_contact_source
+        FROM applications a
+        JOIN jobs j ON j.job_id = a.job_id
+        LEFT JOIN application_scores s ON s.application_id = a.application_id
+        LEFT JOIN job_campaigns jc ON jc.campaign_id = j.campaign_id
+        LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
+        LEFT JOIN users au ON au.user_id = a.assigned_user_id
+        WHERE {where_clause}
+        ORDER BY {sort_column} {sort_order}
+        LIMIT :limit OFFSET :offset
+    """
+
+    params["limit"] = limit
+    params["offset"] = offset
+
+    rows = await db.execute(text(data_query), params)
+
     apps = []
     for r in rows.mappings():
         apps.append({
-            "application_id":                    str(r["application_id"]),
-            "candidate_name":                    r["candidate_name"],
-            "status":                            r["status"],
-            "processing_status":                 r["processing_status"],
-            "stopped_reason":                    r["stopped_reason"],
-            "duplicate_status":                  r["duplicate_status"] or "not_duplicate",
-            "duplicate_reason":                  r["duplicate_reason"],
+            "application_id": str(r["application_id"]),
+            "candidate_name": r["candidate_name"],
+            "job_id": str(r["job_id"]),
+            "job_title": r["job_title"],
+            "job_code": r["job_code"],
+            "campaign_id": str(r["campaign_id"]) if r["campaign_id"] else None,
+            "campaign_name": r["campaign_name"],
+            "client_organization_id": str(r["client_organization_id"]) if r["client_organization_id"] else None,
+            "client_org_name": r["client_org_name"],
+            "status": r["status"],
+            "processing_status": r["processing_status"],
+            "stopped_reason": r["stopped_reason"],
+            "duplicate_status": r["duplicate_status"] or "not_duplicate",
+            "duplicate_reason": r["duplicate_reason"],
             "duplicate_reference_application_id": str(r["duplicate_reference_application_id"]) if r["duplicate_reference_application_id"] else None,
-            "evaluation_exit_reason":            r["evaluation_exit_reason"],
-            "score":                             float(r["score"]) if r["score"] is not None else None,
-            "applied_date":                      r["applied_date"].isoformat() if r["applied_date"] else None,
-            "summary":                           r["summary"],
+            "evaluation_exit_reason": r["evaluation_exit_reason"],
+            "workflow_status": r["workflow_status"] or "awaiting_review",
+            "recruiter_notes": r["recruiter_notes"],
+            "applied_at": r["applied_at"].isoformat() if r["applied_at"] else None,
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            "score": float(r["score"]) if r["score"] is not None else None,
+            "summary": r["summary"],
+            "job_allow_advanced_workflow_move": bool(r["job_allow_advanced_workflow_move"]),
+            "assigned_user_id":   str(r["assigned_user_id"]) if r["assigned_user_id"] else None,
+            "assigned_user_name": r["assigned_user_name"],
+            "assigned_at":        r["assigned_at"].isoformat() if r["assigned_at"] else None,
+            "is_talent_pool":           bool(r["is_talent_pool"]) if r["is_talent_pool"] is not None else False,
+            "preferred_contact_email":  r["preferred_contact_email"],
+            "preferred_contact_source": r["preferred_contact_source"],
         })
-    return apps
+
+    # Backward compatibility mode: if job_id provided, return array (existing behavior)
+    if job_id:
+        return apps
+
+    # New tenant-wide mode: return object with pagination metadata
+    return {
+        "candidates": apps,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "has_more": (offset + limit) < total,
+        },
+    }
 
 
 @router.get("/details")
@@ -111,6 +418,8 @@ async def get_application_details(
                 a.application_id, a.candidate_name, a.candidate_email,
                 a.candidate_email_from_cv, a.candidate_phone_from_cv,
                 a.email_sender_address,
+                a.preferred_contact_email, a.preferred_contact_source,
+                a.preferred_contact_confidence,
                 a.submitted_by_user_id, a.submitted_by_name, a.submitted_by_email,
                 a.decision, a.submission_source, a.processing_status,
                 a.stopped_reason,
@@ -130,6 +439,8 @@ async def get_application_details(
                 a.security_detected_patterns,
                 a.security_detected_snippets,
                 a.security_checked_at,
+                a.workflow_status,
+                a.recruiter_notes,
                 j.title AS job_title, j.job_id,
                 (SELECT af2.original_name FROM application_files af2
                  WHERE af2.application_id = a.application_id LIMIT 1) AS original_filename,
@@ -232,6 +543,31 @@ async def get_application_details(
         for r in ko_rows.mappings()
     ]
 
+    # Fetch workflow history
+    wf_rows = await db.execute(
+        text("""
+            SELECT history_id, from_status, to_status, note, changed_by_name,
+                   created_at, is_advanced_move
+            FROM application_workflow_history
+            WHERE application_id = CAST(:aid AS uuid)
+            ORDER BY created_at DESC
+            LIMIT 50
+        """),
+        {"aid": application_id},
+    )
+    workflow_history = [
+        {
+            "history_id":      str(r["history_id"]),
+            "from_status":     r["from_status"],
+            "to_status":       r["to_status"],
+            "note":            r["note"],
+            "changed_by_name": r["changed_by_name"],
+            "created_at":      r["created_at"].isoformat() if r["created_at"] else None,
+            "is_advanced_move": bool(r["is_advanced_move"]),
+        }
+        for r in wf_rows.mappings()
+    ]
+
     # Fetch AI comparison results if available
     comp_rows = await db.execute(
         text("""
@@ -277,6 +613,9 @@ async def get_application_details(
         "candidate_email_from_cv": app["candidate_email_from_cv"],
         "candidate_phone_from_cv": app["candidate_phone_from_cv"],
         "email_sender_address": app["email_sender_address"],
+        "preferred_contact_email": app["preferred_contact_email"],
+        "preferred_contact_source": app["preferred_contact_source"],
+        "preferred_contact_confidence": float(app["preferred_contact_confidence"]) if app["preferred_contact_confidence"] is not None else None,
         "submitted_by_user_id": str(app["submitted_by_user_id"]) if app["submitted_by_user_id"] else None,
         "submitted_by_name":  app["submitted_by_name"],
         "submitted_by_email": app["submitted_by_email"],
@@ -343,6 +682,9 @@ async def get_application_details(
         "security_detected_snippets": list(app["security_detected_snippets"] or []),
         "security_checked_at":        app["security_checked_at"].isoformat() if app["security_checked_at"] else None,
         "knockout_answers":           knockout_answers,
+        "workflow_status":            app["workflow_status"] or "new",
+        "recruiter_notes":            app["recruiter_notes"],
+        "workflow_history":           workflow_history,
     }
 
 
@@ -594,7 +936,7 @@ async def get_queue_status(
                 COUNT(*) FILTER (WHERE processing_status = 'pending')    AS pending,
                 COUNT(*) FILTER (WHERE processing_status = 'queued')     AS queued,
                 COUNT(*) FILTER (WHERE processing_status = 'processing') AS processing,
-                COUNT(*) FILTER (WHERE processing_status = 'scored') AS completed,
+                COUNT(*) FILTER (WHERE processing_status = 'ai_scored') AS completed,
                 COUNT(*) FILTER (WHERE processing_status = 'failed')     AS failed,
                 COUNT(*) FILTER (
                     WHERE processing_status IN ('queued', 'processing')
@@ -674,6 +1016,276 @@ async def reset_stuck_cvs(
         "reset": reset_count,
         "message": f"Reset {reset_count} stuck CV(s) back to pending.",
     }
+
+
+@router.patch("/{application_id}/workflow-status")
+async def update_workflow_status(
+    application_id: str,
+    body: WorkflowStatusRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Transition an application's recruiter workflow status."""
+    new_status = body.workflow_status.strip().lower()
+    if new_status not in WORKFLOW_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid workflow_status '{new_status}'.",
+        )
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT a.application_id, a.workflow_status, a.job_id, j.allow_advanced_workflow_move
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE a.application_id = :aid AND a.tenant_id = :tid
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
+        """),
+        {
+            "aid":      application_id,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
+    )
+    rec = row.mappings().first()
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    current_status = rec["workflow_status"] or "awaiting_review"
+    if new_status == current_status:
+        return {"workflow_status": current_status}
+
+    is_advanced = body.advanced_move
+
+    if is_advanced:
+        # Advanced move: privileged stage-jump — validate permission, tenant setting, job setting, and require a note
+        # Check tenant setting
+        tenant_row = await db.execute(
+            text("SELECT allow_advanced_workflow_move FROM tenants WHERE tenant_id = :tid"),
+            {"tid": current_user.tenant_id},
+        )
+        tenant = tenant_row.mappings().first()
+        if not tenant or not tenant["allow_advanced_workflow_move"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Exceptional workflow moves are disabled for this tenant.",
+            )
+
+        # Check job-level setting
+        if not rec["allow_advanced_workflow_move"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Exceptional workflow moves are disabled for this job.",
+            )
+
+        actor_role = (current_user.role or "").lower()
+        if actor_role not in ("admin", "super_admin"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Exceptional workflow moves require admin or super_admin role.",
+            )
+        if not body.note or not body.note.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A note/reason is required for exceptional workflow moves.",
+            )
+        # Target must still be a valid workflow status, but no transition-graph check
+    else:
+        # Normal move: enforce the state-machine graph
+        allowed = VALID_WORKFLOW_TRANSITIONS.get(current_status, frozenset())
+        if new_status not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Cannot transition workflow from '{current_status}' to '{new_status}'.",
+            )
+
+    # ── Workflow policy enforcement ────────────────────────────────────────────
+    import json as _json
+    _pol_row = await db.execute(
+        text("SELECT policies FROM tenant_workflow_policies WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": current_user.tenant_id},
+    )
+    _pol_rec = _pol_row.mappings().first()
+    _pol: dict = {}
+    if _pol_rec and _pol_rec["policies"]:
+        _raw = _pol_rec["policies"]
+        _pol = _json.loads(_raw) if isinstance(_raw, str) else dict(_raw)
+
+    if new_status == "rejected":
+        if _pol.get("require_rejection_reason") and not (body.note and body.note.strip()):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A rejection reason is required by your organisation's policy.",
+            )
+
+    if new_status == "offer_made" and _pol.get("require_interview_before_offer"):
+        _iv_row = await db.execute(
+            text("""
+                SELECT COUNT(*) AS cnt FROM candidate_interviews
+                WHERE application_id = CAST(:aid AS uuid)
+                  AND tenant_id = CAST(:tid AS uuid)
+                  AND status = 'completed'
+            """),
+            {"aid": application_id, "tid": current_user.tenant_id},
+        )
+        if (_iv_row.scalar() or 0) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Policy requires at least one completed interview before making an offer.",
+            )
+        if _pol.get("require_interview_feedback"):
+            _fb_row = await db.execute(
+                text("""
+                    SELECT COUNT(*) AS cnt
+                    FROM candidate_interviews ci
+                    JOIN candidate_interview_feedback cif ON cif.interview_id = ci.interview_id
+                    WHERE ci.application_id = CAST(:aid AS uuid)
+                      AND ci.tenant_id = CAST(:tid AS uuid)
+                      AND ci.status = 'completed'
+                """),
+                {"aid": application_id, "tid": current_user.tenant_id},
+            )
+            if (_fb_row.scalar() or 0) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Policy requires interview feedback before making an offer.",
+                )
+
+    if new_status == "hired" and _pol.get("require_approval_before_hire"):
+        _stages = _pol.get("required_approval_stages", [])
+        if _stages:
+            _ap_row = await db.execute(
+                text("""
+                    SELECT COUNT(*) AS cnt FROM candidate_approvals
+                    WHERE application_id = CAST(:aid AS uuid)
+                      AND tenant_id = CAST(:tid AS uuid)
+                      AND decision != 'approved'
+                """),
+                {"aid": application_id, "tid": current_user.tenant_id},
+            )
+            pending_or_rejected = _ap_row.scalar() or 0
+            _ap_total = await db.execute(
+                text("""
+                    SELECT COUNT(*) AS cnt FROM candidate_approvals
+                    WHERE application_id = CAST(:aid AS uuid)
+                      AND tenant_id = CAST(:tid AS uuid)
+                """),
+                {"aid": application_id, "tid": current_user.tenant_id},
+            )
+            total = _ap_total.scalar() or 0
+            if total == 0 or pending_or_rejected > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Policy requires all approval stages to be approved before hiring.",
+                )
+    # ──────────────────────────────────────────────────────────────────────────
+
+    await db.execute(
+        text("""
+            UPDATE applications
+            SET workflow_status = :new_status, updated_at = now()
+            WHERE application_id = CAST(:aid AS uuid) AND tenant_id = :tid
+        """),
+        {"new_status": new_status, "aid": application_id, "tid": current_user.tenant_id},
+    )
+
+    await db.execute(
+        text("""
+            INSERT INTO application_workflow_history
+                (application_id, tenant_id, changed_by, changed_by_name,
+                 from_status, to_status, note, is_advanced_move)
+            VALUES
+                (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:uid AS uuid), :uname,
+                 :from_s, :to_s, :note, :is_adv)
+        """),
+        {
+            "aid":    application_id,
+            "tid":    current_user.tenant_id,
+            "uid":    current_user.user_id,
+            "uname":  current_user.full_name or current_user.email,
+            "from_s": current_status,
+            "to_s":   new_status,
+            "note":   body.note,
+            "is_adv": is_advanced,
+        },
+    )
+
+    _EVENT_MAP = {
+        "shortlisted": "workflow_shortlisted",
+        "rejected": "workflow_rejected",
+        "offer_made": "offer_made",
+    }
+    if new_status in _EVENT_MAP:
+        await process_communication_event(
+            db=db,
+            application_id=application_id,
+            event_type=_EVENT_MAP[new_status],
+            tenant_id=current_user.tenant_id,
+        )
+
+    await db.commit()
+    return {"workflow_status": new_status}
+
+
+@router.patch("/{application_id}/recruiter-notes")
+async def update_recruiter_notes(
+    application_id: str,
+    body: RecruiterNotesRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Save or clear recruiter notes for an application."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT a.application_id
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE a.application_id = :aid AND a.tenant_id = :tid
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
+        """),
+        {
+            "aid":      application_id,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
+    )
+    if not row.mappings().first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    await db.execute(
+        text("""
+            UPDATE applications
+            SET recruiter_notes = :notes, updated_at = now()
+            WHERE application_id = CAST(:aid AS uuid) AND tenant_id = :tid
+        """),
+        {"notes": body.recruiter_notes, "aid": application_id, "tid": current_user.tenant_id},
+    )
+    await db.commit()
+    return {"recruiter_notes": body.recruiter_notes}
 
 
 @router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -779,6 +1391,343 @@ async def download_cv(
         filename=rec["original_name"] or full_path.name,
         media_type=rec["mime_type"] or "application/octet-stream",
     )
+
+
+@router.patch("/bulk-assignment")
+async def bulk_update_assignment(
+    body: BulkAssignmentRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Bulk assign (or unassign) candidates to a recruiter."""
+    if not body.application_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one application_id is required.",
+        )
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    # Verify target user exists in tenant (if assigning, not unassigning)
+    if body.assigned_user_id:
+        target_user = await db.execute(
+            text("""
+                SELECT user_id FROM users
+                WHERE user_id   = CAST(:target_uid AS uuid)
+                  AND tenant_id = CAST(:tid AS uuid)
+                  AND status    = 'active'
+            """),
+            {"target_uid": body.assigned_user_id, "tid": current_user.tenant_id},
+        )
+        if not target_user.first():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Target user not found or not active in this tenant.",
+            )
+
+        # Permission: recruiter can only assign to self
+        if not is_admin and body.assigned_user_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Recruiters can only assign candidates to themselves.",
+            )
+
+    await db.execute(
+        text("""
+            UPDATE applications
+               SET assigned_user_id = CAST(:target_uid AS uuid),
+                   assigned_at      = CASE WHEN CAST(:target_uid AS uuid) IS NOT NULL THEN now() ELSE NULL END,
+                   assigned_by      = CASE WHEN CAST(:target_uid AS uuid) IS NOT NULL THEN CAST(:uid AS uuid) ELSE NULL END
+             WHERE application_id = ANY(CAST(:aids AS uuid[]))
+               AND tenant_id      = CAST(:tid AS uuid)
+        """),
+        {
+            "target_uid": body.assigned_user_id,
+            "uid":        current_user.user_id,
+            "aids":       body.application_ids,
+            "tid":        current_user.tenant_id,
+        },
+    )
+    await db.commit()
+    return {"success": True, "updated_count": len(body.application_ids)}
+
+
+@router.patch("/{application_id}/assignment")
+async def update_assignment(
+    application_id: str,
+    body: AssignmentRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Assign or unassign a single candidate to a recruiter."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    if body.assigned_user_id:
+        target_user = await db.execute(
+            text("""
+                SELECT user_id FROM users
+                WHERE user_id   = CAST(:target_uid AS uuid)
+                  AND tenant_id = CAST(:tid AS uuid)
+                  AND status    = 'active'
+            """),
+            {"target_uid": body.assigned_user_id, "tid": current_user.tenant_id},
+        )
+        if not target_user.first():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Target user not found or not active in this tenant.",
+            )
+
+        if not is_admin and body.assigned_user_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Recruiters can only assign candidates to themselves.",
+            )
+
+    result = await db.execute(
+        text("""
+            UPDATE applications
+               SET assigned_user_id = CAST(:target_uid AS uuid),
+                   assigned_at      = CASE WHEN CAST(:target_uid AS uuid) IS NOT NULL THEN now() ELSE NULL END,
+                   assigned_by      = CASE WHEN CAST(:target_uid AS uuid) IS NOT NULL THEN CAST(:uid AS uuid) ELSE NULL END
+             WHERE application_id = CAST(:aid AS uuid)
+               AND tenant_id      = CAST(:tid AS uuid)
+            RETURNING application_id, assigned_user_id, assigned_at
+        """),
+        {
+            "target_uid": body.assigned_user_id,
+            "uid":        current_user.user_id,
+            "aid":        application_id,
+            "tid":        current_user.tenant_id,
+        },
+    )
+
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found.")
+
+    # Fetch assignee name if assigned
+    assigned_user_name = None
+    if body.assigned_user_id:
+        u_row = await db.execute(
+            text("SELECT COALESCE(full_name, email) AS name FROM users WHERE user_id = CAST(:uid AS uuid)"),
+            {"uid": body.assigned_user_id},
+        )
+        u = u_row.first()
+        if u:
+            assigned_user_name = u[0]
+
+    await db.commit()
+    return {
+        "success": True,
+        "assigned_user_id":   body.assigned_user_id,
+        "assigned_user_name": assigned_user_name,
+        "assigned_at":        row[2].isoformat() if row[2] else None,
+    }
+
+
+@router.patch("/bulk-workflow-status")
+async def bulk_update_workflow_status(
+    body: WorkflowStatusRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Bulk transition workflow status for multiple applications.
+
+    - Only supports normal (non-advanced) moves for now
+    - Skips system-managed or invalid candidates safely
+    - Returns summary: updated_count, skipped_count, skipped_reasons
+    """
+    application_ids = (body.application_ids or []) if hasattr(body, 'application_ids') else []
+    if not application_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one application_id is required.",
+        )
+
+    new_status = body.workflow_status.strip().lower()
+    if new_status not in WORKFLOW_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid workflow_status '{new_status}'.",
+        )
+
+    if body.advanced_move:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Exceptional moves are not supported in bulk operations.",
+        )
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    # ── Bulk workflow policy gate ──────────────────────────────────────────────
+    import json as _json
+    _pol_row = await db.execute(
+        text("SELECT policies FROM tenant_workflow_policies WHERE tenant_id = CAST(:tid AS uuid)"),
+        {"tid": current_user.tenant_id},
+    )
+    _pol_rec = _pol_row.mappings().first()
+    _pol: dict = {}
+    if _pol_rec and _pol_rec["policies"]:
+        _raw = _pol_rec["policies"]
+        _pol = _json.loads(_raw) if isinstance(_raw, str) else dict(_raw)
+
+    if new_status == "rejected":
+        if not _pol.get("allow_bulk_reject", True):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bulk rejection is disabled by your organisation's policy.",
+            )
+        if _pol.get("require_rejection_reason") and not (body.note and body.note.strip()):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A rejection reason is required by your organisation's policy.",
+            )
+    # ──────────────────────────────────────────────────────────────────────────
+
+    # Fetch all applications with current status; skip system-managed
+    rows = await db.execute(
+        text("""
+            SELECT a.application_id, a.workflow_status, a.processing_status
+            FROM applications a
+            WHERE a.application_id = ANY(CAST(:aids AS uuid[]))
+              AND a.tenant_id = CAST(:tid AS uuid)
+              AND a.processing_status = 'ai_scored'
+        """),
+        {"aids": application_ids, "tid": current_user.tenant_id},
+    )
+    valid_apps = {str(r["application_id"]): r["workflow_status"] for r in rows.mappings()}
+
+    # Check for access permissions and client org restrictions
+    rows = await db.execute(
+        text("""
+            SELECT DISTINCT a.application_id
+            FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE a.application_id = ANY(CAST(:aids AS uuid[]))
+              AND a.tenant_id = CAST(:tid AS uuid)
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
+        """),
+        {
+            "aids":     application_ids,
+            "tid":      current_user.tenant_id,
+            "uid":      current_user.user_id,
+            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
+        },
+    )
+    accessible_ids = {str(r["application_id"]) for r in rows.mappings()}
+
+    # Build update list: only valid, accessible, non-draft, with valid transitions
+    to_update: list[str] = []
+    skipped_reasons: dict[str, str] = {}
+
+    for aid in application_ids:
+        if aid not in valid_apps:
+            skipped_reasons[aid] = "Not ai_scored or not found"
+            continue
+        if aid not in accessible_ids:
+            skipped_reasons[aid] = "No access to candidate's job/client"
+            continue
+
+        current_status = valid_apps[aid]
+        allowed = VALID_WORKFLOW_TRANSITIONS.get(current_status, frozenset())
+        if new_status not in allowed:
+            skipped_reasons[aid] = f"Invalid transition from {current_status}"
+            continue
+
+        to_update.append(aid)
+
+    # Batch update workflow status
+    if to_update:
+        await db.execute(
+            text("""
+                UPDATE applications
+                SET workflow_status = :new_status, updated_at = now()
+                WHERE application_id = ANY(CAST(:aids AS uuid[]))
+                  AND tenant_id = CAST(:tid AS uuid)
+            """),
+            {"new_status": new_status, "aids": to_update, "tid": current_user.tenant_id},
+        )
+
+        # Batch insert workflow history (one per candidate)
+        for aid in to_update:
+            await db.execute(
+                text("""
+                    INSERT INTO application_workflow_history
+                        (application_id, tenant_id, changed_by, changed_by_name,
+                         from_status, to_status, note, is_advanced_move)
+                    VALUES
+                        (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:uid AS uuid), :uname,
+                         :from_s, :to_s, :note, FALSE)
+                """),
+                {
+                    "aid":   aid,
+                    "tid":   current_user.tenant_id,
+                    "uid":   current_user.user_id,
+                    "uname": current_user.full_name or current_user.email,
+                    "from_s": valid_apps[aid],
+                    "to_s":   new_status,
+                    "note":   body.note,
+                },
+            )
+
+    await db.commit()
+
+    # Fetch candidate names for updated and skipped candidates
+    all_ids = to_update + list(skipped_reasons.keys())
+    updated_candidates = []
+    skipped_candidates = []
+
+    if all_ids:
+        rows = await db.execute(
+            text("""
+                SELECT a.application_id, a.candidate_name, a.workflow_status
+                FROM applications a
+                WHERE a.application_id = ANY(CAST(:aids AS uuid[]))
+                  AND a.tenant_id = CAST(:tid AS uuid)
+            """),
+            {"aids": all_ids, "tid": current_user.tenant_id},
+        )
+        candidates_by_id = {str(r["application_id"]): r for r in rows.mappings()}
+
+        for aid in to_update:
+            if aid in candidates_by_id:
+                c = candidates_by_id[aid]
+                updated_candidates.append({
+                    "application_id": aid,
+                    "candidate_name": c["candidate_name"],
+                    "workflow_status": c["workflow_status"],
+                })
+
+        for aid, reason in skipped_reasons.items():
+            if aid in candidates_by_id:
+                c = candidates_by_id[aid]
+                skipped_candidates.append({
+                    "application_id": aid,
+                    "candidate_name": c["candidate_name"],
+                    "reason": reason,
+                })
+
+    return {
+        "success": True,
+        "updated_count": len(to_update),
+        "skipped_count": len(skipped_reasons),
+        "updated_candidates": updated_candidates,
+        "skipped_candidates": skipped_candidates,
+    }
 
 
 # Import here to avoid circular import

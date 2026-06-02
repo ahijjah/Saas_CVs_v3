@@ -720,7 +720,7 @@ async def _score_cv_async(
                             gatekeeper_passed      = false,
                             evaluation_stage       = 1,
                             evaluation_exit_reason = :reason,
-                            processing_status      = 'scored',
+                            processing_status      = 'ai_scored',
                             decision               = 'rejected',
                             scored_at              = now()
                         WHERE application_id = :aid
@@ -813,21 +813,52 @@ async def _score_cv_async(
                 "missing_skills":          gatekeeper_result.missing_skills,
             }
 
-            ai_result, _usage = await score_cv(
-                cv_text=gatekeeper_result.cleaned_cv_text,
-                criteria=criteria_dict,
-                job_title=criteria["job_title"],
-                cv_language=gatekeeper_result.cv_language,
-                gatekeeper_context=gatekeeper_context,
-                prompt_override=scoring_prompt,
-            )
+            # Resolve stage model from registry (falls back to prompt/config defaults on None)
+            from services.ai_model_registry_service import resolve_stage_client as _resolve
+            _reg = await _resolve(db, "cv_scoring")
+            _effective_prompt = scoring_prompt
+            if _reg:
+                _effective_prompt = {**(scoring_prompt or {}), "model": _reg.model_name}
+
+            # Primary attempt; fallback on failure
+            _scoring_error: Exception | None = None
+            _fallback_used = False
+            try:
+                ai_result, _usage = await score_cv(
+                    cv_text=gatekeeper_result.cleaned_cv_text,
+                    criteria=criteria_dict,
+                    job_title=criteria["job_title"],
+                    cv_language=gatekeeper_result.cv_language,
+                    gatekeeper_context=gatekeeper_context,
+                    prompt_override=_effective_prompt,
+                    openai_client=_reg.client if _reg else None,
+                )
+            except Exception as _primary_exc:
+                _scoring_error = _primary_exc
+                logger.warning(
+                    "[%s] Primary model failed (%s), trying fallback: %s",
+                    application_id, (_reg.model_name if _reg else "default"), _primary_exc,
+                )
+                if _reg and _reg.is_fallback:
+                    raise  # already using fallback — propagate
+                # Retry with no registry client (uses settings.openai_* as last resort)
+                ai_result, _usage = await score_cv(
+                    cv_text=gatekeeper_result.cleaned_cv_text,
+                    criteria=criteria_dict,
+                    job_title=criteria["job_title"],
+                    cv_language=gatekeeper_result.cv_language,
+                    gatekeeper_context=gatekeeper_context,
+                    prompt_override=scoring_prompt,
+                    openai_client=None,
+                )
+                _fallback_used = True
 
             # Log AI usage — never raises
             from services.ai_usage_service import log_ai_usage as _log_ai_usage
             await _log_ai_usage(
                 db=db,
                 stage="cv_scoring",
-                provider="openai",
+                provider=_reg.provider if _reg and not _fallback_used else "openai",
                 model=_usage.get("model", ""),
                 prompt_tokens=_usage.get("prompt_tokens", 0),
                 completion_tokens=_usage.get("completion_tokens", 0),
@@ -844,6 +875,9 @@ async def _score_cv_async(
                     "cv_language":             gatekeeper_result.cv_language,
                     "gatekeeper_passed":       True,
                     "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
+                    "registry_model_id":       _reg.model_id if _reg else None,
+                    "fallback_used":           _fallback_used,
+                    "fallback_reason":         str(_scoring_error) if _fallback_used else None,
                 },
             )
 
@@ -940,7 +974,7 @@ async def _score_cv_async(
                 text("""
                     UPDATE applications SET
                         decision                 = :decision,
-                        processing_status        = 'scored',
+                        processing_status        = 'ai_scored',
                         evaluation_stage         = 3,
                         qualified_threshold_used = :qt,
                         partial_threshold_used   = :pt,
@@ -974,14 +1008,22 @@ async def _score_cv_async(
                 try:
                     comparison_client = await get_comparison_client_async(db)
                     if comparison_client is not None:
+                        # Registry overrides comparison client when configured
+                        from services.ai_model_registry_service import resolve_stage_client as _resolve_comp
+                        _comp_reg = await _resolve_comp(db, "cv_comparison")
+                        _comp_client = (_comp_reg.client if _comp_reg else None) or comparison_client.client
+                        _comp_provider = (_comp_reg.provider if _comp_reg else None) or comparison_client.provider
+                        _comp_model_id = _comp_reg.model_id if _comp_reg else None
+                        _comp_prompt = {**(scoring_prompt or {}), "model": _comp_reg.model_name} if _comp_reg else scoring_prompt
+
                         comp_result, _comp_usage = await score_cv(
                             cv_text=gatekeeper_result.cleaned_cv_text,
                             criteria=criteria_dict,
                             job_title=criteria["job_title"],
                             cv_language=gatekeeper_result.cv_language,
                             gatekeeper_context=gatekeeper_context,
-                            prompt_override=scoring_prompt,
-                            openai_client=comparison_client.client,
+                            prompt_override=_comp_prompt,
+                            openai_client=_comp_client,
                         )
 
                         # Log comparison usage — never raises
@@ -989,7 +1031,7 @@ async def _score_cv_async(
                         await _log_ai_usage(
                             db=db,
                             stage="cv_comparison",
-                            provider=comparison_client.provider,
+                            provider=_comp_provider,
                             model=_comp_usage.get("model", comparison_client.model),
                             prompt_tokens=_comp_usage.get("prompt_tokens", 0),
                             completion_tokens=_comp_usage.get("completion_tokens", 0),
@@ -1001,9 +1043,10 @@ async def _score_cv_async(
                             application_id=application_id,
                             prompt_key=(scoring_prompt or {}).get("prompt_code"),
                             metadata={
-                                "finish_reason":  _comp_usage.get("finish_reason"),
-                                "cv_language":    gatekeeper_result.cv_language,
-                                "comparison_run": True,
+                                "finish_reason":     _comp_usage.get("finish_reason"),
+                                "cv_language":       gatekeeper_result.cv_language,
+                                "comparison_run":    True,
+                                "registry_model_id": _comp_model_id,
                             },
                         )
 

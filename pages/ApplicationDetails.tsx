@@ -1,7 +1,13 @@
 
 import React, { useState } from 'react';
-import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, PassingCriteria } from '../types';
+import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, PassingCriteria, WorkflowStatus } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import {
+  WORKFLOW_STATUS_STYLES_BORDERED,
+  WORKFLOW_STATUS_LABELS_EN,
+  WORKFLOW_STATUS_LABELS_AR,
+} from '../constants/workflow';
+import { WorkflowActionMenu } from '../components/WorkflowActionMenu';
 
 interface JobMetaStrip {
   job_title: string;
@@ -19,6 +25,11 @@ interface ApplicationDetailsProps {
   jobMeta?: JobMetaStrip | null;
   onDownloadCV?: () => void;
   downloadingCV?: boolean;
+  token?: string;
+  userRole?: string;
+  advancedMoveEnabled?: boolean;
+  onWorkflowStatusChange?: (appId: string, newStatus: WorkflowStatus, note?: string, isAdvancedMove?: boolean) => void;
+  onRecruiterNotesChange?: (appId: string, notes: string | null) => void;
 }
 
 const T = {
@@ -395,7 +406,7 @@ const LANG_LABELS: Record<string, { en: string; ar: string }> = {
   mixed: { en: 'Mixed',   ar: 'مختلط' },
 };
 
-export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, onBack, jobMeta, onDownloadCV, downloadingCV }) => {
+export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, onBack, jobMeta, onDownloadCV, downloadingCV, token, userRole, advancedMoveEnabled, onWorkflowStatusChange, onRecruiterNotesChange }) => {
   const { lang, isAr } = useLanguage() as { lang: 'en' | 'ar'; isAr: boolean };
   const t = T[lang];
 
@@ -403,6 +414,18 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const [intelligenceExpanded, setIntelligenceExpanded] = useState(
     data.gatekeeper_passed === false
   );
+  const [recruiterNotesText, setRecruiterNotesText] = useState(data.recruiter_notes ?? '');
+  const [notesDirty, setNotesDirty] = useState(false);
+
+  const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'awaiting_review';
+  const WF_LABELS = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
+  const WF_STYLES = WORKFLOW_STATUS_STYLES_BORDERED;
+
+  const handleSaveNotes = () => {
+    if (!onRecruiterNotesChange) return;
+    onRecruiterNotesChange(data.application_id, recruiterNotesText.trim() || null);
+    setNotesDirty(false);
+  };
 
   const getScoreBadgeColor = (achieved: number, max: number) => {
     if (!max || max === 0) return 'bg-slate-100 text-slate-600';
@@ -1605,6 +1628,90 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 </p>
               </div>
             )}
+          </div>
+        </section>
+      )}
+
+      {/* Recruiter Workflow Panel */}
+      {onWorkflowStatusChange && (
+        <section className="bg-white rounded-3xl border border-border overflow-hidden">
+          <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
+              <span className={`w-2 h-4 bg-indigo-400 rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span>
+              Recruiter Workflow
+            </h3>
+            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${WF_STYLES[currentWorkflowStatus]}`}>
+              {WF_LABELS[currentWorkflowStatus]}
+            </span>
+          </div>
+          <div className="px-8 py-6 space-y-4">
+            <WorkflowActionMenu
+              applicationId={data.application_id}
+              currentStatus={currentWorkflowStatus}
+              candidateName={data.candidate_name}
+              processingStatus={data.processing_status ?? 'ai_scored'}
+              isUpdating={false}
+              lang={lang}
+              userRole={userRole}
+              advancedMoveEnabled={advancedMoveEnabled}
+              onTransition={(appId, toStatus, note, isAdvancedMove) => onWorkflowStatusChange(appId, toStatus, note, isAdvancedMove)}
+            />
+
+            {/* Workflow History */}
+            {data.workflow_history && data.workflow_history.length > 0 && (
+              <div className="mt-4">
+                <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">History</p>
+                <div className="space-y-1.5">
+                  {data.workflow_history.map(h => (
+                    <div key={h.history_id} className="flex items-start gap-2 text-xs text-textMuted">
+                      <span className="shrink-0 mt-0.5 text-slate-300">→</span>
+                      <span>
+                        <span className="font-semibold text-textMain">{WF_LABELS[h.to_status as WorkflowStatus] || h.to_status}</span>
+                        {h.is_advanced_move && (
+                          <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 px-1 py-0.5 rounded border border-amber-200">
+                            Exceptional
+                          </span>
+                        )}
+                        {h.from_status && <span className="text-slate-400"> from {WF_LABELS[h.from_status as WorkflowStatus] || h.from_status}</span>}
+                        {h.changed_by_name && <span className="text-slate-400"> by {h.changed_by_name}</span>}
+                        {h.note && <span className="italic ml-1">"{h.note}"</span>}
+                        {h.created_at && <span className="text-slate-300 ml-1">· {new Date(h.created_at).toLocaleDateString()}</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Recruiter Notes */}
+      {onRecruiterNotesChange && (
+        <section className="bg-white rounded-3xl border border-border overflow-hidden">
+          <div className="px-8 py-5 border-b border-slate-100">
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
+              <span className={`w-2 h-4 bg-amber-400 rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span>
+              Recruiter Notes
+            </h3>
+          </div>
+          <div className="px-8 py-6 space-y-3">
+            <textarea
+              value={recruiterNotesText}
+              onChange={e => { setRecruiterNotesText(e.target.value); setNotesDirty(true); }}
+              placeholder="Add private recruiter notes about this candidate..."
+              className="w-full text-sm border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+              rows={4}
+            />
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveNotes}
+                disabled={!notesDirty}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 transition-all disabled:opacity-40"
+              >
+                Save Notes
+              </button>
+            </div>
           </div>
         </section>
       )}

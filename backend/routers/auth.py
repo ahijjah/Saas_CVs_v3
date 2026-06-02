@@ -136,7 +136,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
                    t.tenant_type, t.status AS tenant_status,
                    t.created_at AS tenant_created_at,
                    t.subscription_status, t.trial_end_at,
-                   t.job_application_controls_enabled
+                   t.job_application_controls_enabled, t.allow_advanced_workflow_move
             FROM users u
             JOIN tenants t ON t.tenant_id = u.tenant_id
             WHERE u.user_id = :uid
@@ -182,6 +182,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
         "tenant_created_at": p["tenant_created_at"].isoformat() if p["tenant_created_at"] else None,
         "active_users_count": active_count,
         "job_application_controls_enabled": bool(p["job_application_controls_enabled"]),
+        "allow_advanced_workflow_move": bool(p["allow_advanced_workflow_move"]),
     }
 
 
@@ -196,7 +197,8 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
             SELECT u.user_id, u.tenant_id, u.email, u.full_name, u.role, u.status,
                    u.password_hash, u.must_change_password,
                    t.cv_ingestion_mode, t.status AS tenant_status,
-                   t.subscription_status, t.name AS tenant_name, t.tenant_type
+                   t.subscription_status, t.name AS tenant_name, t.tenant_type,
+                   t.allow_advanced_workflow_move
             FROM users u
             JOIN tenants t ON t.tenant_id = u.tenant_id
             WHERE u.email = :email
@@ -245,6 +247,7 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
             "tenant_type": user["tenant_type"] or "organization",
             "subscription_status": user["subscription_status"] or "active",
             "must_change_password": bool(user["must_change_password"]),
+            "allow_advanced_workflow_move": bool(user["allow_advanced_workflow_move"]),
         },
         "cv_ingestion_mode": user["cv_ingestion_mode"],
         "message": "Login successful",

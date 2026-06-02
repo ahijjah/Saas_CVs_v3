@@ -11,6 +11,7 @@ export interface User {
   subscription_status?: SubscriptionStatus;
   must_change_password?: boolean;
   job_application_controls_enabled?: boolean;
+  allow_advanced_workflow_move?: boolean;
 }
 
 export type SubscriptionStatus =
@@ -118,6 +119,46 @@ export interface ClientOrganization {
   assigned_users_count?: number;
 }
 
+export type CampaignStatus = 'draft' | 'active' | 'on_hold' | 'closed' | 'cancelled';
+
+export interface Campaign {
+  campaign_id: string;
+  tenant_id: string;
+  client_organization_id?: string | null;
+  client_org_name?: string | null;
+  name: string;
+  description?: string | null;
+  status: CampaignStatus;
+  start_date?: string | null;
+  end_date?: string | null;
+  target_hire_count?: number | null;
+  campaign_owner_id?: string | null;
+  campaign_owner_name?: string | null;
+  notes?: string | null;
+  public_title?: string | null;
+  is_publicly_listed?: boolean;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  jobs_total?: number;
+  jobs_active?: number;
+  // detail-level aggregate stats (only in GET /campaigns/:id response)
+  applications_total?: number;
+  applications_qualified?: number;
+  applications_partial?: number;
+  applications_rejected?: number;
+  applications_scored?: number;
+}
+
+export interface CampaignJobRef {
+  job_id: string;
+  job_code: string;
+  job_title: string;
+  job_status: string;
+  client_organization_id?: string | null;
+  created_at?: string;
+}
+
 export interface AgencyUserClient {
   assignment_id: string;
   user_id: string;
@@ -149,6 +190,8 @@ export interface Job {
   restrict_forwarding_sender_to_tenant_email?: boolean;
   client_organization_id?: string | null;
   client_org_name?: string | null;
+  campaign_id?: string | null;
+  campaign_name?: string | null;
   vacancies_count?: number | null;
   applications_total: number;
   applications_qualified: number;
@@ -223,6 +266,47 @@ export interface JobDetails extends Job {
 // decision='low_match' is a frontend-only display alias for evaluation_stage=1 + gatekeeper_passed=false + decision='rejected'
 export type ApplicationDecision = 'qualified' | 'partial' | 'rejected' | 'low_match';
 
+export type WorkflowStatus =
+  | 'awaiting_review'
+  | 'under_review'
+  | 'shortlisted'
+  | 'interviewing'
+  | 'offer_made'
+  | 'hired'
+  | 'rejected'
+  | 'withdrawn'
+  | 'on_hold';
+
+export interface WorkflowHistoryEntry {
+  history_id: string;
+  from_status: WorkflowStatus | null;
+  to_status: WorkflowStatus;
+  note: string | null;
+  changed_by_name: string | null;
+  created_at: string | null;
+  is_advanced_move?: boolean;
+}
+
+export interface CandidateComment {
+  comment_id: string;
+  application_id: string;
+  user_id: string;
+  author_name: string;
+  author_email: string;
+  comment_text: string;
+  mentions: string[];
+  created_at: string | null;
+  updated_at: string | null;
+  is_own: boolean;
+}
+
+export interface AssignableUser {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: string;
+}
+
 export interface Application {
   id: string;
   application_id: string;
@@ -238,6 +322,8 @@ export interface Application {
   security_check_status?: 'passed' | 'warning' | 'blocked' | null;
   applied_date: string;
   summary: string;
+  workflow_status?: WorkflowStatus;
+  recruiter_notes?: string | null;
 }
 
 export interface ScoreDimension {
@@ -281,6 +367,9 @@ export interface ApplicationDetailedAnalysis {
   candidate_email_from_cv?: string;
   candidate_phone_from_cv?: string;
   email_sender_address?: string;
+  preferred_contact_email?: string | null;
+  preferred_contact_source?: string | null;
+  preferred_contact_confidence?: number | null;
   submitted_by_user_id?: string | null;
   submitted_by_name?: string | null;
   submitted_by_email?: string | null;
@@ -350,9 +439,12 @@ export interface ApplicationDetailedAnalysis {
   security_detected_snippets?: string[];
   security_checked_at?: string | null;
   knockout_answers?: KnockoutAnswerRecord[];
+  workflow_status?: WorkflowStatus;
+  recruiter_notes?: string | null;
+  workflow_history?: WorkflowHistoryEntry[];
 }
 
-export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked';
+export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked' | 'workflow_awaiting_review' | 'workflow_under_review' | 'workflow_shortlisted' | 'workflow_interviewing' | 'workflow_offer' | 'workflow_hired' | 'workflow_rejected' | 'workflow_withdrawn' | 'workflow_on_hold';
 
 export interface UploadedCV {
   application_id: string;
@@ -575,4 +667,234 @@ export interface AuditLog {
   details: Record<string, any> | null;
   ip_address: string;
   created_at: string | null;
+}
+
+// ─── Group B — Interviews ─────────────────────────────────────────────────────
+
+export type InterviewType = 'phone_screen' | 'technical' | 'hr' | 'panel' | 'final' | 'other';
+export type InterviewStatus = 'scheduled' | 'completed' | 'cancelled' | 'no_show';
+export type InterviewRecommendation = 'strong_yes' | 'yes' | 'neutral' | 'no' | 'strong_no';
+
+export interface CandidateInterview {
+  interview_id: string;
+  application_id: string;
+  interview_type: InterviewType;
+  scheduled_at: string | null;
+  duration_min: number | null;
+  location: string | null;
+  interviewers: string[];
+  status: InterviewStatus;
+  notes: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  feedback_count: number;
+}
+
+export interface InterviewFeedback {
+  feedback_id: string;
+  interview_id: string;
+  reviewer_id: string;
+  reviewer_name: string | null;
+  overall_rating: number | null;
+  recommendation: InterviewRecommendation | null;
+  scorecard: Record<string, any>;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  is_own: boolean;
+}
+
+// ─── Group B — Approvals ──────────────────────────────────────────────────────
+
+export type ApprovalDecision = 'pending' | 'approved' | 'rejected' | 'needs_revision';
+
+export interface CandidateApproval {
+  approval_id: string;
+  application_id: string;
+  approval_stage: string;
+  stage_order: number;
+  approver_id: string | null;
+  approver_name: string | null;
+  decision: ApprovalDecision;
+  comment: string | null;
+  decided_at: string | null;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+// ─── Group B — Workflow Policies ──────────────────────────────────────────────
+
+export interface WorkflowPolicies {
+  require_interview_before_offer: boolean;
+  require_approval_before_hire: boolean;
+  require_rejection_reason: boolean;
+  allow_bulk_reject: boolean;
+  require_interview_feedback: boolean;
+  required_approval_stages: string[];
+}
+
+export interface WorkflowPoliciesResponse {
+  policies: WorkflowPolicies;
+  updated_at: string | null;
+  updated_by_name: string | null;
+}
+
+// ─── Group C — Analytics & SLA Monitoring ─────────────────────────────────
+
+export interface FunnelStageMetric {
+  workflow_status: WorkflowStatus;
+  stage_count: number;
+  conversion_from_previous: number | null;
+  percentage_of_pipeline: number;
+  avg_days_in_stage: number | null;
+  median_days_in_stage: number | null;
+}
+
+export interface FunnelMetricsResponse {
+  stages: FunnelStageMetric[];
+  total_applications: number;
+  date_range: {
+    from: string;
+    to: string;
+  };
+  filters: Record<string, any>;
+}
+
+export interface RecruiterProductivityMetric {
+  user_id: string;
+  recruiter_name: string;
+  total_applications_assigned: number;
+  applications_in_review: number;
+  workflow_moves_made: number;
+  interviews_completed: number;
+  feedback_provided: number;
+  approvals_decided: number;
+  avg_days_assigned: number | null;
+}
+
+export interface RecruiterProductivityResponse {
+  recruiters: RecruiterProductivityMetric[];
+  date_range: {
+    from: string;
+    to: string;
+  };
+}
+
+export interface AgingMetric {
+  application_id: string;
+  candidate_name: string;
+  job_id: string;
+  job_title: string;
+  workflow_status: WorkflowStatus;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  days_in_status: number;
+  sla_status: 'green' | 'amber' | 'red';
+  pending_approvals: number;
+}
+
+export interface AgingMetricsResponse {
+  metrics: AgingMetric[];
+  total_count: number;
+  red_count: number;
+  amber_count: number;
+  green_count: number;
+  filters: Record<string, any>;
+}
+
+export interface SLAThresholds {
+  review_days: number;
+  interview_feedback_days: number;
+  approval_days: number;
+  offer_response_days: number;
+}
+
+export interface RecruitmentInsight {
+  insight_id: string;
+  type: string;
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  description: string;
+  metric_value: number | null;
+  threshold: number | null;
+  suggested_action: string;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+}
+
+export interface InsightsResponse {
+  insights: RecruitmentInsight[];
+  generated_at: string;
+}
+
+export interface CandidateTag {
+  tag_id: string;
+  tag_name: string;
+  color: string | null;
+}
+
+export interface TalentPoolCandidate {
+  application_id: string;
+  candidate_name: string;
+  candidate_email: string;
+  workflow_status: WorkflowStatus;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  created_at: string;
+  job_title: string;
+  job_id: string;
+}
+
+export interface TalentPoolResponse {
+  candidates: TalentPoolCandidate[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+export interface MessageTemplate {
+  template_id: string;
+  name: string;
+  category: string;
+  subject: string;
+  body: string;
+  language: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by_name: string | null;
+}
+
+export interface CandidateCommunication {
+  communication_id: string;
+  channel: string;
+  direction: string;
+  subject: string | null;
+  body: string | null;
+  status: string;
+  error_message?: string | null;
+  candidate_email?: string | null;
+  created_at: string;
+  template_name: string | null;
+  template_category: string | null;
+  created_by_name: string | null;
+  is_automated?: boolean;
+  event_type?: string | null;
+}
+
+export interface AutomationRule {
+  rule_id: string;
+  event_type: string;
+  category: string;
+  mode: 'disabled' | 'draft_only' | 'auto_send';
+  is_active: boolean;
+  delay_minutes: number;
+  template_id: string | null;
+  template_name: string | null;
+  created_at: string;
+  updated_at: string;
 }
