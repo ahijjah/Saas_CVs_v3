@@ -449,7 +449,7 @@ export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_matc
 export interface UploadedCV {
   application_id: string;
   candidate_name: string;
-  processing_status: 'pending' | 'queued' | 'processing' | 'scored' | 'failed';
+  processing_status: 'pending' | 'queued' | 'processing' | 'ai_scored' | 'failed';
   decision: ApplicationDecision | null;
   evaluation_stage: 1 | 2 | 3 | null;
   evaluation_stage_label: string | null;

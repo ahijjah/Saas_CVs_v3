@@ -417,7 +417,7 @@ async def get_campaign(
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')     AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')       AS applications_partial,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')      AS applications_rejected,
-                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored') AS applications_scored
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored') AS applications_scored
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             WHERE j.campaign_id = CAST(:cid AS uuid)

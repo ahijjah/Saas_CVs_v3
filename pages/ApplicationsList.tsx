@@ -441,7 +441,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   // ── Classification predicates ──────────────────────────────────────────────
 
   const normaliseStatus  = (s: string) => s === 'low_match' ? 'rejected' : s;
-  const isAiScored       = (a: Application) => a.processing_status === 'scored';
+  const isAiScored       = (a: Application) => a.processing_status === 'ai_scored';
   const isPending        = (a: Application) => ['pending', 'queued', 'processing'].includes(a.processing_status ?? '');
   const isSecurityBlocked = (a: Application) =>
     a.processing_status === 'failed' && (
@@ -704,7 +704,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         ) : (
           filteredApplications.map(app => {
             const styles  = getAiDecisionStyles(app);
-            const isTerminal = !app.processing_status || app.processing_status === 'scored' || app.processing_status === 'failed';
+            const isTerminal = !app.processing_status || app.processing_status === 'ai_scored' || app.processing_status === 'failed';
             const wfStatus = app.workflow_status as WorkflowStatus | undefined;
             return (
               <div key={app.id || app.application_id} className="bg-white p-6 rounded-xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between hover:border-primary/30 transition-all">

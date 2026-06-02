@@ -398,7 +398,7 @@ async def get_tenant_usage(
                 (SELECT COUNT(*) FROM applications a
                  JOIN jobs j ON j.job_id = a.job_id
                  WHERE j.tenant_id = CAST(:tid AS uuid)
-                   AND a.processing_status = 'scored'
+                   AND a.processing_status = 'ai_scored'
                    AND COALESCE(a.scored_at, a.created_at) >= now() - INTERVAL '30 days') AS cvs_processed_rolling
         """),
         {"tid": current_user.tenant_id},

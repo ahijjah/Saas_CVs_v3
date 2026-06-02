@@ -1318,7 +1318,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     cv.processing_status === 'queued' ||
     cv.processing_status === 'processing'
   );
-  const cvsScoredCount = queueStatus?.completed ?? cvsDisplay.filter(cv => cv.processing_status === 'scored' || cv.processing_status === 'low_match').length;
+  const cvsScoredCount = queueStatus?.completed ?? cvsDisplay.filter(cv => cv.processing_status === 'ai_scored').length;
   const cvsTotal = queueStatus?.total ?? cvsDisplay.length;
   const cvsActivelyProcessing = queueStatus?.is_processing ?? cvsInQueue.some(cv => cv.processing_status === 'queued' || cv.processing_status === 'processing');
   const cvsHasPending = cvsInQueue.some(cv => cv.processing_status === 'pending');
@@ -1336,19 +1336,18 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         if (cv.evaluation_stage === 1) return { label: t.statusL3Score, color: 'text-violet-600 bg-violet-50 border-violet-200', spin: true };
         return                                { label: t.statusL1Screen, color: 'text-sky-600 bg-sky-50 border-sky-200',          spin: true };
       }
-      case 'scored':
+      case 'ai_scored':
         if (cv.evaluation_stage != null && cv.evaluation_stage < 3)
           return { label: t.statusRejectedL2, color: 'text-red-600 bg-red-50 border-red-200',    spin: false };
         return   { label: cv.score != null ? `${Math.round(cv.score)}` : t.statusScored,
                    color: 'text-success bg-green-50 border-green-200', spin: false };
-      case 'low_match': return { label: t.statusLowMatch, color: 'text-slate-500 bg-slate-50 border-slate-200', spin: false };
       case 'failed':    return { label: t.statusFailed,   color: 'text-error bg-red-50 border-red-200',         spin: false };
       default:            return { label: cv.processing_status, color: 'text-textMuted bg-slate-50 border-slate-200', spin: false };
     }
   };
 
   const decisionBadge = (cv: UploadedCV) => {
-    if (cv.processing_status !== 'scored' || !cv.decision) return null;
+    if (cv.processing_status !== 'ai_scored' || !cv.decision) return null;
     const map: Record<string, string> = {
       qualified: 'bg-green-100 text-success',
       partial:   'bg-amber-100 text-warning',
@@ -2316,11 +2315,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                       const st = cvStatusDisplay(cv);
                       const isDeleting = deletingCVId === cv.application_id;
                       const canDelete = cv.processing_status === 'pending' && !cvsScoringInProgress;
-                      const isDone = cv.processing_status === 'scored' || cv.processing_status === 'low_match' || cv.processing_status === 'failed';
+                      const isDone = cv.processing_status === 'ai_scored' || cv.processing_status === 'failed';
                       const hasExitReason = cv.evaluation_exit_reason && (
                         cv.processing_status === 'failed' ||
-                        cv.processing_status === 'low_match' ||
-                        (cv.processing_status === 'scored' && cv.evaluation_stage != null && cv.evaluation_stage < 3)
+                        (cv.processing_status === 'ai_scored' && cv.evaluation_stage != null && cv.evaluation_stage < 3)
                       );
                       return (
                         <div key={cv.application_id} className={`flex flex-col gap-1 rounded-xl border px-3 py-2 transition-colors ${isDone ? 'bg-slate-50/60 border-slate-100' : 'bg-white border-indigo-100'}`}>
