@@ -4,6 +4,7 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus, KnockoutQuestion, PassingCriteria } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { usePageTitle } from '../context/PageTitleContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
 interface JobDetailsProps {
@@ -479,6 +480,7 @@ const T = {
 export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onViewApplications, onOpenApplication, addToast }) => {
   const { lang, isAr } = useLanguage();
   const t = T[lang];
+  const { setPageTitle } = usePageTitle();
   const isSuperAdmin = (auth.user?.role || '').toLowerCase() === 'super_admin';
   const role = (auth.user?.role || '').toLowerCase();
   const canEdit = role === 'admin' || role === 'hr_manager';
@@ -488,6 +490,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [details, setDetails] = useState<JobDetailsType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const title = details?.job_title || (isAr ? 'تفاصيل الوظيفة' : 'Job Details');
+    setPageTitle(title);
+    return () => { setPageTitle(null); };
+  }, [setPageTitle, details?.job_title, isAr]);
   const [descExpanded, setDescExpanded] = useState(false);
   const [copiedAlias, setCopiedAlias] = useState(false);
   const [copiedJobRef, setCopiedJobRef] = useState(false);

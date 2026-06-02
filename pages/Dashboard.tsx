@@ -192,6 +192,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
 
   useEffect(() => {
     setPageTitle(t.dashboard);
+    return () => { setPageTitle(null); };
   }, [setPageTitle, t.dashboard]);
 
   useEffect(() => {

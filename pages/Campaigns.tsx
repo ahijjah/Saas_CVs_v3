@@ -4,6 +4,7 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { AuthState, Campaign, CampaignStatus, ClientOrganization } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { usePageTitle } from '../context/PageTitleContext';
 
 interface CampaignsProps {
   auth: AuthState;
@@ -145,6 +146,12 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
   const t = T[lang];
   const navigate = useNavigate();
   const token = auth.token;
+  const { setPageTitle } = usePageTitle();
+
+  useEffect(() => {
+    setPageTitle(t.title);
+    return () => { setPageTitle(null); };
+  }, [setPageTitle, t.title]);
 
   const tenantType = auth.user?.tenant_type ?? 'organization';
   const isAgency = tenantType === 'agency' || tenantType === 'individual_recruiter';

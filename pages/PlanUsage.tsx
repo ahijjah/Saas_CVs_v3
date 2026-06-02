@@ -202,6 +202,7 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
 
   useEffect(() => {
     setPageTitle(t.title);
+    return () => { setPageTitle(null); };
   }, [setPageTitle, t.title]);
 
   const loadAll = useCallback(async () => {

@@ -6,6 +6,7 @@ import { WEBHOOK_CONFIG } from '../config';
 import { AuthState, UserProfile, TenantUser, MessageTemplate, AutomationRule } from '../types';
 import { ToastType } from '../components/Toast';
 import { useLanguage } from '../context/LanguageContext';
+import { usePageTitle } from '../context/PageTitleContext';
 
 interface SettingsProps {
   auth: AuthState;
@@ -340,6 +341,12 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const { lang, isAr } = useLanguage();
   const navigate = useNavigate();
   const t = T[lang];
+  const { setPageTitle } = usePageTitle();
+
+  useEffect(() => {
+    setPageTitle(lang === 'ar' ? 'الإعدادات' : 'Settings');
+    return () => { setPageTitle(null); };
+  }, [setPageTitle, lang]);
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -393,6 +400,16 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     interview_feedback_days: 7,
     approval_days: 10,
     offer_response_days: 5,
+  });
+
+  // Track original loaded toggle values so Save only enables when changed
+  const [policiesOriginal, setPoliciesOriginal] = useState({
+    require_interview_before_offer: false,
+    require_approval_before_hire: false,
+    require_rejection_reason: false,
+    allow_bulk_reject: true,
+    require_interview_feedback: false,
+    required_approval_stages: '',
   });
 
   // SLA Thresholds edit mode state
@@ -632,7 +649,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         if (data?.policies) {
           const p = data.policies;
           const sla = p.sla_thresholds || {};
-          setPoliciesForm({
+          const toggleValues = {
             require_interview_before_offer: !!p.require_interview_before_offer,
             require_approval_before_hire:   !!p.require_approval_before_hire,
             require_rejection_reason:       !!p.require_rejection_reason,
@@ -641,11 +658,16 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
             required_approval_stages: Array.isArray(p.required_approval_stages)
               ? p.required_approval_stages.join('\n')
               : '',
-            review_days:           sla.review_days ?? 14,
+          };
+          const slaValues = {
+            review_days:             sla.review_days ?? 14,
             interview_feedback_days: sla.interview_feedback_days ?? 7,
-            approval_days:         sla.approval_days ?? 10,
-            offer_response_days:   sla.offer_response_days ?? 5,
-          });
+            approval_days:           sla.approval_days ?? 10,
+            offer_response_days:     sla.offer_response_days ?? 5,
+          };
+          setPoliciesForm({ ...toggleValues, ...slaValues });
+          setPoliciesOriginal(toggleValues);
+          setSLAOriginalValues(slaValues);
         }
       })
       .catch(() => {})
@@ -675,11 +697,31 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         },
       }, auth.token!);
       addToast(t.policiesSaved, 'success');
+      // Update original values so Save button disables again
+      setPoliciesOriginal({
+        require_interview_before_offer: policiesForm.require_interview_before_offer,
+        require_approval_before_hire:   policiesForm.require_approval_before_hire,
+        require_rejection_reason:       policiesForm.require_rejection_reason,
+        allow_bulk_reject:              policiesForm.allow_bulk_reject,
+        require_interview_feedback:     policiesForm.require_interview_feedback,
+        required_approval_stages:       policiesForm.required_approval_stages,
+      });
     } catch (err: any) {
       addToast(err.message || 'Failed to save policies', 'error');
     } finally {
       setSavingPolicies(false);
     }
+  };
+
+  const isPoliciesDirty = () => {
+    return (
+      policiesForm.require_interview_before_offer !== policiesOriginal.require_interview_before_offer ||
+      policiesForm.require_approval_before_hire   !== policiesOriginal.require_approval_before_hire   ||
+      policiesForm.require_rejection_reason       !== policiesOriginal.require_rejection_reason       ||
+      policiesForm.allow_bulk_reject              !== policiesOriginal.allow_bulk_reject              ||
+      policiesForm.require_interview_feedback     !== policiesOriginal.require_interview_feedback     ||
+      policiesForm.required_approval_stages       !== policiesOriginal.required_approval_stages
+    );
   };
 
   const handleCancelEdit = () => {
@@ -1594,8 +1636,8 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
                   </div>
                 )}
 
-                {/* Save button for other policies - show when not editing SLA */}
-                {!isEditingSLA && (
+                {/* Save button for policy toggles - only visible/enabled when toggles have changed */}
+                {!isEditingSLA && isPoliciesDirty() && (
                   <div className="flex justify-end pt-2">
                     <button
                       onClick={handleSavePolicies}

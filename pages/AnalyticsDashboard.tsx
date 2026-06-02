@@ -7,6 +7,7 @@ import {
   RecruitmentInsight,
 } from '../types';
 import { APIService } from '../services/api';
+import { usePageTitle } from '../context/PageTitleContext';
 import '../styles/analytics.css';
 
 interface AnalyticsDashboardProps {
@@ -21,6 +22,13 @@ const SLA_LABELS: Record<string, string> = {
 };
 
 const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast }) => {
+  const { setPageTitle } = usePageTitle();
+
+  useEffect(() => {
+    setPageTitle('Analytics');
+    return () => { setPageTitle(null); };
+  }, [setPageTitle]);
+
   const [dateFrom, setDateFrom] = useState<string>(
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   );

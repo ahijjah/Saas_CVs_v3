@@ -5,6 +5,7 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { Job, AuthState } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { usePageTitle } from '../context/PageTitleContext';
 
 interface JobsDashboardProps {
   auth: AuthState;
@@ -111,6 +112,12 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
 }) => {
   const { lang } = useLanguage();
   const t = T[lang];
+  const { setPageTitle } = usePageTitle();
+
+  useEffect(() => {
+    setPageTitle(t.title);
+    return () => { setPageTitle(null); };
+  }, [setPageTitle, t.title]);
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);

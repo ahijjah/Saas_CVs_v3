@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { APIService } from '../services/api';
 import { TalentPoolResponse, TalentPoolCandidate } from '../types';
+import { usePageTitle } from '../context/PageTitleContext';
 
 interface TalentPoolProps {
   auth: any;
@@ -8,6 +9,13 @@ interface TalentPoolProps {
 }
 
 const TalentPool: React.FC<TalentPoolProps> = ({ auth, addToast }) => {
+  const { setPageTitle } = usePageTitle();
+
+  useEffect(() => {
+    setPageTitle('Talent Pool');
+    return () => { setPageTitle(null); };
+  }, [setPageTitle]);
+
   const [candidates, setCandidates] = useState<TalentPoolCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [skip, setSkip] = useState(0);

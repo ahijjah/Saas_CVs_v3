@@ -3444,6 +3444,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
 
   useEffect(() => {
     setPageTitle(t.pageTitle);
+    return () => { setPageTitle(null); };
   }, [setPageTitle, t.pageTitle]);
 
   // Fetch campaigns once on mount
