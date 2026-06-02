@@ -774,6 +774,28 @@ function formatTimelineTimestamp(iso: string): string {
   }
 }
 
+function filterCommunications(
+  communications: CandidateCommunication[],
+  filter: 'all' | 'draft' | 'sent' | 'failed' | 'logged' | 'automated' | 'manual'
+): CandidateCommunication[] {
+  switch (filter) {
+    case 'draft':
+      return communications.filter(c => c.status === 'draft');
+    case 'sent':
+      return communications.filter(c => c.status === 'sent');
+    case 'failed':
+      return communications.filter(c => c.status === 'failed');
+    case 'logged':
+      return communications.filter(c => c.status === 'logged');
+    case 'automated':
+      return communications.filter(c => c.is_automated);
+    case 'manual':
+      return communications.filter(c => !c.is_automated);
+    default:
+      return communications;
+  }
+}
+
 // ── CandidateDetailDrawer ───────────────────────────────────────────────────
 // Right-side slide panel showing detailed candidate information.
 // Opens when user clicks a candidate row. Reuses WorkflowActionMenu for transitions.
@@ -934,6 +956,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [editingCommId, setEditingCommId] = useState<string | null>(null);
   const [sendingCommId, setSendingCommId] = useState<string | null>(null);
   const [deletingCommId, setDeletingCommId] = useState<string | null>(null);
+  // Communication filtering
+  const [commFilter, setCommFilter] = useState<'all' | 'draft' | 'sent' | 'failed' | 'logged' | 'automated' | 'manual'>('all');
   // Preferred contact local state — shadows candidate prop after recruiter saves
   const [showPrefContactEdit, setShowPrefContactEdit] = useState(false);
   const [prefContactEmailInput, setPrefContactEmailInput] = useState('');
@@ -1108,6 +1132,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setEditingCommId(null);
     setSendingCommId(null);
     setDeletingCommId(null);
+    setCommFilter('all');
     setShowPrefContactEdit(false);
     setPrefContactEmailInput('');
     setLocalPreferred(null);
@@ -2477,17 +2502,38 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               </div>
             )}
 
+            {/* Communication filters */}
+            {!commsLoading && communications.length > 0 && (
+              <div className="flex flex-wrap gap-2 pb-3 border-b border-slate-200">
+                {(['all', 'draft', 'sent', 'failed', 'logged', 'automated', 'manual'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setCommFilter(f)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                      commFilter === f
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* History list */}
             {commsLoading ? (
               <div className="flex items-center gap-2 text-sm text-slate-400 py-4">
                 <span className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin inline-block" />
                 Loading…
               </div>
-            ) : communications.length === 0 ? (
-              <p className="text-sm text-slate-400 italic py-4">{t.noCommunications}</p>
+            ) : filterCommunications(communications, commFilter).length === 0 ? (
+              <p className="text-sm text-slate-400 italic py-4">
+                {communications.length === 0 ? t.noCommunications : 'No communications match the selected filter.'}
+              </p>
             ) : (
               <div className="space-y-3">
-                {communications.map(comm => {
+                {filterCommunications(communications, commFilter).map(comm => {
                   const isDraft = comm.status === 'draft';
                   const isFailed = comm.status === 'failed';
                   const isActionable = isDraft || isFailed;
