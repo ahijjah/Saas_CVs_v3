@@ -3331,7 +3331,7 @@ function buildApiParams(
   // Manual filters (override quick view if set)
   if (workflowFilter)   p.workflow_status = workflowFilter;
   if (processingFilter) p.processing_status = processingFilter;
-  if (aiResultFilter)   p.ai_decision = aiResultFilter;
+  if (aiResultFilter)   p.ai_decision = aiResultFilter === 'rejected_low_match' ? 'rejected' : aiResultFilter;
   if (campaignFilter)   p.campaign_id = campaignFilter;
   if (clientFilter)     p.client_organization_id = clientFilter;
   if (search.trim())    p.search = search.trim();

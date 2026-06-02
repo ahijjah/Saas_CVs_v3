@@ -204,9 +204,13 @@ async def list_applications(
             params["proc_status"] = processing_status
 
     # AI decision filter (maps to 'decision' column)
+    # 'rejected_low_match' is the UI alias for DB value 'rejected'.
+    # AI decisions only exist for ai_scored applications; add that constraint here
+    # so callers don't need to pass processing_status=ai_scored separately.
     if ai_decision:
-        where_parts.append("a.decision = :ai_dec")
-        params["ai_dec"] = ai_decision
+        db_decision = "rejected" if ai_decision == "rejected_low_match" else ai_decision
+        where_parts.append("a.processing_status = 'ai_scored' AND a.decision = :ai_dec")
+        params["ai_dec"] = db_decision
 
     # Possible duplicate flag
     if possible_duplicate is not None:
