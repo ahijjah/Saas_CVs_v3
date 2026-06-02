@@ -361,18 +361,18 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
             return (
               <div
                 key={plan.plan_id}
-                className={`relative rounded-2xl border overflow-hidden flex flex-col transition-all ${
+                className={`rounded-2xl border overflow-hidden flex flex-col transition-all ${
                   isHighlight
                     ? 'border-violet-400 shadow-xl shadow-violet-100'
                     : 'border-border hover:border-violet-200 hover:shadow-md'
                 }`}
               >
-                {isHighlight && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-violet-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full whitespace-nowrap">
-                    Most Popular
-                  </div>
-                )}
-                <div className={`bg-gradient-to-br ${gradient} ${isHighlight ? 'pt-8 px-5 pb-5' : 'p-5'} text-white`}>
+                <div className={`bg-gradient-to-br ${gradient} ${isHighlight ? 'pt-4 px-5 pb-5' : 'p-5'} text-white`}>
+                  {isHighlight && (
+                    <div className="inline-block bg-white/25 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full whitespace-nowrap mb-2">
+                      Most Popular
+                    </div>
+                  )}
                   <div className="font-black text-sm uppercase tracking-widest opacity-80">{localPlanName(plan.plan_code, plan.plan_name, lang)}</div>
                   <div className="text-3xl font-black mt-1">
                     {plan.monthly_price === 0 ? t.free : `$${plan.monthly_price}`}
