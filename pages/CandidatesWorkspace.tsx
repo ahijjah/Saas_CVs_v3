@@ -958,6 +958,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [deletingCommId, setDeletingCommId] = useState<string | null>(null);
   // Communication filtering
   const [commFilter, setCommFilter] = useState<'all' | 'draft' | 'sent' | 'failed' | 'logged' | 'automated' | 'manual'>('all');
+  // Send dialog email validation error
+  const [sendEmailError, setSendEmailError] = useState<string | null>(null);
   // Preferred contact local state — shadows candidate prop after recruiter saves
   const [showPrefContactEdit, setShowPrefContactEdit] = useState(false);
   const [prefContactEmailInput, setPrefContactEmailInput] = useState('');
@@ -1133,6 +1135,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setSendingCommId(null);
     setDeletingCommId(null);
     setCommFilter('all');
+    setSendEmailError(null);
     setShowPrefContactEdit(false);
     setPrefContactEmailInput('');
     setLocalPreferred(null);
@@ -1160,6 +1163,23 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
       addToastRef.current(err.message || 'Failed to save notes', 'error');
     } finally {
       setSavingNotes(false);
+    }
+  };
+
+  // Refresh communications list and keep detail.communications in sync for the timeline.
+  // Call this after any mutation (send/draft/log/delete/retry) so both the Communication
+  // tab and the Activity Timeline reflect the latest state without a full page reload.
+  const refreshCommunications = async (applicationId: string) => {
+    if (!token) return;
+    try {
+      const api = new APIService(token);
+      const commsData = await api.listCommunications(applicationId);
+      const updated: CandidateCommunication[] = commsData?.communications || [];
+      setCommunications(updated);
+      // Also patch detail.communications so buildTimeline picks up the change
+      setDetail(prev => prev ? { ...prev, communications: updated } : prev);
+    } catch {
+      // silently ignore — optimistic state already applied
     }
   };
 
@@ -2329,7 +2349,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => { setSendDialogToEmail(effectivePreferred.email || ''); setShowSendConfirm(true); }}
+                    onClick={() => { setSendDialogToEmail(effectivePreferred.email || ''); setSendEmailError(null); setShowSendConfirm(true); }}
                     disabled={savingComm || (!commForm.subject && !commForm.body) || !candidate}
                     className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
                   >
@@ -2339,28 +2359,28 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                     onClick={async () => {
                       if (savingComm || !candidate) return;
                       setSavingComm(true);
+                      const appId = candidate.application_id;
                       try {
                         const api = new APIService(token);
                         if (editingCommId) {
                           // Update existing draft in-place
-                          const updated = await api.updateCommunication(candidate.application_id, editingCommId, {
+                          await api.updateCommunication(appId, editingCommId, {
                             subject: commForm.subject || undefined,
                             body: commForm.body || undefined,
                             template_id: commForm.template_id || undefined,
                           });
-                          setCommunications(prev => prev.map(c => c.communication_id === editingCommId ? { ...c, ...updated } : c));
                           setEditingCommId(null);
                         } else {
-                          const result = await api.logCommunication(candidate.application_id, {
+                          await api.logCommunication(appId, {
                             subject: commForm.subject || undefined,
                             body: commForm.body || undefined,
                             status: 'logged',
                             template_id: commForm.template_id || undefined,
                           });
-                          setCommunications(prev => [result, ...prev]);
                         }
                         setShowCommForm(false);
                         addToast(editingCommId ? 'Draft updated.' : t.commSaved, 'success');
+                        await refreshCommunications(appId);
                       } catch (err: any) {
                         addToast(err.message || 'Failed to save.', 'error');
                       } finally {
@@ -2376,27 +2396,27 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                     onClick={async () => {
                       if (savingComm || !candidate) return;
                       setSavingComm(true);
+                      const appId = candidate.application_id;
                       try {
                         const api = new APIService(token);
                         if (editingCommId) {
-                          const updated = await api.updateCommunication(candidate.application_id, editingCommId, {
+                          await api.updateCommunication(appId, editingCommId, {
                             subject: commForm.subject || undefined,
                             body: commForm.body || undefined,
                             template_id: commForm.template_id || undefined,
                           });
-                          setCommunications(prev => prev.map(c => c.communication_id === editingCommId ? { ...c, ...updated } : c));
                           setEditingCommId(null);
                         } else {
-                          const result = await api.logCommunication(candidate.application_id, {
+                          await api.logCommunication(appId, {
                             subject: commForm.subject || undefined,
                             body: commForm.body || undefined,
                             status: 'draft',
                             template_id: commForm.template_id || undefined,
                           });
-                          setCommunications(prev => [result, ...prev]);
                         }
                         setShowCommForm(false);
-                        addToast(editingCommId ? 'Draft saved.' : 'Draft saved.', 'success');
+                        addToast('Draft saved.', 'success');
+                        await refreshCommunications(appId);
                       } catch (err: any) {
                         addToast(err.message || 'Failed to save draft.', 'error');
                       } finally {
@@ -2429,11 +2449,25 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                       <input
                         type="email"
                         value={sendDialogToEmail}
-                        onChange={e => setSendDialogToEmail(e.target.value)}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setSendDialogToEmail(val);
+                          setSendEmailError(
+                            val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())
+                              ? 'Invalid email address format.'
+                              : null
+                          );
+                        }}
                         placeholder="recipient@example.com"
-                        className={`w-full border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 ${!sendDialogToEmail ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}
+                        className={`w-full border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
+                          sendEmailError ? 'border-red-400 bg-red-50' :
+                          !sendDialogToEmail ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'
+                        }`}
                       />
-                      {!sendDialogToEmail && (
+                      {sendEmailError && (
+                        <p className="text-xs text-red-600 mt-1">{sendEmailError}</p>
+                      )}
+                      {!sendDialogToEmail && !sendEmailError && (
                         <p className="text-xs text-amber-600 mt-1">Enter a recipient email to send.</p>
                       )}
                     </div>
@@ -2445,7 +2479,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   <p className="text-xs text-slate-500 mb-4">This email will be sent immediately and recorded in the communication history.</p>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => { setShowSendConfirm(false); setSendingCommId(null); }}
+                      onClick={() => { setShowSendConfirm(false); setSendingCommId(null); setSendEmailError(null); }}
                       className="flex-1 px-4 py-2 rounded text-sm text-slate-700 bg-slate-100 hover:bg-slate-200"
                     >
                       Cancel
@@ -2453,46 +2487,44 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                     <button
                       onClick={async () => {
                         if (savingComm || !candidate || !sendDialogToEmail.trim()) return;
+                        const emailVal = sendDialogToEmail.trim();
+                        if (!emailVal || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+                          setSendEmailError('Invalid recipient email address.');
+                          return;
+                        }
                         setSavingComm(true);
+                        const appId = candidate.application_id;
                         try {
                           const api = new APIService(token);
                           if (sendingCommId) {
-                            // Send an existing draft/failed record in-place (no new record)
-                            const updated = await api.sendExistingCommunication(candidate.application_id, sendingCommId);
-                            setCommunications(prev => prev.map(c => c.communication_id === sendingCommId ? { ...c, ...updated } : c));
+                            // Retry an existing draft/failed record
+                            await api.sendExistingCommunication(appId, sendingCommId);
                           } else {
-                            // New send from compose form — pass explicit to_email only if it differs from preferred
-                            const toEmailOverride = sendDialogToEmail.trim() !== (effectivePreferred.email || '') ? sendDialogToEmail.trim() : undefined;
-                            const result = await api.sendCommunication(candidate.application_id, {
+                            // New send from compose form
+                            const toEmailOverride = emailVal !== (effectivePreferred.email || '') ? emailVal : undefined;
+                            await api.sendCommunication(appId, {
                               subject: commForm.subject,
                               body: commForm.body,
                               to_email: toEmailOverride,
                               template_id: commForm.template_id || undefined,
                             });
-                            if (editingCommId) {
-                              setCommunications(prev => [result, ...prev.filter(c => c.communication_id !== editingCommId)]);
-                              setEditingCommId(null);
-                            } else {
-                              setCommunications(prev => [result, ...prev]);
-                            }
+                            if (editingCommId) setEditingCommId(null);
                           }
                           setShowCommForm(false);
                           setShowSendConfirm(false);
                           setSendingCommId(null);
+                          setSendEmailError(null);
                           setCommForm({ subject: '', body: '', template_id: '' });
                           addToast('Email sent successfully.', 'success');
+                          await refreshCommunications(appId);
                         } catch (err: any) {
                           addToast(err.message || 'Failed to send email.', 'error');
-                          if (sendingCommId) {
-                            setCommunications(prev => prev.map(c =>
-                              c.communication_id === sendingCommId ? { ...c, status: 'failed' } : c
-                            ));
-                          }
+                          await refreshCommunications(appId);
                         } finally {
                           setSavingComm(false);
                         }
                       }}
-                      disabled={savingComm || !sendDialogToEmail.trim()}
+                      disabled={savingComm || !sendDialogToEmail.trim() || !!sendEmailError}
                       className="flex-1 px-4 py-2 rounded text-sm text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
                     >
                       {savingComm ? 'Sending…' : 'Send'}
@@ -2601,6 +2633,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                             onClick={() => {
                               setSendingCommId(comm.communication_id);
                               setSendDialogToEmail(comm.candidate_email || effectivePreferred.email || '');
+                              setSendEmailError(null);
                               setShowSendConfirm(true);
                             }}
                             disabled={deletingCommId === comm.communication_id}
@@ -2613,12 +2646,13 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                             <button
                               onClick={async () => {
                                 if (deletingCommId || !candidate) return;
+                                const appId = candidate.application_id;
                                 setDeletingCommId(comm.communication_id);
                                 try {
                                   const api = new APIService(token);
-                                  await api.deleteCommunication(candidate.application_id, comm.communication_id);
-                                  setCommunications(prev => prev.filter(c => c.communication_id !== comm.communication_id));
+                                  await api.deleteCommunication(appId, comm.communication_id);
                                   addToast('Draft deleted.', 'success');
+                                  await refreshCommunications(appId);
                                 } catch (err: any) {
                                   addToast(err.message || 'Failed to delete draft.', 'error');
                                 } finally {
