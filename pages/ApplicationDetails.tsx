@@ -1634,7 +1634,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
 
       {/* Recruiter Workflow Panel */}
       {onWorkflowStatusChange && (
-        <section className="bg-white rounded-3xl border border-border overflow-hidden">
+        <section className="bg-white rounded-3xl border border-border">
           <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between">
             <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
               <span className={`w-2 h-4 bg-indigo-400 rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span>
@@ -1644,7 +1644,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
               {WF_LABELS[currentWorkflowStatus]}
             </span>
           </div>
-          <div className="px-8 py-6 space-y-4">
+          <div className="px-8 py-6 space-y-4 relative z-20">
             <WorkflowActionMenu
               applicationId={data.application_id}
               currentStatus={currentWorkflowStatus}

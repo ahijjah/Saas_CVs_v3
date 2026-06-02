@@ -1423,12 +1423,12 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 
       {/* Drawer panel */}
       <div
-        className={`fixed right-0 top-0 bottom-0 w-full sm:w-96 bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto transition-transform duration-300 ${
+        className={`fixed right-0 top-0 bottom-0 w-full sm:w-96 bg-white border-l border-slate-200 shadow-xl z-50 flex flex-col transition-transform duration-300 ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4 z-10">
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-semibold text-slate-900 truncate">{candidate.candidate_name || '—'}</h2>
             <p className="text-xs text-slate-500 mt-0.5 truncate">{candidate.job_title || '—'}</p>
@@ -1453,7 +1453,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
         </div>
 
         {/* Tab navigation */}
-        <div className="sticky top-[88px] bg-white border-b border-slate-200 px-6 flex gap-1 overflow-x-auto">
+        <div className="sticky top-[88px] bg-white border-b border-slate-200 px-6 flex gap-1 overflow-x-auto z-10">
           {([
             { key: 'overview', label: 'Overview', badge: null },
             { key: 'interviews', label: t.interviews, badge: interviews.length > 0 ? interviews.length : null },
@@ -1479,6 +1479,9 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
             </button>
           ))}
         </div>
+
+        {/* Scrollable content area */}
+        <div className="flex-1 overflow-y-auto">
 
         {/* Discussion Tab */}
         {activeTab === 'discussion' && (
@@ -3082,6 +3085,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           </a>
         </div>
         )} {/* end Overview tab */}
+        </div>
+        {/* end scrollable content area */}
       </div>
     </>
   );
