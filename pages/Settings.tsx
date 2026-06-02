@@ -395,6 +395,15 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
     offer_response_days: 5,
   });
 
+  // SLA Thresholds edit mode state
+  const [isEditingSLA, setIsEditingSLA] = useState(false);
+  const [slaOriginalValues, setSLAOriginalValues] = useState({
+    review_days: 14,
+    interview_feedback_days: 7,
+    approval_days: 10,
+    offer_response_days: 5,
+  });
+
   // Communication Templates state
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
@@ -682,6 +691,75 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
       });
     }
     setIsEditing(false);
+  };
+
+  const handleEnterSLAEditMode = () => {
+    setSLAOriginalValues({
+      review_days: policiesForm.review_days,
+      interview_feedback_days: policiesForm.interview_feedback_days,
+      approval_days: policiesForm.approval_days,
+      offer_response_days: policiesForm.offer_response_days,
+    });
+    setIsEditingSLA(true);
+  };
+
+  const handleCancelSLAEdit = () => {
+    setPoliciesForm(p => ({
+      ...p,
+      review_days: slaOriginalValues.review_days,
+      interview_feedback_days: slaOriginalValues.interview_feedback_days,
+      approval_days: slaOriginalValues.approval_days,
+      offer_response_days: slaOriginalValues.offer_response_days,
+    }));
+    setIsEditingSLA(false);
+  };
+
+  const isSLADirty = () => {
+    return (
+      policiesForm.review_days !== slaOriginalValues.review_days ||
+      policiesForm.interview_feedback_days !== slaOriginalValues.interview_feedback_days ||
+      policiesForm.approval_days !== slaOriginalValues.approval_days ||
+      policiesForm.offer_response_days !== slaOriginalValues.offer_response_days
+    );
+  };
+
+  const handleSaveSLAChanges = async () => {
+    if (savingPolicies || !isSLADirty()) return;
+    setSavingPolicies(true);
+    try {
+      const stages = policiesForm.required_approval_stages
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean);
+      await apiService.patch(WEBHOOK_CONFIG.WORKFLOW_POLICIES_URL, {
+        require_interview_before_offer: policiesForm.require_interview_before_offer,
+        require_approval_before_hire:   policiesForm.require_approval_before_hire,
+        require_rejection_reason:       policiesForm.require_rejection_reason,
+        allow_bulk_reject:              policiesForm.allow_bulk_reject,
+        require_interview_feedback:     policiesForm.require_interview_feedback,
+        required_approval_stages:       stages,
+        sla_thresholds: {
+          review_days:           policiesForm.review_days,
+          interview_feedback_days: policiesForm.interview_feedback_days,
+          approval_days:         policiesForm.approval_days,
+          offer_response_days:   policiesForm.offer_response_days,
+        },
+      }, auth.token!);
+      addToast(t.policiesSaved, 'success');
+      // Update original values after successful save
+      setSLAOriginalValues({
+        review_days: policiesForm.review_days,
+        interview_feedback_days: policiesForm.interview_feedback_days,
+        approval_days: policiesForm.approval_days,
+        offer_response_days: policiesForm.offer_response_days,
+      });
+      // Exit edit mode
+      setIsEditingSLA(false);
+    } catch (err: any) {
+      addToast(err.message || 'Failed to save policies', 'error');
+    } finally {
+      setSavingPolicies(false);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1383,79 +1461,151 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
 
                 {/* SLA Thresholds */}
                 <div>
-                  <label className="block text-sm font-semibold text-textMain mb-3">
-                    {(t as any).slaThresholds || 'SLA Thresholds'}
-                  </label>
-                  <p className="text-xs text-textMuted mb-4">Set the SLA response time limits (in days) for different stages of the recruitment process.</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-textMain mb-1.5">
-                        {(t as any).reviewDays || 'Review Days'}
-                      </label>
-                      <input
-                        type="number"
-                        value={policiesForm.review_days}
-                        onChange={e => setPoliciesForm(p => ({ ...p, review_days: Math.max(1, parseInt(e.target.value) || 1) }))}
-                        min="1"
-                        max="90"
-                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                      />
-                      <p className="text-xs text-textMuted mt-1">Time for initial review before shortlisting</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-textMain mb-1.5">
-                        {(t as any).interviewFeedbackDays || 'Interview Feedback Days'}
-                      </label>
-                      <input
-                        type="number"
-                        value={policiesForm.interview_feedback_days}
-                        onChange={e => setPoliciesForm(p => ({ ...p, interview_feedback_days: Math.max(1, parseInt(e.target.value) || 1) }))}
-                        min="1"
-                        max="90"
-                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                      />
-                      <p className="text-xs text-textMuted mt-1">Time to provide interview feedback</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-textMain mb-1.5">
-                        {(t as any).approvalDays || 'Approval Days'}
-                      </label>
-                      <input
-                        type="number"
-                        value={policiesForm.approval_days}
-                        onChange={e => setPoliciesForm(p => ({ ...p, approval_days: Math.max(1, parseInt(e.target.value) || 1) }))}
-                        min="1"
-                        max="90"
-                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                      />
-                      <p className="text-xs text-textMuted mt-1">Time for approval decision</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-textMain mb-1.5">
-                        {(t as any).offerResponseDays || 'Offer Response Days'}
-                      </label>
-                      <input
-                        type="number"
-                        value={policiesForm.offer_response_days}
-                        onChange={e => setPoliciesForm(p => ({ ...p, offer_response_days: Math.max(1, parseInt(e.target.value) || 1) }))}
-                        min="1"
-                        max="90"
-                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                      />
-                      <p className="text-xs text-textMuted mt-1">Time for candidate to respond to offer</p>
-                    </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-semibold text-textMain">
+                      {(t as any).slaThresholds || 'SLA Thresholds'}
+                    </label>
+                    {!isEditingSLA && (
+                      <button
+                        onClick={handleEnterSLAEditMode}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-border rounded-lg text-xs font-bold text-textMain hover:bg-slate-50 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Edit
+                      </button>
+                    )}
                   </div>
+                  <p className="text-xs text-textMuted mb-4">Set the SLA response time limits (in days) for different stages of the recruitment process.</p>
+
+                  {!isEditingSLA ? (
+                    // Read-only mode
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-slate-50 rounded-xl px-4 py-3">
+                        <p className="text-xs font-semibold text-textMain mb-1">
+                          {(t as any).reviewDays || 'Review Days'}
+                        </p>
+                        <p className="text-lg font-bold text-textMain mb-1">{policiesForm.review_days}</p>
+                        <p className="text-xs text-textMuted">Time for initial review before shortlisting</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl px-4 py-3">
+                        <p className="text-xs font-semibold text-textMain mb-1">
+                          {(t as any).interviewFeedbackDays || 'Interview Feedback Days'}
+                        </p>
+                        <p className="text-lg font-bold text-textMain mb-1">{policiesForm.interview_feedback_days}</p>
+                        <p className="text-xs text-textMuted">Time to provide interview feedback</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl px-4 py-3">
+                        <p className="text-xs font-semibold text-textMain mb-1">
+                          {(t as any).approvalDays || 'Approval Days'}
+                        </p>
+                        <p className="text-lg font-bold text-textMain mb-1">{policiesForm.approval_days}</p>
+                        <p className="text-xs text-textMuted">Time for approval decision</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl px-4 py-3">
+                        <p className="text-xs font-semibold text-textMain mb-1">
+                          {(t as any).offerResponseDays || 'Offer Response Days'}
+                        </p>
+                        <p className="text-lg font-bold text-textMain mb-1">{policiesForm.offer_response_days}</p>
+                        <p className="text-xs text-textMuted">Time for candidate to respond to offer</p>
+                      </div>
+                    </div>
+                  ) : (
+                    // Edit mode
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-textMain mb-1.5">
+                          {(t as any).reviewDays || 'Review Days'}
+                        </label>
+                        <input
+                          type="number"
+                          value={policiesForm.review_days}
+                          onChange={e => setPoliciesForm(p => ({ ...p, review_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                          min="1"
+                          max="90"
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                        <p className="text-xs text-textMuted mt-1">Time for initial review before shortlisting</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-textMain mb-1.5">
+                          {(t as any).interviewFeedbackDays || 'Interview Feedback Days'}
+                        </label>
+                        <input
+                          type="number"
+                          value={policiesForm.interview_feedback_days}
+                          onChange={e => setPoliciesForm(p => ({ ...p, interview_feedback_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                          min="1"
+                          max="90"
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                        <p className="text-xs text-textMuted mt-1">Time to provide interview feedback</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-textMain mb-1.5">
+                          {(t as any).approvalDays || 'Approval Days'}
+                        </label>
+                        <input
+                          type="number"
+                          value={policiesForm.approval_days}
+                          onChange={e => setPoliciesForm(p => ({ ...p, approval_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                          min="1"
+                          max="90"
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                        <p className="text-xs text-textMuted mt-1">Time for approval decision</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-textMain mb-1.5">
+                          {(t as any).offerResponseDays || 'Offer Response Days'}
+                        </label>
+                        <input
+                          type="number"
+                          value={policiesForm.offer_response_days}
+                          onChange={e => setPoliciesForm(p => ({ ...p, offer_response_days: Math.max(1, parseInt(e.target.value) || 1) }))}
+                          min="1"
+                          max="90"
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                        <p className="text-xs text-textMuted mt-1">Time for candidate to respond to offer</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex justify-end pt-2">
-                  <button
-                    onClick={handleSavePolicies}
-                    disabled={savingPolicies}
-                    className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-sm transition-colors disabled:opacity-40"
-                  >
-                    {savingPolicies ? t.savingPolicies : t.savePolicies}
-                  </button>
-                </div>
+                {/* Save/Cancel buttons - only show when editing SLA */}
+                {isEditingSLA && (
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      onClick={handleCancelSLAEdit}
+                      disabled={savingPolicies}
+                      className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-textMain text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveSLAChanges}
+                      disabled={savingPolicies || !isSLADirty()}
+                      className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-sm transition-colors disabled:opacity-40"
+                    >
+                      {savingPolicies ? t.savingPolicies : t.savePolicies}
+                    </button>
+                  </div>
+                )}
+
+                {/* Save button for other policies - show when not editing SLA */}
+                {!isEditingSLA && (
+                  <div className="flex justify-end pt-2">
+                    <button
+                      onClick={handleSavePolicies}
+                      disabled={savingPolicies}
+                      className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-sm transition-colors disabled:opacity-40"
+                    >
+                      {savingPolicies ? t.savingPolicies : t.savePolicies}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
