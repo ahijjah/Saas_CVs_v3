@@ -11,7 +11,7 @@ from routers import (
     platform_secrets, public, saved_views, subscription_plans, tenant, workflow_policies,
 )
 from routers.candidate_tags import app_router as candidate_tags_app, tag_router as candidate_tags_tags
-from routers.communication import comm_router as communication_comm, template_router as communication_templates
+from routers.communication import automation_router as communication_automation, comm_router as communication_comm, template_router as communication_templates
 
 settings = get_settings()
 
@@ -64,6 +64,7 @@ app.include_router(candidate_tags_app)
 app.include_router(candidate_tags_tags)
 app.include_router(communication_templates)
 app.include_router(communication_comm)
+app.include_router(communication_automation)
 
 
 @app.get("/health")

@@ -13,6 +13,7 @@ from services.email_service import _send
 
 template_router = APIRouter(prefix="/communication/templates", tags=["communication"])
 comm_router = APIRouter(prefix="/applications", tags=["communication"])
+automation_router = APIRouter(prefix="/communication/automation-rules", tags=["communication"])
 
 _EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
 
@@ -62,7 +63,27 @@ class PreferredContactUpdate(BaseModel):
     preferred_contact_email: str | None = None
 
 
+class AutomationRuleCreate(BaseModel):
+    event_type: str
+    template_id: str | None = None
+    mode: str = "draft_only"
+    is_active: bool = True
+    delay_minutes: int = 0
+
+
+class AutomationRuleUpdate(BaseModel):
+    template_id: str | None = None
+    mode: str | None = None
+    is_active: bool | None = None
+    delay_minutes: int | None = None
+
+
 VALID_CATEGORIES = {"interview_invitation", "rejection", "shortlisted", "offer", "request_info", "talent_pool", "general"}
+VALID_EVENT_TYPES = {
+    "workflow_shortlisted", "workflow_rejected", "offer_made",
+    "interview_scheduled", "interview_completed", "talent_pool_added",
+}
+VALID_MODES = {"disabled", "draft_only", "auto_send"}
 
 # Full application query for communication endpoints — includes all email fields
 _APP_EMAIL_QUERY = """
@@ -312,6 +333,7 @@ async def list_communications(
             SELECT
                 c.communication_id, c.channel, c.direction, c.subject,
                 c.body, c.status, c.error_message, c.candidate_email, c.created_at,
+                c.is_automated, c.event_type,
                 t.name AS template_name, t.category AS template_category,
                 COALESCE(u.full_name, u.email) AS created_by_name
             FROM candidate_communications c
@@ -672,3 +694,199 @@ async def delete_communication(
     )
     await db.commit()
     return {"status": "communication deleted"}
+
+
+# ── Automation Rules Endpoints ─────────────────────────────────────────────────
+
+
+@automation_router.get("/")
+async def list_automation_rules(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """List all communication automation rules for the tenant (admin only)."""
+    if current_user.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Only admins can view automation rules")
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    rows = await db.execute(
+        text("""
+            SELECT r.rule_id, r.event_type, r.category, r.mode, r.is_active,
+                   r.delay_minutes, r.created_at, r.updated_at,
+                   r.template_id, t.name AS template_name
+            FROM communication_automation_rules r
+            LEFT JOIN candidate_message_templates t ON t.template_id = r.template_id
+            WHERE r.tenant_id = CAST(:tid AS uuid)
+            ORDER BY r.event_type
+        """),
+        {"tid": current_user.tenant_id},
+    )
+
+    rules = []
+    for r in rows.mappings():
+        row = dict(r)
+        row["rule_id"] = str(row["rule_id"])
+        row["template_id"] = str(row["template_id"]) if row["template_id"] else None
+        row["created_at"] = row["created_at"].isoformat() if row["created_at"] else None
+        row["updated_at"] = row["updated_at"].isoformat() if row["updated_at"] else None
+        rules.append(row)
+
+    return {"rules": rules}
+
+
+@automation_router.post("/")
+async def create_automation_rule(
+    body: AutomationRuleCreate,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Create a communication automation rule (admin only). One rule per event type per tenant."""
+    if current_user.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Only admins can create automation rules")
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    if body.event_type not in VALID_EVENT_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid event_type. Must be one of: {', '.join(sorted(VALID_EVENT_TYPES))}")
+    if body.mode not in VALID_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of: {', '.join(sorted(VALID_MODES))}")
+    if body.delay_minutes < 0:
+        raise HTTPException(status_code=400, detail="delay_minutes cannot be negative")
+
+    if body.template_id:
+        tpl_check = await db.execute(
+            text("SELECT template_id FROM candidate_message_templates WHERE template_id = CAST(:tid AS uuid) AND tenant_id = CAST(:tenant_id AS uuid)"),
+            {"tid": body.template_id, "tenant_id": current_user.tenant_id},
+        )
+        if not tpl_check.scalars().first():
+            raise HTTPException(status_code=404, detail="Template not found")
+
+    try:
+        result = await db.execute(
+            text("""
+                INSERT INTO communication_automation_rules
+                    (tenant_id, event_type, category, template_id, mode, is_active, delay_minutes, created_by)
+                VALUES
+                    (CAST(:tid AS uuid), :event_type, 'workflow',
+                     CAST(:template_id AS uuid), :mode, :is_active, :delay_minutes, CAST(:uid AS uuid))
+                RETURNING rule_id, event_type, category, mode, is_active, delay_minutes, template_id, created_at, updated_at
+            """),
+            {
+                "tid": current_user.tenant_id,
+                "event_type": body.event_type,
+                "template_id": body.template_id,
+                "mode": body.mode,
+                "is_active": body.is_active,
+                "delay_minutes": body.delay_minutes,
+                "uid": current_user.user_id,
+            },
+        )
+        row = result.mappings().first()
+        await db.commit()
+
+        r = dict(row)
+        r["rule_id"] = str(r["rule_id"])
+        r["template_id"] = str(r["template_id"]) if r["template_id"] else None
+        r["created_at"] = r["created_at"].isoformat() if r["created_at"] else None
+        r["updated_at"] = r["updated_at"].isoformat() if r["updated_at"] else None
+        return r
+    except Exception as e:
+        if "uq_automation_event_per_tenant" in str(e) or "unique" in str(e).lower():
+            raise HTTPException(status_code=409, detail=f"An automation rule for '{body.event_type}' already exists. Update the existing rule instead.")
+        raise HTTPException(status_code=400, detail="Failed to create automation rule")
+
+
+@automation_router.patch("/{rule_id}")
+async def update_automation_rule(
+    rule_id: str,
+    body: AutomationRuleUpdate,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update an existing automation rule (admin only)."""
+    if current_user.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Only admins can update automation rules")
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    check = await db.execute(
+        text("SELECT rule_id FROM communication_automation_rules WHERE rule_id = CAST(:rid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+        {"rid": rule_id, "tid": current_user.tenant_id},
+    )
+    if not check.scalars().first():
+        raise HTTPException(status_code=404, detail="Automation rule not found")
+
+    if body.mode is not None and body.mode not in VALID_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of: {', '.join(sorted(VALID_MODES))}")
+    if body.delay_minutes is not None and body.delay_minutes < 0:
+        raise HTTPException(status_code=400, detail="delay_minutes cannot be negative")
+
+    if body.template_id is not None:
+        tpl_check = await db.execute(
+            text("SELECT template_id FROM candidate_message_templates WHERE template_id = CAST(:tid AS uuid) AND tenant_id = CAST(:tenant_id AS uuid)"),
+            {"tid": body.template_id, "tenant_id": current_user.tenant_id},
+        )
+        if not tpl_check.scalars().first():
+            raise HTTPException(status_code=404, detail="Template not found")
+
+    set_parts = ["updated_at = NOW()"]
+    params: dict = {"rid": rule_id}
+
+    if body.template_id is not None:
+        set_parts.append("template_id = CAST(:template_id AS uuid)")
+        params["template_id"] = body.template_id
+    if body.mode is not None:
+        set_parts.append("mode = :mode")
+        params["mode"] = body.mode
+    if body.is_active is not None:
+        set_parts.append("is_active = :is_active")
+        params["is_active"] = body.is_active
+    if body.delay_minutes is not None:
+        set_parts.append("delay_minutes = :delay_minutes")
+        params["delay_minutes"] = body.delay_minutes
+
+    if len(set_parts) == 1:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = await db.execute(
+        text(f"""
+            UPDATE communication_automation_rules
+            SET {', '.join(set_parts)}
+            WHERE rule_id = CAST(:rid AS uuid)
+            RETURNING rule_id, event_type, category, mode, is_active, delay_minutes, template_id, created_at, updated_at
+        """),
+        params,
+    )
+    row = result.mappings().first()
+    await db.commit()
+
+    r = dict(row)
+    r["rule_id"] = str(r["rule_id"])
+    r["template_id"] = str(r["template_id"]) if r["template_id"] else None
+    r["created_at"] = r["created_at"].isoformat() if r["created_at"] else None
+    r["updated_at"] = r["updated_at"].isoformat() if r["updated_at"] else None
+    return r
+
+
+@automation_router.delete("/{rule_id}")
+async def delete_automation_rule(
+    rule_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Delete an automation rule (admin only)."""
+    if current_user.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Only admins can delete automation rules")
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    result = await db.execute(
+        text("DELETE FROM communication_automation_rules WHERE rule_id = CAST(:rid AS uuid) AND tenant_id = CAST(:tid AS uuid) RETURNING rule_id"),
+        {"rid": rule_id, "tid": current_user.tenant_id},
+    )
+    if not result.scalars().first():
+        raise HTTPException(status_code=404, detail="Automation rule not found")
+
+    await db.commit()
+    return {"status": "automation rule deleted"}

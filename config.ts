@@ -114,6 +114,8 @@ export const WEBHOOK_CONFIG = {
   // Communication templates & history
   COMMUNICATION_TEMPLATES_URL:  `${API_BASE}/communication/templates`,
   COMMUNICATION_BASE_URL:       `${API_BASE}/applications`,
+  // Communication automation rules (admin only)
+  COMMUNICATION_AUTOMATION_RULES_URL: `${API_BASE}/communication/automation-rules`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

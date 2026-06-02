@@ -882,4 +882,19 @@ export interface CandidateCommunication {
   template_name: string | null;
   template_category: string | null;
   created_by_name: string | null;
+  is_automated?: boolean;
+  event_type?: string | null;
+}
+
+export interface AutomationRule {
+  rule_id: string;
+  event_type: string;
+  category: string;
+  mode: 'disabled' | 'draft_only' | 'auto_send';
+  is_active: boolean;
+  delay_minutes: number;
+  template_id: string | null;
+  template_name: string | null;
+  created_at: string;
+  updated_at: string;
 }

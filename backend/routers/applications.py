@@ -18,6 +18,7 @@ from services.application_intake_service import (
     IntakeValidationError,
     process_cv_intake,
 )
+from services.communication_events import process_communication_event
 from workers.cv_score import score_cv_task
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -1220,6 +1221,19 @@ async def update_workflow_status(
             "is_adv": is_advanced,
         },
     )
+
+    _EVENT_MAP = {
+        "shortlisted": "workflow_shortlisted",
+        "rejected": "workflow_rejected",
+        "offer_made": "offer_made",
+    }
+    if new_status in _EVENT_MAP:
+        await process_communication_event(
+            db=db,
+            application_id=application_id,
+            event_type=_EVENT_MAP[new_status],
+            tenant_id=current_user.tenant_id,
+        )
 
     await db.commit()
     return {"workflow_status": new_status}

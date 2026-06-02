@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
 from database import get_db, set_rls_context
+from services.communication_events import process_communication_event
 
 router = APIRouter(prefix="/applications", tags=["interviews"])
 
@@ -219,6 +220,19 @@ async def create_interview(
     rec = dict(row.mappings().first())
     rec["created_by_name"] = current_user.full_name or current_user.email
     rec["feedback_count"] = 0
+
+    if body.status == "scheduled":
+        try:
+            await process_communication_event(
+                db=db,
+                application_id=application_id,
+                event_type="interview_scheduled",
+                tenant_id=current_user.tenant_id,
+            )
+            await db.commit()
+        except Exception:
+            pass
+
     return {"interview": _serialize_interview(rec)}
 
 

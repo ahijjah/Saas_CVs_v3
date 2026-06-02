@@ -280,4 +280,22 @@ export class APIService {
   }) {
     return apiService.patch(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/preferred-contact`, data, this.token);
   }
+
+  // ── Communication Automation Rules ────────────────────────────────────────
+
+  async listAutomationRules() {
+    return apiService.get(WEBHOOK_CONFIG.COMMUNICATION_AUTOMATION_RULES_URL, {}, this.token);
+  }
+
+  async createAutomationRule(data: { event_type: string; template_id?: string | null; mode?: string; is_active?: boolean; delay_minutes?: number }) {
+    return apiService.post(WEBHOOK_CONFIG.COMMUNICATION_AUTOMATION_RULES_URL, data, this.token);
+  }
+
+  async updateAutomationRule(ruleId: string, data: { template_id?: string | null; mode?: string; is_active?: boolean; delay_minutes?: number }) {
+    return apiService.patch(`${WEBHOOK_CONFIG.COMMUNICATION_AUTOMATION_RULES_URL}/${ruleId}`, data, this.token);
+  }
+
+  async deleteAutomationRule(ruleId: string) {
+    return apiService.delete(`${WEBHOOK_CONFIG.COMMUNICATION_AUTOMATION_RULES_URL}/${ruleId}`, this.token);
+  }
 };
