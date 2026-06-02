@@ -571,12 +571,25 @@ function formatDate(iso: string | null): string {
 
 interface TimelineEvent {
   id: string;
-  type: 'application_submitted' | 'ai_scored' | 'workflow_transition' | 'processing_failed' | 'security_blocked' | 'duplicate_detected';
+  type: 'application_submitted' | 'ai_scored' | 'workflow_transition' | 'processing_failed' | 'security_blocked' | 'duplicate_detected' | 'communication';
   timestamp: string; // ISO string
   actor: string;
   action: string;
   detail?: string;
   isAdvancedMove?: boolean;
+  // Communication-specific fields
+  communicationData?: {
+    communication_id: string;
+    subject: string | null;
+    body: string | null;
+    status: string;
+    error_message?: string | null;
+    candidate_email?: string | null;
+    template_name: string | null;
+    template_category: string | null;
+    is_automated?: boolean;
+    event_type?: string | null;
+  };
 }
 
 function buildTimeline(candidate: Candidate, detail: AppDetail | null): TimelineEvent[] {
@@ -661,6 +674,40 @@ function buildTimeline(candidate: Candidate, detail: AppDetail | null): Timeline
     });
   }
 
+  // Communication events
+  if (detail?.communications && Array.isArray(detail.communications)) {
+    for (const comm of detail.communications) {
+      if (comm.created_at) {
+        const statusLabel = comm.status === 'sent' ? 'Email sent' : comm.status === 'failed' ? 'Email failed' : comm.status === 'draft' ? 'Draft created' : 'Communication logged';
+        const actor = comm.created_by_name || 'System';
+        const action = comm.subject
+          ? `${statusLabel}: ${comm.subject}`
+          : statusLabel;
+
+        events.push({
+          id: `comm-${comm.communication_id}`,
+          type: 'communication',
+          timestamp: comm.created_at,
+          actor: actor,
+          action: action,
+          detail: comm.body || undefined,
+          communicationData: {
+            communication_id: comm.communication_id,
+            subject: comm.subject,
+            body: comm.body,
+            status: comm.status,
+            error_message: comm.error_message,
+            candidate_email: comm.candidate_email,
+            template_name: comm.template_name,
+            template_category: comm.template_category,
+            is_automated: comm.is_automated,
+            event_type: comm.event_type,
+          },
+        });
+      }
+    }
+  }
+
   // Sort by timestamp, newest first
   return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 }
@@ -679,6 +726,8 @@ function timelineEventColor(type: TimelineEvent['type']): string {
       return 'bg-red-100 text-red-700 border-red-200';
     case 'duplicate_detected':
       return 'bg-amber-100 text-amber-700 border-amber-200';
+    case 'communication':
+      return 'bg-purple-100 text-purple-700 border-purple-200';
     default:
       return 'bg-slate-100 text-slate-700 border-slate-200';
   }
@@ -698,6 +747,8 @@ function timelineEventDotColor(type: TimelineEvent['type']): string {
       return 'bg-red-500';
     case 'duplicate_detected':
       return 'bg-amber-500';
+    case 'communication':
+      return 'bg-purple-500';
     default:
       return 'bg-slate-400';
   }
@@ -763,6 +814,7 @@ interface AppDetail {
   email_sender_address?: string | null;
   preferred_contact_email?: string | null;
   preferred_contact_source?: string | null;
+  communications?: CandidateCommunication[];
 }
 
 interface CandidateDetailDrawerProps {
@@ -900,7 +952,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   // Cache key includes detailVersion so the parent can force a re-fetch after
   // a successful workflow transition or notes save by incrementing the version.
   useEffect(() => {
-    if (!candidate?.application_id || !open) return;
+    if (!candidate?.application_id || !open || !token) return;
     const cacheKey = `${candidate.application_id}-${detailVersion}`;
     // Already loaded for this exact application + version
     if (detailForRef.current === cacheKey) return;
@@ -911,14 +963,20 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setDetailError(null);
     setDetailLoading(true);
 
-    apiService.get(
-      WEBHOOK_CONFIG.APPLICATION_DETAILS_WEBHOOK_URL,
-      { application_id: candidate.application_id },
-      token,
-    ).then((raw: unknown) => {
+    const api = new APIService(token);
+    Promise.all([
+      apiService.get(
+        WEBHOOK_CONFIG.APPLICATION_DETAILS_WEBHOOK_URL,
+        { application_id: candidate.application_id },
+        token,
+      ),
+      api.listCommunications(candidate.application_id),
+    ]).then(([raw, commsData]: any[]) => {
       if (cancelled) return;
       const detailObj: AppDetail | null = Array.isArray(raw) ? raw[0] : (raw as AppDetail);
       if (!detailObj) throw new Error('No data returned');
+      // Merge communications into detail
+      detailObj.communications = commsData?.communications || [];
       setDetail(detailObj);
       // Sync notes from full detail only if recruiter hasn't made local edits
       setNotesText(prev => {
@@ -3001,23 +3059,86 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 
                         {/* Event content */}
                         <div className="flex-1 pb-2">
-                          <div className={`px-2 py-1.5 rounded border ${event.isAdvancedMove ? 'bg-amber-50 text-amber-800 border-amber-200' : timelineEventColor(event.type)}`}>
-                            <div className="flex items-start justify-between gap-1">
-                              <span className="font-medium">
-                                {event.action}
-                                {event.isAdvancedMove && (
-                                  <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-amber-200 text-amber-800 px-1 py-0.5 rounded">
-                                    Exceptional
+                          {event.type === 'communication' && event.communicationData ? (
+                            <div className={`px-3 py-2 rounded border bg-purple-50 border-purple-200`}>
+                              {/* Communication headers with badges */}
+                              <div className="flex items-start justify-between gap-2 mb-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap max-w-[calc(100%-60px)]">
+                                  <span className="font-medium text-purple-900 truncate">
+                                    {event.communicationData.subject || '(no subject)'}
                                   </span>
+                                  {event.communicationData.template_category && (
+                                    <span className="px-1 py-0.5 text-[9px] font-bold rounded bg-indigo-200 text-indigo-700 flex-shrink-0">
+                                      {event.communicationData.template_category}
+                                    </span>
+                                  )}
+                                  <span className={`px-1 py-0.5 text-[9px] font-bold rounded flex-shrink-0 ${
+                                    event.communicationData.status === 'sent' ? 'bg-green-200 text-green-700' :
+                                    event.communicationData.status === 'failed' ? 'bg-red-200 text-red-700' :
+                                    event.communicationData.status === 'draft' ? 'bg-amber-200 text-amber-700' :
+                                    'bg-slate-200 text-slate-700'
+                                  }`}>
+                                    {event.communicationData.status}
+                                  </span>
+                                  {event.communicationData.is_automated && (
+                                    <span className="px-1 py-0.5 text-[9px] font-bold rounded bg-violet-200 text-violet-700 flex-shrink-0">
+                                      Automated
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-slate-500 flex-shrink-0">
+                                  {formatTimelineTimestamp(event.timestamp)}
+                                </span>
+                              </div>
+
+                              {/* Sender and recipient */}
+                              <div className="text-[10px] text-purple-700 mb-1">
+                                from {event.actor}
+                                {event.communicationData.candidate_email && (
+                                  <> to <span className="font-medium">{event.communicationData.candidate_email}</span></>
                                 )}
-                              </span>
-                              <span className="text-xs opacity-70 flex-shrink-0">
-                                {formatTimelineTimestamp(event.timestamp)}
-                              </span>
+                              </div>
+
+                              {/* Message preview */}
+                              {event.communicationData.body && (
+                                <div className="text-[11px] text-slate-600 bg-white rounded px-2 py-1.5 mt-1.5 border border-purple-100 whitespace-pre-wrap line-clamp-3">
+                                  {event.communicationData.body}
+                                </div>
+                              )}
+
+                              {/* Error message for failed emails */}
+                              {event.communicationData.error_message && (
+                                <div className="text-[10px] text-red-700 bg-red-50 rounded px-2 py-1 mt-1.5 border border-red-200">
+                                  {event.communicationData.error_message}
+                                </div>
+                              )}
+
+                              {/* Automation info */}
+                              {event.communicationData.is_automated && event.communicationData.event_type && (
+                                <div className="text-[10px] text-violet-700 mt-1.5 bg-violet-50 rounded px-2 py-1 border border-violet-100">
+                                  Triggered by: {event.communicationData.event_type}
+                                </div>
+                              )}
                             </div>
-                            {event.actor && <div className="text-xs opacity-75 mt-0.5">by {event.actor}</div>}
-                            {event.detail && <div className="text-xs opacity-75 mt-1 italic line-clamp-2">{event.detail}</div>}
-                          </div>
+                          ) : (
+                            <div className={`px-2 py-1.5 rounded border ${event.isAdvancedMove ? 'bg-amber-50 text-amber-800 border-amber-200' : timelineEventColor(event.type)}`}>
+                              <div className="flex items-start justify-between gap-1">
+                                <span className="font-medium">
+                                  {event.action}
+                                  {event.isAdvancedMove && (
+                                    <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-amber-200 text-amber-800 px-1 py-0.5 rounded">
+                                      Exceptional
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="text-xs opacity-70 flex-shrink-0">
+                                  {formatTimelineTimestamp(event.timestamp)}
+                                </span>
+                              </div>
+                              {event.actor && <div className="text-xs opacity-75 mt-0.5">by {event.actor}</div>}
+                              {event.detail && <div className="text-xs opacity-75 mt-1 italic line-clamp-2">{event.detail}</div>}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
