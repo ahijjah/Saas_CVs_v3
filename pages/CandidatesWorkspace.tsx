@@ -1538,33 +1538,35 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-semibold text-slate-900 truncate">{candidate.candidate_name || '—'}</h2>
-            <p className="text-xs text-slate-500 mt-0.5 truncate">{candidate.job_title || '—'}</p>
-            {/* Assignee chip */}
-            {candidate.assigned_user_name && (
-              <div className="flex items-center gap-1 mt-1.5">
-                <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold flex items-center justify-center">
-                  {candidate.assigned_user_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+        {/* Header + Tabs wrapper — single sticky block to avoid gaps */}
+        <div className="sticky top-0 z-10 bg-white">
+          {/* Header */}
+          <div className="border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-semibold text-slate-900 truncate">{candidate.candidate_name || '—'}</h2>
+              <p className="text-xs text-slate-500 mt-0.5 truncate">{candidate.job_title || '—'}</p>
+              {/* Assignee chip */}
+              {candidate.assigned_user_name && (
+                <div className="flex items-center gap-1 mt-1.5">
+                  <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold flex items-center justify-center">
+                    {candidate.assigned_user_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                  </div>
+                  <span className="text-[10px] text-emerald-700">{candidate.assigned_user_name}</span>
                 </div>
-                <span className="text-[10px] text-emerald-700">{candidate.assigned_user_name}</span>
-              </div>
-            )}
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
-          >
-            <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
 
-        {/* Tab navigation */}
-        <div className="sticky top-[88px] z-10 bg-white border-b border-slate-200 px-6 flex gap-1 overflow-x-auto">
+          {/* Tab navigation */}
+          <div className="border-b border-slate-200 px-6 flex gap-1 overflow-x-auto">
           {([
             { key: 'overview', label: 'Overview', badge: null },
             { key: 'interviews', label: t.interviews, badge: interviews.length > 0 ? interviews.length : null },
@@ -1589,6 +1591,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               )}
             </button>
           ))}
+          </div>
         </div>
 
         {/* Discussion Tab */}
