@@ -70,7 +70,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
 
   useEffect(() => {
     loadAnalytics();
-  }, [dateFrom, dateTo]);
+  }, []);
 
   useEffect(() => {
     setAgingCurrentPage(1);
