@@ -14,6 +14,8 @@ from services.email_service import _send
 template_router = APIRouter(prefix="/communication/templates", tags=["communication"])
 comm_router = APIRouter(prefix="/applications", tags=["communication"])
 
+_EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
+
 
 # ── Pydantic Models ────────────────────────────────────────────────────────────
 
@@ -46,7 +48,7 @@ class CommunicationLog(BaseModel):
 class CommunicationSend(BaseModel):
     subject: str
     body: str
-    to_email: str | None = None
+    to_email: str | None = None    # explicit one-message override; backend falls back to preferred_contact_email
     template_id: str | None = None
 
 
@@ -56,7 +58,37 @@ class CommunicationUpdate(BaseModel):
     template_id: str | None = None
 
 
+class PreferredContactUpdate(BaseModel):
+    preferred_contact_email: str | None = None
+    preferred_contact_source: str = "manual_override"
+    preferred_contact_locked: bool = True
+
+
 VALID_CATEGORIES = {"interview_invitation", "rejection", "shortlisted", "offer", "request_info", "talent_pool", "general"}
+
+# Full application query for communication endpoints — includes all email fields
+_APP_EMAIL_QUERY = """
+    SELECT a.application_id, a.candidate_name,
+           a.candidate_email, a.candidate_email_from_cv,
+           a.email_sender_address, a.confirmation_email_recipient,
+           a.preferred_contact_email, a.preferred_contact_locked
+    FROM applications a
+    JOIN jobs j ON j.job_id = a.job_id
+    WHERE a.application_id = CAST(:app_id AS uuid)
+      AND j.tenant_id = CAST(:tid AS uuid)
+"""
+
+
+def _resolve_recipient(app_row: dict, explicit_override: str | None = None) -> str | None:
+    """Return the best available recipient email using the canonical fallback chain."""
+    return (
+        explicit_override
+        or app_row.get("preferred_contact_email")
+        or app_row.get("confirmation_email_recipient")
+        or app_row.get("candidate_email")
+        or app_row.get("candidate_email_from_cv")
+        or app_row.get("email_sender_address")
+    ) or None
 
 
 # ── Template Endpoints ─────────────────────────────────────────────────────────
@@ -265,7 +297,6 @@ async def list_communications(
     """List communication history for a candidate application."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Verify application belongs to this tenant
     app_check = await db.execute(
         text("""
             SELECT a.application_id FROM applications a
@@ -282,7 +313,7 @@ async def list_communications(
         text("""
             SELECT
                 c.communication_id, c.channel, c.direction, c.subject,
-                c.body, c.status, c.error_message, c.created_at,
+                c.body, c.status, c.error_message, c.candidate_email, c.created_at,
                 t.name AS template_name, t.category AS template_category,
                 COALESCE(u.full_name, u.email) AS created_by_name
             FROM candidate_communications c
@@ -311,26 +342,19 @@ async def log_communication(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Log a drafted/simulated communication for a candidate. Does NOT send email."""
+    """Log a drafted/simulated communication. Does NOT send email. Draft saving allowed without email."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Fetch application info to get candidate details and verify tenant
-    app_check = await db.execute(
-        text("""
-            SELECT a.application_id, a.candidate_name, a.candidate_email
-            FROM applications a
-            JOIN jobs j ON j.job_id = a.job_id
-            WHERE a.application_id = CAST(:app_id AS uuid)
-              AND j.tenant_id = CAST(:tid AS uuid)
-        """),
-        {"app_id": application_id, "tid": current_user.tenant_id},
-    )
+    app_check = await db.execute(text(_APP_EMAIL_QUERY), {"app_id": application_id, "tid": current_user.tenant_id})
     app_row = app_check.mappings().first()
     if not app_row:
         raise HTTPException(status_code=404, detail="Application not found")
 
     if body.status not in ("draft", "logged"):
         body.status = "draft"
+
+    # Cache the resolved email (may be NULL — drafts are allowed without email)
+    cached_email = _resolve_recipient(dict(app_row))
 
     result = await db.execute(
         text("""
@@ -346,7 +370,7 @@ async def log_communication(
         {
             "tid": current_user.tenant_id,
             "app_id": application_id,
-            "candidate_email": app_row["candidate_email"],
+            "candidate_email": cached_email,
             "candidate_name": app_row["candidate_name"],
             "subject": body.subject,
             "body": body.body,
@@ -371,43 +395,30 @@ async def send_email_to_candidate(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Send an email to a candidate and log as sent in communication history."""
+    """Send an email to a candidate using the preferred contact fallback chain."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Fetch application info to get candidate details and verify tenant
-    app_check = await db.execute(
-        text("""
-            SELECT a.application_id, a.candidate_name, a.candidate_email
-            FROM applications a
-            JOIN jobs j ON j.job_id = a.job_id
-            WHERE a.application_id = CAST(:app_id AS uuid)
-              AND j.tenant_id = CAST(:tid AS uuid)
-        """),
-        {"app_id": application_id, "tid": current_user.tenant_id},
-    )
+    app_check = await db.execute(text(_APP_EMAIL_QUERY), {"app_id": application_id, "tid": current_user.tenant_id})
     app_row = app_check.mappings().first()
     if not app_row:
         raise HTTPException(status_code=404, detail="Application not found")
 
-    # Determine recipient email
-    to_email = body.to_email or app_row["candidate_email"]
+    # Resolve recipient: explicit override → preferred_contact_email → fallback chain
+    to_email = _resolve_recipient(dict(app_row), explicit_override=body.to_email)
     if not to_email:
-        raise HTTPException(status_code=400, detail="Candidate email address is missing")
+        raise HTTPException(status_code=400, detail="Candidate email address is missing. Set a preferred contact email or provide a recipient override.")
 
-    # Build plain text version from HTML (simple strip-tags fallback)
-    text_body = body.body.replace("<br/>", "\n").replace("<br>", "\n").replace("<p>", "").replace("</p>", "\n")
-    text_body = re.sub(r"<[^>]+>", "", text_body).strip()
+    text_body = _strip_html(body.body)
 
-    # Try to send the email
     error_message: str | None = None
     try:
         await _send(to_email, body.subject, body.body, text_body)
-        status = "sent"
+        comm_status = "sent"
     except Exception as e:
-        status = "failed"
+        comm_status = "failed"
         error_message = str(e)
 
-    # Create communication record
+    # Store actual to_email used (not candidate_email from application — the real recipient)
     result = await db.execute(
         text("""
             INSERT INTO candidate_communications
@@ -422,11 +433,11 @@ async def send_email_to_candidate(
         {
             "tid": current_user.tenant_id,
             "app_id": application_id,
-            "candidate_email": app_row["candidate_email"],
+            "candidate_email": to_email,
             "candidate_name": app_row["candidate_name"],
             "subject": body.subject,
             "body": body.body,
-            "status": status,
+            "status": comm_status,
             "error_message": error_message,
             "template_id": body.template_id,
             "uid": current_user.user_id,
@@ -435,11 +446,9 @@ async def send_email_to_candidate(
     row = result.mappings().first()
     await db.commit()
 
-    # If send failed, return error to client
-    if status == "failed":
+    if comm_status == "failed":
         raise HTTPException(status_code=500, detail=f"Email send failed: {error_message}")
 
-    # Return success response
     r = dict(row)
     r["communication_id"] = str(r["communication_id"])
     r["created_at"] = r["created_at"].isoformat() if r["created_at"] else None
@@ -482,6 +491,60 @@ async def _verify_comm_ownership(
             detail=f"This action is only allowed on {' or '.join(allowed_statuses)} communications",
         )
     return dict(comm)
+
+
+@comm_router.patch("/{application_id}/preferred-contact")
+async def update_preferred_contact(
+    application_id: str,
+    body: PreferredContactUpdate,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Set or update the preferred contact email for a candidate application."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    if body.preferred_contact_email:
+        email = body.preferred_contact_email.strip().lower()
+        if not _EMAIL_RE.match(email):
+            raise HTTPException(status_code=400, detail="Invalid email format")
+        body.preferred_contact_email = email
+
+    check = await db.execute(
+        text("""
+            SELECT a.application_id FROM applications a
+            JOIN jobs j ON j.job_id = a.job_id
+            WHERE a.application_id = CAST(:app_id AS uuid)
+              AND j.tenant_id = CAST(:tid AS uuid)
+        """),
+        {"app_id": application_id, "tid": current_user.tenant_id},
+    )
+    if not check.scalars().first():
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    result = await db.execute(
+        text("""
+            UPDATE applications SET
+                preferred_contact_email = :email,
+                preferred_contact_source = :source,
+                preferred_contact_locked = :locked
+            WHERE application_id = CAST(:app_id AS uuid)
+            RETURNING preferred_contact_email, preferred_contact_source, preferred_contact_locked
+        """),
+        {
+            "app_id": application_id,
+            "email": body.preferred_contact_email,
+            "source": body.preferred_contact_source,
+            "locked": body.preferred_contact_locked,
+        },
+    )
+    row = result.mappings().first()
+    await db.commit()
+
+    return {
+        "preferred_contact_email": row["preferred_contact_email"],
+        "preferred_contact_source": row["preferred_contact_source"],
+        "preferred_contact_locked": bool(row["preferred_contact_locked"]),
+    }
 
 
 @comm_router.patch("/{application_id}/communications/{communication_id}")
@@ -541,7 +604,7 @@ async def send_existing_communication(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Send an existing draft or failed communication. Updates the record in-place — no duplicate created."""
+    """Send an existing draft or failed communication. Updates in-place — no duplicate created."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     comm = await _verify_comm_ownership(
@@ -549,9 +612,16 @@ async def send_existing_communication(
         allowed_statuses=["draft", "failed"],
     )
 
+    # Use stored candidate_email; if NULL (old drafts without email), resolve from application
     to_email = comm["candidate_email"]
     if not to_email:
-        raise HTTPException(status_code=400, detail="Candidate email address is missing")
+        app_check = await db.execute(text(_APP_EMAIL_QUERY), {"app_id": application_id, "tid": current_user.tenant_id})
+        app_row = app_check.mappings().first()
+        if app_row:
+            to_email = _resolve_recipient(dict(app_row))
+
+    if not to_email:
+        raise HTTPException(status_code=400, detail="Candidate email address is missing. Set a preferred contact email first.")
 
     subject = comm["subject"] or "(no subject)"
     html_body = comm["body"] or ""
@@ -565,14 +635,15 @@ async def send_existing_communication(
         new_status = "failed"
         error_message = str(e)
 
+    # Update status and store the actual to_email used
     result = await db.execute(
         text("""
             UPDATE candidate_communications
-            SET status = :status, error_message = :error_message
+            SET status = :status, error_message = :error_message, candidate_email = :to_email
             WHERE communication_id = CAST(:cid AS uuid)
-            RETURNING communication_id, subject, body, status, error_message, created_at
+            RETURNING communication_id, subject, body, status, error_message, candidate_email, created_at
         """),
-        {"cid": communication_id, "status": new_status, "error_message": error_message},
+        {"cid": communication_id, "status": new_status, "error_message": error_message, "to_email": to_email},
     )
     row = result.mappings().first()
     await db.commit()

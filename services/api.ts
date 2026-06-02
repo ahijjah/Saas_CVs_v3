@@ -274,4 +274,12 @@ export class APIService {
   async deleteCommunication(applicationId: string, communicationId: string) {
     return apiService.delete(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/communications/${communicationId}`, this.token);
   }
+
+  async updatePreferredContact(applicationId: string, data: {
+    preferred_contact_email?: string | null;
+    preferred_contact_source?: string;
+    preferred_contact_locked?: boolean;
+  }) {
+    return apiService.patch(`${WEBHOOK_CONFIG.COMMUNICATION_BASE_URL}/${applicationId}/preferred-contact`, data, this.token);
+  }
 };

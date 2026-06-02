@@ -78,6 +78,9 @@ interface Candidate {
   assigned_user_name?: string | null;
   assigned_at?: string | null;
   is_talent_pool?: boolean;
+  preferred_contact_email?: string | null;
+  preferred_contact_source?: string | null;
+  preferred_contact_locked?: boolean;
 }
 
 interface Pagination {
@@ -756,6 +759,12 @@ interface AppDetail {
   stopped_reason?: string;
   duplicate_status?: string;
   security_check_status?: string;
+  candidate_email?: string | null;
+  candidate_email_from_cv?: string | null;
+  email_sender_address?: string | null;
+  preferred_contact_email?: string | null;
+  preferred_contact_source?: string | null;
+  preferred_contact_locked?: boolean;
 }
 
 interface CandidateDetailDrawerProps {
@@ -870,10 +879,17 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [savingComm, setSavingComm] = useState(false);
   const [commTemplates, setCommTemplates] = useState<MessageTemplate[]>([]);
   const [showSendConfirm, setShowSendConfirm] = useState(false);
+  const [sendDialogToEmail, setSendDialogToEmail] = useState('');
   // When non-null, we're editing or sending an existing record (not creating a new one)
   const [editingCommId, setEditingCommId] = useState<string | null>(null);
   const [sendingCommId, setSendingCommId] = useState<string | null>(null);
   const [deletingCommId, setDeletingCommId] = useState<string | null>(null);
+  // Preferred contact local state — shadows candidate prop after recruiter saves
+  const [showPrefContactEdit, setShowPrefContactEdit] = useState(false);
+  const [prefContactEmailInput, setPrefContactEmailInput] = useState('');
+  const [prefContactLock, setPrefContactLock] = useState(true);
+  const [savingPrefContact, setSavingPrefContact] = useState(false);
+  const [localPreferred, setLocalPreferred] = useState<{ email: string | null; source: string | null; locked: boolean } | null>(null);
 
   // Must come before any early return — Rules of Hooks
 
@@ -1037,6 +1053,10 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setEditingCommId(null);
     setSendingCommId(null);
     setDeletingCommId(null);
+    setShowPrefContactEdit(false);
+    setPrefContactEmailInput('');
+    setPrefContactLock(true);
+    setLocalPreferred(null);
     setShowTagCreator(false);
     setNewTagName('');
     setShowReuseModal(false);
@@ -2074,8 +2094,106 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
         )}
 
         {/* Communication Tab */}
-        {activeTab === 'communication' && (
+        {activeTab === 'communication' && (() => {
+          // Effective preferred contact: local state takes precedence over candidate prop (updated after save)
+          const effectivePreferred = localPreferred ?? {
+            email: candidate.preferred_contact_email ?? null,
+            source: candidate.preferred_contact_source ?? null,
+            locked: candidate.preferred_contact_locked ?? false,
+          };
+          const sourceLabels: Record<string, string> = {
+            manual_upload: 'Manual Upload', email_forwarding: 'Email Fwd',
+            platform_email: 'Platform Email', public_apply: 'Application',
+            cv_extracted: 'CV Extracted', email_sender: 'Email Sender',
+            manual_override: 'Manual',
+          };
+          return (
           <div className="px-6 py-4 space-y-4">
+            {/* Preferred Contact Email block */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Preferred Contact Email</p>
+                <button
+                  onClick={() => { setPrefContactEmailInput(effectivePreferred.email || ''); setPrefContactLock(effectivePreferred.locked); setShowPrefContactEdit(v => !v); }}
+                  className="text-xs text-indigo-600 hover:underline"
+                >
+                  {showPrefContactEdit ? 'Cancel' : 'Edit'}
+                </button>
+              </div>
+              {!showPrefContactEdit && (
+                effectivePreferred.email ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium text-slate-800 break-all">{effectivePreferred.email}</p>
+                    {effectivePreferred.source && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700">
+                        {sourceLabels[effectivePreferred.source] || effectivePreferred.source}
+                      </span>
+                    )}
+                    {effectivePreferred.locked && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-700">Locked</span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <p className="text-xs text-amber-700">No candidate email available. Enter a recipient email manually before sending, or set a preferred contact email.</p>
+                  </div>
+                )
+              )}
+              {showPrefContactEdit && (
+                <div className="space-y-2 mt-2">
+                  <input
+                    type="email"
+                    value={prefContactEmailInput}
+                    onChange={e => setPrefContactEmailInput(e.target.value)}
+                    placeholder="email@example.com"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  />
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={prefContactLock}
+                      onChange={e => setPrefContactLock(e.target.checked)}
+                      className="rounded border-slate-300 text-indigo-600"
+                    />
+                    <span className="text-xs text-slate-600">Lock as preferred contact (prevent automatic updates)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        if (savingPrefContact) return;
+                        setSavingPrefContact(true);
+                        try {
+                          const api = new APIService(token);
+                          const result = await api.updatePreferredContact(candidate.application_id, {
+                            preferred_contact_email: prefContactEmailInput.trim() || null,
+                            preferred_contact_source: 'manual_override',
+                            preferred_contact_locked: prefContactLock,
+                          });
+                          setLocalPreferred({ email: result.preferred_contact_email, source: result.preferred_contact_source, locked: result.preferred_contact_locked });
+                          setShowPrefContactEdit(false);
+                          addToast('Preferred contact email updated.', 'success');
+                        } catch (err: any) {
+                          addToast(err.message || 'Failed to update contact email.', 'error');
+                        } finally {
+                          setSavingPrefContact(false);
+                        }
+                      }}
+                      disabled={savingPrefContact}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50"
+                    >
+                      {savingPrefContact ? '…' : 'Save'}
+                    </button>
+                    <button onClick={() => setShowPrefContactEdit(false)} className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* New communication button */}
             {!showCommForm && (
               <button
@@ -2147,7 +2265,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => setShowSendConfirm(true)}
+                    onClick={() => { setSendDialogToEmail(effectivePreferred.email || ''); setShowSendConfirm(true); }}
                     disabled={savingComm || (!commForm.subject && !commForm.body) || !candidate}
                     className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
                   >
@@ -2241,14 +2359,23 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-lg">
                   <h3 className="font-bold text-lg mb-4">Send Email to {candidate.candidate_name}</h3>
-                  <div className="bg-slate-50 rounded-lg p-4 mb-4 space-y-2">
+                  <div className="bg-slate-50 rounded-lg p-4 mb-4 space-y-3">
                     <div>
-                      <p className="text-xs font-semibold text-slate-500 uppercase">To</p>
-                      <p className="text-sm text-slate-800 break-all">{candidate.candidate_email || '(no email)'}</p>
+                      <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">To</label>
+                      <input
+                        type="email"
+                        value={sendDialogToEmail}
+                        onChange={e => setSendDialogToEmail(e.target.value)}
+                        placeholder="recipient@example.com"
+                        className={`w-full border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 ${!sendDialogToEmail ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}
+                      />
+                      {!sendDialogToEmail && (
+                        <p className="text-xs text-amber-600 mt-1">Enter a recipient email to send.</p>
+                      )}
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-slate-500 uppercase">Subject</p>
-                      <p className="text-sm text-slate-800">{commForm.subject || '(no subject)'}</p>
+                      <p className="text-sm text-slate-800">{(sendingCommId ? communications.find(c => c.communication_id === sendingCommId)?.subject : commForm.subject) || '(no subject)'}</p>
                     </div>
                   </div>
                   <p className="text-xs text-slate-500 mb-4">This email will be sent immediately and recorded in the communication history.</p>
@@ -2261,7 +2388,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                     </button>
                     <button
                       onClick={async () => {
-                        if (savingComm || !candidate) return;
+                        if (savingComm || !candidate || !sendDialogToEmail.trim()) return;
                         setSavingComm(true);
                         try {
                           const api = new APIService(token);
@@ -2270,16 +2397,15 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                             const updated = await api.sendExistingCommunication(candidate.application_id, sendingCommId);
                             setCommunications(prev => prev.map(c => c.communication_id === sendingCommId ? { ...c, ...updated } : c));
                           } else {
-                            // New send from compose form
+                            // New send from compose form — pass explicit to_email only if it differs from preferred
+                            const toEmailOverride = sendDialogToEmail.trim() !== (effectivePreferred.email || '') ? sendDialogToEmail.trim() : undefined;
                             const result = await api.sendCommunication(candidate.application_id, {
                               subject: commForm.subject,
                               body: commForm.body,
-                              to_email: candidate.candidate_email || undefined,
+                              to_email: toEmailOverride,
                               template_id: commForm.template_id || undefined,
                             });
                             if (editingCommId) {
-                              // We were editing a draft and chose "Send Email" — the draft was replaced by sending
-                              // Remove the old draft, the send endpoint created a new record
                               setCommunications(prev => [result, ...prev.filter(c => c.communication_id !== editingCommId)]);
                               setEditingCommId(null);
                             } else {
@@ -2293,7 +2419,6 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                           addToast('Email sent successfully.', 'success');
                         } catch (err: any) {
                           addToast(err.message || 'Failed to send email.', 'error');
-                          // On failure, update the sending record's status to failed in local state
                           if (sendingCommId) {
                             setCommunications(prev => prev.map(c =>
                               c.communication_id === sendingCommId ? { ...c, status: 'failed' } : c
@@ -2303,7 +2428,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                           setSavingComm(false);
                         }
                       }}
-                      disabled={savingComm}
+                      disabled={savingComm || !sendDialogToEmail.trim()}
                       className="flex-1 px-4 py-2 rounded text-sm text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
                     >
                       {savingComm ? 'Sending…' : 'Send'}
@@ -2384,13 +2509,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                           {/* Send / Retry */}
                           <button
                             onClick={() => {
-                              // Load content into form for subject display in confirm dialog
-                              setCommForm({
-                                subject: comm.subject || '',
-                                body: comm.body || '',
-                                template_id: '',
-                              });
                               setSendingCommId(comm.communication_id);
+                              setSendDialogToEmail(comm.candidate_email || effectivePreferred.email || '');
                               setShowSendConfirm(true);
                             }}
                             disabled={deletingCommId === comm.communication_id}
@@ -2429,7 +2549,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Overview Tab */}
         {activeTab === 'overview' && (
@@ -2924,10 +3045,32 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 
           {/* Candidate Contact Information */}
           <div className="space-y-2 text-sm">
-            {candidate.email && (
+            {(candidate.preferred_contact_email || detail?.preferred_contact_email) && (
               <div>
-                <label className="block text-xs font-medium text-slate-500 uppercase">Email</label>
-                <p className="text-slate-700 mt-0.5 break-all">{candidate.email}</p>
+                <label className="block text-xs font-medium text-slate-500 uppercase">Preferred Contact</label>
+                <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                  <p className="text-slate-700 break-all">{candidate.preferred_contact_email || detail?.preferred_contact_email}</p>
+                  {(candidate.preferred_contact_source || detail?.preferred_contact_source) && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-100 text-indigo-700">
+                      {{ manual_upload: 'Manual Upload', email_forwarding: 'Email Fwd', platform_email: 'Platform Email', public_apply: 'Application', cv_extracted: 'CV Extracted', email_sender: 'Email Sender', manual_override: 'Manual' }[candidate.preferred_contact_source || detail?.preferred_contact_source || ''] || (candidate.preferred_contact_source || detail?.preferred_contact_source)}
+                    </span>
+                  )}
+                  {(candidate.preferred_contact_locked || detail?.preferred_contact_locked) && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-700">Locked</span>
+                  )}
+                </div>
+              </div>
+            )}
+            {detail?.candidate_email && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase">Application Email</label>
+                <p className="text-slate-700 mt-0.5 break-all">{detail.candidate_email}</p>
+              </div>
+            )}
+            {detail?.candidate_email_from_cv && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase">CV Extracted Email</label>
+                <p className="text-slate-700 mt-0.5 break-all">{detail.candidate_email_from_cv}</p>
               </div>
             )}
             {candidate.phone && (

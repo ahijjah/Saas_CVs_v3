@@ -334,7 +334,10 @@ async def list_applications(
             j.allow_advanced_workflow_move      AS job_allow_advanced_workflow_move,
             a.assigned_user_id,
             a.assigned_at,
-            COALESCE(au.full_name, au.email)    AS assigned_user_name
+            COALESCE(au.full_name, au.email)    AS assigned_user_name,
+            a.preferred_contact_email,
+            a.preferred_contact_source,
+            a.preferred_contact_locked
         FROM applications a
         JOIN jobs j ON j.job_id = a.job_id
         LEFT JOIN application_scores s ON s.application_id = a.application_id
@@ -380,7 +383,10 @@ async def list_applications(
             "assigned_user_id":   str(r["assigned_user_id"]) if r["assigned_user_id"] else None,
             "assigned_user_name": r["assigned_user_name"],
             "assigned_at":        r["assigned_at"].isoformat() if r["assigned_at"] else None,
-            "is_talent_pool":     bool(r["is_talent_pool"]) if r["is_talent_pool"] is not None else False,
+            "is_talent_pool":           bool(r["is_talent_pool"]) if r["is_talent_pool"] is not None else False,
+            "preferred_contact_email":  r["preferred_contact_email"],
+            "preferred_contact_source": r["preferred_contact_source"],
+            "preferred_contact_locked": bool(r["preferred_contact_locked"]) if r["preferred_contact_locked"] is not None else False,
         })
 
     # Backward compatibility mode: if job_id provided, return array (existing behavior)
@@ -413,6 +419,8 @@ async def get_application_details(
                 a.application_id, a.candidate_name, a.candidate_email,
                 a.candidate_email_from_cv, a.candidate_phone_from_cv,
                 a.email_sender_address,
+                a.preferred_contact_email, a.preferred_contact_source,
+                a.preferred_contact_confidence, a.preferred_contact_locked,
                 a.submitted_by_user_id, a.submitted_by_name, a.submitted_by_email,
                 a.decision, a.submission_source, a.processing_status,
                 a.stopped_reason,
@@ -606,6 +614,10 @@ async def get_application_details(
         "candidate_email_from_cv": app["candidate_email_from_cv"],
         "candidate_phone_from_cv": app["candidate_phone_from_cv"],
         "email_sender_address": app["email_sender_address"],
+        "preferred_contact_email": app["preferred_contact_email"],
+        "preferred_contact_source": app["preferred_contact_source"],
+        "preferred_contact_confidence": float(app["preferred_contact_confidence"]) if app["preferred_contact_confidence"] is not None else None,
+        "preferred_contact_locked": bool(app["preferred_contact_locked"]) if app["preferred_contact_locked"] is not None else False,
         "submitted_by_user_id": str(app["submitted_by_user_id"]) if app["submitted_by_user_id"] else None,
         "submitted_by_name":  app["submitted_by_name"],
         "submitted_by_email": app["submitted_by_email"],

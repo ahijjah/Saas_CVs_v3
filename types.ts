@@ -367,6 +367,10 @@ export interface ApplicationDetailedAnalysis {
   candidate_email_from_cv?: string;
   candidate_phone_from_cv?: string;
   email_sender_address?: string;
+  preferred_contact_email?: string | null;
+  preferred_contact_source?: string | null;
+  preferred_contact_confidence?: number | null;
+  preferred_contact_locked?: boolean;
   submitted_by_user_id?: string | null;
   submitted_by_name?: string | null;
   submitted_by_email?: string | null;
@@ -874,6 +878,7 @@ export interface CandidateCommunication {
   body: string | null;
   status: string;
   error_message?: string | null;
+  candidate_email?: string | null;
   created_at: string;
   template_name: string | null;
   template_category: string | null;
