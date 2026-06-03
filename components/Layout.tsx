@@ -388,27 +388,29 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
         ${isCollapsed ? 'w-20' : 'w-64'}
         ${isSidebarOpen ? 'translate-x-0' : isAr ? 'translate-x-full lg:translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
-        <div className={`flex items-center transition-all duration-300 ${isCollapsed ? 'p-4 justify-center' : 'p-6 justify-between'}`}>
-          <div className={`flex items-center ${isCollapsed ? 'flex-col gap-1' : 'gap-2'}`}>
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-black text-xl flex-shrink-0">C</div>
             {!isCollapsed && <h1 className="text-textMain font-bold text-lg tracking-tight whitespace-nowrap">CV Analyzer</h1>}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center">
+            {/* Desktop collapse/expand button */}
             <button
-              className="hidden lg:p-2 text-textMuted hover:text-textMain transition-colors rounded-lg hover:bg-slate-50"
+              className="hidden lg:flex items-center justify-center p-1.5 text-textMuted hover:text-textMain transition-colors rounded-lg hover:bg-slate-50"
               onClick={() => setIsCollapsed(!isCollapsed)}
               title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               {isCollapsed ? (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                 </svg>
               ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
                 </svg>
               )}
             </button>
+            {/* Mobile close button */}
             <button className="lg:hidden p-2 text-textMuted hover:text-textMain transition-colors" onClick={() => setIsSidebarOpen(false)}>
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
