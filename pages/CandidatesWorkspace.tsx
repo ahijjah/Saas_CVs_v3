@@ -22,7 +22,7 @@
  * with optimistic UI and toast feedback.
  */
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiService, APIService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
@@ -96,6 +96,7 @@ interface SavedViewFilters {
   aiResultFilter?:   string;
   campaignFilter?:   string;
   clientFilter?:     string;
+  jobFilter?:        string;
   search?:           string;
   assignedFilter?:   string;
   tagFilter?:        string[];
@@ -3331,6 +3332,7 @@ function buildApiParams(
   aiResultFilter: string,
   campaignFilter: string,
   clientFilter: string,
+  jobFilter: string,
   search: string,
   assignedFilter: string,
   page: number,
@@ -3359,6 +3361,7 @@ function buildApiParams(
   if (workflowFilter)   p.workflow_status = workflowFilter;
   if (processingFilter) p.processing_status = processingFilter;
   if (aiResultFilter)   p.ai_decision = aiResultFilter === 'rejected_low_match' ? 'rejected' : aiResultFilter;
+  if (jobFilter)        p.job_id = jobFilter;
   if (campaignFilter)   p.campaign_id = campaignFilter;
   if (clientFilter)     p.client_organization_id = clientFilter;
   if (search.trim())    p.search = search.trim();
@@ -3392,6 +3395,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const initialAiResult = searchParams.get('ai_decision') || '';
   const initialCampaign = searchParams.get('campaign_id') || '';
   const initialClient = searchParams.get('client_organization_id') || '';
+  const initialJob = searchParams.get('job_id') || '';
   const initialSearch = searchParams.get('search') || '';
   const initialPage = parseInt(searchParams.get('page') || '1', 10);
   const initialAppId = searchParams.get('app_id') || '';
@@ -3404,6 +3408,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [aiResultFilter, setAiResultFilter] = useState(initialAiResult);
   const [campaignFilter, setCampaignFilter] = useState(initialCampaign);
   const [clientFilter, setClientFilter] = useState(initialClient);
+  const [jobFilter, setJobFilter] = useState(initialJob);
   const [search, setSearch] = useState(initialSearch);
   const [assignedFilter, setAssignedFilter] = useState(searchParams.get('assigned_to') || '');
   const [page, setPage] = useState(initialPage);
@@ -3562,16 +3567,31 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       .catch(() => {}); // non-critical
   }, [auth.token]);
 
-  // Load available jobs for reuse candidate modal
+  // Load available jobs (reuse modal + Job filter dropdown)
   useEffect(() => {
     if (!auth.token) return;
-    apiService.get(WEBHOOK_CONFIG.JOBS_URL, {}, auth.token)
+    apiService.get(WEBHOOK_CONFIG.GET_JOBS_WEBHOOK_URL, {}, auth.token)
       .then((data: any) => {
         if (Array.isArray(data)) setAvailableJobs(data);
         else if (data?.jobs) setAvailableJobs(data.jobs);
       })
       .catch(() => {});
   }, [auth.token]);
+
+  // Job options filtered by currently selected campaign/client
+  const jobOptions = useMemo(() => {
+    return availableJobs.filter((j: any) =>
+      (!clientFilter || j.client_organization_id === clientFilter) &&
+      (!campaignFilter || j.campaign_id === campaignFilter)
+    );
+  }, [availableJobs, clientFilter, campaignFilter]);
+
+  // Reset job filter when it no longer belongs to the selected campaign/client
+  useEffect(() => {
+    if (jobFilter && !jobOptions.some((j: any) => j.job_id === jobFilter)) {
+      setJobFilter('');
+    }
+  }, [jobOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleApplySavedView = (view: SavedView) => {
     const f = view.filters;
@@ -3581,6 +3601,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setAiResultFilter(f.aiResultFilter || '');
     setCampaignFilter(f.campaignFilter || '');
     setClientFilter(f.clientFilter || '');
+    setJobFilter(f.jobFilter || '');
     setSearch(f.search || '');
     setDebouncedSearch(f.search || '');
     setAssignedFilter(f.assignedFilter || '');
@@ -3603,6 +3624,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       if (aiResultFilter)   filters.aiResultFilter   = aiResultFilter;
       if (campaignFilter)   filters.campaignFilter   = campaignFilter;
       if (clientFilter)     filters.clientFilter     = clientFilter;
+      if (jobFilter)        filters.jobFilter        = jobFilter;
       if (debouncedSearch)  filters.search           = debouncedSearch;
       if (assignedFilter)   filters.assignedFilter   = assignedFilter;
       if (tagFilter.length > 0) filters.tagFilter = tagFilter;
@@ -3993,6 +4015,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (aiResultFilter)           p.ai_decision = aiResultFilter;
     if (campaignFilter)           p.campaign_id = campaignFilter;
     if (clientFilter)             p.client_organization_id = clientFilter;
+    if (jobFilter)                p.job_id = jobFilter;
     if (debouncedSearch)          p.search = debouncedSearch;
     if (assignedFilter)           p.assigned_to = assignedFilter;
     if (page > 1)                 p.page = String(page);
@@ -4000,7 +4023,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (tagFilter.length > 0)     p.tags = tagFilter.join(',');
     if (talentPoolOnly)           p.talent_pool = 'true';
     setSearchParams(p, { replace: true });
-  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, selectedAppId, tagFilter, talentPoolOnly, setSearchParams]);
+  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, selectedAppId, tagFilter, talentPoolOnly, setSearchParams]);
 
   // Debounce search field
   const handleSearchChange = (value: string) => {
@@ -4017,7 +4040,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (!auth.token) return;
     setLoading(true);
     try {
-      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly);
+      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly);
       const data = await apiService.get(WEBHOOK_CONFIG.CANDIDATES_SEARCH_URL, params, auth.token);
       // Tenant-wide mode returns { candidates, pagination }
       if (data && typeof data === 'object' && Array.isArray(data.candidates)) {
@@ -4039,7 +4062,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       setLoading(false);
     }
   // addToast intentionally omitted — using ref to avoid infinite loop
-  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchCandidates();
@@ -4069,6 +4092,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setAiResultFilter('');
     setCampaignFilter('');
     setClientFilter('');
+    setJobFilter('');
     setSearch('');
     setDebouncedSearch('');
     setAssignedFilter('');
@@ -4078,7 +4102,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     clearSelection();
   };
 
-  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || debouncedSearch || assignedFilter || tagFilter.length > 0 || talentPoolOnly;
+  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || jobFilter || debouncedSearch || assignedFilter || tagFilter.length > 0 || talentPoolOnly;
 
   const openCandidate = (c: Candidate) => {
     setSelectedAppId(c.application_id);
@@ -4370,6 +4394,21 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
             ))}
           </select>
         )}
+
+        {/* Job filter */}
+        <select
+          value={jobFilter}
+          onChange={e => { setJobFilter(e.target.value); setPage(1); }}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50"
+          disabled={availableJobs.length === 0}
+        >
+          <option value="">{lang === 'ar' ? 'كل الوظائف' : 'All Jobs'}</option>
+          {jobOptions.map((j: any) => (
+            <option key={j.job_id} value={j.job_id}>
+              {j.job_title}{j.job_code ? ` (${j.job_code})` : ''}
+            </option>
+          ))}
+        </select>
 
         {/* Assigned filter */}
         <select
