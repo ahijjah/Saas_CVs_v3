@@ -90,24 +90,38 @@ _APP_EMAIL_QUERY = """
     SELECT a.application_id, a.candidate_name,
            a.candidate_email, a.candidate_email_from_cv,
            a.email_sender_address, a.confirmation_email_recipient,
-           a.preferred_contact_email, a.preferred_contact_locked
+           a.preferred_contact_email, a.preferred_contact_locked,
+           a.submission_source
     FROM applications a
     JOIN jobs j ON j.job_id = a.job_id
     WHERE a.application_id = CAST(:app_id AS uuid)
       AND j.tenant_id = CAST(:tid AS uuid)
 """
 
+# Intake methods where submission email belongs to a recruiter/forwarder, not the candidate.
+_FORWARDER_INTAKE_SOURCES = {"email_forwarding", "platform_email", "manual_upload"}
+
 
 def _resolve_recipient(app_row: dict, explicit_override: str | None = None) -> str | None:
-    """Return the best available recipient email using the canonical fallback chain."""
-    return (
-        explicit_override
-        or app_row.get("preferred_contact_email")
-        or app_row.get("confirmation_email_recipient")
-        or app_row.get("candidate_email")
-        or app_row.get("candidate_email_from_cv")
-        or app_row.get("email_sender_address")
-    ) or None
+    """Return the best available recipient email using the canonical fallback chain.
+
+    For forwarded/platform_email/manual_upload intake, the CV-extracted email is the
+    candidate's own address and is preferred over the submission email, which may belong
+    to a recruiter or email forwarder, not the actual candidate.
+    """
+    preferred  = app_row.get("preferred_contact_email")
+    confirm    = app_row.get("confirmation_email_recipient")
+    cv_email   = app_row.get("candidate_email_from_cv")
+    sub_email  = app_row.get("candidate_email")
+    sender     = app_row.get("email_sender_address")
+    source     = app_row.get("submission_source") or ""
+
+    if source in _FORWARDER_INTAKE_SOURCES:
+        # submission email may be a recruiter/forwarder — prefer CV-extracted address
+        return (explicit_override or preferred or confirm or cv_email or sub_email) or None
+
+    # public_apply: submission email is the candidate's own address
+    return (explicit_override or preferred or confirm or sub_email or cv_email or sender) or None
 
 
 # ── Template Endpoints ─────────────────────────────────────────────────────────

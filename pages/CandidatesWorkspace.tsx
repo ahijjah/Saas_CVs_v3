@@ -844,6 +844,7 @@ interface AppDetail {
   email_sender_address?: string | null;
   preferred_contact_email?: string | null;
   preferred_contact_source?: string | null;
+  submission_source?: string | null;
   communications?: CandidateCommunication[];
 }
 
@@ -2205,10 +2206,33 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 
         {/* Communication Tab */}
         {activeTab === 'communication' && (() => {
-          // Effective preferred contact: local state takes precedence over candidate prop (updated after save)
+          // Resolve the best candidate email from detail when no preferred contact is manually set.
+          // For forwarded/platform/manual intake the submission email may belong to a recruiter —
+          // prefer the CV-extracted email instead. For public apply, submission email is the candidate.
+          const forwarderIntake = (
+            detail?.submission_source === 'email_forwarding' ||
+            detail?.submission_source === 'platform_email' ||
+            detail?.submission_source === 'manual_upload'
+          );
+          const resolvedFromDetail: { email: string | null; source: string | null } = (() => {
+            if (!detail) return { email: null, source: null };
+            if (forwarderIntake) {
+              if (detail.candidate_email_from_cv)
+                return { email: detail.candidate_email_from_cv, source: 'cv_extracted' };
+              return { email: null, source: null };
+            }
+            // public_apply (or unknown): submission email is the candidate's own address
+            if (detail.candidate_email)
+              return { email: detail.candidate_email, source: detail.submission_source || null };
+            if (detail.candidate_email_from_cv)
+              return { email: detail.candidate_email_from_cv, source: 'cv_extracted' };
+            return { email: null, source: null };
+          })();
+
+          // Effective preferred contact: local state → DB preferred → resolved from intake
           const effectivePreferred = localPreferred ?? {
-            email: candidate.preferred_contact_email ?? null,
-            source: candidate.preferred_contact_source ?? null,
+            email: candidate.preferred_contact_email ?? resolvedFromDetail.email,
+            source: candidate.preferred_contact_source ?? resolvedFromDetail.source,
           };
           const sourceLabels: Record<string, string> = {
             manual_upload: 'Manual Upload', email_forwarding: 'Email Fwd',
