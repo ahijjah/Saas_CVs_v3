@@ -483,10 +483,13 @@ export interface PassingCriteria {
 
 /** Knockout answer with question metadata — returned in application detail API. */
 export interface KnockoutAnswerRecord {
-  answer_id: string;
+  answer_id?: string | null;
   question_id: string;
-  answer_value: string;
-  is_disqualifying: boolean;
+  answer_value?: string | null;
+  is_disqualifying?: boolean | null;
+  answer_source?: string | null;
+  updated_at?: string | null;
+  updated_by_name?: string | null;
   question_text: string;
   question_type: 'yes_no' | 'single_choice' | 'number';
   is_required: boolean;

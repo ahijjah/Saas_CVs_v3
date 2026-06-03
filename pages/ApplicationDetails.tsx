@@ -179,6 +179,15 @@ const T = {
     knockoutNotEvaluated: 'Not Evaluated',
     knockoutCriteriaPass: (op: string, val: string) => `Pass if answer is ${op} ${val}`,
     knockoutCriteriaAnswers: (answers: string[]) => `Must answer: ${answers.join(' or ')}`,
+    knockoutNotAnswered: 'Not Answered',
+    knockoutSource: 'Source',
+    knockoutSourceCandidate: 'Candidate',
+    knockoutSourceRecruiter: 'Recruiter Entered',
+    knockoutSourceAI: 'AI Extracted',
+    knockoutEditAnswer: 'Edit',
+    knockoutSaveAnswer: 'Save',
+    knockoutCancelEdit: 'Cancel',
+    knockoutEditPlaceholder: 'Enter answer',
     securityDetectedStatements: 'Detected Suspicious Statements',
     securitySnippetsNote: 'Short excerpts shown for reviewer context. Full CV content is not displayed here.',
     securityPatternLabels: {
@@ -360,6 +369,15 @@ const T = {
     knockoutNotEvaluated: 'غير مُقيَّم',
     knockoutCriteriaPass: (op: string, val: string) => `ينجح إذا كانت الإجابة ${op} ${val}`,
     knockoutCriteriaAnswers: (answers: string[]) => `يجب الإجابة بـ: ${answers.join(' أو ')}`,
+    knockoutNotAnswered: 'لم تُجب',
+    knockoutSource: 'المصدر',
+    knockoutSourceCandidate: 'المتقدم',
+    knockoutSourceRecruiter: 'أدخله المسؤول',
+    knockoutSourceAI: 'مستخرج بالذكاء الاصطناعي',
+    knockoutEditAnswer: 'تعديل',
+    knockoutSaveAnswer: 'حفظ',
+    knockoutCancelEdit: 'إلغاء',
+    knockoutEditPlaceholder: 'أدخل الإجابة',
     securityDetectedStatements: 'العبارات المشبوهة المكتشفة',
     securitySnippetsNote: 'مقاطع قصيرة تُعرض لأغراض المراجعة. لا يُعرض النص الكامل للسيرة الذاتية هنا.',
     securityPatternLabels: {
@@ -1147,38 +1165,50 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const koAnswers: KnockoutAnswerRecord[] = data.knockout_answers ?? [];
         const kt = t as any;
 
-        type EvalResult = 'passed' | 'failed' | 'no_criteria' | 'not_evaluated';
+        // Local state for inline editing — keyed by question_id
+        const [editingQid, setEditingQid] = React.useState<string | null>(null);
+        const [editingValue, setEditingValue] = React.useState('');
+        const [editingSaving, setEditingSaving] = React.useState(false);
+        // Local answer overrides so the UI reflects saves immediately
+        const [localAnswers, setLocalAnswers] = React.useState<Record<string, string>>({});
 
-        const evaluateAnswer = (qa: KnockoutAnswerRecord): EvalResult => {
+        if (koAnswers.length === 0) return null;
+
+        type EvalResult = 'passed' | 'failed' | 'no_criteria' | 'not_evaluated' | 'not_answered';
+
+        const evaluateAnswer = (qa: KnockoutAnswerRecord, rawVal: string | null | undefined): EvalResult => {
+          if (rawVal == null || rawVal === '') return 'not_answered';
           const pc: PassingCriteria | null | undefined = qa.passing_criteria;
           if (!pc) return 'no_criteria';
-          const raw = qa.answer_value ?? '';
 
           if ((qa.question_type === 'yes_no' || qa.question_type === 'single_choice') && pc.passing_answers?.length) {
-            const match = pc.passing_answers.some(a => a.toLowerCase() === raw.toLowerCase());
+            const match = pc.passing_answers.some(a => a.toLowerCase() === rawVal.toLowerCase());
             return match ? 'passed' : 'failed';
           }
 
           if (qa.question_type === 'number' && pc.operator != null && pc.value != null) {
-            const num = parseFloat(raw);
+            const num = parseFloat(rawVal);
             if (isNaN(num)) return 'not_evaluated';
-            const threshold = pc.value;
             const ops: Record<string, boolean> = {
-              '>=': num >= threshold,
-              '>':  num >  threshold,
-              '=':  num === threshold,
-              '<=': num <= threshold,
-              '<':  num <  threshold,
+              '>=': num >= pc.value,
+              '>':  num >  pc.value,
+              '=':  num === pc.value,
+              '<=': num <= pc.value,
+              '<':  num <  pc.value,
             };
             const result = ops[pc.operator];
-            if (result === undefined) return 'not_evaluated';
-            return result ? 'passed' : 'failed';
+            return result === undefined ? 'not_evaluated' : (result ? 'passed' : 'failed');
           }
 
           return 'not_evaluated';
         };
 
         const evalBadge = (result: EvalResult) => {
+          if (result === 'not_answered') return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-400 italic">
+              {kt.knockoutNotAnswered}
+            </span>
+          );
           if (result === 'passed') return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-700">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
@@ -1215,6 +1245,127 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           return null;
         };
 
+        const sourceLabel = (src: string | null | undefined) => {
+          if (!src || src === 'candidate_provided') return kt.knockoutSourceCandidate;
+          if (src === 'recruiter_entered') return kt.knockoutSourceRecruiter;
+          if (src === 'ai_extracted') return kt.knockoutSourceAI;
+          return src;
+        };
+
+        const handleStartEdit = (qa: KnockoutAnswerRecord) => {
+          const cur = localAnswers[qa.question_id] ?? qa.answer_value ?? '';
+          setEditingQid(qa.question_id);
+          setEditingValue(cur);
+        };
+
+        const handleSaveEdit = async (qa: KnockoutAnswerRecord) => {
+          if (!token) return;
+          setEditingSaving(true);
+          try {
+            const { apiService: api } = await import('../services/api');
+            await api.saveKnockoutAnswer(data.application_id, qa.question_id, editingValue.trim(), token);
+            setLocalAnswers(prev => ({ ...prev, [qa.question_id]: editingValue.trim() }));
+            setEditingQid(null);
+          } catch {
+            // leave edit mode open so user can retry
+          } finally {
+            setEditingSaving(false);
+          }
+        };
+
+        const renderAnswerCell = (qa: KnockoutAnswerRecord) => {
+          const displayVal = localAnswers[qa.question_id] ?? qa.answer_value;
+          const isEditing = editingQid === qa.question_id;
+
+          if (isEditing) {
+            if (qa.question_type === 'yes_no') {
+              return (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex gap-2">
+                    {['yes', 'no'].map(opt => (
+                      <button
+                        key={opt}
+                        onClick={() => setEditingValue(opt)}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold border ${editingValue === opt ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'}`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-1.5 mt-0.5">
+                    <button onClick={() => handleSaveEdit(qa)} disabled={editingSaving} className="px-2.5 py-1 bg-indigo-600 text-white text-[11px] font-semibold rounded-lg disabled:opacity-50">
+                      {kt.knockoutSaveAnswer}
+                    </button>
+                    <button onClick={() => setEditingQid(null)} disabled={editingSaving} className="px-2.5 py-1 bg-slate-100 text-slate-600 text-[11px] font-semibold rounded-lg">
+                      {kt.knockoutCancelEdit}
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+            if (qa.question_type === 'single_choice' && qa.options?.length) {
+              return (
+                <div className="flex flex-col gap-1.5">
+                  <select
+                    value={editingValue}
+                    onChange={e => setEditingValue(e.target.value)}
+                    className="text-sm border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  >
+                    <option value="">—</option>
+                    {qa.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => handleSaveEdit(qa)} disabled={editingSaving} className="px-2.5 py-1 bg-indigo-600 text-white text-[11px] font-semibold rounded-lg disabled:opacity-50">
+                      {kt.knockoutSaveAnswer}
+                    </button>
+                    <button onClick={() => setEditingQid(null)} disabled={editingSaving} className="px-2.5 py-1 bg-slate-100 text-slate-600 text-[11px] font-semibold rounded-lg">
+                      {kt.knockoutCancelEdit}
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+            // number or fallback
+            return (
+              <div className="flex flex-col gap-1.5">
+                <input
+                  type={qa.question_type === 'number' ? 'number' : 'text'}
+                  value={editingValue}
+                  onChange={e => setEditingValue(e.target.value)}
+                  placeholder={kt.knockoutEditPlaceholder}
+                  className="text-sm border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300 w-32"
+                />
+                <div className="flex gap-1.5">
+                  <button onClick={() => handleSaveEdit(qa)} disabled={editingSaving} className="px-2.5 py-1 bg-indigo-600 text-white text-[11px] font-semibold rounded-lg disabled:opacity-50">
+                    {kt.knockoutSaveAnswer}
+                  </button>
+                  <button onClick={() => setEditingQid(null)} disabled={editingSaving} className="px-2.5 py-1 bg-slate-100 text-slate-600 text-[11px] font-semibold rounded-lg">
+                    {kt.knockoutCancelEdit}
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="flex items-start gap-2">
+              {displayVal != null && displayVal !== '' ? (
+                <p className="text-sm font-semibold text-textMain capitalize">{displayVal}</p>
+              ) : (
+                <p className="text-sm text-slate-400 italic">{kt.knockoutNotAnswered}</p>
+              )}
+              {token && (
+                <button
+                  onClick={() => handleStartEdit(qa)}
+                  className="ml-auto flex-shrink-0 text-[10px] text-indigo-500 hover:text-indigo-700 font-semibold underline"
+                >
+                  {kt.knockoutEditAnswer}
+                </button>
+              )}
+            </div>
+          );
+        };
+
         return (
           <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
             <div className="px-6 py-3 border-b border-border flex items-center gap-2 bg-slate-50">
@@ -1223,42 +1374,43 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
               </svg>
               <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{kt.knockoutSectionTitle}</h4>
             </div>
-            {koAnswers.length === 0 ? (
-              <p className="px-6 py-4 text-sm text-textMuted italic">{kt.knockoutNoAnswers}</p>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {koAnswers.map((qa, idx) => {
-                  const evalResult = evaluateAnswer(qa);
-                  const criteriaLabel = formatCriteria(qa);
-                  return (
-                    <div key={qa.answer_id} className="px-6 py-4 grid grid-cols-1 md:grid-cols-4 gap-x-8 gap-y-1.5">
-                      <div className="md:col-span-2">
-                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{idx + 1}. {kt.knockoutQuestion}</p>
-                        <p className="text-sm font-medium text-textMain">
-                          {qa.question_text}
-                          {qa.is_required && (
-                            <span className="ml-1.5 px-1.5 py-0.5 bg-slate-100 text-textMuted text-[9px] font-black uppercase rounded">{kt.knockoutRequired}</span>
-                          )}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{kt.knockoutAnswer}</p>
-                        <p className="text-sm font-semibold text-textMain capitalize">{qa.answer_value}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{kt.knockoutPassingCriteria}</p>
-                        {criteriaLabel ? (
-                          <p className="text-sm text-slate-600 mb-1">{criteriaLabel}</p>
-                        ) : (
-                          <p className="text-sm text-slate-400 italic mb-1">—</p>
+            <div className="divide-y divide-slate-100">
+              {koAnswers.map((qa, idx) => {
+                const displayVal = localAnswers[qa.question_id] ?? qa.answer_value;
+                const evalResult = evaluateAnswer(qa, displayVal);
+                const criteriaLabel = formatCriteria(qa);
+                const src = editingQid === qa.question_id ? 'recruiter_entered' : (localAnswers[qa.question_id] != null ? 'recruiter_entered' : qa.answer_source);
+                return (
+                  <div key={qa.question_id} className="px-6 py-4 grid grid-cols-1 md:grid-cols-4 gap-x-8 gap-y-1.5">
+                    <div className="md:col-span-2">
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{idx + 1}. {kt.knockoutQuestion}</p>
+                      <p className="text-sm font-medium text-textMain">
+                        {qa.question_text}
+                        {qa.is_required && (
+                          <span className="ml-1.5 px-1.5 py-0.5 bg-slate-100 text-textMuted text-[9px] font-black uppercase rounded">{kt.knockoutRequired}</span>
                         )}
-                        {evalBadge(evalResult)}
-                      </div>
+                      </p>
+                      {displayVal != null && displayVal !== '' && src && (
+                        <p className="text-[10px] text-slate-400 mt-0.5">{kt.knockoutSource}: {sourceLabel(src)}</p>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{kt.knockoutAnswer}</p>
+                      {renderAnswerCell(qa)}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{kt.knockoutPassingCriteria}</p>
+                      {criteriaLabel ? (
+                        <p className="text-sm text-slate-600 mb-1">{criteriaLabel}</p>
+                      ) : (
+                        <p className="text-sm text-slate-400 italic mb-1">—</p>
+                      )}
+                      {evalBadge(evalResult)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         );
       })()}

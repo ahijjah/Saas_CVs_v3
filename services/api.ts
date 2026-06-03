@@ -122,7 +122,12 @@ export const apiService = {
 
   async requestPasswordReset(email: string) {
     return this.post(WEBHOOK_CONFIG.FORGOT_PASSWORD_WEBHOOK_URL, { email });
-  }
+  },
+
+  async saveKnockoutAnswer(applicationId: string, questionId: string, answerValue: string, token?: string) {
+    const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANSWERS_BASE_URL}/${applicationId}/knockout-answers`;
+    return this.patch(url, { question_id: questionId, answer_value: answerValue }, token);
+  },
 };
 
 export class APIService {

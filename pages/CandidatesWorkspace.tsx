@@ -31,7 +31,6 @@ import {
   CandidateInterview, InterviewFeedback, CandidateApproval, CandidateTag,
   MessageTemplate, CandidateCommunication,
 } from '../types';
-import { APIService } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import {
@@ -361,6 +360,27 @@ const T = {
       talent_pool: 'Talent Pool',
       general: 'General',
     } as Record<string, string>,
+    // Screening tab
+    screeningTab: 'Screening',
+    screeningNoQuestions: 'No knockout questions configured for this job.',
+    knockoutNotAnswered: 'Not Answered',
+    knockoutSource: 'Source',
+    knockoutSourceCandidate: 'Candidate',
+    knockoutSourceRecruiter: 'Recruiter Entered',
+    knockoutSourceAI: 'AI Extracted',
+    knockoutEditAnswer: 'Edit',
+    knockoutSaveAnswer: 'Save',
+    knockoutCancelEdit: 'Cancel',
+    knockoutEditPlaceholder: 'Enter answer',
+    knockoutRequired: 'Required',
+    knockoutPassingCriteria: 'Passing Criteria',
+    knockoutPassed: 'Passed',
+    knockoutFailed: 'Failed',
+    knockoutNoCriteria: 'No Criteria',
+    knockoutNotEvaluated: 'Not Evaluated',
+    knockoutAnswer: 'Answer',
+    knockoutCriteriaPass: (op: string, val: string) => `Pass if ${op} ${val}`,
+    knockoutCriteriaAnswers: (answers: string[]) => `Must answer: ${answers.join(' or ')}`,
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -524,6 +544,27 @@ const T = {
       talent_pool: 'مجموعة مواهب',
       general: 'عام',
     } as Record<string, string>,
+    // Screening tab
+    screeningTab: 'الفرز',
+    screeningNoQuestions: 'لا توجد أسئلة فرز مسبق لهذه الوظيفة.',
+    knockoutNotAnswered: 'لم تُجب',
+    knockoutSource: 'المصدر',
+    knockoutSourceCandidate: 'المتقدم',
+    knockoutSourceRecruiter: 'أدخله المسؤول',
+    knockoutSourceAI: 'مستخرج بالذكاء الاصطناعي',
+    knockoutEditAnswer: 'تعديل',
+    knockoutSaveAnswer: 'حفظ',
+    knockoutCancelEdit: 'إلغاء',
+    knockoutEditPlaceholder: 'أدخل الإجابة',
+    knockoutRequired: 'إلزامي',
+    knockoutPassingCriteria: 'معايير الاجتياز',
+    knockoutPassed: 'اجتاز',
+    knockoutFailed: 'لم يجتز',
+    knockoutNoCriteria: 'لا معايير',
+    knockoutNotEvaluated: 'غير مُقيَّم',
+    knockoutAnswer: 'الإجابة',
+    knockoutCriteriaPass: (op: string, val: string) => `ينجح إذا ${op} ${val}`,
+    knockoutCriteriaAnswers: (answers: string[]) => `يجب الإجابة بـ: ${answers.join(' أو ')}`,
   },
 };
 
@@ -847,6 +888,8 @@ interface AppDetail {
   preferred_contact_source?: string | null;
   submission_source?: string | null;
   communications?: CandidateCommunication[];
+  knockout_answers?: import('../types').KnockoutAnswerRecord[];
+  job_id?: string;
 }
 
 interface CandidateDetailDrawerProps {
@@ -900,7 +943,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const detailForRef = useRef<string | null>(null);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'overview' | 'discussion' | 'interviews' | 'approvals' | 'communication'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'discussion' | 'interviews' | 'approvals' | 'communication' | 'screening'>('overview');
   const [comments, setComments] = useState<CandidateComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
@@ -1571,6 +1614,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           <div className="border-b border-slate-200 px-6 flex gap-1 overflow-x-auto">
           {([
             { key: 'overview', label: 'Overview', badge: null },
+            { key: 'screening', label: t.screeningTab, badge: (detail?.knockout_answers?.length ?? 0) > 0 ? detail!.knockout_answers!.length : null },
             { key: 'interviews', label: t.interviews, badge: interviews.length > 0 ? interviews.length : null },
             { key: 'approvals', label: t.approvalsTab, badge: approvals.length > 0 ? approvals.length : null },
             { key: 'discussion', label: t.discussion, badge: comments.length > 0 ? comments.length : null },
@@ -2711,6 +2755,106 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           </div>
           );
         })()}
+
+        {/* Screening Tab */}
+        {activeTab === 'screening' && (
+          <div className="px-6 py-4">
+            {detailLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 py-6">
+                <span className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin inline-block" />
+                Loading…
+              </div>
+            ) : (() => {
+              const koAnswers = detail?.knockout_answers ?? [];
+              if (koAnswers.length === 0) {
+                return <p className="text-sm text-slate-400 italic py-4">{t.screeningNoQuestions}</p>;
+              }
+
+              type EvalResult = 'passed' | 'failed' | 'no_criteria' | 'not_evaluated' | 'not_answered';
+
+              const evaluateAnswer = (qa: import('../types').KnockoutAnswerRecord, rawVal: string | null | undefined): EvalResult => {
+                if (rawVal == null || rawVal === '') return 'not_answered';
+                const pc = qa.passing_criteria;
+                if (!pc) return 'no_criteria';
+                if ((qa.question_type === 'yes_no' || qa.question_type === 'single_choice') && pc.passing_answers?.length) {
+                  return pc.passing_answers.some(a => a.toLowerCase() === rawVal.toLowerCase()) ? 'passed' : 'failed';
+                }
+                if (qa.question_type === 'number' && pc.operator != null && pc.value != null) {
+                  const num = parseFloat(rawVal);
+                  if (isNaN(num)) return 'not_evaluated';
+                  const ops: Record<string, boolean> = { '>=': num >= pc.value!, '>': num > pc.value!, '=': num === pc.value!, '<=': num <= pc.value!, '<': num < pc.value! };
+                  const r = ops[pc.operator!];
+                  return r === undefined ? 'not_evaluated' : (r ? 'passed' : 'failed');
+                }
+                return 'not_evaluated';
+              };
+
+              const evalBadge = (result: EvalResult) => {
+                if (result === 'not_answered') return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-400 italic">{t.knockoutNotAnswered}</span>;
+                if (result === 'passed') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-700"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>{t.knockoutPassed}</span>;
+                if (result === 'failed') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-700"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>{t.knockoutFailed}</span>;
+                if (result === 'no_criteria') return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-500">{t.knockoutNoCriteria}</span>;
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-700">{t.knockoutNotEvaluated}</span>;
+              };
+
+              const formatCriteria = (qa: import('../types').KnockoutAnswerRecord): string | null => {
+                const pc = qa.passing_criteria;
+                if (!pc) return null;
+                if (qa.question_type === 'number' && pc.operator != null && pc.value != null) return t.knockoutCriteriaPass(pc.operator!, String(pc.value));
+                if ((qa.question_type === 'yes_no' || qa.question_type === 'single_choice') && pc.passing_answers?.length) return t.knockoutCriteriaAnswers(pc.passing_answers);
+                return null;
+              };
+
+              const sourceLabel = (src: string | null | undefined) => {
+                if (!src || src === 'candidate_provided') return t.knockoutSourceCandidate;
+                if (src === 'recruiter_entered') return t.knockoutSourceRecruiter;
+                if (src === 'ai_extracted') return t.knockoutSourceAI;
+                return src;
+              };
+
+              return (
+                <div className="divide-y divide-slate-100 -mx-6 px-0">
+                  {koAnswers.map((qa, idx) => {
+                    const displayVal = qa.answer_value;
+                    const evalResult = evaluateAnswer(qa, displayVal);
+                    const criteriaLabel = formatCriteria(qa);
+                    return (
+                      <div key={qa.question_id} className="px-6 py-4 grid grid-cols-1 gap-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{idx + 1}. {qa.question_text}
+                              {qa.is_required && <span className="ml-1.5 px-1 py-0.5 bg-slate-100 text-slate-400 text-[9px] font-black uppercase rounded">{t.knockoutRequired}</span>}
+                            </p>
+                          </div>
+                          <div className="flex-shrink-0">{evalBadge(evalResult)}</div>
+                        </div>
+                        <div className="flex items-center gap-4 flex-wrap">
+                          <div>
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase mr-1">{t.knockoutAnswer}:</span>
+                            {displayVal != null && displayVal !== '' ? (
+                              <span className="text-sm font-semibold text-slate-800 capitalize">{displayVal}</span>
+                            ) : (
+                              <span className="text-sm text-slate-400 italic">{t.knockoutNotAnswered}</span>
+                            )}
+                          </div>
+                          {criteriaLabel && (
+                            <div>
+                              <span className="text-[10px] font-semibold text-slate-400 uppercase mr-1">{t.knockoutPassingCriteria}:</span>
+                              <span className="text-xs text-slate-600">{criteriaLabel}</span>
+                            </div>
+                          )}
+                          {displayVal != null && displayVal !== '' && qa.answer_source && (
+                            <span className="text-[10px] text-slate-400">{t.knockoutSource}: {sourceLabel(qa.answer_source)}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         {/* Overview Tab */}
         {activeTab === 'overview' && (

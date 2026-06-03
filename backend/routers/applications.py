@@ -19,6 +19,7 @@ from services.application_intake_service import (
     process_cv_intake,
 )
 from services.communication_events import process_communication_event
+from services.knockout_questions_service import save_knockout_answers
 from workers.cv_score import score_cv_task
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -69,6 +70,11 @@ class AssignmentRequest(BaseModel):
 class BulkAssignmentRequest(BaseModel):
     application_ids:  list[str]
     assigned_user_id: str | None = None  # None = unassign all
+
+
+class KnockoutAnswerRequest(BaseModel):
+    question_id:  str
+    answer_value: str
 
 
 @router.get("/assignable-users")
@@ -522,33 +528,43 @@ async def get_application_details(
                 "applied_at":     ref["applied_at"].isoformat() if ref["applied_at"] else None,
             }
 
-    # Fetch knockout question answers with question metadata
+    # Fetch all knockout questions for this job, LEFT JOINing answers so unanswered
+    # questions also appear (answer fields will be NULL for those rows).
     ko_rows = await db.execute(
         text("""
             SELECT
                 a.answer_id,
-                a.question_id,
+                q.question_id,
                 a.answer_value,
                 a.is_disqualifying,
+                a.answer_source,
+                a.updated_at   AS answer_updated_at,
+                u.full_name    AS updated_by_name,
                 q.question_text,
                 q.question_type,
                 q.is_required,
                 q.options,
                 q.passing_criteria,
                 q.display_order
-            FROM application_knockout_answers a
-            JOIN job_knockout_questions q ON q.question_id = a.question_id
-            WHERE a.application_id = CAST(:aid AS uuid)
+            FROM job_knockout_questions q
+            LEFT JOIN application_knockout_answers a
+                   ON a.question_id = q.question_id
+                  AND a.application_id = CAST(:aid AS uuid)
+            LEFT JOIN users u ON u.user_id = a.updated_by
+            WHERE q.job_id = :jid
             ORDER BY q.display_order, q.created_at
         """),
-        {"aid": application_id},
+        {"aid": application_id, "jid": str(app["job_id"])},
     )
     knockout_answers = [
         {
-            "answer_id":        str(r["answer_id"]),
+            "answer_id":        str(r["answer_id"]) if r["answer_id"] else None,
             "question_id":      str(r["question_id"]),
             "answer_value":     r["answer_value"],
             "is_disqualifying": r["is_disqualifying"],
+            "answer_source":    r["answer_source"],
+            "updated_at":       r["answer_updated_at"].isoformat() if r["answer_updated_at"] else None,
+            "updated_by_name":  r["updated_by_name"],
             "question_text":    r["question_text"],
             "question_type":    r["question_type"],
             "is_required":      r["is_required"],
@@ -1302,6 +1318,40 @@ async def update_recruiter_notes(
     )
     await db.commit()
     return {"recruiter_notes": body.recruiter_notes}
+
+
+@router.patch("/{application_id}/knockout-answers", status_code=status.HTTP_200_OK)
+async def update_knockout_answer(
+    application_id: str,
+    body: KnockoutAnswerRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Allow authenticated recruiters/admins to add or update a single knockout answer."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    # Verify the application belongs to this tenant
+    row = await db.execute(
+        text("""
+            SELECT a.job_id FROM applications a
+            WHERE a.application_id = CAST(:aid AS uuid) AND a.tenant_id = :tid
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    app_row = row.mappings().first()
+    if not app_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    await save_knockout_answers(
+        db=db,
+        application_id=application_id,
+        job_id=str(app_row["job_id"]),
+        answers=[{"question_id": body.question_id, "answer_value": body.answer_value}],
+        answer_source="recruiter_entered",
+        updated_by=current_user.user_id,
+    )
+    await db.commit()
+    return {"status": "ok"}
 
 
 @router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)

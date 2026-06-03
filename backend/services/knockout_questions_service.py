@@ -229,6 +229,8 @@ async def save_knockout_answers(
     application_id: str,
     job_id: str,
     answers: list[dict],
+    answer_source: str = "candidate_provided",
+    updated_by: str | None = None,
 ) -> None:
     """
     Persist candidate answers. Each item: {question_id, answer_value}.
@@ -285,13 +287,20 @@ async def save_knockout_answers(
             await db.execute(
                 text("""
                     INSERT INTO application_knockout_answers
-                        (application_id, tenant_id, question_id, answer_value, is_disqualifying)
-                    VALUES (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid), CAST(:val AS jsonb), FALSE)
+                        (application_id, tenant_id, question_id, answer_value,
+                         is_disqualifying, answer_source, updated_by, updated_at)
+                    VALUES (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid),
+                            CAST(:val AS jsonb), FALSE, :src,
+                            CAST(:uid AS uuid), CASE WHEN :uid IS NOT NULL THEN now() ELSE NULL END)
                     ON CONFLICT (application_id, question_id) DO UPDATE
-                        SET answer_value    = EXCLUDED.answer_value,
-                            is_disqualifying = FALSE
+                        SET answer_value     = EXCLUDED.answer_value,
+                            is_disqualifying  = FALSE,
+                            answer_source     = EXCLUDED.answer_source,
+                            updated_by        = EXCLUDED.updated_by,
+                            updated_at        = EXCLUDED.updated_at
                 """),
-                {"aid": application_id, "tid": tenant_id, "qid": qid, "val": val_json},
+                {"aid": application_id, "tid": tenant_id, "qid": qid, "val": val_json,
+                 "src": answer_source, "uid": updated_by},
             )
         except Exception as exc:
             logger.error(
