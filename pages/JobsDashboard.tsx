@@ -59,6 +59,7 @@ const T = {
     analysisPending: 'Analysis Pending',
     analysisInsufficient: 'Needs Improvement',
     analysisBlocked: 'Analysis Blocked',
+    analysisFailed: 'Analysis Failed',
   },
   ar: {
     title: 'الوظائف',
@@ -98,6 +99,7 @@ const T = {
     analysisPending: 'التحليل معلق',
     analysisInsufficient: 'يحتاج تحسين',
     analysisBlocked: 'التحليل محظور',
+    analysisFailed: 'فشل التحليل',
     filterByClient: 'تصفية حسب العميل',
     allClients: 'جميع العملاء',
   },
@@ -430,6 +432,9 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                             {t.scoringInProgress}
                           </span>
                         )}
+                        {job.criteria_extraction_status === 'failed' && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700">{t.analysisFailed}</span>
+                        )}
                         {job.criteria_extraction_status === 'blocked' && (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700">{t.analysisBlocked}</span>
                         )}
@@ -576,6 +581,9 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                                 {t.scoringInProgress}
                               </span>
+                            )}
+                            {job.criteria_extraction_status === 'failed' && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">{t.analysisFailed}</span>
                             )}
                             {job.criteria_extraction_status === 'blocked' && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">{t.analysisBlocked}</span>

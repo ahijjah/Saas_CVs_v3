@@ -1282,7 +1282,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const canEditIntake = canEdit;
   const canManageKnockout = canEdit || isSuperAdmin;
   const hasKnockoutQuestions = (details.knockout_questions ?? []).length > 0;
-  const intakeBlocked = ['pending', 'processing', 'insufficient', 'blocked'].includes(details.criteria_extraction_status || '');
+  const intakeBlocked = ['pending', 'processing', 'insufficient', 'failed', 'blocked'].includes(details.criteria_extraction_status || '');
 
   const analysis = details.analysis_json ?? undefined;
   const metaValues = [details.job_client, details.job_type || 'Full-time', details.location || 'Remote', details.posted_date || '-', details.closing_date || '-'];
