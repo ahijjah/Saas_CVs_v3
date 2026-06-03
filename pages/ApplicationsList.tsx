@@ -324,12 +324,29 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     setDownloadingCVId(applicationId);
     try {
       const url = `${WEBHOOK_CONFIG.CV_DOWNLOAD_BASE_URL}/${applicationId}/cv`;
-      const resp = await fetch(url, { headers: { Authorization: `Bearer ${auth.token!}` } });
+      const token = auth.token || localStorage.getItem('token');
+      if (!token) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.reload();
+        return;
+      }
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (resp.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('cv_analyzer_auth');
+        window.location.reload();
+        return;
+      }
       if (!resp.ok) throw new Error('CV not available');
       const blob = await resp.blob();
+      const contentDisposition = resp.headers.get('Content-Disposition');
+      const filenameMatch = contentDisposition?.match(/filename[^;=\n]*=([^;\n]*)/);
+      const filename = filenameMatch ? filenameMatch[1].replace(/['"]/g, '').trim() : 'cv';
       const objUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = objUrl; a.download = 'cv';
+      a.href = objUrl; a.download = filename;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(objUrl), 10000);
     } catch {
