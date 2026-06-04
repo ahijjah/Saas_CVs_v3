@@ -200,6 +200,8 @@ const T = {
     knockoutGenerateSuggestions: 'Generate AI Suggestions',
     knockoutGenerating: 'Analyzing…',
     knockoutAISuggested: 'AI Suggested',
+    knockoutAllAnswered: 'All screening questions have answers.',
+    knockoutNoContentForAI: 'No CV/email content available for AI suggestions.',
     knockoutSuggestionEvidence: 'Evidence',
     knockoutSuggestionConfidence: 'Confidence',
     knockoutSuggestionAccept: 'Accept',
@@ -416,6 +418,8 @@ const T = {
     knockoutGenerateSuggestions: 'توليد اقتراحات ذكاء اصطناعي',
     knockoutGenerating: 'جارٍ التحليل…',
     knockoutAISuggested: 'مقترح بالذكاء الاصطناعي',
+    knockoutAllAnswered: 'جميع أسئلة الفرز لها إجابات.',
+    knockoutNoContentForAI: 'لا يوجد محتوى CV/بريد إلكتروني لاقتراحات الذكاء الاصطناعي.',
     knockoutSuggestionEvidence: 'الدليل',
     knockoutSuggestionConfidence: 'الثقة',
     knockoutSuggestionAccept: 'قبول',
@@ -1395,7 +1399,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 setSuggestionsError(kt.knockoutNoSuggestionsFound);
               }
             } else if (result?.status === 'no_content') {
-              setSuggestionsError(result.reason || kt.knockoutNoContent);
+              setSuggestionsError(result.reason || kt.knockoutNoContentForAI);
             } else if (result?.status === 'error') {
               setSuggestionsError(result.reason || kt.knockoutAnalysisFailed);
             }
@@ -1640,16 +1644,30 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{kt.knockoutSectionTitle}</h4>
-              {token && koAnswers.some(qa => (localAnswers[qa.question_id] ?? qa.answer_value) == null || (localAnswers[qa.question_id] ?? qa.answer_value) === '') && (
-                <button
-                  onClick={handleGenerateSuggestions}
-                  disabled={analyzing}
-                  className="ml-auto flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                  {analyzing ? kt.knockoutGenerating : kt.knockoutGenerateSuggestions}
-                </button>
-              )}
+              {(() => {
+                const isPublicApply = data.submission_source === 'public_apply';
+                const hasMissing = koAnswers.some(qa => {
+                  const v = localAnswers[qa.question_id] ?? qa.answer_value;
+                  return v == null || v === '';
+                });
+                const allAnswered = koAnswers.length > 0 && !hasMissing;
+                if (!token || isPublicApply) return null;
+                if (allAnswered) {
+                  return (
+                    <span className="ml-auto text-[10px] text-slate-400 italic">{kt.knockoutAllAnswered}</span>
+                  );
+                }
+                return (
+                  <button
+                    onClick={handleGenerateSuggestions}
+                    disabled={analyzing}
+                    className="ml-auto flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    {analyzing ? kt.knockoutGenerating : kt.knockoutGenerateSuggestions}
+                  </button>
+                );
+              })()}
             </div>
             {suggestionsError && (
               <div className="px-6 py-2 bg-amber-50 border-b border-amber-100 flex items-start gap-2">

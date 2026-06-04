@@ -568,10 +568,24 @@ async def accept_knockout_suggestion(
     )
     sug = sug_row.mappings().first()
 
-    answer_to_save = override_answer.strip() if override_answer is not None else ((sug or {}).get("suggested_answer") or "")
-    # Use the suggestion's source (already a new-style value like ai_cv/ai_email/ai_cv_email)
-    accepted_source = (sug or {}).get("suggested_source") or "ai_cv"
-    accepted_method = (sug or {}).get("answer_method") or "ai_inference"
+    suggested_val = (sug or {}).get("suggested_answer") or ""
+
+    if override_answer is not None:
+        answer_to_save = override_answer.strip()
+        # If the recruiter edited the value, treat it as manual entry regardless of AI source.
+        # If the recruiter typed the exact same value the AI suggested, still preserve AI provenance.
+        if answer_to_save != suggested_val:
+            accepted_source = "recruiter_entered"
+            accepted_method = "manual_entry"
+        else:
+            # Same value as suggestion — accept with suggestion's provenance
+            accepted_source = (sug or {}).get("suggested_source") or "ai_cv"
+            accepted_method = (sug or {}).get("answer_method") or "ai_inference"
+    else:
+        answer_to_save = suggested_val
+        # Accept without edit — preserve suggestion's provenance exactly
+        accepted_source = (sug or {}).get("suggested_source") or "ai_cv"
+        accepted_method = (sug or {}).get("answer_method") or "ai_inference"
 
     await save_knockout_answers(
         db=db,

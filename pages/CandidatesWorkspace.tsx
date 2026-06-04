@@ -388,6 +388,29 @@ const T = {
     knockoutAnswer: 'Answer',
     knockoutCriteriaPass: (op: string, val: string) => `Pass if ${op} ${val}`,
     knockoutCriteriaAnswers: (answers: string[]) => `Must answer: ${answers.join(' or ')}`,
+    knockoutGenerateSuggestions: 'Generate AI Suggestions',
+    knockoutGenerating: 'Analyzing…',
+    knockoutAISuggested: 'AI Suggested',
+    knockoutAllAnswered: 'All screening questions have answers.',
+    knockoutNoSuggestionsFound: 'No AI suggestions could be generated.',
+    knockoutNoContentForAI: 'No CV/email content available for AI suggestions.',
+    knockoutAnalysisFailed: 'AI analysis failed.',
+    knockoutSuggestionSourceCV: 'from CV',
+    knockoutSuggestionSourceEmail: 'from Email',
+    knockoutSuggestionSourceBoth: 'from CV + Email',
+    knockoutSuggestionSourceCandidateEmail: 'Candidate wrote in email',
+    knockoutSuggestionConfidence: 'Confidence',
+    knockoutSuggestionEvidence: 'Evidence',
+    knockoutSuggestionAccept: 'Accept',
+    knockoutSuggestionIgnore: 'Ignore',
+    knockoutAccept: 'Accept',
+    knockoutEditAndAccept: 'Edit & Accept',
+    knockoutAcceptEdited: 'Accept Edited',
+    knockoutIgnore: 'Ignore',
+    knockoutVerified: 'Verified',
+    knockoutInferred: 'Inferred',
+    knockoutNoEvidence: 'No Evidence',
+    knockoutContradiction: 'Contradiction',
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -579,6 +602,29 @@ const T = {
     knockoutAnswer: 'الإجابة',
     knockoutCriteriaPass: (op: string, val: string) => `ينجح إذا ${op} ${val}`,
     knockoutCriteriaAnswers: (answers: string[]) => `يجب الإجابة بـ: ${answers.join(' أو ')}`,
+    knockoutGenerateSuggestions: 'توليد اقتراحات ذكاء اصطناعي',
+    knockoutGenerating: 'جارٍ التحليل…',
+    knockoutAISuggested: 'مقترح بالذكاء الاصطناعي',
+    knockoutAllAnswered: 'جميع أسئلة الفرز لها إجابات.',
+    knockoutNoSuggestionsFound: 'لم يتمكن الذكاء الاصطناعي من توليد اقتراحات.',
+    knockoutNoContentForAI: 'لا يوجد محتوى CV/بريد لاقتراحات الذكاء الاصطناعي.',
+    knockoutAnalysisFailed: 'فشل تحليل الذكاء الاصطناعي.',
+    knockoutSuggestionSourceCV: 'من السيرة الذاتية',
+    knockoutSuggestionSourceEmail: 'من البريد',
+    knockoutSuggestionSourceBoth: 'من السيرة + البريد',
+    knockoutSuggestionSourceCandidateEmail: 'كتبه المتقدم في البريد',
+    knockoutSuggestionConfidence: 'الثقة',
+    knockoutSuggestionEvidence: 'الدليل',
+    knockoutSuggestionAccept: 'قبول',
+    knockoutSuggestionIgnore: 'تجاهل',
+    knockoutAccept: 'قبول',
+    knockoutEditAndAccept: 'تعديل وقبول',
+    knockoutAcceptEdited: 'قبول المعدَّل',
+    knockoutIgnore: 'تجاهل',
+    knockoutVerified: 'مُتحقَّق',
+    knockoutInferred: 'مستنتَج',
+    knockoutNoEvidence: 'لا دليل',
+    knockoutContradiction: 'تناقض',
   },
 };
 
@@ -903,6 +949,7 @@ interface AppDetail {
   submission_source?: string | null;
   communications?: CandidateCommunication[];
   knockout_answers?: import('../types').KnockoutAnswerRecord[];
+  knockout_suggestions?: import('../types').KnockoutSuggestionRecord[];
   job_id?: string;
 }
 
@@ -1033,6 +1080,13 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [savingPrefContact, setSavingPrefContact] = useState(false);
   const [localPreferred, setLocalPreferred] = useState<{ email: string | null; source: string | null } | null>(null);
 
+  // Knockout AI suggestion state
+  const [wsSuggestions, setWsSuggestions] = useState<import('../types').KnockoutSuggestionRecord[]>([]);
+  const [wsKoAnalyzing, setWsKoAnalyzing] = useState(false);
+  const [wsKoError, setWsKoError] = useState<string | null>(null);
+  const [wsEditingSuggQid, setWsEditingSuggQid] = useState<string | null>(null);
+  const [wsEditingSuggValue, setWsEditingSuggValue] = useState('');
+
   // Must come before any early return — Rules of Hooks
 
   // Sync notes text when candidate changes; do not overwrite unsaved edits
@@ -1087,6 +1141,14 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate?.application_id, open, token, detailVersion]);
+
+  // Sync knockout suggestions when detail loads or candidate changes
+  useEffect(() => {
+    setWsSuggestions(detail?.knockout_suggestions ?? []);
+    setWsKoError(null);
+    setWsEditingSuggQid(null);
+    setWsEditingSuggValue('');
+  }, [detail]);
 
   // Load comments when switching to Discussion tab or when candidate changes
   useEffect(() => {
@@ -1247,6 +1309,60 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
       setDetail(prev => prev ? { ...prev, communications: updated } : prev);
     } catch {
       // silently ignore — optimistic state already applied
+    }
+  };
+
+  const handleWsGenerateSuggestions = async () => {
+    if (!candidate?.application_id || !token || wsKoAnalyzing) return;
+    setWsKoAnalyzing(true);
+    setWsKoError(null);
+    try {
+      const api = new APIService(token);
+      const result = await api.triggerKnockoutAnalysis(candidate.application_id);
+      if (result?.suggestions && Array.isArray(result.suggestions)) {
+        setWsSuggestions(result.suggestions);
+      }
+    } catch (err: any) {
+      setWsKoError(err?.message || t.knockoutAnalysisFailed);
+    } finally {
+      setWsKoAnalyzing(false);
+    }
+  };
+
+  const handleWsAcceptSuggestion = async (suggestionId: string, questionId: string, overrideAnswer?: string) => {
+    if (!candidate?.application_id || !token) return;
+    try {
+      const api = new APIService(token);
+      await api.acceptKnockoutSuggestion(candidate.application_id, questionId, overrideAnswer);
+      setWsSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestionId));
+      setWsEditingSuggQid(null);
+      setWsEditingSuggValue('');
+      addToastRef.current('Answer accepted.', 'success');
+      // Refresh detail to pick up the saved answer
+      detailForRef.current = null;
+      const raw: any = await apiService.get(
+        WEBHOOK_CONFIG.APPLICATION_DETAILS_WEBHOOK_URL,
+        { application_id: candidate.application_id },
+        token,
+      );
+      const detailObj: AppDetail | null = Array.isArray(raw) ? raw[0] : raw;
+      if (detailObj) {
+        detailObj.communications = detail?.communications || [];
+        setDetail(detailObj);
+      }
+    } catch (err: any) {
+      addToastRef.current(err?.message || 'Failed to accept suggestion.', 'error');
+    }
+  };
+
+  const handleWsIgnoreSuggestion = async (suggestionId: string, questionId: string) => {
+    if (!candidate?.application_id || !token) return;
+    try {
+      const api = new APIService(token);
+      await api.ignoreKnockoutSuggestion(candidate.application_id, questionId);
+      setWsSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestionId));
+    } catch (err: any) {
+      addToastRef.current(err?.message || 'Failed to ignore suggestion.', 'error');
     }
   };
 
@@ -2854,47 +2970,169 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 return null;
               };
 
+              const isPublicApply = detail?.submission_source === 'public_apply';
+              const hasMissing = koAnswers.some(qa => qa.answer_value == null || qa.answer_value === '');
+              const allAnswered = !hasMissing;
+
+              const suggSourceLabel = (src: string | null | undefined) => {
+                if (src === 'candidate_email') return t.knockoutSourceCandidateEmail;
+                if (src === 'ai_cv') return t.knockoutSourceAICV;
+                if (src === 'ai_email') return t.knockoutSourceAIEmail;
+                if (src === 'ai_cv_email') return t.knockoutSourceAICVEmail;
+                if (src === 'not_found') return t.knockoutNotAnswered;
+                return src || '';
+              };
+
               return (
-                <div className="divide-y divide-slate-100 -mx-6 px-0">
-                  {koAnswers.map((qa, idx) => {
-                    const displayVal = qa.answer_value;
-                    const evalResult = evaluateAnswer(qa, displayVal);
-                    const criteriaLabel = formatCriteria(qa);
-                    return (
-                      <div key={qa.question_id} className="px-6 py-4 grid grid-cols-1 gap-y-1.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{idx + 1}. {qa.question_text}
-                              {qa.is_required && <span className="ml-1.5 px-1 py-0.5 bg-slate-100 text-slate-400 text-[9px] font-black uppercase rounded">{t.knockoutRequired}</span>}
-                            </p>
+                <div>
+                  {/* Section header: all-answered message or Generate button */}
+                  {!isPublicApply && (
+                    <div className="flex items-center justify-end mb-3">
+                      {allAnswered ? (
+                        <span className="text-[10px] text-slate-400 italic">{t.knockoutAllAnswered}</span>
+                      ) : (
+                        <button
+                          onClick={handleWsGenerateSuggestions}
+                          disabled={wsKoAnalyzing}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {wsKoAnalyzing ? (
+                            <>
+                              <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                              {t.knockoutGenerating}
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.346.09-.84 2.52A.75.75 0 0114.22 21H9.78a.75.75 0 01-.713-.516l-.84-2.52-.345-.09z" /></svg>
+                              {t.knockoutGenerateSuggestions}
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {wsKoError && (
+                    <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2 mb-3">{wsKoError}</p>
+                  )}
+                  <div className="divide-y divide-slate-100 -mx-6 px-0">
+                    {koAnswers.map((qa, idx) => {
+                      const displayVal = qa.answer_value;
+                      const evalResult = evaluateAnswer(qa, displayVal);
+                      const criteriaLabel = formatCriteria(qa);
+                      const suggestion = wsSuggestions.find(s => s.question_id === qa.question_id && s.status === 'pending');
+                      const isEditingThis = wsEditingSuggQid === qa.question_id;
+                      return (
+                        <div key={qa.question_id} className="px-6 py-4 grid grid-cols-1 gap-y-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{idx + 1}. {qa.question_text}
+                                {qa.is_required && <span className="ml-1.5 px-1 py-0.5 bg-slate-100 text-slate-400 text-[9px] font-black uppercase rounded">{t.knockoutRequired}</span>}
+                              </p>
+                            </div>
+                            <div className="flex-shrink-0">{evalBadge(evalResult)}</div>
                           </div>
-                          <div className="flex-shrink-0">{evalBadge(evalResult)}</div>
-                        </div>
-                        <div className="flex items-center gap-4 flex-wrap">
-                          <div>
-                            <span className="text-[10px] font-semibold text-slate-400 uppercase mr-1">{t.knockoutAnswer}:</span>
-                            {displayVal != null && displayVal !== '' ? (
-                              <span className="text-sm font-semibold text-slate-800 capitalize">{displayVal}</span>
-                            ) : (
-                              <span className="text-sm text-slate-400 italic">{t.knockoutNotAnswered}</span>
+                          <div className="flex items-center gap-4 flex-wrap">
+                            <div>
+                              <span className="text-[10px] font-semibold text-slate-400 uppercase mr-1">{t.knockoutAnswer}:</span>
+                              {displayVal != null && displayVal !== '' ? (
+                                <span className="text-sm font-semibold text-slate-800 capitalize">{displayVal}</span>
+                              ) : (
+                                <span className="text-sm text-slate-400 italic">{t.knockoutNotAnswered}</span>
+                              )}
+                            </div>
+                            {criteriaLabel && (
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-400 uppercase mr-1">{t.knockoutPassingCriteria}:</span>
+                                <span className="text-xs text-slate-600">{criteriaLabel}</span>
+                              </div>
+                            )}
+                            {displayVal != null && displayVal !== '' && qa.answer_source && (
+                              <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                                {t.knockoutSource}: {sourceLabel(qa.answer_source)}
+                                {qa.answer_method && methodBadge(qa.answer_method)}
+                              </span>
                             )}
                           </div>
-                          {criteriaLabel && (
-                            <div>
-                              <span className="text-[10px] font-semibold text-slate-400 uppercase mr-1">{t.knockoutPassingCriteria}:</span>
-                              <span className="text-xs text-slate-600">{criteriaLabel}</span>
+                          {/* Suggestion panel */}
+                          {suggestion && (
+                            <div className="mt-2 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2.5 space-y-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{t.knockoutAISuggested}</span>
+                                {suggestion.suggested_source && suggestion.suggested_source !== 'not_found' && (
+                                  <span className="text-[9px] text-indigo-400">{suggSourceLabel(suggestion.suggested_source)}</span>
+                                )}
+                                {suggestion.answer_method && methodBadge(suggestion.answer_method)}
+                              </div>
+                              {suggestion.suggested_value != null && suggestion.suggested_value !== '' && suggestion.suggested_source !== 'not_found' ? (
+                                <>
+                                  <p className="text-sm font-semibold text-indigo-800 capitalize">{suggestion.suggested_value}</p>
+                                  {suggestion.evidence && (
+                                    <p className="text-[10px] text-indigo-600 italic leading-relaxed">"{suggestion.evidence}"</p>
+                                  )}
+                                  {isEditingThis ? (
+                                    <div className="space-y-1.5">
+                                      <input
+                                        type="text"
+                                        value={wsEditingSuggValue}
+                                        onChange={e => setWsEditingSuggValue(e.target.value)}
+                                        className="w-full text-xs border border-indigo-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                                        placeholder={suggestion.suggested_value}
+                                      />
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={() => handleWsAcceptSuggestion(suggestion.suggestion_id, qa.question_id, wsEditingSuggValue.trim() || undefined)}
+                                          className="text-xs font-semibold text-white bg-indigo-600 rounded px-2.5 py-1 hover:bg-indigo-700"
+                                        >
+                                          {t.knockoutAcceptEdited}
+                                        </button>
+                                        <button
+                                          onClick={() => { setWsEditingSuggQid(null); setWsEditingSuggValue(''); }}
+                                          className="text-xs text-slate-500 hover:text-slate-700"
+                                        >
+                                          {t.knockoutCancelEdit}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex gap-3 flex-wrap">
+                                      <button
+                                        onClick={() => handleWsAcceptSuggestion(suggestion.suggestion_id, qa.question_id)}
+                                        className="text-xs font-semibold text-indigo-700 hover:text-indigo-900"
+                                      >
+                                        {t.knockoutAccept}
+                                      </button>
+                                      <button
+                                        onClick={() => { setWsEditingSuggQid(qa.question_id); setWsEditingSuggValue(suggestion.suggested_value ?? ''); }}
+                                        className="text-xs font-semibold text-slate-600 hover:text-slate-900"
+                                      >
+                                        {t.knockoutEditAndAccept}
+                                      </button>
+                                      <button
+                                        onClick={() => handleWsIgnoreSuggestion(suggestion.suggestion_id, qa.question_id)}
+                                        className="text-xs text-slate-400 hover:text-slate-600 ml-auto"
+                                      >
+                                        {t.knockoutIgnore}
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs text-indigo-400 italic">{t.knockoutNoSuggestionsFound}</p>
+                                  <button
+                                    onClick={() => handleWsIgnoreSuggestion(suggestion.suggestion_id)}
+                                    className="text-xs text-slate-400 hover:text-slate-600"
+                                  >
+                                    {t.knockoutIgnore}
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )}
-                          {displayVal != null && displayVal !== '' && qa.answer_source && (
-                            <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                              {t.knockoutSource}: {sourceLabel(qa.answer_source)}
-                              {qa.answer_method && methodBadge(qa.answer_method)}
-                            </span>
-                          )}
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })()}
