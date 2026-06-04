@@ -205,6 +205,9 @@ const T = {
     knockoutSuggestionSourceCV: 'From CV',
     knockoutSuggestionSourceEmail: 'From Email',
     knockoutSuggestionSourceBoth: 'From CV & Email',
+    knockoutNoSuggestionsFound: 'No suggestions were generated. Ensure the CV has been processed and extracted text is available.',
+    knockoutNoContent: 'No CV text or email content is available for this application. Ensure the CV has been processed successfully before generating suggestions.',
+    knockoutAnalysisFailed: 'AI suggestion generation failed',
     securityDetectedStatements: 'Detected Suspicious Statements',
     securitySnippetsNote: 'Short excerpts shown for reviewer context. Full CV content is not displayed here.',
     securityPatternLabels: {
@@ -411,6 +414,9 @@ const T = {
     knockoutSuggestionSourceCV: 'من السيرة الذاتية',
     knockoutSuggestionSourceEmail: 'من البريد الإلكتروني',
     knockoutSuggestionSourceBoth: 'من السيرة الذاتية والبريد',
+    knockoutNoSuggestionsFound: 'لم يتم توليد أي اقتراحات. تأكد من معالجة السيرة الذاتية واستخراج النص منها.',
+    knockoutNoContent: 'لا يوجد نص سيرة ذاتية أو بريد إلكتروني متاح. تأكد من اكتمال معالجة السيرة الذاتية قبل توليد الاقتراحات.',
+    knockoutAnalysisFailed: 'فشل توليد اقتراحات الذكاء الاصطناعي',
     securityDetectedStatements: 'العبارات المشبوهة المكتشفة',
     securitySnippetsNote: 'مقاطع قصيرة تُعرض لأغراض المراجعة. لا يُعرض النص الكامل للسيرة الذاتية هنا.',
     securityPatternLabels: {
@@ -478,6 +484,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
     data.knockout_suggestions ?? []
   );
   const [koAnalyzing, setKoAnalyzing] = useState(false);
+  const [koSuggestionsError, setKoSuggestionsError] = useState<string | null>(null);
   const [koEditingSuggestionQid, setKoEditingSuggestionQid] = useState<string | null>(null);
   const [koEditingSuggestionValue, setKoEditingSuggestionValue] = useState('');
 
@@ -1224,6 +1231,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const setSuggestions = setKoSuggestions;
         const analyzing = koAnalyzing;
         const setAnalyzing = setKoAnalyzing;
+        const suggestionsError = koSuggestionsError;
+        const setSuggestionsError = setKoSuggestionsError;
         const editingSuggestionQid = koEditingSuggestionQid;
         const setEditingSuggestionQid = setKoEditingSuggestionQid;
         const editingSuggestionValue = koEditingSuggestionValue;
@@ -1333,11 +1342,23 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const handleGenerateSuggestions = async () => {
           if (!token || analyzing) return;
           setAnalyzing(true);
+          setSuggestionsError(null);
           try {
             const result = await apiService.triggerKnockoutAnalysis(data.application_id, false, token);
-            if (Array.isArray(result)) setSuggestions(result);
-          } catch {
-            // non-critical — silently fail
+            if (result?.status === 'ok') {
+              if (Array.isArray(result.suggestions)) {
+                setSuggestions(result.suggestions);
+              }
+              if (!result.suggestions_generated) {
+                setSuggestionsError(kt.knockoutNoSuggestionsFound);
+              }
+            } else if (result?.status === 'no_content') {
+              setSuggestionsError(result.reason || kt.knockoutNoContent);
+            } else if (result?.status === 'error') {
+              setSuggestionsError(result.reason || kt.knockoutAnalysisFailed);
+            }
+          } catch (err: any) {
+            setSuggestionsError(err?.message ? `${kt.knockoutAnalysisFailed}: ${err.message}` : kt.knockoutAnalysisFailed);
           } finally {
             setAnalyzing(false);
           }
@@ -1579,6 +1600,12 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 </button>
               )}
             </div>
+            {suggestionsError && (
+              <div className="px-6 py-2 bg-amber-50 border-b border-amber-100 flex items-start gap-2">
+                <svg className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                <p className="text-[11px] text-amber-700 leading-snug">{suggestionsError}</p>
+              </div>
+            )}
             <div className="divide-y divide-slate-100">
               {koAnswers.map((qa, idx) => {
                 const displayVal = localAnswers[qa.question_id] ?? qa.answer_value;

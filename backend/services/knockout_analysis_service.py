@@ -13,6 +13,7 @@ Design guarantees:
 """
 import json
 import logging
+import time
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +27,7 @@ _VALID_SOURCES  = {"cv", "email_body", "cv_and_email", "not_found"}
 _VALID_STATUSES = {"verified", "inferred", "no_evidence", "contradiction", "not_found"}
 
 
-# ── Hardcoded fallback prompt ─────────────────────────────────────────────────
+# ── Hardcoded fallback prompt (mirrors the seeded DB row in migration 080) ─────
 
 KNOCKOUT_ANALYSIS_SYSTEM_PROMPT = """\
 You are an HR pre-screening analyst. Your task is to extract answers to structured
@@ -91,289 +92,340 @@ async def run_knockout_analysis(
     job_id: str,
     tenant_id: str,
     force_all: bool = False,
-) -> list[dict]:
+) -> tuple[list[dict], str | None]:
     """
     Generate AI-suggested answers for unanswered knockout questions.
 
-    Loads the active 'knockout_analysis' prompt from ai_prompts (falls back
-    to the hardcoded KNOCKOUT_ANALYSIS_SYSTEM_PROMPT if none is configured).
+    Loads the active 'knockout_analysis' prompt from ai_prompts (falls back to
+    KNOCKOUT_ANALYSIS_SYSTEM_PROMPT).  Uses the AI model registry (stage
+    'knockout_analysis') for model/client resolution; falls back to
+    settings.openai_* if no registry entry is configured.
 
     Args:
-        force_all: If True, generates suggestions even for already-answered questions
-                   (useful for manual re-analysis). Default False: skips answered questions.
+        force_all: If True, generates suggestions even for already-answered
+                   questions (manual re-analysis). Default False: skips answered.
 
-    Returns list of suggestion dicts stored/updated in the DB.
-    Never raises — on any failure returns [] and logs the error.
+    Returns:
+        (suggestions, error_reason)
+        - (suggestions, None)  — success; suggestions may be [] if all answered
+        - ([], reason_str)     — no content available, or AI call failed
+          reason_str is a safe, human-readable message for the frontend.
+
+    Never raises — callers (worker, endpoint) can rely on the tuple return.
     """
     try:
-        # ── 1. Load all knockout questions for this job ───────────────────────
-        q_rows = await db.execute(
-            text("""
-                SELECT question_id, question_text, question_type, is_required, options
-                FROM job_knockout_questions
-                WHERE job_id = :jid
-                ORDER BY display_order, created_at
-            """),
-            {"jid": job_id},
+        return await _run_knockout_analysis(
+            db=db,
+            application_id=application_id,
+            job_id=job_id,
+            tenant_id=tenant_id,
+            force_all=force_all,
         )
-        all_questions = [dict(r) for r in q_rows.mappings()]
-        if not all_questions:
-            return []
-
-        # ── 2. Find which questions already have a final answer ───────────────
-        ans_rows = await db.execute(
-            text("""
-                SELECT question_id
-                FROM application_knockout_answers
-                WHERE application_id = CAST(:aid AS uuid)
-            """),
-            {"aid": application_id},
-        )
-        answered_qids = {str(r[0]) for r in ans_rows}
-
-        questions_to_analyze = (
-            all_questions if force_all
-            else [q for q in all_questions if str(q["question_id"]) not in answered_qids]
-        )
-        if not questions_to_analyze:
-            logger.info("[%s] All knockout questions already answered — skipping analysis", application_id)
-            return []
-
-        # ── 3. Fetch CV text ──────────────────────────────────────────────────
-        cv_row = await db.execute(
-            text("""
-                SELECT extracted_text
-                FROM application_files
-                WHERE application_id = :aid
-                  AND extraction_status = 'done'
-                LIMIT 1
-            """),
-            {"aid": application_id},
-        )
-        cv_text: str | None = cv_row.scalar_one_or_none()
-
-        # ── 4. Fetch email context from intake log ────────────────────────────
-        intake_row = await db.execute(
-            text("""
-                SELECT subject, sender_email, intake_method
-                FROM application_intake_log
-                WHERE application_id = CAST(:aid AS uuid)
-                ORDER BY created_at DESC
-                LIMIT 1
-            """),
-            {"aid": application_id},
-        )
-        intake = intake_row.mappings().first()
-        email_subject: str | None = None
-        if intake:
-            # Build a short context string from available email metadata
-            parts = []
-            method = intake.get("intake_method") or ""
-            if intake.get("subject"):
-                parts.append(f"Subject: {intake['subject']}")
-            if intake.get("sender_email") and method in ("email_forwarding", "platform_email"):
-                parts.append(f"From: {intake['sender_email']}")
-            if parts:
-                email_subject = "\n".join(parts)
-
-        # Skip if neither CV text nor email context is available
-        if not cv_text and not email_subject:
-            logger.info(
-                "[%s] No text available for knockout analysis (no CV text, no email context)",
-                application_id,
-            )
-            return []
-
-        # ── 5. Fetch job title ────────────────────────────────────────────────
-        job_row = await db.execute(
-            text("SELECT title FROM jobs WHERE job_id = :jid"),
-            {"jid": job_id},
-        )
-        job_title: str = job_row.scalar_one_or_none() or "Unknown Position"
-
-        # ── 6. Load active prompt (falls back to hardcoded) ───────────────────
-        prompt_cfg = await load_active_prompt(db, "knockout_analysis")
-        from config import get_settings
-        cfg = get_settings()
-
-        system_prompt = (prompt_cfg or {}).get("system_prompt") or KNOCKOUT_ANALYSIS_SYSTEM_PROMPT
-        model         = (prompt_cfg or {}).get("model")         or cfg.openai_model
-        temperature   = float((prompt_cfg or {}).get("temperature", 0.1))
-        max_tokens    = int((prompt_cfg   or {}).get("max_tokens",  2000))
-
-        # ── 7. Build AI input ─────────────────────────────────────────────────
-        questions_payload = [
-            {
-                "question_id":   str(q["question_id"]),
-                "question_text": q["question_text"],
-                "question_type": q["question_type"],
-                **({"options": q["options"]} if q["options"] else {}),
-            }
-            for q in questions_to_analyze
-        ]
-
-        user_payload: dict = {
-            "job_title": job_title,
-            "questions": questions_payload,
-        }
-        if cv_text:
-            # Truncate to avoid token limits; 8 000 chars ≈ ~2 000 tokens
-            user_payload["cv_text"] = cv_text[:8000]
-        if email_subject:
-            user_payload["email_context"] = email_subject
-
-        user_message = json.dumps(user_payload, ensure_ascii=False)
-
-        # ── 8. Call AI ────────────────────────────────────────────────────────
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=cfg.openai_api_key)
-
-        import time as _time
-        _t0 = _time.monotonic()
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_message},
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-        )
-        latency_ms = int((_time.monotonic() - _t0) * 1000)
-
-        raw = response.choices[0].message.content
-        ai_output = json.loads(raw)
-
-        usage = response.usage
-        prompt_tokens     = usage.prompt_tokens     if usage else 0
-        completion_tokens = usage.completion_tokens if usage else 0
-        total_tokens      = usage.total_tokens      if usage else 0
-        ai_model_used     = response.model or model
-
-        # Log AI usage — non-critical
-        try:
-            from services.ai_usage_service import log_ai_usage as _log_ai_usage
-            await _log_ai_usage(
-                db=db,
-                stage="knockout_analysis",
-                provider="openai",
-                model=ai_model_used,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-                latency_ms=latency_ms,
-                request_status="success",
-                tenant_id=tenant_id,
-                job_id=job_id,
-                application_id=application_id,
-                prompt_key=(prompt_cfg or {}).get("prompt_code") or "knockout_analysis",
-                prompt_version_id=(prompt_cfg or {}).get("version"),
-                metadata={"questions_analyzed": len(questions_to_analyze)},
-            )
-        except Exception as _log_exc:
-            logger.warning("[%s] AI usage log failed (knockout_analysis): %s", application_id, _log_exc)
-
-        # ── 9. Parse and validate AI output ──────────────────────────────────
-        answers_raw = ai_output.get("answers") or []
-        valid_qids  = {str(q["question_id"]) for q in questions_to_analyze}
-
-        suggestions: list[dict] = []
-        for item in answers_raw:
-            qid = str(item.get("question_id", ""))
-            if qid not in valid_qids:
-                continue
-
-            source  = item.get("suggested_source", "not_found")
-            vstatus = item.get("verification_status", "not_found")
-            if source  not in _VALID_SOURCES:  source  = "not_found"
-            if vstatus not in _VALID_STATUSES: vstatus = "not_found"
-
-            raw_conf = item.get("confidence", 0.0)
-            try:
-                confidence = max(0.0, min(1.0, float(raw_conf)))
-            except (TypeError, ValueError):
-                confidence = 0.0
-
-            suggested_answer = item.get("suggested_answer")
-            evidence_text    = item.get("evidence_text")
-
-            # Coerce to string or null
-            if suggested_answer is not None:
-                suggested_answer = str(suggested_answer).strip()
-                if not suggested_answer:
-                    suggested_answer = None
-
-            suggestions.append({
-                "question_id":        qid,
-                "suggested_answer":   suggested_answer,
-                "suggested_source":   source,
-                "confidence":         confidence,
-                "evidence_text":      str(evidence_text)[:300] if evidence_text else None,
-                "verification_status": vstatus,
-                "ai_model":           ai_model_used,
-                "prompt_code":        (prompt_cfg or {}).get("prompt_code") or "knockout_analysis",
-                "prompt_version":     (prompt_cfg or {}).get("version"),
-            })
-
-        # ── 10. Upsert suggestions ────────────────────────────────────────────
-        for s in suggestions:
-            await db.execute(
-                text("""
-                    INSERT INTO application_knockout_answer_suggestions
-                        (application_id, tenant_id, question_id,
-                         suggested_answer, suggested_source, confidence,
-                         evidence_text, verification_status,
-                         ai_model, prompt_code, prompt_version,
-                         status, created_at)
-                    VALUES
-                        (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid),
-                         :answer, :source, :conf,
-                         :evidence, :vstatus,
-                         :model, :pcode, :pver,
-                         'pending', now())
-                    ON CONFLICT (application_id, question_id) DO UPDATE
-                        SET suggested_answer    = EXCLUDED.suggested_answer,
-                            suggested_source    = EXCLUDED.suggested_source,
-                            confidence          = EXCLUDED.confidence,
-                            evidence_text       = EXCLUDED.evidence_text,
-                            verification_status = EXCLUDED.verification_status,
-                            ai_model            = EXCLUDED.ai_model,
-                            prompt_code         = EXCLUDED.prompt_code,
-                            prompt_version      = EXCLUDED.prompt_version,
-                            status              = 'pending',
-                            accepted_by         = NULL,
-                            accepted_at         = NULL,
-                            created_at          = now()
-                """),
-                {
-                    "aid":     application_id,
-                    "tid":     tenant_id,
-                    "qid":     s["question_id"],
-                    "answer":  s["suggested_answer"],
-                    "source":  s["suggested_source"],
-                    "conf":    s["confidence"],
-                    "evidence": s["evidence_text"],
-                    "vstatus": s["verification_status"],
-                    "model":   s["ai_model"],
-                    "pcode":   s["prompt_code"],
-                    "pver":    s["prompt_version"],
-                },
-            )
-
-        logger.info(
-            "[%s] Knockout analysis complete: %d suggestions stored",
-            application_id, len(suggestions),
-        )
-        return suggestions
-
+    except json.JSONDecodeError as exc:
+        logger.error("[%s] knockout_analysis: AI JSON parse error: %s", application_id, exc)
+        return [], "AI returned an invalid response. Please try again."
     except Exception as exc:
-        logger.error(
-            "[%s] run_knockout_analysis failed: %s",
-            application_id, exc,
-            exc_info=True,
+        msg = str(exc)
+        logger.error("[%s] knockout_analysis failed: %s", application_id, exc, exc_info=True)
+        if any(kw in msg.lower() for kw in ("quota", "rate limit", "429")):
+            return [], "AI quota exceeded. Please try again in a few minutes."
+        if any(kw in msg.lower() for kw in ("api_key", "authentication", "unauthorized", "401")):
+            return [], "AI provider authentication failed. Check platform configuration."
+        if any(kw in msg.lower() for kw in ("model", "not found", "does not exist")):
+            return [], f"AI model error: {msg[:120]}"
+        return [], "AI analysis failed. Please try again or contact support."
+
+
+async def _run_knockout_analysis(
+    db: AsyncSession,
+    application_id: str,
+    job_id: str,
+    tenant_id: str,
+    force_all: bool,
+) -> tuple[list[dict], str | None]:
+    """Inner implementation — may raise; wrapped by run_knockout_analysis."""
+
+    # ── 1. Load all knockout questions for this job ───────────────────────────
+    q_rows = await db.execute(
+        text("""
+            SELECT question_id, question_text, question_type, is_required, options
+            FROM job_knockout_questions
+            WHERE job_id = :jid
+            ORDER BY display_order, created_at
+        """),
+        {"jid": job_id},
+    )
+    all_questions = [dict(r) for r in q_rows.mappings()]
+    if not all_questions:
+        logger.info("[%s] No knockout questions for job %s — skipping", application_id, job_id)
+        return [], None
+
+    # ── 2. Find which questions already have a final answer ───────────────────
+    ans_rows = await db.execute(
+        text("""
+            SELECT question_id
+            FROM application_knockout_answers
+            WHERE application_id = CAST(:aid AS uuid)
+              AND answer_value IS NOT NULL
+              AND answer_value <> ''
+        """),
+        {"aid": application_id},
+    )
+    answered_qids = {str(r[0]) for r in ans_rows}
+
+    questions_to_analyze = (
+        all_questions if force_all
+        else [q for q in all_questions if str(q["question_id"]) not in answered_qids]
+    )
+    if not questions_to_analyze:
+        logger.info("[%s] All knockout questions already answered — skipping", application_id)
+        return [], None
+
+    # ── 3. Fetch CV extracted text ────────────────────────────────────────────
+    cv_row = await db.execute(
+        text("""
+            SELECT extracted_text
+            FROM application_files
+            WHERE application_id = :aid
+              AND extraction_status = 'done'
+              AND extracted_text IS NOT NULL
+              AND length(extracted_text) > 50
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {"aid": application_id},
+    )
+    cv_text: str | None = cv_row.scalar_one_or_none()
+
+    # ── 4. Fetch email context from intake log ────────────────────────────────
+    intake_row = await db.execute(
+        text("""
+            SELECT subject, sender_email, intake_method
+            FROM application_intake_log
+            WHERE application_id = CAST(:aid AS uuid)
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {"aid": application_id},
+    )
+    intake = intake_row.mappings().first()
+    email_context: str | None = None
+    if intake:
+        parts = []
+        method = intake.get("intake_method") or ""
+        if intake.get("subject"):
+            parts.append(f"Subject: {intake['subject']}")
+        if intake.get("sender_email") and method in ("email_forwarding", "platform_email"):
+            parts.append(f"From: {intake['sender_email']}")
+        if parts:
+            email_context = "\n".join(parts)
+
+    if not cv_text and not email_context:
+        logger.info(
+            "[%s] No text available for knockout analysis (no CV text, no email context)",
+            application_id,
         )
-        return []
+        return [], (
+            "No CV text or email content is available for this application. "
+            "Ensure the CV has been processed successfully (extraction_status = 'done') "
+            "before generating suggestions."
+        )
+
+    # ── 5. Fetch job title ────────────────────────────────────────────────────
+    job_row = await db.execute(
+        text("SELECT title FROM jobs WHERE job_id = :jid"),
+        {"jid": job_id},
+    )
+    job_title: str = job_row.scalar_one_or_none() or "Unknown Position"
+
+    # ── 6. Load active prompt (DB → hardcoded fallback) ───────────────────────
+    prompt_cfg = await load_active_prompt(db, "knockout_analysis")
+
+    system_prompt = (prompt_cfg or {}).get("system_prompt") or KNOCKOUT_ANALYSIS_SYSTEM_PROMPT
+    temperature   = float((prompt_cfg or {}).get("temperature") or 0.1)
+    max_tokens    = int((prompt_cfg   or {}).get("max_tokens")  or 2000)
+
+    # ── 7. Resolve model / client from AI model registry ─────────────────────
+    from services.ai_model_registry_service import resolve_stage_client
+    from config import get_settings
+    cfg = get_settings()
+
+    registry_model = await resolve_stage_client(db, "knockout_analysis")
+    if registry_model:
+        openai_client = registry_model.client
+        model = registry_model.model_name
+        logger.debug(
+            "[%s] knockout_analysis using registry model: %s (%s)",
+            application_id, model, registry_model.provider,
+        )
+    else:
+        # Fall back to prompt config model, then platform default
+        from services.ai_service import _get_client
+        openai_client = _get_client()
+        model = (prompt_cfg or {}).get("model") or cfg.openai_model
+        logger.debug(
+            "[%s] knockout_analysis using default model: %s", application_id, model
+        )
+
+    # ── 8. Build user payload ─────────────────────────────────────────────────
+    questions_payload = [
+        {
+            "question_id":   str(q["question_id"]),
+            "question_text": q["question_text"],
+            "question_type": q["question_type"],
+            **({"options": q["options"]} if q["options"] else {}),
+        }
+        for q in questions_to_analyze
+    ]
+
+    user_payload: dict = {
+        "job_title": job_title,
+        "questions": questions_payload,
+    }
+    if cv_text:
+        # Truncate to keep prompt within token budget (~2000 tokens)
+        user_payload["cv_text"] = cv_text[:8000]
+    if email_context:
+        user_payload["email_context"] = email_context
+
+    user_message = json.dumps(user_payload, ensure_ascii=False)
+
+    # ── 9. Call AI ────────────────────────────────────────────────────────────
+    _t0 = time.monotonic()
+    response = await openai_client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_message},
+        ],
+        temperature=temperature,
+        max_tokens=max_tokens,
+        response_format={"type": "json_object"},
+    )
+    latency_ms = int((time.monotonic() - _t0) * 1000)
+
+    raw = response.choices[0].message.content
+    # This raises json.JSONDecodeError if the model returns garbage — caught by outer wrapper
+    ai_output = json.loads(raw)
+
+    usage = response.usage
+    prompt_tokens     = usage.prompt_tokens     if usage else 0
+    completion_tokens = usage.completion_tokens if usage else 0
+    total_tokens      = usage.total_tokens      if usage else 0
+    ai_model_used     = response.model or model
+
+    # ── 10. Log AI usage (non-critical) ───────────────────────────────────────
+    try:
+        from services.ai_usage_service import log_ai_usage as _log_ai_usage
+        await _log_ai_usage(
+            db=db,
+            stage="knockout_analysis",
+            provider=registry_model.provider if registry_model else "openai",
+            model=ai_model_used,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            latency_ms=latency_ms,
+            request_status="success",
+            tenant_id=tenant_id,
+            job_id=job_id,
+            application_id=application_id,
+            prompt_key=(prompt_cfg or {}).get("prompt_code") or "knockout_analysis",
+            prompt_version_id=(prompt_cfg or {}).get("version"),
+            metadata={"questions_analyzed": len(questions_to_analyze)},
+        )
+    except Exception as _log_exc:
+        logger.warning("[%s] AI usage log failed (knockout_analysis): %s", application_id, _log_exc)
+
+    # ── 11. Parse and validate AI output ──────────────────────────────────────
+    answers_raw = ai_output.get("answers") or []
+    valid_qids  = {str(q["question_id"]) for q in questions_to_analyze}
+
+    suggestions: list[dict] = []
+    for item in answers_raw:
+        qid = str(item.get("question_id", ""))
+        if qid not in valid_qids:
+            continue
+
+        source  = item.get("suggested_source", "not_found")
+        vstatus = item.get("verification_status", "not_found")
+        if source  not in _VALID_SOURCES:  source  = "not_found"
+        if vstatus not in _VALID_STATUSES: vstatus = "not_found"
+
+        raw_conf = item.get("confidence", 0.0)
+        try:
+            confidence = max(0.0, min(1.0, float(raw_conf)))
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        suggested_answer = item.get("suggested_answer")
+        evidence_text    = item.get("evidence_text")
+
+        if suggested_answer is not None:
+            suggested_answer = str(suggested_answer).strip() or None
+
+        suggestions.append({
+            "question_id":         qid,
+            "suggested_answer":    suggested_answer,
+            "suggested_source":    source,
+            "confidence":          confidence,
+            "evidence_text":       str(evidence_text)[:300] if evidence_text else None,
+            "verification_status": vstatus,
+            "ai_model":            ai_model_used,
+            "prompt_code":         (prompt_cfg or {}).get("prompt_code") or "knockout_analysis",
+            "prompt_version":      (prompt_cfg or {}).get("version"),
+        })
+
+    # ── 12. Upsert suggestions ────────────────────────────────────────────────
+    for s in suggestions:
+        await db.execute(
+            text("""
+                INSERT INTO application_knockout_answer_suggestions
+                    (application_id, tenant_id, question_id,
+                     suggested_answer, suggested_source, confidence,
+                     evidence_text, verification_status,
+                     ai_model, prompt_code, prompt_version,
+                     status, created_at)
+                VALUES
+                    (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid),
+                     :answer, :source, :conf,
+                     :evidence, :vstatus,
+                     :model, :pcode, :pver,
+                     'pending', now())
+                ON CONFLICT (application_id, question_id) DO UPDATE
+                    SET suggested_answer    = EXCLUDED.suggested_answer,
+                        suggested_source    = EXCLUDED.suggested_source,
+                        confidence          = EXCLUDED.confidence,
+                        evidence_text       = EXCLUDED.evidence_text,
+                        verification_status = EXCLUDED.verification_status,
+                        ai_model            = EXCLUDED.ai_model,
+                        prompt_code         = EXCLUDED.prompt_code,
+                        prompt_version      = EXCLUDED.prompt_version,
+                        status              = 'pending',
+                        accepted_by         = NULL,
+                        accepted_at         = NULL,
+                        created_at          = now()
+            """),
+            {
+                "aid":     application_id,
+                "tid":     tenant_id,
+                "qid":     s["question_id"],
+                "answer":  s["suggested_answer"],
+                "source":  s["suggested_source"],
+                "conf":    s["confidence"],
+                "evidence": s["evidence_text"],
+                "vstatus": s["verification_status"],
+                "model":   s["ai_model"],
+                "pcode":   s["prompt_code"],
+                "pver":    s["prompt_version"],
+            },
+        )
+
+    logger.info(
+        "[%s] knockout_analysis complete: %d suggestions stored (model=%s, latency=%dms)",
+        application_id, len(suggestions), ai_model_used, latency_ms,
+    )
+    return suggestions, None
 
 
 # ── Read suggestions ──────────────────────────────────────────────────────────
@@ -401,6 +453,7 @@ async def get_knockout_suggestions(
             FROM application_knockout_answer_suggestions s
             LEFT JOIN users u ON u.user_id = s.accepted_by
             WHERE s.application_id = CAST(:aid AS uuid)
+            ORDER BY s.created_at DESC
         """),
         {"aid": application_id},
     )
@@ -440,7 +493,6 @@ async def accept_knockout_suggestion(
     override_answer: if provided, saves this value instead of the AI suggestion
     (used for 'Edit & Accept' flow where the user tweaked the answer).
     """
-    # Resolve the answer to save
     if override_answer is not None:
         answer_to_save = override_answer.strip()
     else:
@@ -455,7 +507,6 @@ async def accept_knockout_suggestion(
         )
         answer_to_save = row.scalar_one_or_none() or ""
 
-    # Save as final answer
     await save_knockout_answers(
         db=db,
         application_id=application_id,
@@ -465,7 +516,6 @@ async def accept_knockout_suggestion(
         updated_by=accepted_by_user_id,
     )
 
-    # Mark suggestion accepted
     await db.execute(
         text("""
             UPDATE application_knockout_answer_suggestions

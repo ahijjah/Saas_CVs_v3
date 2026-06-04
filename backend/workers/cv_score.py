@@ -1154,7 +1154,7 @@ async def _score_cv_async(
                 from services.knockout_questions_service import job_has_active_knockout_questions
                 from services.knockout_analysis_service import run_knockout_analysis
                 if await job_has_active_knockout_questions(db, job_id):
-                    suggestions = await run_knockout_analysis(
+                    suggestions, _ko_reason = await run_knockout_analysis(
                         db=db,
                         application_id=application_id,
                         job_id=job_id,

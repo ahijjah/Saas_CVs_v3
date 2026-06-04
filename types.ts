@@ -652,7 +652,7 @@ export interface PlatformSecret {
 
 // ─── AI Prompts ───────────────────────────────────────────────────────────────
 
-export type PromptCategory = 'criteria' | 'scoring' | 'screening' | 'summary' | 'interview';
+export type PromptCategory = 'criteria' | 'scoring' | 'screening' | 'summary' | 'interview' | 'knockout';
 
 export interface AIPrompt {
   prompt_id: string;

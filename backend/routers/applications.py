@@ -1369,7 +1369,7 @@ async def update_knockout_answer(
     return {"status": "ok"}
 
 
-@router.post("/{application_id}/knockout-analysis", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/{application_id}/knockout-analysis", status_code=status.HTTP_200_OK)
 async def trigger_knockout_analysis(
     application_id: str,
     current_user: CurrentUserDep,
@@ -1379,6 +1379,11 @@ async def trigger_knockout_analysis(
     """Manually trigger AI knockout answer analysis for an application.
 
     force_all=true re-analyses even questions that already have a final answer.
+
+    Returns:
+        status "ok"       — success; suggestions list may be empty if all questions are answered
+        status "no_content" — no CV text or email content available
+        status "error"    — AI call or other failure; reason field contains safe message
     """
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
@@ -1393,16 +1398,38 @@ async def trigger_knockout_analysis(
     if not app_row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
 
-    suggestions = await run_knockout_analysis(
+    suggestions_raw, error_reason = await run_knockout_analysis(
         db=db,
         application_id=application_id,
         job_id=str(app_row["job_id"]),
         tenant_id=current_user.tenant_id,
         force_all=force_all,
     )
-    if suggestions:
+
+    if suggestions_raw:
         await db.commit()
-    return {"status": "ok", "suggestions_generated": len(suggestions)}
+        # Re-apply RLS context (SET LOCAL resets after commit)
+        await set_rls_context(db, current_user.tenant_id, current_user.role)
+        full_suggestions = await get_knockout_suggestions(db, application_id)
+    else:
+        full_suggestions = []
+
+    if error_reason:
+        # Distinguish "no content" from hard errors for frontend messaging
+        outcome = "no_content" if "no cv text" in error_reason.lower() else "error"
+        return {
+            "status": outcome,
+            "reason": error_reason,
+            "suggestions": [],
+            "suggestions_generated": 0,
+        }
+
+    return {
+        "status": "ok",
+        "reason": None,
+        "suggestions": full_suggestions,
+        "suggestions_generated": len(full_suggestions),
+    }
 
 
 @router.patch("/{application_id}/knockout-suggestions/accept", status_code=status.HTTP_200_OK)
