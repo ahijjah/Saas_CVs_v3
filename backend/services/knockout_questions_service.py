@@ -282,7 +282,6 @@ async def save_knockout_answers(
             logger.debug("Skipping answer for unknown question_id=%s (job=%s)", qid, job_id)
             continue
 
-        val_json = json.dumps(val)
         try:
             await db.execute(
                 text("""
@@ -290,7 +289,7 @@ async def save_knockout_answers(
                         (application_id, tenant_id, question_id, answer_value,
                          is_disqualifying, answer_source, updated_by, updated_at)
                     VALUES (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid),
-                            CAST(:val AS jsonb), FALSE, :src,
+                            :val, FALSE, :src,
                             CAST(:uid AS uuid), CASE WHEN :uid IS NOT NULL THEN now() ELSE NULL END)
                     ON CONFLICT (application_id, question_id) DO UPDATE
                         SET answer_value     = EXCLUDED.answer_value,
@@ -299,7 +298,7 @@ async def save_knockout_answers(
                             updated_by        = EXCLUDED.updated_by,
                             updated_at        = EXCLUDED.updated_at
                 """),
-                {"aid": application_id, "tid": tenant_id, "qid": qid, "val": val_json,
+                {"aid": application_id, "tid": tenant_id, "qid": qid, "val": val,
                  "src": answer_source, "uid": updated_by},
             )
         except Exception as exc:

@@ -161,13 +161,17 @@ async def _run_knockout_analysis(
         return [], None
 
     # ── 2. Find which questions already have a final answer ───────────────────
+    # Use answer_value::text to avoid asyncpg JSONB type-inference errors caused
+    # by historical records inserted with CAST(:val AS jsonb) on a TEXT column.
+    # Also exclude JSON-encoded empty strings ('""') left by the old code path.
     ans_rows = await db.execute(
         text("""
             SELECT question_id
             FROM application_knockout_answers
             WHERE application_id = CAST(:aid AS uuid)
               AND answer_value IS NOT NULL
-              AND answer_value <> ''
+              AND char_length(trim(answer_value::text)) > 0
+              AND answer_value::text NOT IN ('""', 'null', '[]', '{}')
         """),
         {"aid": application_id},
     )
