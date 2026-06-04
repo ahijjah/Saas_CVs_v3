@@ -489,6 +489,7 @@ export interface KnockoutAnswerRecord {
   answer_value?: string | null;
   is_disqualifying?: boolean | null;
   answer_source?: string | null;
+  answer_method?: string | null;
   updated_at?: string | null;
   updated_by_name?: string | null;
   question_text: string;
@@ -504,7 +505,8 @@ export interface KnockoutSuggestionRecord {
   suggestion_id: string;
   question_id: string;
   suggested_answer?: string | null;
-  suggested_source: 'cv' | 'email_body' | 'cv_and_email' | 'not_found';
+  suggested_source: 'ai_cv' | 'ai_email' | 'ai_cv_email' | 'not_found';
+  answer_method?: string | null;
   confidence: number;
   evidence_text?: string | null;
   verification_status: 'verified' | 'inferred' | 'no_evidence' | 'contradiction' | 'not_found';

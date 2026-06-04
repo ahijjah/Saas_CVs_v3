@@ -549,6 +549,7 @@ async def get_application_details(
                 a.answer_value,
                 a.is_disqualifying,
                 a.answer_source,
+                a.answer_method,
                 a.updated_at   AS answer_updated_at,
                 u.full_name    AS updated_by_name,
                 q.question_text,
@@ -574,6 +575,7 @@ async def get_application_details(
             "answer_value":     r["answer_value"],
             "is_disqualifying": r["is_disqualifying"],
             "answer_source":    r["answer_source"],
+            "answer_method":    r["answer_method"],
             "updated_at":       r["answer_updated_at"].isoformat() if r["answer_updated_at"] else None,
             "updated_by_name":  r["updated_by_name"],
             "question_text":    r["question_text"],
@@ -1363,6 +1365,7 @@ async def update_knockout_answer(
         job_id=str(app_row["job_id"]),
         answers=[{"question_id": body.question_id, "answer_value": body.answer_value}],
         answer_source="recruiter_entered",
+        answer_method="manual_entry",
         updated_by=current_user.user_id,
     )
     await db.commit()

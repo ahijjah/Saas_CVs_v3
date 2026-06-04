@@ -182,14 +182,21 @@ const T = {
     knockoutCriteriaAnswers: (answers: string[]) => `Must answer: ${answers.join(' or ')}`,
     knockoutNotAnswered: 'Not Answered',
     knockoutSource: 'Source',
-    knockoutSourceCandidate: 'Candidate',
+    knockoutSourceCandidate: 'Candidate (Form)',
+    knockoutSourceCandidateEmail: 'Candidate (Email)',
     knockoutSourceRecruiter: 'Recruiter Entered',
     knockoutSourceAI: 'AI Extracted',
+    knockoutSourceAICV: 'AI (CV)',
+    knockoutSourceAIEmail: 'AI (Email)',
+    knockoutSourceAICVEmail: 'AI (CV + Email)',
+    knockoutSourceAISuggested: 'AI Suggested (Accepted)',
+    knockoutMethodDirect: 'Direct Statement',
+    knockoutMethodInferred: 'AI Inference',
+    knockoutMethodManual: 'Manual Entry',
     knockoutEditAnswer: 'Edit',
     knockoutSaveAnswer: 'Save',
     knockoutCancelEdit: 'Cancel',
     knockoutEditPlaceholder: 'Enter answer',
-    knockoutSourceAISuggested: 'AI Suggested (Accepted)',
     knockoutGenerateSuggestions: 'Generate AI Suggestions',
     knockoutGenerating: 'Analyzing…',
     knockoutAISuggested: 'AI Suggested',
@@ -391,14 +398,21 @@ const T = {
     knockoutCriteriaAnswers: (answers: string[]) => `يجب الإجابة بـ: ${answers.join(' أو ')}`,
     knockoutNotAnswered: 'لم تُجب',
     knockoutSource: 'المصدر',
-    knockoutSourceCandidate: 'المتقدم',
+    knockoutSourceCandidate: 'المتقدم (نموذج)',
+    knockoutSourceCandidateEmail: 'المتقدم (بريد إلكتروني)',
     knockoutSourceRecruiter: 'أدخله المسؤول',
     knockoutSourceAI: 'مستخرج بالذكاء الاصطناعي',
+    knockoutSourceAICV: 'ذكاء اصطناعي (السيرة)',
+    knockoutSourceAIEmail: 'ذكاء اصطناعي (البريد)',
+    knockoutSourceAICVEmail: 'ذكاء اصطناعي (السيرة + البريد)',
+    knockoutSourceAISuggested: 'مقترح بالذكاء الاصطناعي (مقبول)',
+    knockoutMethodDirect: 'تصريح مباشر',
+    knockoutMethodInferred: 'استنتاج ذكاء اصطناعي',
+    knockoutMethodManual: 'إدخال يدوي',
     knockoutEditAnswer: 'تعديل',
     knockoutSaveAnswer: 'حفظ',
     knockoutCancelEdit: 'إلغاء',
     knockoutEditPlaceholder: 'أدخل الإجابة',
-    knockoutSourceAISuggested: 'مقترح بالذكاء الاصطناعي (مقبول)',
     knockoutGenerateSuggestions: 'توليد اقتراحات ذكاء اصطناعي',
     knockoutGenerating: 'جارٍ التحليل…',
     knockoutAISuggested: 'مقترح بالذكاء الاصطناعي',
@@ -1312,11 +1326,39 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         };
 
         const sourceLabel = (src: string | null | undefined) => {
-          if (!src || src === 'candidate_provided') return kt.knockoutSourceCandidate;
+          if (!src || src === 'candidate_provided' || src === 'candidate_form') return kt.knockoutSourceCandidate;
+          if (src === 'candidate_email') return kt.knockoutSourceCandidateEmail;
           if (src === 'recruiter_entered') return kt.knockoutSourceRecruiter;
-          if (src === 'ai_extracted') return kt.knockoutSourceAI;
+          if (src === 'ai_extracted' || src === 'ai_cv') return kt.knockoutSourceAICV;
+          if (src === 'ai_email') return kt.knockoutSourceAIEmail;
+          if (src === 'ai_cv_email') return kt.knockoutSourceAICVEmail;
           if (src === 'ai_suggested_accepted') return kt.knockoutSourceAISuggested;
           return src;
+        };
+
+        const methodBadge = (method: string | null | undefined) => {
+          if (!method || method === 'direct_statement') {
+            return (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 text-[9px] font-black uppercase tracking-widest">
+                {kt.knockoutMethodDirect}
+              </span>
+            );
+          }
+          if (method === 'ai_inference') {
+            return (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[9px] font-black uppercase tracking-widest">
+                {kt.knockoutMethodInferred}
+              </span>
+            );
+          }
+          if (method === 'manual_entry') {
+            return (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest">
+                {kt.knockoutMethodManual}
+              </span>
+            );
+          }
+          return null;
         };
 
         const handleStartEdit = (qa: KnockoutAnswerRecord) => {
@@ -1474,6 +1516,9 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
               not_found: kt.knockoutNoEvidence,
             };
             const suggSourceLabel: Record<string, string> = {
+              ai_cv: kt.knockoutSuggestionSourceCV,
+              ai_email: kt.knockoutSuggestionSourceEmail,
+              ai_cv_email: kt.knockoutSuggestionSourceBoth,
               cv: kt.knockoutSuggestionSourceCV,
               email_body: kt.knockoutSuggestionSourceEmail,
               cv_and_email: kt.knockoutSuggestionSourceBoth,
@@ -1488,6 +1533,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                   </span>
                   {suggestion.suggested_source !== 'not_found' && (
                     <span className="text-[9px] text-indigo-500 font-semibold">{suggSourceLabel[suggestion.suggested_source]}</span>
+                  )}
+                  {suggestion.answer_method && suggestion.answer_method !== 'ai_inference' && (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-green-50 text-green-700 text-[8px] font-black uppercase tracking-widest">
+                      {kt.knockoutMethodDirect}
+                    </span>
                   )}
                   <span className="ml-auto text-[9px] text-slate-500 font-semibold">{kt.knockoutSuggestionConfidence}: {confPct}%</span>
                 </div>
@@ -1623,7 +1673,10 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                         )}
                       </p>
                       {displayVal != null && displayVal !== '' && src && (
-                        <p className="text-[10px] text-slate-400 mt-0.5">{kt.knockoutSource}: {sourceLabel(src)}</p>
+                        <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                          <p className="text-[10px] text-slate-400">{kt.knockoutSource}: {sourceLabel(src)}</p>
+                          {qa.answer_method && methodBadge(qa.answer_method)}
+                        </div>
                       )}
                     </div>
                     <div>

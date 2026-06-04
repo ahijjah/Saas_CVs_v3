@@ -23,7 +23,8 @@ from services.knockout_questions_service import save_knockout_answers
 
 logger = logging.getLogger(__name__)
 
-_VALID_SOURCES  = {"cv", "email_body", "cv_and_email", "not_found"}
+_VALID_SOURCES  = {"ai_cv", "ai_email", "ai_cv_email", "not_found"}
+_VALID_METHODS  = {"direct_statement", "ai_inference"}
 _VALID_STATUSES = {"verified", "inferred", "no_evidence", "contradiction", "not_found"}
 
 
@@ -49,7 +50,8 @@ Return exactly this structure:
     {
       "question_id": "<same UUID as in the input>",
       "suggested_answer": "<answer string, or null if not found>",
-      "suggested_source": "cv | email_body | cv_and_email | not_found",
+      "suggested_source": "ai_cv | ai_email | ai_cv_email | not_found",
+      "answer_method": "direct_statement | ai_inference",
       "confidence": <float 0.00–1.00>,
       "evidence_text": "<direct quote or paraphrase from the source, max 250 chars, or null>",
       "verification_status": "verified | inferred | no_evidence | contradiction | not_found"
@@ -62,11 +64,23 @@ ANSWER FORMAT RULES:
 - single_choice questions: suggested_answer must be exactly one of the provided options, or null
 - number questions:      suggested_answer must be a numeric string (e.g. "5" or "3.5"), or null
 - When no relevant evidence exists: suggested_answer=null, suggested_source="not_found",
-  confidence=0.0, evidence_text=null, verification_status="not_found"
+  answer_method="ai_inference", confidence=0.0, evidence_text=null, verification_status="not_found"
+
+SUGGESTED SOURCE GUIDE:
+- ai_cv:       Answer derived solely from the CV/resume text
+- ai_email:    Answer derived solely from the email subject/sender context
+- ai_cv_email: Answer derived from both CV and email context combined
+- not_found:   No evidence found in any provided source
+
+ANSWER METHOD GUIDE:
+- direct_statement: Candidate explicitly and unambiguously states the answer
+  (e.g. "I hold a valid driving licence", "I have 5 years of experience in Python")
+- ai_inference: Answer is reasonably implied but not directly stated
+  (e.g. job title implies seniority level, location implies eligibility to work)
 
 VERIFICATION STATUS GUIDE:
-- verified:      Candidate explicitly states the fact (e.g. "I have a valid driving license")
-- inferred:      Reasonably implied but not directly stated (e.g. job title implies seniority)
+- verified:      Candidate explicitly states the fact
+- inferred:      Reasonably implied but not directly stated
 - no_evidence:   Topic not mentioned at all in provided text
 - contradiction: Conflicting signals found in the text
 - not_found:     No text provided or question cannot be answered from available text
@@ -352,8 +366,10 @@ async def _run_knockout_analysis(
             continue
 
         source  = item.get("suggested_source", "not_found")
+        method  = item.get("answer_method", "ai_inference")
         vstatus = item.get("verification_status", "not_found")
         if source  not in _VALID_SOURCES:  source  = "not_found"
+        if method  not in _VALID_METHODS:  method  = "ai_inference"
         if vstatus not in _VALID_STATUSES: vstatus = "not_found"
 
         raw_conf = item.get("confidence", 0.0)
@@ -372,6 +388,7 @@ async def _run_knockout_analysis(
             "question_id":         qid,
             "suggested_answer":    suggested_answer,
             "suggested_source":    source,
+            "answer_method":       method,
             "confidence":          confidence,
             "evidence_text":       str(evidence_text)[:300] if evidence_text else None,
             "verification_status": vstatus,
@@ -386,19 +403,20 @@ async def _run_knockout_analysis(
             text("""
                 INSERT INTO application_knockout_answer_suggestions
                     (application_id, tenant_id, question_id,
-                     suggested_answer, suggested_source, confidence,
+                     suggested_answer, suggested_source, answer_method, confidence,
                      evidence_text, verification_status,
                      ai_model, prompt_code, prompt_version,
                      status, created_at)
                 VALUES
                     (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid),
-                     :answer, :source, :conf,
+                     :answer, :source, :method, :conf,
                      :evidence, :vstatus,
                      :model, :pcode, :pver,
                      'pending', now())
                 ON CONFLICT (application_id, question_id) DO UPDATE
                     SET suggested_answer    = EXCLUDED.suggested_answer,
                         suggested_source    = EXCLUDED.suggested_source,
+                        answer_method       = EXCLUDED.answer_method,
                         confidence          = EXCLUDED.confidence,
                         evidence_text       = EXCLUDED.evidence_text,
                         verification_status = EXCLUDED.verification_status,
@@ -416,6 +434,7 @@ async def _run_knockout_analysis(
                 "qid":     s["question_id"],
                 "answer":  s["suggested_answer"],
                 "source":  s["suggested_source"],
+                "method":  s["answer_method"],
                 "conf":    s["confidence"],
                 "evidence": s["evidence_text"],
                 "vstatus": s["verification_status"],
@@ -446,6 +465,7 @@ async def get_knockout_suggestions(
                 s.question_id,
                 s.suggested_answer,
                 s.suggested_source,
+                s.answer_method,
                 s.confidence,
                 s.evidence_text,
                 s.verification_status,
@@ -467,6 +487,7 @@ async def get_knockout_suggestions(
             "question_id":         str(r["question_id"]),
             "suggested_answer":    r["suggested_answer"],
             "suggested_source":    r["suggested_source"],
+            "answer_method":       r["answer_method"],
             "confidence":          float(r["confidence"]) if r["confidence"] is not None else 0.0,
             "evidence_text":       r["evidence_text"],
             "verification_status": r["verification_status"],
@@ -497,26 +518,30 @@ async def accept_knockout_suggestion(
     override_answer: if provided, saves this value instead of the AI suggestion
     (used for 'Edit & Accept' flow where the user tweaked the answer).
     """
-    if override_answer is not None:
-        answer_to_save = override_answer.strip()
-    else:
-        row = await db.execute(
-            text("""
-                SELECT suggested_answer
-                FROM application_knockout_answer_suggestions
-                WHERE application_id = CAST(:aid AS uuid)
-                  AND question_id    = CAST(:qid AS uuid)
-            """),
-            {"aid": application_id, "qid": question_id},
-        )
-        answer_to_save = row.scalar_one_or_none() or ""
+    # Fetch suggestion to get the source and method for provenance
+    sug_row = await db.execute(
+        text("""
+            SELECT suggested_answer, suggested_source, answer_method
+            FROM application_knockout_answer_suggestions
+            WHERE application_id = CAST(:aid AS uuid)
+              AND question_id    = CAST(:qid AS uuid)
+        """),
+        {"aid": application_id, "qid": question_id},
+    )
+    sug = sug_row.mappings().first()
+
+    answer_to_save = override_answer.strip() if override_answer is not None else ((sug or {}).get("suggested_answer") or "")
+    # Use the suggestion's source (already a new-style value like ai_cv/ai_email/ai_cv_email)
+    accepted_source = (sug or {}).get("suggested_source") or "ai_cv"
+    accepted_method = (sug or {}).get("answer_method") or "ai_inference"
 
     await save_knockout_answers(
         db=db,
         application_id=application_id,
         job_id=job_id,
         answers=[{"question_id": question_id, "answer_value": answer_to_save}],
-        answer_source="ai_suggested_accepted",
+        answer_source=accepted_source,
+        answer_method=accepted_method,
         updated_by=accepted_by_user_id,
     )
 

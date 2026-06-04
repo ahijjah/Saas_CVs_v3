@@ -202,7 +202,8 @@ _DEFAULT_PROMPTS: dict[str, dict] = {
             '    {\n'
             '      "question_id": "<same UUID as in the input>",\n'
             '      "suggested_answer": "<answer string, or null if not found>",\n'
-            '      "suggested_source": "cv | email_body | cv_and_email | not_found",\n'
+            '      "suggested_source": "ai_cv | ai_email | ai_cv_email | not_found",\n'
+            '      "answer_method": "direct_statement | ai_inference",\n'
             '      "confidence": <float 0.00–1.00>,\n'
             '      "evidence_text": "<direct quote or paraphrase, max 250 chars, or null>",\n'
             '      "verification_status": "verified | inferred | no_evidence | contradiction | not_found"\n'
@@ -214,7 +215,15 @@ _DEFAULT_PROMPTS: dict[str, dict] = {
             "- single_choice questions: suggested_answer must be exactly one of the provided options, or null\n"
             "- number questions:        suggested_answer must be a numeric string (e.g. \"5\" or \"3.5\"), or null\n"
             "- When no relevant evidence: suggested_answer=null, suggested_source=\"not_found\",\n"
-            "  confidence=0.0, evidence_text=null, verification_status=\"not_found\"\n\n"
+            "  answer_method=\"ai_inference\", confidence=0.0, evidence_text=null, verification_status=\"not_found\"\n\n"
+            "SUGGESTED SOURCE GUIDE:\n"
+            "- ai_cv:        Answer derived solely from the CV/resume text\n"
+            "- ai_email:     Answer derived solely from the email subject/sender context\n"
+            "- ai_cv_email:  Answer derived from both CV and email context combined\n"
+            "- not_found:    No evidence found in any provided source\n\n"
+            "ANSWER METHOD GUIDE:\n"
+            "- direct_statement: Candidate explicitly and unambiguously states the answer\n"
+            "- ai_inference:     Answer is reasonably implied but not directly stated\n\n"
             "VERIFICATION STATUS:\n"
             "- verified:      Candidate explicitly states the fact\n"
             "- inferred:      Reasonably implied but not directly stated\n"

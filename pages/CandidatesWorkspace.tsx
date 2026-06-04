@@ -365,9 +365,16 @@ const T = {
     screeningNoQuestions: 'No knockout questions configured for this job.',
     knockoutNotAnswered: 'Not Answered',
     knockoutSource: 'Source',
-    knockoutSourceCandidate: 'Candidate',
+    knockoutSourceCandidate: 'Candidate (Form)',
+    knockoutSourceCandidateEmail: 'Candidate (Email)',
     knockoutSourceRecruiter: 'Recruiter Entered',
     knockoutSourceAI: 'AI Extracted',
+    knockoutSourceAICV: 'AI (CV)',
+    knockoutSourceAIEmail: 'AI (Email)',
+    knockoutSourceAICVEmail: 'AI (CV + Email)',
+    knockoutMethodDirect: 'Direct',
+    knockoutMethodInferred: 'Inferred',
+    knockoutMethodManual: 'Manual',
     knockoutEditAnswer: 'Edit',
     knockoutSaveAnswer: 'Save',
     knockoutCancelEdit: 'Cancel',
@@ -549,9 +556,16 @@ const T = {
     screeningNoQuestions: 'لا توجد أسئلة فرز مسبق لهذه الوظيفة.',
     knockoutNotAnswered: 'لم تُجب',
     knockoutSource: 'المصدر',
-    knockoutSourceCandidate: 'المتقدم',
+    knockoutSourceCandidate: 'المتقدم (نموذج)',
+    knockoutSourceCandidateEmail: 'المتقدم (بريد)',
     knockoutSourceRecruiter: 'أدخله المسؤول',
     knockoutSourceAI: 'مستخرج بالذكاء الاصطناعي',
+    knockoutSourceAICV: 'ذكاء اصطناعي (السيرة)',
+    knockoutSourceAIEmail: 'ذكاء اصطناعي (البريد)',
+    knockoutSourceAICVEmail: 'ذكاء اصطناعي (السيرة + البريد)',
+    knockoutMethodDirect: 'مباشر',
+    knockoutMethodInferred: 'استنتاج',
+    knockoutMethodManual: 'يدوي',
     knockoutEditAnswer: 'تعديل',
     knockoutSaveAnswer: 'حفظ',
     knockoutCancelEdit: 'إلغاء',
@@ -2806,10 +2820,38 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               };
 
               const sourceLabel = (src: string | null | undefined) => {
-                if (!src || src === 'candidate_provided') return t.knockoutSourceCandidate;
+                if (!src || src === 'candidate_provided' || src === 'candidate_form') return t.knockoutSourceCandidate;
+                if (src === 'candidate_email') return t.knockoutSourceCandidateEmail;
                 if (src === 'recruiter_entered') return t.knockoutSourceRecruiter;
-                if (src === 'ai_extracted') return t.knockoutSourceAI;
+                if (src === 'ai_extracted' || src === 'ai_cv') return t.knockoutSourceAICV;
+                if (src === 'ai_email') return t.knockoutSourceAIEmail;
+                if (src === 'ai_cv_email') return t.knockoutSourceAICVEmail;
                 return src;
+              };
+
+              const methodBadge = (method: string | null | undefined) => {
+                if (!method || method === 'direct_statement') {
+                  return (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-green-50 text-green-700 text-[8px] font-black uppercase tracking-widest">
+                      {t.knockoutMethodDirect}
+                    </span>
+                  );
+                }
+                if (method === 'ai_inference') {
+                  return (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[8px] font-black uppercase tracking-widest">
+                      {t.knockoutMethodInferred}
+                    </span>
+                  );
+                }
+                if (method === 'manual_entry') {
+                  return (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[8px] font-black uppercase tracking-widest">
+                      {t.knockoutMethodManual}
+                    </span>
+                  );
+                }
+                return null;
               };
 
               return (
@@ -2844,7 +2886,10 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                             </div>
                           )}
                           {displayVal != null && displayVal !== '' && qa.answer_source && (
-                            <span className="text-[10px] text-slate-400">{t.knockoutSource}: {sourceLabel(qa.answer_source)}</span>
+                            <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                              {t.knockoutSource}: {sourceLabel(qa.answer_source)}
+                              {qa.answer_method && methodBadge(qa.answer_method)}
+                            </span>
                           )}
                         </div>
                       </div>
