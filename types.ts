@@ -505,7 +505,7 @@ export interface KnockoutSuggestionRecord {
   suggestion_id: string;
   question_id: string;
   suggested_answer?: string | null;
-  suggested_source: 'ai_cv' | 'ai_email' | 'ai_cv_email' | 'not_found';
+  suggested_source: 'candidate_email' | 'ai_cv' | 'ai_email' | 'ai_cv_email' | 'not_found';
   answer_method?: string | null;
   confidence: number;
   evidence_text?: string | null;

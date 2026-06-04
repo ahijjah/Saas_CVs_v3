@@ -1516,6 +1516,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
               not_found: kt.knockoutNoEvidence,
             };
             const suggSourceLabel: Record<string, string> = {
+              candidate_email: kt.knockoutSourceCandidateEmail,
               ai_cv: kt.knockoutSuggestionSourceCV,
               ai_email: kt.knockoutSuggestionSourceEmail,
               ai_cv_email: kt.knockoutSuggestionSourceBoth,

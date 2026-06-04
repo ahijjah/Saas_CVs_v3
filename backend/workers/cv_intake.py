@@ -95,6 +95,48 @@ def _html_to_text(html_bytes: bytes, charset: str = "utf-8") -> str:
         return ""
 
 
+# ── Email body extraction ─────────────────────────────────────────────────────
+
+_EMAIL_BODY_MAX_CHARS = 6000
+
+def _extract_body_plain(msg) -> str | None:
+    """
+    Extract the plain-text body of an email message.
+
+    Preference: text/plain part.  Falls back to text/html stripped to visible
+    text via _html_to_text().  Returns None if no readable body is found.
+    Truncated to _EMAIL_BODY_MAX_CHARS to stay within AI token budgets.
+    """
+    if msg is None:
+        return None
+
+    plain_text: str | None = None
+    html_bytes: bytes | None = None
+    html_charset = "utf-8"
+
+    for part in msg.walk():
+        ct = part.get_content_type()
+        if ct == "text/plain" and plain_text is None:
+            payload = part.get_payload(decode=True)
+            if payload:
+                charset = part.get_content_charset() or "utf-8"
+                try:
+                    plain_text = payload.decode(charset, errors="replace")
+                except Exception:
+                    plain_text = payload.decode("utf-8", errors="replace")
+        elif ct == "text/html" and html_bytes is None:
+            html_bytes = part.get_payload(decode=True) or b""
+            html_charset = part.get_content_charset() or "utf-8"
+
+    body = plain_text or (_html_to_text(html_bytes, html_charset) if html_bytes else None)
+    if not body:
+        return None
+    body = body.strip()
+    if not body:
+        return None
+    return body[:_EMAIL_BODY_MAX_CHARS]
+
+
 # ── Job-code extraction ───────────────────────────────────────────────────────
 
 def _extract_job_code_from_message(subject: str, msg) -> tuple[str | None, str]:
@@ -326,6 +368,10 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
             queue_recruiter_unmatched_alert,
         )
 
+        # Extract plain-text body once for the whole message (used for knockout analysis).
+        # Done before attachment loop so it's available regardless of per-attachment outcome.
+        email_body_plain: str | None = _extract_body_plain(msg)
+
         job_id, tenant_id, ingestion_mode, reject_reason, inactive_job_id, job_code_source = (
             await _resolve_routing(db, recipient, subject, forwarding_email, sender=sender, msg=msg)
         )
@@ -472,6 +518,7 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     db, job_id, tenant_id, sender_name, sender,
                     attachment_bytes, content_type, filename, cfg,
                     ingestion_mode=ingestion_mode,
+                    email_body_plain=email_body_plain,
                 )
                 logger.info(
                     "Application inserted — id=%s file=%s job=%s tenant=%s routing=%s uid=%s",
@@ -698,6 +745,7 @@ async def _create_application_and_score(
     filename: str,
     cfg,
     ingestion_mode: str = "forwarding",
+    email_body_plain: str | None = None,
 ) -> tuple[str, datetime]:
     """
     Delegate to the shared intake service and return (application_id, scoring_enqueued_at).
@@ -726,6 +774,7 @@ async def _create_application_and_score(
         files_base_path=cfg.files_base_path,
         max_file_size_mb=cfg.max_file_size_mb,
         email_sender_address=candidate_email,
+        email_body_plain=email_body_plain,
     )
 
     if not result.success:
