@@ -371,6 +371,11 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
         # Extract plain-text body once for the whole message (used for knockout analysis).
         # Done before attachment loop so it's available regardless of per-attachment outcome.
         email_body_plain: str | None = _extract_body_plain(msg)
+        logger.info(
+            "Email body extraction — uid=%s body_chars=%d",
+            msg_id_bytes,
+            len(email_body_plain) if email_body_plain else 0,
+        )
 
         job_id, tenant_id, ingestion_mode, reject_reason, inactive_job_id, job_code_source = (
             await _resolve_routing(db, recipient, subject, forwarding_email, sender=sender, msg=msg)
@@ -519,6 +524,8 @@ async def _process_message(imap, msg_id_bytes: bytes, make_session, cfg) -> None
                     attachment_bytes, content_type, filename, cfg,
                     ingestion_mode=ingestion_mode,
                     email_body_plain=email_body_plain,
+                    email_subject=subject,
+                    email_sender=sender,
                 )
                 logger.info(
                     "Application inserted — id=%s file=%s job=%s tenant=%s routing=%s uid=%s",
@@ -746,6 +753,8 @@ async def _create_application_and_score(
     cfg,
     ingestion_mode: str = "forwarding",
     email_body_plain: str | None = None,
+    email_subject: str | None = None,
+    email_sender: str | None = None,
 ) -> tuple[str, datetime]:
     """
     Delegate to the shared intake service and return (application_id, scoring_enqueued_at).
@@ -775,14 +784,17 @@ async def _create_application_and_score(
         max_file_size_mb=cfg.max_file_size_mb,
         email_sender_address=candidate_email,
         email_body_plain=email_body_plain,
+        subject=email_subject,
+        sender_email=email_sender,
     )
 
     if not result.success:
         raise RuntimeError(f"Intake service returned {result.status}: {result.error_message}")
 
     logger.info(
-        "Application created via intake service — id=%s intake_log=%s",
+        "Application created via intake service — id=%s intake_log=%s body_stored=%s",
         result.application_id, result.intake_log_id,
+        "yes" if email_body_plain else "no (empty/absent)",
     )
     return result.application_id, result.scoring_enqueued_at
 

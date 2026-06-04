@@ -28,6 +28,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from database import set_rls_context
 from services.subscription_service import can_process_cv, increment_monthly_usage
 
 logger = logging.getLogger(__name__)
@@ -634,13 +635,23 @@ async def process_cv_intake(
 
     # ── Step 8: commit ────────────────────────────────────────────────────────
     await db.commit()
+    # set_config(..., true) is LOCAL to the current transaction — it resets after
+    # every COMMIT.  Re-establish the RLS context so the steps that follow can
+    # still write to RLS-protected tables (application_intake_log, etc.).
+    await set_rls_context(db, tenant_id, "recruiter")
 
     # ── Step 8b: increment monthly usage counter (non-fatal) ─────────────────
     try:
         await increment_monthly_usage(tenant_id, db)
         await db.commit()
+        await set_rls_context(db, tenant_id, "recruiter")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to increment monthly usage for tenant %s: %s", tenant_id, exc)
+        # Still re-establish context so Step 10 can proceed
+        try:
+            await set_rls_context(db, tenant_id, "recruiter")
+        except Exception:
+            pass
 
     # ── Step 9: enqueue scoring (non-fatal if Celery is down) ─────────────────
     scoring_enqueued_at: datetime | None = None
@@ -662,6 +673,13 @@ async def process_cv_intake(
     # ── Step 10: write intake log ─────────────────────────────────────────────
     processed_at = datetime.now(timezone.utc)
     duration_ms = int((processed_at - started).total_seconds() * 1000)
+
+    logger.info(
+        "Intake Step 10: writing log for application=%s method=%s body_chars=%d subject=%s sender=%s",
+        application_id, intake_method,
+        len(email_body_plain) if email_body_plain else 0,
+        bool(subject), bool(sender_email),
+    )
 
     log_id = await _safe_log(
         db,
@@ -686,11 +704,20 @@ async def process_cv_intake(
         received_at=received,
     )
     if log_id:
+        logger.info(
+            "Intake Step 10: log written — log_id=%s body_stored=%s",
+            log_id, bool(email_body_plain),
+        )
         await update_intake_log_completion(
             db, log_id,
             processed_at=processed_at,
             duration_ms=duration_ms,
             scoring_enqueued_at=scoring_enqueued_at,
+        )
+    else:
+        logger.error(
+            "Intake Step 10: _safe_log returned None for application=%s — intake log NOT written",
+            application_id,
         )
     await db.commit()
 

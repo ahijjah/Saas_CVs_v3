@@ -245,10 +245,19 @@ async def _run_knockout_analysis(
         method = intake.get("intake_method") or ""
         if intake.get("subject"):
             email_subject = intake["subject"]
-        if intake.get("sender_email") and method in ("email_forwarding", "platform_email"):
+        # intake_method stored by cv_intake.py is "forwarding" (the ingestion_mode value),
+        # NOT "email_forwarding" (the submission_source value). Accept both plus "platform_email".
+        _email_intake_methods = {"email_forwarding", "platform_email", "forwarding"}
+        if intake.get("sender_email") and method in _email_intake_methods:
             email_sender = intake["sender_email"]
         if intake.get("email_body_plain"):
             email_body = intake["email_body_plain"]
+    logger.info(
+        "[%s] knockout intake context — method=%s subject=%s sender=%s body_chars=%d",
+        application_id, (intake or {}).get("intake_method"),
+        bool(email_subject), bool(email_sender),
+        len(email_body) if email_body else 0,
+    )
 
     has_email_content = bool(email_subject or email_sender or email_body)
     if not cv_text and not has_email_content:
@@ -401,20 +410,29 @@ async def _run_knockout_analysis(
             suggested_answer = str(suggested_answer).strip() or None
 
         # ── Enforce consistency rules ──────────────────────────────────────
-        # not_found cannot coexist with an actual answer or evidence
+        # Helper: infer corrected source from available evidence
+        def _infer_source(ev: str | None) -> str:
+            if ev and "email" in str(ev).lower():
+                return "ai_email"
+            return "ai_cv"
+
+        # Rule 1: not_found cannot coexist with an actual answer or evidence
         if source == "not_found" and (suggested_answer or evidence_text):
-            # AI found something but labelled it not_found — correct the source
-            if evidence_text and "email" in str(evidence_text).lower():
-                source = "ai_email"
-            else:
-                source = "ai_cv"
-        # not_found must have null answer
+            source = _infer_source(evidence_text)
+
+        # Rule 2: not_found cannot coexist with a meaningful verification_status
+        # (verified / inferred / contradiction all imply actual evidence was found)
+        if source == "not_found" and vstatus in ("verified", "inferred", "contradiction"):
+            source = _infer_source(evidence_text)
+
+        # Rule 3: not_found enforces nulls — clear all evidence fields
         if source == "not_found":
             suggested_answer = None
             evidence_text = None
             confidence = 0.0
             vstatus = "not_found"
-        # candidate_email implies direct_statement
+
+        # Rule 4: candidate_email requires direct_statement + verified
         if source == "candidate_email":
             method = "direct_statement"
             if vstatus not in ("verified", "contradiction"):
