@@ -436,6 +436,12 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const [recruiterNotesText, setRecruiterNotesText] = useState(data.recruiter_notes ?? '');
   const [notesDirty, setNotesDirty] = useState(false);
 
+  // Knockout inline-edit state (hoisted here to satisfy Rules of Hooks)
+  const [koEditingQid, setKoEditingQid] = useState<string | null>(null);
+  const [koEditingValue, setKoEditingValue] = useState('');
+  const [koEditingSaving, setKoEditingSaving] = useState(false);
+  const [koLocalAnswers, setKoLocalAnswers] = useState<Record<string, string>>({});
+
   const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'awaiting_review';
   const WF_LABELS = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
   const WF_STYLES = WORKFLOW_STATUS_STYLES_BORDERED;
@@ -1166,12 +1172,15 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const koAnswers: KnockoutAnswerRecord[] = data.knockout_answers ?? [];
         const kt = t as any;
 
-        // Local state for inline editing — keyed by question_id
-        const [editingQid, setEditingQid] = React.useState<string | null>(null);
-        const [editingValue, setEditingValue] = React.useState('');
-        const [editingSaving, setEditingSaving] = React.useState(false);
-        // Local answer overrides so the UI reflects saves immediately
-        const [localAnswers, setLocalAnswers] = React.useState<Record<string, string>>({});
+        // State is hoisted to component body (koEditingQid etc.) — aliased here for locality
+        const editingQid = koEditingQid;
+        const setEditingQid = setKoEditingQid;
+        const editingValue = koEditingValue;
+        const setEditingValue = setKoEditingValue;
+        const editingSaving = koEditingSaving;
+        const setEditingSaving = setKoEditingSaving;
+        const localAnswers = koLocalAnswers;
+        const setLocalAnswers = setKoLocalAnswers;
 
         if (koAnswers.length === 0) return null;
 
