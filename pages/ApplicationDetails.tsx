@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, PassingCriteria, WorkflowStatus } from '../types';
+import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, KnockoutSuggestionRecord, PassingCriteria, WorkflowStatus } from '../types';
 import { apiService } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import {
@@ -189,6 +189,22 @@ const T = {
     knockoutSaveAnswer: 'Save',
     knockoutCancelEdit: 'Cancel',
     knockoutEditPlaceholder: 'Enter answer',
+    knockoutSourceAISuggested: 'AI Suggested (Accepted)',
+    knockoutGenerateSuggestions: 'Generate AI Suggestions',
+    knockoutGenerating: 'Analyzing…',
+    knockoutAISuggested: 'AI Suggested',
+    knockoutSuggestionEvidence: 'Evidence',
+    knockoutSuggestionConfidence: 'Confidence',
+    knockoutSuggestionAccept: 'Accept',
+    knockoutSuggestionEditAccept: 'Edit & Accept',
+    knockoutSuggestionIgnore: 'Ignore',
+    knockoutVerified: 'Direct evidence',
+    knockoutInferred: 'Inferred',
+    knockoutNoEvidence: 'No evidence',
+    knockoutContradiction: 'Contradictory',
+    knockoutSuggestionSourceCV: 'From CV',
+    knockoutSuggestionSourceEmail: 'From Email',
+    knockoutSuggestionSourceBoth: 'From CV & Email',
     securityDetectedStatements: 'Detected Suspicious Statements',
     securitySnippetsNote: 'Short excerpts shown for reviewer context. Full CV content is not displayed here.',
     securityPatternLabels: {
@@ -379,6 +395,22 @@ const T = {
     knockoutSaveAnswer: 'حفظ',
     knockoutCancelEdit: 'إلغاء',
     knockoutEditPlaceholder: 'أدخل الإجابة',
+    knockoutSourceAISuggested: 'مقترح بالذكاء الاصطناعي (مقبول)',
+    knockoutGenerateSuggestions: 'توليد اقتراحات ذكاء اصطناعي',
+    knockoutGenerating: 'جارٍ التحليل…',
+    knockoutAISuggested: 'مقترح بالذكاء الاصطناعي',
+    knockoutSuggestionEvidence: 'الدليل',
+    knockoutSuggestionConfidence: 'الثقة',
+    knockoutSuggestionAccept: 'قبول',
+    knockoutSuggestionEditAccept: 'تعديل وقبول',
+    knockoutSuggestionIgnore: 'تجاهل',
+    knockoutVerified: 'دليل مباشر',
+    knockoutInferred: 'مستنتج',
+    knockoutNoEvidence: 'لا دليل',
+    knockoutContradiction: 'متناقض',
+    knockoutSuggestionSourceCV: 'من السيرة الذاتية',
+    knockoutSuggestionSourceEmail: 'من البريد الإلكتروني',
+    knockoutSuggestionSourceBoth: 'من السيرة الذاتية والبريد',
     securityDetectedStatements: 'العبارات المشبوهة المكتشفة',
     securitySnippetsNote: 'مقاطع قصيرة تُعرض لأغراض المراجعة. لا يُعرض النص الكامل للسيرة الذاتية هنا.',
     securityPatternLabels: {
@@ -441,6 +473,13 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const [koEditingValue, setKoEditingValue] = useState('');
   const [koEditingSaving, setKoEditingSaving] = useState(false);
   const [koLocalAnswers, setKoLocalAnswers] = useState<Record<string, string>>({});
+  // Knockout suggestion state
+  const [koSuggestions, setKoSuggestions] = useState<KnockoutSuggestionRecord[]>(
+    data.knockout_suggestions ?? []
+  );
+  const [koAnalyzing, setKoAnalyzing] = useState(false);
+  const [koEditingSuggestionQid, setKoEditingSuggestionQid] = useState<string | null>(null);
+  const [koEditingSuggestionValue, setKoEditingSuggestionValue] = useState('');
 
   const currentWorkflowStatus: WorkflowStatus = (data.workflow_status as WorkflowStatus) || 'awaiting_review';
   const WF_LABELS = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
@@ -1181,6 +1220,14 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const setEditingSaving = setKoEditingSaving;
         const localAnswers = koLocalAnswers;
         const setLocalAnswers = setKoLocalAnswers;
+        const suggestions = koSuggestions;
+        const setSuggestions = setKoSuggestions;
+        const analyzing = koAnalyzing;
+        const setAnalyzing = setKoAnalyzing;
+        const editingSuggestionQid = koEditingSuggestionQid;
+        const setEditingSuggestionQid = setKoEditingSuggestionQid;
+        const editingSuggestionValue = koEditingSuggestionValue;
+        const setEditingSuggestionValue = setKoEditingSuggestionValue;
 
         if (koAnswers.length === 0) return null;
 
@@ -1259,6 +1306,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           if (!src || src === 'candidate_provided') return kt.knockoutSourceCandidate;
           if (src === 'recruiter_entered') return kt.knockoutSourceRecruiter;
           if (src === 'ai_extracted') return kt.knockoutSourceAI;
+          if (src === 'ai_suggested_accepted') return kt.knockoutSourceAISuggested;
           return src;
         };
 
@@ -1279,6 +1327,42 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             // leave edit mode open so user can retry
           } finally {
             setEditingSaving(false);
+          }
+        };
+
+        const handleGenerateSuggestions = async () => {
+          if (!token || analyzing) return;
+          setAnalyzing(true);
+          try {
+            const result = await apiService.triggerKnockoutAnalysis(data.application_id, false, token);
+            if (Array.isArray(result)) setSuggestions(result);
+          } catch {
+            // non-critical — silently fail
+          } finally {
+            setAnalyzing(false);
+          }
+        };
+
+        const handleAcceptSuggestion = async (questionId: string, overrideAnswer?: string) => {
+          if (!token) return;
+          try {
+            await apiService.acceptKnockoutSuggestion(data.application_id, questionId, overrideAnswer ?? null, token);
+            const accepted = suggestions.find(s => s.question_id === questionId);
+            const finalAnswer = overrideAnswer ?? accepted?.suggested_answer ?? '';
+            setLocalAnswers(prev => ({ ...prev, [questionId]: finalAnswer }));
+            setSuggestions(prev => prev.map(s => s.question_id === questionId ? { ...s, status: 'accepted' } : s));
+          } catch {
+            // silently fail
+          }
+        };
+
+        const handleIgnoreSuggestion = async (questionId: string) => {
+          if (!token) return;
+          try {
+            await apiService.ignoreKnockoutSuggestion(data.application_id, questionId, token);
+            setSuggestions(prev => prev.map(s => s.question_id === questionId ? { ...s, status: 'ignored' } : s));
+          } catch {
+            // silently fail
           }
         };
 
@@ -1356,6 +1440,108 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             );
           }
 
+          // Show suggestion panel when there's no final answer and a pending suggestion exists
+          const suggestion = suggestions.find(s => s.question_id === qa.question_id && s.status === 'pending');
+          if ((displayVal == null || displayVal === '') && suggestion) {
+            const isEditingSuggestion = editingSuggestionQid === qa.question_id;
+            const confPct = Math.round(suggestion.confidence * 100);
+            const verificationLabel: Record<string, string> = {
+              verified: kt.knockoutVerified,
+              inferred: kt.knockoutInferred,
+              no_evidence: kt.knockoutNoEvidence,
+              contradiction: kt.knockoutContradiction,
+              not_found: kt.knockoutNoEvidence,
+            };
+            const suggSourceLabel: Record<string, string> = {
+              cv: kt.knockoutSuggestionSourceCV,
+              email_body: kt.knockoutSuggestionSourceEmail,
+              cv_and_email: kt.knockoutSuggestionSourceBoth,
+              not_found: '',
+            };
+            return (
+              <div className="flex flex-col gap-2 border border-indigo-100 bg-indigo-50/60 rounded-xl p-3">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[9px] font-black uppercase tracking-widest">
+                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    {kt.knockoutAISuggested}
+                  </span>
+                  {suggestion.suggested_source !== 'not_found' && (
+                    <span className="text-[9px] text-indigo-500 font-semibold">{suggSourceLabel[suggestion.suggested_source]}</span>
+                  )}
+                  <span className="ml-auto text-[9px] text-slate-500 font-semibold">{kt.knockoutSuggestionConfidence}: {confPct}%</span>
+                </div>
+                {suggestion.suggested_answer && (
+                  isEditingSuggestion ? (
+                    <input
+                      type="text"
+                      value={editingSuggestionValue}
+                      onChange={e => setEditingSuggestionValue(e.target.value)}
+                      className="text-sm border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300 w-full"
+                    />
+                  ) : (
+                    <p className="text-sm font-semibold text-indigo-900 capitalize">{suggestion.suggested_answer}</p>
+                  )
+                )}
+                {suggestion.evidence_text && (
+                  <p className="text-[10px] text-slate-500 leading-snug">
+                    <span className="font-semibold text-slate-600">{kt.knockoutSuggestionEvidence}:</span> {suggestion.evidence_text}
+                  </p>
+                )}
+                {suggestion.verification_status && (
+                  <span className={`inline-flex self-start items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                    suggestion.verification_status === 'verified' ? 'bg-green-100 text-green-700' :
+                    suggestion.verification_status === 'inferred' ? 'bg-amber-100 text-amber-700' :
+                    suggestion.verification_status === 'contradiction' ? 'bg-red-100 text-red-700' :
+                    'bg-slate-100 text-slate-500'
+                  }`}>
+                    {verificationLabel[suggestion.verification_status] ?? suggestion.verification_status}
+                  </span>
+                )}
+                {token && (
+                  <div className="flex gap-1.5 mt-0.5 flex-wrap">
+                    {isEditingSuggestion ? (
+                      <>
+                        <button
+                          onClick={() => { handleAcceptSuggestion(qa.question_id, editingSuggestionValue); setEditingSuggestionQid(null); }}
+                          className="px-2.5 py-1 bg-indigo-600 text-white text-[11px] font-semibold rounded-lg hover:bg-indigo-700"
+                        >
+                          {kt.knockoutSuggestionAccept}
+                        </button>
+                        <button
+                          onClick={() => setEditingSuggestionQid(null)}
+                          className="px-2.5 py-1 bg-slate-100 text-slate-600 text-[11px] font-semibold rounded-lg"
+                        >
+                          {kt.knockoutCancelEdit}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleAcceptSuggestion(qa.question_id)}
+                          className="px-2.5 py-1 bg-indigo-600 text-white text-[11px] font-semibold rounded-lg hover:bg-indigo-700"
+                        >
+                          {kt.knockoutSuggestionAccept}
+                        </button>
+                        <button
+                          onClick={() => { setEditingSuggestionQid(qa.question_id); setEditingSuggestionValue(suggestion.suggested_answer ?? ''); }}
+                          className="px-2.5 py-1 bg-white border border-indigo-300 text-indigo-700 text-[11px] font-semibold rounded-lg hover:bg-indigo-50"
+                        >
+                          {kt.knockoutSuggestionEditAccept}
+                        </button>
+                        <button
+                          onClick={() => handleIgnoreSuggestion(qa.question_id)}
+                          className="px-2.5 py-1 bg-slate-100 text-slate-500 text-[11px] font-semibold rounded-lg hover:bg-slate-200"
+                        >
+                          {kt.knockoutSuggestionIgnore}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
           return (
             <div className="flex items-start gap-2">
               {displayVal != null && displayVal !== '' ? (
@@ -1382,6 +1568,16 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{kt.knockoutSectionTitle}</h4>
+              {token && koAnswers.some(qa => (localAnswers[qa.question_id] ?? qa.answer_value) == null || (localAnswers[qa.question_id] ?? qa.answer_value) === '') && (
+                <button
+                  onClick={handleGenerateSuggestions}
+                  disabled={analyzing}
+                  className="ml-auto flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                  {analyzing ? kt.knockoutGenerating : kt.knockoutGenerateSuggestions}
+                </button>
+              )}
             </div>
             <div className="divide-y divide-slate-100">
               {koAnswers.map((qa, idx) => {

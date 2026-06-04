@@ -439,6 +439,7 @@ export interface ApplicationDetailedAnalysis {
   security_detected_snippets?: string[];
   security_checked_at?: string | null;
   knockout_answers?: KnockoutAnswerRecord[];
+  knockout_suggestions?: KnockoutSuggestionRecord[];
   workflow_status?: WorkflowStatus;
   recruiter_notes?: string | null;
   workflow_history?: WorkflowHistoryEntry[];
@@ -496,6 +497,22 @@ export interface KnockoutAnswerRecord {
   options?: string[] | null;
   passing_criteria?: PassingCriteria | null;
   display_order: number;
+}
+
+/** AI-generated suggestion for an unanswered knockout question. */
+export interface KnockoutSuggestionRecord {
+  suggestion_id: string;
+  question_id: string;
+  suggested_answer?: string | null;
+  suggested_source: 'cv' | 'email_body' | 'cv_and_email' | 'not_found';
+  confidence: number;
+  evidence_text?: string | null;
+  verification_status: 'verified' | 'inferred' | 'no_evidence' | 'contradiction' | 'not_found';
+  ai_model?: string | null;
+  status: 'pending' | 'accepted' | 'ignored';
+  accepted_at?: string | null;
+  accepted_by_name?: string | null;
+  created_at?: string | null;
 }
 
 /** Full question shape — authenticated APIs only. Includes passing_criteria. */

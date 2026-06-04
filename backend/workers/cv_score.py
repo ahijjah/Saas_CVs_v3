@@ -1147,6 +1147,31 @@ async def _score_cv_async(
                     application_id, email_exc,
                 )
 
+            # ── Post-scoring: AI knockout analysis ────────────────────────────
+            # Run after scoring is committed so failures never affect scoring.
+            # Only runs if the job has knockout questions configured.
+            try:
+                from services.knockout_questions_service import job_has_active_knockout_questions
+                from services.knockout_analysis_service import run_knockout_analysis
+                if await job_has_active_knockout_questions(db, job_id):
+                    suggestions = await run_knockout_analysis(
+                        db=db,
+                        application_id=application_id,
+                        job_id=job_id,
+                        tenant_id=tenant_id,
+                    )
+                    if suggestions:
+                        await db.commit()
+                        logger.info(
+                            "[%s] Knockout analysis stored %d suggestions",
+                            application_id, len(suggestions),
+                        )
+            except Exception as ko_exc:
+                logger.warning(
+                    "[%s] Knockout analysis failed (non-critical): %s",
+                    application_id, ko_exc,
+                )
+
     except Exception as exc:
         # Session context manager has already rolled back and closed the
         # connection by the time we reach here — safe to open a new session.

@@ -118,6 +118,9 @@ export const WEBHOOK_CONFIG = {
   COMMUNICATION_AUTOMATION_RULES_URL: `${API_BASE}/communication/automation-rules`,
   // Knockout answers — append /{application_id}/knockout-answers
   KNOCKOUT_ANSWERS_BASE_URL:          `${API_BASE}/applications`,
+  // Knockout AI analysis — append /{application_id}/knockout-analysis
+  // Knockout suggestion accept/ignore — append /{application_id}/knockout-suggestions/accept|ignore
+  KNOCKOUT_ANALYSIS_BASE_URL:         `${API_BASE}/applications`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

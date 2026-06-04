@@ -128,6 +128,21 @@ export const apiService = {
     const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANSWERS_BASE_URL}/${applicationId}/knockout-answers`;
     return this.patch(url, { question_id: questionId, answer_value: answerValue }, token);
   },
+
+  async triggerKnockoutAnalysis(applicationId: string, forceAll = false, token?: string) {
+    const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANALYSIS_BASE_URL}/${applicationId}/knockout-analysis${forceAll ? '?force_all=true' : ''}`;
+    return this.post(url, {}, token);
+  },
+
+  async acceptKnockoutSuggestion(applicationId: string, questionId: string, overrideAnswer?: string | null, token?: string) {
+    const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANALYSIS_BASE_URL}/${applicationId}/knockout-suggestions/accept`;
+    return this.patch(url, { question_id: questionId, override_answer: overrideAnswer ?? null }, token);
+  },
+
+  async ignoreKnockoutSuggestion(applicationId: string, questionId: string, token?: string) {
+    const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANALYSIS_BASE_URL}/${applicationId}/knockout-suggestions/ignore`;
+    return this.patch(url, { question_id: questionId, answer_value: '' }, token);
+  },
 };
 
 export class APIService {

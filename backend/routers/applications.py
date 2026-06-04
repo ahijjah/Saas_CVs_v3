@@ -20,6 +20,12 @@ from services.application_intake_service import (
 )
 from services.communication_events import process_communication_event
 from services.knockout_questions_service import save_knockout_answers
+from services.knockout_analysis_service import (
+    run_knockout_analysis,
+    get_knockout_suggestions,
+    accept_knockout_suggestion,
+    ignore_knockout_suggestion,
+)
 from workers.cv_score import score_cv_task
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -75,6 +81,11 @@ class BulkAssignmentRequest(BaseModel):
 class KnockoutAnswerRequest(BaseModel):
     question_id:  str
     answer_value: str
+
+
+class KnockoutAcceptRequest(BaseModel):
+    question_id:     str
+    override_answer: str | None = None  # if set, saves this instead of AI suggestion
 
 
 @router.get("/assignable-users")
@@ -575,6 +586,9 @@ async def get_application_details(
         for r in ko_rows.mappings()
     ]
 
+    # Fetch AI knockout suggestions
+    knockout_suggestions = await get_knockout_suggestions(db, application_id)
+
     # Fetch workflow history
     wf_rows = await db.execute(
         text("""
@@ -714,6 +728,7 @@ async def get_application_details(
         "security_detected_snippets": list(app["security_detected_snippets"] or []),
         "security_checked_at":        app["security_checked_at"].isoformat() if app["security_checked_at"] else None,
         "knockout_answers":           knockout_answers,
+        "knockout_suggestions":       knockout_suggestions,
         "workflow_status":            app["workflow_status"] or "new",
         "recruiter_notes":            app["recruiter_notes"],
         "workflow_history":           workflow_history,
@@ -1350,6 +1365,104 @@ async def update_knockout_answer(
         answer_source="recruiter_entered",
         updated_by=current_user.user_id,
     )
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/{application_id}/knockout-analysis", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_knockout_analysis(
+    application_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    force_all: bool = False,
+):
+    """Manually trigger AI knockout answer analysis for an application.
+
+    force_all=true re-analyses even questions that already have a final answer.
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT a.job_id FROM applications a
+            WHERE a.application_id = CAST(:aid AS uuid) AND a.tenant_id = :tid
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    app_row = row.mappings().first()
+    if not app_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    suggestions = await run_knockout_analysis(
+        db=db,
+        application_id=application_id,
+        job_id=str(app_row["job_id"]),
+        tenant_id=current_user.tenant_id,
+        force_all=force_all,
+    )
+    if suggestions:
+        await db.commit()
+    return {"status": "ok", "suggestions_generated": len(suggestions)}
+
+
+@router.patch("/{application_id}/knockout-suggestions/accept", status_code=status.HTTP_200_OK)
+async def accept_knockout_suggestion_endpoint(
+    application_id: str,
+    body: KnockoutAcceptRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Accept an AI suggestion (optionally with an edited answer), saving it as a final answer.
+
+    answer_source is stored as 'ai_suggested_accepted'.
+    If override_answer is provided, that value is saved instead of the AI suggestion.
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT a.job_id FROM applications a
+            WHERE a.application_id = CAST(:aid AS uuid) AND a.tenant_id = :tid
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    app_row = row.mappings().first()
+    if not app_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    await accept_knockout_suggestion(
+        db=db,
+        application_id=application_id,
+        job_id=str(app_row["job_id"]),
+        question_id=body.question_id,
+        accepted_by_user_id=current_user.user_id,
+        override_answer=body.override_answer,
+    )
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.patch("/{application_id}/knockout-suggestions/ignore", status_code=status.HTTP_200_OK)
+async def ignore_knockout_suggestion_endpoint(
+    application_id: str,
+    body: KnockoutAnswerRequest,   # reuse: only question_id matters, answer_value ignored
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Mark an AI suggestion as ignored (dismissed without accepting)."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT application_id FROM applications
+            WHERE application_id = CAST(:aid AS uuid) AND tenant_id = :tid
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    if not row.mappings().first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    await ignore_knockout_suggestion(db=db, application_id=application_id, question_id=body.question_id)
     await db.commit()
     return {"status": "ok"}
 
