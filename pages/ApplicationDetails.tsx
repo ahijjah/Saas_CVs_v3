@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, PassingCriteria, WorkflowStatus } from '../types';
+import { apiService } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import {
   WORKFLOW_STATUS_STYLES_BORDERED,
@@ -1262,8 +1263,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           if (!token) return;
           setEditingSaving(true);
           try {
-            const { apiService: api } = await import('../services/api');
-            await api.saveKnockoutAnswer(data.application_id, qa.question_id, editingValue.trim(), token);
+            await apiService.saveKnockoutAnswer(data.application_id, qa.question_id, editingValue.trim(), token);
             setLocalAnswers(prev => ({ ...prev, [qa.question_id]: editingValue.trim() }));
             setEditingQid(null);
           } catch {
