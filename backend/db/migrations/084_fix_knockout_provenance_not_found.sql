@@ -24,8 +24,7 @@ UPDATE application_knockout_answer_suggestions
 SET suggested_source = CASE
         WHEN evidence_text ILIKE '%email%' THEN 'ai_email'
         ELSE 'ai_cv'
-    END,
-    updated_at = now()
+    END
 WHERE suggested_source = 'not_found'
   AND (
       suggested_answer IS NOT NULL
@@ -38,8 +37,7 @@ UPDATE application_knockout_answer_suggestions
 SET suggested_answer    = NULL,
     evidence_text       = NULL,
     confidence          = 0.0,
-    verification_status = 'not_found',
-    updated_at          = now()
+    verification_status = 'not_found'
 WHERE suggested_source = 'not_found'
   AND (
       suggested_answer    IS NOT NULL
