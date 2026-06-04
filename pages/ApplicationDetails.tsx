@@ -193,6 +193,7 @@ const T = {
     knockoutMethodDirect: 'Direct Statement',
     knockoutMethodInferred: 'AI Inference',
     knockoutMethodManual: 'Manual Entry',
+    knockoutMethodNotFound: 'Not Found',
     knockoutEditAnswer: 'Edit',
     knockoutSaveAnswer: 'Save',
     knockoutCancelEdit: 'Cancel',
@@ -411,6 +412,7 @@ const T = {
     knockoutMethodDirect: 'تصريح مباشر',
     knockoutMethodInferred: 'استنتاج ذكاء اصطناعي',
     knockoutMethodManual: 'إدخال يدوي',
+    knockoutMethodNotFound: 'غير موجود',
     knockoutEditAnswer: 'تعديل',
     knockoutSaveAnswer: 'حفظ',
     knockoutCancelEdit: 'إلغاء',
@@ -1359,6 +1361,13 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             return (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest">
                 {kt.knockoutMethodManual}
+              </span>
+            );
+          }
+          if (method === 'not_found') {
+            return (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[9px] font-black uppercase tracking-widest">
+                {kt.knockoutMethodNotFound}
               </span>
             );
           }

@@ -24,7 +24,7 @@ from services.knockout_questions_service import save_knockout_answers
 logger = logging.getLogger(__name__)
 
 _VALID_SOURCES  = {"candidate_email", "ai_cv", "ai_email", "ai_cv_email", "not_found"}
-_VALID_METHODS  = {"direct_statement", "ai_inference"}
+_VALID_METHODS  = {"direct_statement", "ai_inference", "not_found"}
 _VALID_STATUSES = {"verified", "inferred", "no_evidence", "contradiction", "not_found"}
 
 
@@ -432,12 +432,13 @@ async def _run_knockout_analysis(
 
         # Helper: force a row into the canonical not_found state
         def _force_not_found() -> None:
-            nonlocal source, suggested_answer, evidence_text, confidence, vstatus
+            nonlocal source, suggested_answer, evidence_text, confidence, vstatus, method
             source = "not_found"
             suggested_answer = None
             evidence_text = None
             confidence = 0.0
             vstatus = "not_found"
+            method = "not_found"
 
         # Rule 1: not_found source cannot coexist with an actual answer or evidence
         #         — AI found something but mis-labelled the source; correct it.

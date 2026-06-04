@@ -375,6 +375,7 @@ const T = {
     knockoutMethodDirect: 'Direct',
     knockoutMethodInferred: 'Inferred',
     knockoutMethodManual: 'Manual',
+    knockoutMethodNotFound: 'Not Found',
     knockoutEditAnswer: 'Edit',
     knockoutSaveAnswer: 'Save',
     knockoutCancelEdit: 'Cancel',
@@ -589,6 +590,7 @@ const T = {
     knockoutMethodDirect: 'مباشر',
     knockoutMethodInferred: 'استنتاج',
     knockoutMethodManual: 'يدوي',
+    knockoutMethodNotFound: 'غير موجود',
     knockoutEditAnswer: 'تعديل',
     knockoutSaveAnswer: 'حفظ',
     knockoutCancelEdit: 'إلغاء',
@@ -2964,6 +2966,13 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   return (
                     <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[8px] font-black uppercase tracking-widest">
                       {t.knockoutMethodManual}
+                    </span>
+                  );
+                }
+                if (method === 'not_found') {
+                  return (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[8px] font-black uppercase tracking-widest">
+                      {t.knockoutMethodNotFound}
                     </span>
                   );
                 }
