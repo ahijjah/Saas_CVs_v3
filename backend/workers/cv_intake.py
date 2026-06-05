@@ -134,6 +134,20 @@ def _extract_body_plain(msg) -> str | None:
     body = body.strip()
     if not body:
         return None
+
+    full_len = len(body)
+    if full_len > _EMAIL_BODY_MAX_CHARS:
+        logger.warning(
+            "Email body truncated: full=%d chars stored=%d chars (%.0f%% lost) — "
+            "candidate answers beyond char %d will not reach knockout AI",
+            full_len, _EMAIL_BODY_MAX_CHARS,
+            (full_len - _EMAIL_BODY_MAX_CHARS) / full_len * 100,
+            _EMAIL_BODY_MAX_CHARS,
+        )
+    logger.debug(
+        "Email body head (0:500): %r",
+        body[:500],
+    )
     return body[:_EMAIL_BODY_MAX_CHARS]
 
 

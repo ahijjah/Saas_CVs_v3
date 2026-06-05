@@ -394,6 +394,34 @@ async def _run_knockout_analysis(
 
     user_message = json.dumps(user_payload, ensure_ascii=False)
 
+    # ── Diagnostic: log exact payload composition ─────────────────────────────
+    logger.info(
+        "[%s] knockout payload summary — cv_chars=%d email_body_chars=%d "
+        "email_body_in_payload=%s payload_total_chars=%d",
+        application_id,
+        len(cv_text) if cv_text else 0,
+        len(email_body) if email_body else 0,
+        "yes" if email_body else "NO",
+        len(user_message),
+    )
+    logger.debug(
+        "[%s] knockout payload HEAD (0:1000):\n%s",
+        application_id, user_message[:1000],
+    )
+    logger.debug(
+        "[%s] knockout payload TAIL (-1000:):\n%s",
+        application_id, user_message[-1000:],
+    )
+    if email_body:
+        logger.debug(
+            "[%s] email_body HEAD (0:1000):\n%s",
+            application_id, email_body[:1000],
+        )
+        logger.debug(
+            "[%s] email_body TAIL (-1000:):\n%s",
+            application_id, email_body[-1000:],
+        )
+
     # ── 9. Call AI ────────────────────────────────────────────────────────────
     _t0 = time.monotonic()
     response = await openai_client.chat.completions.create(
