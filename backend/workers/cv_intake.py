@@ -59,32 +59,66 @@ _IMAP_LOCK_TTL = 300  # seconds — generous upper bound for a single poll run
 # ── HTML safe-text extraction ─────────────────────────────────────────────────
 
 class _TextExtractor(HTMLParser):
-    """Strip HTML tags and collect visible text nodes."""
+    """
+    Strip HTML tags and emit structured plain text.
+
+    Table rows (common in form-submission emails like Formsite) are converted to
+    "Label: Value" lines so knockout AI can read them as direct field answers.
+    Block-level elements (p, div, br, tr, li, h1–h6) each start a new line.
+    """
+
+    _SKIP_TAGS  = frozenset({"script", "style", "head"})
+    _BLOCK_TAGS = frozenset({
+        "p", "div", "br", "li",
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "section", "article", "fieldset", "legend",
+    })
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self._chunks: list[str] = []
-        self._skip_tags = {"script", "style", "head"}
+        self._parts: list[str] = []
         self._skip_depth = 0
 
     def handle_starttag(self, tag: str, attrs) -> None:
-        if tag.lower() in self._skip_tags:
+        t = tag.lower()
+        if t in self._SKIP_TAGS:
             self._skip_depth += 1
+        elif self._skip_depth == 0 and t in self._BLOCK_TAGS:
+            if self._parts and self._parts[-1] != "\n":
+                self._parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() in self._skip_tags and self._skip_depth > 0:
+        t = tag.lower()
+        if t in self._SKIP_TAGS and self._skip_depth > 0:
             self._skip_depth -= 1
+        elif self._skip_depth == 0:
+            if t == "td":
+                # Tab separates cells within a row — converted to ": " in get_text()
+                self._parts.append("\t")
+            elif t in ("tr",) or t in self._BLOCK_TAGS:
+                if self._parts and self._parts[-1] != "\n":
+                    self._parts.append("\n")
 
     def handle_data(self, data: str) -> None:
         if self._skip_depth == 0 and data.strip():
-            self._chunks.append(data)
+            self._parts.append(data.strip())
 
     def get_text(self) -> str:
-        return " ".join(self._chunks)
+        raw = "".join(self._parts)
+        lines: list[str] = []
+        for line in raw.splitlines():
+            cells = [c.strip() for c in line.split("\t") if c.strip()]
+            if len(cells) >= 2:
+                # "Label\tValue" → "Label: Value"
+                lines.append(": ".join(cells))
+            elif cells:
+                lines.append(cells[0])
+        text = "\n".join(lines)
+        return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def _html_to_text(html_bytes: bytes, charset: str = "utf-8") -> str:
-    """Safely extract visible text from HTML bytes. Never raises."""
+    """Safely extract structured text from HTML bytes. Never raises."""
     try:
         raw = html_bytes.decode(charset, errors="replace")
         extractor = _TextExtractor()
@@ -97,42 +131,80 @@ def _html_to_text(html_bytes: bytes, charset: str = "utf-8") -> str:
 
 # ── Email body extraction ─────────────────────────────────────────────────────
 
-_EMAIL_BODY_MAX_CHARS = 6000
+# Increased from 6000: Formsite HTML form submissions with a job description field
+# can easily be 8 000–12 000 chars; screening answers must not be truncated.
+_EMAIL_BODY_MAX_CHARS = 10_000
+
 
 def _extract_body_plain(msg) -> str | None:
     """
-    Extract the plain-text body of an email message.
+    Extract the most complete plain-text body from an email message.
 
-    Preference: text/plain part.  Falls back to text/html stripped to visible
-    text via _html_to_text().  Returns None if no readable body is found.
-    Truncated to _EMAIL_BODY_MAX_CHARS to stay within AI token budgets.
+    Strategy:
+      1. Walk ALL MIME parts; collect the first non-empty text/plain and text/html.
+      2. Convert HTML to structured text using _html_to_text() (table-aware).
+      3. Prefer HTML when it produces ≥ 2× more content than plain text.
+         Rationale: form-submission services (Formsite, Typeform, etc.) put ALL
+         structured field responses in the HTML part; the text/plain part is a
+         minimal notification summary that omits screening answers entirely.
+      4. Log MIME part inventory and chosen source for diagnosis.
+      5. Truncate to _EMAIL_BODY_MAX_CHARS.
     """
     if msg is None:
         return None
 
+    parts_log: list[str] = []
     plain_text: str | None = None
-    html_bytes: bytes | None = None
-    html_charset = "utf-8"
+    html_text:  str | None = None
 
     for part in msg.walk():
-        ct = part.get_content_type()
-        if ct == "text/plain" and plain_text is None:
-            payload = part.get_payload(decode=True)
-            if payload:
-                charset = part.get_content_charset() or "utf-8"
-                try:
-                    plain_text = payload.decode(charset, errors="replace")
-                except Exception:
-                    plain_text = payload.decode("utf-8", errors="replace")
-        elif ct == "text/html" and html_bytes is None:
-            html_bytes = part.get_payload(decode=True) or b""
-            html_charset = part.get_content_charset() or "utf-8"
+        ct      = part.get_content_type()
+        payload = part.get_payload(decode=True)
+        size    = len(payload) if payload else 0
+        parts_log.append(f"{ct}({size}b)")
 
-    body = plain_text or (_html_to_text(html_bytes, html_charset) if html_bytes else None)
-    if not body:
-        return None
-    body = body.strip()
-    if not body:
+        if ct == "text/plain" and plain_text is None and payload:
+            charset = part.get_content_charset() or "utf-8"
+            try:
+                decoded = payload.decode(charset, errors="replace").strip()
+            except Exception:
+                decoded = payload.decode("utf-8", errors="replace").strip()
+            plain_text = decoded or None
+
+        elif ct == "text/html" and html_text is None and payload:
+            charset   = part.get_content_charset() or "utf-8"
+            extracted = _html_to_text(payload, charset).strip()
+            html_text = extracted or None
+
+    logger.info("Email MIME parts: %s", " | ".join(parts_log) or "none")
+
+    # Choose the most complete source.
+    # Formsite puts all form field responses ONLY in the HTML part.
+    # text/plain contains only a minimal notification (name, email, maybe one
+    # long job-description field) — screening answers are absent from it.
+    if plain_text and html_text:
+        ratio = len(html_text) / max(len(plain_text), 1)
+        if ratio >= 2.0:
+            body = html_text
+            logger.info(
+                "Email body: HTML selected (%d chars, %.1fx richer than plain %d chars) — "
+                "form-submission mode",
+                len(html_text), ratio, len(plain_text),
+            )
+        else:
+            body = plain_text
+            logger.info(
+                "Email body: plain selected (%d chars) — HTML (%d chars) not significantly richer",
+                len(plain_text), len(html_text),
+            )
+    elif html_text:
+        body = html_text
+        logger.info("Email body: HTML only (%d chars) — no plain part found", len(html_text))
+    elif plain_text:
+        body = plain_text
+        logger.info("Email body: plain only (%d chars) — no HTML part found", len(plain_text))
+    else:
+        logger.info("Email body: no usable content in any MIME part")
         return None
 
     full_len = len(body)
@@ -144,10 +216,7 @@ def _extract_body_plain(msg) -> str | None:
             (full_len - _EMAIL_BODY_MAX_CHARS) / full_len * 100,
             _EMAIL_BODY_MAX_CHARS,
         )
-    logger.debug(
-        "Email body head (0:500): %r",
-        body[:500],
-    )
+    logger.debug("Email body head (0:500): %r", body[:500])
     return body[:_EMAIL_BODY_MAX_CHARS]
 
 
