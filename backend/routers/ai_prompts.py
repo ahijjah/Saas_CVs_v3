@@ -192,10 +192,25 @@ _DEFAULT_PROMPTS: dict[str, dict] = {
             "You are provided with:\n"
             "- A job title\n"
             "- A list of knockout questions (each with a type and, for choice questions, the allowed options)\n"
-            "- Optionally, the extracted text from the candidate's CV (cv_text)\n"
+            "- Optionally, the full plain-text body of the submission email (email_body) — READ THIS FIRST\n"
             "- Optionally, the subject line of the submission email (email_subject)\n"
             "- Optionally, the sender email address (email_sender)\n"
-            "- Optionally, the full plain-text body of the submission email (email_body)\n\n"
+            "- Optionally, the extracted text from the candidate's CV (cv_text)\n\n"
+            "PROCESSING ORDER — MANDATORY:\n"
+            "For EACH question, follow this exact sequence before choosing source and answer:\n"
+            "  Step 1 — Read the ENTIRE email_body (if provided). Find any direct candidate statement\n"
+            "            that answers this specific question. If found → MUST use candidate_email.\n"
+            "  Step 2 — Only if email_body contains NO direct answer for this question: examine cv_text.\n"
+            "            Use ai_cv for answers derived from the CV.\n"
+            "  Step 3 — If both sources support the same answer but email has no direct statement:\n"
+            "            use ai_cv_email.\n"
+            "DO NOT use ai_cv if you already found a direct answer in email_body.\n\n"
+            "EMAIL BODY PRIORITY — EXAMPLES (MUST use candidate_email + direct_statement + verified):\n"
+            '  "My highest education is Bachelor\'s Degree"  → Bachelor\'s Degree, candidate_email\n'
+            '  "I have 2 years of relevant experience"      → 2, candidate_email\n'
+            '  "Yes, I have archiving experience"           → yes, candidate_email\n'
+            '  "I can perform physical archive duties"      → yes, candidate_email\n'
+            "  Any first-person statement answering a knockout question → candidate_email, confidence ≥ 0.90\n\n"
             "For each question, determine the most likely answer based ONLY on the provided text.\n\n"
             "OUTPUT: Valid JSON only — no markdown, no explanation, no code blocks.\n\n"
             "Return exactly this structure:\n"

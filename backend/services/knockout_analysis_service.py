@@ -13,6 +13,7 @@ Design guarantees:
 """
 import json
 import logging
+import re
 import time
 
 from sqlalchemy import text
@@ -28,6 +29,25 @@ _VALID_METHODS  = {"direct_statement", "ai_inference", "not_found"}
 _VALID_STATUSES = {"verified", "inferred", "no_evidence", "contradiction", "not_found"}
 
 
+def _scan_email_body_markers(body: str) -> list[str]:
+    """Heuristic scan for direct candidate answer patterns. Diagnostic logging only."""
+    b = body.lower()
+    found = []
+    for name, pat in (
+        ("direct_i_have",    r"\bi\s+have\b"),
+        ("direct_i_am",      r"\bi\s+am\b"),
+        ("direct_i_hold",    r"\bi\s+hold\b"),
+        ("education_level",  r"\b(bachelor|master|phd|diploma|degree|graduate)\b"),
+        ("experience_years", r"\b\d+\s+years?\b"),
+        ("yes_answer",       r"\byes,?\s+i\b"),
+        ("no_answer",        r"\bno,?\s+i\b"),
+        ("archive_direct",   r"\b(archiv|filing|digitiz)\b"),
+    ):
+        if re.search(pat, b):
+            found.append(name)
+    return found
+
+
 # ── Hardcoded fallback prompt (mirrors the seeded DB row in migration 080) ─────
 
 KNOCKOUT_ANALYSIS_SYSTEM_PROMPT = """\
@@ -37,10 +57,30 @@ pre-qualification (knockout) questions from candidate documents.
 You are provided with:
 - A job title
 - A list of knockout questions (each with a type and, for choice questions, the allowed options)
-- Optionally, the extracted text from the candidate's CV (cv_text)
+- Optionally, the full plain-text body of the submission email (email_body) — READ THIS FIRST
 - Optionally, the subject line of the submission email (email_subject)
 - Optionally, the sender email address (email_sender)
-- Optionally, the full plain-text body of the submission email (email_body)
+- Optionally, the extracted text from the candidate's CV (cv_text)
+
+PROCESSING ORDER — MANDATORY:
+For EACH question, follow this exact sequence before choosing source and answer:
+  Step 1 — Read the ENTIRE email_body (if provided). Find any direct candidate statement
+            that answers this specific question. If found → MUST use candidate_email.
+  Step 2 — Only if email_body contains NO direct answer for this question: examine cv_text.
+            Use ai_cv for answers derived from the CV.
+  Step 3 — If both sources support the same answer but email has no direct statement:
+            use ai_cv_email.
+DO NOT use ai_cv if you already found a direct answer in email_body.
+
+EMAIL BODY PRIORITY — EXAMPLES (MUST use candidate_email + direct_statement + verified):
+  "My highest education is Bachelor's Degree"       → Bachelor's Degree, candidate_email
+  "I have 2 years of relevant experience"           → 2, candidate_email
+  "I have 5 years experience in archiving"          → 5, candidate_email
+  "Yes, I have archiving experience"                → yes, candidate_email
+  "I can perform physical archive duties"           → yes, candidate_email
+  "No, I don't have a driving licence"              → no, candidate_email
+  Any first-person statement directly answering a knockout question → candidate_email,
+  direct_statement, verified, confidence ≥ 0.90.
 
 For each question, determine the most likely answer based ONLY on the provided text.
 
@@ -272,6 +312,12 @@ async def _run_knockout_analysis(
         bool(email_subject), bool(email_sender),
         len(email_body) if email_body else 0,
     )
+    if email_body:
+        _markers = _scan_email_body_markers(email_body)
+        logger.info(
+            "[%s] email body answer markers: %d detected — %s",
+            application_id, len(_markers), _markers or "none",
+        )
 
     has_email_content = bool(email_subject or email_sender or email_body)
     if not cv_text and not has_email_content:
@@ -336,14 +382,15 @@ async def _run_knockout_analysis(
         "job_title": job_title,
         "questions": questions_payload,
     }
-    if cv_text:
-        user_payload["cv_text"] = cv_text[:8000]
+    # email_body placed before cv_text so the AI reads direct candidate statements first
+    if email_body:
+        user_payload["email_body"] = email_body  # already truncated at intake (≤ 6000 chars)
     if email_subject:
         user_payload["email_subject"] = email_subject
     if email_sender:
         user_payload["email_sender"] = email_sender
-    if email_body:
-        user_payload["email_body"] = email_body  # already truncated at intake (≤ 6000 chars)
+    if cv_text:
+        user_payload["cv_text"] = cv_text[:8000]
 
     user_message = json.dumps(user_payload, ensure_ascii=False)
 
@@ -426,6 +473,10 @@ async def _run_knockout_analysis(
         # ── Enforce consistency rules ──────────────────────────────────────
         # Helper: infer corrected source from available evidence text
         def _infer_source(ev: str | None) -> str:
+            # If a 60-char snippet of the evidence appears verbatim in the email body,
+            # the AI found it in the email but mis-labelled the source.
+            if ev and email_body and str(ev).lower()[:60] in email_body.lower():
+                return "candidate_email"
             if ev and "email" in str(ev).lower():
                 return "ai_email"
             return "ai_cv"
@@ -485,6 +536,22 @@ async def _run_knockout_analysis(
             method = "direct_statement"
             if vstatus not in ("verified", "contradiction"):
                 vstatus = "verified"
+
+        # Rule 7: AI labelled source as ai_cv but evidence snippet appears verbatim in
+        #         email body — the AI found it in the email but mislabelled the source.
+        if source == "ai_cv" and evidence_text and email_body:
+            ev_snippet = evidence_text.lower().strip()[:60]
+            if ev_snippet and ev_snippet in email_body.lower():
+                logger.info(
+                    "[%s] normalization rule7: correcting ai_cv → candidate_email for qid=%s "
+                    "(evidence snippet found in email body)",
+                    application_id, qid,
+                )
+                source = "candidate_email"
+                method = "direct_statement"
+                if vstatus not in ("verified", "contradiction"):
+                    vstatus = "verified"
+                confidence = max(confidence, 0.90)
 
         suggestions.append({
             "question_id":         qid,
