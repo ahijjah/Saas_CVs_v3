@@ -6,9 +6,10 @@ Architecture
 1. Parse email_body_plain into (label, value) candidate pairs using
    multiple pattern strategies:
      A. "Label: Value" or "Label - Value"  — HTML-table-extracted rows (Formsite, etc.)
-     B. Question line + standalone X/✓ + answer line  — Formsite plain-text format
+     B. Question line + standalone X/✓ + answer line  — Formsite plain-text (simple)
      C. Inline "[x] Answer" / "✓ Answer" lines  — checkbox/radio HTML
      D. Question line immediately followed by answer  — proximity fallback
+     E. Radio-group option block: Question → [blank] → [Opt]\nX\n[Opt (selected)]
 
 2. Fuzzy-match each extracted label to configured knockout question texts
    using RapidFuzz token_set_ratio (handles word reordering and partial matches).
@@ -268,6 +269,64 @@ def _parse_body(body: str) -> list[_RawPair]:
                 pattern="question_followed_by_answer", marked=False,
                 evidence=f"{ln}\n{nxt}",
             ))
+
+    # ── Pattern E: Radio-group option block with adjacent X marker ────────────
+    # Handles Formsite single-choice format where all options are listed and a
+    # standalone X appears on the line BEFORE the selected option:
+    #   "Question?\n\nOpt A\nX\nOpt B (selected)\nOpt C"
+    #
+    # Rule: within the option block, a standalone X/✓ selects the immediately
+    # following non-blank line.  At most one X per block.
+    i = 0
+    while i < n:
+        ln = lines[i].strip()
+        if not (ln.endswith("?") and len(ln) >= 10):
+            i += 1
+            continue
+
+        # Skip blank lines immediately after the question
+        j = i + 1
+        while j < n and not lines[j].strip():
+            j += 1
+
+        # Collect the option block (up to 30 lines; stop on second question or
+        # two consecutive blank lines).
+        block: list[tuple[int, str]] = []   # (line_index, stripped_text)
+        blank_streak = 0
+        max_j = min(j + 30, n)
+        while j < max_j:
+            candidate = lines[j].strip()
+            if not candidate:
+                blank_streak += 1
+                if blank_streak >= 2:
+                    break
+                j += 1
+                continue
+            blank_streak = 0
+            # A new question line terminates the block
+            if candidate.endswith("?") and len(candidate) >= 10:
+                break
+            block.append((j, candidate))
+            j += 1
+
+        # Need at least 3 lines: [option, X, selected] to be meaningful
+        if len(block) >= 3:
+            for k, (_, bline) in enumerate(block):
+                if _STANDALONE_MARKER_RE.match(bline) and k + 1 < len(block):
+                    selected = block[k + 1][1]
+                    if selected:
+                        label = ln.rstrip("?").strip()
+                        ctx_start = max(0, k - 1)
+                        ctx_end   = min(len(block), k + 3)
+                        ctx_lines = [ln] + [bl for _, bl in block[ctx_start:ctx_end]]
+                        _add(_RawPair(
+                            label=label, value=selected,
+                            pattern="choice_group_marker", marked=True,
+                            evidence="\n".join(ctx_lines[:8]),
+                        ))
+                    break  # at most one X per block
+
+        i += 1
 
     return pairs
 

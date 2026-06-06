@@ -57,6 +57,34 @@ Do you have experience working with archives?
 [ ] No
 """
 
+# Pattern E: Formsite radio-group — all options listed, X before selected option
+FORMSITE_RADIO_GROUP_BODY = """\
+What is the highest level of education that you have?
+
+High School Diploma
+X
+Bachelor's Degree or equivalent
+Master's Degree or equivalent
+PhD or equivalent
+
+How many years of relevant professional experience do you have?
+
+Less than 1 year
+X
+2 years
+3 years
+4 years
+5 years
+
+Do you have experience working with archives?
+X
+Yes
+
+Are you willing and able to perform physical archive duties, including lifting boxes, shelving records, and standing for extended periods?
+X
+Yes
+"""
+
 
 # ── Mock knockout questions matching the test body ───────────────────────────
 
@@ -280,6 +308,84 @@ class TestFullPipeline:
         results = _run_extraction(INLINE_CHECKBOX_BODY, MOCK_QUESTIONS)
         resolved = [r for r in results if r.resolved]
         assert len(resolved) >= 2, f"Expected ≥2 resolved from checkbox body, got {len(resolved)}"
+
+
+# ── Pattern E tests: Radio-group option block ────────────────────────────────
+
+class TestPatternE:
+    """Formsite radio-group: all options listed, standalone X before selected option."""
+
+    def test_education_radio_group_extracted(self):
+        pairs = _parse_body(FORMSITE_RADIO_GROUP_BODY)
+        edu = next((p for p in pairs if "education" in p.label.lower()), None)
+        assert edu is not None, "Education question not extracted"
+        assert "bachelor" in edu.value.lower(), f"Unexpected education value: {edu.value!r}"
+
+    def test_education_pattern_is_choice_group_marker(self):
+        pairs = _parse_body(FORMSITE_RADIO_GROUP_BODY)
+        edu = next((p for p in pairs if "education" in p.label.lower()), None)
+        assert edu is not None
+        assert edu.pattern == "choice_group_marker"
+        assert edu.marked is True
+
+    def test_experience_radio_group_extracted(self):
+        pairs = _parse_body(FORMSITE_RADIO_GROUP_BODY)
+        exp = next(
+            (p for p in pairs if "years" in p.label.lower() and "experience" in p.label.lower()),
+            None,
+        )
+        assert exp is not None, "Experience question not extracted"
+        assert "2" in exp.value, f"Unexpected experience value: {exp.value!r}"
+
+    def test_full_pipeline_radio_group_all_four_resolved(self):
+        results = _run_extraction(FORMSITE_RADIO_GROUP_BODY, MOCK_QUESTIONS)
+        resolved = [r for r in results if r.resolved]
+        assert len(resolved) == 4, (
+            f"Expected 4 resolved from radio-group body, got {len(resolved)}.\n"
+            + "\n".join(
+                f"  {r.question_id[:8]} resolved={r.resolved} conf={r.confidence:.2f} "
+                f"answer={r.suggested_answer!r} pattern={r.extraction_pattern}"
+                for r in results
+            )
+        )
+
+    def test_education_answer_normalised(self):
+        results = _run_extraction(FORMSITE_RADIO_GROUP_BODY, MOCK_QUESTIONS)
+        r = next(r for r in results if "education" in r.question_text.lower())
+        assert r.resolved
+        assert r.suggested_answer is not None
+        assert "bachelor" in r.suggested_answer.lower()
+        assert r.extraction_pattern == "choice_group_marker"
+
+    def test_experience_answer_normalised_to_number(self):
+        results = _run_extraction(FORMSITE_RADIO_GROUP_BODY, MOCK_QUESTIONS)
+        r = next(r for r in results if "years" in r.question_text.lower())
+        assert r.resolved
+        assert r.suggested_answer == "2"
+        assert r.question_type == "number"
+
+    def test_archive_yes_still_resolved(self):
+        results = _run_extraction(FORMSITE_RADIO_GROUP_BODY, MOCK_QUESTIONS)
+        r = next(
+            r for r in results
+            if "archive" in r.question_text.lower() and "physical" not in r.question_text.lower()
+        )
+        assert r.resolved
+        assert r.suggested_answer == "yes"
+
+    def test_physical_yes_still_resolved(self):
+        results = _run_extraction(FORMSITE_RADIO_GROUP_BODY, MOCK_QUESTIONS)
+        r = next(r for r in results if "physical" in r.question_text.lower())
+        assert r.resolved
+        assert r.suggested_answer == "yes"
+
+    def test_confidence_high_for_radio_group(self):
+        results = _run_extraction(FORMSITE_RADIO_GROUP_BODY, MOCK_QUESTIONS)
+        for r in results:
+            if r.resolved:
+                assert r.confidence >= 0.90, (
+                    f"Low confidence for {r.question_text[:40]!r}: {r.confidence:.2f}"
+                )
 
 
 # ── Normalisation unit tests ──────────────────────────────────────────────────
