@@ -122,7 +122,7 @@ class ValidationResult:
     validation_status: str
     suggested_answer:  str | None
     validation_source: str | None
-    confidence:        float
+    confidence:        float | None
     evidence_text:     str | None
     reasoning_summary: str | None
 
@@ -192,7 +192,7 @@ async def get_knockout_validations(
             "suggested_answer":   r["suggested_answer"],
             "validation_status":  r["validation_status"],
             "validation_source":  r["validation_source"],
-            "confidence":         float(r["confidence"]) if r["confidence"] is not None else 0.0,
+            "confidence":         float(r["confidence"]) if r["confidence"] is not None else None,
             "evidence_text":      r["evidence_text"],
             "reasoning_summary":  r["reasoning_summary"],
             "ai_model":           r["ai_model"],
@@ -672,14 +672,23 @@ async def _run(
             continue
 
         has_fa     = bool(final_answers.get(qid))
-        vstatus    = item.get("validation_status") or item.get("validation_result", "cannot_validate")
+
+        # Normalize status — AI may return "result", "validation_result", or "validation_status"
+        _raw_status = (
+            item.get("validation_status")
+            or item.get("validation_result")
+            or item.get("result")
+            or ""
+        )
+        vstatus = _raw_status if _raw_status in _VALID_STATUSES else (
+            "cannot_validate" if has_fa else "cannot_determine"
+        )
+
         vsource    = item.get("validation_source", "none")
         suggested  = item.get("suggested_answer")
         evidence   = item.get("evidence_text")
         reasoning  = item.get("reasoning_summary")
 
-        if vstatus not in _VALID_STATUSES:
-            vstatus = "cannot_validate" if has_fa else "cannot_determine"
         if vsource not in _VALID_SOURCES:
             vsource = "none"
 
@@ -695,26 +704,26 @@ async def _run(
         if has_fa or vstatus in ("cannot_validate", "cannot_determine"):
             suggested = None
 
+        _raw_conf = item.get("confidence")
         try:
-            confidence = max(0.0, min(1.0, float(item.get("confidence", 0.0))))
+            confidence = max(0.0, min(1.0, float(_raw_conf))) if _raw_conf is not None else None
         except (TypeError, ValueError):
-            confidence = 0.0
+            confidence = None
 
         if vstatus in ("cannot_validate", "cannot_determine"):
-            confidence = 0.0
+            confidence = None
             evidence   = None
 
         fa_snapshot = final_answers.get(qid)
 
         # ── DIAGNOSTIC LOGGING (temporary) ───────────────────────────────────
         logger.warning(
-            "[%s] screening_validation RESULT qid=%s status=%s suggested=%s final=%s confidence=%s",
+            "[%s] screening_validation PARSE qid=%s raw_status=%s normalized_status=%s suggested=%s",
             application_id,
             qid,
+            _raw_status,
             vstatus,
             suggested,
-            fa_snapshot["value"] if fa_snapshot else None,
-            confidence,
         )
         # ── END DIAGNOSTIC LOGGING ────────────────────────────────────────────
 
