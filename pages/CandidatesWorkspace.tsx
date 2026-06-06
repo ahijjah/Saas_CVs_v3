@@ -389,13 +389,19 @@ const T = {
     knockoutAnswer: 'Answer',
     knockoutCriteriaPass: (op: string, val: string) => `Pass if ${op} ${val}`,
     knockoutCriteriaAnswers: (answers: string[]) => `Must answer: ${answers.join(' or ')}`,
-    knockoutGenerateSuggestions: 'Generate AI Suggestions',
-    knockoutGenerating: 'Analyzing…',
+    knockoutGenerateSuggestions: 'Run Screening Validation',
+    knockoutGenerating: 'Validating…',
     knockoutAISuggested: 'AI Suggested',
     knockoutAllAnswered: 'All screening questions have answers.',
-    knockoutNoSuggestionsFound: 'No AI suggestions could be generated.',
-    knockoutNoContentForAI: 'No CV/email content available for AI suggestions.',
-    knockoutAnalysisFailed: 'AI analysis failed.',
+    knockoutNoSuggestionsFound: 'No validation results could be generated.',
+    knockoutNoContentForAI: 'No CV/email content available for screening validation.',
+    knockoutAnalysisFailed: 'Screening validation failed.',
+    knockoutCvValidation: 'CV Validation',
+    knockoutSupportedByCv: 'Supported by CV',
+    knockoutContradictedByCv: 'Contradicted by CV',
+    knockoutNotSupportedByCv: 'Not in CV',
+    knockoutCannotValidate: 'Cannot Validate',
+    knockoutCannotDetermine: 'Cannot Determine',
     knockoutSuggestionSourceCV: 'from CV',
     knockoutSuggestionSourceEmail: 'from Email',
     knockoutSuggestionSourceBoth: 'from CV + Email',
@@ -604,13 +610,19 @@ const T = {
     knockoutAnswer: 'الإجابة',
     knockoutCriteriaPass: (op: string, val: string) => `ينجح إذا ${op} ${val}`,
     knockoutCriteriaAnswers: (answers: string[]) => `يجب الإجابة بـ: ${answers.join(' أو ')}`,
-    knockoutGenerateSuggestions: 'توليد اقتراحات ذكاء اصطناعي',
-    knockoutGenerating: 'جارٍ التحليل…',
+    knockoutGenerateSuggestions: 'تشغيل التحقق من الفرز',
+    knockoutGenerating: 'جارٍ التحقق…',
     knockoutAISuggested: 'مقترح بالذكاء الاصطناعي',
     knockoutAllAnswered: 'جميع أسئلة الفرز لها إجابات.',
-    knockoutNoSuggestionsFound: 'لم يتمكن الذكاء الاصطناعي من توليد اقتراحات.',
-    knockoutNoContentForAI: 'لا يوجد محتوى CV/بريد لاقتراحات الذكاء الاصطناعي.',
-    knockoutAnalysisFailed: 'فشل تحليل الذكاء الاصطناعي.',
+    knockoutNoSuggestionsFound: 'لم يتم توليد نتائج تحقق.',
+    knockoutNoContentForAI: 'لا يوجد محتوى CV/بريد للتحقق.',
+    knockoutAnalysisFailed: 'فشل التحقق من الفرز.',
+    knockoutCvValidation: 'التحقق من السيرة الذاتية',
+    knockoutSupportedByCv: 'مدعوم',
+    knockoutContradictedByCv: 'متناقض',
+    knockoutNotSupportedByCv: 'غير مذكور',
+    knockoutCannotValidate: 'لا يمكن التحقق',
+    knockoutCannotDetermine: 'لا يمكن التحديد',
     knockoutSuggestionSourceCV: 'من السيرة الذاتية',
     knockoutSuggestionSourceEmail: 'من البريد',
     knockoutSuggestionSourceBoth: 'من السيرة + البريد',
@@ -1084,6 +1096,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 
   // Knockout AI suggestion state
   const [wsSuggestions, setWsSuggestions] = useState<import('../types').KnockoutSuggestionRecord[]>([]);
+  const [wsValidations, setWsValidations] = useState<import('../types').KnockoutValidationRecord[]>([]);
   const [wsKoAnalyzing, setWsKoAnalyzing] = useState(false);
   const [wsKoError, setWsKoError] = useState<string | null>(null);
   const [wsEditingSuggQid, setWsEditingSuggQid] = useState<string | null>(null);
@@ -1147,6 +1160,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   // Sync knockout suggestions when detail loads or candidate changes
   useEffect(() => {
     setWsSuggestions(detail?.knockout_suggestions ?? []);
+    setWsValidations(detail?.knockout_validations ?? []);
     setWsKoError(null);
     setWsEditingSuggQid(null);
     setWsEditingSuggValue('');
@@ -1320,7 +1334,10 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setWsKoError(null);
     try {
       const api = new APIService(token);
-      const result = await api.triggerKnockoutAnalysis(candidate.application_id);
+      const result = await api.triggerScreeningValidation(candidate.application_id);
+      if (result?.validations && Array.isArray(result.validations)) {
+        setWsValidations(result.validations);
+      }
       if (result?.suggestions && Array.isArray(result.suggestions)) {
         setWsSuggestions(result.suggestions);
       }

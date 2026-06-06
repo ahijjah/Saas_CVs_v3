@@ -440,6 +440,7 @@ export interface ApplicationDetailedAnalysis {
   security_checked_at?: string | null;
   knockout_answers?: KnockoutAnswerRecord[];
   knockout_suggestions?: KnockoutSuggestionRecord[];
+  knockout_validations?: KnockoutValidationRecord[];
   workflow_status?: WorkflowStatus;
   recruiter_notes?: string | null;
   workflow_history?: WorkflowHistoryEntry[];
@@ -500,6 +501,32 @@ export interface KnockoutAnswerRecord {
   options?: string[] | null;
   passing_criteria?: PassingCriteria | null;
   display_order: number;
+}
+
+/** Screening validation result — one per knockout question per run. */
+export interface KnockoutValidationRecord {
+  validation_id?: string | null;
+  question_id: string;
+  has_final_answer: boolean;
+  final_answer_value?: string | null;
+  final_answer_source?: string | null;
+  suggested_answer?: string | null;
+  validation_status:
+    | 'supported_by_cv'
+    | 'contradicted_by_cv'
+    | 'not_supported_by_cv'
+    | 'cannot_validate'
+    | 'suggested'
+    | 'cannot_determine';
+  validation_source?: 'cv' | 'email' | 'cv_and_email' | 'none' | null;
+  confidence?: number | null;
+  evidence_text?: string | null;
+  reasoning_summary?: string | null;
+  ai_model?: string | null;
+  prompt_code?: string | null;
+  prompt_version?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 /** AI-generated suggestion for an unanswered knockout question. */

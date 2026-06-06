@@ -26,6 +26,10 @@ from services.knockout_analysis_service import (
     accept_knockout_suggestion,
     ignore_knockout_suggestion,
 )
+from services.screening_validation_service import (
+    run_screening_validation,
+    get_knockout_validations,
+)
 from workers.cv_score import score_cv_task
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -595,6 +599,9 @@ async def get_application_details(
     # Fetch AI knockout suggestions
     knockout_suggestions = await get_knockout_suggestions(db, application_id)
 
+    # Fetch screening validation results
+    knockout_validations = await get_knockout_validations(db, application_id)
+
     # Fetch workflow history
     wf_rows = await db.execute(
         text("""
@@ -735,6 +742,7 @@ async def get_application_details(
         "security_checked_at":        app["security_checked_at"].isoformat() if app["security_checked_at"] else None,
         "knockout_answers":           knockout_answers,
         "knockout_suggestions":       knockout_suggestions,
+        "knockout_validations":       knockout_validations,
         "workflow_status":            app["workflow_status"] or "new",
         "recruiter_notes":            app["recruiter_notes"],
         "workflow_history":           workflow_history,
@@ -1436,6 +1444,74 @@ async def trigger_knockout_analysis(
         "reason": None,
         "suggestions": full_suggestions,
         "suggestions_generated": len(full_suggestions),
+    }
+
+
+@router.post("/{application_id}/screening-validation", status_code=status.HTTP_200_OK)
+async def trigger_screening_validation(
+    application_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Run Screening Answer Validation for all knockout questions.
+
+    For each question:
+    - If a final answer exists: validates it against CV evidence and returns
+      supported_by_cv | contradicted_by_cv | not_supported_by_cv | cannot_validate
+    - If no final answer exists: suggests an answer when CV evidence is strong,
+      or returns cannot_determine when evidence is insufficient
+
+    AI does not force answers. Existing final answers are never overwritten.
+    Suggestions for unanswered questions are stored as pending and require
+    recruiter acceptance before becoming final answers.
+
+    Returns:
+        status "ok"         — success; validations and suggestions populated
+        status "no_content" — no CV text or email content available
+        status "error"      — AI call or other failure
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT a.job_id FROM applications a
+            WHERE a.application_id = CAST(:aid AS uuid) AND a.tenant_id = :tid
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    app_row = row.mappings().first()
+    if not app_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    validations_raw, error_reason = await run_screening_validation(
+        db=db,
+        application_id=application_id,
+        job_id=str(app_row["job_id"]),
+        tenant_id=current_user.tenant_id,
+    )
+
+    if error_reason:
+        outcome = "no_content" if "no cv text" in error_reason.lower() else "error"
+        return {
+            "status": outcome,
+            "reason": error_reason,
+            "validations": [],
+            "suggestions": [],
+        }
+
+    await db.commit()
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    full_validations = await get_knockout_validations(db, application_id)
+    full_suggestions = await get_knockout_suggestions(db, application_id)
+
+    return {
+        "status":           "ok",
+        "reason":           None,
+        "validations":      full_validations,
+        "suggestions":      full_suggestions,
+        "validations_count": len(full_validations),
     }
 
 

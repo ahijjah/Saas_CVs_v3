@@ -134,6 +134,11 @@ export const apiService = {
     return this.post(url, {}, token);
   },
 
+  async triggerScreeningValidation(applicationId: string, token?: string) {
+    const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANALYSIS_BASE_URL}/${applicationId}/screening-validation`;
+    return this.post(url, {}, token);
+  },
+
   async acceptKnockoutSuggestion(applicationId: string, questionId: string, overrideAnswer?: string | null, token?: string) {
     const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANALYSIS_BASE_URL}/${applicationId}/knockout-suggestions/accept`;
     return this.patch(url, { question_id: questionId, override_answer: overrideAnswer ?? null }, token);

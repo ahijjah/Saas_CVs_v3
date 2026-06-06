@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, KnockoutSuggestionRecord, PassingCriteria, WorkflowStatus } from '../types';
+import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, KnockoutSuggestionRecord, KnockoutValidationRecord, PassingCriteria, WorkflowStatus } from '../types';
 import { apiService } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import {
@@ -198,11 +198,11 @@ const T = {
     knockoutSaveAnswer: 'Save',
     knockoutCancelEdit: 'Cancel',
     knockoutEditPlaceholder: 'Enter answer',
-    knockoutGenerateSuggestions: 'Generate AI Suggestions',
-    knockoutGenerating: 'Analyzing…',
+    knockoutGenerateSuggestions: 'Run Screening Validation',
+    knockoutGenerating: 'Validating…',
     knockoutAISuggested: 'AI Suggested',
     knockoutAllAnswered: 'All screening questions have answers.',
-    knockoutNoContentForAI: 'No CV/email content available for AI suggestions.',
+    knockoutNoContentForAI: 'No CV/email content available for screening validation.',
     knockoutSuggestionEvidence: 'Evidence',
     knockoutSuggestionConfidence: 'Confidence',
     knockoutSuggestionAccept: 'Accept',
@@ -216,8 +216,15 @@ const T = {
     knockoutSuggestionSourceEmail: 'From Email',
     knockoutSuggestionSourceBoth: 'From CV & Email',
     knockoutNoSuggestionsFound: 'No suggestions were generated. Ensure the CV has been processed and extracted text is available.',
-    knockoutNoContent: 'No CV text or email content is available for this application. Ensure the CV has been processed successfully before generating suggestions.',
-    knockoutAnalysisFailed: 'AI suggestion generation failed',
+    knockoutNoContent: 'No CV text or email content is available for this application. Ensure the CV has been processed successfully before running screening validation.',
+    knockoutAnalysisFailed: 'Screening validation failed',
+    knockoutCvValidation: 'CV Validation',
+    knockoutSupportedByCv: 'Supported by CV',
+    knockoutContradictedByCv: 'Contradicted by CV',
+    knockoutNotSupportedByCv: 'Not in CV',
+    knockoutCannotValidate: 'Cannot Validate',
+    knockoutCannotDetermine: 'Cannot Determine',
+    knockoutReasoning: 'Reasoning',
     securityDetectedStatements: 'Detected Suspicious Statements',
     securitySnippetsNote: 'Short excerpts shown for reviewer context. Full CV content is not displayed here.',
     securityPatternLabels: {
@@ -417,11 +424,11 @@ const T = {
     knockoutSaveAnswer: 'حفظ',
     knockoutCancelEdit: 'إلغاء',
     knockoutEditPlaceholder: 'أدخل الإجابة',
-    knockoutGenerateSuggestions: 'توليد اقتراحات ذكاء اصطناعي',
-    knockoutGenerating: 'جارٍ التحليل…',
+    knockoutGenerateSuggestions: 'تشغيل التحقق من الفرز',
+    knockoutGenerating: 'جارٍ التحقق…',
     knockoutAISuggested: 'مقترح بالذكاء الاصطناعي',
     knockoutAllAnswered: 'جميع أسئلة الفرز لها إجابات.',
-    knockoutNoContentForAI: 'لا يوجد محتوى CV/بريد إلكتروني لاقتراحات الذكاء الاصطناعي.',
+    knockoutNoContentForAI: 'لا يوجد محتوى CV/بريد إلكتروني للتحقق.',
     knockoutSuggestionEvidence: 'الدليل',
     knockoutSuggestionConfidence: 'الثقة',
     knockoutSuggestionAccept: 'قبول',
@@ -435,8 +442,15 @@ const T = {
     knockoutSuggestionSourceEmail: 'من البريد الإلكتروني',
     knockoutSuggestionSourceBoth: 'من السيرة الذاتية والبريد',
     knockoutNoSuggestionsFound: 'لم يتم توليد أي اقتراحات. تأكد من معالجة السيرة الذاتية واستخراج النص منها.',
-    knockoutNoContent: 'لا يوجد نص سيرة ذاتية أو بريد إلكتروني متاح. تأكد من اكتمال معالجة السيرة الذاتية قبل توليد الاقتراحات.',
-    knockoutAnalysisFailed: 'فشل توليد اقتراحات الذكاء الاصطناعي',
+    knockoutNoContent: 'لا يوجد نص سيرة ذاتية أو بريد إلكتروني متاح. تأكد من اكتمال معالجة السيرة الذاتية قبل التحقق.',
+    knockoutAnalysisFailed: 'فشل التحقق من الفرز',
+    knockoutCvValidation: 'التحقق من السيرة الذاتية',
+    knockoutSupportedByCv: 'مدعوم بالسيرة الذاتية',
+    knockoutContradictedByCv: 'متناقض مع السيرة الذاتية',
+    knockoutNotSupportedByCv: 'غير مذكور في السيرة الذاتية',
+    knockoutCannotValidate: 'لا يمكن التحقق',
+    knockoutCannotDetermine: 'لا يمكن التحديد',
+    knockoutReasoning: 'التفسير',
     securityDetectedStatements: 'العبارات المشبوهة المكتشفة',
     securitySnippetsNote: 'مقاطع قصيرة تُعرض لأغراض المراجعة. لا يُعرض النص الكامل للسيرة الذاتية هنا.',
     securityPatternLabels: {
@@ -499,9 +513,12 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const [koEditingValue, setKoEditingValue] = useState('');
   const [koEditingSaving, setKoEditingSaving] = useState(false);
   const [koLocalAnswers, setKoLocalAnswers] = useState<Record<string, string>>({});
-  // Knockout suggestion state
+  // Knockout suggestion + validation state
   const [koSuggestions, setKoSuggestions] = useState<KnockoutSuggestionRecord[]>(
     data.knockout_suggestions ?? []
+  );
+  const [koValidations, setKoValidations] = useState<KnockoutValidationRecord[]>(
+    data.knockout_validations ?? []
   );
   const [koAnalyzing, setKoAnalyzing] = useState(false);
   const [koSuggestionsError, setKoSuggestionsError] = useState<string | null>(null);
@@ -1249,6 +1266,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const setLocalAnswers = setKoLocalAnswers;
         const suggestions = koSuggestions;
         const setSuggestions = setKoSuggestions;
+        const validations = koValidations;
+        const setValidations = setKoValidations;
         const analyzing = koAnalyzing;
         const setAnalyzing = setKoAnalyzing;
         const suggestionsError = koSuggestionsError;
@@ -1257,6 +1276,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const setEditingSuggestionQid = setKoEditingSuggestionQid;
         const editingSuggestionValue = koEditingSuggestionValue;
         const setEditingSuggestionValue = setKoEditingSuggestionValue;
+
+        // Map validations by question_id for quick lookup
+        const validationByQid = Object.fromEntries(
+          validations.map(v => [v.question_id, v])
+        );
 
         if (koAnswers.length === 0) return null;
 
@@ -1399,12 +1423,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           setAnalyzing(true);
           setSuggestionsError(null);
           try {
-            const result = await apiService.triggerKnockoutAnalysis(data.application_id, false, token);
+            const result = await apiService.triggerScreeningValidation(data.application_id, token);
             if (result?.status === 'ok') {
-              if (Array.isArray(result.suggestions)) {
-                setSuggestions(result.suggestions);
-              }
-              if (!result.suggestions_generated) {
+              if (Array.isArray(result.validations)) setValidations(result.validations);
+              if (Array.isArray(result.suggestions)) setSuggestions(result.suggestions);
+              if (!result.validations_count && !result.suggestions_generated) {
                 setSuggestionsError(kt.knockoutNoSuggestionsFound);
               }
             } else if (result?.status === 'no_content') {
@@ -1516,9 +1539,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             );
           }
 
-          // Show suggestion panel when there's no final answer and a pending suggestion exists
+          // Show suggestion panel when there's no final answer, a pending suggestion exists,
+          // AND no validation result (validation panel handles the suggested case instead).
           const suggestion = suggestions.find(s => s.question_id === qa.question_id && s.status === 'pending');
-          if ((displayVal == null || displayVal === '') && suggestion) {
+          const hasValidation = Boolean(validationByQid[qa.question_id]);
+          if ((displayVal == null || displayVal === '') && suggestion && !hasValidation) {
             const isEditingSuggestion = editingSuggestionQid === qa.question_id;
             const confPct = Math.round(suggestion.confidence * 100);
             const verificationLabel: Record<string, string> = {
@@ -1653,30 +1678,16 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{kt.knockoutSectionTitle}</h4>
-              {(() => {
-                const isPublicApply = data.submission_source === 'public_apply';
-                const hasMissing = koAnswers.some(qa => {
-                  const v = localAnswers[qa.question_id] ?? qa.answer_value;
-                  return v == null || v === '';
-                });
-                const allAnswered = koAnswers.length > 0 && !hasMissing;
-                if (!token || isPublicApply) return null;
-                if (allAnswered) {
-                  return (
-                    <span className="ml-auto text-[10px] text-slate-400 italic">{kt.knockoutAllAnswered}</span>
-                  );
-                }
-                return (
-                  <button
-                    onClick={handleGenerateSuggestions}
-                    disabled={analyzing}
-                    className="ml-auto flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                    {analyzing ? kt.knockoutGenerating : kt.knockoutGenerateSuggestions}
-                  </button>
-                );
-              })()}
+              {token && data.submission_source !== 'public_apply' && (
+                <button
+                  onClick={handleGenerateSuggestions}
+                  disabled={analyzing}
+                  className="ml-auto flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  {analyzing ? kt.knockoutGenerating : kt.knockoutGenerateSuggestions}
+                </button>
+              )}
             </div>
             {suggestionsError && (
               <div className="px-6 py-2 bg-amber-50 border-b border-amber-100 flex items-start gap-2">
@@ -1690,6 +1701,31 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 const evalResult = evaluateAnswer(qa, displayVal);
                 const criteriaLabel = formatCriteria(qa);
                 const src = editingQid === qa.question_id ? 'recruiter_entered' : (localAnswers[qa.question_id] != null ? 'recruiter_entered' : qa.answer_source);
+                const validation = validationByQid[qa.question_id];
+                const validationStatusBadge = (vstatus: string) => {
+                  const map: Record<string, string> = {
+                    supported_by_cv:     'bg-green-50 text-green-700',
+                    contradicted_by_cv:  'bg-red-50 text-red-700',
+                    not_supported_by_cv: 'bg-slate-100 text-slate-500',
+                    cannot_validate:     'bg-amber-50 text-amber-600',
+                    suggested:           'bg-indigo-50 text-indigo-600',
+                    cannot_determine:    'bg-slate-100 text-slate-400',
+                  };
+                  const statusLabel: Record<string, string> = {
+                    supported_by_cv:     kt.knockoutSupportedByCv,
+                    contradicted_by_cv:  kt.knockoutContradictedByCv,
+                    not_supported_by_cv: kt.knockoutNotSupportedByCv,
+                    cannot_validate:     kt.knockoutCannotValidate,
+                    suggested:           kt.knockoutAISuggested,
+                    cannot_determine:    kt.knockoutCannotDetermine,
+                  };
+                  return (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${map[vstatus] ?? 'bg-slate-100 text-slate-500'}`}>
+                      {statusLabel[vstatus] ?? vstatus}
+                    </span>
+                  );
+                };
+
                 return (
                   <div key={qa.question_id} className="px-6 py-4 grid grid-cols-1 md:grid-cols-4 gap-x-8 gap-y-1.5">
                     <div className="md:col-span-2">
@@ -1732,6 +1768,53 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                       )}
                       {evalBadge(evalResult)}
                     </div>
+
+                    {/* Validation panel — full width, shown after running screening validation */}
+                    {validation && (
+                      <div className="md:col-span-4 mt-1 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[9px] font-black text-textMuted uppercase tracking-widest">{kt.knockoutCvValidation}</span>
+                          {validationStatusBadge(validation.validation_status)}
+                          {validation.confidence != null && validation.confidence > 0 && (
+                            <span className="text-[9px] text-slate-400 font-mono">{Math.round(validation.confidence * 100)}%</span>
+                          )}
+                        </div>
+                        {validation.evidence_text && (
+                          <p className="text-[10px] text-slate-500 italic leading-snug">
+                            "{validation.evidence_text}"
+                          </p>
+                        )}
+                        {validation.reasoning_summary && (
+                          <p className="text-[10px] text-slate-500 leading-snug">
+                            <span className="font-semibold">{kt.knockoutReasoning}:</span> {validation.reasoning_summary}
+                          </p>
+                        )}
+                        {/* For unanswered + suggested: show accept/ignore within validation panel */}
+                        {validation.validation_status === 'suggested' && validation.suggested_answer && (() => {
+                          const valSuggestion = suggestions.find(s => s.question_id === qa.question_id && s.status === 'pending');
+                          if (!valSuggestion) return null;
+                          const isEditingThis = editingSuggestionQid === qa.question_id;
+                          return (
+                            <div className="flex items-center gap-2 flex-wrap pt-1">
+                              <span className="text-xs font-semibold text-indigo-700 capitalize">{validation.suggested_answer}</span>
+                              {!isEditingThis ? (
+                                <>
+                                  <button onClick={() => handleAcceptSuggestion(qa.question_id)} className="px-2.5 py-1 bg-indigo-600 text-white text-[11px] font-semibold rounded-lg hover:bg-indigo-700">{kt.knockoutSuggestionAccept}</button>
+                                  <button onClick={() => { setEditingSuggestionQid(qa.question_id); setEditingSuggestionValue(validation.suggested_answer ?? ''); }} className="px-2.5 py-1 bg-white border border-indigo-300 text-indigo-700 text-[11px] font-semibold rounded-lg hover:bg-indigo-50">{kt.knockoutSuggestionEditAccept}</button>
+                                  <button onClick={() => handleIgnoreSuggestion(qa.question_id)} className="px-2.5 py-1 bg-slate-100 text-slate-500 text-[11px] font-semibold rounded-lg hover:bg-slate-200">{kt.knockoutSuggestionIgnore}</button>
+                                </>
+                              ) : (
+                                <>
+                                  <input type="text" value={editingSuggestionValue} onChange={e => setEditingSuggestionValue(e.target.value)} className="border border-indigo-300 rounded-lg px-2 py-1 text-xs text-textMain w-40 focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+                                  <button onClick={() => handleAcceptSuggestion(qa.question_id, editingSuggestionValue)} className="px-2.5 py-1 bg-indigo-600 text-white text-[11px] font-semibold rounded-lg">{kt.knockoutSuggestionAccept}</button>
+                                  <button onClick={() => setEditingSuggestionQid(null)} className="px-2.5 py-1 bg-slate-100 text-slate-500 text-[11px] font-semibold rounded-lg">{kt.knockoutCancelEdit}</button>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                 );
               })}
