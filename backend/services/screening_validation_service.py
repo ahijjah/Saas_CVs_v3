@@ -672,7 +672,7 @@ async def _run(
             continue
 
         has_fa     = bool(final_answers.get(qid))
-        vstatus    = item.get("validation_status", "cannot_validate")
+        vstatus    = item.get("validation_status") or item.get("validation_result", "cannot_validate")
         vsource    = item.get("validation_source", "none")
         suggested  = item.get("suggested_answer")
         evidence   = item.get("evidence_text")
