@@ -658,7 +658,7 @@ async def _run_knockout_analysis(
             job_id=job_id,
             application_id=application_id,
             prompt_key=(prompt_cfg or {}).get("prompt_code") or "knockout_analysis",
-            prompt_version_id=(prompt_cfg or {}).get("version"),
+            prompt_version_id=(prompt_cfg or {}).get("prompt_id"),
             metadata={"questions_analyzed": len(questions_to_analyze)},
         )
     except Exception as _log_exc:

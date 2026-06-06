@@ -50,6 +50,7 @@ async def load_active_prompt(db: AsyncSession, prompt_code: str) -> dict | None:
         row = result.mappings().first()
         if row:
             return {
+                "prompt_id":            str(row["prompt_id"]) if row["prompt_id"] else None,
                 "prompt_code":          row["prompt_code"],
                 "version":              row["version"],
                 "system_prompt":        row["system_prompt"],
