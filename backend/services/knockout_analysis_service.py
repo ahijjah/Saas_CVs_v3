@@ -264,6 +264,115 @@ async def _run_knockout_analysis(
         logger.info("[%s] All knockout questions already answered — skipping", application_id)
         return [], None
 
+    # ── 2b. Deterministic extraction from email body ──────────────────────────
+    # Run before the LLM to extract form-structured answers (Formsite, HTML
+    # tables, label:value rows, checkbox patterns) without consuming AI tokens.
+    # Only questions that remain unresolved after this stage go to the LLM.
+    from services.knockout_answer_extraction_service import extract_knockout_answers_from_email
+
+    det_results = await extract_knockout_answers_from_email(
+        db=db,
+        application_id=application_id,
+        job_id=job_id,
+        questions=questions_to_analyze,   # pass pre-loaded list to skip re-query
+    )
+
+    # Collect suggestions that are already accepted so we don't overwrite them
+    _accepted_rows = await db.execute(
+        text("""
+            SELECT question_id::text
+            FROM application_knockout_answer_suggestions
+            WHERE application_id = CAST(:aid AS uuid)
+              AND status = 'accepted'
+        """),
+        {"aid": application_id},
+    )
+    _accepted_qids: set[str] = {r[0] for r in _accepted_rows}
+
+    det_suggestions: list[dict] = []
+    det_resolved_qids: set[str] = set()
+
+    for res in det_results:
+        if not res.resolved:
+            continue
+        if res.question_id in _accepted_qids:
+            logger.debug(
+                "[%s] det extraction: skipping qid=%s — suggestion already accepted",
+                application_id, res.question_id,
+            )
+            continue
+
+        det_resolved_qids.add(res.question_id)
+        await db.execute(
+            text("""
+                INSERT INTO application_knockout_answer_suggestions
+                    (application_id, tenant_id, question_id,
+                     suggested_answer, suggested_source, answer_method, confidence,
+                     evidence_text, verification_status,
+                     ai_model, prompt_code, prompt_version,
+                     status, created_at)
+                VALUES
+                    (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid),
+                     :answer, 'candidate_email', 'direct_statement', :conf,
+                     :evidence, 'verified',
+                     'deterministic_extractor', 'knockout_extraction', NULL,
+                     'pending', now())
+                ON CONFLICT (application_id, question_id) DO UPDATE
+                    SET suggested_answer    = EXCLUDED.suggested_answer,
+                        suggested_source    = EXCLUDED.suggested_source,
+                        answer_method       = EXCLUDED.answer_method,
+                        confidence          = EXCLUDED.confidence,
+                        evidence_text       = EXCLUDED.evidence_text,
+                        verification_status = EXCLUDED.verification_status,
+                        ai_model            = EXCLUDED.ai_model,
+                        prompt_code         = EXCLUDED.prompt_code,
+                        prompt_version      = EXCLUDED.prompt_version,
+                        status              = 'pending',
+                        accepted_by         = NULL,
+                        accepted_at         = NULL,
+                        created_at          = now()
+            """),
+            {
+                "aid":      application_id,
+                "tid":      tenant_id,
+                "qid":      res.question_id,
+                "answer":   res.suggested_answer,
+                "conf":     res.confidence,
+                "evidence": res.evidence_text,
+            },
+        )
+        det_suggestions.append({
+            "question_id":         res.question_id,
+            "suggested_answer":    res.suggested_answer,
+            "suggested_source":    "candidate_email",
+            "answer_method":       "direct_statement",
+            "confidence":          res.confidence,
+            "evidence_text":       (res.evidence_text or "")[:300] or None,
+            "verification_status": "verified",
+            "ai_model":            "deterministic_extractor",
+            "prompt_code":         "knockout_extraction",
+            "prompt_version":      None,
+        })
+
+    logger.info(
+        "[%s] det extraction: %d resolved, %d forwarded to AI fallback",
+        application_id, len(det_resolved_qids),
+        len(questions_to_analyze) - len(det_resolved_qids),
+    )
+
+    # Remove deterministically-resolved questions from AI payload
+    questions_to_analyze = [
+        q for q in questions_to_analyze
+        if str(q["question_id"]) not in det_resolved_qids
+    ]
+
+    if not questions_to_analyze:
+        logger.info(
+            "[%s] knockout_analysis: all questions resolved deterministically (%d suggestions)",
+            application_id, len(det_suggestions),
+        )
+        return det_suggestions, None
+
     # ── 3. Fetch CV extracted text ────────────────────────────────────────────
     cv_row = await db.execute(
         text("""
@@ -641,13 +750,17 @@ async def _run_knockout_analysis(
             },
         )
 
+    all_suggestions = det_suggestions + suggestions
     logger.info(
-        "[%s] knockout_analysis complete: %d suggestions stored (model=%s, latency=%dms, "
+        "[%s] knockout_analysis complete: %d suggestions stored "
+        "(%d deterministic + %d AI, model=%s, latency=%dms, "
         "cv=%s, email_subject=%s, email_body=%s)",
-        application_id, len(suggestions), ai_model_used, latency_ms,
+        application_id, len(all_suggestions),
+        len(det_suggestions), len(suggestions),
+        ai_model_used, latency_ms,
         bool(cv_text), bool(email_subject), bool(email_body),
     )
-    return suggestions, None
+    return all_suggestions, None
 
 
 # ── Read suggestions ──────────────────────────────────────────────────────────
