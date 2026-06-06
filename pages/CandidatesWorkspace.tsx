@@ -433,6 +433,9 @@ const T = {
     knockoutSeeMore: 'More',
     knockoutSeeLess: 'Less',
     knockoutReasoning: 'Reasoning',
+    knockoutFinalAnswer: 'Final Answer',
+    knockoutCannotDetermineHelper: 'The AI could not find sufficient evidence in the CV or email to determine an answer.',
+    knockoutCannotValidateHelper: 'The AI could not validate the existing answer using available CV evidence.',
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -669,6 +672,9 @@ const T = {
     knockoutSeeMore: 'المزيد',
     knockoutSeeLess: 'أقل',
     knockoutReasoning: 'التفسير',
+    knockoutFinalAnswer: 'الإجابة النهائية',
+    knockoutCannotDetermineHelper: 'لم يتمكن الذكاء الاصطناعي من إيجاد أدلة كافية لتحديد إجابة.',
+    knockoutCannotValidateHelper: 'لم يتمكن الذكاء الاصطناعي من التحقق من الإجابة باستخدام الأدلة المتاحة.',
   },
 };
 
@@ -3112,6 +3118,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                       const evalResult = evaluateAnswer(qa, displayVal);
                       const criteriaLabel = formatCriteria(qa);
                       const suggestion = wsSuggestions.find(s => s.question_id === qa.question_id && s.status === 'pending');
+                      const wsValidation = wsValidations.find(v => v.question_id === qa.question_id);
                       const isEditingThis = wsEditingSuggQid === qa.question_id;
                       return (
                         <div key={qa.question_id} className="px-6 py-4 grid grid-cols-1 gap-y-1.5">
@@ -3125,7 +3132,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                           </div>
                           <div className="flex items-center gap-4 flex-wrap">
                             <div>
-                              <span className="text-[10px] font-semibold text-slate-400 uppercase mr-1">{t.knockoutAnswer}:</span>
+                              <span className="text-[10px] font-semibold text-slate-400 uppercase mr-1">{t.knockoutFinalAnswer}:</span>
                               {displayVal != null && displayVal !== '' ? (
                                 <span className="text-sm font-semibold text-slate-800 capitalize">{displayVal}</span>
                               ) : (
@@ -3153,82 +3160,132 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                               </div>
                             )}
                           </div>
-                          {/* Suggestion panel */}
-                          {suggestion && (
-                            <div className="mt-2 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2.5 space-y-2">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{t.knockoutAISuggested}</span>
-                                {suggestion.suggested_source && suggestion.suggested_source !== 'not_found' && (
-                                  <span className="text-[9px] text-indigo-400">{suggSourceLabel(suggestion.suggested_source)}</span>
-                                )}
-                                {suggestion.answer_method && methodBadge(suggestion.answer_method)}
-                              </div>
-                              {suggestion.suggested_value != null && suggestion.suggested_value !== '' && suggestion.suggested_source !== 'not_found' ? (
-                                <>
-                                  <p className="text-sm font-semibold text-indigo-800 capitalize">{suggestion.suggested_value}</p>
-                                  {suggestion.evidence && (
-                                    <p className="text-[10px] text-indigo-600 italic leading-relaxed">"{suggestion.evidence}"</p>
+                          {/* Screening Validation panel */}
+                          {wsValidation && (() => {
+                            const vstatus = wsValidation.validation_status;
+                            const ev = wsValidation.evidence_text ?? '';
+                            const isExpanded = wsEvidenceExpanded.has(qa.question_id);
+                            const EVIDENCE_PREVIEW = 120;
+                            const showToggle = ev.length > EVIDENCE_PREVIEW;
+                            const displayEvidence = showToggle && !isExpanded ? ev.slice(0, EVIDENCE_PREVIEW) + '…' : ev;
+                            const vsColors: Record<string, string> = {
+                              supported_by_cv:     'bg-green-50 text-green-700',
+                              contradicted_by_cv:  'bg-red-50 text-red-700',
+                              not_supported_by_cv: 'bg-slate-100 text-slate-500',
+                              cannot_validate:     'bg-amber-50 text-amber-600',
+                              suggested:           'bg-indigo-50 text-indigo-600',
+                              cannot_determine:    'bg-slate-100 text-slate-400',
+                            };
+                            const vsLabels: Record<string, string> = {
+                              supported_by_cv:     t.knockoutSupportedByCv,
+                              contradicted_by_cv:  t.knockoutContradictedByCv,
+                              not_supported_by_cv: t.knockoutNotSupportedByCv,
+                              cannot_validate:     t.knockoutCannotValidate,
+                              suggested:           t.knockoutAISuggested,
+                              cannot_determine:    t.knockoutCannotDetermine,
+                            };
+                            const containerClass = vstatus === 'contradicted_by_cv'
+                              ? 'mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 space-y-2'
+                              : vstatus === 'suggested'
+                              ? 'mt-2 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2.5 space-y-2'
+                              : 'mt-2 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2.5 space-y-2';
+                            return (
+                              <div className={containerClass}>
+                                {/* Header */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{t.knockoutCvValidation}</span>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${vsColors[vstatus] ?? 'bg-slate-100 text-slate-500'}`}>
+                                    {vsLabels[vstatus] ?? vstatus}
+                                  </span>
+                                  {wsValidation.confidence != null && wsValidation.confidence > 0 && (
+                                    <span className="text-[9px] text-slate-400 font-mono">{t.knockoutSuggestionConfidence}: {Math.round(wsValidation.confidence * 100)}%</span>
                                   )}
-                                  {isEditingThis ? (
-                                    <div className="space-y-1.5">
-                                      <input
-                                        type="text"
-                                        value={wsEditingSuggValue}
-                                        onChange={e => setWsEditingSuggValue(e.target.value)}
-                                        className="w-full text-xs border border-indigo-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                                        placeholder={suggestion.suggested_value}
-                                      />
-                                      <div className="flex gap-2">
-                                        <button
-                                          onClick={() => handleWsAcceptSuggestion(suggestion.suggestion_id, qa.question_id, wsEditingSuggValue.trim() || undefined)}
-                                          className="text-xs font-semibold text-white bg-indigo-600 rounded px-2.5 py-1 hover:bg-indigo-700"
-                                        >
-                                          {t.knockoutAcceptEdited}
-                                        </button>
-                                        <button
-                                          onClick={() => { setWsEditingSuggQid(null); setWsEditingSuggValue(''); }}
-                                          className="text-xs text-slate-500 hover:text-slate-700"
-                                        >
-                                          {t.knockoutCancelEdit}
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="flex gap-3 flex-wrap">
-                                      <button
-                                        onClick={() => handleWsAcceptSuggestion(suggestion.suggestion_id, qa.question_id)}
-                                        className="text-xs font-semibold text-indigo-700 hover:text-indigo-900"
-                                      >
-                                        {t.knockoutAccept}
-                                      </button>
-                                      <button
-                                        onClick={() => { setWsEditingSuggQid(qa.question_id); setWsEditingSuggValue(suggestion.suggested_value ?? ''); }}
-                                        className="text-xs font-semibold text-slate-600 hover:text-slate-900"
-                                      >
-                                        {t.knockoutEditAndAccept}
-                                      </button>
-                                      <button
-                                        onClick={() => handleWsIgnoreSuggestion(suggestion.suggestion_id, qa.question_id)}
-                                        className="text-xs text-slate-400 hover:text-slate-600 ml-auto"
-                                      >
-                                        {t.knockoutIgnore}
-                                      </button>
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <div className="flex items-center justify-between">
-                                  <p className="text-xs text-indigo-400 italic">{t.knockoutNoSuggestionsFound}</p>
-                                  <button
-                                    onClick={() => handleWsIgnoreSuggestion(suggestion.suggestion_id)}
-                                    className="text-xs text-slate-400 hover:text-slate-600"
-                                  >
-                                    {t.knockoutIgnore}
-                                  </button>
                                 </div>
-                              )}
-                            </div>
-                          )}
+
+                                {/* Helper text for cannot_* statuses */}
+                                {vstatus === 'cannot_determine' && (
+                                  <p className="text-[10px] text-slate-500 italic">{t.knockoutCannotDetermineHelper}</p>
+                                )}
+                                {vstatus === 'cannot_validate' && (
+                                  <p className="text-[10px] text-slate-500 italic">{t.knockoutCannotValidateHelper}</p>
+                                )}
+
+                                {/* Suggested answer + action buttons */}
+                                {vstatus === 'suggested' && wsValidation.suggested_answer && (() => {
+                                  const pendingSugg = suggestion;
+                                  if (!pendingSugg) return null;
+                                  return (
+                                    <>
+                                      <p className="text-sm font-semibold text-indigo-800 capitalize">{wsValidation.suggested_answer}</p>
+                                      {isEditingThis ? (
+                                        <div className="space-y-1.5">
+                                          <input
+                                            type="text"
+                                            value={wsEditingSuggValue}
+                                            onChange={e => setWsEditingSuggValue(e.target.value)}
+                                            className="w-full text-xs border border-indigo-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                                            placeholder={wsValidation.suggested_answer}
+                                          />
+                                          <div className="flex gap-2">
+                                            <button
+                                              onClick={() => handleWsAcceptSuggestion(pendingSugg.suggestion_id, qa.question_id, wsEditingSuggValue.trim() || undefined)}
+                                              className="text-xs font-semibold text-white bg-indigo-600 rounded px-2.5 py-1 hover:bg-indigo-700"
+                                            >{t.knockoutAcceptEdited}</button>
+                                            <button
+                                              onClick={() => { setWsEditingSuggQid(null); setWsEditingSuggValue(''); }}
+                                              className="text-xs text-slate-500 hover:text-slate-700"
+                                            >{t.knockoutCancelEdit}</button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex gap-3 flex-wrap">
+                                          <button
+                                            onClick={() => handleWsAcceptSuggestion(pendingSugg.suggestion_id, qa.question_id)}
+                                            className="text-xs font-semibold text-indigo-700 hover:text-indigo-900"
+                                          >{t.knockoutAccept}</button>
+                                          <button
+                                            onClick={() => { setWsEditingSuggQid(qa.question_id); setWsEditingSuggValue(wsValidation.suggested_answer ?? ''); }}
+                                            className="text-xs font-semibold text-slate-600 hover:text-slate-900"
+                                          >{t.knockoutEditAndAccept}</button>
+                                          <button
+                                            onClick={() => handleWsIgnoreSuggestion(pendingSugg.suggestion_id, qa.question_id)}
+                                            className="text-xs text-slate-400 hover:text-slate-600 ml-auto"
+                                          >{t.knockoutIgnore}</button>
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+
+                                {/* Evidence — collapsible */}
+                                {ev && (
+                                  <div>
+                                    <p className="text-[10px] text-slate-500 italic leading-snug">
+                                      <span className="not-italic font-semibold text-slate-400">{t.knockoutSuggestionEvidence}: </span>
+                                      "{displayEvidence}"
+                                      {showToggle && (
+                                        <button
+                                          onClick={() => setWsEvidenceExpanded(prev => {
+                                            const next = new Set(prev);
+                                            next.has(qa.question_id) ? next.delete(qa.question_id) : next.add(qa.question_id);
+                                            return next;
+                                          })}
+                                          className="ml-1 not-italic text-indigo-500 hover:text-indigo-700 font-semibold"
+                                        >{isExpanded ? t.knockoutSeeLess : t.knockoutSeeMore}</button>
+                                      )}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* Reasoning */}
+                                {wsValidation.reasoning_summary && (
+                                  <p className="text-[10px] text-slate-500 leading-snug">
+                                    <span className="font-semibold">{t.knockoutReasoning}:</span> {wsValidation.reasoning_summary}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}

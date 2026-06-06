@@ -243,6 +243,8 @@ const T = {
     knockoutSeeLess: 'See less',
     knockoutFinalAnswer: 'Final Answer',
     knockoutScreeningValidation: 'Screening Validation',
+    knockoutCannotDetermineHelper: 'The AI could not find sufficient evidence in the CV or email to determine an answer.',
+    knockoutCannotValidateHelper: 'The AI could not validate the existing answer using available CV evidence.',
     securityDetectedStatements: 'Detected Suspicious Statements',
     securitySnippetsNote: 'Short excerpts shown for reviewer context. Full CV content is not displayed here.',
     securityPatternLabels: {
@@ -487,6 +489,8 @@ const T = {
     knockoutSeeLess: 'عرض أقل',
     knockoutFinalAnswer: 'الإجابة النهائية',
     knockoutScreeningValidation: 'التحقق من الفرز',
+    knockoutCannotDetermineHelper: 'لم يتمكن الذكاء الاصطناعي من إيجاد أدلة كافية في السيرة الذاتية أو البريد لتحديد إجابة.',
+    knockoutCannotValidateHelper: 'لم يتمكن الذكاء الاصطناعي من التحقق من الإجابة الموجودة باستخدام أدلة السيرة الذاتية المتاحة.',
     securityDetectedStatements: 'العبارات المشبوهة المكتشفة',
     securitySnippetsNote: 'مقاطع قصيرة تُعرض لأغراض المراجعة. لا يُعرض النص الكامل للسيرة الذاتية هنا.',
     securityPatternLabels: {
@@ -1886,7 +1890,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                       )}
                     </div>
                     <div>
-                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{kt.knockoutAnswer}</p>
+                      <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{kt.knockoutFinalAnswer}</p>
                       {renderAnswerCell(qa)}
                     </div>
                     <div>
@@ -1908,7 +1912,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                       const displayEvidence = showToggle && !isExpanded ? ev.slice(0, EVIDENCE_PREVIEW) + '…' : ev;
 
                       return (
-                        <div className="md:col-span-4 mt-1 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 space-y-2">
+                        <div className={`md:col-span-4 mt-1 rounded-lg border px-4 py-3 space-y-2 ${
+                            validation.validation_status === 'contradicted_by_cv' ? 'border-red-200 bg-red-50' :
+                            validation.validation_status === 'suggested' ? 'border-indigo-100 bg-indigo-50' :
+                            'border-slate-100 bg-slate-50'
+                          }`}>
                           {/* Header row */}
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-[9px] font-black text-textMuted uppercase tracking-widest">{kt.knockoutCvValidation}</span>
@@ -1917,6 +1925,14 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                               <span className="text-[9px] text-slate-400 font-mono">{kt.knockoutSuggestionConfidence}: {Math.round(validation.confidence * 100)}%</span>
                             )}
                           </div>
+
+                          {/* Helper text for cannot_* statuses */}
+                          {validation.validation_status === 'cannot_determine' && (
+                            <p className="text-[10px] text-slate-500 italic">{kt.knockoutCannotDetermineHelper}</p>
+                          )}
+                          {validation.validation_status === 'cannot_validate' && (
+                            <p className="text-[10px] text-slate-500 italic">{kt.knockoutCannotValidateHelper}</p>
+                          )}
 
                           {/* Suggested answer block */}
                           {validation.validation_status === 'suggested' && validation.suggested_answer && (() => {
