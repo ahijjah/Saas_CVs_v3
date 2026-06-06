@@ -559,6 +559,39 @@ async def _run(
 
     user_message = json.dumps(user_payload, ensure_ascii=False)
 
+    # ── DIAGNOSTIC LOGGING (temporary) ───────────────────────────────────────
+    logger.info(
+        "[%s] screening_validation QUESTIONS:\n%s",
+        application_id,
+        json.dumps(questions_payload, ensure_ascii=False, indent=2),
+    )
+    logger.info(
+        "[%s] screening_validation CV HEAD:\n%s",
+        application_id,
+        cv_text[:1500] if cv_text else "",
+    )
+    logger.info(
+        "[%s] screening_validation CV LENGTH=%d",
+        application_id,
+        len(cv_text) if cv_text else 0,
+    )
+    logger.info(
+        "[%s] screening_validation EMAIL HEAD:\n%s",
+        application_id,
+        email_body[:1500] if email_body else "",
+    )
+    logger.info(
+        "[%s] screening_validation EMAIL LENGTH=%d",
+        application_id,
+        len(email_body) if email_body else 0,
+    )
+    logger.info(
+        "[%s] screening_validation USER PAYLOAD:\n%s",
+        application_id,
+        user_message[:10000],
+    )
+    # ── END DIAGNOSTIC LOGGING ────────────────────────────────────────────────
+
     logger.info(
         "[%s] screening_validation: %d questions (%d answered, %d unanswered) "
         "cv=%s email=%s payload_chars=%d",
@@ -584,8 +617,24 @@ async def _run(
     )
     latency_ms = int((time.monotonic() - _t0) * 1000)
 
+    # ── DIAGNOSTIC LOGGING (temporary) ───────────────────────────────────────
+    logger.info(
+        "[%s] screening_validation RAW RESPONSE:\n%s",
+        application_id,
+        response.choices[0].message.content,
+    )
+    # ── END DIAGNOSTIC LOGGING ────────────────────────────────────────────────
+
     ai_output   = json.loads(response.choices[0].message.content)
     usage       = response.usage
+
+    # ── DIAGNOSTIC LOGGING (temporary) ───────────────────────────────────────
+    logger.info(
+        "[%s] screening_validation PARSED OUTPUT:\n%s",
+        application_id,
+        json.dumps(ai_output, ensure_ascii=False, indent=2),
+    )
+    # ── END DIAGNOSTIC LOGGING ────────────────────────────────────────────────
     ai_model_used = response.model or model
 
     # ── Log AI usage ──────────────────────────────────────────────────────────
@@ -656,6 +705,18 @@ async def _run(
             evidence   = None
 
         fa_snapshot = final_answers.get(qid)
+
+        # ── DIAGNOSTIC LOGGING (temporary) ───────────────────────────────────
+        logger.info(
+            "[%s] screening_validation RESULT qid=%s status=%s suggested=%s final=%s confidence=%s",
+            application_id,
+            qid,
+            vstatus,
+            suggested,
+            fa_snapshot["value"] if fa_snapshot else None,
+            confidence,
+        )
+        # ── END DIAGNOSTIC LOGGING ────────────────────────────────────────────
 
         validations.append(ValidationResult(
             question_id       = qid,
