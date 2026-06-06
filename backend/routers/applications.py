@@ -320,6 +320,19 @@ async def list_applications(
             )
         """)
 
+    # Decision CW-1: Exclude stopped-before-AI records from all normal tenant-wide views.
+    # These records are only accessible via the explicit 'pre_ai_stopped' processing_status filter
+    # (used by the "Stopped Before AI" quick view). The job-scoped backward-compatible mode
+    # (job_id provided) is unaffected so existing job detail pages continue to work.
+    _pre_ai_stopped_statuses = (
+        "'security_blocked', 'duplicate_blocked', 'extraction_failed', "
+        "'processing_failed', 'stopped', 'failed'"
+    )
+    if not job_id and processing_status != 'pre_ai_stopped':
+        where_parts.append(
+            f"a.processing_status NOT IN ({_pre_ai_stopped_statuses})"
+        )
+
     # Always enforce access control: admin OR no client OR assigned via agency_user_clients
     where_parts.append("""
         (
@@ -399,10 +412,15 @@ async def list_applications(
                     THEN 'cannot_determine'
                 WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
                              WHERE kv.application_id = a.application_id
+                               AND kv.validation_status = 'not_supported_by_cv')
+                    THEN 'not_supported'
+                WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
+                             WHERE kv.application_id = a.application_id
                                AND kv.validation_status = 'suggested')
                     THEN 'suggestion'
                 WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
-                             WHERE kv.application_id = a.application_id)
+                             WHERE kv.application_id = a.application_id
+                               AND kv.validation_status = 'supported_by_cv')
                     THEN 'validated'
                 ELSE NULL
             END AS validation_summary

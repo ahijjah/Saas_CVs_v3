@@ -82,8 +82,8 @@ interface Candidate {
   stopped_reason?: string | null;
   security_check_status?: 'passed' | 'warning' | 'blocked' | null;
   security_risk_level?: 'low' | 'medium' | 'high' | null;
-  /** null = not validated; 'validated'|'suggestion'|'cannot_determine'|'contradiction' */
-  validation_summary?: 'validated' | 'suggestion' | 'cannot_determine' | 'contradiction' | null;
+  /** null = not validated; 'validated'|'not_supported'|'suggestion'|'cannot_determine'|'contradiction' */
+  validation_summary?: 'validated' | 'not_supported' | 'suggestion' | 'cannot_determine' | 'contradiction' | null;
 }
 
 interface Pagination {
@@ -466,16 +466,19 @@ const T = {
     colStopReason: 'Stop Reason',
     // CW-1: flags
     flagDuplicate: 'Duplicate',
+    flagConfirmedDuplicate: 'Confirmed Duplicate',
     flagSecurity: 'Security',
     flagContradiction: 'Contradiction',
     flagSuggestion: 'Suggestion',
     flagCannotDetermine: 'Cannot Determine',
+    flagNotSupported: 'Not Supported',
     flagTalentPool: 'Talent Pool',
     // CW-1: validation summary badges
     valSummaryValidated: 'Validated',
     valSummaryContradiction: 'Contradiction',
     valSummaryCannotDetermine: 'Cannot Determine',
     valSummarySuggestion: 'Suggestion',
+    valSummaryNotSupported: 'Not Supported',
     // CW-1: new filters
     filterHasNotes: 'Has Notes',
     filterPossibleDuplicate: 'Possible Duplicate',
@@ -483,8 +486,8 @@ const T = {
     filterAppliedBefore: 'To',
     filterAppliedDateRange: 'Applied Date',
     // CW-1: attention indicator tooltips
-    attentionRed: 'Needs attention: validation contradiction or security warning',
-    attentionYellow: 'Review recommended: cannot determine, suggestion pending, or possible duplicate',
+    attentionRed: 'Needs attention: contradiction, confirmed duplicate, or security block',
+    attentionYellow: 'Review recommended: cannot determine, not supported, suggestion pending, possible duplicate, or security warning',
     attentionGreen: 'No issues detected',
   },
   ar: {
@@ -731,16 +734,19 @@ const T = {
     colStopReason: 'سبب الإيقاف',
     // CW-1: flags
     flagDuplicate: 'مكرر',
+    flagConfirmedDuplicate: 'مكرر مؤكد',
     flagSecurity: 'أمني',
     flagContradiction: 'تناقض',
     flagSuggestion: 'اقتراح',
     flagCannotDetermine: 'لا يمكن التحديد',
+    flagNotSupported: 'غير مدعوم من السيرة',
     flagTalentPool: 'مجموعة مواهب',
     // CW-1: validation summary badges
     valSummaryValidated: 'تم التحقق',
     valSummaryContradiction: 'تناقض',
     valSummaryCannotDetermine: 'لا يمكن التحديد',
     valSummarySuggestion: 'اقتراح',
+    valSummaryNotSupported: 'غير مدعوم من السيرة',
     // CW-1: new filters
     filterHasNotes: 'يحتوي ملاحظات',
     filterPossibleDuplicate: 'مكرر محتمل',
@@ -748,8 +754,8 @@ const T = {
     filterAppliedBefore: 'إلى',
     filterAppliedDateRange: 'تاريخ التقديم',
     // CW-1: attention indicator tooltips
-    attentionRed: 'يحتاج انتباهاً: تناقض في التحقق أو تحذير أمني',
-    attentionYellow: 'مراجعة موصى بها: لا يمكن التحديد، اقتراح معلق، أو مكرر محتمل',
+    attentionRed: 'يحتاج انتباهاً: تناقض أو مكرر مؤكد أو محظور أمنياً',
+    attentionYellow: 'مراجعة موصى بها: لا يمكن التحديد، غير مدعوم، اقتراح معلق، مكرر محتمل، أو تحذير أمني',
     attentionGreen: 'لا توجد مشاكل مكتشفة',
   },
 };
@@ -5676,14 +5682,19 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 const isBulkEligible = c.processing_status === 'ai_scored';
                 const isStoppedRow  = activeView === 'stopped_before_ai';
 
-                // ── CW-1: Attention indicator ────────────────────────────────
-                const hasContradiction = c.validation_summary === 'contradiction';
-                const hasSecurityWarn  = c.security_check_status === 'warning' || c.security_check_status === 'blocked';
-                const hasDuplicate     = c.duplicate_status === 'possible_duplicate' || c.duplicate_status === 'confirmed_duplicate';
-                const hasCannotDet     = c.validation_summary === 'cannot_determine';
-                const hasSuggestion    = c.validation_summary === 'suggestion';
-                const isRed    = hasContradiction || hasSecurityWarn;
-                const isYellow = !isRed && (hasCannotDet || hasSuggestion || hasDuplicate);
+                // ── CW-1: Attention indicator (Decision 2) ───────────────────
+                const hasContradiction    = c.validation_summary === 'contradiction';
+                const hasSecurityBlocked  = c.security_check_status === 'blocked';
+                const hasSecurityWarn     = c.security_check_status === 'warning';
+                const hasConfirmedDup     = c.duplicate_status === 'confirmed_duplicate';
+                const hasPossibleDup      = c.duplicate_status === 'possible_duplicate';
+                const hasCannotDet        = c.validation_summary === 'cannot_determine';
+                const hasSuggestion       = c.validation_summary === 'suggestion';
+                const hasNotSupported     = c.validation_summary === 'not_supported';
+                // RED: contradiction, confirmed_duplicate, or security blocked
+                const isRed    = hasContradiction || hasSecurityBlocked || hasConfirmedDup;
+                // YELLOW: security warning, possible_duplicate, cannot_determine, suggestion, not_supported
+                const isYellow = !isRed && (hasSecurityWarn || hasPossibleDup || hasCannotDet || hasSuggestion || hasNotSupported);
                 const isGreen  = !isRed && !isYellow && c.validation_summary === 'validated';
                 const attentionDot = isRed
                   ? <span className="inline-block w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title={t.attentionRed} />
@@ -5698,14 +5709,23 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 if (c.is_talent_pool) flagBadges.push(
                   <span key="tp" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-green-100 text-green-700">{t.flagTalentPool}</span>
                 );
-                if (hasDuplicate) flagBadges.push(
+                if (hasConfirmedDup) flagBadges.push(
+                  <span key="cdup" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-700">{t.flagConfirmedDuplicate}</span>
+                );
+                if (hasPossibleDup) flagBadges.push(
                   <span key="dup" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">{t.flagDuplicate}</span>
+                );
+                if (hasSecurityBlocked) flagBadges.push(
+                  <span key="secb" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-700">{t.flagSecurity}</span>
                 );
                 if (hasSecurityWarn) flagBadges.push(
                   <span key="sec" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-100 text-orange-700">{t.flagSecurity}</span>
                 );
                 if (hasContradiction) flagBadges.push(
                   <span key="con" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-700">{t.flagContradiction}</span>
+                );
+                if (hasNotSupported) flagBadges.push(
+                  <span key="ns" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">{t.flagNotSupported}</span>
                 );
                 if (hasSuggestion) flagBadges.push(
                   <span key="sug" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-100 text-indigo-700">{t.flagSuggestion}</span>
@@ -5780,16 +5800,18 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                         <button
                           onClick={() => openCandidate(c)}
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold mb-1 cursor-pointer transition-opacity hover:opacity-80 ${
-                            c.validation_summary === 'contradiction' ? 'bg-red-100 text-red-700' :
-                            c.validation_summary === 'cannot_determine' ? 'bg-slate-100 text-slate-500' :
-                            c.validation_summary === 'suggestion' ? 'bg-indigo-100 text-indigo-700' :
+                            c.validation_summary === 'contradiction'   ? 'bg-red-100 text-red-700' :
+                            c.validation_summary === 'cannot_determine'? 'bg-slate-100 text-slate-500' :
+                            c.validation_summary === 'not_supported'   ? 'bg-amber-100 text-amber-700' :
+                            c.validation_summary === 'suggestion'      ? 'bg-indigo-100 text-indigo-700' :
                             'bg-green-50 text-green-700'
                           }`}
                           title="Open Screening Validation"
                         >
-                          {c.validation_summary === 'contradiction' ? t.valSummaryContradiction :
+                          {c.validation_summary === 'contradiction'    ? t.valSummaryContradiction :
                            c.validation_summary === 'cannot_determine' ? t.valSummaryCannotDetermine :
-                           c.validation_summary === 'suggestion' ? t.valSummarySuggestion :
+                           c.validation_summary === 'not_supported'    ? t.valSummaryNotSupported :
+                           c.validation_summary === 'suggestion'       ? t.valSummarySuggestion :
                            t.valSummaryValidated}
                         </button>
                       )}
