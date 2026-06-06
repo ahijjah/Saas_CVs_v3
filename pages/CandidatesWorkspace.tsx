@@ -391,13 +391,16 @@ const T = {
     knockoutCriteriaPass: (op: string, val: string) => `Pass if ${op} ${val}`,
     knockoutCriteriaAnswers: (answers: string[]) => `Must answer: ${answers.join(' or ')}`,
     knockoutGenerateSuggestions: 'Run Screening Validation',
+    knockoutValidationCompleted: '✓ Validation Completed',
+    knockoutValidationOutdated: '⚠ Outdated',
+    knockoutAlreadyCompleted: 'Screening validation already completed. No changes detected since last run.',
     knockoutGenerating: 'Validating…',
-    knockoutAISuggested: 'AI Suggested',
+    knockoutAISuggested: 'Suggested from CV',
     knockoutAllAnswered: 'All screening questions have answers.',
     knockoutNoSuggestionsFound: 'No validation results could be generated.',
     knockoutNoContentForAI: 'No CV/email content available for screening validation.',
     knockoutAnalysisFailed: 'Screening validation failed.',
-    knockoutCvValidation: 'CV Validation',
+    knockoutCvValidation: 'Screening Validation',
     knockoutSupportedByCv: 'Supported by CV',
     knockoutContradictedByCv: 'Contradicted by CV',
     knockoutNotSupportedByCv: 'Not in CV',
@@ -419,6 +422,17 @@ const T = {
     knockoutInferred: 'Inferred',
     knockoutNoEvidence: 'No Evidence',
     knockoutContradiction: 'Contradiction',
+    knockoutValidationLastRun: 'Last Run',
+    knockoutValidationQuestionsProcessed: 'Questions',
+    knockoutValidationPromptVersion: 'Prompt',
+    knockoutValidationModel: 'Model',
+    knockoutValidationStatusLabel: 'Status',
+    knockoutValidationAnswersValidated: 'validated',
+    knockoutValidationSuggested: 'suggested',
+    knockoutValidationCannotDetermine: 'cannot determine',
+    knockoutSeeMore: 'More',
+    knockoutSeeLess: 'Less',
+    knockoutReasoning: 'Reasoning',
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -613,13 +627,16 @@ const T = {
     knockoutCriteriaPass: (op: string, val: string) => `ينجح إذا ${op} ${val}`,
     knockoutCriteriaAnswers: (answers: string[]) => `يجب الإجابة بـ: ${answers.join(' أو ')}`,
     knockoutGenerateSuggestions: 'تشغيل التحقق من الفرز',
+    knockoutValidationCompleted: '✓ اكتمل التحقق',
+    knockoutValidationOutdated: '⚠ قديم',
+    knockoutAlreadyCompleted: 'اكتمل التحقق من الفرز. لم يُكتشف أي تغيير.',
     knockoutGenerating: 'جارٍ التحقق…',
-    knockoutAISuggested: 'مقترح بالذكاء الاصطناعي',
+    knockoutAISuggested: 'مقترح من السيرة الذاتية',
     knockoutAllAnswered: 'جميع أسئلة الفرز لها إجابات.',
     knockoutNoSuggestionsFound: 'لم يتم توليد نتائج تحقق.',
     knockoutNoContentForAI: 'لا يوجد محتوى CV/بريد للتحقق.',
     knockoutAnalysisFailed: 'فشل التحقق من الفرز.',
-    knockoutCvValidation: 'التحقق من السيرة الذاتية',
+    knockoutCvValidation: 'التحقق من الفرز',
     knockoutSupportedByCv: 'مدعوم',
     knockoutContradictedByCv: 'متناقض',
     knockoutNotSupportedByCv: 'غير مذكور',
@@ -641,6 +658,17 @@ const T = {
     knockoutInferred: 'مستنتَج',
     knockoutNoEvidence: 'لا دليل',
     knockoutContradiction: 'تناقض',
+    knockoutValidationLastRun: 'آخر تشغيل',
+    knockoutValidationQuestionsProcessed: 'الأسئلة',
+    knockoutValidationPromptVersion: 'النظام',
+    knockoutValidationModel: 'النموذج',
+    knockoutValidationStatusLabel: 'الحالة',
+    knockoutValidationAnswersValidated: 'تم التحقق',
+    knockoutValidationSuggested: 'مقترح',
+    knockoutValidationCannotDetermine: 'لا يمكن التحديد',
+    knockoutSeeMore: 'المزيد',
+    knockoutSeeLess: 'أقل',
+    knockoutReasoning: 'التفسير',
   },
 };
 
@@ -1099,6 +1127,9 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   // Knockout AI suggestion state
   const [wsSuggestions, setWsSuggestions] = useState<import('../types').KnockoutSuggestionRecord[]>([]);
   const [wsValidations, setWsValidations] = useState<import('../types').KnockoutValidationRecord[]>([]);
+  const [wsValidationRun, setWsValidationRun] = useState<import('../types').KnockoutValidationRun | null>(null);
+  const [wsValidationLocalStale, setWsValidationLocalStale] = useState(false);
+  const [wsEvidenceExpanded, setWsEvidenceExpanded] = useState<Set<string>>(new Set());
   const [wsKoAnalyzing, setWsKoAnalyzing] = useState(false);
   const [wsKoError, setWsKoError] = useState<string | null>(null);
   const [wsEditingSuggQid, setWsEditingSuggQid] = useState<string | null>(null);
@@ -1163,6 +1194,9 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   useEffect(() => {
     setWsSuggestions(detail?.knockout_suggestions ?? []);
     setWsValidations(detail?.knockout_validations ?? []);
+    setWsValidationRun((detail as any)?.latest_validation_run ?? null);
+    setWsValidationLocalStale(false);
+    setWsEvidenceExpanded(new Set());
     setWsKoError(null);
     setWsEditingSuggQid(null);
     setWsEditingSuggValue('');
@@ -1343,6 +1377,13 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
       if (result?.suggestions && Array.isArray(result.suggestions)) {
         setWsSuggestions(result.suggestions);
       }
+      if (result?.run) {
+        setWsValidationRun(result.run);
+        setWsValidationLocalStale(false);
+      }
+      if (result?.status === 'already_completed') {
+        setWsKoError(t.knockoutAlreadyCompleted);
+      }
     } catch (err: any) {
       setWsKoError(err?.message || t.knockoutAnalysisFailed);
     } finally {
@@ -1358,6 +1399,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
       setWsSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestionId));
       setWsEditingSuggQid(null);
       setWsEditingSuggValue('');
+      setWsValidationLocalStale(true);
       addToastRef.current('Answer accepted.', 'success');
       // Refresh detail to pick up the saved answer
       detailForRef.current = null;
@@ -1382,6 +1424,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
       const api = new APIService(token);
       await api.ignoreKnockoutSuggestion(candidate.application_id, questionId);
       setWsSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestionId));
+      setWsValidationLocalStale(true);
     } catch (err: any) {
       addToastRef.current(err?.message || 'Failed to ignore suggestion.', 'error');
     }
@@ -3018,35 +3061,49 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 return src || '';
               };
 
+              const isWsValidationFresh = Boolean(wsValidationRun && !wsValidationRun.is_stale && !wsValidationLocalStale);
+
               return (
                 <div>
-                  {/* Section header: all-answered message or Generate button */}
+                  {/* Section header: Run button with freshness state */}
                   {!isPublicApply && (
                     <div className="flex items-center justify-end mb-3">
-                      {allAnswered ? (
-                        <span className="text-[10px] text-slate-400 italic">{t.knockoutAllAnswered}</span>
+                      {isWsValidationFresh ? (
+                        <button disabled className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg opacity-80 cursor-default">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          {t.knockoutValidationCompleted}
+                        </button>
                       ) : (
                         <button
                           onClick={handleWsGenerateSuggestions}
                           disabled={wsKoAnalyzing}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${wsValidationRun && !isWsValidationFresh ? 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100' : 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'}`}
                         >
                           {wsKoAnalyzing ? (
-                            <>
-                              <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                              {t.knockoutGenerating}
-                            </>
+                            <><span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />{t.knockoutGenerating}</>
+                          ) : wsValidationRun && !isWsValidationFresh ? (
+                            <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>{t.knockoutValidationOutdated}</>
                           ) : (
-                            <>
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.346.09-.84 2.52A.75.75 0 0114.22 21H9.78a.75.75 0 01-.713-.516l-.84-2.52-.345-.09z" /></svg>
-                              {t.knockoutGenerateSuggestions}
-                            </>
+                            <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>{t.knockoutGenerateSuggestions}</>
                           )}
                         </button>
                       )}
                     </div>
                   )}
-                  {wsKoError && (
+
+                  {/* Validation run summary */}
+                  {wsValidationRun && (
+                    <div className={`rounded-lg px-3 py-2 mb-3 flex flex-wrap gap-x-4 gap-y-1 text-[9px] ${wsValidationRun.is_stale || wsValidationLocalStale ? 'bg-amber-50 border border-amber-100' : 'bg-green-50 border border-green-100'}`}>
+                      <span className="font-black uppercase tracking-widest text-slate-400">{t.knockoutValidationStatusLabel}: <span className={wsValidationRun.is_stale || wsValidationLocalStale ? 'text-amber-600' : 'text-green-600'}>{wsValidationRun.is_stale || wsValidationLocalStale ? t.knockoutValidationOutdated : '✓'}</span></span>
+                      <span className="text-slate-400">{t.knockoutValidationLastRun}: <span className="text-slate-500">{new Date(wsValidationRun.created_at).toLocaleString()}</span></span>
+                      {wsValidationRun.questions_count > 0 && <span className="text-slate-400">{t.knockoutValidationQuestionsProcessed}: <span className="text-slate-500">{wsValidationRun.questions_count}</span></span>}
+                      {wsValidationRun.prompt_version && <span className="text-slate-400">{t.knockoutValidationPromptVersion}: <span className="text-slate-500">v{wsValidationRun.prompt_version}</span></span>}
+                      {wsValidationRun.validated_count > 0 && <span className="text-green-600">✓ {wsValidationRun.validated_count} {t.knockoutValidationAnswersValidated}</span>}
+                      {wsValidationRun.suggested_count > 0 && <span className="text-indigo-600">● {wsValidationRun.suggested_count} {t.knockoutValidationSuggested}</span>}
+                    </div>
+                  )}
+
+                  {wsKoError && wsKoError !== t.knockoutAlreadyCompleted && (
                     <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2 mb-3">{wsKoError}</p>
                   )}
                   <div className="divide-y divide-slate-100 -mx-6 px-0">

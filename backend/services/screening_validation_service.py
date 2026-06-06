@@ -136,26 +136,21 @@ async def run_screening_validation(
     tenant_id: str,
 ) -> tuple[list[dict], str | None]:
     """
-    Run Screening Answer Validation for all knockout questions on an application.
+    Entry point for Screening Answer Validation.
 
-    Returns:
-        (validations, error_reason)
-        validations: list of validation dicts ready for API response
-        error_reason: None on success; safe human-readable string on failure
+    Returns ([], "already_completed") without calling the LLM if a valid
+    completed run already exists and nothing has changed since then.
     """
     try:
+        # Duplicate-run protection: skip LLM call if nothing has changed
+        if await _check_validation_fresh(db, application_id, job_id):
+            return [], "already_completed"
         return await _run(db, application_id, job_id, tenant_id)
-    except json.JSONDecodeError as exc:
-        logger.error("[%s] screening_validation: AI JSON parse error: %s", application_id, exc)
-        return [], "AI returned an invalid response. Please try again."
     except Exception as exc:
-        msg = str(exc)
-        logger.error("[%s] screening_validation failed: %s", application_id, exc, exc_info=True)
-        if any(kw in msg.lower() for kw in ("quota", "rate limit", "429")):
-            return [], "AI quota exceeded. Please try again in a few minutes."
-        if any(kw in msg.lower() for kw in ("api_key", "authentication", "unauthorized", "401")):
-            return [], "AI provider authentication failed. Check platform configuration."
-        return [], "Screening validation failed. Please try again or contact support."
+        logger.exception(
+            "[%s] screening_validation unhandled error: %s", application_id, exc
+        )
+        return [], str(exc)
 
 
 async def get_knockout_validations(
@@ -210,7 +205,225 @@ async def get_knockout_validations(
     ]
 
 
+async def get_latest_validation_run(db: AsyncSession, application_id: str) -> dict | None:
+    """
+    Return the most recent completed validation run with a computed is_stale flag.
+    is_stale = True means the run is outdated and re-run is allowed.
+    """
+    # Fetch job_id for this application (needed for question-count freshness check)
+    job_row = await db.execute(
+        text("SELECT job_id::text, tenant_id::text FROM applications WHERE application_id = CAST(:aid AS uuid)"),
+        {"aid": application_id},
+    )
+    app_data = job_row.mappings().first()
+    if not app_data:
+        return None
+    job_id = str(app_data["job_id"])
+    tenant_id = str(app_data["tenant_id"])
+
+    run_row = await db.execute(
+        text("""
+            SELECT run_id::text, validation_status, questions_count,
+                   validated_count, suggested_count, cannot_count, not_supported_count,
+                   prompt_version, model, created_at
+            FROM application_knockout_validation_runs
+            WHERE application_id = CAST(:aid AS uuid)
+              AND validation_status = 'completed'
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {"aid": application_id},
+    )
+    run = run_row.mappings().first()
+    if not run:
+        return None
+
+    is_stale = not await _check_validation_fresh(db, application_id, job_id)
+
+    return {
+        "run_id":            run["run_id"],
+        "validation_status": run["validation_status"],
+        "questions_count":   run["questions_count"],
+        "validated_count":   run["validated_count"],
+        "suggested_count":   run["suggested_count"],
+        "cannot_count":      run["cannot_count"],
+        "not_supported_count": run["not_supported_count"],
+        "prompt_version":    run["prompt_version"],
+        "model":             run["model"],
+        "created_at":        run["created_at"].isoformat() if run["created_at"] else None,
+        "is_stale":          is_stale,
+    }
+
+
 # ── Private implementation ────────────────────────────────────────────────────
+
+async def _check_validation_fresh(
+    db: AsyncSession,
+    application_id: str,
+    job_id: str,
+) -> bool:
+    """
+    Returns True if the latest completed validation run is still valid
+    and a re-run is NOT needed.
+
+    A run becomes stale when any of the following is detected:
+    1. A final knockout answer was updated after the run
+    2. A new CV file was added after the run
+    3. A new knockout question was added to the job after the run
+    4. The active prompt version changed since the run
+    5. Not all active questions have a validation record
+    6. A suggestion was ignored after the run was created (recruiter rejected)
+    """
+    run_row = await db.execute(
+        text("""
+            SELECT run_id, created_at, prompt_version
+            FROM application_knockout_validation_runs
+            WHERE application_id = CAST(:aid AS uuid)
+              AND validation_status = 'completed'
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {"aid": application_id},
+    )
+    run = run_row.mappings().first()
+    if not run:
+        return False
+
+    run_ts = run["created_at"]
+
+    # 1. Any final answer updated after run?
+    r = await db.execute(
+        text("""
+            SELECT 1 FROM application_knockout_answers
+            WHERE application_id = CAST(:aid AS uuid)
+              AND updated_at IS NOT NULL
+              AND updated_at > :ts
+            LIMIT 1
+        """),
+        {"aid": application_id, "ts": run_ts},
+    )
+    if r.scalar_one_or_none():
+        return False
+
+    # 2. New CV file added after run?
+    r = await db.execute(
+        text("""
+            SELECT 1 FROM application_files
+            WHERE application_id = :aid
+              AND created_at > :ts
+            LIMIT 1
+        """),
+        {"aid": application_id, "ts": run_ts},
+    )
+    if r.scalar_one_or_none():
+        return False
+
+    # 3. New knockout question added after run?
+    r = await db.execute(
+        text("""
+            SELECT 1 FROM job_knockout_questions
+            WHERE job_id = :jid
+              AND created_at > :ts
+            LIMIT 1
+        """),
+        {"jid": job_id, "ts": run_ts},
+    )
+    if r.scalar_one_or_none():
+        return False
+
+    # 4. Prompt version changed?
+    pr = await db.execute(
+        text("""
+            SELECT version FROM ai_prompts
+            WHERE prompt_code = 'screening_answer_validation'
+              AND is_active = TRUE
+            ORDER BY version DESC
+            LIMIT 1
+        """),
+    )
+    current_ver = pr.scalar_one_or_none()
+    if current_ver is not None and run["prompt_version"] is not None:
+        if int(current_ver) != int(run["prompt_version"]):
+            return False
+
+    # 5. All active questions have a validation record?
+    r_qc = await db.execute(
+        text("SELECT COUNT(*) FROM job_knockout_questions WHERE job_id = :jid"),
+        {"jid": job_id},
+    )
+    r_vc = await db.execute(
+        text("""
+            SELECT COUNT(*) FROM application_knockout_answer_validations
+            WHERE application_id = CAST(:aid AS uuid)
+        """),
+        {"aid": application_id},
+    )
+    q_count = r_qc.scalar_one_or_none() or 0
+    v_count = r_vc.scalar_one_or_none() or 0
+    if q_count > 0 and v_count < q_count:
+        return False
+
+    # 6. Any suggestion was ignored since run (recruiter dismissed, wants re-run)?
+    r = await db.execute(
+        text("""
+            SELECT 1
+            FROM application_knockout_answer_validations v
+            JOIN application_knockout_answer_suggestions s
+              ON s.application_id = v.application_id
+             AND s.question_id    = v.question_id
+            WHERE v.application_id  = CAST(:aid AS uuid)
+              AND v.validation_status = 'suggested'
+              AND s.status = 'ignored'
+            LIMIT 1
+        """),
+        {"aid": application_id},
+    )
+    if r.scalar_one_or_none():
+        return False
+
+    return True
+
+
+async def _save_validation_run(
+    db: AsyncSession,
+    application_id: str,
+    tenant_id: str,
+    validations: list,
+    prompt_version: int | None,
+    model: str | None,
+) -> None:
+    """Persist a completed validation run record."""
+    validated_n     = sum(1 for v in validations if v.validation_status in ("supported_by_cv", "contradicted_by_cv"))
+    not_supported_n = sum(1 for v in validations if v.validation_status == "not_supported_by_cv")
+    suggested_n     = sum(1 for v in validations if v.validation_status == "suggested")
+    cannot_n        = sum(1 for v in validations if v.validation_status in ("cannot_validate", "cannot_determine"))
+
+    await db.execute(
+        text("""
+            INSERT INTO application_knockout_validation_runs
+                (application_id, tenant_id, validation_status,
+                 questions_count, validated_count, suggested_count,
+                 cannot_count, not_supported_count,
+                 prompt_version, model)
+            VALUES
+                (CAST(:aid AS uuid), CAST(:tid AS uuid), 'completed',
+                 :q_count, :validated, :suggested,
+                 :cannot, :not_supported,
+                 :pver, :model)
+        """),
+        {
+            "aid":           application_id,
+            "tid":           tenant_id,
+            "q_count":       len(validations),
+            "validated":     validated_n,
+            "suggested":     suggested_n,
+            "cannot":        cannot_n,
+            "not_supported": not_supported_n,
+            "pver":          prompt_version,
+            "model":         model,
+        },
+    )
+
 
 async def _run(
     db: AsyncSession,
@@ -572,6 +785,16 @@ async def _run(
         sum(1 for v in validations if v.validation_status == "not_supported_by_cv"),
         cannot_n, suggested_n,
         ai_model_used, latency_ms,
+    )
+
+    # Persist run record
+    await _save_validation_run(
+        db=db,
+        application_id=application_id,
+        tenant_id=tenant_id,
+        validations=validations,
+        prompt_version=prompt_version,
+        model=ai_model_used,
     )
 
     return [

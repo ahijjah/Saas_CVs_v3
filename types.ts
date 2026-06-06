@@ -441,6 +441,7 @@ export interface ApplicationDetailedAnalysis {
   knockout_answers?: KnockoutAnswerRecord[];
   knockout_suggestions?: KnockoutSuggestionRecord[];
   knockout_validations?: KnockoutValidationRecord[];
+  latest_validation_run?: KnockoutValidationRun | null;
   workflow_status?: WorkflowStatus;
   recruiter_notes?: string | null;
   workflow_history?: WorkflowHistoryEntry[];
@@ -527,6 +528,21 @@ export interface KnockoutValidationRecord {
   prompt_version?: number | null;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+/** Metadata for a completed screening validation pass. */
+export interface KnockoutValidationRun {
+  run_id: string;
+  validation_status: 'completed' | 'partial' | 'failed';
+  questions_count: number;
+  validated_count: number;
+  suggested_count: number;
+  cannot_count: number;
+  not_supported_count: number;
+  prompt_version: number | null;
+  model: string | null;
+  created_at: string;
+  is_stale: boolean;
 }
 
 /** AI-generated suggestion for an unanswered knockout question. */

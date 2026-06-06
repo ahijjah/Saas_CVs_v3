@@ -29,6 +29,7 @@ from services.knockout_analysis_service import (
 from services.screening_validation_service import (
     run_screening_validation,
     get_knockout_validations,
+    get_latest_validation_run,
 )
 from workers.cv_score import score_cv_task
 
@@ -601,6 +602,7 @@ async def get_application_details(
 
     # Fetch screening validation results
     knockout_validations = await get_knockout_validations(db, application_id)
+    latest_validation_run = await get_latest_validation_run(db, application_id)
 
     # Fetch workflow history
     wf_rows = await db.execute(
@@ -743,6 +745,7 @@ async def get_application_details(
         "knockout_answers":           knockout_answers,
         "knockout_suggestions":       knockout_suggestions,
         "knockout_validations":       knockout_validations,
+        "latest_validation_run":      latest_validation_run,
         "workflow_status":            app["workflow_status"] or "new",
         "recruiter_notes":            app["recruiter_notes"],
         "workflow_history":           workflow_history,
@@ -1491,6 +1494,18 @@ async def trigger_screening_validation(
         tenant_id=current_user.tenant_id,
     )
 
+    if error_reason == "already_completed":
+        await set_rls_context(db, current_user.tenant_id, current_user.role)
+        full_validations = await get_knockout_validations(db, application_id)
+        latest_run = await get_latest_validation_run(db, application_id)
+        return {
+            "status":     "already_completed",
+            "reason":     "Screening validation has already been completed for this application.",
+            "validations": full_validations,
+            "suggestions": [],
+            "run":         latest_run,
+        }
+
     if error_reason:
         outcome = "no_content" if "no cv text" in error_reason.lower() else "error"
         return {
@@ -1505,6 +1520,7 @@ async def trigger_screening_validation(
 
     full_validations = await get_knockout_validations(db, application_id)
     full_suggestions = await get_knockout_suggestions(db, application_id)
+    latest_run = await get_latest_validation_run(db, application_id)
 
     return {
         "status":           "ok",
@@ -1512,6 +1528,7 @@ async def trigger_screening_validation(
         "validations":      full_validations,
         "suggestions":      full_suggestions,
         "validations_count": len(full_validations),
+        "run":              latest_run,
     }
 
 
