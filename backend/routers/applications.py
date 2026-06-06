@@ -1159,7 +1159,8 @@ async def update_workflow_status(
 
     row = await db.execute(
         text("""
-            SELECT a.application_id, a.workflow_status, a.job_id, j.allow_advanced_workflow_move
+            SELECT a.application_id, a.workflow_status, a.processing_status, a.job_id,
+                   j.allow_advanced_workflow_move
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             WHERE a.application_id = :aid AND a.tenant_id = :tid
@@ -1185,9 +1186,22 @@ async def update_workflow_status(
     if not rec:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
 
-    current_status = rec["workflow_status"] or "awaiting_review"
-    if new_status == current_status:
-        return {"workflow_status": current_status}
+    # Only AI-scored candidates are managed through the recruiter workflow.
+    # Stopped-before-AI candidates (processing_status != 'ai_scored') are system-managed
+    # and must not be transitioned through recruiter workflow moves.
+    if rec["processing_status"] != "ai_scored":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only AI-scored applications can be moved through the recruiter workflow.",
+        )
+
+    # Null-safe effective status: migration 077 made workflow_status nullable for
+    # stopped-before-AI candidates. For ai_scored candidates, NULL means the record
+    # predates the initial awaiting_review assignment and should be treated as such.
+    effective_current_status: str = rec["workflow_status"] if rec["workflow_status"] else "awaiting_review"
+
+    if new_status == effective_current_status:
+        return {"workflow_status": effective_current_status}
 
     is_advanced = body.advanced_move
 
@@ -1226,11 +1240,11 @@ async def update_workflow_status(
         # Target must still be a valid workflow status, but no transition-graph check
     else:
         # Normal move: enforce the state-machine graph
-        allowed = VALID_WORKFLOW_TRANSITIONS.get(current_status, frozenset())
+        allowed = VALID_WORKFLOW_TRANSITIONS.get(effective_current_status, frozenset())
         if new_status not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Cannot transition workflow from '{current_status}' to '{new_status}'.",
+                detail=f"Cannot transition workflow from '{effective_current_status}' to '{new_status}'.",
             )
 
     # ── Workflow policy enforcement ────────────────────────────────────────────
@@ -1337,7 +1351,7 @@ async def update_workflow_status(
             "tid":    current_user.tenant_id,
             "uid":    current_user.user_id,
             "uname":  current_user.full_name or current_user.email,
-            "from_s": current_status,
+            "from_s": effective_current_status,
             "to_s":   new_status,
             "note":   body.note,
             "is_adv": is_advanced,
