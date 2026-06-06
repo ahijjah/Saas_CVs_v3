@@ -436,6 +436,82 @@ async def _save_validation_run(
     )
 
 
+def _parse_screening_results(
+    raw_results: list,
+    questions: list[dict],
+    final_answers: dict[str, dict],
+) -> list["ValidationResult"]:
+    """Parse AI output items into ValidationResult objects.
+
+    Exposed as a module-level function so it can be unit-tested without
+    touching the database or making real AI calls.
+    """
+    valid_qids = {str(q["question_id"]) for q in questions}
+    validations: list[ValidationResult] = []
+
+    for item in raw_results:
+        qid = str(item.get("question_id", ""))
+        if qid not in valid_qids:
+            continue
+
+        has_fa = bool(final_answers.get(qid))
+
+        # Normalize status — AI may return "result", "validation_result", or "validation_status"
+        _raw_status = (
+            item.get("validation_status")
+            or item.get("validation_result")
+            or item.get("result")
+            or ""
+        )
+        vstatus = _raw_status if _raw_status in _VALID_STATUSES else (
+            "cannot_validate" if has_fa else "cannot_determine"
+        )
+
+        vsource   = item.get("validation_source", "none")
+        suggested = item.get("suggested_answer")
+        evidence  = item.get("evidence_text")
+        reasoning = item.get("reasoning_summary")
+
+        if vsource not in _VALID_SOURCES:
+            vsource = "none"
+
+        # Enforce cross-field consistency
+        if has_fa and vstatus in _UNANSWERED_STATUSES:
+            vstatus = "cannot_validate"
+        if not has_fa and vstatus in _ANSWERED_STATUSES:
+            vstatus = "cannot_determine"
+
+        # suggested_answer must be null for answered questions and for cannot_* statuses
+        if has_fa or vstatus in ("cannot_validate", "cannot_determine"):
+            suggested = None
+
+        _raw_conf = item.get("confidence")
+        try:
+            confidence = max(0.0, min(1.0, float(_raw_conf))) if _raw_conf is not None else None
+        except (TypeError, ValueError):
+            confidence = None
+
+        if vstatus in ("cannot_validate", "cannot_determine"):
+            confidence = None
+            evidence   = None
+
+        fa_snapshot = final_answers.get(qid)
+
+        validations.append(ValidationResult(
+            question_id       = qid,
+            has_final_answer  = has_fa,
+            final_answer      = fa_snapshot["value"] if fa_snapshot else None,
+            validation_status = vstatus,
+            suggested_answer  = str(suggested).strip() if suggested else None,
+            validation_source = vsource,
+            confidence        = confidence,
+            evidence_text     = str(evidence)[:300] if evidence else None,
+            reasoning_summary = str(reasoning)[:500] if reasoning else None,
+        ))
+
+    return validations
+
+
 async def _run(
     db: AsyncSession,
     application_id: str,
@@ -624,72 +700,11 @@ async def _run(
         logger.warning("[%s] AI usage log failed (screening_validation): %s", application_id, _log_exc)
 
     # ── Parse and validate AI output ──────────────────────────────────────────
-    results_raw = ai_output.get("results") or []
-    valid_qids  = {str(q["question_id"]) for q in questions}
-
-    validations: list[ValidationResult] = []
-
-    for item in results_raw:
-        qid = str(item.get("question_id", ""))
-        if qid not in valid_qids:
-            continue
-
-        has_fa     = bool(final_answers.get(qid))
-
-        # Normalize status — AI may return "result", "validation_result", or "validation_status"
-        _raw_status = (
-            item.get("validation_status")
-            or item.get("validation_result")
-            or item.get("result")
-            or ""
-        )
-        vstatus = _raw_status if _raw_status in _VALID_STATUSES else (
-            "cannot_validate" if has_fa else "cannot_determine"
-        )
-
-        vsource    = item.get("validation_source", "none")
-        suggested  = item.get("suggested_answer")
-        evidence   = item.get("evidence_text")
-        reasoning  = item.get("reasoning_summary")
-
-        if vsource not in _VALID_SOURCES:
-            vsource = "none"
-
-        # Enforce cross-field consistency
-        if has_fa and vstatus in _UNANSWERED_STATUSES:
-            # AI returned an unanswered status for an answered question — correct it
-            vstatus = "cannot_validate"
-        if not has_fa and vstatus in _ANSWERED_STATUSES:
-            # AI returned an answered status for an unanswered question — correct it
-            vstatus = "cannot_determine"
-
-        # suggested_answer must be null for answered questions and for cannot_* statuses
-        if has_fa or vstatus in ("cannot_validate", "cannot_determine"):
-            suggested = None
-
-        _raw_conf = item.get("confidence")
-        try:
-            confidence = max(0.0, min(1.0, float(_raw_conf))) if _raw_conf is not None else None
-        except (TypeError, ValueError):
-            confidence = None
-
-        if vstatus in ("cannot_validate", "cannot_determine"):
-            confidence = None
-            evidence   = None
-
-        fa_snapshot = final_answers.get(qid)
-
-        validations.append(ValidationResult(
-            question_id       = qid,
-            has_final_answer  = has_fa,
-            final_answer      = fa_snapshot["value"]  if fa_snapshot else None,
-            validation_status = vstatus,
-            suggested_answer  = str(suggested).strip() if suggested else None,
-            validation_source = vsource,
-            confidence        = confidence,
-            evidence_text     = str(evidence)[:300]   if evidence  else None,
-            reasoning_summary = str(reasoning)[:500]  if reasoning else None,
-        ))
+    validations = _parse_screening_results(
+        ai_output.get("results") or [],
+        questions,
+        final_answers,
+    )
 
     # ── Persist validations ───────────────────────────────────────────────────
     prompt_version = (prompt_cfg or {}).get("version")
