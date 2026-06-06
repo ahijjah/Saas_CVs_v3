@@ -5655,7 +5655,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       )}
 
       {/* Candidate Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-7 h-7 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
