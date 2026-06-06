@@ -3056,10 +3056,18 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                               </div>
                             )}
                             {displayVal != null && displayVal !== '' && qa.answer_source && (
-                              <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                                {t.knockoutSource}: {sourceLabel(qa.answer_source)}
-                                {qa.answer_method && methodBadge(qa.answer_method)}
-                              </span>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                                  {t.knockoutSource}: {sourceLabel(qa.answer_source)}
+                                  {qa.answer_method && methodBadge(qa.answer_method)}
+                                  {qa.confidence != null && (
+                                    <span className="font-mono">{Math.round(qa.confidence * 100)}%</span>
+                                  )}
+                                </span>
+                                {qa.evidence_text && qa.answer_source === 'candidate_email' && qa.answer_method === 'direct_statement' && (
+                                  <span className="text-[10px] text-slate-400 italic line-clamp-1">"{qa.evidence_text}"</span>
+                                )}
+                              </div>
                             )}
                           </div>
                           {/* Suggestion panel */}

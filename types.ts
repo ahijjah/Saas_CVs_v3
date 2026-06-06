@@ -490,6 +490,8 @@ export interface KnockoutAnswerRecord {
   is_disqualifying?: boolean | null;
   answer_source?: string | null;
   answer_method?: string | null;
+  evidence_text?: string | null;
+  confidence?: number | null;
   updated_at?: string | null;
   updated_by_name?: string | null;
   question_text: string;

@@ -1701,9 +1701,21 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                         )}
                       </p>
                       {displayVal != null && displayVal !== '' && src && (
-                        <div className="flex items-center gap-1 flex-wrap mt-0.5">
-                          <p className="text-[10px] text-slate-400">{kt.knockoutSource}: {sourceLabel(src)}</p>
-                          {qa.answer_method && methodBadge(qa.answer_method)}
+                        <div className="flex flex-col gap-0.5 mt-0.5">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <p className="text-[10px] text-slate-400">{kt.knockoutSource}: {sourceLabel(src)}</p>
+                            {qa.answer_method && methodBadge(qa.answer_method)}
+                            {qa.confidence != null && (
+                              <span className="text-[9px] text-slate-400 font-mono">
+                                {kt.knockoutSuggestionConfidence}: {Math.round(qa.confidence * 100)}%
+                              </span>
+                            )}
+                          </div>
+                          {qa.evidence_text && src === 'candidate_email' && qa.answer_method === 'direct_statement' && (
+                            <p className="text-[10px] text-slate-400 italic leading-snug line-clamp-2">
+                              {kt.knockoutSuggestionEvidence}: "{qa.evidence_text}"
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>

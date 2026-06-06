@@ -28,6 +28,10 @@ _VALID_SOURCES  = {"candidate_email", "ai_cv", "ai_email", "ai_cv_email", "not_f
 _VALID_METHODS  = {"direct_statement", "ai_inference", "not_found"}
 _VALID_STATUSES = {"verified", "inferred", "no_evidence", "contradiction", "not_found"}
 
+# Deterministic extraction results at or above this confidence are auto-saved
+# directly as final answers in application_knockout_answers (not pending suggestions).
+_DET_AUTOSAVE_CONFIDENCE = 0.95
+
 
 def _scan_email_body_markers(body: str) -> list[str]:
     """Heuristic scan for direct candidate answer patterns. Diagnostic logging only."""
@@ -303,44 +307,125 @@ async def _run_knockout_analysis(
             continue
 
         det_resolved_qids.add(res.question_id)
-        await db.execute(
-            text("""
-                INSERT INTO application_knockout_answer_suggestions
-                    (application_id, tenant_id, question_id,
-                     suggested_answer, suggested_source, answer_method, confidence,
-                     evidence_text, verification_status,
-                     ai_model, prompt_code, prompt_version,
-                     status, created_at)
-                VALUES
-                    (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid),
-                     :answer, 'candidate_email', 'direct_statement', :conf,
-                     :evidence, 'verified',
-                     'deterministic_extractor', 'knockout_extraction', NULL,
-                     'pending', now())
-                ON CONFLICT (application_id, question_id) DO UPDATE
-                    SET suggested_answer    = EXCLUDED.suggested_answer,
-                        suggested_source    = EXCLUDED.suggested_source,
-                        answer_method       = EXCLUDED.answer_method,
-                        confidence          = EXCLUDED.confidence,
-                        evidence_text       = EXCLUDED.evidence_text,
-                        verification_status = EXCLUDED.verification_status,
-                        ai_model            = EXCLUDED.ai_model,
-                        prompt_code         = EXCLUDED.prompt_code,
-                        prompt_version      = EXCLUDED.prompt_version,
-                        status              = 'pending',
-                        accepted_by         = NULL,
-                        accepted_at         = NULL,
-                        created_at          = now()
-            """),
-            {
-                "aid":      application_id,
-                "tid":      tenant_id,
-                "qid":      res.question_id,
-                "answer":   res.suggested_answer,
-                "conf":     res.confidence,
-                "evidence": res.evidence_text,
-            },
-        )
+        high_confidence = res.confidence >= _DET_AUTOSAVE_CONFIDENCE
+
+        if high_confidence:
+            # ── Auto-save as final answer ─────────────────────────────────────
+            # High-confidence deterministic extractions (candidate_email,
+            # direct_statement, verified, confidence ≥ 0.95) are stored
+            # directly in application_knockout_answers — no recruiter review
+            # needed.  The suggestion is still written as 'accepted' for audit.
+            # Overwrite protection: ON CONFLICT DO NOTHING — if a final answer
+            # already exists (candidate_form / recruiter_entered / another source)
+            # it is never overwritten.
+            await db.execute(
+                text("""
+                    INSERT INTO application_knockout_answers
+                        (application_id, tenant_id, question_id,
+                         answer_value, is_disqualifying,
+                         answer_source, answer_method,
+                         evidence_text, confidence,
+                         updated_at, updated_by)
+                    VALUES
+                        (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid),
+                         :answer, FALSE,
+                         'candidate_email', 'direct_statement',
+                         :evidence, :conf,
+                         now(), NULL)
+                    ON CONFLICT (application_id, question_id) DO NOTHING
+                """),
+                {
+                    "aid":      application_id,
+                    "tid":      tenant_id,
+                    "qid":      res.question_id,
+                    "answer":   res.suggested_answer,
+                    "conf":     res.confidence,
+                    "evidence": res.evidence_text,
+                },
+            )
+            # Upsert the suggestion as accepted (audit trail)
+            await db.execute(
+                text("""
+                    INSERT INTO application_knockout_answer_suggestions
+                        (application_id, tenant_id, question_id,
+                         suggested_answer, suggested_source, answer_method, confidence,
+                         evidence_text, verification_status,
+                         ai_model, prompt_code, prompt_version,
+                         status, accepted_at, created_at)
+                    VALUES
+                        (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid),
+                         :answer, 'candidate_email', 'direct_statement', :conf,
+                         :evidence, 'verified',
+                         'deterministic_extractor', 'knockout_extraction', NULL,
+                         'accepted', now(), now())
+                    ON CONFLICT (application_id, question_id) DO UPDATE
+                        SET suggested_answer    = EXCLUDED.suggested_answer,
+                            suggested_source    = EXCLUDED.suggested_source,
+                            answer_method       = EXCLUDED.answer_method,
+                            confidence          = EXCLUDED.confidence,
+                            evidence_text       = EXCLUDED.evidence_text,
+                            verification_status = EXCLUDED.verification_status,
+                            ai_model            = EXCLUDED.ai_model,
+                            prompt_code         = EXCLUDED.prompt_code,
+                            prompt_version      = EXCLUDED.prompt_version,
+                            status              = 'accepted',
+                            accepted_at         = now(),
+                            created_at          = now()
+                """),
+                {
+                    "aid":      application_id,
+                    "tid":      tenant_id,
+                    "qid":      res.question_id,
+                    "answer":   res.suggested_answer,
+                    "conf":     res.confidence,
+                    "evidence": res.evidence_text,
+                },
+            )
+            logger.info(
+                "[%s] det extraction: AUTO-SAVED final answer qid=%s answer=%r conf=%.2f",
+                application_id, res.question_id, res.suggested_answer, res.confidence,
+            )
+        else:
+            # ── Store as pending suggestion (lower confidence, recruiter review) ──
+            await db.execute(
+                text("""
+                    INSERT INTO application_knockout_answer_suggestions
+                        (application_id, tenant_id, question_id,
+                         suggested_answer, suggested_source, answer_method, confidence,
+                         evidence_text, verification_status,
+                         ai_model, prompt_code, prompt_version,
+                         status, created_at)
+                    VALUES
+                        (CAST(:aid AS uuid), CAST(:tid AS uuid), CAST(:qid AS uuid),
+                         :answer, 'candidate_email', 'direct_statement', :conf,
+                         :evidence, 'verified',
+                         'deterministic_extractor', 'knockout_extraction', NULL,
+                         'pending', now())
+                    ON CONFLICT (application_id, question_id) DO UPDATE
+                        SET suggested_answer    = EXCLUDED.suggested_answer,
+                            suggested_source    = EXCLUDED.suggested_source,
+                            answer_method       = EXCLUDED.answer_method,
+                            confidence          = EXCLUDED.confidence,
+                            evidence_text       = EXCLUDED.evidence_text,
+                            verification_status = EXCLUDED.verification_status,
+                            ai_model            = EXCLUDED.ai_model,
+                            prompt_code         = EXCLUDED.prompt_code,
+                            prompt_version      = EXCLUDED.prompt_version,
+                            status              = 'pending',
+                            accepted_by         = NULL,
+                            accepted_at         = NULL,
+                            created_at          = now()
+                """),
+                {
+                    "aid":      application_id,
+                    "tid":      tenant_id,
+                    "qid":      res.question_id,
+                    "answer":   res.suggested_answer,
+                    "conf":     res.confidence,
+                    "evidence": res.evidence_text,
+                },
+            )
+
         det_suggestions.append({
             "question_id":         res.question_id,
             "suggested_answer":    res.suggested_answer,
@@ -352,6 +437,7 @@ async def _run_knockout_analysis(
             "ai_model":            "deterministic_extractor",
             "prompt_code":         "knockout_extraction",
             "prompt_version":      None,
+            "auto_saved":          high_confidence,
         })
 
     logger.info(
