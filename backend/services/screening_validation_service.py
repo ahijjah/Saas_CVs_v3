@@ -42,6 +42,17 @@ _ANSWERED_STATUSES = frozenset({
 _UNANSWERED_STATUSES = frozenset({"suggested", "cannot_determine"})
 _VALID_SOURCES = frozenset({"cv", "email", "cv_and_email", "none"})
 
+# Default confidence when AI omits the field — used only for the suggestions table
+# (which has a NOT NULL constraint). The validations table stores NULL for missing values.
+_SUGGESTION_DEFAULT_CONFIDENCE: dict[str, float] = {
+    "suggested":           0.75,
+    "supported_by_cv":     0.75,
+    "contradicted_by_cv":  0.75,
+    "not_supported_by_cv": 0.0,
+    "cannot_validate":     0.0,
+    "cannot_determine":    0.0,
+}
+
 # ── Hardcoded fallback prompt ─────────────────────────────────────────────────
 # Mirrors the system_prompt seeded in migration 088. Update both together.
 
@@ -833,7 +844,7 @@ async def _run(
                     "qid":      v.question_id,
                     "answer":   v.suggested_answer,
                     "src":      "ai_cv" if v.validation_source in ("cv", "cv_and_email") else "ai_email",
-                    "conf":     v.confidence,
+                    "conf":     v.confidence if v.confidence is not None else _SUGGESTION_DEFAULT_CONFIDENCE.get(v.validation_status, 0.0),
                     "evidence": v.evidence_text,
                     "model":    ai_model_used,
                     "pcode":    _PROMPT_CODE,
