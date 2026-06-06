@@ -10,11 +10,11 @@
  * Navigation: clicking a candidate name or the View button opens the job-scoped
  * application detail: /applications?job_id=<job_id>&app_id=<application_id>
  *
- * Phase 4 separation: failed/blocked/pre-AI applications are excluded from
- * recruiter-operational views at the query level. The Awaiting Review quick
- * view always adds processing_status=ai_scored so only recruiter-actionable
- * candidates appear. Failed/Blocked uses the 'failed_or_blocked' backend alias
- * that expands to all system-stopped processing statuses.
+ * Queue structure: two groups — Recruitment Pipeline (all, awaiting_review,
+ * under_review, interviewing, hired, recent) and Attention & Exceptions
+ * (validation_issues, stopped_before_ai). Stopped-before-AI records are excluded
+ * from all pipeline views by default; only the stopped_before_ai exception queue
+ * shows them (processing_status=pre_ai_stopped backend alias).
  *
  * Phase 3d: Inline workflow actions. Each ai_scored row shows a compact "Move
  * to" dropdown driven by VALID_WORKFLOW_TRANSITIONS. Non-ai_scored rows show a
@@ -139,9 +139,7 @@ type QuickView =
   | 'awaiting_review'
   | 'under_review'
   | 'interviewing'
-  | 'in_process'
   | 'hired'
-  | 'failed_blocked'
   | 'recent'
   | 'stopped_before_ai'
   | 'validation_issues';
@@ -153,12 +151,18 @@ interface QuickViewDef {
   params: Record<string, string>;
 }
 
-const QUICK_VIEWS: QuickViewDef[] = [
+// Group A: recruiter workflow pipeline
+const PIPELINE_VIEWS: QuickViewDef[] = [
+  {
+    id: 'all',
+    labelEn: 'All Candidates',
+    labelAr: 'جميع المرشحين',
+    params: {},
+  },
   {
     id: 'awaiting_review',
     labelEn: 'Awaiting Review',
     labelAr: 'في انتظار المراجعة',
-    // Only recruiter-actionable: must be ai_scored, not failed/blocked
     params: { workflow_status: 'awaiting_review', processing_status: 'ai_scored' },
   },
   {
@@ -174,23 +178,10 @@ const QUICK_VIEWS: QuickViewDef[] = [
     params: { workflow_status: 'interviewing' },
   },
   {
-    id: 'in_process',
-    labelEn: 'In Process',
-    labelAr: 'قيد المعالجة',
-    params: {},
-  },
-  {
     id: 'hired',
     labelEn: 'Hired',
     labelAr: 'تم التعيين',
     params: { workflow_status: 'hired' },
-  },
-  {
-    id: 'failed_blocked',
-    labelEn: 'Failed / Blocked',
-    labelAr: 'فشل / محظور',
-    // 'failed_or_blocked' is a backend alias that expands to all system-stopped statuses
-    params: { processing_status: 'failed_or_blocked' },
   },
   {
     id: 'recent',
@@ -198,18 +189,21 @@ const QUICK_VIEWS: QuickViewDef[] = [
     labelAr: 'حديثاً',
     params: { sort_by: 'applied_at', sort_order: 'desc' },
   },
-  {
-    id: 'stopped_before_ai',
-    labelEn: 'Stopped Before AI',
-    labelAr: 'موقوف قبل الذكاء',
-    // pre_ai_stopped backend alias: security_blocked | duplicate_blocked | extraction_failed | processing_failed | stopped | failed
-    params: { processing_status: 'pre_ai_stopped' },
-  },
+];
+
+// Group B: exception / attention queues
+const ATTENTION_VIEWS: QuickViewDef[] = [
   {
     id: 'validation_issues',
     labelEn: 'Validation Issues',
     labelAr: 'مشاكل التحقق',
     params: { validation_issues: 'true' },
+  },
+  {
+    id: 'stopped_before_ai',
+    labelEn: 'Stopped Before AI',
+    labelAr: 'موقوف قبل الذكاء',
+    params: { processing_status: 'pre_ai_stopped' },
   },
 ];
 
@@ -224,12 +218,16 @@ const T = {
     // Table columns
     colCandidate: 'Candidate',
     colJob: 'Job',
-    colAiMatch: 'AI Match',
-    colAiResult: 'AI Result',
+    colAiScore: 'AI Score',
+    colDecision: 'Decision',
+    colVerification: 'Verification',
     colWorkflow: 'Workflow',
     colProcessing: 'Processing',
     colApplied: 'Applied',
     colActions: '',
+    // Queue group labels
+    queueGroupPipeline: 'Pipeline',
+    queueGroupAttention: 'Attention',
     // Action
     actionView: 'View',
     // Filters
@@ -497,12 +495,16 @@ const T = {
     noResultsHint: 'حاول مسح الفلاتر أو اختيار عرض مختلف.',
     colCandidate: 'المرشح',
     colJob: 'الوظيفة',
-    colAiMatch: 'تطابق الذكاء',
-    colAiResult: 'نتيجة الذكاء',
+    colAiScore: 'درجة الذكاء',
+    colDecision: 'قرار الذكاء',
+    colVerification: 'التحقق',
     colWorkflow: 'مرحلة التوظيف',
     colProcessing: 'حالة المعالجة',
     colApplied: 'تاريخ التقديم',
     colActions: '',
+    // Queue group labels
+    queueGroupPipeline: 'خط التوظيف',
+    queueGroupAttention: 'تنبيهات',
     actionView: 'عرض',
     filterWorkflow: 'مرحلة التوظيف',
     filterProcessing: 'حالة المعالجة',
@@ -3385,12 +3387,12 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           <div className="grid grid-cols-2 gap-4">
             {candidate.score !== null && (
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-500 uppercase">{t.colAiMatch}</label>
+                <label className="block text-xs font-medium text-slate-500 uppercase">{t.colAiScore}</label>
                 <p className="text-2xl font-bold text-slate-900">{candidate.score.toFixed(0)}%</p>
               </div>
             )}
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-500 uppercase">{t.colAiResult}</label>
+              <label className="block text-xs font-medium text-slate-500 uppercase">{t.colDecision}</label>
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiStyle}`}>
                 {aiLabel}
               </span>
@@ -4017,15 +4019,14 @@ function buildApiParams(
   };
 
   // Quick view overrides specific params
-  if (view === 'awaiting_review')   { p.workflow_status = 'awaiting_review'; p.processing_status = 'ai_scored'; }
-  else if (view === 'under_review') p.workflow_status = 'under_review';
-  else if (view === 'interviewing') p.workflow_status = 'interviewing';
-  else if (view === 'hired')        p.workflow_status = 'hired';
-  else if (view === 'failed_blocked') { p.processing_status = 'failed_or_blocked'; }
-  else if (view === 'recent')       { p.sort_by = 'applied_at'; p.sort_order = 'desc'; }
+  if (view === 'awaiting_review')        { p.workflow_status = 'awaiting_review'; p.processing_status = 'ai_scored'; }
+  else if (view === 'under_review')      p.workflow_status = 'under_review';
+  else if (view === 'interviewing')      p.workflow_status = 'interviewing';
+  else if (view === 'hired')             p.workflow_status = 'hired';
+  else if (view === 'recent')            { p.sort_by = 'applied_at'; p.sort_order = 'desc'; }
   else if (view === 'stopped_before_ai') { p.processing_status = 'pre_ai_stopped'; }
   else if (view === 'validation_issues') { p.validation_issues = 'true'; }
-  // in_process: applied by manual workflowFilter below
+  // 'all': no extra params — backend default exclusions apply
 
   // Manual filters (override quick view if set)
   if (workflowFilter)   p.workflow_status = workflowFilter;
@@ -4889,49 +4890,69 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
 
-      {/* Quick View Pills */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => handleViewChange('all')}
-          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-            activeView === 'all'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
-          }`}
-        >
-          All
-        </button>
-        {QUICK_VIEWS.map(v => {
-          const isActive = activeView === v.id;
-          // Special visual treatment for the two new operational views
-          const isStoppedView = v.id === 'stopped_before_ai';
-          const isIssuesView  = v.id === 'validation_issues';
-          const activeClass = isStoppedView
-            ? 'bg-orange-600 text-white'
-            : isIssuesView
-            ? 'bg-red-600 text-white'
-            : 'bg-indigo-600 text-white';
-          const inactiveClass = isStoppedView
-            ? 'bg-white border border-orange-200 text-orange-700 hover:border-orange-400 hover:text-orange-800'
-            : isIssuesView
-            ? 'bg-white border border-red-200 text-red-700 hover:border-red-400 hover:text-red-800'
-            : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600';
-          return (
-            <button
-              key={v.id}
-              onClick={() => handleViewChange(v.id)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${isActive ? activeClass : inactiveClass}`}
-            >
-              {lang === 'ar' ? v.labelAr : v.labelEn}
-              {/* Show record count badge when this view is active */}
-              {isActive && pagination && pagination.total > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/25 text-[10px] font-bold tabular-nums">
-                  {pagination.total}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      {/* Quick View Pills — two groups: pipeline (recruiter workflow) + attention (exceptions) */}
+      <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 space-y-2.5">
+
+        {/* Group A: Recruitment Pipeline */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-16 shrink-0 select-none">
+            {t.queueGroupPipeline}
+          </span>
+          {PIPELINE_VIEWS.map(v => {
+            const isActive = activeView === v.id;
+            return (
+              <button
+                key={v.id}
+                onClick={() => handleViewChange(v.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
+                }`}
+              >
+                {lang === 'ar' ? v.labelAr : v.labelEn}
+                {isActive && pagination && pagination.total > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/25 text-[10px] font-bold tabular-nums">
+                    {pagination.total}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-slate-100" />
+
+        {/* Group B: Attention & Exceptions */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider w-16 shrink-0 select-none">
+            {t.queueGroupAttention}
+          </span>
+          {ATTENTION_VIEWS.map(v => {
+            const isActive = activeView === v.id;
+            const isStoppedView = v.id === 'stopped_before_ai';
+            const activeClass   = isStoppedView ? 'bg-orange-600 text-white' : 'bg-amber-500 text-white';
+            const inactiveClass = isStoppedView
+              ? 'bg-white border border-orange-200 text-orange-700 hover:border-orange-400 hover:text-orange-800'
+              : 'bg-white border border-amber-200 text-amber-700 hover:border-amber-400 hover:text-amber-800';
+            return (
+              <button
+                key={v.id}
+                onClick={() => handleViewChange(v.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${isActive ? activeClass : inactiveClass}`}
+              >
+                {lang === 'ar' ? v.labelAr : v.labelEn}
+                {isActive && pagination && pagination.total > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/25 text-[10px] font-bold tabular-nums">
+                    {pagination.total}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
       </div>
 
       {/* Saved Views Row */}
@@ -5665,11 +5686,11 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colCandidate}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colJob}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiMatch}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiResult}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiScore}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colDecision}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colVerification}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colWorkflow}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden xl:table-cell">{t.colAssigned}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">{t.colProcessing}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">{t.colApplied}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colActions}</th>
               </tr>
@@ -5782,7 +5803,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       )}
                     </td>
 
-                    {/* AI Match score */}
+                    {/* AI Score */}
                     <td className="px-4 py-3">
                       {c.score !== null && c.score !== undefined ? (
                         <span className="font-semibold text-slate-800 tabular-nums">
@@ -5793,17 +5814,23 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       )}
                     </td>
 
-                    {/* AI Result / Validation Summary — dual-purpose cell */}
+                    {/* Decision — AI scoring outcome only */}
                     <td className="px-4 py-3">
-                      {/* CW-1: validation summary badge — clickable to open screening tab */}
-                      {c.validation_summary && (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiDecisionStyle(c.status)}`}>
+                        {aiDecisionLabel(c.status, t)}
+                      </span>
+                    </td>
+
+                    {/* Verification — validation summary indicator */}
+                    <td className="px-4 py-3">
+                      {c.validation_summary ? (
                         <button
                           onClick={() => openCandidate(c)}
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold mb-1 cursor-pointer transition-opacity hover:opacity-80 ${
-                            c.validation_summary === 'contradiction'   ? 'bg-red-100 text-red-700' :
-                            c.validation_summary === 'cannot_determine'? 'bg-slate-100 text-slate-500' :
-                            c.validation_summary === 'not_supported'   ? 'bg-amber-100 text-amber-700' :
-                            c.validation_summary === 'suggestion'      ? 'bg-indigo-100 text-indigo-700' :
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-opacity hover:opacity-80 ${
+                            c.validation_summary === 'contradiction'    ? 'bg-red-100 text-red-700' :
+                            c.validation_summary === 'cannot_determine' ? 'bg-slate-100 text-slate-500' :
+                            c.validation_summary === 'not_supported'    ? 'bg-amber-100 text-amber-700' :
+                            c.validation_summary === 'suggestion'       ? 'bg-indigo-100 text-indigo-700' :
                             'bg-green-50 text-green-700'
                           }`}
                           title="Open Screening Validation"
@@ -5814,12 +5841,9 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                            c.validation_summary === 'suggestion'       ? t.valSummarySuggestion :
                            t.valSummaryValidated}
                         </button>
+                      ) : (
+                        <span className="text-slate-300 text-xs">—</span>
                       )}
-                      <div>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiDecisionStyle(c.status)}`}>
-                          {aiDecisionLabel(c.status, t)}
-                        </span>
-                      </div>
                     </td>
 
                     {/* Workflow status pill */}
@@ -5841,13 +5865,6 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       ) : (
                         <span className="text-xs text-slate-300">—</span>
                       )}
-                    </td>
-
-                    {/* Processing status */}
-                    <td className="px-4 py-3 hidden lg:table-cell">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${processingStyle(c.processing_status)}`}>
-                        {processingLabel(c.processing_status, t)}
-                      </span>
                     </td>
 
                     {/* Applied date */}
