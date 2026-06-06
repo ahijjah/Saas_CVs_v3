@@ -79,6 +79,11 @@ interface Candidate {
   is_talent_pool?: boolean;
   preferred_contact_email?: string | null;
   preferred_contact_source?: string | null;
+  stopped_reason?: string | null;
+  security_check_status?: 'passed' | 'warning' | 'blocked' | null;
+  security_risk_level?: 'low' | 'medium' | 'high' | null;
+  /** null = not validated; 'validated'|'suggestion'|'cannot_determine'|'contradiction' */
+  validation_summary?: 'validated' | 'suggestion' | 'cannot_determine' | 'contradiction' | null;
 }
 
 interface Pagination {
@@ -98,8 +103,12 @@ interface SavedViewFilters {
   jobFilter?:        string;
   search?:           string;
   assignedFilter?:   string;
-  tagFilter?:        string[];
-  talentPoolOnly?:   boolean;
+  tagFilter?:             string[];
+  talentPoolOnly?:        boolean;
+  hasNotesFilter?:        boolean;
+  possibleDuplicateFilter?: boolean;
+  appliedAfter?:          string;
+  appliedBefore?:         string;
 }
 
 interface SavedView {
@@ -133,7 +142,9 @@ type QuickView =
   | 'in_process'
   | 'hired'
   | 'failed_blocked'
-  | 'recent';
+  | 'recent'
+  | 'stopped_before_ai'
+  | 'validation_issues';
 
 interface QuickViewDef {
   id: QuickView;
@@ -186,6 +197,19 @@ const QUICK_VIEWS: QuickViewDef[] = [
     labelEn: 'Recent',
     labelAr: 'حديثاً',
     params: { sort_by: 'applied_at', sort_order: 'desc' },
+  },
+  {
+    id: 'stopped_before_ai',
+    labelEn: 'Stopped Before AI',
+    labelAr: 'موقوف قبل الذكاء',
+    // pre_ai_stopped backend alias: security_blocked | duplicate_blocked | extraction_failed | processing_failed | stopped | failed
+    params: { processing_status: 'pre_ai_stopped' },
+  },
+  {
+    id: 'validation_issues',
+    labelEn: 'Validation Issues',
+    labelAr: 'مشاكل التحقق',
+    params: { validation_issues: 'true' },
   },
 ];
 
@@ -436,6 +460,32 @@ const T = {
     knockoutFinalAnswer: 'Final Answer',
     knockoutCannotDetermineHelper: 'The AI could not find sufficient evidence in the CV or email to determine an answer.',
     knockoutCannotValidateHelper: 'The AI could not validate the existing answer using available CV evidence.',
+    // CW-1: new view labels
+    viewStoppedBeforeAi: 'Stopped Before AI',
+    viewValidationIssues: 'Validation Issues',
+    colStopReason: 'Stop Reason',
+    // CW-1: flags
+    flagDuplicate: 'Duplicate',
+    flagSecurity: 'Security',
+    flagContradiction: 'Contradiction',
+    flagSuggestion: 'Suggestion',
+    flagCannotDetermine: 'Cannot Determine',
+    flagTalentPool: 'Talent Pool',
+    // CW-1: validation summary badges
+    valSummaryValidated: 'Validated',
+    valSummaryContradiction: 'Contradiction',
+    valSummaryCannotDetermine: 'Cannot Determine',
+    valSummarySuggestion: 'Suggestion',
+    // CW-1: new filters
+    filterHasNotes: 'Has Notes',
+    filterPossibleDuplicate: 'Possible Duplicate',
+    filterAppliedAfter: 'From',
+    filterAppliedBefore: 'To',
+    filterAppliedDateRange: 'Applied Date',
+    // CW-1: attention indicator tooltips
+    attentionRed: 'Needs attention: validation contradiction or security warning',
+    attentionYellow: 'Review recommended: cannot determine, suggestion pending, or possible duplicate',
+    attentionGreen: 'No issues detected',
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -675,6 +725,32 @@ const T = {
     knockoutFinalAnswer: 'الإجابة النهائية',
     knockoutCannotDetermineHelper: 'لم يتمكن الذكاء الاصطناعي من إيجاد أدلة كافية لتحديد إجابة.',
     knockoutCannotValidateHelper: 'لم يتمكن الذكاء الاصطناعي من التحقق من الإجابة باستخدام الأدلة المتاحة.',
+    // CW-1: new view labels
+    viewStoppedBeforeAi: 'موقوف قبل الذكاء',
+    viewValidationIssues: 'مشاكل التحقق',
+    colStopReason: 'سبب الإيقاف',
+    // CW-1: flags
+    flagDuplicate: 'مكرر',
+    flagSecurity: 'أمني',
+    flagContradiction: 'تناقض',
+    flagSuggestion: 'اقتراح',
+    flagCannotDetermine: 'لا يمكن التحديد',
+    flagTalentPool: 'مجموعة مواهب',
+    // CW-1: validation summary badges
+    valSummaryValidated: 'تم التحقق',
+    valSummaryContradiction: 'تناقض',
+    valSummaryCannotDetermine: 'لا يمكن التحديد',
+    valSummarySuggestion: 'اقتراح',
+    // CW-1: new filters
+    filterHasNotes: 'يحتوي ملاحظات',
+    filterPossibleDuplicate: 'مكرر محتمل',
+    filterAppliedAfter: 'من',
+    filterAppliedBefore: 'إلى',
+    filterAppliedDateRange: 'تاريخ التقديم',
+    // CW-1: attention indicator tooltips
+    attentionRed: 'يحتاج انتباهاً: تناقض في التحقق أو تحذير أمني',
+    attentionYellow: 'مراجعة موصى بها: لا يمكن التحديد، اقتراح معلق، أو مكرر محتمل',
+    attentionGreen: 'لا توجد مشاكل مكتشفة',
   },
 };
 
@@ -3922,6 +3998,10 @@ function buildApiParams(
   page: number,
   tagFilter: string[] = [],
   talentPoolOnly: boolean = false,
+  hasNotesFilter: boolean = false,
+  possibleDuplicateFilter: boolean = false,
+  appliedAfter: string = '',
+  appliedBefore: string = '',
 ): Record<string, string> {
   const p: Record<string, string> = {
     limit: '50',
@@ -3931,14 +4011,14 @@ function buildApiParams(
   };
 
   // Quick view overrides specific params
-  // awaiting_review: recruiter-actionable only (ai_scored excludes failed/blocked)
   if (view === 'awaiting_review')   { p.workflow_status = 'awaiting_review'; p.processing_status = 'ai_scored'; }
   else if (view === 'under_review') p.workflow_status = 'under_review';
   else if (view === 'interviewing') p.workflow_status = 'interviewing';
   else if (view === 'hired')        p.workflow_status = 'hired';
-  // failed_or_blocked: backend alias for all system-stopped processing statuses
   else if (view === 'failed_blocked') { p.processing_status = 'failed_or_blocked'; }
   else if (view === 'recent')       { p.sort_by = 'applied_at'; p.sort_order = 'desc'; }
+  else if (view === 'stopped_before_ai') { p.processing_status = 'pre_ai_stopped'; }
+  else if (view === 'validation_issues') { p.validation_issues = 'true'; }
   // in_process: applied by manual workflowFilter below
 
   // Manual filters (override quick view if set)
@@ -3952,6 +4032,10 @@ function buildApiParams(
   if (assignedFilter)   p.assigned_to = assignedFilter;
   if (tagFilter.length > 0) p.tag_ids = tagFilter.join(',');
   if (talentPoolOnly)   p.talent_pool_only = 'true';
+  if (hasNotesFilter)   p.has_notes = 'true';
+  if (possibleDuplicateFilter) p.possible_duplicate = 'true';
+  if (appliedAfter.trim())  p.applied_after  = appliedAfter.trim();
+  if (appliedBefore.trim()) p.applied_before = appliedBefore.trim();
 
   console.debug('[buildApiParams]', { tagFilter, talentPoolOnly, params: p });
   return p;
@@ -4001,6 +4085,12 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   // Initialize tagFilter and talentPoolOnly from URL params
   const [tagFilter, setTagFilter] = useState<string[]>(initialTagFilter);
   const [talentPoolOnly, setTalentPoolOnly] = useState(initialTalentPoolOnly);
+
+  // CW-1: new filter state (initialised from URL)
+  const [hasNotesFilter, setHasNotesFilter]               = useState(searchParams.get('has_notes') === 'true');
+  const [possibleDuplicateFilter, setPossibleDuplicateFilter] = useState(searchParams.get('possible_duplicate') === 'true');
+  const [appliedAfter, setAppliedAfter]                   = useState(searchParams.get('applied_after') || '');
+  const [appliedBefore, setAppliedBefore]                 = useState(searchParams.get('applied_before') || '');
 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -4191,6 +4281,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setAssignedFilter(f.assignedFilter || '');
     setTagFilter(f.tagFilter || []);
     setTalentPoolOnly(f.talentPoolOnly || false);
+    setHasNotesFilter(f.hasNotesFilter || false);
+    setPossibleDuplicateFilter(f.possibleDuplicateFilter || false);
+    setAppliedAfter(f.appliedAfter || '');
+    setAppliedBefore(f.appliedBefore || '');
     setPage(1);
     clearSelection();
     addToastRef.current(t.savedViewApplied, 'success');
@@ -4213,6 +4307,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       if (assignedFilter)   filters.assignedFilter   = assignedFilter;
       if (tagFilter.length > 0) filters.tagFilter = tagFilter;
       if (talentPoolOnly) filters.talentPoolOnly = talentPoolOnly;
+      if (hasNotesFilter) filters.hasNotesFilter = hasNotesFilter;
+      if (possibleDuplicateFilter) filters.possibleDuplicateFilter = possibleDuplicateFilter;
+      if (appliedAfter)  filters.appliedAfter  = appliedAfter;
+      if (appliedBefore) filters.appliedBefore = appliedBefore;
 
       const data: any = await apiService.post(
         WEBHOOK_CONFIG.CANDIDATE_SAVED_VIEWS_URL,
@@ -4606,8 +4704,12 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (selectedAppId)            p.app_id = selectedAppId;
     if (tagFilter.length > 0)     p.tags = tagFilter.join(',');
     if (talentPoolOnly)           p.talent_pool = 'true';
+    if (hasNotesFilter)           p.has_notes = 'true';
+    if (possibleDuplicateFilter)  p.possible_duplicate = 'true';
+    if (appliedAfter)             p.applied_after  = appliedAfter;
+    if (appliedBefore)            p.applied_before = appliedBefore;
     setSearchParams(p, { replace: true });
-  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, selectedAppId, tagFilter, talentPoolOnly, setSearchParams]);
+  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, selectedAppId, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore, setSearchParams]);
 
   // Debounce search field
   const handleSearchChange = (value: string) => {
@@ -4624,7 +4726,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (!auth.token) return;
     setLoading(true);
     try {
-      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly);
+      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore);
       const data = await apiService.get(WEBHOOK_CONFIG.CANDIDATES_SEARCH_URL, params, auth.token);
       // Tenant-wide mode returns { candidates, pagination }
       if (data && typeof data === 'object' && Array.isArray(data.candidates)) {
@@ -4646,7 +4748,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       setLoading(false);
     }
   // addToast intentionally omitted — using ref to avoid infinite loop
-  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchCandidates();
@@ -4665,6 +4767,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setAssignedFilter('');
     setTagFilter([]);
     setTalentPoolOnly(false);
+    setHasNotesFilter(false);
+    setPossibleDuplicateFilter(false);
+    setAppliedAfter('');
+    setAppliedBefore('');
     setPage(1);
     clearSelection();
   };
@@ -4682,11 +4788,15 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setAssignedFilter('');
     setTagFilter([]);
     setTalentPoolOnly(false);
+    setHasNotesFilter(false);
+    setPossibleDuplicateFilter(false);
+    setAppliedAfter('');
+    setAppliedBefore('');
     setPage(1);
     clearSelection();
   };
 
-  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || jobFilter || debouncedSearch || assignedFilter || tagFilter.length > 0 || talentPoolOnly;
+  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || jobFilter || debouncedSearch || assignedFilter || tagFilter.length > 0 || talentPoolOnly || hasNotesFilter || possibleDuplicateFilter || appliedAfter || appliedBefore;
 
   const openCandidate = (c: Candidate) => {
     setSelectedAppId(c.application_id);
@@ -4785,19 +4895,37 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         >
           All
         </button>
-        {QUICK_VIEWS.map(v => (
-          <button
-            key={v.id}
-            onClick={() => handleViewChange(v.id)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              activeView === v.id
-                ? 'bg-indigo-600 text-white'
-                : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
-            }`}
-          >
-            {lang === 'ar' ? v.labelAr : v.labelEn}
-          </button>
-        ))}
+        {QUICK_VIEWS.map(v => {
+          const isActive = activeView === v.id;
+          // Special visual treatment for the two new operational views
+          const isStoppedView = v.id === 'stopped_before_ai';
+          const isIssuesView  = v.id === 'validation_issues';
+          const activeClass = isStoppedView
+            ? 'bg-orange-600 text-white'
+            : isIssuesView
+            ? 'bg-red-600 text-white'
+            : 'bg-indigo-600 text-white';
+          const inactiveClass = isStoppedView
+            ? 'bg-white border border-orange-200 text-orange-700 hover:border-orange-400 hover:text-orange-800'
+            : isIssuesView
+            ? 'bg-white border border-red-200 text-red-700 hover:border-red-400 hover:text-red-800'
+            : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600';
+          return (
+            <button
+              key={v.id}
+              onClick={() => handleViewChange(v.id)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${isActive ? activeClass : inactiveClass}`}
+            >
+              {lang === 'ar' ? v.labelAr : v.labelEn}
+              {/* Show record count badge when this view is active */}
+              {isActive && pagination && pagination.total > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/25 text-[10px] font-bold tabular-nums">
+                  {pagination.total}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Saved Views Row */}
@@ -5048,7 +5176,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         </div>
 
         {/* Talent Pool Filter */}
-        <label className="flex items-center gap-2 mt-3 cursor-pointer">
+        <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={talentPoolOnly}
@@ -5060,6 +5188,48 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           />
           <span className="text-xs font-medium text-gray-700">Talent Pool Only</span>
         </label>
+
+        {/* CW-1: Has Notes filter */}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={hasNotesFilter}
+            onChange={(e) => { setHasNotesFilter(e.target.checked); setPage(1); }}
+            className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-300"
+          />
+          <span className="text-xs font-medium text-gray-700">{t.filterHasNotes}</span>
+        </label>
+
+        {/* CW-1: Possible Duplicate filter */}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={possibleDuplicateFilter}
+            onChange={(e) => { setPossibleDuplicateFilter(e.target.checked); setPage(1); }}
+            className="w-4 h-4 rounded text-amber-600 border-slate-300 focus:ring-amber-300"
+          />
+          <span className="text-xs font-medium text-gray-700">{t.filterPossibleDuplicate}</span>
+        </label>
+
+        {/* CW-1: Applied date range */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium text-slate-500 whitespace-nowrap">{t.filterAppliedDateRange}:</span>
+          <input
+            type="date"
+            value={appliedAfter}
+            onChange={e => { setAppliedAfter(e.target.value); setPage(1); }}
+            title={t.filterAppliedAfter}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+          <span className="text-xs text-slate-400">–</span>
+          <input
+            type="date"
+            value={appliedBefore}
+            onChange={e => { setAppliedBefore(e.target.value); setPage(1); }}
+            title={t.filterAppliedBefore}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+        </div>
 
         {/* Name search */}
         <input
@@ -5504,10 +5674,50 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 const wfLabel = wfLabels[c.workflow_status] ?? c.workflow_status;
                 const isUpdating = updatingId === c.application_id;
                 const isBulkEligible = c.processing_status === 'ai_scored';
+                const isStoppedRow  = activeView === 'stopped_before_ai';
+
+                // ── CW-1: Attention indicator ────────────────────────────────
+                const hasContradiction = c.validation_summary === 'contradiction';
+                const hasSecurityWarn  = c.security_check_status === 'warning' || c.security_check_status === 'blocked';
+                const hasDuplicate     = c.duplicate_status === 'possible_duplicate' || c.duplicate_status === 'confirmed_duplicate';
+                const hasCannotDet     = c.validation_summary === 'cannot_determine';
+                const hasSuggestion    = c.validation_summary === 'suggestion';
+                const isRed    = hasContradiction || hasSecurityWarn;
+                const isYellow = !isRed && (hasCannotDet || hasSuggestion || hasDuplicate);
+                const isGreen  = !isRed && !isYellow && c.validation_summary === 'validated';
+                const attentionDot = isRed
+                  ? <span className="inline-block w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title={t.attentionRed} />
+                  : isYellow
+                  ? <span className="inline-block w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title={t.attentionYellow} />
+                  : isGreen
+                  ? <span className="inline-block w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title={t.attentionGreen} />
+                  : null;
+
+                // ── CW-1: Compact flags ──────────────────────────────────────
+                const flagBadges: React.ReactNode[] = [];
+                if (c.is_talent_pool) flagBadges.push(
+                  <span key="tp" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-green-100 text-green-700">{t.flagTalentPool}</span>
+                );
+                if (hasDuplicate) flagBadges.push(
+                  <span key="dup" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">{t.flagDuplicate}</span>
+                );
+                if (hasSecurityWarn) flagBadges.push(
+                  <span key="sec" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-100 text-orange-700">{t.flagSecurity}</span>
+                );
+                if (hasContradiction) flagBadges.push(
+                  <span key="con" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-700">{t.flagContradiction}</span>
+                );
+                if (hasSuggestion) flagBadges.push(
+                  <span key="sug" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-100 text-indigo-700">{t.flagSuggestion}</span>
+                );
+                if (hasCannotDet) flagBadges.push(
+                  <span key="cd" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500">{t.flagCannotDetermine}</span>
+                );
+
                 return (
                   <tr
                     key={c.application_id}
-                    className={`hover:bg-slate-50 transition-colors ${isUpdating ? 'opacity-70' : ''} ${selectedIds.has(c.application_id) ? 'bg-indigo-50' : ''}`}
+                    className={`hover:bg-slate-50 transition-colors ${isUpdating ? 'opacity-70' : ''} ${selectedIds.has(c.application_id) ? 'bg-indigo-50' : ''} ${isRed ? 'border-l-2 border-l-red-400' : ''}`}
                   >
                     {/* Checkbox — disabled for system-managed (non-ai_scored) rows */}
                     <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
@@ -5522,14 +5732,16 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                     </td>
                     {/* Candidate name — click navigates to detail */}
                     <td className="px-4 py-3 cursor-pointer" onClick={() => openCandidate(c)}>
-                      <div className="font-medium text-slate-900 leading-tight">{c.candidate_name || '—'}</div>
+                      <div className="flex items-center gap-1.5">
+                        {attentionDot}
+                        <span className="font-medium text-slate-900 leading-tight">{c.candidate_name || '—'}</span>
+                      </div>
                       {c.client_org_name && (
                         <div className="text-xs text-slate-400 mt-0.5">{c.client_org_name}</div>
                       )}
-                      {(c as any).is_talent_pool && (
-                        <span className="inline-block mt-1 px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
-                          Talent Pool
-                        </span>
+                      {/* CW-1: Compact flags row */}
+                      {flagBadges.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">{flagBadges}</div>
                       )}
                     </td>
 
@@ -5542,11 +5754,17 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       {c.job_code && (
                         <div className="text-xs text-slate-400 mt-0.5">{c.job_code}</div>
                       )}
+                      {/* CW-1: For stopped rows show stop reason inline under job */}
+                      {isStoppedRow && c.stopped_reason && (
+                        <div className="text-[10px] text-red-600 mt-0.5 italic leading-tight line-clamp-1" title={c.stopped_reason}>
+                          {c.stopped_reason}
+                        </div>
+                      )}
                     </td>
 
                     {/* AI Match score */}
                     <td className="px-4 py-3">
-                      {c.score !== null ? (
+                      {c.score !== null && c.score !== undefined ? (
                         <span className="font-semibold text-slate-800 tabular-nums">
                           {c.score.toFixed(0)}%
                         </span>
@@ -5555,11 +5773,31 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       )}
                     </td>
 
-                    {/* AI Result */}
+                    {/* AI Result / Validation Summary — dual-purpose cell */}
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiDecisionStyle(c.status)}`}>
-                        {aiDecisionLabel(c.status, t)}
-                      </span>
+                      {/* CW-1: validation summary badge — clickable to open screening tab */}
+                      {c.validation_summary && (
+                        <button
+                          onClick={() => openCandidate(c)}
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold mb-1 cursor-pointer transition-opacity hover:opacity-80 ${
+                            c.validation_summary === 'contradiction' ? 'bg-red-100 text-red-700' :
+                            c.validation_summary === 'cannot_determine' ? 'bg-slate-100 text-slate-500' :
+                            c.validation_summary === 'suggestion' ? 'bg-indigo-100 text-indigo-700' :
+                            'bg-green-50 text-green-700'
+                          }`}
+                          title="Open Screening Validation"
+                        >
+                          {c.validation_summary === 'contradiction' ? t.valSummaryContradiction :
+                           c.validation_summary === 'cannot_determine' ? t.valSummaryCannotDetermine :
+                           c.validation_summary === 'suggestion' ? t.valSummarySuggestion :
+                           t.valSummaryValidated}
+                        </button>
+                      )}
+                      <div>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiDecisionStyle(c.status)}`}>
+                          {aiDecisionLabel(c.status, t)}
+                        </span>
+                      </div>
                     </td>
 
                     {/* Workflow status pill */}

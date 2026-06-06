@@ -143,6 +143,7 @@ async def list_applications(
     assigned_to: str | None = None,
     tag_ids: str | None = None,
     talent_pool_only: bool = False,
+    validation_issues: bool | None = None,
     sort_by: str = "applied_at",
     sort_order: str = "desc",
     page: int = 1,
@@ -216,6 +217,12 @@ async def list_applications(
             where_parts.append("a.processing_status IN ('queued', 'processing')")
         elif processing_status == 'stopped_before_ai':
             where_parts.append("a.processing_status = 'failed' AND a.stopped_reason IS NOT NULL")
+        elif processing_status == 'pre_ai_stopped':
+            # All applications that never reached AI scoring — used by the "Stopped Before AI" workspace view
+            where_parts.append(
+                "a.processing_status IN ('security_blocked', 'duplicate_blocked', "
+                "'extraction_failed', 'processing_failed', 'stopped', 'failed')"
+            )
         elif processing_status == 'failed_or_blocked':
             # Legacy alias: all failed/stopped states (backward compat with old quick-views)
             where_parts.append(
@@ -303,6 +310,16 @@ async def list_applications(
     if talent_pool_only and not job_id:
         where_parts.append("a.is_talent_pool = TRUE")
 
+    # Validation issues filter — candidates with any contradiction/cannot_determine/cannot_validate
+    if validation_issues:
+        where_parts.append("""
+            EXISTS(
+                SELECT 1 FROM application_knockout_answer_validations kv
+                WHERE kv.application_id = a.application_id
+                  AND kv.validation_status IN ('contradicted_by_cv', 'cannot_validate', 'cannot_determine')
+            )
+        """)
+
     # Always enforce access control: admin OR no client OR assigned via agency_user_clients
     where_parts.append("""
         (
@@ -368,7 +385,27 @@ async def list_applications(
             a.assigned_at,
             COALESCE(au.full_name, au.email)    AS assigned_user_name,
             a.preferred_contact_email,
-            a.preferred_contact_source
+            a.preferred_contact_source,
+            a.security_check_status,
+            a.security_risk_level,
+            CASE
+                WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
+                             WHERE kv.application_id = a.application_id
+                               AND kv.validation_status = 'contradicted_by_cv')
+                    THEN 'contradiction'
+                WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
+                             WHERE kv.application_id = a.application_id
+                               AND kv.validation_status IN ('cannot_validate', 'cannot_determine'))
+                    THEN 'cannot_determine'
+                WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
+                             WHERE kv.application_id = a.application_id
+                               AND kv.validation_status = 'suggested')
+                    THEN 'suggestion'
+                WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
+                             WHERE kv.application_id = a.application_id)
+                    THEN 'validated'
+                ELSE NULL
+            END AS validation_summary
         FROM applications a
         JOIN jobs j ON j.job_id = a.job_id
         LEFT JOIN application_scores s ON s.application_id = a.application_id
@@ -424,6 +461,9 @@ async def list_applications(
             "is_talent_pool":           bool(r["is_talent_pool"]) if r["is_talent_pool"] is not None else False,
             "preferred_contact_email":  r["preferred_contact_email"],
             "preferred_contact_source": r["preferred_contact_source"],
+            "security_check_status":    r["security_check_status"],
+            "security_risk_level":      r["security_risk_level"],
+            "validation_summary":       r["validation_summary"],
         })
 
     # Backward compatibility mode: if job_id provided, return array (existing behavior)
