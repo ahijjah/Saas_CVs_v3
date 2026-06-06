@@ -21,7 +21,7 @@
  *   - For exceptional operational corrections only — not routine workflow
  *   - Shows all statuses except current, grouped identically
  *   - Note/reason is always required
- *   - Visually demoted: small muted text link below primary Move button
+ *   - Visually separated from Standard Move: amber button with divider
  *   - Rendered only when advancedMoveEnabled && userRole is in ADVANCED_MOVE_ALLOWED_ROLES
  *   - Backend independently enforces permission + required note
  *
@@ -240,7 +240,7 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   if (!hasNormalOptions && !canDoAdvancedMove) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-slate-400 bg-slate-50 border border-slate-200">
-        —
+        No standard moves available
       </span>
     );
   }
@@ -415,25 +415,32 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
     <div ref={wrapperRef} className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
 
       {/* ── Normal Move button ── */}
-      {hasNormalOptions && (
+      {hasNormalOptions ? (
         <button
           ref={normalBtnRef}
           disabled={isUpdating}
           onClick={openNormal}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 bg-white hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-indigo-200 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
             <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin inline-block" />
           ) : (
             <>
-              Move
+              Move to...
               <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
                 <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </>
           )}
         </button>
+      ) : (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-slate-400 bg-slate-50 border border-slate-200">
+          No standard moves
+        </span>
       )}
+
+      {/* ── Separator between standard and exceptional ── */}
+      {canDoAdvancedMove && <span className="w-px h-4 bg-slate-200 flex-shrink-0" />}
 
       {/* ── Exceptional Move trigger ── */}
       {canDoAdvancedMove && (
@@ -442,9 +449,9 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
           disabled={isUpdating}
           onClick={openAdvanced}
           title="Exceptional Move — use only for exceptional operational corrections. Bypasses standard recruitment workflow."
-          className="inline-flex items-center gap-0.5 text-[10px] text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed underline underline-offset-2"
+          className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg border border-amber-200 text-[10px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Exceptional
+          Exceptional Move
           <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none">
             <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -469,6 +476,10 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
             <NotePanel />
           ) : (
             <>
+              <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-100 rounded-t-xl">
+                <p className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider">Standard Move</p>
+                <p className="text-[10px] text-indigo-600 mt-0.5">Allowed transitions from current stage</p>
+              </div>
               <GroupSection label="Forward" statuses={groups.forward} wfLabels={wfLabels} onSelect={selectStatus} prev={false} />
               <GroupSection label="Back / Reopen" statuses={groups.back_reopen} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0} />
               <GroupSection label="Pause / Close" statuses={groups.pause_close} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0 || groups.back_reopen.length > 0} />
