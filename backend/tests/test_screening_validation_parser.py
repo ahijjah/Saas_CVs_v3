@@ -284,12 +284,27 @@ class TestFieldCompatibility:
 
 class TestEdgeCases:
     def test_unknown_question_id_silently_skipped(self):
+        """Unknown QID is discarded; all known questions still get fallback rows."""
         results = _parse([{"question_id": "00000000-dead-dead-dead-000000000000",
                            "validation_status": "suggested"}])
-        assert len(results) == 0
+        # Both QUESTIONS get fallback rows; the unknown QID is dropped.
+        assert len(results) == len(QUESTIONS)
+        assert all(r.validation_status == "cannot_determine" for r in results)
 
-    def test_empty_results_returns_empty_list(self):
-        assert _parse([]) == []
+    def test_empty_results_all_questions_get_fallback(self):
+        """Empty AI response → every question gets a fallback row."""
+        results = _parse([])
+        assert len(results) == len(QUESTIONS)
+
+    def test_empty_results_unanswered_gets_cannot_determine(self):
+        results = _parse([])
+        r = next(r for r in results if r.question_id == QID_UNANSWERED)
+        assert r.validation_status == "cannot_determine"
+
+    def test_empty_results_answered_gets_cannot_validate(self):
+        results = _parse([], FINAL_ANSWERS)
+        r = next(r for r in results if r.question_id == QID_ANSWERED)
+        assert r.validation_status == "cannot_validate"
 
     def test_multiple_questions_parsed_independently(self):
         results = _parse([
@@ -330,3 +345,58 @@ class TestCrossFieldConsistency:
         results = _parse([{"question_id": QID_ANSWERED, "validation_status": "cannot_validate"}],
                          FINAL_ANSWERS)
         assert results[0].validation_status == "cannot_validate"
+
+
+# ── 11. Fallback rows for AI-skipped questions ───────────────────────────────
+
+class TestFallbackRows:
+    def test_partial_response_still_covers_all_questions(self):
+        """AI returns only one of two questions → both get a result."""
+        results = _parse(
+            [{"question_id": QID_UNANSWERED, "result": "suggested", "suggested_answer": "PhD"}],
+        )
+        assert len(results) == len(QUESTIONS)
+
+    def test_skipped_unanswered_gets_cannot_determine(self):
+        results = _parse([{"question_id": QID_UNANSWERED, "result": "suggested",
+                           "suggested_answer": "PhD"}], FINAL_ANSWERS)
+        skipped = next(r for r in results if r.question_id == QID_ANSWERED)
+        # QID_ANSWERED was not in AI response → fallback
+        assert skipped.validation_status == "cannot_validate"
+
+    def test_skipped_answered_gets_cannot_validate(self):
+        results = _parse(
+            [{"question_id": QID_ANSWERED, "validation_status": "supported_by_cv"}],
+            FINAL_ANSWERS,
+        )
+        skipped = next(r for r in results if r.question_id == QID_UNANSWERED)
+        assert skipped.validation_status == "cannot_determine"
+
+    def test_fallback_row_has_no_suggested_answer(self):
+        results = _parse([{"question_id": QID_ANSWERED, "validation_status": "supported_by_cv"}],
+                         FINAL_ANSWERS)
+        skipped = next(r for r in results if r.question_id == QID_UNANSWERED)
+        assert skipped.suggested_answer is None
+
+    def test_fallback_row_has_none_confidence(self):
+        results = _parse([])
+        for r in results:
+            assert r.confidence is None
+
+    def test_full_response_no_extra_rows(self):
+        """AI returns all questions → output count equals question count (no duplicates)."""
+        results = _parse(
+            [
+                {"question_id": QID_UNANSWERED, "result": "suggested", "suggested_answer": "X"},
+                {"question_id": QID_ANSWERED,   "validation_status": "supported_by_cv"},
+            ],
+            FINAL_ANSWERS,
+        )
+        assert len(results) == len(QUESTIONS)
+
+    def test_fallback_preserves_final_answer_snapshot(self):
+        """Fallback row for an answered question must copy the final answer value."""
+        results = _parse([], FINAL_ANSWERS)
+        r = next(r for r in results if r.question_id == QID_ANSWERED)
+        assert r.final_answer == "Bachelor's Degree"
+        assert r.has_final_answer is True

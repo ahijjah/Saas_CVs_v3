@@ -445,15 +445,23 @@ def _parse_screening_results(
 
     Exposed as a module-level function so it can be unit-tested without
     touching the database or making real AI calls.
+
+    Every question in `questions` is guaranteed to have exactly one
+    ValidationResult in the output: questions the AI returned are parsed
+    normally; questions the AI skipped receive a fallback row so that
+    the validation-runs freshness check (which compares question count
+    against validation-row count) always passes.
     """
     valid_qids = {str(q["question_id"]) for q in questions}
     validations: list[ValidationResult] = []
+    parsed_qids: set[str] = set()
 
     for item in raw_results:
         qid = str(item.get("question_id", ""))
         if qid not in valid_qids:
             continue
 
+        parsed_qids.add(qid)
         has_fa = bool(final_answers.get(qid))
 
         # Normalize status — AI may return "result", "validation_result", or "validation_status"
@@ -507,6 +515,28 @@ def _parse_screening_results(
             confidence        = confidence,
             evidence_text     = str(evidence)[:300] if evidence else None,
             reasoning_summary = str(reasoning)[:500] if reasoning else None,
+        ))
+
+    # ── Fallback rows for questions the AI did not return ─────────────────────
+    # Guarantees v_count == q_count so the freshness check never fails due to
+    # partial AI responses. Unanswered questions → cannot_determine;
+    # answered questions → cannot_validate.
+    for q in questions:
+        qid = str(q["question_id"])
+        if qid in parsed_qids:
+            continue
+        has_fa      = bool(final_answers.get(qid))
+        fa_snapshot = final_answers.get(qid)
+        validations.append(ValidationResult(
+            question_id       = qid,
+            has_final_answer  = has_fa,
+            final_answer      = fa_snapshot["value"] if fa_snapshot else None,
+            validation_status = "cannot_validate" if has_fa else "cannot_determine",
+            suggested_answer  = None,
+            validation_source = "none",
+            confidence        = None,
+            evidence_text     = None,
+            reasoning_summary = None,
         ))
 
     return validations
