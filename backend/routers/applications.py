@@ -1524,8 +1524,8 @@ async def accept_knockout_suggestion_endpoint(
 ):
     """Accept an AI suggestion (optionally with an edited answer), saving it as a final answer.
 
-    answer_source is stored as 'ai_suggested_accepted'.
-    If override_answer is provided, that value is saved instead of the AI suggestion.
+    Accept without edit (or edit to same value): answer_source = AI source, answer_method = recruiter_approved.
+    Edit to a different value: answer_source = recruiter_entered, answer_method = manual_entry.
     """
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 

@@ -910,11 +910,16 @@ async def accept_knockout_suggestion(
     override_answer: str | None = None,
 ) -> None:
     """
-    Accept a suggestion — saves the answer as a final answer with
-    answer_source='ai_suggested_accepted', then marks the suggestion accepted.
+    Accept a suggestion — saves the answer as a final answer, then marks the
+    suggestion accepted.
 
-    override_answer: if provided, saves this value instead of the AI suggestion
-    (used for 'Edit & Accept' flow where the user tweaked the answer).
+    Provenance rules:
+    - Accept without edit or edit to same value → answer_source = AI source
+      (ai_cv / ai_email / ai_cv_email), answer_method = 'recruiter_approved'
+    - Edit to a different value → answer_source = 'recruiter_entered',
+      answer_method = 'manual_entry'
+
+    override_answer: if provided, saves this value instead of the AI suggestion.
     """
     # Fetch suggestion to get the source and method for provenance
     sug_row = await db.execute(
@@ -932,20 +937,19 @@ async def accept_knockout_suggestion(
 
     if override_answer is not None:
         answer_to_save = override_answer.strip()
-        # If the recruiter edited the value, treat it as manual entry regardless of AI source.
-        # If the recruiter typed the exact same value the AI suggested, still preserve AI provenance.
         if answer_to_save != suggested_val:
+            # Recruiter changed the value — treat as manual entry
             accepted_source = "recruiter_entered"
             accepted_method = "manual_entry"
         else:
-            # Same value as suggestion — accept with suggestion's provenance
+            # Same value as suggestion — AI source, recruiter approved
             accepted_source = (sug or {}).get("suggested_source") or "ai_cv"
-            accepted_method = (sug or {}).get("answer_method") or "ai_inference"
+            accepted_method = "recruiter_approved"
     else:
         answer_to_save = suggested_val
-        # Accept without edit — preserve suggestion's provenance exactly
+        # Accept without edit — AI source, recruiter approved
         accepted_source = (sug or {}).get("suggested_source") or "ai_cv"
-        accepted_method = (sug or {}).get("answer_method") or "ai_inference"
+        accepted_method = "recruiter_approved"
 
     await save_knockout_answers(
         db=db,
@@ -971,6 +975,21 @@ async def accept_knockout_suggestion(
             "aid": application_id,
             "qid": question_id,
         },
+    )
+
+    # Update the validation record (if one exists) to reflect the accepted answer
+    await db.execute(
+        text("""
+            UPDATE application_knockout_answer_validations
+            SET final_answer_value  = :val,
+                final_answer_source = :src,
+                updated_at          = now()
+            WHERE application_id = CAST(:aid AS uuid)
+              AND question_id    = CAST(:qid AS uuid)
+              AND validation_status = 'suggested'
+        """),
+        {"val": answer_to_save, "src": accepted_source,
+         "aid": application_id, "qid": question_id},
     )
 
 

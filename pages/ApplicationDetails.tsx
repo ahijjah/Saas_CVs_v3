@@ -192,6 +192,7 @@ const T = {
     knockoutSourceAISuggested: 'AI Suggested (Accepted)',
     knockoutMethodDirect: 'Direct Statement',
     knockoutMethodInferred: 'AI Inference',
+    knockoutMethodApproved: 'Recruiter Approved',
     knockoutMethodManual: 'Manual Entry',
     knockoutMethodNotFound: 'Not Found',
     knockoutEditAnswer: 'Edit',
@@ -418,6 +419,7 @@ const T = {
     knockoutSourceAISuggested: 'مقترح بالذكاء الاصطناعي (مقبول)',
     knockoutMethodDirect: 'تصريح مباشر',
     knockoutMethodInferred: 'استنتاج ذكاء اصطناعي',
+    knockoutMethodApproved: 'موافقة المسؤول',
     knockoutMethodManual: 'إدخال يدوي',
     knockoutMethodNotFound: 'غير موجود',
     knockoutEditAnswer: 'تعديل',
@@ -1378,6 +1380,13 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             return (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[9px] font-black uppercase tracking-widest">
                 {kt.knockoutMethodInferred}
+              </span>
+            );
+          }
+          if (method === 'recruiter_approved') {
+            return (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[9px] font-black uppercase tracking-widest">
+                {kt.knockoutMethodApproved}
               </span>
             );
           }

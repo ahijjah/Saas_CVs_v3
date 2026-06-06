@@ -374,6 +374,7 @@ const T = {
     knockoutSourceAICVEmail: 'AI (CV + Email)',
     knockoutMethodDirect: 'Direct',
     knockoutMethodInferred: 'Inferred',
+    knockoutMethodApproved: 'Approved',
     knockoutMethodManual: 'Manual',
     knockoutMethodNotFound: 'Not Found',
     knockoutEditAnswer: 'Edit',
@@ -595,6 +596,7 @@ const T = {
     knockoutSourceAICVEmail: 'ذكاء اصطناعي (السيرة + البريد)',
     knockoutMethodDirect: 'مباشر',
     knockoutMethodInferred: 'استنتاج',
+    knockoutMethodApproved: 'موافقة',
     knockoutMethodManual: 'يدوي',
     knockoutMethodNotFound: 'غير موجود',
     knockoutEditAnswer: 'تعديل',
@@ -2976,6 +2978,13 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   return (
                     <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[8px] font-black uppercase tracking-widest">
                       {t.knockoutMethodInferred}
+                    </span>
+                  );
+                }
+                if (method === 'recruiter_approved') {
+                  return (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[8px] font-black uppercase tracking-widest">
+                      {t.knockoutMethodApproved}
                     </span>
                   );
                 }
