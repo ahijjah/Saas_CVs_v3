@@ -4831,13 +4831,36 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       )
     );
 
+    // Track whether the HTTP PATCH itself succeeded so the catch block only
+    // reverts and errors on a real server/network failure, not on any JS
+    // exception that might occur in the post-success side-effect code.
+    let patchSucceeded = false;
     try {
-      await apiService.patch(
+      const res = await apiService.patch(
         `${WEBHOOK_CONFIG.APPLICATION_WORKFLOW_STATUS_URL}/${applicationId}/workflow-status`,
         { workflow_status: toStatus, note: note || null, advanced_move: isAdvancedMove || false },
-        auth.token,
+        auth.token ?? undefined,
       );
-      const label = WORKFLOW_STATUS_LABELS_EN[toStatus];
+      // HTTP 200 received — treat as success regardless of response body shape.
+      // Backend returns {"workflow_status": new_status}; we use toStatus we already have.
+      patchSucceeded = true;
+
+      const confirmedStatus: WorkflowStatus =
+        (res?.workflow_status && res.workflow_status in VALID_WORKFLOW_TRANSITIONS)
+          ? res.workflow_status as WorkflowStatus
+          : toStatus;
+
+      // Sync local state to the server's confirmed status (defensive: avoids
+      // drift if backend normalised the status string e.g. trimmed whitespace).
+      if (confirmedStatus !== toStatus) {
+        setCandidates(prev =>
+          prev.map(c =>
+            c.application_id === applicationId ? { ...c, workflow_status: confirmedStatus } : c
+          )
+        );
+      }
+
+      const label = WORKFLOW_STATUS_LABELS_EN[confirmedStatus];
       addToastRef.current(
         isAdvancedMove ? `Exceptional Move → ${label}` : `Moved to ${label}`,
         'success',
@@ -4847,9 +4870,12 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         setDrawerDetailVersion(v => v + 1);
       }
     } catch (err: any) {
-      // Revert optimistic update on failure
-      setCandidates(prevCandidates);
-      addToastRef.current(err.message || 'Failed to update workflow status', 'error');
+      if (!patchSucceeded) {
+        // Revert optimistic update only when the PATCH itself failed (network
+        // error, 4xx/5xx response). Do NOT revert for post-success JS errors.
+        setCandidates(prevCandidates);
+        addToastRef.current(err.message || 'Failed to update workflow status', 'error');
+      }
     } finally {
       setUpdatingId(null);
     }
