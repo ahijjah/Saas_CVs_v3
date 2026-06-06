@@ -122,7 +122,8 @@ function calcMenuPos(btn: HTMLElement, menuMinWidth: number): MenuPos {
 
 export interface WorkflowActionMenuProps {
   applicationId: string;
-  currentStatus: WorkflowStatus;
+  /** Nullable at runtime: DB column has been nullable since migration 077. Component applies safe fallback. */
+  currentStatus: WorkflowStatus | null | undefined;
   candidateName?: string;
   /**
    * Only 'ai_scored' applications are recruiter-actionable.
@@ -233,8 +234,16 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
     );
   }
 
-  const transitions = VALID_WORKFLOW_TRANSITIONS[currentStatus] ?? [];
-  const groups = groupTransitions(currentStatus, transitions);
+  // Runtime null guard: DB column is nullable since migration 077.
+  // For ai_scored candidates, null/unknown status defaults to 'awaiting_review',
+  // matching the backend's own fallback rule in applications.py.
+  const safeStatus: WorkflowStatus =
+    currentStatus != null && (currentStatus as string) in VALID_WORKFLOW_TRANSITIONS
+      ? currentStatus
+      : 'awaiting_review';
+
+  const transitions = VALID_WORKFLOW_TRANSITIONS[safeStatus] ?? [];
+  const groups = groupTransitions(safeStatus, transitions);
   const hasNormalOptions = Object.values(groups).some(g => g.length > 0);
 
   if (!hasNormalOptions && !canDoAdvancedMove) {
@@ -287,7 +296,7 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   };
 
   const selectStatus = (toStatus: WorkflowStatus) => {
-    const requirement = getNoteRequirement(toStatus, currentStatus);
+    const requirement = getNoteRequirement(toStatus, safeStatus);
     if (requirement === 'required' || requirement === 'recommended') {
       setPendingStatus(toStatus);
       setPendingIsAdvanced(false);
@@ -344,8 +353,8 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   };
 
   // Advanced targets: all statuses except current
-  const advancedTargets = ALL_WORKFLOW_STATUSES.filter(s => s !== currentStatus);
-  const advancedGroups = groupTransitions(currentStatus, advancedTargets);
+  const advancedTargets = ALL_WORKFLOW_STATUSES.filter(s => s !== safeStatus);
+  const advancedGroups = groupTransitions(safeStatus, advancedTargets);
 
   // ── Shared note confirmation panel ────────────────────────────────────────
 
@@ -554,8 +563,8 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
               <div className="grid grid-cols-3 gap-2 items-center text-sm">
                 <div>
                   <p className="text-xs font-semibold text-slate-600 uppercase mb-1">From</p>
-                  <div className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${WORKFLOW_STATUS_STYLES[currentStatus] ?? 'bg-slate-100 text-slate-700'}`}>
-                    {wfLabels[currentStatus]}
+                  <div className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${WORKFLOW_STATUS_STYLES[safeStatus] ?? 'bg-slate-100 text-slate-700'}`}>
+                    {wfLabels[safeStatus]}
                   </div>
                 </div>
                 <div className="flex justify-center">

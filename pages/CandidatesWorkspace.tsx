@@ -61,7 +61,7 @@ interface Candidate {
   client_org_name: string | null;
   status: string | null;           // AI decision: qualified/partial/rejected/null
   processing_status: string;
-  workflow_status: WorkflowStatus;
+  workflow_status: WorkflowStatus | null;
   score: number | null;
   applied_at: string | null;
   updated_at: string | null;
@@ -1843,8 +1843,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     }
   };
 
-  const wfStyle = WORKFLOW_STATUS_STYLES[candidate.workflow_status] ?? 'bg-slate-100 text-slate-600';
-  const wfLabel = wfLabels[candidate.workflow_status] ?? candidate.workflow_status;
+  const wfStyle = WORKFLOW_STATUS_STYLES[candidate.workflow_status ?? 'awaiting_review'] ?? 'bg-slate-100 text-slate-600';
+  const wfLabel = wfLabels[candidate.workflow_status ?? 'awaiting_review'] ?? candidate.workflow_status;
   const procStyle = processingStyle(candidate.processing_status);
   const procLabel = processingLabel(candidate.processing_status, t);
   const aiStyle = aiDecisionStyle(candidate.status);
@@ -5419,7 +5419,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         // Detect mixed workflow states across selected candidates
         const selectedCandidates = candidates.filter(c => selectedIds.has(c.application_id));
         const statusCounts = selectedCandidates.reduce<Record<string, number>>((acc, c) => {
-          acc[c.workflow_status] = (acc[c.workflow_status] || 0) + 1;
+          const ws = c.workflow_status ?? 'awaiting_review';
+          acc[ws] = (acc[ws] || 0) + 1;
           return acc;
         }, {});
         const isMixed = Object.keys(statusCounts).length > 1;
@@ -5697,8 +5698,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
             </thead>
             <tbody className="divide-y divide-slate-100">
               {candidates.map(c => {
-                const wfStyle = WORKFLOW_STATUS_STYLES[c.workflow_status] ?? 'bg-slate-100 text-slate-600';
-                const wfLabel = wfLabels[c.workflow_status] ?? c.workflow_status;
+                const wfStyle = WORKFLOW_STATUS_STYLES[c.workflow_status ?? 'awaiting_review'] ?? 'bg-slate-100 text-slate-600';
+                const wfLabel = wfLabels[c.workflow_status ?? 'awaiting_review'] ?? c.workflow_status;
                 const isUpdating = updatingId === c.application_id;
                 const isBulkEligible = c.processing_status === 'ai_scored';
                 const isStoppedRow  = activeView === 'stopped_before_ai';
