@@ -241,6 +241,7 @@ const T = {
     exportButton: 'Export',
     exportCsv: 'Export CSV',
     exportExcel: 'Export Excel',
+    exportPdf: 'Export PDF',
     exporting: 'Exporting…',
     exportError: 'Export failed. Please try again.',
     // Pagination
@@ -510,6 +511,7 @@ const T = {
     exportButton: 'تصدير',
     exportCsv: 'تصدير CSV',
     exportExcel: 'تصدير Excel',
+    exportPdf: 'تصدير PDF',
     exporting: 'جارٍ التصدير…',
     exportError: 'فشل التصدير. حاول مرة أخرى.',
     showing: 'عرض',
@@ -4875,7 +4877,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   // Export ALL candidates matching the current filters (CSV / Excel) — reuses the
   // exact same filter-building logic as the live list query (buildApiParams), so
   // the export always matches what's shown in the workspace for these filters.
-  const handleExport = async (fmt: 'csv' | 'xlsx') => {
+  const handleExport = async (fmt: 'csv' | 'xlsx' | 'pdf') => {
     setShowExportMenu(false);
     setExporting(true);
     try {
@@ -5415,6 +5417,12 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                   className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100"
                 >
                   {t.exportExcel}
+                </button>
+                <button
+                  onClick={() => handleExport('pdf')}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100"
+                >
+                  {t.exportPdf}
                 </button>
               </div>
             </>

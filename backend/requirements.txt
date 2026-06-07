@@ -33,6 +33,9 @@ pymupdf==1.24.14
 # Excel/XLSX export (Candidates Workspace export feature)
 openpyxl==3.1.5
 
+# PDF report export (Candidates Workspace export feature)
+reportlab==4.2.5
+
 # ── Intelligence Layer (Gatekeeper + Bilingual NLP) ───────────────────────────
 
 # Local semantic similarity — multilingual model runs fully on-device

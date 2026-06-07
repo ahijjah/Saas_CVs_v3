@@ -569,23 +569,19 @@ _EXPORT_COLUMNS: list[str] = [
     "Recruiter Notes",
 ]
 
-_AI_RECOMMENDATION_LABELS: dict[str, str] = {
-    "qualified": "Qualified",
-    "partial": "Partial Match",
-    "rejected": "Rejected — Low Match",
-    "low_match": "Rejected — Low Match",
-}
+def _effective_workflow_status(r) -> str:
+    processing_status = r["processing_status"]
+    if processing_status == "ai_scored":
+        return r["workflow_status"] or "awaiting_review"
+    return r["workflow_status"] or ""
+
+
+def _ai_recommendation_label(r) -> str:
+    return _AI_RECOMMENDATION_LABELS.get(r["status"] or "", r["status"] or "")
 
 
 def _export_row(r) -> list:
     """Map a candidate export query row to the requested export column order."""
-    processing_status = r["processing_status"]
-    workflow_status = (
-        (r["workflow_status"] or "awaiting_review")
-        if processing_status == "ai_scored"
-        else (r["workflow_status"] or "")
-    )
-    ai_recommendation = _AI_RECOMMENDATION_LABELS.get(r["status"] or "", r["status"] or "")
     return [
         r["candidate_name"] or "",
         r["candidate_email"] or "",
@@ -594,8 +590,8 @@ def _export_row(r) -> list:
         r["campaign_name"] or "",
         r["client_org_name"] or "",
         float(r["score"]) if r["score"] is not None else "",
-        ai_recommendation,
-        workflow_status,
+        _ai_recommendation_label(r),
+        _effective_workflow_status(r),
         r["assigned_user_name"] or "",
         r["applied_at"].strftime("%Y-%m-%d %H:%M") if r["applied_at"] else "",
         r["security_check_status"] or "",
@@ -603,6 +599,284 @@ def _export_row(r) -> list:
         "Yes" if r["is_talent_pool"] else "No",
         r["recruiter_notes"] or "",
     ]
+
+
+# ── PDF report helpers ────────────────────────────────────────────────────────
+
+_WORKFLOW_STATUS_LABELS: dict[str, str] = {
+    "awaiting_review": "Awaiting Review",
+    "under_review":    "Under Review",
+    "shortlisted":     "Shortlisted",
+    "interviewing":    "Interviewing",
+    "offer_made":      "Offer Made",
+    "hired":           "Hired",
+    "rejected":        "Rejected",
+    "withdrawn":       "Withdrawn",
+    "on_hold":         "On Hold",
+}
+
+# Human-readable labels for filters surfaced in the PDF "Applied Filters" section.
+_AI_DECISION_FILTER_LABELS: dict[str, str] = {
+    "qualified":           "Qualified",
+    "partial":             "Partial Match",
+    "rejected":            "Rejected — Low Match",
+    "rejected_low_match":  "Rejected — Low Match",
+    "not_scored":          "Not Scored",
+}
+
+_PROCESSING_STATUS_FILTER_LABELS: dict[str, str] = {
+    "ai_scored":          "AI Scored",
+    "in_progress":        "In Progress",
+    "stopped_before_ai":  "Stopped Before AI",
+    "pre_ai_stopped":     "Stopped Before AI",
+    "failed_or_blocked":  "Failed / Blocked",
+}
+
+
+async def _describe_active_filters(
+    db: AsyncSession,
+    current_user,
+    *,
+    job_id, workflow_status, processing_status, ai_decision,
+    possible_duplicate, has_notes, applied_after, applied_before,
+    search, campaign_id, client_organization_id, assigned_to, tag_ids,
+    talent_pool_only, validation_issues,
+) -> list[str]:
+    """Build a list of human-readable 'Label: value' strings describing the
+    filters applied to this export, for the PDF report's Applied Filters section.
+    Resolves IDs to display names via small tenant-scoped lookups."""
+    labels: list[str] = []
+
+    if search:
+        labels.append(f"Search: \"{search}\"")
+
+    if job_id:
+        row = (await db.execute(
+            text("SELECT title FROM jobs WHERE job_id = CAST(:jid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+            {"jid": job_id, "tid": current_user.tenant_id},
+        )).first()
+        labels.append(f"Job: {row[0] if row else job_id}")
+
+    if campaign_id:
+        row = (await db.execute(
+            text("SELECT name FROM job_campaigns WHERE campaign_id = CAST(:cid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+            {"cid": campaign_id, "tid": current_user.tenant_id},
+        )).first()
+        labels.append(f"Campaign: {row[0] if row else campaign_id}")
+
+    if client_organization_id:
+        row = (await db.execute(
+            text("SELECT organization_name FROM client_organizations WHERE client_organization_id = CAST(:cid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+            {"cid": client_organization_id, "tid": current_user.tenant_id},
+        )).first()
+        labels.append(f"Client: {row[0] if row else client_organization_id}")
+
+    if workflow_status:
+        labels.append(f"Workflow Status: {_WORKFLOW_STATUS_LABELS.get(workflow_status, workflow_status)}")
+
+    if processing_status:
+        labels.append(f"Queue / View: {_PROCESSING_STATUS_FILTER_LABELS.get(processing_status, processing_status)}")
+
+    if ai_decision:
+        labels.append(f"AI Recommendation: {_AI_DECISION_FILTER_LABELS.get(ai_decision, ai_decision)}")
+
+    if applied_after:
+        labels.append(f"Applied From: {applied_after}")
+    if applied_before:
+        labels.append(f"Applied To: {applied_before}")
+
+    if assigned_to == "me":
+        labels.append(f"Assigned Recruiter: {current_user.full_name or current_user.email} (Me)")
+    elif assigned_to == "unassigned":
+        labels.append("Assigned Recruiter: Unassigned")
+    elif assigned_to:
+        row = (await db.execute(
+            text("SELECT COALESCE(full_name, email) FROM users WHERE user_id = CAST(:uid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+            {"uid": assigned_to, "tid": current_user.tenant_id},
+        )).first()
+        labels.append(f"Assigned Recruiter: {row[0] if row else assigned_to}")
+
+    if tag_ids:
+        tag_list = [tid.strip() for tid in tag_ids.split(',') if tid.strip()]
+        if tag_list:
+            tag_rows = (await db.execute(
+                text("SELECT tag_name FROM candidate_tags WHERE tag_id = ANY(:tids) AND tenant_id = CAST(:tid AS uuid)"),
+                {"tids": tag_list, "tid": current_user.tenant_id},
+            )).all()
+            tag_names = [r[0] for r in tag_rows] or tag_list
+            labels.append(f"Tags: {', '.join(tag_names)}")
+
+    if talent_pool_only:
+        labels.append("Talent Pool: Yes")
+    if possible_duplicate is not None:
+        labels.append(f"Possible Duplicate: {'Yes' if possible_duplicate else 'No'}")
+    if has_notes is not None:
+        labels.append(f"Has Notes: {'Yes' if has_notes else 'No'}")
+    if validation_issues:
+        labels.append("View: Validation Issues")
+
+    return labels
+
+
+def _build_pdf_export(
+    records: list,
+    filter_labels: list[str],
+    generated_by: str,
+    generated_at: str,
+) -> bytes:
+    """Render the candidate export as a multi-page A4 portrait PDF report
+    using reportlab platypus (Report Summary page + Candidate Details table)."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=18, spaceAfter=4)
+    meta_style = ParagraphStyle("ReportMeta", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#475569"))
+    h2_style = ParagraphStyle("SectionHeading", parent=styles["Heading2"], fontSize=12, spaceBefore=12, spaceAfter=6, textColor=colors.HexColor("#1e293b"))
+    body_style = ParagraphStyle("Body", parent=styles["Normal"], fontSize=9, leading=12)
+    cell_style = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=8, leading=10)
+    header_cell_style = ParagraphStyle("HeaderCell", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=16 * mm, bottomMargin=16 * mm,
+        title="Candidates Export Report",
+    )
+
+    story = []
+
+    # ── Page 1: Report Summary ──
+    story.append(Paragraph("CV Analyzer — Recruitment Platform", meta_style))
+    story.append(Paragraph("Candidates Export Report", title_style))
+    story.append(Paragraph(f"Generated by: {generated_by}", meta_style))
+    story.append(Paragraph(f"Generated on: {generated_at}", meta_style))
+    story.append(Spacer(1, 8))
+
+    story.append(Paragraph("Applied Filters", h2_style))
+    if filter_labels:
+        for lbl in filter_labels:
+            story.append(Paragraph(f"• {lbl}", body_style))
+    else:
+        story.append(Paragraph("All Candidates (no filters applied)", body_style))
+
+    total = len(records)
+    story.append(Paragraph("Summary Statistics", h2_style))
+    story.append(Paragraph(f"Total candidates exported: <b>{total}</b>", body_style))
+
+    # AI Recommendation summary
+    ai_counts = {"Qualified": 0, "Partial Match": 0, "Not Recommended": 0}
+    for r in records:
+        decision = (r["status"] or "").lower()
+        if decision == "qualified":
+            ai_counts["Qualified"] += 1
+        elif decision == "partial":
+            ai_counts["Partial Match"] += 1
+        elif decision:
+            ai_counts["Not Recommended"] += 1
+
+    story.append(Paragraph("AI Recommendation Summary", h2_style))
+    ai_table = Table(
+        [["Recommendation", "Count"]] + [[k, str(v)] for k, v in ai_counts.items()],
+        colWidths=[90 * mm, 30 * mm],
+    )
+    ai_table.setStyle(_summary_table_style())
+    story.append(ai_table)
+
+    # Workflow summary
+    workflow_counts = {label: 0 for label in _WORKFLOW_STATUS_LABELS.values()}
+    for r in records:
+        wf = _effective_workflow_status(r)
+        label = _WORKFLOW_STATUS_LABELS.get(wf)
+        if label:
+            workflow_counts[label] += 1
+
+    story.append(Paragraph("Workflow Summary", h2_style))
+    wf_table = Table(
+        [["Workflow Status", "Count"]] + [[k, str(v)] for k, v in workflow_counts.items()],
+        colWidths=[90 * mm, 30 * mm],
+    )
+    wf_table.setStyle(_summary_table_style())
+    story.append(wf_table)
+
+    # Optional indicators — only shown when non-zero
+    security_warnings = sum(1 for r in records if (r["security_check_status"] or "") in ("warning", "blocked"))
+    possible_duplicates = sum(1 for r in records if (r["duplicate_status"] or "") in ("possible_duplicate", "confirmed_duplicate"))
+    optional_rows = []
+    if security_warnings:
+        optional_rows.append(["Security Warnings", str(security_warnings)])
+    if possible_duplicates:
+        optional_rows.append(["Possible Duplicates", str(possible_duplicates)])
+
+    if optional_rows:
+        story.append(Paragraph("Additional Indicators", h2_style))
+        opt_table = Table([["Indicator", "Count"]] + optional_rows, colWidths=[90 * mm, 30 * mm])
+        opt_table.setStyle(_summary_table_style())
+        story.append(opt_table)
+
+    # ── Page 2+: Candidate Details ──
+    story.append(PageBreak())
+    story.append(Paragraph("Candidate Details", h2_style))
+
+    detail_columns = [
+        "Candidate Name", "Job Title", "AI Score", "AI Recommendation",
+        "Workflow Status", "Assigned Recruiter", "Applied Date",
+    ]
+    table_data = [[Paragraph(c, header_cell_style) for c in detail_columns]]
+    for r in records:
+        score = r["score"]
+        table_data.append([
+            Paragraph(r["candidate_name"] or "", cell_style),
+            Paragraph(r["job_title"] or "", cell_style),
+            Paragraph(f"{float(score):.0f}" if score is not None else "—", cell_style),
+            Paragraph(_ai_recommendation_label(r) or "—", cell_style),
+            Paragraph(_WORKFLOW_STATUS_LABELS.get(_effective_workflow_status(r), "—"), cell_style),
+            Paragraph(r["assigned_user_name"] or "Unassigned", cell_style),
+            Paragraph(r["applied_at"].strftime("%Y-%m-%d") if r["applied_at"] else "—", cell_style),
+        ])
+
+    detail_table = Table(
+        table_data,
+        colWidths=[36 * mm, 36 * mm, 18 * mm, 28 * mm, 26 * mm, 30 * mm, 24 * mm],
+        repeatRows=1,
+    )
+    detail_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    story.append(detail_table)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def _summary_table_style():
+    from reportlab.lib import colors
+    from reportlab.platypus import TableStyle
+    return TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ])
 
 
 @router.get("/export")
@@ -630,7 +904,7 @@ async def export_applications(
 ):
     """
     Export ALL candidates matching the current Candidates Workspace filters
-    (not just the current page) as CSV or Excel/XLSX.
+    (not just the current page) as CSV, Excel/XLSX, or a formatted PDF report.
 
     Reuses the exact same filter-building and access-control logic as
     GET /applications (see _build_candidate_filter_clause) so export results
@@ -638,10 +912,10 @@ async def export_applications(
     tenant and client access.
     """
     fmt = (format or "csv").lower()
-    if fmt not in ("csv", "xlsx", "excel"):
+    if fmt not in ("csv", "xlsx", "excel", "pdf"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported export format. Supported formats: csv, xlsx.",
+            detail="Unsupported export format. Supported formats: csv, xlsx, pdf.",
         )
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
@@ -727,23 +1001,46 @@ async def export_applications(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    # Excel / XLSX
-    from openpyxl import Workbook
+    if fmt in ("xlsx", "excel"):
+        from openpyxl import Workbook
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Candidates"
-    ws.append(_EXPORT_COLUMNS)
-    for r in records:
-        ws.append(_export_row(r))
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Candidates"
+        ws.append(_EXPORT_COLUMNS)
+        for r in records:
+            ws.append(_export_row(r))
 
-    xlsx_buffer = io.BytesIO()
-    wb.save(xlsx_buffer)
-    xlsx_buffer.seek(0)
-    filename = f"candidates_export_{timestamp}.xlsx"
+        xlsx_buffer = io.BytesIO()
+        wb.save(xlsx_buffer)
+        xlsx_buffer.seek(0)
+        filename = f"candidates_export_{timestamp}.xlsx"
+        return StreamingResponse(
+            iter([xlsx_buffer.getvalue()]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # PDF report
+    filter_labels = await _describe_active_filters(
+        db, current_user,
+        job_id=job_id, workflow_status=workflow_status, processing_status=processing_status,
+        ai_decision=ai_decision, possible_duplicate=possible_duplicate, has_notes=has_notes,
+        applied_after=applied_after, applied_before=applied_before, search=search,
+        campaign_id=campaign_id, client_organization_id=client_organization_id,
+        assigned_to=assigned_to, tag_ids=tag_ids, talent_pool_only=talent_pool_only,
+        validation_issues=validation_issues,
+    )
+    pdf_bytes = _build_pdf_export(
+        records,
+        filter_labels,
+        generated_by=current_user.full_name or current_user.email,
+        generated_at=datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+    )
+    filename = f"candidates_export_{timestamp}.pdf"
     return StreamingResponse(
-        iter([xlsx_buffer.getvalue()]),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        iter([pdf_bytes]),
+        media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
