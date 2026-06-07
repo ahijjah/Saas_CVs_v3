@@ -96,6 +96,65 @@ class InsightsResponse(BaseModel):
     generated_at: str
 
 
+class TimeToHireMetrics(BaseModel):
+    avg_days: float | None
+    median_days: float | None
+    min_days: float | None
+    max_days: float | None
+    sample_size: int
+
+
+class FilledJobInfo(BaseModel):
+    job_id: str
+    job_title: str
+    job_code: str | None
+    days_to_fill: float
+
+
+class TimeToFillMetrics(BaseModel):
+    avg_days: float | None
+    median_days: float | None
+    fastest_job: FilledJobInfo | None
+    slowest_job: FilledJobInfo | None
+    sample_size: int
+
+
+class ReviewCycleStage(BaseModel):
+    workflow_status: str
+    avg_days: float | None
+    sample_size: int
+
+
+class LongestOpenJob(BaseModel):
+    job_id: str
+    job_title: str
+    job_code: str | None
+    days_open: float
+    applications: int
+    awaiting_review: int
+    under_review: int
+    interviewing: int
+    hired: int
+
+
+class RecruiterEfficiencyMetric(BaseModel):
+    user_id: str
+    recruiter_name: str
+    avg_time_to_hire_days: float | None
+    hires_completed: int
+    candidates_managed: int
+
+
+class RecruitmentEfficiencyResponse(BaseModel):
+    time_to_hire: TimeToHireMetrics
+    time_to_fill: TimeToFillMetrics
+    review_cycle: list[ReviewCycleStage]
+    longest_open_jobs: list[LongestOpenJob]
+    recruiter_efficiency: list[RecruiterEfficiencyMetric]
+    date_range: dict
+    filters: dict
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────
 
 
@@ -604,4 +663,293 @@ async def get_insights(
     return InsightsResponse(
         insights=insights,
         generated_at=datetime.utcnow().isoformat(),
+    )
+
+
+@router.get("/efficiency")
+async def get_recruitment_efficiency(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    job_id: str | None = None,
+    campaign_id: str | None = None,
+    recruiter_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    """
+    Recruitment efficiency metrics: time-to-hire, time-to-fill, review-cycle
+    durations, longest-open jobs, and recruiter efficiency.
+
+    Built entirely from existing application/job timestamps and
+    application_workflow_history — no new business logic, no predictions.
+    All aggregation happens server-side; the frontend only renders results.
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    try:
+        df = datetime.fromisoformat(date_from) if date_from else datetime.now().replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        dt = datetime.fromisoformat(date_to) if date_to else datetime.now()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid date format. Use ISO 8601.")
+
+    extra_where = ""
+    params: dict = {
+        "tid":       current_user.tenant_id,
+        "date_from": df,
+        "date_to":   dt,
+    }
+    if job_id:
+        extra_where += " AND a.job_id = CAST(:job_id AS uuid)"
+        params["job_id"] = job_id
+    if campaign_id:
+        extra_where += " AND a.campaign_id = CAST(:campaign_id AS uuid)"
+        params["campaign_id"] = campaign_id
+    if recruiter_id:
+        extra_where += " AND a.assigned_user_id = CAST(:recruiter_id AS uuid)"
+        params["recruiter_id"] = recruiter_id
+
+    # ── 1. Time to Hire: application created_at → first 'hired' transition ────
+    tth_row = await db.execute(
+        text(f"""
+            WITH hire_events AS (
+              SELECT
+                a.application_id,
+                a.created_at AS app_created_at,
+                MIN(awh.created_at) AS hired_at
+              FROM applications a
+              JOIN jobs j ON j.job_id = a.job_id
+              JOIN application_workflow_history awh
+                ON awh.application_id = a.application_id AND awh.to_status = 'hired'
+              WHERE j.tenant_id = CAST(:tid AS uuid)
+                AND a.created_at >= :date_from
+                AND a.created_at <= :date_to
+                {extra_where}
+              GROUP BY a.application_id, a.created_at
+            ),
+            durations AS (
+              SELECT EXTRACT(EPOCH FROM (hired_at - app_created_at)) / 86400 AS days_to_hire
+              FROM hire_events
+            )
+            SELECT
+              AVG(days_to_hire)                                                   AS avg_days,
+              PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_to_hire)           AS median_days,
+              MIN(days_to_hire)                                                   AS min_days,
+              MAX(days_to_hire)                                                   AS max_days,
+              COUNT(*)                                                            AS sample_size
+            FROM durations
+        """),
+        params,
+    )
+    tth = tth_row.mappings().first()
+    time_to_hire = TimeToHireMetrics(
+        avg_days=float(tth["avg_days"]) if tth and tth["avg_days"] is not None else None,
+        median_days=float(tth["median_days"]) if tth and tth["median_days"] is not None else None,
+        min_days=float(tth["min_days"]) if tth and tth["min_days"] is not None else None,
+        max_days=float(tth["max_days"]) if tth and tth["max_days"] is not None else None,
+        sample_size=int(tth["sample_size"]) if tth else 0,
+    )
+
+    # ── 2. Time to Fill: job created_at (open) → first hire for that job ──────
+    job_extra_where = ""
+    fill_params: dict = {"tid": current_user.tenant_id}
+    if job_id:
+        job_extra_where += " AND j.job_id = CAST(:job_id AS uuid)"
+        fill_params["job_id"] = job_id
+    if campaign_id:
+        job_extra_where += " AND a.campaign_id = CAST(:campaign_id AS uuid)"
+        fill_params["campaign_id"] = campaign_id
+
+    ttf_rows = await db.execute(
+        text(f"""
+            WITH job_first_hire AS (
+              SELECT a.job_id, MIN(awh.created_at) AS first_hired_at
+              FROM applications a
+              JOIN jobs j ON j.job_id = a.job_id
+              JOIN application_workflow_history awh
+                ON awh.application_id = a.application_id AND awh.to_status = 'hired'
+              WHERE j.tenant_id = CAST(:tid AS uuid)
+                {job_extra_where}
+              GROUP BY a.job_id
+            )
+            SELECT
+              j.job_id,
+              j.title AS job_title,
+              j.job_code,
+              EXTRACT(EPOCH FROM (jfh.first_hired_at - j.created_at)) / 86400 AS days_to_fill
+            FROM job_first_hire jfh
+            JOIN jobs j ON j.job_id = jfh.job_id
+        """),
+        fill_params,
+    )
+    fill_durations = [
+        {
+            "job_id": str(r["job_id"]),
+            "job_title": r["job_title"],
+            "job_code": r["job_code"],
+            "days_to_fill": float(r["days_to_fill"]),
+        }
+        for r in ttf_rows.mappings().all()
+    ]
+
+    if fill_durations:
+        days_values = sorted(d["days_to_fill"] for d in fill_durations)
+        n = len(days_values)
+        avg_fill = sum(days_values) / n
+        median_fill = (
+            days_values[n // 2] if n % 2 == 1
+            else (days_values[n // 2 - 1] + days_values[n // 2]) / 2
+        )
+        fastest = min(fill_durations, key=lambda d: d["days_to_fill"])
+        slowest = max(fill_durations, key=lambda d: d["days_to_fill"])
+        time_to_fill = TimeToFillMetrics(
+            avg_days=avg_fill,
+            median_days=median_fill,
+            fastest_job=FilledJobInfo(**fastest),
+            slowest_job=FilledJobInfo(**slowest),
+            sample_size=n,
+        )
+    else:
+        time_to_fill = TimeToFillMetrics(
+            avg_days=None, median_days=None, fastest_job=None, slowest_job=None, sample_size=0,
+        )
+
+    # ── 3. Review Cycle: avg days spent in each workflow status ───────────────
+    # Duration in a status = time between consecutive workflow_history transitions
+    # (open-ended stages use NOW() as the end boundary).
+    cycle_rows = await db.execute(
+        text(f"""
+            WITH ordered_history AS (
+              SELECT
+                awh.application_id,
+                awh.to_status,
+                awh.created_at,
+                LEAD(awh.created_at) OVER (
+                  PARTITION BY awh.application_id ORDER BY awh.created_at
+                ) AS next_at
+              FROM application_workflow_history awh
+              JOIN applications a ON a.application_id = awh.application_id
+              JOIN jobs j ON j.job_id = a.job_id
+              WHERE j.tenant_id = CAST(:tid AS uuid)
+                AND a.created_at >= :date_from
+                AND a.created_at <= :date_to
+                {extra_where}
+            )
+            SELECT
+              to_status,
+              AVG(EXTRACT(EPOCH FROM (COALESCE(next_at, NOW()) - created_at)) / 86400) AS avg_days,
+              COUNT(*) AS sample_size
+            FROM ordered_history
+            WHERE to_status IN ('awaiting_review', 'under_review', 'interviewing', 'offer_made')
+            GROUP BY to_status
+        """),
+        params,
+    )
+    cycle_by_status = {r["to_status"]: r for r in cycle_rows.mappings().all()}
+    review_cycle = [
+        ReviewCycleStage(
+            workflow_status=status,
+            avg_days=float(cycle_by_status[status]["avg_days"]) if status in cycle_by_status and cycle_by_status[status]["avg_days"] is not None else None,
+            sample_size=int(cycle_by_status[status]["sample_size"]) if status in cycle_by_status else 0,
+        )
+        for status in ("awaiting_review", "under_review", "interviewing", "offer_made")
+    ]
+
+    # ── 4. Longest Open Jobs: currently-active jobs ranked by days open ───────
+    longest_extra_where = ""
+    longest_params: dict = {"tid": current_user.tenant_id}
+    if job_id:
+        longest_extra_where += " AND j.job_id = CAST(:job_id AS uuid)"
+        longest_params["job_id"] = job_id
+
+    longest_rows = await db.execute(
+        text(f"""
+            SELECT
+              j.job_id,
+              j.title AS job_title,
+              j.job_code,
+              EXTRACT(EPOCH FROM (NOW() - j.created_at)) / 86400 AS days_open,
+              COUNT(a.application_id) AS applications,
+              COUNT(*) FILTER (
+                WHERE a.workflow_status = 'awaiting_review' AND a.processing_status = 'ai_scored'
+              ) AS awaiting_review,
+              COUNT(*) FILTER (WHERE a.workflow_status = 'under_review') AS under_review,
+              COUNT(*) FILTER (WHERE a.workflow_status = 'interviewing') AS interviewing,
+              COUNT(*) FILTER (WHERE a.workflow_status = 'hired')        AS hired
+            FROM jobs j
+            LEFT JOIN applications a ON a.job_id = j.job_id
+            WHERE j.tenant_id = CAST(:tid AS uuid)
+              AND j.status = 'active'
+              {longest_extra_where}
+            GROUP BY j.job_id, j.title, j.job_code, j.created_at
+            ORDER BY days_open DESC
+            LIMIT 15
+        """),
+        longest_params,
+    )
+    longest_open_jobs = [
+        LongestOpenJob(
+            job_id=str(r["job_id"]),
+            job_title=r["job_title"],
+            job_code=r["job_code"],
+            days_open=float(r["days_open"]),
+            applications=int(r["applications"]),
+            awaiting_review=int(r["awaiting_review"]),
+            under_review=int(r["under_review"]),
+            interviewing=int(r["interviewing"]),
+            hired=int(r["hired"]),
+        )
+        for r in longest_rows.mappings().all()
+    ]
+
+    # ── 5. Recruiter Efficiency: avg time-to-hire, hires, candidates managed ──
+    recruiter_rows = await db.execute(
+        text(f"""
+            WITH hire_durations AS (
+              SELECT
+                a2.application_id,
+                a2.assigned_user_id,
+                EXTRACT(EPOCH FROM (MIN(awh.created_at) - a2.created_at)) / 86400 AS days_to_hire
+              FROM applications a2
+              JOIN application_workflow_history awh
+                ON awh.application_id = a2.application_id AND awh.to_status = 'hired'
+              GROUP BY a2.application_id, a2.assigned_user_id
+            )
+            SELECT
+              u.user_id,
+              COALESCE(u.full_name, u.email) AS recruiter_name,
+              AVG(hd.days_to_hire)                          AS avg_time_to_hire_days,
+              COUNT(DISTINCT hd.application_id)             AS hires_completed,
+              COUNT(DISTINCT a.application_id)              AS candidates_managed
+            FROM users u
+            JOIN applications a ON a.assigned_user_id = u.user_id
+            JOIN jobs j ON j.job_id = a.job_id
+            LEFT JOIN hire_durations hd ON hd.application_id = a.application_id
+            WHERE u.tenant_id = CAST(:tid AS uuid)
+              AND a.created_at >= :date_from
+              AND a.created_at <= :date_to
+              {extra_where}
+            GROUP BY u.user_id, u.full_name, u.email
+            ORDER BY hires_completed DESC, avg_time_to_hire_days ASC NULLS LAST
+        """),
+        params,
+    )
+    recruiter_efficiency = [
+        RecruiterEfficiencyMetric(
+            user_id=str(r["user_id"]),
+            recruiter_name=r["recruiter_name"],
+            avg_time_to_hire_days=float(r["avg_time_to_hire_days"]) if r["avg_time_to_hire_days"] is not None else None,
+            hires_completed=int(r["hires_completed"]),
+            candidates_managed=int(r["candidates_managed"]),
+        )
+        for r in recruiter_rows.mappings().all()
+    ]
+
+    return RecruitmentEfficiencyResponse(
+        time_to_hire=time_to_hire,
+        time_to_fill=time_to_fill,
+        review_cycle=review_cycle,
+        longest_open_jobs=longest_open_jobs,
+        recruiter_efficiency=recruiter_efficiency,
+        date_range={"from": df.isoformat(), "to": dt.isoformat()},
+        filters={"job_id": job_id, "campaign_id": campaign_id, "recruiter_id": recruiter_id},
     )

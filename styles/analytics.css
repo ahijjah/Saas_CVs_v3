@@ -563,3 +563,128 @@ tbody tr:hover {
   font-size: 12px;
   color: #6b7280;
 }
+
+/* Recruitment Efficiency */
+.efficiency-subheading {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 24px 0 12px;
+}
+
+.efficiency-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.efficiency-kpi-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 18px 20px;
+}
+
+.efficiency-kpi-card h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.efficiency-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.efficiency-kpi-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.efficiency-kpi-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+}
+
+.efficiency-kpi-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.efficiency-kpi-note {
+  font-size: 12px;
+  color: #9ca3af;
+  margin: 8px 0 0;
+}
+
+.efficiency-fill-extremes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0 4px;
+  border-top: 1px solid #f3f4f6;
+  margin-top: 4px;
+}
+
+.efficiency-fill-extremes > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.efficiency-fill-job {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.review-cycle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.review-cycle-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.review-cycle-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.review-cycle-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.review-cycle-note {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.efficiency-table {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}

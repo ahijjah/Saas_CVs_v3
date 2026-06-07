@@ -110,6 +110,7 @@ export const WEBHOOK_CONFIG = {
   ANALYTICS_RECRUITER_PRODUCTIVITY_URL: `${API_BASE}/analytics/recruiter-productivity`,
   ANALYTICS_AGING_URL:          `${API_BASE}/analytics/aging`,
   ANALYTICS_INSIGHTS_URL:       `${API_BASE}/analytics/insights`,
+  ANALYTICS_EFFICIENCY_URL:     `${API_BASE}/analytics/efficiency`,
   // Candidate tags & talent pool
   TAGS_URL:                     `${API_BASE}/tags`,
   TALENT_POOL_URL:              `${API_BASE}/applications/talent-pool`,

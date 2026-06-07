@@ -898,6 +898,65 @@ export interface InsightsResponse {
   generated_at: string;
 }
 
+export interface TimeToHireMetrics {
+  avg_days: number | null;
+  median_days: number | null;
+  min_days: number | null;
+  max_days: number | null;
+  sample_size: number;
+}
+
+export interface FilledJobInfo {
+  job_id: string;
+  job_title: string;
+  job_code: string | null;
+  days_to_fill: number;
+}
+
+export interface TimeToFillMetrics {
+  avg_days: number | null;
+  median_days: number | null;
+  fastest_job: FilledJobInfo | null;
+  slowest_job: FilledJobInfo | null;
+  sample_size: number;
+}
+
+export interface ReviewCycleStage {
+  workflow_status: WorkflowStatus;
+  avg_days: number | null;
+  sample_size: number;
+}
+
+export interface LongestOpenJob {
+  job_id: string;
+  job_title: string;
+  job_code: string | null;
+  days_open: number;
+  applications: number;
+  awaiting_review: number;
+  under_review: number;
+  interviewing: number;
+  hired: number;
+}
+
+export interface RecruiterEfficiencyMetric {
+  user_id: string;
+  recruiter_name: string;
+  avg_time_to_hire_days: number | null;
+  hires_completed: number;
+  candidates_managed: number;
+}
+
+export interface RecruitmentEfficiencyResponse {
+  time_to_hire: TimeToHireMetrics;
+  time_to_fill: TimeToFillMetrics;
+  review_cycle: ReviewCycleStage[];
+  longest_open_jobs: LongestOpenJob[];
+  recruiter_efficiency: RecruiterEfficiencyMetric[];
+  date_range: { from: string; to: string };
+  filters: Record<string, any>;
+}
+
 export interface CandidateTag {
   tag_id: string;
   tag_name: string;

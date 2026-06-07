@@ -242,6 +242,23 @@ export class APIService {
     return apiService.get(WEBHOOK_CONFIG.ANALYTICS_INSIGHTS_URL, {}, this.token);
   }
 
+  async getRecruitmentEfficiency(filters: {
+    job_id?: string;
+    campaign_id?: string;
+    recruiter_id?: string;
+    date_from?: string;
+    date_to?: string;
+  }) {
+    const params: Record<string, string> = {};
+    if (filters.date_from) params.date_from = filters.date_from;
+    if (filters.date_to) params.date_to = filters.date_to;
+    if (filters.job_id) params.job_id = filters.job_id;
+    if (filters.campaign_id) params.campaign_id = filters.campaign_id;
+    if (filters.recruiter_id) params.recruiter_id = filters.recruiter_id;
+
+    return apiService.get(WEBHOOK_CONFIG.ANALYTICS_EFFICIENCY_URL, params, this.token);
+  }
+
   // ── Candidate Tags ────────────────────────────────────────────────────────
 
   async getApplicationTags(applicationId: string) {
