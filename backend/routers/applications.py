@@ -804,7 +804,15 @@ async def get_application_details(
         "knockout_suggestions":       knockout_suggestions,
         "knockout_validations":       knockout_validations,
         "latest_validation_run":      latest_validation_run,
-        "workflow_status":            app["workflow_status"] or "new",
+        # Same business rule as the list endpoint (line ~465): only ai_scored
+        # candidates get the 'awaiting_review' null-fallback; other processing
+        # states return their actual DB value (None/null). Never surface the
+        # legacy 'new' placeholder — it is not a valid recruiter workflow status.
+        "workflow_status": (
+            app["workflow_status"] or "awaiting_review"
+            if app["processing_status"] == "ai_scored"
+            else app["workflow_status"]
+        ),
         "recruiter_notes":            app["recruiter_notes"],
         "workflow_history":           workflow_history,
     }
