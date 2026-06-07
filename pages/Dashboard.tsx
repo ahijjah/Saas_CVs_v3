@@ -6,6 +6,10 @@ import { WEBHOOK_CONFIG } from '../config';
 import { AuthState } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
+import { TrendSparkline, TrendPoint } from '../components/charts/TrendSparkline';
+import { PipelineSnapshotChart } from '../components/charts/PipelineSnapshotChart';
+import { AttentionSummaryChart, AttentionItem } from '../components/charts/AttentionSummaryChart';
+import '../styles/analytics.css';
 
 interface DashboardProps {
   auth: AuthState;
@@ -22,6 +26,10 @@ interface DashboardKpis {
   // Needs attention
   awaiting_review: number;
   failed_or_blocked: number;
+  security_warnings: number;
+  possible_duplicates: number;
+  validation_issues: number;
+  stopped_before_ai: number;
   // Pipeline breakdown
   under_review: number;
   interviewing: number;
@@ -37,6 +45,19 @@ interface DashboardSummary {
   kpis: DashboardKpis;
 }
 
+interface DashboardTrendDay {
+  date: string;
+  applications_received: number;
+  hires: number;
+}
+
+interface DashboardTrends {
+  days: number;
+  series: DashboardTrendDay[];
+  total_applications: number;
+  total_hires: number;
+}
+
 const T = {
   en: {
     dashboard: 'Home',
@@ -48,6 +69,19 @@ const T = {
     sectionOverview: 'Workspace Overview',
     sectionAttention: 'Needs Attention',
     sectionPipeline: 'Recruitment Pipeline',
+    sectionTrends: 'Trends (Last 30 Days)',
+    sectionPipelineSnapshot: 'Pipeline Snapshot',
+    sectionAttentionSummary: 'Attention Summary',
+    applicationsTrend: 'Applications Trend',
+    hiringTrend: 'Hiring Trend',
+    totalInPeriod: 'in period',
+    noTrendData: 'No activity in this period yet.',
+    noPipelineData: 'No active pipeline yet.',
+    noAttentionData: 'Nothing needs attention right now.',
+    validationIssues: 'Validation Issues',
+    securityWarnings: 'Security Warnings',
+    possibleDuplicates: 'Possible Duplicates',
+    stoppedBeforeAi: 'Stopped Before AI',
     activeCampaigns: 'Active Campaigns',
     activeJobs: 'Active Jobs',
     totalApplications: 'Total Applications',
@@ -77,6 +111,19 @@ const T = {
     sectionOverview: 'نظرة عامة على مساحة العمل',
     sectionAttention: 'يحتاج إلى انتباه',
     sectionPipeline: 'خط التوظيف',
+    sectionTrends: 'الاتجاهات (آخر 30 يومًا)',
+    sectionPipelineSnapshot: 'لمحة عن خط التوظيف',
+    sectionAttentionSummary: 'ملخص الانتباه',
+    applicationsTrend: 'اتجاه الطلبات',
+    hiringTrend: 'اتجاه التعيين',
+    totalInPeriod: 'خلال الفترة',
+    noTrendData: 'لا يوجد نشاط في هذه الفترة بعد.',
+    noPipelineData: 'لا يوجد خط توظيف نشط بعد.',
+    noAttentionData: 'لا يوجد ما يحتاج إلى انتباه الآن.',
+    validationIssues: 'مشاكل التحقق',
+    securityWarnings: 'تحذيرات أمنية',
+    possibleDuplicates: 'تكرارات محتملة',
+    stoppedBeforeAi: 'متوقف قبل الذكاء الاصطناعي',
     activeCampaigns: 'الحملات النشطة',
     activeJobs: 'الوظائف النشطة',
     totalApplications: 'إجمالي الطلبات',
@@ -185,6 +232,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
   const { setPageTitle } = usePageTitle();
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [trends, setTrends] = useState<DashboardTrends | null>(null);
   const [loading, setLoading] = useState(true);
 
   const tenantType = auth.user?.tenant_type ?? 'organization';
@@ -200,8 +248,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
       if (!auth.token) return;
       setLoading(true);
       try {
-        const data = await apiService.get(WEBHOOK_CONFIG.DASHBOARD_SUMMARY_URL, {}, auth.token);
-        setSummary(data);
+        const [summaryData, trendsData] = await Promise.all([
+          apiService.get(WEBHOOK_CONFIG.DASHBOARD_SUMMARY_URL, {}, auth.token),
+          apiService.get(WEBHOOK_CONFIG.DASHBOARD_TRENDS_URL, { days: '30' }, auth.token).catch(() => null),
+        ]);
+        setSummary(summaryData);
+        setTrends(trendsData);
       } catch (err: any) {
         addToast(err.message || 'Failed to load dashboard', 'error');
       } finally {
@@ -254,6 +306,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
   }
 
   const showCampaigns = isAgency || kpis.active_campaigns > 0;
+
+  const applicationsTrendData: TrendPoint[] = (trends?.series || []).map((d) => ({
+    date: d.date,
+    value: d.applications_received,
+  }));
+  const hiringTrendData: TrendPoint[] = (trends?.series || []).map((d) => ({
+    date: d.date,
+    value: d.hires,
+  }));
+
+  const attentionSummaryItems: AttentionItem[] = [
+    { key: 'awaiting_review',     label: t.attAwaitingReview,  value: kpis.awaiting_review,     color: '#0ea5e9' },
+    { key: 'validation_issues',   label: t.validationIssues,   value: kpis.validation_issues,   color: '#f59e0b' },
+    { key: 'security_warnings',   label: t.securityWarnings,   value: kpis.security_warnings,   color: '#ef4444' },
+    { key: 'possible_duplicates', label: t.possibleDuplicates, value: kpis.possible_duplicates, color: '#a855f7' },
+    { key: 'failed_or_blocked',   label: t.attFailedBlocked,   value: kpis.failed_or_blocked,   color: '#dc2626' },
+    { key: 'stopped_before_ai',   label: t.stoppedBeforeAi,    value: kpis.stopped_before_ai,   color: '#64748b' },
+  ];
 
   const pipelineTotal =
     kpis.awaiting_review + kpis.under_review + kpis.interviewing +
@@ -324,6 +394,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
         </div>
       </section>
 
+      {/* ── Trends: Applications & Hiring (last 30 days) ─────────────────── */}
+      {trends && (
+        <section>
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
+            {t.sectionTrends}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <TrendSparkline
+              title={t.applicationsTrend}
+              total={trends.total_applications}
+              totalLabel={t.totalInPeriod}
+              data={applicationsTrendData}
+              color="#3b82f6"
+              emptyText={t.noTrendData}
+            />
+            <TrendSparkline
+              title={t.hiringTrend}
+              total={trends.total_hires}
+              totalLabel={t.totalInPeriod}
+              data={hiringTrendData}
+              color="#10b981"
+              emptyText={t.noTrendData}
+            />
+          </div>
+        </section>
+      )}
+
       {/* ── Section B: Needs Attention ───────────────────────────────────── */}
       <section>
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
@@ -340,6 +437,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
             ))}
           </div>
         )}
+
+        {/* Compact visual breakdown of operational bottlenecks */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 mt-3">
+          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            {t.sectionAttentionSummary}
+          </h3>
+          <AttentionSummaryChart items={attentionSummaryItems} emptyText={t.noAttentionData} />
+        </div>
       </section>
 
       {/* ── Section C: Recruitment Pipeline ─────────────────────────────── */}
@@ -347,16 +452,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ auth, addToast }) => {
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
           {t.sectionPipeline}
         </h2>
-        <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-          <PipelineRow label={t.awaitingReview} value={kpis.awaiting_review} total={pipelineTotal} color="text-sky-700"    barColor="bg-sky-400" />
-          <PipelineRow label={t.underReview}    value={kpis.under_review}    total={pipelineTotal} color="text-blue-700"   barColor="bg-blue-400" />
-          <PipelineRow label={t.interviewing}   value={kpis.interviewing}    total={pipelineTotal} color="text-purple-700" barColor="bg-purple-400" />
-          <PipelineRow label={t.offerMade}      value={kpis.offer_made}      total={pipelineTotal} color="text-amber-700"  barColor="bg-amber-400" />
-          <PipelineRow label={t.hired}          value={kpis.hired}           total={pipelineTotal} color="text-green-700"  barColor="bg-green-400" />
-          <div className="border-t border-slate-100 my-1" />
-          <PipelineRow label={t.rejected}       value={kpis.rejected}        total={pipelineTotal} color="text-red-500"    barColor="bg-red-300" />
-          <PipelineRow label={t.withdrawn}      value={kpis.withdrawn}       total={pipelineTotal} color="text-slate-400"  barColor="bg-slate-300" />
-          <PipelineRow label={t.onHold}         value={kpis.on_hold}         total={pipelineTotal} color="text-orange-500" barColor="bg-orange-300" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3 lg:col-span-2">
+            <PipelineRow label={t.awaitingReview} value={kpis.awaiting_review} total={pipelineTotal} color="text-sky-700"    barColor="bg-sky-400" />
+            <PipelineRow label={t.underReview}    value={kpis.under_review}    total={pipelineTotal} color="text-blue-700"   barColor="bg-blue-400" />
+            <PipelineRow label={t.interviewing}   value={kpis.interviewing}    total={pipelineTotal} color="text-purple-700" barColor="bg-purple-400" />
+            <PipelineRow label={t.offerMade}      value={kpis.offer_made}      total={pipelineTotal} color="text-amber-700"  barColor="bg-amber-400" />
+            <PipelineRow label={t.hired}          value={kpis.hired}           total={pipelineTotal} color="text-green-700"  barColor="bg-green-400" />
+            <div className="border-t border-slate-100 my-1" />
+            <PipelineRow label={t.rejected}       value={kpis.rejected}        total={pipelineTotal} color="text-red-500"    barColor="bg-red-300" />
+            <PipelineRow label={t.withdrawn}      value={kpis.withdrawn}       total={pipelineTotal} color="text-slate-400"  barColor="bg-slate-300" />
+            <PipelineRow label={t.onHold}         value={kpis.on_hold}         total={pipelineTotal} color="text-orange-500" barColor="bg-orange-300" />
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              {t.sectionPipelineSnapshot}
+            </h3>
+            <PipelineSnapshotChart
+              awaitingReview={kpis.awaiting_review}
+              underReview={kpis.under_review}
+              interviewing={kpis.interviewing}
+              offerMade={kpis.offer_made}
+              hired={kpis.hired}
+              labels={{
+                awaitingReview: t.awaitingReview,
+                underReview: t.underReview,
+                interviewing: t.interviewing,
+                offerMade: t.offerMade,
+                hired: t.hired,
+              }}
+              emptyText={t.noPipelineData}
+            />
+          </div>
         </div>
       </section>
 

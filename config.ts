@@ -39,6 +39,7 @@ export const WEBHOOK_CONFIG = {
   TENANT_USAGE_URL:          `${API_BASE}/tenant/usage`,
   // Dashboard
   DASHBOARD_SUMMARY_URL:     `${API_BASE}/dashboard/summary`,
+  DASHBOARD_TRENDS_URL:      `${API_BASE}/dashboard/trends`,
   // Platform Control (super_admin)
   PLATFORM_CONFIG_URL:          `${API_BASE}/admin/platform-config`,
   SUBSCRIPTION_PLANS_URL:       `${API_BASE}/admin/subscription-plans`,
