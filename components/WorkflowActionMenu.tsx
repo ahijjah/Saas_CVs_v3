@@ -451,14 +451,16 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
       {/* ── Separator between standard and exceptional ── */}
       {canDoAdvancedMove && <span className="w-px h-4 bg-slate-200 flex-shrink-0" />}
 
-      {/* ── Exceptional Move trigger ── */}
+      {/* ── Exceptional Move trigger — intentionally muted/neutral so it never
+            competes visually with the primary "Move to..." action. This is a
+            cautionary, secondary action: subtle border, no fill, no bold weight. ── */}
       {canDoAdvancedMove && (
         <button
           ref={advancedBtnRef}
           disabled={isUpdating}
           onClick={openAdvanced}
-          title="Exceptional Move — use only for exceptional operational corrections. Bypasses standard recruitment workflow."
-          className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg border border-amber-200 text-[10px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Exceptional Move — use only to bypass normal workflow. Intended for rare operational corrections only."
+          className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg border border-dashed border-slate-300 text-[10px] font-normal text-slate-400 bg-transparent hover:text-slate-600 hover:border-slate-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Exceptional Move
           <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none">
