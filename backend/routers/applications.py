@@ -569,6 +569,19 @@ _EXPORT_COLUMNS: list[str] = [
     "Recruiter Notes",
 ]
 
+# Maps raw `decision`/`status` DB values (and the UI's 'rejected_low_match' alias)
+# to the human-readable AI recommendation labels used across CSV/Excel/PDF export.
+# Falls back to the raw value (or "Not Scored" when null/empty) for anything unmapped.
+_AI_RECOMMENDATION_LABELS: dict[str, str] = {
+    "qualified":          "Qualified",
+    "partial":            "Partial Match",
+    "rejected":           "Rejected — Low Match",
+    "rejected_low_match": "Rejected — Low Match",
+    "low_match":          "Rejected — Low Match",
+    "not_scored":         "Not Scored",
+}
+
+
 def _effective_workflow_status(r) -> str:
     processing_status = r["processing_status"]
     if processing_status == "ai_scored":
@@ -577,7 +590,10 @@ def _effective_workflow_status(r) -> str:
 
 
 def _ai_recommendation_label(r) -> str:
-    return _AI_RECOMMENDATION_LABELS.get(r["status"] or "", r["status"] or "")
+    raw = r["status"] or ""
+    if not raw:
+        return "Not Scored"
+    return _AI_RECOMMENDATION_LABELS.get(raw, raw)
 
 
 def _export_row(r) -> list:
