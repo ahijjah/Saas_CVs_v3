@@ -220,7 +220,6 @@ const T = {
     colJob: 'Job',
     colAiScore: 'AI Score',
     colDecision: 'AI Recommendation',
-    colVerification: 'Verification',
     colWorkflow: 'Workflow',
     colProcessing: 'Processing',
     colApplied: 'Applied',
@@ -466,27 +465,17 @@ const T = {
     flagDuplicate: 'Duplicate',
     flagConfirmedDuplicate: 'Confirmed Duplicate',
     flagSecurity: 'Security',
-    flagContradiction: 'Contradiction',
-    flagSuggestion: 'Suggestion',
-    flagCannotDetermine: 'Cannot Determine',
-    flagNotSupported: 'Not Supported',
     flagTalentPool: 'Talent Pool',
-    // CW-1: validation summary badges
-    valSummaryValidated: 'Validated',
-    valSummaryContradiction: 'Contradiction',
-    valSummaryCannotDetermine: 'Cannot Determine',
-    valSummarySuggestion: 'Suggestion',
-    valSummaryNotSupported: 'Not Supported',
     // CW-1: new filters
     filterHasNotes: 'Has Notes',
     filterPossibleDuplicate: 'Possible Duplicate',
     filterAppliedAfter: 'From',
     filterAppliedBefore: 'To',
     filterAppliedDateRange: 'Applied Date',
-    // CW-1: attention indicator tooltips
-    attentionRed: 'Needs attention: contradiction, confirmed duplicate, or security block',
-    attentionYellow: 'Review recommended: cannot determine, not supported, suggestion pending, possible duplicate, or security warning',
-    attentionGreen: 'No issues detected',
+    // CW-1: attention indicator tooltips — application-level concerns only
+    // (knockout/screening validation lives in Application Details, not the row)
+    attentionRed: 'Needs attention: confirmed duplicate or security block',
+    attentionYellow: 'Review recommended: possible duplicate or security warning',
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -497,7 +486,6 @@ const T = {
     colJob: 'الوظيفة',
     colAiScore: 'درجة الذكاء',
     colDecision: 'توصية الذكاء الاصطناعي',
-    colVerification: 'التحقق',
     colWorkflow: 'مرحلة التوظيف',
     colProcessing: 'حالة المعالجة',
     colApplied: 'تاريخ التقديم',
@@ -738,27 +726,16 @@ const T = {
     flagDuplicate: 'مكرر',
     flagConfirmedDuplicate: 'مكرر مؤكد',
     flagSecurity: 'أمني',
-    flagContradiction: 'تناقض',
-    flagSuggestion: 'اقتراح',
-    flagCannotDetermine: 'لا يمكن التحديد',
-    flagNotSupported: 'غير مدعوم من السيرة',
     flagTalentPool: 'مجموعة مواهب',
-    // CW-1: validation summary badges
-    valSummaryValidated: 'تم التحقق',
-    valSummaryContradiction: 'تناقض',
-    valSummaryCannotDetermine: 'لا يمكن التحديد',
-    valSummarySuggestion: 'اقتراح',
-    valSummaryNotSupported: 'غير مدعوم من السيرة',
     // CW-1: new filters
     filterHasNotes: 'يحتوي ملاحظات',
     filterPossibleDuplicate: 'مكرر محتمل',
     filterAppliedAfter: 'من',
     filterAppliedBefore: 'إلى',
     filterAppliedDateRange: 'تاريخ التقديم',
-    // CW-1: attention indicator tooltips
-    attentionRed: 'يحتاج انتباهاً: تناقض أو مكرر مؤكد أو محظور أمنياً',
-    attentionYellow: 'مراجعة موصى بها: لا يمكن التحديد، غير مدعوم، اقتراح معلق، مكرر محتمل، أو تحذير أمني',
-    attentionGreen: 'لا توجد مشاكل مكتشفة',
+    // CW-1: attention indicator tooltips — application-level concerns only
+    attentionRed: 'يحتاج انتباهاً: مكرر مؤكد أو محظور أمنياً',
+    attentionYellow: 'مراجعة موصى بها: مكرر محتمل أو تحذير أمني',
   },
 };
 
@@ -5715,7 +5692,6 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colJob}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiScore}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colDecision}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colVerification}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colWorkflow}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden xl:table-cell">{t.colAssigned}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">{t.colApplied}</th>
@@ -5731,28 +5707,26 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 const isStoppedRow  = activeView === 'stopped_before_ai';
 
                 // ── CW-1: Attention indicator (Decision 2) ───────────────────
-                const hasContradiction    = c.validation_summary === 'contradiction';
+                // Application-level concerns only — knockout/screening validation
+                // (contradiction, cannot determine, cannot validate, not supported,
+                // suggestions) belongs to individual screening questions, not the
+                // application as a whole, and is surfaced in Application Details
+                // (Screening tab → Knockout Questions) and the Validation Issues queue.
                 const hasSecurityBlocked  = c.security_check_status === 'blocked';
                 const hasSecurityWarn     = c.security_check_status === 'warning';
                 const hasConfirmedDup     = c.duplicate_status === 'confirmed_duplicate';
                 const hasPossibleDup      = c.duplicate_status === 'possible_duplicate';
-                const hasCannotDet        = c.validation_summary === 'cannot_determine';
-                const hasSuggestion       = c.validation_summary === 'suggestion';
-                const hasNotSupported     = c.validation_summary === 'not_supported';
-                // RED: contradiction, confirmed_duplicate, or security blocked
-                const isRed    = hasContradiction || hasSecurityBlocked || hasConfirmedDup;
-                // YELLOW: security warning, possible_duplicate, cannot_determine, suggestion, not_supported
-                const isYellow = !isRed && (hasSecurityWarn || hasPossibleDup || hasCannotDet || hasSuggestion || hasNotSupported);
-                const isGreen  = !isRed && !isYellow && c.validation_summary === 'validated';
+                // RED: confirmed_duplicate or security blocked
+                const isRed    = hasSecurityBlocked || hasConfirmedDup;
+                // YELLOW: security warning or possible_duplicate
+                const isYellow = !isRed && (hasSecurityWarn || hasPossibleDup);
                 const attentionDot = isRed
                   ? <span className="inline-block w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title={t.attentionRed} />
                   : isYellow
                   ? <span className="inline-block w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title={t.attentionYellow} />
-                  : isGreen
-                  ? <span className="inline-block w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title={t.attentionGreen} />
                   : null;
 
-                // ── CW-1: Compact flags ──────────────────────────────────────
+                // ── CW-1: Compact flags — application-level only ─────────────
                 const flagBadges: React.ReactNode[] = [];
                 if (c.is_talent_pool) flagBadges.push(
                   <span key="tp" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-green-100 text-green-700">{t.flagTalentPool}</span>
@@ -5768,18 +5742,6 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 );
                 if (hasSecurityWarn) flagBadges.push(
                   <span key="sec" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-100 text-orange-700">{t.flagSecurity}</span>
-                );
-                if (hasContradiction) flagBadges.push(
-                  <span key="con" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-700">{t.flagContradiction}</span>
-                );
-                if (hasNotSupported) flagBadges.push(
-                  <span key="ns" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">{t.flagNotSupported}</span>
-                );
-                if (hasSuggestion) flagBadges.push(
-                  <span key="sug" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-100 text-indigo-700">{t.flagSuggestion}</span>
-                );
-                if (hasCannotDet) flagBadges.push(
-                  <span key="cd" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500">{t.flagCannotDetermine}</span>
                 );
 
                 return (
@@ -5846,31 +5808,6 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiDecisionStyle(c.status)}`}>
                         {aiDecisionLabel(c.status, t)}
                       </span>
-                    </td>
-
-                    {/* Verification — validation summary indicator */}
-                    <td className="px-4 py-3">
-                      {c.validation_summary ? (
-                        <button
-                          onClick={() => openCandidate(c)}
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-opacity hover:opacity-80 ${
-                            c.validation_summary === 'contradiction'    ? 'bg-red-100 text-red-700' :
-                            c.validation_summary === 'cannot_determine' ? 'bg-slate-100 text-slate-500' :
-                            c.validation_summary === 'not_supported'    ? 'bg-amber-100 text-amber-700' :
-                            c.validation_summary === 'suggestion'       ? 'bg-indigo-100 text-indigo-700' :
-                            'bg-green-50 text-green-700'
-                          }`}
-                          title="Open Screening Validation"
-                        >
-                          {c.validation_summary === 'contradiction'    ? t.valSummaryContradiction :
-                           c.validation_summary === 'cannot_determine' ? t.valSummaryCannotDetermine :
-                           c.validation_summary === 'not_supported'    ? t.valSummaryNotSupported :
-                           c.validation_summary === 'suggestion'       ? t.valSummarySuggestion :
-                           t.valSummaryValidated}
-                        </button>
-                      ) : (
-                        <span className="text-slate-300 text-xs">—</span>
-                      )}
                     </td>
 
                     {/* Workflow status pill */}
