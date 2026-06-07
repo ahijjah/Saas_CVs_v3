@@ -8,6 +8,9 @@ import {
 } from '../types';
 import { APIService } from '../services/api';
 import { usePageTitle } from '../context/PageTitleContext';
+import { FunnelStagesChart } from '../components/charts/FunnelStagesChart';
+import { RecruiterProductivityChart } from '../components/charts/RecruiterProductivityChart';
+import { SLADistributionChart } from '../components/charts/SLADistributionChart';
 import '../styles/analytics.css';
 
 interface AnalyticsDashboardProps {
@@ -19,6 +22,18 @@ const SLA_LABELS: Record<string, string> = {
   green: 'On Track',
   amber: 'Approaching SLA',
   red: 'Overdue',
+};
+
+const SEVERITY_ORDER: Record<string, number> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
+
+const SEVERITY_ICONS: Record<string, string> = {
+  critical: '⛔',
+  warning: '⚠',
+  info: 'ℹ',
 };
 
 const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast }) => {
@@ -136,6 +151,9 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
       {/* Funnel Stages */}
       <section className="analytics-section">
         <h2>Recruitment Funnel</h2>
+        <div className="chart-card">
+          <FunnelStagesChart stages={funnelMetrics?.stages || []} />
+        </div>
         <div className="funnel-table">
           <table>
             <thead>
@@ -175,6 +193,9 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
       {/* Recruiter Productivity */}
       <section className="analytics-section">
         <h2>Recruiter Productivity</h2>
+        <div className="chart-card">
+          <RecruiterProductivityChart recruiters={recruiterMetrics?.recruiters || []} />
+        </div>
         <div className="productivity-table">
           <table>
             <thead>
@@ -208,6 +229,16 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
       {/* SLA Aging */}
       <section className="analytics-section">
         <h2>SLA Monitoring</h2>
+        <div className="sla-overview">
+          <div className="chart-card sla-chart-card">
+            <SLADistributionChart
+              redCount={agingMetrics?.red_count || 0}
+              amberCount={agingMetrics?.amber_count || 0}
+              greenCount={agingMetrics?.green_count || 0}
+              activeFilter={slaFilter}
+              onSliceClick={(status) => setSlaFilter(slaFilter === status ? null : status)}
+            />
+          </div>
         <div className="sla-alert-zones">
           <div
             className={`alert-zone red ${slaFilter === 'red' ? 'active' : ''}`}
@@ -233,6 +264,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
             <div className="zone-count">{agingMetrics?.green_count || 0}</div>
             <div className="zone-label">On Track</div>
           </div>
+        </div>
         </div>
 
         {slaFilter && (
@@ -358,9 +390,14 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
           </div>
         ) : (
           <div className="insights-list">
-            {insights.insights.map((insight: RecruitmentInsight) => (
+            {[...insights.insights]
+              .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+              .map((insight: RecruitmentInsight) => (
               <div key={insight.insight_id} className={`insight-card insight-${insight.severity}`}>
                 <div className="insight-card-header">
+                  <span className={`insight-severity-icon severity-${insight.severity}`} aria-hidden="true">
+                    {SEVERITY_ICONS[insight.severity] ?? '•'}
+                  </span>
                   <span className={`insight-severity-badge severity-${insight.severity}`}>
                     {insight.severity.toUpperCase()}
                   </span>
