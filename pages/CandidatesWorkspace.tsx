@@ -238,6 +238,11 @@ const T = {
     filterSearch: 'Search candidate…',
     clearFilters: 'Clear filters',
     allStatuses: 'All',
+    exportButton: 'Export',
+    exportCsv: 'Export CSV',
+    exportExcel: 'Export Excel',
+    exporting: 'Exporting…',
+    exportError: 'Export failed. Please try again.',
     // Pagination
     showing: 'Showing',
     of: 'of',
@@ -502,6 +507,11 @@ const T = {
     filterSearch: 'بحث عن مرشح…',
     clearFilters: 'مسح الفلاتر',
     allStatuses: 'الكل',
+    exportButton: 'تصدير',
+    exportCsv: 'تصدير CSV',
+    exportExcel: 'تصدير Excel',
+    exporting: 'جارٍ التصدير…',
+    exportError: 'فشل التصدير. حاول مرة أخرى.',
     showing: 'عرض',
     of: 'من',
     prev: 'السابق',
@@ -4179,6 +4189,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [savingView, setSavingView] = useState(false);
   const [makeViewShared, setMakeViewShared] = useState(false);
 
+  // Export (CSV / Excel) — exports ALL candidates matching current filters
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkTargetStatus, setBulkTargetStatus] = useState('');
@@ -4858,6 +4872,25 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
 
   const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || jobFilter || debouncedSearch || assignedFilter || tagFilter.length > 0 || talentPoolOnly || hasNotesFilter || possibleDuplicateFilter || appliedAfter || appliedBefore;
 
+  // Export ALL candidates matching the current filters (CSV / Excel) — reuses the
+  // exact same filter-building logic as the live list query (buildApiParams), so
+  // the export always matches what's shown in the workspace for these filters.
+  const handleExport = async (fmt: 'csv' | 'xlsx') => {
+    setShowExportMenu(false);
+    setExporting(true);
+    try {
+      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore);
+      delete params.page;
+      delete params.limit;
+      params.format = fmt;
+      await apiService.downloadFile(WEBHOOK_CONFIG.CANDIDATES_EXPORT_URL, params, auth.token);
+    } catch (err: any) {
+      addToastRef.current(err?.message || t.exportError, 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const openCandidate = (c: Candidate) => {
     setSelectedAppId(c.application_id);
   };
@@ -5355,6 +5388,38 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
             {t.clearFilters}
           </button>
         )}
+
+        {/* Export (CSV / Excel) — exports ALL candidates matching current filters */}
+        <div className="relative">
+          <button
+            onClick={() => setShowExportMenu(v => !v)}
+            disabled={exporting}
+            className="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 transition-colors bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M7 10l5 5 5-5M12 15V3" /></svg>
+            {exporting ? t.exporting : t.exportButton}
+            <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          {showExportMenu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
+              <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg z-20 overflow-hidden">
+                <button
+                  onClick={() => handleExport('csv')}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  {t.exportCsv}
+                </button>
+                <button
+                  onClick={() => handleExport('xlsx')}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100"
+                >
+                  {t.exportExcel}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Result count */}
         {pagination && (

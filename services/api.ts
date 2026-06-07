@@ -94,6 +94,46 @@ export const apiService = {
     return handleResponse(response);
   },
 
+  // Downloads a binary/file response (e.g. CSV/Excel export) and triggers a
+  // browser save dialog using the filename from Content-Disposition (if present).
+  async downloadFile(url: string, params: Record<string, string> = {}, token?: string) {
+    const headers: HeadersInit = {};
+    const activeToken = token || localStorage.getItem(TOKEN_KEY);
+    if (activeToken) {
+      headers['Authorization'] = `Bearer ${activeToken}`;
+    }
+
+    const queryString = new URLSearchParams(params).toString();
+    const fullUrl = queryString ? `${url}?${queryString}` : url;
+
+    const response = await fetch(fullUrl, { method: 'GET', headers });
+    if (!response.ok) {
+      let message = `Export failed (${response.status})`;
+      try {
+        const body = await response.json();
+        message = body?.detail || message;
+      } catch {
+        // response was not JSON (e.g. binary error body) — keep default message
+      }
+      throw new Error(message);
+    }
+
+    const blob = await response.blob();
+    let filename = 'export';
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match) filename = match[1];
+
+    const objectUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(objectUrl);
+  },
+
   async patch(url: string, data: any, token?: string) {
     const headers: HeadersInit = { 'Content-Type': 'application/json' };
     const activeToken = token || localStorage.getItem(TOKEN_KEY);

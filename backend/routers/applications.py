@@ -1,12 +1,15 @@
+import csv
+import io
 import logging
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -125,10 +128,9 @@ async def get_assignable_users(
     return {"users": users}
 
 
-@router.get("")
-async def list_applications(
-    current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+def _build_candidate_filter_clause(
+    current_user,
+    is_admin: bool,
     job_id: str | None = None,
     workflow_status: str | None = None,
     processing_status: str | None = None,
@@ -144,54 +146,19 @@ async def list_applications(
     tag_ids: str | None = None,
     talent_pool_only: bool = False,
     validation_issues: bool | None = None,
-    sort_by: str = "applied_at",
-    sort_order: str = "desc",
-    page: int = 1,
-    limit: int = 50,
-):
+) -> tuple[str, dict]:
     """
-    List applications with flexible filtering and pagination.
+    Build the shared WHERE clause + bind params for tenant-wide candidate
+    listing/export queries. Centralised here so the list endpoint and the
+    export endpoint apply identical filtering and access-control rules —
+    "do not duplicate filtering logic".
 
-    Backward compatible mode:
-    - If job_id provided: returns applications for that job (existing behavior)
-    - If job_id not provided: returns all tenant applications (new global search)
-
-    Supports multi-dimensional filtering:
-    - workflow_status: awaiting_review, under_review, interviewing, etc.
-    - processing_status: ai_scored, pending, failed, security_blocked, etc.
-    - ai_decision: qualified, partial, rejected_low_match, not_scored
-    - possible_duplicate: true/false
-    - has_notes: true/false
-    - date range: applied_after, applied_before (ISO format)
-    - search: candidate name substring match
-    - campaign_id: filter by campaign (tenant-wide mode only)
-    - client_organization_id: agency/freelancer client filter
-
-    Supports pagination and sorting.
-
-    Access control:
-    - Respects RLS tenant isolation
-    - Respects agency/freelancer client scoping
+    Returns (where_clause, params).
     """
-    await set_rls_context(db, current_user.tenant_id, current_user.role)
-
-    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
-
-    # Validate pagination
-    page = max(1, page)
-    limit = max(1, min(limit, 500))  # Cap at 500 per page for safety
-    offset = (page - 1) * limit
-
-    # Validate sorting
-    valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
-    sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
-    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
-
-    # Build WHERE clause dynamically
     where_parts = [
         "a.tenant_id = CAST(:tid AS uuid)",
     ]
-    params = {
+    params: dict = {
         "tid": current_user.tenant_id,
         "uid": current_user.user_id,
         "is_admin": is_admin,
@@ -347,7 +314,90 @@ async def list_applications(
         )
     """)
 
-    where_clause = " AND ".join(where_parts)
+    return " AND ".join(where_parts), params
+
+
+@router.get("")
+async def list_applications(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    job_id: str | None = None,
+    workflow_status: str | None = None,
+    processing_status: str | None = None,
+    ai_decision: str | None = None,
+    possible_duplicate: bool | None = None,
+    has_notes: bool | None = None,
+    applied_after: str | None = None,
+    applied_before: str | None = None,
+    search: str | None = None,
+    campaign_id: str | None = None,
+    client_organization_id: str | None = None,
+    assigned_to: str | None = None,
+    tag_ids: str | None = None,
+    talent_pool_only: bool = False,
+    validation_issues: bool | None = None,
+    sort_by: str = "applied_at",
+    sort_order: str = "desc",
+    page: int = 1,
+    limit: int = 50,
+):
+    """
+    List applications with flexible filtering and pagination.
+
+    Backward compatible mode:
+    - If job_id provided: returns applications for that job (existing behavior)
+    - If job_id not provided: returns all tenant applications (new global search)
+
+    Supports multi-dimensional filtering:
+    - workflow_status: awaiting_review, under_review, interviewing, etc.
+    - processing_status: ai_scored, pending, failed, security_blocked, etc.
+    - ai_decision: qualified, partial, rejected_low_match, not_scored
+    - possible_duplicate: true/false
+    - has_notes: true/false
+    - date range: applied_after, applied_before (ISO format)
+    - search: candidate name substring match
+    - campaign_id: filter by campaign (tenant-wide mode only)
+    - client_organization_id: agency/freelancer client filter
+
+    Supports pagination and sorting.
+
+    Access control:
+    - Respects RLS tenant isolation
+    - Respects agency/freelancer client scoping
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    # Validate pagination
+    page = max(1, page)
+    limit = max(1, min(limit, 500))  # Cap at 500 per page for safety
+    offset = (page - 1) * limit
+
+    # Validate sorting
+    valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
+    sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
+    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+
+    where_clause, params = _build_candidate_filter_clause(
+        current_user,
+        is_admin,
+        job_id=job_id,
+        workflow_status=workflow_status,
+        processing_status=processing_status,
+        ai_decision=ai_decision,
+        possible_duplicate=possible_duplicate,
+        has_notes=has_notes,
+        applied_after=applied_after,
+        applied_before=applied_before,
+        search=search,
+        campaign_id=campaign_id,
+        client_organization_id=client_organization_id,
+        assigned_to=assigned_to,
+        tag_ids=tag_ids,
+        talent_pool_only=talent_pool_only,
+        validation_issues=validation_issues,
+    )
 
     # Map sort_by to actual column
     sort_column = {
@@ -498,6 +548,204 @@ async def list_applications(
             "has_more": (offset + limit) < total,
         },
     }
+
+
+# Export field order shared by CSV and Excel — matches the requested column set.
+_EXPORT_COLUMNS: list[str] = [
+    "Candidate Name",
+    "Candidate Email",
+    "Job Title",
+    "Job Code",
+    "Campaign",
+    "Client",
+    "AI Score",
+    "AI Recommendation",
+    "Workflow Status",
+    "Assigned Recruiter",
+    "Applied Date",
+    "Security Status",
+    "Duplicate Status",
+    "Talent Pool",
+    "Recruiter Notes",
+]
+
+_AI_RECOMMENDATION_LABELS: dict[str, str] = {
+    "qualified": "Qualified",
+    "partial": "Partial Match",
+    "rejected": "Rejected — Low Match",
+    "low_match": "Rejected — Low Match",
+}
+
+
+def _export_row(r) -> list:
+    """Map a candidate export query row to the requested export column order."""
+    processing_status = r["processing_status"]
+    workflow_status = (
+        (r["workflow_status"] or "awaiting_review")
+        if processing_status == "ai_scored"
+        else (r["workflow_status"] or "")
+    )
+    ai_recommendation = _AI_RECOMMENDATION_LABELS.get(r["status"] or "", r["status"] or "")
+    return [
+        r["candidate_name"] or "",
+        r["candidate_email"] or "",
+        r["job_title"] or "",
+        r["job_code"] or "",
+        r["campaign_name"] or "",
+        r["client_org_name"] or "",
+        float(r["score"]) if r["score"] is not None else "",
+        ai_recommendation,
+        workflow_status,
+        r["assigned_user_name"] or "",
+        r["applied_at"].strftime("%Y-%m-%d %H:%M") if r["applied_at"] else "",
+        r["security_check_status"] or "",
+        r["duplicate_status"] or "not_duplicate",
+        "Yes" if r["is_talent_pool"] else "No",
+        r["recruiter_notes"] or "",
+    ]
+
+
+@router.get("/export")
+async def export_applications(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    format: str = "csv",
+    job_id: str | None = None,
+    workflow_status: str | None = None,
+    processing_status: str | None = None,
+    ai_decision: str | None = None,
+    possible_duplicate: bool | None = None,
+    has_notes: bool | None = None,
+    applied_after: str | None = None,
+    applied_before: str | None = None,
+    search: str | None = None,
+    campaign_id: str | None = None,
+    client_organization_id: str | None = None,
+    assigned_to: str | None = None,
+    tag_ids: str | None = None,
+    talent_pool_only: bool = False,
+    validation_issues: bool | None = None,
+    sort_by: str = "applied_at",
+    sort_order: str = "desc",
+):
+    """
+    Export ALL candidates matching the current Candidates Workspace filters
+    (not just the current page) as CSV or Excel/XLSX.
+
+    Reuses the exact same filter-building and access-control logic as
+    GET /applications (see _build_candidate_filter_clause) so export results
+    always match what the recruiter sees in the workspace, scoped to their
+    tenant and client access.
+    """
+    fmt = (format or "csv").lower()
+    if fmt not in ("csv", "xlsx", "excel"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported export format. Supported formats: csv, xlsx.",
+        )
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
+    sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
+    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+
+    where_clause, params = _build_candidate_filter_clause(
+        current_user,
+        is_admin,
+        job_id=job_id,
+        workflow_status=workflow_status,
+        processing_status=processing_status,
+        ai_decision=ai_decision,
+        possible_duplicate=possible_duplicate,
+        has_notes=has_notes,
+        applied_after=applied_after,
+        applied_before=applied_before,
+        search=search,
+        campaign_id=campaign_id,
+        client_organization_id=client_organization_id,
+        assigned_to=assigned_to,
+        tag_ids=tag_ids,
+        talent_pool_only=talent_pool_only,
+        validation_issues=validation_issues,
+    )
+
+    sort_column = {
+        "applied_at": "a.applied_at",
+        "updated_at": "a.scored_at",
+        "score": "s.final_score",
+        "candidate_name": "a.candidate_name",
+    }.get(sort_by, "a.applied_at")
+
+    # No LIMIT/OFFSET — export must cover every matching record, not one page.
+    data_query = f"""
+        SELECT
+            a.candidate_name,
+            a.candidate_email,
+            j.title                          AS job_title,
+            j.job_code,
+            jc.name                          AS campaign_name,
+            co.organization_name             AS client_org_name,
+            s.final_score                    AS score,
+            a.decision                       AS status,
+            a.processing_status,
+            a.workflow_status,
+            COALESCE(au.full_name, au.email) AS assigned_user_name,
+            a.applied_at,
+            a.security_check_status,
+            a.duplicate_status,
+            a.is_talent_pool,
+            a.recruiter_notes
+        FROM applications a
+        JOIN jobs j ON j.job_id = a.job_id
+        LEFT JOIN application_scores s ON s.application_id = a.application_id
+        LEFT JOIN job_campaigns jc ON jc.campaign_id = j.campaign_id
+        LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
+        LEFT JOIN users au ON au.user_id = a.assigned_user_id
+        WHERE {where_clause}
+        ORDER BY {sort_column} {sort_order}
+    """
+
+    rows = await db.execute(text(data_query), params)
+    records = list(rows.mappings())
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+    if fmt == "csv":
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(_EXPORT_COLUMNS)
+        for r in records:
+            writer.writerow(_export_row(r))
+        buffer.seek(0)
+        filename = f"candidates_export_{timestamp}.csv"
+        return StreamingResponse(
+            iter([buffer.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # Excel / XLSX
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Candidates"
+    ws.append(_EXPORT_COLUMNS)
+    for r in records:
+        ws.append(_export_row(r))
+
+    xlsx_buffer = io.BytesIO()
+    wb.save(xlsx_buffer)
+    xlsx_buffer.seek(0)
+    filename = f"candidates_export_{timestamp}.xlsx"
+    return StreamingResponse(
+        iter([xlsx_buffer.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/details")

@@ -30,6 +30,9 @@ redis==5.2.1
 # PDF (high-performance bilingual extraction)
 pymupdf==1.24.14
 
+# Excel/XLSX export (Candidates Workspace export feature)
+openpyxl==3.1.5
+
 # ── Intelligence Layer (Gatekeeper + Bilingual NLP) ───────────────────────────
 
 # Local semantic similarity — multilingual model runs fully on-device
