@@ -1,6 +1,7 @@
 import csv
 import io
 import logging
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -619,6 +620,73 @@ def _export_row(r) -> list:
 
 # ── PDF report helpers ────────────────────────────────────────────────────────
 
+# ReportLab's built-in base-14 fonts (Helvetica, Times, Courier) only cover
+# Latin-1 and render any Arabic codepoint as a "tofu" box (■). Bundling a
+# Unicode font with Arabic glyph coverage and registering it with ReportLab's
+# pdfmetrics is required to render Arabic candidate names / job titles / etc.
+_PDF_FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+_PDF_FONT_FAMILY = "Helvetica"   # safe fallback if the bundled font can't be loaded
+_PDF_FONT_FAMILY_BOLD = "Helvetica-Bold"
+_pdf_fonts_registered = False
+
+_ARABIC_CHAR_RE = re.compile(
+    r"[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]"
+)
+
+
+def _ensure_pdf_fonts_registered() -> tuple[str, str]:
+    """Register the bundled Amiri Unicode font (Arabic + Latin coverage) with
+    ReportLab so PDF exports can render Arabic text. Idempotent — registration
+    only happens once per process. Returns (regular_font_name, bold_font_name).
+    Falls back to Helvetica if the font files are missing for any reason."""
+    global _pdf_fonts_registered, _PDF_FONT_FAMILY, _PDF_FONT_FAMILY_BOLD
+    if _pdf_fonts_registered:
+        return _PDF_FONT_FAMILY, _PDF_FONT_FAMILY_BOLD
+
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    try:
+        pdfmetrics.registerFont(TTFont("Amiri", str(_PDF_FONT_DIR / "Amiri-Regular.ttf")))
+        pdfmetrics.registerFont(TTFont("Amiri-Bold", str(_PDF_FONT_DIR / "Amiri-Bold.ttf")))
+        pdfmetrics.registerFontFamily("Amiri", normal="Amiri", bold="Amiri-Bold")
+        _PDF_FONT_FAMILY = "Amiri"
+        _PDF_FONT_FAMILY_BOLD = "Amiri-Bold"
+    except Exception:
+        logger.warning(
+            "Could not load bundled Arabic-capable PDF font (Amiri); "
+            "falling back to Helvetica — Arabic text will render as boxes.",
+            exc_info=True,
+        )
+
+    _pdf_fonts_registered = True
+    return _PDF_FONT_FAMILY, _PDF_FONT_FAMILY_BOLD
+
+
+def _pdf_text(value) -> str:
+    """Prepare a string for rendering inside a ReportLab Paragraph.
+
+    ReportLab lays text out in logical (storage) order and left-to-right —
+    it has no bidi engine. Arabic text must therefore be:
+      1. reshaped (arabic_reshaper) so each letter uses its correct
+         contextual glyph form (initial/medial/final/isolated), and
+      2. reordered into visual order (python-bidi's get_display) so RTL runs
+         display right-to-left while any embedded LTR runs (e.g. numbers,
+         English words) remain correctly ordered.
+
+    Strings without Arabic characters are returned unchanged (no-op for the
+    overwhelming majority of English-only export content).
+    """
+    text = "" if value is None else str(value)
+    if not _ARABIC_CHAR_RE.search(text):
+        return text
+
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+
+    return get_display(arabic_reshaper.reshape(text))
+
+
 _WORKFLOW_STATUS_LABELS: dict[str, str] = {
     "awaiting_review": "Awaiting Review",
     "under_review":    "Under Review",
@@ -750,13 +818,15 @@ def _build_pdf_export(
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
     )
 
+    pdf_font, pdf_font_bold = _ensure_pdf_fonts_registered()
+
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=18, spaceAfter=4)
-    meta_style = ParagraphStyle("ReportMeta", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#475569"))
-    h2_style = ParagraphStyle("SectionHeading", parent=styles["Heading2"], fontSize=12, spaceBefore=12, spaceAfter=6, textColor=colors.HexColor("#1e293b"))
-    body_style = ParagraphStyle("Body", parent=styles["Normal"], fontSize=9, leading=12)
-    cell_style = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=8, leading=10)
-    header_cell_style = ParagraphStyle("HeaderCell", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
+    title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=18, spaceAfter=4, fontName=pdf_font_bold)
+    meta_style = ParagraphStyle("ReportMeta", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#475569"), fontName=pdf_font)
+    h2_style = ParagraphStyle("SectionHeading", parent=styles["Heading2"], fontSize=12, spaceBefore=12, spaceAfter=6, textColor=colors.HexColor("#1e293b"), fontName=pdf_font_bold)
+    body_style = ParagraphStyle("Body", parent=styles["Normal"], fontSize=9, leading=12, fontName=pdf_font)
+    cell_style = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=8, leading=10, fontName=pdf_font)
+    header_cell_style = ParagraphStyle("HeaderCell", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.white, fontName=pdf_font_bold)
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -778,7 +848,7 @@ def _build_pdf_export(
     story.append(Paragraph("Applied Filters", h2_style))
     if filter_labels:
         for lbl in filter_labels:
-            story.append(Paragraph(f"• {lbl}", body_style))
+            story.append(Paragraph(f"• {_pdf_text(lbl)}", body_style))
     else:
         story.append(Paragraph("All Candidates (no filters applied)", body_style))
 
@@ -848,12 +918,12 @@ def _build_pdf_export(
     for r in records:
         score = r["score"]
         table_data.append([
-            Paragraph(r["candidate_name"] or "", cell_style),
-            Paragraph(r["job_title"] or "", cell_style),
+            Paragraph(_pdf_text(r["candidate_name"]) or "", cell_style),
+            Paragraph(_pdf_text(r["job_title"]) or "", cell_style),
             Paragraph(f"{float(score):.0f}" if score is not None else "—", cell_style),
             Paragraph(_ai_recommendation_label(r) or "—", cell_style),
             Paragraph(_WORKFLOW_STATUS_LABELS.get(_effective_workflow_status(r), "—"), cell_style),
-            Paragraph(r["assigned_user_name"] or "Unassigned", cell_style),
+            Paragraph(_pdf_text(r["assigned_user_name"]) or "Unassigned", cell_style),
             Paragraph(r["applied_at"].strftime("%Y-%m-%d") if r["applied_at"] else "—", cell_style),
         ])
 
@@ -865,7 +935,8 @@ def _build_pdf_export(
     detail_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), pdf_font_bold),
+        ("FONTNAME", (0, 1), (-1, -1), pdf_font),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),

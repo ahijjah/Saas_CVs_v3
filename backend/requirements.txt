@@ -36,6 +36,11 @@ openpyxl==3.1.5
 # PDF report export (Candidates Workspace export feature)
 reportlab==4.2.5
 
+# Arabic glyph shaping + bidi reordering for PDF export (ReportLab has no bidi
+# engine and the base-14 fonts lack Arabic glyphs — see backend/assets/fonts/Amiri-*.ttf)
+arabic-reshaper==3.0.1
+python-bidi==0.6.10
+
 # ── Intelligence Layer (Gatekeeper + Bilingual NLP) ───────────────────────────
 
 # Local semantic similarity — multilingual model runs fully on-device
