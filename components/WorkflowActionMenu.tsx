@@ -451,19 +451,19 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
       {/* ── Separator between standard and exceptional ── */}
       {canDoAdvancedMove && <span className="w-px h-4 bg-slate-200 flex-shrink-0" />}
 
-      {/* ── Exceptional Move trigger — intentionally muted/neutral so it never
-            competes visually with the primary "Move to..." action. This is a
-            cautionary, secondary action: subtle border, no fill, no bold weight. ── */}
+      {/* ── Exceptional Move trigger — deliberately understated: plain text link
+            styling (no border, no fill, italic, very small, muted gray) so it
+            reads as a rare administrative override, never a normal workflow action. ── */}
       {canDoAdvancedMove && (
         <button
           ref={advancedBtnRef}
           disabled={isUpdating}
           onClick={openAdvanced}
-          title="Exceptional Move — use only to bypass normal workflow. Intended for rare operational corrections only."
-          className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg border border-dashed border-slate-300 text-[10px] font-normal text-slate-400 bg-transparent hover:text-slate-600 hover:border-slate-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Administrative override. Use only when bypassing the normal workflow."
+          className="inline-flex items-center gap-0.5 px-1 py-1 text-[9px] italic font-normal text-slate-400 bg-transparent border-0 hover:text-slate-500 hover:underline transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Exceptional Move
-          <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none">
+          exceptional
+          <svg className="w-2 h-2" viewBox="0 0 12 12" fill="none">
             <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
