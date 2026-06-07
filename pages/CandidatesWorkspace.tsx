@@ -1031,10 +1031,25 @@ interface AppAnalysis {
   evaluation_notes?: string;
 }
 
+interface ScoreDimension {
+  achieved: number;
+  max: number;
+  weight: number | null;
+}
+
 interface AppDetail {
   application_id: string;
   overall_score?: number;
   decision?: string;
+  scores?: {
+    skills?: ScoreDimension;
+    experience?: ScoreDimension;
+    education?: ScoreDimension;
+    certifications?: ScoreDimension;
+    soft_skills?: ScoreDimension;
+    domain_knowledge?: ScoreDimension;
+    other_requirements?: ScoreDimension;
+  };
   analysis?: AppAnalysis;
   recruiter_notes?: string | null;
   workflow_history?: Array<{
@@ -3654,6 +3669,67 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           {candidate.processing_status === 'ai_scored' && (
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-slate-900">AI Evaluation</h3>
+
+              {/* Compact score breakdown — overall score, AI recommendation, and
+                  per-dimension achieved/weight rows sized for the drawer's width.
+                  Full detail (reasoning, evidence, comparisons) stays in
+                  Application Details; this is a quick-glance summary only. */}
+              <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Overall AI Score</span>
+                  <span className="text-sm font-bold text-slate-900">
+                    {candidate.score != null ? `${candidate.score} / 100` : '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">AI Recommendation</span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiStyle}`}>
+                    {aiLabel}
+                  </span>
+                </div>
+
+                {detail?.scores && (() => {
+                  const dims: Array<[string, ScoreDimension | undefined]> = [
+                    ['Technical Skills',     detail.scores!.skills],
+                    ['Relevant Experience',  detail.scores!.experience],
+                    ['Education Alignment',  detail.scores!.education],
+                    ['Certifications',       detail.scores!.certifications],
+                    ['Soft Skills',          detail.scores!.soft_skills],
+                    ['Domain Knowledge',     detail.scores!.domain_knowledge],
+                    ['Other Criteria',       detail.scores!.other_requirements],
+                  ];
+                  const visibleDims = dims.filter(([, dim]) => dim && dim.max > 0);
+                  if (visibleDims.length === 0) return null;
+
+                  return (
+                    <div className="pt-1 mt-1 border-t border-slate-200 divide-y divide-slate-100">
+                      {visibleDims.map(([label, dim]) => {
+                        const hasWeight = dim!.weight != null && dim!.weight > 0;
+                        return (
+                          <div key={label} className="flex items-center gap-2 py-1.5">
+                            <span className="flex-1 text-xs text-slate-600 truncate">{label}</span>
+                            <span className="text-xs font-semibold text-slate-700 tabular-nums">
+                              {dim!.achieved}/{dim!.max}
+                            </span>
+                            {hasWeight ? (
+                              <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold w-9 text-center flex-shrink-0">
+                                {dim!.weight}%
+                              </span>
+                            ) : (
+                              <span
+                                className="px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded text-[10px] font-medium flex-shrink-0"
+                                title="This dimension was not weighted in the final score for this job"
+                              >
+                                Not included
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
 
               {detailLoading && (
                 <div className="flex items-center gap-2 text-sm text-slate-400">
