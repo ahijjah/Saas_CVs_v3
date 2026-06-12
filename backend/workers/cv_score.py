@@ -797,14 +797,29 @@ async def _score_cv_async(
             # LEVEL 3 — Full LLM scoring
             # ════════════════════════════════════════════════════════════════
             logger.info("[%s] Starting L3 AI scoring", application_id)
+
+            # Separate required vs preferred skills using analysis_json (stored by
+            # criteria_worker). Falls back to the flat merged skills column for jobs
+            # that predate this fix — no regression on existing data.
+            _analysis_json = criteria.get("analysis_json") or {}
+            if isinstance(_analysis_json, str):
+                try:
+                    _analysis_json = json.loads(_analysis_json)
+                except (json.JSONDecodeError, TypeError):
+                    _analysis_json = {}
+            _skills_block    = _analysis_json.get("skills", {})
+            skills_required  = _skills_block.get("required") or list(criteria.get("skills") or [])
+            skills_preferred = _skills_block.get("preferred") or []
+
             criteria_dict = {
-                "skills":             criteria["skills"],
-                "experience":         criteria["experience"],
-                "education":          criteria["education"],
-                "certifications":     criteria["certifications"],
-                "soft_skills":        criteria["soft_skills"],
-                "domain_knowledge":   criteria["domain_knowledge"],
-                "other_requirements": criteria["other_requirements"],
+                "skills_required":    skills_required,
+                "skills_preferred":   skills_preferred,
+                "experience":         list(criteria.get("experience") or []),
+                "education":          list(criteria.get("education") or []),
+                "certifications":     list(criteria.get("certifications") or []),
+                "soft_skills":        list(criteria.get("soft_skills") or []),
+                "domain_knowledge":   list(criteria.get("domain_knowledge") or []),
+                "other_requirements": list(criteria.get("other_requirements") or []),
                 **weights,
             }
             gatekeeper_context = {

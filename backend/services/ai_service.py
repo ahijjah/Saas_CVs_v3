@@ -173,6 +173,11 @@ SCORING GUIDE (for each dimension):
   30-49:  Weak match — minimal relevant evidence
   0-29:   Does not meet — no meaningful evidence found
 
+REQUIRED vs PREFERRED SKILLS (applies to score_skills only):
+- Skills listed under [MANDATORY] are hard requirements. A candidate missing mandatory skills MUST score below 50 on score_skills unless they demonstrate exceptional compensating depth across all other dimensions.
+- Skills listed under [PREFERRED] are nice-to-have. Missing preferred skills warrant at most a minor deduction (5–10 points) — do not penalise heavily for their absence.
+- Candidates who meet all mandatory skills and several preferred skills should score 80+.
+
 REQUIRED FIELD RULES:
 - candidate_name/email/phone: extract from CV contact section, use empty string if not found
 - score_details.positive: specific evidence from the CV that directly matches the job requirements (2-4 items, quote CV specifics)
@@ -406,6 +411,60 @@ def _resolve_output_language(prompt_override: dict | None) -> str:
     return _OUTPUT_LANG_MAP.get(raw, "English")
 
 
+def _format_criteria_for_prompt(criteria: dict[str, Any]) -> str:
+    """Format criteria dict as a structured text block for the scoring prompt.
+
+    Renders required and preferred skills under separate labelled headings so the
+    AI can apply appropriate weighting to each group.  Falls back gracefully if
+    the caller passes a legacy flat dict (uses 'skills' key).
+    """
+    parts: list[str] = []
+
+    def _section(title: str, items: list[str], weight_key: str) -> None:
+        parts.append(title)
+        if items:
+            parts.extend(f"  • {item}" for item in items)
+        else:
+            parts.append("  (none specified)")
+        parts.append(f"  Weight: {criteria.get(weight_key, 0)}%")
+        parts.append("")
+
+    # Skills — split mandatory / preferred when available
+    req_skills  = criteria.get("skills_required")  or criteria.get("skills") or []
+    pref_skills = criteria.get("skills_preferred") or []
+
+    parts.append("SKILLS")
+    if req_skills:
+        parts.append("  [MANDATORY — must be present; absence significantly reduces score_skills]")
+        parts.extend(f"    • {s}" for s in req_skills)
+    if pref_skills:
+        parts.append("  [PREFERRED — nice-to-have; absence causes minor gap only]")
+        parts.extend(f"    • {s}" for s in pref_skills)
+    if not req_skills and not pref_skills:
+        parts.append("  (none specified)")
+    parts.append(f"  Weight: {criteria.get('weight_skills', 0)}%")
+    parts.append("")
+
+    _section("EXPERIENCE",         criteria.get("experience") or [],         "weight_experience")
+    _section("EDUCATION",          criteria.get("education") or [],          "weight_education")
+    _section("CERTIFICATIONS",     criteria.get("certifications") or [],     "weight_certifications")
+
+    # Soft skills may be empty; provide fallback guidance so the AI does not score 0
+    soft = criteria.get("soft_skills") or []
+    parts.append("SOFT SKILLS")
+    if soft:
+        parts.extend(f"  • {s}" for s in soft)
+    else:
+        parts.append("  (none listed — infer from CV: clarity of communication, leadership, collaboration indicators)")
+    parts.append(f"  Weight: {criteria.get('weight_soft_skills', 0)}%")
+    parts.append("")
+
+    _section("DOMAIN KNOWLEDGE",   criteria.get("domain_knowledge") or [],   "weight_domain_knowledge")
+    _section("OTHER REQUIREMENTS", criteria.get("other_requirements") or [], "weight_other")
+
+    return "\n".join(parts).rstrip()
+
+
 async def score_cv(
     cv_text: str,
     criteria: dict[str, Any],
@@ -433,7 +492,7 @@ async def score_cv(
     """
     import time as _time
     client = openai_client or _get_client()
-    criteria_text = json.dumps(criteria, indent=2, ensure_ascii=False)
+    criteria_text = _format_criteria_for_prompt(criteria)
 
     # Ensure security hardening rules are present whether using the hardcoded
     # default or a DB-loaded custom prompt.
