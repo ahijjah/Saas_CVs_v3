@@ -827,53 +827,77 @@ def remove_contradicted_gaps(
         return result, []
 
 
+# Words / prefixes that indicate a sentence is making a negative claim about a skill.
+# Used by clean_narrative_contradictions() to avoid removing positive statements
+# that happen to mention a skill keyword.
+_SENTENCE_NEGATIVE_INDICATORS: frozenset[str] = frozenset({
+    "no ", "not ", "lack", "absent", "absence", "missing", "without ",
+    "no evidence", "no explicit", "no mention", "limited ", "insufficient",
+    "does not ", "doesn't ", "have not", "hasn't ", "no experience",
+    "no background", "no formal", "no specific",
+    # Arabic negation markers
+    "لا ", "لم ", "غياب", "ضعف", "عدم ", "لا يوجد", "لا توجد",
+})
+
+
 def clean_narrative_contradictions(
     result: dict[str, Any],
     suppression_messages: list[str],
 ) -> dict[str, Any]:
-    """Remove contradiction echoes from narrative fields after gap suppression.
+    """Remove contradiction echoes from narrative fields.
 
-    For each label triggered in suppression_messages, uses the corresponding
-    rule's gap_patterns as contamination markers.  Any sentence / list-item in
-    reasoning.<dim>, evaluation_notes, or score_details.<dim>.negative that
-    contains a contamination marker is removed.
+    Scans ALL _GAP_CONTRADICTION_RULES against the evidence corpus
+    (strengths + reasoning).  For each rule whose evidence_keywords appear
+    in the corpus, any sentence in reasoning.<dim>, evaluation_notes, or
+    score_details.<dim>.negative that both (a) contains a gap_pattern from
+    that rule AND (b) contains a negative-indicator word is removed.
 
-    Appends a summary to reasoning._consistency_warning.
+    The evidence-corpus approach means this function runs unconditionally and
+    catches contradictions that appear only in narrative fields even when no
+    gap was suppressed from gaps_identified.
+
+    suppression_messages is used only to annotate _consistency_warning.
     Never raises — returns result unchanged on any error.
     """
-    if not suppression_messages:
-        return result
     try:
         import re
 
-        # Extract labels from messages formatted "[label] gap suppressed …"
-        triggered_labels: set[str] = set()
-        _label_re = re.compile(r"^\[([^\]]+)\]")
-        for msg in suppression_messages:
-            m = _label_re.match(msg)
-            if m:
-                triggered_labels.add(m.group(1))
+        # Build evidence corpus from strengths + all original reasoning values.
+        # We use the original result (before any mutation in this call) so the
+        # corpus is stable throughout the loop.
+        evidence_parts: list[str] = list(result.get("strengths") or [])
+        reasoning_src = result.get("reasoning") or {}
+        if isinstance(reasoning_src, dict):
+            evidence_parts.extend(str(v) for v in reasoning_src.values() if v)
+        evidence_lower = " ".join(evidence_parts).lower()
 
-        if not triggered_labels:
+        # Which rules are "active" — their evidence_keywords appear in the corpus.
+        active_rules: list[dict] = [
+            rule for rule in _GAP_CONTRADICTION_RULES
+            if any(ev in evidence_lower for ev in rule["evidence_keywords"])
+        ]
+
+        if not active_rules:
             return result
 
-        # Build contamination pattern list from matching rule gap_patterns
-        contamination: list[str] = []
-        for rule in _GAP_CONTRADICTION_RULES:
-            if rule["label"] in triggered_labels:
-                contamination.extend(p.lower() for p in rule["gap_patterns"])
-
-        if not contamination:
-            return result
-
-        def _is_contaminated(text: str) -> bool:
-            t = text.lower()
-            return any(pat in t for pat in contamination)
+        def _is_contaminated_sentence(sentence: str) -> bool:
+            s = sentence.lower()
+            # Only target sentences that make a *negative* claim about a skill.
+            if not any(ind in s for ind in _SENTENCE_NEGATIVE_INDICATORS):
+                return False
+            for rule in active_rules:
+                if not any(p in s for p in rule["gap_patterns"]):
+                    continue
+                # gap_exclusion_patterns mark a sub-topic handled by a more
+                # specific rule — this rule's generic evidence is insufficient.
+                if any(excl in s for excl in rule.get("gap_exclusion_patterns", [])):
+                    continue
+                return True
+            return False
 
         def _clean_text(text: str) -> tuple[str, int]:
-            """Split on sentence boundaries, drop contaminated sentences."""
             parts = re.split(r"(?<=[.!?])\s+", text.strip())
-            kept = [s for s in parts if not _is_contaminated(s)]
+            kept = [s for s in parts if not _is_contaminated_sentence(s)]
             removed = len(parts) - len(kept)
             return " ".join(kept).strip(), removed
 
@@ -915,15 +939,18 @@ def clean_narrative_contradictions(
                 negatives = detail.get("negative")
                 if not isinstance(negatives, list):
                     continue
-                kept_neg = [item for item in negatives if not _is_contaminated(str(item))]
+                kept_neg = [
+                    item for item in negatives
+                    if not _is_contaminated_sentence(str(item))
+                ]
                 n = len(negatives) - len(kept_neg)
                 if n:
                     score_details[dim] = {**detail, "negative": kept_neg}
                     sd_changed = True
                     cleanup_notes.append(f"score_details.{dim}.negative: removed {n} item(s)")
                     logger.info(
-                        "clean_narrative_contradictions: score_details.%s.negative — removed %d item(s)",
-                        dim, n,
+                        "clean_narrative_contradictions: score_details.%s.negative "
+                        "— removed %d item(s)", dim, n,
                     )
             if sd_changed:
                 updated["score_details"] = score_details
@@ -931,11 +958,13 @@ def clean_narrative_contradictions(
         if not cleanup_notes:
             return result
 
-        # Append summary to _consistency_warning
+        # Append combined note to _consistency_warning
         existing_warn = reasoning.get("_consistency_warning") or ""
-        note = "narrative_cleanup: " + "; ".join(cleanup_notes)
+        gap_note = "; ".join(suppression_messages) if suppression_messages else ""
+        narrative_note = "narrative_cleanup: " + "; ".join(cleanup_notes)
+        combined = f"{gap_note} | {narrative_note}" if gap_note else narrative_note
         reasoning["_consistency_warning"] = (
-            f"{existing_warn} | {note}" if existing_warn else note
+            f"{existing_warn} | {combined}" if existing_warn else combined
         )
         updated["reasoning"] = reasoning
         return updated
@@ -1007,13 +1036,28 @@ def reconstruct_narrative_fields(result: dict[str, Any]) -> dict[str, Any]:
             evidence  = [e for e in (positives + add_str) if isinstance(e, str) and e.strip()]
 
             if not evidence:
+                # Try the dim-level summary (always one sentence, AI always fills it).
+                # Only use it when it reads as a positive statement — skip if it
+                # contains negative indicators (e.g. "lacks required skills").
+                sd_summary = (sd_dim.get("summary") or "").strip() if isinstance(sd_dim, dict) else ""
+                if sd_summary and not any(
+                    ind in sd_summary.lower() for ind in _SENTENCE_NEGATIVE_INDICATORS
+                ):
+                    evidence = [sd_summary]
+
+            if not evidence:
                 evidence = [s for s in strengths_list if isinstance(s, str) and s.strip()]
 
             if not evidence:
                 continue
 
-            joined = "; ".join(e.rstrip(".") for e in evidence[:3])
-            reasoning[dim_key] = f"The candidate demonstrates {joined}."
+            # If we have a single full-sentence item (e.g. score_details summary),
+            # use it verbatim to avoid "The candidate demonstrates <full sentence>."
+            if len(evidence) == 1 and evidence[0].rstrip().endswith("."):
+                reasoning[dim_key] = evidence[0]
+            else:
+                joined = "; ".join(e.rstrip(".") for e in evidence[:3])
+                reasoning[dim_key] = f"The candidate demonstrates {joined}."
             score_val = result.get(score_key, 0)
             rebuild_notes.append(f"reasoning.{dim_key} rebuilt from positive evidence")
             logger.info(

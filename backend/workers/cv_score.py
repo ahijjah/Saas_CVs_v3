@@ -943,11 +943,12 @@ async def _score_cv_async(
                     logger.info("[%s] Gap contradiction removed: %s", application_id, _gs)
 
             # ── Narrative contradiction cleaner ───────────────────────────────
-            # After gaps are suppressed, remove echoes of the same contradiction
-            # from reasoning.*, evaluation_notes, and score_details.*.negative.
-            # Operates only when gaps were actually suppressed; never blocks.
-            if _gap_suppressions:
-                ai_result = clean_narrative_contradictions(ai_result, _gap_suppressions)
+            # Scans ALL contradiction rules against the evidence corpus and
+            # removes negative-claim sentences from reasoning.*, evaluation_notes,
+            # and score_details.*.negative.  Runs unconditionally so it also
+            # catches contradictions that appear only in narrative fields even
+            # when no gap was suppressed.  Never blocks scoring.
+            ai_result = clean_narrative_contradictions(ai_result, _gap_suppressions)
 
             # ── Narrative reconstruction ───────────────────────────────────────
             # Rebuild any reasoning dim / evaluation_notes field that was left
