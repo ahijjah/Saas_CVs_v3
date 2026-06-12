@@ -704,6 +704,13 @@ _GAP_CONTRADICTION_RULES: tuple[dict, ...] = (
             "file management", "document control",
             "الأرشفة", "الحفظ", "إدارة السجلات", "إدارة الوثائق",
         ],
+        # If the gap mentions any of these, it is about *digital* archiving;
+        # generic filing/archiving evidence is NOT sufficient to suppress it.
+        "gap_exclusion_patterns": [
+            "digital archiv", "digitiz", "electronic records", "ecm", "dms",
+            "document management system", "scanning", "electronic archiv",
+            "الرقمنة", "السجلات الإلكترونية",
+        ],
         "evidence_keywords": [
             "archiv", "filing", "records management", "document control",
             "document management", "file organiz", "records system",
@@ -711,16 +718,24 @@ _GAP_CONTRADICTION_RULES: tuple[dict, ...] = (
         ],
     },
     {
-        "label": "digitization",
+        # Renamed from "digitization" — only strong digital indicators suppress
+        # a gap about digital archiving systems (ECM/DMS/scanning etc.).
+        "label": "digital_archiving_systems",
         "gap_patterns": [
-            "digitization", "digital records", "electronic records",
-            "document scanning", "no digitization",
+            "digital archiving", "digital archiving systems", "digitization",
+            "digital records", "electronic records", "document scanning",
+            "no digitization", "ecm", "dms", "electronic archiving",
+            "digital document management",
             "الرقمنة", "السجلات الإلكترونية", "التحول الرقمي للوثائق",
+            "الأرشفة الإلكترونية",
         ],
+        # Requires *strong* digital evidence — generic filing alone is insufficient.
         "evidence_keywords": [
-            "digitiz", "scanning", "digital records", "electronic records",
-            "digital archiv", "ecm",
+            "digitiz", "scanning", "ecm", "dms",
+            "electronic content management", "document management system",
+            "digital archiv", "electronic records management",
             "الرقمنة", "المسح الضوئي", "السجلات الإلكترونية",
+            "نظام إدارة الوثائق الإلكترونية",
         ],
     },
     {
@@ -775,6 +790,11 @@ def remove_contradicted_gaps(
             for rule in _GAP_CONTRADICTION_RULES:
                 if not any(pat in gap_lower for pat in rule["gap_patterns"]):
                     continue
+                # Skip rule when gap is about a more-specific sub-topic that
+                # the rule's generic evidence cannot cover (e.g. "digital
+                # archiving systems" gap must not be suppressed by plain filing).
+                if any(excl in gap_lower for excl in rule.get("gap_exclusion_patterns", [])):
+                    continue
                 if any(ev in evidence_lower for ev in rule["evidence_keywords"]):
                     contradiction_label = rule["label"]
                     break
@@ -805,6 +825,124 @@ def remove_contradicted_gaps(
     except Exception as exc:
         logger.warning("remove_contradicted_gaps failed (non-critical): %s", exc)
         return result, []
+
+
+def clean_narrative_contradictions(
+    result: dict[str, Any],
+    suppression_messages: list[str],
+) -> dict[str, Any]:
+    """Remove contradiction echoes from narrative fields after gap suppression.
+
+    For each label triggered in suppression_messages, uses the corresponding
+    rule's gap_patterns as contamination markers.  Any sentence / list-item in
+    reasoning.<dim>, evaluation_notes, or score_details.<dim>.negative that
+    contains a contamination marker is removed.
+
+    Appends a summary to reasoning._consistency_warning.
+    Never raises — returns result unchanged on any error.
+    """
+    if not suppression_messages:
+        return result
+    try:
+        import re
+
+        # Extract labels from messages formatted "[label] gap suppressed …"
+        triggered_labels: set[str] = set()
+        _label_re = re.compile(r"^\[([^\]]+)\]")
+        for msg in suppression_messages:
+            m = _label_re.match(msg)
+            if m:
+                triggered_labels.add(m.group(1))
+
+        if not triggered_labels:
+            return result
+
+        # Build contamination pattern list from matching rule gap_patterns
+        contamination: list[str] = []
+        for rule in _GAP_CONTRADICTION_RULES:
+            if rule["label"] in triggered_labels:
+                contamination.extend(p.lower() for p in rule["gap_patterns"])
+
+        if not contamination:
+            return result
+
+        def _is_contaminated(text: str) -> bool:
+            t = text.lower()
+            return any(pat in t for pat in contamination)
+
+        def _clean_text(text: str) -> tuple[str, int]:
+            """Split on sentence boundaries, drop contaminated sentences."""
+            parts = re.split(r"(?<=[.!?])\s+", text.strip())
+            kept = [s for s in parts if not _is_contaminated(s)]
+            removed = len(parts) - len(kept)
+            return " ".join(kept).strip(), removed
+
+        cleanup_notes: list[str] = []
+        updated: dict[str, Any] = dict(result)
+
+        # ── reasoning.<dim> ───────────────────────────────────────────────────
+        reasoning: dict[str, Any] = dict(result.get("reasoning") or {})
+        for dim, val in list(reasoning.items()):
+            if dim.startswith("_") or not isinstance(val, str) or not val:
+                continue
+            cleaned, n = _clean_text(val)
+            if n:
+                reasoning[dim] = cleaned
+                cleanup_notes.append(f"reasoning.{dim}: removed {n} sentence(s)")
+                logger.info(
+                    "clean_narrative_contradictions: reasoning.%s — removed %d sentence(s)", dim, n
+                )
+
+        # ── evaluation_notes ──────────────────────────────────────────────────
+        eval_notes = result.get("evaluation_notes") or ""
+        if isinstance(eval_notes, str) and eval_notes:
+            cleaned, n = _clean_text(eval_notes)
+            if n:
+                updated["evaluation_notes"] = cleaned
+                cleanup_notes.append(f"evaluation_notes: removed {n} sentence(s)")
+                logger.info(
+                    "clean_narrative_contradictions: evaluation_notes — removed %d sentence(s)", n
+                )
+
+        # ── score_details.<dim>.negative ──────────────────────────────────────
+        score_details = result.get("score_details")
+        if isinstance(score_details, dict):
+            score_details = dict(score_details)
+            sd_changed = False
+            for dim, detail in list(score_details.items()):
+                if not isinstance(detail, dict):
+                    continue
+                negatives = detail.get("negative")
+                if not isinstance(negatives, list):
+                    continue
+                kept_neg = [item for item in negatives if not _is_contaminated(str(item))]
+                n = len(negatives) - len(kept_neg)
+                if n:
+                    score_details[dim] = {**detail, "negative": kept_neg}
+                    sd_changed = True
+                    cleanup_notes.append(f"score_details.{dim}.negative: removed {n} item(s)")
+                    logger.info(
+                        "clean_narrative_contradictions: score_details.%s.negative — removed %d item(s)",
+                        dim, n,
+                    )
+            if sd_changed:
+                updated["score_details"] = score_details
+
+        if not cleanup_notes:
+            return result
+
+        # Append summary to _consistency_warning
+        existing_warn = reasoning.get("_consistency_warning") or ""
+        note = "narrative_cleanup: " + "; ".join(cleanup_notes)
+        reasoning["_consistency_warning"] = (
+            f"{existing_warn} | {note}" if existing_warn else note
+        )
+        updated["reasoning"] = reasoning
+        return updated
+
+    except Exception as exc:
+        logger.warning("clean_narrative_contradictions failed (non-critical): %s", exc)
+        return result
 
 
 def compute_final_score(scores: dict[str, int], weights: dict[str, int]) -> int:
