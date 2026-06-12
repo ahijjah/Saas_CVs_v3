@@ -201,10 +201,12 @@ async def _score_cv_async(
     from config import get_settings
     from database import set_rls_context
     from services.ai_service import (
+        check_soft_skills_consistency,
         compute_final_score,
         determine_decision,
         load_active_prompt,
         score_cv,
+        validate_scoring_result,
     )
     from services.docx_service import convert_docx_to_pdf
     from services.email_service import send_cv_received_email
@@ -895,6 +897,34 @@ async def _score_cv_async(
                     "fallback_reason":         str(_scoring_error) if _fallback_used else None,
                 },
             )
+
+            # ── Guard: reject structurally invalid AI output ──────────────────
+            # Raises ValueError when all 7 scores are 0 but narrative is
+            # populated — indicates a truncated / malformed AI response.
+            # The outer except propagates to Celery's retry handler so the
+            # task is retried up to max_retries before _mark_failed is called.
+            # raw_ai_response is logged here so it is preserved in worker logs
+            # even if the row is never written to application_scores.
+            try:
+                validate_scoring_result(ai_result)
+            except ValueError as _val_err:
+                logger.error(
+                    "[%s] INVALID AI scoring output — will not save: %s | "
+                    "raw_response=%.2000s",
+                    application_id,
+                    _val_err,
+                    json.dumps(ai_result, ensure_ascii=False),
+                )
+                raise
+
+            # ── Non-blocking soft-skills consistency warning ───────────────────
+            # Logged and stored in reasoning JSONB; never fails scoring.
+            _soft_warn = check_soft_skills_consistency(ai_result)
+            if _soft_warn:
+                logger.warning("[%s] Soft-skills consistency: %s", application_id, _soft_warn)
+                _reasoning = dict(ai_result.get("reasoning") or {})
+                _reasoning["_consistency_warning"] = _soft_warn
+                ai_result = {**ai_result, "reasoning": _reasoning}
 
             final_score = compute_final_score(ai_result, weights)
             q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)

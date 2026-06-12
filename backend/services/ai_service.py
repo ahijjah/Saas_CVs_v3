@@ -598,6 +598,84 @@ def _validate_criteria(data: dict[str, Any]) -> None:
     data.setdefault("other_requirements", [])
 
 
+# ── Scoring output guards ─────────────────────────────────────────────────────
+
+_SCORE_FIELDS: tuple[str, ...] = (
+    "score_skills", "score_experience", "score_education",
+    "score_certifications", "score_soft_skills",
+    "score_domain_knowledge", "score_other",
+)
+
+_SOFT_SKILL_INDICATORS: frozenset[str] = frozenset({
+    "confidentiality", "coordination", "communication", "documentation",
+    "quality assurance", "records handling", "customer interaction",
+    "compliance", "working under pressure",
+})
+
+
+def validate_scoring_result(result: dict[str, Any]) -> None:
+    """Raise ValueError if the AI result is structurally invalid.
+
+    Condition: all 7 dimension scores are 0 AND at least one narrative field
+    (strengths, gaps_identified, reasoning, score_details, evaluation_notes)
+    is non-empty.  This pattern indicates the AI produced narrative text but
+    omitted or malformed the numeric score block — saving it would create a
+    final_score=0 row that looks like a valid AI score when it is not.
+
+    A result where both scores AND narrative are empty is unusual but not
+    structurally invalid (it can legitimately occur for extremely sparse CVs),
+    so that case is allowed through.
+    """
+    all_zero = all(result.get(f, 0) == 0 for f in _SCORE_FIELDS)
+    if not all_zero:
+        return
+
+    narrative_populated = any([
+        bool(result.get("strengths")),
+        bool(result.get("gaps_identified")),
+        bool(result.get("reasoning")),
+        bool(result.get("score_details")),
+        bool((result.get("evaluation_notes") or "").strip()),
+    ])
+
+    if narrative_populated:
+        raise ValueError(
+            "All 7 dimension scores are 0 while narrative fields "
+            "(strengths/gaps/reasoning/score_details/evaluation_notes) are populated. "
+            "The AI response is missing the numeric score block — "
+            "likely a truncated or malformed output (e.g. prompt missing OUTPUT JSON section)."
+        )
+
+
+def check_soft_skills_consistency(result: dict[str, Any]) -> str | None:
+    """Return a warning string if score_soft_skills=0 but narrative fields
+    contain soft-skill indicators, otherwise None.
+
+    Non-blocking — callers log the warning and store it in reasoning JSONB
+    but do not fail or retry scoring.
+    """
+    if result.get("score_soft_skills", 0) != 0:
+        return None
+
+    narrative_parts: list[str] = [
+        " ".join(result.get("strengths") or []),
+        result.get("evaluation_notes") or "",
+    ]
+    reasoning = result.get("reasoning") or {}
+    if isinstance(reasoning, dict):
+        narrative_parts.extend(str(v) for v in reasoning.values() if v)
+
+    narrative_lower = " ".join(narrative_parts).lower()
+    matched = sorted(kw for kw in _SOFT_SKILL_INDICATORS if kw in narrative_lower)
+
+    if matched:
+        return (
+            f"score_soft_skills=0 but narrative mentions soft-skill indicators: "
+            f"{', '.join(matched)}"
+        )
+    return None
+
+
 def compute_final_score(scores: dict[str, int], weights: dict[str, int]) -> int:
     """Compute weighted final score (0-100) as integer with ceiling rounding."""
     import math
