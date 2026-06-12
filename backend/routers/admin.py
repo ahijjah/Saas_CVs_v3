@@ -525,7 +525,7 @@ async def get_tenant_usage(
                 (SELECT COUNT(*) FROM applications a
                  JOIN jobs j ON j.job_id = a.job_id
                  WHERE j.tenant_id = CAST(:tid AS uuid)
-                   AND a.processing_status = 'scored'
+                   AND a.processing_status = 'ai_scored'
                    AND date_trunc('month', a.scored_at) = date_trunc('month', now())) AS cvs_processed_this_month
         """),
         {"tid": tenant_id},

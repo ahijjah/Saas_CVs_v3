@@ -248,12 +248,12 @@ async def list_jobs(
                 jc.criteria_extraction_status,
                 COUNT(a.application_id)                                                                          AS applications_total,
                 -- AI Scored: primary classification by processing_status
-                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored')                           AS applications_scored,
-                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored')                           AS applications_scored,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
                     AND a.decision = 'qualified')                                                                 AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
                     AND a.decision = 'partial')                                                                   AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
                     AND a.decision = 'rejected')                                                                  AS applications_rejected,
                 -- Stopped Before AI: processing_status = 'failed'
                 -- stopped_reason is authoritative; fall back to security_check_status for historical rows
@@ -505,12 +505,12 @@ async def get_job_details(
                 uu.full_name AS updated_by_name,
                 COUNT(a.application_id)                                                                          AS applications_total,
                 -- AI Scored: primary classification by processing_status
-                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored')                           AS applications_scored,
-                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored')                           AS applications_scored,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
                     AND a.decision = 'qualified')                                                                 AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
                     AND a.decision = 'partial')                                                                   AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored'
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
                     AND a.decision = 'rejected')                                                                  AS applications_rejected,
                 -- Stopped Before AI: processing_status = 'failed'
                 -- stopped_reason is authoritative; fall back to security_check_status for historical rows

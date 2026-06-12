@@ -4,6 +4,7 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus, KnockoutQuestion, PassingCriteria } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { usePageTitle } from '../context/PageTitleContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
 interface JobDetailsProps {
@@ -19,7 +20,7 @@ const T = {
   en: {
     loading: 'Syncing campaign data...',
     syncError: 'Sync Error',
-    returnDashboard: 'Return to Dashboard',
+    returnDashboard: 'Return to Home',
     reviewPortal: 'Review Portal',
     metaLabels: ['Client', 'Type', 'Location', 'Posted', 'Closing'],
     kpiTotalLabel: 'Total Received',
@@ -250,7 +251,7 @@ const T = {
   ar: {
     loading: 'جارٍ مزامنة بيانات الحملة...',
     syncError: 'خطأ في المزامنة',
-    returnDashboard: 'العودة إلى لوحة التحكم',
+    returnDashboard: 'العودة إلى الرئيسية',
     reviewPortal: 'بوابة المراجعة',
     metaLabels: ['العميل', 'النوع', 'الموقع', 'تاريخ النشر', 'تاريخ الإغلاق'],
     kpiTotalLabel: 'إجمالي الوارد',
@@ -479,6 +480,7 @@ const T = {
 export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onViewApplications, onOpenApplication, addToast }) => {
   const { lang, isAr } = useLanguage();
   const t = T[lang];
+  const { setPageTitle } = usePageTitle();
   const isSuperAdmin = (auth.user?.role || '').toLowerCase() === 'super_admin';
   const role = (auth.user?.role || '').toLowerCase();
   const canEdit = role === 'admin' || role === 'hr_manager';
@@ -488,6 +490,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const [details, setDetails] = useState<JobDetailsType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const title = details?.job_title || (isAr ? 'تفاصيل الوظيفة' : 'Job Details');
+    setPageTitle(title);
+    return () => { setPageTitle(null); };
+  }, [setPageTitle, details?.job_title, isAr]);
   const [descExpanded, setDescExpanded] = useState(false);
   const [copiedAlias, setCopiedAlias] = useState(false);
   const [copiedJobRef, setCopiedJobRef] = useState(false);
@@ -1274,7 +1282,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const canEditIntake = canEdit;
   const canManageKnockout = canEdit || isSuperAdmin;
   const hasKnockoutQuestions = (details.knockout_questions ?? []).length > 0;
-  const intakeBlocked = ['pending', 'processing', 'insufficient', 'blocked'].includes(details.criteria_extraction_status || '');
+  const intakeBlocked = ['pending', 'processing', 'insufficient', 'failed', 'blocked'].includes(details.criteria_extraction_status || '');
 
   const analysis = details.analysis_json ?? undefined;
   const metaValues = [details.job_client, details.job_type || 'Full-time', details.location || 'Remote', details.posted_date || '-', details.closing_date || '-'];
@@ -1318,7 +1326,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     cv.processing_status === 'queued' ||
     cv.processing_status === 'processing'
   );
-  const cvsScoredCount = queueStatus?.completed ?? cvsDisplay.filter(cv => cv.processing_status === 'scored' || cv.processing_status === 'low_match').length;
+  const cvsScoredCount = queueStatus?.completed ?? cvsDisplay.filter(cv => cv.processing_status === 'ai_scored').length;
   const cvsTotal = queueStatus?.total ?? cvsDisplay.length;
   const cvsActivelyProcessing = queueStatus?.is_processing ?? cvsInQueue.some(cv => cv.processing_status === 'queued' || cv.processing_status === 'processing');
   const cvsHasPending = cvsInQueue.some(cv => cv.processing_status === 'pending');
@@ -1336,19 +1344,18 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         if (cv.evaluation_stage === 1) return { label: t.statusL3Score, color: 'text-violet-600 bg-violet-50 border-violet-200', spin: true };
         return                                { label: t.statusL1Screen, color: 'text-sky-600 bg-sky-50 border-sky-200',          spin: true };
       }
-      case 'scored':
+      case 'ai_scored':
         if (cv.evaluation_stage != null && cv.evaluation_stage < 3)
           return { label: t.statusRejectedL2, color: 'text-red-600 bg-red-50 border-red-200',    spin: false };
         return   { label: cv.score != null ? `${Math.round(cv.score)}` : t.statusScored,
                    color: 'text-success bg-green-50 border-green-200', spin: false };
-      case 'low_match': return { label: t.statusLowMatch, color: 'text-slate-500 bg-slate-50 border-slate-200', spin: false };
       case 'failed':    return { label: t.statusFailed,   color: 'text-error bg-red-50 border-red-200',         spin: false };
       default:            return { label: cv.processing_status, color: 'text-textMuted bg-slate-50 border-slate-200', spin: false };
     }
   };
 
   const decisionBadge = (cv: UploadedCV) => {
-    if (cv.processing_status !== 'scored' || !cv.decision) return null;
+    if (cv.processing_status !== 'ai_scored' || !cv.decision) return null;
     const map: Record<string, string> = {
       qualified: 'bg-green-100 text-success',
       partial:   'bg-amber-100 text-warning',
@@ -2316,11 +2323,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                       const st = cvStatusDisplay(cv);
                       const isDeleting = deletingCVId === cv.application_id;
                       const canDelete = cv.processing_status === 'pending' && !cvsScoringInProgress;
-                      const isDone = cv.processing_status === 'scored' || cv.processing_status === 'low_match' || cv.processing_status === 'failed';
+                      const isDone = cv.processing_status === 'ai_scored' || cv.processing_status === 'failed';
                       const hasExitReason = cv.evaluation_exit_reason && (
                         cv.processing_status === 'failed' ||
-                        cv.processing_status === 'low_match' ||
-                        (cv.processing_status === 'scored' && cv.evaluation_stage != null && cv.evaluation_stage < 3)
+                        (cv.processing_status === 'ai_scored' && cv.evaluation_stage != null && cv.evaluation_stage < 3)
                       );
                       return (
                         <div key={cv.application_id} className={`flex flex-col gap-1 rounded-xl border px-3 py-2 transition-colors ${isDone ? 'bg-slate-50/60 border-slate-100' : 'bg-white border-indigo-100'}`}>

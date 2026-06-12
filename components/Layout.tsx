@@ -14,7 +14,7 @@ interface LayoutProps {
 
 const T = {
   en: {
-    dashboard: 'Dashboard', jobs: 'Jobs', campaigns: 'Campaigns', candidates: 'Candidates', talentPool: 'Talent Pool', analytics: 'Analytics', settings: 'Settings', planUsage: 'Plan & Usage',
+    dashboard: 'Home', jobs: 'Jobs', campaigns: 'Campaigns', candidates: 'Candidates', talentPool: 'Talent Pool', analytics: 'Analytics', settings: 'Settings', planUsage: 'Plan & Usage',
     clientOrgs: 'Client Organizations', clients: 'Clients',
     sysAdmin: 'System Admin', tenantMgmt: 'Tenant Management',
     platformControl: 'Platform Control', workspaceSection: 'Workspace', accountSection: 'Account',
@@ -49,7 +49,7 @@ const T = {
     } as Record<string, string>,
   },
   ar: {
-    dashboard: 'لوحة التحكم', jobs: 'الوظائف', campaigns: 'الحملات', candidates: 'المرشحون', talentPool: 'مجمع المواهب', analytics: 'التحليلات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
+    dashboard: 'الرئيسية', jobs: 'الوظائف', campaigns: 'الحملات', candidates: 'المرشحون', talentPool: 'مجمع المواهب', analytics: 'التحليلات', settings: 'الإعدادات', planUsage: 'الخطة والاستخدام',
     clientOrgs: 'منظمات العملاء', clients: 'العملاء',
     sysAdmin: 'مشرف النظام', tenantMgmt: 'إدارة المستأجر',
     platformControl: 'التحكم بالمنصة', workspaceSection: 'مساحة العمل', accountSection: 'الحساب',
@@ -169,10 +169,20 @@ const GlobeIcon = () => (
 
 export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    // Load collapsed state from localStorage on mount
+    const saved = localStorage.getItem('sidebar-collapsed');
+    return saved !== null ? JSON.parse(saved) : false;
+  });
   const { lang, setLang, isAr } = useLanguage();
   const location = useLocation();
   const navigate = useNavigate();
   const t = T[lang];
+
+  // Persist collapsed state to localStorage whenever it changes
+  React.useEffect(() => {
+    localStorage.setItem('sidebar-collapsed', JSON.stringify(isCollapsed));
+  }, [isCollapsed]);
 
   const isSuperAdmin = user?.role?.toLowerCase() === 'super_admin';
   const isTenantAdmin = user?.role?.toLowerCase() === 'admin';
@@ -373,49 +383,71 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
       )}
 
       <aside className={`
-        fixed lg:static inset-y-0 z-50 w-64 bg-white flex flex-col transform transition-transform duration-300 ease-in-out
-        ${isAr ? 'right-0 border-l border-border' : 'left-0 border-r border-border'}
+        fixed lg:static inset-y-0 z-50 bg-white flex flex-col transform transition-transform duration-300 ease-in-out border-border
+        ${isAr ? 'right-0 border-l' : 'left-0 border-r'}
+        ${isCollapsed ? 'w-20' : 'w-64'}
         ${isSidebarOpen ? 'translate-x-0' : isAr ? 'translate-x-full lg:translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
-        <div className="p-6 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-black text-xl">C</div>
-            <h1 className="text-textMain font-bold text-lg tracking-tight">CV Analyzer</h1>
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-black text-xl flex-shrink-0">C</div>
+            {!isCollapsed && <h1 className="text-textMain font-bold text-lg tracking-tight whitespace-nowrap">CV Analyzer</h1>}
           </div>
-          <button className="lg:hidden p-2 text-textMuted hover:text-textMain transition-colors" onClick={() => setIsSidebarOpen(false)}>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center">
+            {/* Desktop collapse/expand button */}
+            <button
+              className="hidden lg:flex items-center justify-center p-1.5 text-textMuted hover:text-textMain transition-colors rounded-lg hover:bg-slate-50"
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {isCollapsed ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                </svg>
+              )}
+            </button>
+            {/* Mobile close button */}
+            <button className="lg:hidden p-2 text-textMuted hover:text-textMain transition-colors" onClick={() => setIsSidebarOpen(false)}>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <nav className="flex-1 px-4 py-4 space-y-6 overflow-y-auto">
+        <nav className={`flex-1 overflow-y-auto transition-all duration-300 ${isCollapsed ? 'px-2 py-4 space-y-4' : 'px-4 py-4 space-y-6'}`}>
           {isSuperAdmin && (
             <>
               <div>
-                <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.sysAdmin}</p>
+                {!isCollapsed && <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.sysAdmin}</p>}
                 <div className="space-y-1">
                   {adminMenuItems.map(item => (
                     <button
                       key={item.id}
                       onClick={() => handleNavigate(item.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
+                      title={isCollapsed ? item.label : undefined}
+                      className={`w-full flex items-center gap-3 transition-all rounded-xl text-sm font-medium ${isCollapsed ? 'p-2 justify-center' : 'px-4 py-2.5'} ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
                     >
-                      {item.icon}<span>{item.label}</span>
+                      {item.icon}{!isCollapsed && <span>{item.label}</span>}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.platformControl}</p>
+                {!isCollapsed && <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.platformControl}</p>}
                 <div className="space-y-1">
                   {platformControlItems.map(item => (
                     <button
                       key={item.id}
                       onClick={() => handleNavigate(item.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
+                      title={isCollapsed ? item.label : undefined}
+                      className={`w-full flex items-center gap-3 transition-all rounded-xl text-sm font-medium ${isCollapsed ? 'p-2 justify-center' : 'px-4 py-2.5'} ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
                     >
-                      {item.icon}<span>{item.label}</span>
+                      {item.icon}{!isCollapsed && <span>{item.label}</span>}
                     </button>
                   ))}
                 </div>
@@ -425,55 +457,59 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
 
           {/* Workspace section */}
           <div>
-            <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.workspaceSection}</p>
+            {!isCollapsed && <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.workspaceSection}</p>}
             <div className="space-y-1">
               {workspaceMenuItems.map(item => (
                 <button
                   key={item.id}
                   onClick={() => handleNavigate(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
+                  title={isCollapsed ? item.label : undefined}
+                  className={`w-full flex items-center gap-3 transition-all rounded-xl text-sm font-medium ${isCollapsed ? 'p-2 justify-center' : 'px-4 py-2.5'} ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
                 >
-                  {item.icon}<span>{item.label}</span>
+                  {item.icon}{!isCollapsed && <span>{item.label}</span>}
                 </button>
               ))}
             </div>
           </div>
 
           {/* Visual separator between workspace and account sections */}
-          <div className="h-px bg-border" />
+          {!isCollapsed && <div className="h-px bg-border" />}
 
           {/* Account section */}
           <div>
-            <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.accountSection}</p>
+            {!isCollapsed && <p className="px-4 text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.accountSection}</p>}
             <div className="space-y-1">
               {accountMenuItems.map(item => (
                 <button
                   key={item.id}
                   onClick={() => handleNavigate(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
+                  title={isCollapsed ? item.label : undefined}
+                  className={`w-full flex items-center gap-3 transition-all rounded-xl text-sm font-medium ${isCollapsed ? 'p-2 justify-center' : 'px-4 py-2.5'} ${isActive(item.id) ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-textMuted hover:bg-slate-50 hover:text-textMain'}`}
                 >
-                  {item.icon}<span>{item.label}</span>
+                  {item.icon}{!isCollapsed && <span>{item.label}</span>}
                 </button>
               ))}
             </div>
           </div>
         </nav>
 
-        <div className="p-4 border-t border-border bg-white space-y-2">
+        <div className={`border-t border-border bg-white space-y-2 transition-all duration-300 ${isCollapsed ? 'p-2' : 'p-4'}`}>
           <button
             onClick={() => setLang(isAr ? 'en' : 'ar')}
-            className="w-full flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-textMuted hover:text-primary hover:bg-slate-50 transition-all border border-border"
+            title={isCollapsed ? t.langBtn : undefined}
+            className={`w-full flex items-center gap-2 rounded-xl text-sm font-semibold text-textMuted hover:text-primary hover:bg-slate-50 transition-all border border-border ${isCollapsed ? 'p-2 justify-center' : 'px-4 py-2'}`}
           >
-            <GlobeIcon /><span>{t.langBtn}</span>
+            <GlobeIcon />{!isCollapsed && <span>{t.langBtn}</span>}
           </button>
           <button
             onClick={onLogout}
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold text-error hover:bg-red-50 transition-all"
+            title={isCollapsed ? t.logout : undefined}
+            className={`w-full flex items-center gap-3 rounded-xl text-sm font-bold text-error hover:bg-red-50 transition-all ${isCollapsed ? 'p-2 justify-center' : 'px-4 py-2.5'}`}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-            <span>{t.logout}</span>
+            {!isCollapsed && <span>{t.logout}</span>}
           </button>
         </div>
       </aside>

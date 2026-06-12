@@ -15,6 +15,7 @@ const CATEGORY_LABELS: Record<PromptCategory | string, string> = {
   screening: 'Pre-screening',
   summary:   'Summary',
   interview: 'Interview Questions',
+  knockout:  'Knockout Analysis',
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -23,15 +24,17 @@ const CATEGORY_COLORS: Record<string, string> = {
   screening: 'bg-cyan-100 text-cyan-700',
   summary:   'bg-purple-100 text-purple-700',
   interview: 'bg-amber-100 text-amber-700',
+  knockout:  'bg-rose-100 text-rose-700',
 };
 
 const PIPELINE_DESCRIPTIONS: Record<string, string> = {
   criteria_extraction: 'Extracts structured hiring criteria (skills, experience, education, weights) from a job description.',
   cv_scoring:          'Full 7-dimension bilingual CV scoring — Level 3 deep evaluation.',
   level2_screening:    'Lightweight binary PASS/REJECT pre-screen — Level 2 fast gate-keeper.',
+  knockout_analysis:   'Analyzes CV text and email context to suggest answers for unanswered knockout questions. Returns confidence, evidence, and verification status per question.',
 };
 
-const KNOWN_CODES = ['criteria_extraction', 'cv_scoring', 'level2_screening'];
+const KNOWN_CODES = ['criteria_extraction', 'cv_scoring', 'level2_screening', 'knockout_analysis'];
 
 // Defaults used when backend does not return valid_models (graceful fallback)
 const FALLBACK_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'];

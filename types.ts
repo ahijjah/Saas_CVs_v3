@@ -439,6 +439,9 @@ export interface ApplicationDetailedAnalysis {
   security_detected_snippets?: string[];
   security_checked_at?: string | null;
   knockout_answers?: KnockoutAnswerRecord[];
+  knockout_suggestions?: KnockoutSuggestionRecord[];
+  knockout_validations?: KnockoutValidationRecord[];
+  latest_validation_run?: KnockoutValidationRun | null;
   workflow_status?: WorkflowStatus;
   recruiter_notes?: string | null;
   workflow_history?: WorkflowHistoryEntry[];
@@ -449,7 +452,7 @@ export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_matc
 export interface UploadedCV {
   application_id: string;
   candidate_name: string;
-  processing_status: 'pending' | 'queued' | 'processing' | 'scored' | 'failed';
+  processing_status: 'pending' | 'queued' | 'processing' | 'ai_scored' | 'failed';
   decision: ApplicationDecision | null;
   evaluation_stage: 1 | 2 | 3 | null;
   evaluation_stage_label: string | null;
@@ -483,16 +486,80 @@ export interface PassingCriteria {
 
 /** Knockout answer with question metadata — returned in application detail API. */
 export interface KnockoutAnswerRecord {
-  answer_id: string;
+  answer_id?: string | null;
   question_id: string;
-  answer_value: string;
-  is_disqualifying: boolean;
+  answer_value?: string | null;
+  is_disqualifying?: boolean | null;
+  answer_source?: string | null;
+  answer_method?: string | null;
+  evidence_text?: string | null;
+  confidence?: number | null;
+  updated_at?: string | null;
+  updated_by_name?: string | null;
   question_text: string;
   question_type: 'yes_no' | 'single_choice' | 'number';
   is_required: boolean;
   options?: string[] | null;
   passing_criteria?: PassingCriteria | null;
   display_order: number;
+}
+
+/** Screening validation result — one per knockout question per run. */
+export interface KnockoutValidationRecord {
+  validation_id?: string | null;
+  question_id: string;
+  has_final_answer: boolean;
+  final_answer_value?: string | null;
+  final_answer_source?: string | null;
+  suggested_answer?: string | null;
+  validation_status:
+    | 'supported_by_cv'
+    | 'contradicted_by_cv'
+    | 'not_supported_by_cv'
+    | 'cannot_validate'
+    | 'suggested'
+    | 'cannot_determine';
+  validation_source?: 'cv' | 'email' | 'cv_and_email' | 'none' | null;
+  confidence?: number | null;
+  evidence_text?: string | null;
+  reasoning_summary?: string | null;
+  ai_model?: string | null;
+  prompt_code?: string | null;
+  prompt_version?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** Metadata for a completed screening validation pass. */
+export interface KnockoutValidationRun {
+  run_id: string;
+  validation_status: 'completed' | 'partial' | 'failed';
+  questions_count: number;
+  validated_count: number;
+  suggested_count: number;
+  cannot_count: number;
+  not_supported_count: number;
+  prompt_version: number | null;
+  model: string | null;
+  created_at: string;
+  is_stale: boolean;
+}
+
+/** AI-generated suggestion for an unanswered knockout question. */
+export interface KnockoutSuggestionRecord {
+  suggestion_id: string;
+  question_id: string;
+  suggested_answer?: string | null;
+  suggested_source: 'candidate_email' | 'ai_cv' | 'ai_email' | 'ai_cv_email' | 'not_found';
+  answer_method?: string | null;
+  confidence: number;
+  evidence_text?: string | null;
+  verification_status: 'verified' | 'inferred' | 'no_evidence' | 'contradiction' | 'not_found';
+  ai_model?: string | null;
+  status: 'pending' | 'accepted' | 'ignored';
+  accepted_at?: string | null;
+  accepted_by_name?: string | null;
+  created_at?: string | null;
 }
 
 /** Full question shape — authenticated APIs only. Includes passing_criteria. */
@@ -632,7 +699,7 @@ export interface PlatformSecret {
 
 // ─── AI Prompts ───────────────────────────────────────────────────────────────
 
-export type PromptCategory = 'criteria' | 'scoring' | 'screening' | 'summary' | 'interview';
+export type PromptCategory = 'criteria' | 'scoring' | 'screening' | 'summary' | 'interview' | 'knockout';
 
 export interface AIPrompt {
   prompt_id: string;
@@ -829,6 +896,65 @@ export interface RecruitmentInsight {
 export interface InsightsResponse {
   insights: RecruitmentInsight[];
   generated_at: string;
+}
+
+export interface TimeToHireMetrics {
+  avg_days: number | null;
+  median_days: number | null;
+  min_days: number | null;
+  max_days: number | null;
+  sample_size: number;
+}
+
+export interface FilledJobInfo {
+  job_id: string;
+  job_title: string;
+  job_code: string | null;
+  days_to_fill: number;
+}
+
+export interface TimeToFillMetrics {
+  avg_days: number | null;
+  median_days: number | null;
+  fastest_job: FilledJobInfo | null;
+  slowest_job: FilledJobInfo | null;
+  sample_size: number;
+}
+
+export interface ReviewCycleStage {
+  workflow_status: WorkflowStatus;
+  avg_days: number | null;
+  sample_size: number;
+}
+
+export interface LongestOpenJob {
+  job_id: string;
+  job_title: string;
+  job_code: string | null;
+  days_open: number;
+  applications: number;
+  awaiting_review: number;
+  under_review: number;
+  interviewing: number;
+  hired: number;
+}
+
+export interface RecruiterEfficiencyMetric {
+  user_id: string;
+  recruiter_name: string;
+  avg_time_to_hire_days: number | null;
+  hires_completed: number;
+  candidates_managed: number;
+}
+
+export interface RecruitmentEfficiencyResponse {
+  time_to_hire: TimeToHireMetrics;
+  time_to_fill: TimeToFillMetrics;
+  review_cycle: ReviewCycleStage[];
+  longest_open_jobs: LongestOpenJob[];
+  recruiter_efficiency: RecruiterEfficiencyMetric[];
+  date_range: { from: string; to: string };
+  filters: Record<string, any>;
 }
 
 export interface CandidateTag {

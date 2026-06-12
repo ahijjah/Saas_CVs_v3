@@ -5,6 +5,7 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { Job, AuthState } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { usePageTitle } from '../context/PageTitleContext';
 
 interface JobsDashboardProps {
   auth: AuthState;
@@ -58,6 +59,7 @@ const T = {
     analysisPending: 'Analysis Pending',
     analysisInsufficient: 'Needs Improvement',
     analysisBlocked: 'Analysis Blocked',
+    analysisFailed: 'Analysis Failed',
   },
   ar: {
     title: 'الوظائف',
@@ -97,6 +99,7 @@ const T = {
     analysisPending: 'التحليل معلق',
     analysisInsufficient: 'يحتاج تحسين',
     analysisBlocked: 'التحليل محظور',
+    analysisFailed: 'فشل التحليل',
     filterByClient: 'تصفية حسب العميل',
     allClients: 'جميع العملاء',
   },
@@ -111,6 +114,12 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
 }) => {
   const { lang } = useLanguage();
   const t = T[lang];
+  const { setPageTitle } = usePageTitle();
+
+  useEffect(() => {
+    setPageTitle(t.title);
+    return () => { setPageTitle(null); };
+  }, [setPageTitle, t.title]);
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -423,6 +432,9 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                             {t.scoringInProgress}
                           </span>
                         )}
+                        {job.criteria_extraction_status === 'failed' && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700">{t.analysisFailed}</span>
+                        )}
                         {job.criteria_extraction_status === 'blocked' && (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700">{t.analysisBlocked}</span>
                         )}
@@ -569,6 +581,9 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                                 {t.scoringInProgress}
                               </span>
+                            )}
+                            {job.criteria_extraction_status === 'failed' && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">{t.analysisFailed}</span>
                             )}
                             {job.criteria_extraction_status === 'blocked' && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">{t.analysisBlocked}</span>

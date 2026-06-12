@@ -1,12 +1,16 @@
+import csv
+import io
 import logging
+import re
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +23,18 @@ from services.application_intake_service import (
     process_cv_intake,
 )
 from services.communication_events import process_communication_event
+from services.knockout_questions_service import save_knockout_answers
+from services.knockout_analysis_service import (
+    run_knockout_analysis,
+    get_knockout_suggestions,
+    accept_knockout_suggestion,
+    ignore_knockout_suggestion,
+)
+from services.screening_validation_service import (
+    run_screening_validation,
+    get_knockout_validations,
+    get_latest_validation_run,
+)
 from workers.cv_score import score_cv_task
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -71,6 +87,16 @@ class BulkAssignmentRequest(BaseModel):
     assigned_user_id: str | None = None  # None = unassign all
 
 
+class KnockoutAnswerRequest(BaseModel):
+    question_id:  str
+    answer_value: str
+
+
+class KnockoutAcceptRequest(BaseModel):
+    question_id:     str
+    override_answer: str | None = None  # if set, saves this instead of AI suggestion
+
+
 @router.get("/assignable-users")
 async def get_assignable_users(
     current_user: CurrentUserDep,
@@ -103,10 +129,9 @@ async def get_assignable_users(
     return {"users": users}
 
 
-@router.get("")
-async def list_applications(
-    current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+def _build_candidate_filter_clause(
+    current_user,
+    is_admin: bool,
     job_id: str | None = None,
     workflow_status: str | None = None,
     processing_status: str | None = None,
@@ -121,54 +146,20 @@ async def list_applications(
     assigned_to: str | None = None,
     tag_ids: str | None = None,
     talent_pool_only: bool = False,
-    sort_by: str = "applied_at",
-    sort_order: str = "desc",
-    page: int = 1,
-    limit: int = 50,
-):
+    validation_issues: bool | None = None,
+) -> tuple[str, dict]:
     """
-    List applications with flexible filtering and pagination.
+    Build the shared WHERE clause + bind params for tenant-wide candidate
+    listing/export queries. Centralised here so the list endpoint and the
+    export endpoint apply identical filtering and access-control rules —
+    "do not duplicate filtering logic".
 
-    Backward compatible mode:
-    - If job_id provided: returns applications for that job (existing behavior)
-    - If job_id not provided: returns all tenant applications (new global search)
-
-    Supports multi-dimensional filtering:
-    - workflow_status: awaiting_review, under_review, interviewing, etc.
-    - processing_status: ai_scored, pending, failed, security_blocked, etc.
-    - ai_decision: qualified, partial, rejected_low_match, not_scored
-    - possible_duplicate: true/false
-    - has_notes: true/false
-    - date range: applied_after, applied_before (ISO format)
-    - search: candidate name substring match
-    - campaign_id: filter by campaign (tenant-wide mode only)
-    - client_organization_id: agency/freelancer client filter
-
-    Supports pagination and sorting.
-
-    Access control:
-    - Respects RLS tenant isolation
-    - Respects agency/freelancer client scoping
+    Returns (where_clause, params).
     """
-    await set_rls_context(db, current_user.tenant_id, current_user.role)
-
-    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
-
-    # Validate pagination
-    page = max(1, page)
-    limit = max(1, min(limit, 500))  # Cap at 500 per page for safety
-    offset = (page - 1) * limit
-
-    # Validate sorting
-    valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
-    sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
-    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
-
-    # Build WHERE clause dynamically
     where_parts = [
         "a.tenant_id = CAST(:tid AS uuid)",
     ]
-    params = {
+    params: dict = {
         "tid": current_user.tenant_id,
         "uid": current_user.user_id,
         "is_admin": is_admin,
@@ -185,23 +176,38 @@ async def list_applications(
         params["wf_status"] = workflow_status
 
     # Processing status filter
-    # Special alias 'failed_or_blocked' expands to all non-recoverable system states
-    # so the frontend can send a single param without multi-value URL encoding.
-    FAILED_OR_BLOCKED_STATUSES = (
-        "'failed', 'security_blocked', 'duplicate_blocked', "
-        "'extraction_failed', 'processing_failed', 'stopped'"
-    )
+    # Aliases for recruiter-facing simplified filter values:
+    #   in_progress      → queued | processing (actively in the scoring pipeline)
+    #   stopped_before_ai → failed AND stopped_reason IS NOT NULL (pre-AI gate failures)
+    #   failed_or_blocked → legacy alias for all non-recoverable system states
     if processing_status:
-        if processing_status == 'failed_or_blocked':
-            where_parts.append(f"a.processing_status IN ({FAILED_OR_BLOCKED_STATUSES})")
+        if processing_status == 'in_progress':
+            where_parts.append("a.processing_status IN ('queued', 'processing')")
+        elif processing_status == 'stopped_before_ai':
+            where_parts.append("a.processing_status = 'failed' AND a.stopped_reason IS NOT NULL")
+        elif processing_status == 'pre_ai_stopped':
+            # All applications that never reached AI scoring — used by the "Stopped Before AI" workspace view
+            where_parts.append(
+                "a.processing_status IN ('security_blocked', 'duplicate_blocked', "
+                "'extraction_failed', 'processing_failed', 'stopped', 'failed')"
+            )
+        elif processing_status == 'failed_or_blocked':
+            # Legacy alias: all failed/stopped states (backward compat with old quick-views)
+            where_parts.append(
+                "a.processing_status = 'failed'"
+            )
         else:
             where_parts.append("a.processing_status = :proc_status")
             params["proc_status"] = processing_status
 
     # AI decision filter (maps to 'decision' column)
+    # 'rejected_low_match' is the UI alias for DB value 'rejected'.
+    # AI decisions only exist for ai_scored applications; add that constraint here
+    # so callers don't need to pass processing_status=ai_scored separately.
     if ai_decision:
-        where_parts.append("a.decision = :ai_dec")
-        params["ai_dec"] = ai_decision
+        db_decision = "rejected" if ai_decision == "rejected_low_match" else ai_decision
+        where_parts.append("a.processing_status = 'ai_scored' AND a.decision = :ai_dec")
+        params["ai_dec"] = db_decision
 
     # Possible duplicate flag
     if possible_duplicate is not None:
@@ -272,6 +278,29 @@ async def list_applications(
     if talent_pool_only and not job_id:
         where_parts.append("a.is_talent_pool = TRUE")
 
+    # Validation issues filter — candidates with any contradiction/cannot_determine/cannot_validate
+    if validation_issues:
+        where_parts.append("""
+            EXISTS(
+                SELECT 1 FROM application_knockout_answer_validations kv
+                WHERE kv.application_id = a.application_id
+                  AND kv.validation_status IN ('contradicted_by_cv', 'cannot_validate', 'cannot_determine')
+            )
+        """)
+
+    # Decision CW-1: Exclude stopped-before-AI records from all normal tenant-wide views.
+    # These records are only accessible via the explicit 'pre_ai_stopped' processing_status filter
+    # (used by the "Stopped Before AI" quick view). The job-scoped backward-compatible mode
+    # (job_id provided) is unaffected so existing job detail pages continue to work.
+    _pre_ai_stopped_statuses = (
+        "'security_blocked', 'duplicate_blocked', 'extraction_failed', "
+        "'processing_failed', 'stopped', 'failed'"
+    )
+    if not job_id and processing_status != 'pre_ai_stopped':
+        where_parts.append(
+            f"a.processing_status NOT IN ({_pre_ai_stopped_statuses})"
+        )
+
     # Always enforce access control: admin OR no client OR assigned via agency_user_clients
     where_parts.append("""
         (
@@ -286,7 +315,90 @@ async def list_applications(
         )
     """)
 
-    where_clause = " AND ".join(where_parts)
+    return " AND ".join(where_parts), params
+
+
+@router.get("")
+async def list_applications(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    job_id: str | None = None,
+    workflow_status: str | None = None,
+    processing_status: str | None = None,
+    ai_decision: str | None = None,
+    possible_duplicate: bool | None = None,
+    has_notes: bool | None = None,
+    applied_after: str | None = None,
+    applied_before: str | None = None,
+    search: str | None = None,
+    campaign_id: str | None = None,
+    client_organization_id: str | None = None,
+    assigned_to: str | None = None,
+    tag_ids: str | None = None,
+    talent_pool_only: bool = False,
+    validation_issues: bool | None = None,
+    sort_by: str = "applied_at",
+    sort_order: str = "desc",
+    page: int = 1,
+    limit: int = 50,
+):
+    """
+    List applications with flexible filtering and pagination.
+
+    Backward compatible mode:
+    - If job_id provided: returns applications for that job (existing behavior)
+    - If job_id not provided: returns all tenant applications (new global search)
+
+    Supports multi-dimensional filtering:
+    - workflow_status: awaiting_review, under_review, interviewing, etc.
+    - processing_status: ai_scored, pending, failed, security_blocked, etc.
+    - ai_decision: qualified, partial, rejected_low_match, not_scored
+    - possible_duplicate: true/false
+    - has_notes: true/false
+    - date range: applied_after, applied_before (ISO format)
+    - search: candidate name substring match
+    - campaign_id: filter by campaign (tenant-wide mode only)
+    - client_organization_id: agency/freelancer client filter
+
+    Supports pagination and sorting.
+
+    Access control:
+    - Respects RLS tenant isolation
+    - Respects agency/freelancer client scoping
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    # Validate pagination
+    page = max(1, page)
+    limit = max(1, min(limit, 500))  # Cap at 500 per page for safety
+    offset = (page - 1) * limit
+
+    # Validate sorting
+    valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
+    sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
+    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+
+    where_clause, params = _build_candidate_filter_clause(
+        current_user,
+        is_admin,
+        job_id=job_id,
+        workflow_status=workflow_status,
+        processing_status=processing_status,
+        ai_decision=ai_decision,
+        possible_duplicate=possible_duplicate,
+        has_notes=has_notes,
+        applied_after=applied_after,
+        applied_before=applied_before,
+        search=search,
+        campaign_id=campaign_id,
+        client_organization_id=client_organization_id,
+        assigned_to=assigned_to,
+        tag_ids=tag_ids,
+        talent_pool_only=talent_pool_only,
+        validation_issues=validation_issues,
+    )
 
     # Map sort_by to actual column
     sort_column = {
@@ -337,7 +449,32 @@ async def list_applications(
             a.assigned_at,
             COALESCE(au.full_name, au.email)    AS assigned_user_name,
             a.preferred_contact_email,
-            a.preferred_contact_source
+            a.preferred_contact_source,
+            a.security_check_status,
+            a.security_risk_level,
+            CASE
+                WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
+                             WHERE kv.application_id = a.application_id
+                               AND kv.validation_status = 'contradicted_by_cv')
+                    THEN 'contradiction'
+                WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
+                             WHERE kv.application_id = a.application_id
+                               AND kv.validation_status IN ('cannot_validate', 'cannot_determine'))
+                    THEN 'cannot_determine'
+                WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
+                             WHERE kv.application_id = a.application_id
+                               AND kv.validation_status = 'not_supported_by_cv')
+                    THEN 'not_supported'
+                WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
+                             WHERE kv.application_id = a.application_id
+                               AND kv.validation_status = 'suggested')
+                    THEN 'suggestion'
+                WHEN EXISTS(SELECT 1 FROM application_knockout_answer_validations kv
+                             WHERE kv.application_id = a.application_id
+                               AND kv.validation_status = 'supported_by_cv')
+                    THEN 'validated'
+                ELSE NULL
+            END AS validation_summary
         FROM applications a
         JOIN jobs j ON j.job_id = a.job_id
         LEFT JOIN application_scores s ON s.application_id = a.application_id
@@ -373,7 +510,14 @@ async def list_applications(
             "duplicate_reason": r["duplicate_reason"],
             "duplicate_reference_application_id": str(r["duplicate_reference_application_id"]) if r["duplicate_reference_application_id"] else None,
             "evaluation_exit_reason": r["evaluation_exit_reason"],
-            "workflow_status": r["workflow_status"] or "awaiting_review",
+            # Only AI-scored applications enter the recruiter workflow queue.
+            # Stopped-before-AI applications (processing_status = 'failed') must not
+            # masquerade as 'awaiting_review' — return their actual DB value (None/null).
+            "workflow_status": (
+                r["workflow_status"] or "awaiting_review"
+                if r["processing_status"] == "ai_scored"
+                else r["workflow_status"]
+            ),
             "recruiter_notes": r["recruiter_notes"],
             "applied_at": r["applied_at"].isoformat() if r["applied_at"] else None,
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
@@ -386,6 +530,9 @@ async def list_applications(
             "is_talent_pool":           bool(r["is_talent_pool"]) if r["is_talent_pool"] is not None else False,
             "preferred_contact_email":  r["preferred_contact_email"],
             "preferred_contact_source": r["preferred_contact_source"],
+            "security_check_status":    r["security_check_status"],
+            "security_risk_level":      r["security_risk_level"],
+            "validation_summary":       r["validation_summary"],
         })
 
     # Backward compatibility mode: if job_id provided, return array (existing behavior)
@@ -402,6 +549,587 @@ async def list_applications(
             "has_more": (offset + limit) < total,
         },
     }
+
+
+# Export field order shared by CSV and Excel — matches the requested column set.
+_EXPORT_COLUMNS: list[str] = [
+    "Candidate Name",
+    "Candidate Email",
+    "Job Title",
+    "Job Code",
+    "Campaign",
+    "Client",
+    "AI Score",
+    "AI Recommendation",
+    "Workflow Status",
+    "Assigned Recruiter",
+    "Applied Date",
+    "Security Status",
+    "Duplicate Status",
+    "Talent Pool",
+    "Recruiter Notes",
+]
+
+# Maps raw `decision`/`status` DB values (and the UI's 'rejected_low_match' alias)
+# to the human-readable AI recommendation labels used across CSV/Excel/PDF export.
+# Falls back to the raw value (or "Not Scored" when null/empty) for anything unmapped.
+_AI_RECOMMENDATION_LABELS: dict[str, str] = {
+    "qualified":          "Qualified",
+    "partial":            "Partial Match",
+    "rejected":           "Rejected — Low Match",
+    "rejected_low_match": "Rejected — Low Match",
+    "low_match":          "Rejected — Low Match",
+    "not_scored":         "Not Scored",
+}
+
+
+def _effective_workflow_status(r) -> str:
+    processing_status = r["processing_status"]
+    if processing_status == "ai_scored":
+        return r["workflow_status"] or "awaiting_review"
+    return r["workflow_status"] or ""
+
+
+def _ai_recommendation_label(r) -> str:
+    raw = r["status"] or ""
+    if not raw:
+        return "Not Scored"
+    return _AI_RECOMMENDATION_LABELS.get(raw, raw)
+
+
+def _export_row(r) -> list:
+    """Map a candidate export query row to the requested export column order."""
+    return [
+        r["candidate_name"] or "",
+        r["candidate_email"] or "",
+        r["job_title"] or "",
+        r["job_code"] or "",
+        r["campaign_name"] or "",
+        r["client_org_name"] or "",
+        float(r["score"]) if r["score"] is not None else "",
+        _ai_recommendation_label(r),
+        _effective_workflow_status(r),
+        r["assigned_user_name"] or "",
+        r["applied_at"].strftime("%Y-%m-%d %H:%M") if r["applied_at"] else "",
+        r["security_check_status"] or "",
+        r["duplicate_status"] or "not_duplicate",
+        "Yes" if r["is_talent_pool"] else "No",
+        r["recruiter_notes"] or "",
+    ]
+
+
+# ── PDF report helpers ────────────────────────────────────────────────────────
+
+# ReportLab's built-in base-14 fonts (Helvetica, Times, Courier) only cover
+# Latin-1 and render any Arabic codepoint as a "tofu" box (■). Bundling a
+# Unicode font with Arabic glyph coverage and registering it with ReportLab's
+# pdfmetrics is required to render Arabic candidate names / job titles / etc.
+_PDF_FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+_PDF_FONT_FAMILY = "Helvetica"   # safe fallback if the bundled font can't be loaded
+_PDF_FONT_FAMILY_BOLD = "Helvetica-Bold"
+_pdf_fonts_registered = False
+
+_ARABIC_CHAR_RE = re.compile(
+    r"[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]"
+)
+
+
+def _ensure_pdf_fonts_registered() -> tuple[str, str]:
+    """Register the bundled Amiri Unicode font (Arabic + Latin coverage) with
+    ReportLab so PDF exports can render Arabic text. Idempotent — registration
+    only happens once per process. Returns (regular_font_name, bold_font_name).
+    Falls back to Helvetica if the font files are missing for any reason."""
+    global _pdf_fonts_registered, _PDF_FONT_FAMILY, _PDF_FONT_FAMILY_BOLD
+    if _pdf_fonts_registered:
+        return _PDF_FONT_FAMILY, _PDF_FONT_FAMILY_BOLD
+
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    try:
+        pdfmetrics.registerFont(TTFont("Amiri", str(_PDF_FONT_DIR / "Amiri-Regular.ttf")))
+        pdfmetrics.registerFont(TTFont("Amiri-Bold", str(_PDF_FONT_DIR / "Amiri-Bold.ttf")))
+        pdfmetrics.registerFontFamily("Amiri", normal="Amiri", bold="Amiri-Bold")
+        _PDF_FONT_FAMILY = "Amiri"
+        _PDF_FONT_FAMILY_BOLD = "Amiri-Bold"
+    except Exception:
+        logger.warning(
+            "Could not load bundled Arabic-capable PDF font (Amiri); "
+            "falling back to Helvetica — Arabic text will render as boxes.",
+            exc_info=True,
+        )
+
+    _pdf_fonts_registered = True
+    return _PDF_FONT_FAMILY, _PDF_FONT_FAMILY_BOLD
+
+
+def _pdf_text(value) -> str:
+    """Prepare a string for rendering inside a ReportLab Paragraph.
+
+    ReportLab lays text out in logical (storage) order and left-to-right —
+    it has no bidi engine. Arabic text must therefore be:
+      1. reshaped (arabic_reshaper) so each letter uses its correct
+         contextual glyph form (initial/medial/final/isolated), and
+      2. reordered into visual order (python-bidi's get_display) so RTL runs
+         display right-to-left while any embedded LTR runs (e.g. numbers,
+         English words) remain correctly ordered.
+
+    Strings without Arabic characters are returned unchanged (no-op for the
+    overwhelming majority of English-only export content).
+    """
+    text = "" if value is None else str(value)
+    if not _ARABIC_CHAR_RE.search(text):
+        return text
+
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+
+    return get_display(arabic_reshaper.reshape(text))
+
+
+_WORKFLOW_STATUS_LABELS: dict[str, str] = {
+    "awaiting_review": "Awaiting Review",
+    "under_review":    "Under Review",
+    "shortlisted":     "Shortlisted",
+    "interviewing":    "Interviewing",
+    "offer_made":      "Offer Made",
+    "hired":           "Hired",
+    "rejected":        "Rejected",
+    "withdrawn":       "Withdrawn",
+    "on_hold":         "On Hold",
+}
+
+# Human-readable labels for filters surfaced in the PDF "Applied Filters" section.
+_AI_DECISION_FILTER_LABELS: dict[str, str] = {
+    "qualified":           "Qualified",
+    "partial":             "Partial Match",
+    "rejected":            "Rejected — Low Match",
+    "rejected_low_match":  "Rejected — Low Match",
+    "not_scored":          "Not Scored",
+}
+
+_PROCESSING_STATUS_FILTER_LABELS: dict[str, str] = {
+    "ai_scored":          "AI Scored",
+    "in_progress":        "In Progress",
+    "stopped_before_ai":  "Stopped Before AI",
+    "pre_ai_stopped":     "Stopped Before AI",
+    "failed_or_blocked":  "Failed / Blocked",
+}
+
+
+async def _describe_active_filters(
+    db: AsyncSession,
+    current_user,
+    *,
+    job_id, workflow_status, processing_status, ai_decision,
+    possible_duplicate, has_notes, applied_after, applied_before,
+    search, campaign_id, client_organization_id, assigned_to, tag_ids,
+    talent_pool_only, validation_issues,
+) -> list[str]:
+    """Build a list of human-readable 'Label: value' strings describing the
+    filters applied to this export, for the PDF report's Applied Filters section.
+    Resolves IDs to display names via small tenant-scoped lookups."""
+    labels: list[str] = []
+
+    if search:
+        labels.append(f"Search: \"{search}\"")
+
+    if job_id:
+        row = (await db.execute(
+            text("SELECT title FROM jobs WHERE job_id = CAST(:jid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+            {"jid": job_id, "tid": current_user.tenant_id},
+        )).first()
+        labels.append(f"Job: {row[0] if row else job_id}")
+
+    if campaign_id:
+        row = (await db.execute(
+            text("SELECT name FROM job_campaigns WHERE campaign_id = CAST(:cid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+            {"cid": campaign_id, "tid": current_user.tenant_id},
+        )).first()
+        labels.append(f"Campaign: {row[0] if row else campaign_id}")
+
+    if client_organization_id:
+        row = (await db.execute(
+            text("SELECT organization_name FROM client_organizations WHERE client_organization_id = CAST(:cid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+            {"cid": client_organization_id, "tid": current_user.tenant_id},
+        )).first()
+        labels.append(f"Client: {row[0] if row else client_organization_id}")
+
+    if workflow_status:
+        labels.append(f"Workflow Status: {_WORKFLOW_STATUS_LABELS.get(workflow_status, workflow_status)}")
+
+    if processing_status:
+        labels.append(f"Queue / View: {_PROCESSING_STATUS_FILTER_LABELS.get(processing_status, processing_status)}")
+
+    if ai_decision:
+        labels.append(f"AI Recommendation: {_AI_DECISION_FILTER_LABELS.get(ai_decision, ai_decision)}")
+
+    if applied_after:
+        labels.append(f"Applied From: {applied_after}")
+    if applied_before:
+        labels.append(f"Applied To: {applied_before}")
+
+    if assigned_to == "me":
+        labels.append(f"Assigned Recruiter: {current_user.full_name or current_user.email} (Me)")
+    elif assigned_to == "unassigned":
+        labels.append("Assigned Recruiter: Unassigned")
+    elif assigned_to:
+        row = (await db.execute(
+            text("SELECT COALESCE(full_name, email) FROM users WHERE user_id = CAST(:uid AS uuid) AND tenant_id = CAST(:tid AS uuid)"),
+            {"uid": assigned_to, "tid": current_user.tenant_id},
+        )).first()
+        labels.append(f"Assigned Recruiter: {row[0] if row else assigned_to}")
+
+    if tag_ids:
+        tag_list = [tid.strip() for tid in tag_ids.split(',') if tid.strip()]
+        if tag_list:
+            tag_rows = (await db.execute(
+                text("SELECT tag_name FROM candidate_tags WHERE tag_id = ANY(:tids) AND tenant_id = CAST(:tid AS uuid)"),
+                {"tids": tag_list, "tid": current_user.tenant_id},
+            )).all()
+            tag_names = [r[0] for r in tag_rows] or tag_list
+            labels.append(f"Tags: {', '.join(tag_names)}")
+
+    if talent_pool_only:
+        labels.append("Talent Pool: Yes")
+    if possible_duplicate is not None:
+        labels.append(f"Possible Duplicate: {'Yes' if possible_duplicate else 'No'}")
+    if has_notes is not None:
+        labels.append(f"Has Notes: {'Yes' if has_notes else 'No'}")
+    if validation_issues:
+        labels.append("View: Validation Issues")
+
+    return labels
+
+
+def _build_pdf_export(
+    records: list,
+    filter_labels: list[str],
+    generated_by: str,
+    generated_at: str,
+) -> bytes:
+    """Render the candidate export as a multi-page A4 portrait PDF report
+    using reportlab platypus (Report Summary page + Candidate Details table)."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+    )
+
+    pdf_font, pdf_font_bold = _ensure_pdf_fonts_registered()
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=18, spaceAfter=4, fontName=pdf_font_bold)
+    meta_style = ParagraphStyle("ReportMeta", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#475569"), fontName=pdf_font)
+    h2_style = ParagraphStyle("SectionHeading", parent=styles["Heading2"], fontSize=12, spaceBefore=12, spaceAfter=6, textColor=colors.HexColor("#1e293b"), fontName=pdf_font_bold)
+    body_style = ParagraphStyle("Body", parent=styles["Normal"], fontSize=9, leading=12, fontName=pdf_font)
+    cell_style = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=8, leading=10, fontName=pdf_font)
+    header_cell_style = ParagraphStyle("HeaderCell", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.white, fontName=pdf_font_bold)
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=16 * mm, bottomMargin=16 * mm,
+        title="Candidates Export Report",
+    )
+
+    story = []
+
+    # ── Page 1: Report Summary ──
+    story.append(Paragraph("CV Analyzer — Recruitment Platform", meta_style))
+    story.append(Paragraph("Candidates Export Report", title_style))
+    story.append(Paragraph(f"Generated by: {generated_by}", meta_style))
+    story.append(Paragraph(f"Generated on: {generated_at}", meta_style))
+    story.append(Spacer(1, 8))
+
+    story.append(Paragraph("Applied Filters", h2_style))
+    if filter_labels:
+        for lbl in filter_labels:
+            story.append(Paragraph(f"• {_pdf_text(lbl)}", body_style))
+    else:
+        story.append(Paragraph("All Candidates (no filters applied)", body_style))
+
+    total = len(records)
+    story.append(Paragraph("Summary Statistics", h2_style))
+    story.append(Paragraph(f"Total candidates exported: <b>{total}</b>", body_style))
+
+    # AI Recommendation summary
+    ai_counts = {"Qualified": 0, "Partial Match": 0, "Not Recommended": 0}
+    for r in records:
+        decision = (r["status"] or "").lower()
+        if decision == "qualified":
+            ai_counts["Qualified"] += 1
+        elif decision == "partial":
+            ai_counts["Partial Match"] += 1
+        elif decision:
+            ai_counts["Not Recommended"] += 1
+
+    story.append(Paragraph("AI Recommendation Summary", h2_style))
+    ai_table = Table(
+        [["Recommendation", "Count"]] + [[k, str(v)] for k, v in ai_counts.items()],
+        colWidths=[90 * mm, 30 * mm],
+    )
+    ai_table.setStyle(_summary_table_style())
+    story.append(ai_table)
+
+    # Workflow summary
+    workflow_counts = {label: 0 for label in _WORKFLOW_STATUS_LABELS.values()}
+    for r in records:
+        wf = _effective_workflow_status(r)
+        label = _WORKFLOW_STATUS_LABELS.get(wf)
+        if label:
+            workflow_counts[label] += 1
+
+    story.append(Paragraph("Workflow Summary", h2_style))
+    wf_table = Table(
+        [["Workflow Status", "Count"]] + [[k, str(v)] for k, v in workflow_counts.items()],
+        colWidths=[90 * mm, 30 * mm],
+    )
+    wf_table.setStyle(_summary_table_style())
+    story.append(wf_table)
+
+    # Optional indicators — only shown when non-zero
+    security_warnings = sum(1 for r in records if (r["security_check_status"] or "") in ("warning", "blocked"))
+    possible_duplicates = sum(1 for r in records if (r["duplicate_status"] or "") in ("possible_duplicate", "confirmed_duplicate"))
+    optional_rows = []
+    if security_warnings:
+        optional_rows.append(["Security Warnings", str(security_warnings)])
+    if possible_duplicates:
+        optional_rows.append(["Possible Duplicates", str(possible_duplicates)])
+
+    if optional_rows:
+        story.append(Paragraph("Additional Indicators", h2_style))
+        opt_table = Table([["Indicator", "Count"]] + optional_rows, colWidths=[90 * mm, 30 * mm])
+        opt_table.setStyle(_summary_table_style())
+        story.append(opt_table)
+
+    # ── Page 2+: Candidate Details ──
+    story.append(PageBreak())
+    story.append(Paragraph("Candidate Details", h2_style))
+
+    detail_columns = [
+        "Candidate Name", "Job Title", "AI Score", "AI Recommendation",
+        "Workflow Status", "Assigned Recruiter", "Applied Date",
+    ]
+    table_data = [[Paragraph(c, header_cell_style) for c in detail_columns]]
+    for r in records:
+        score = r["score"]
+        table_data.append([
+            Paragraph(_pdf_text(r["candidate_name"]) or "", cell_style),
+            Paragraph(_pdf_text(r["job_title"]) or "", cell_style),
+            Paragraph(f"{float(score):.0f}" if score is not None else "—", cell_style),
+            Paragraph(_ai_recommendation_label(r) or "—", cell_style),
+            Paragraph(_WORKFLOW_STATUS_LABELS.get(_effective_workflow_status(r), "—"), cell_style),
+            Paragraph(_pdf_text(r["assigned_user_name"]) or "Unassigned", cell_style),
+            Paragraph(r["applied_at"].strftime("%Y-%m-%d") if r["applied_at"] else "—", cell_style),
+        ])
+
+    detail_table = Table(
+        table_data,
+        colWidths=[36 * mm, 36 * mm, 18 * mm, 28 * mm, 26 * mm, 30 * mm, 24 * mm],
+        repeatRows=1,
+    )
+    detail_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), pdf_font_bold),
+        ("FONTNAME", (0, 1), (-1, -1), pdf_font),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    story.append(detail_table)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def _summary_table_style():
+    from reportlab.lib import colors
+    from reportlab.platypus import TableStyle
+    return TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ])
+
+
+@router.get("/export")
+async def export_applications(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    format: str = "csv",
+    job_id: str | None = None,
+    workflow_status: str | None = None,
+    processing_status: str | None = None,
+    ai_decision: str | None = None,
+    possible_duplicate: bool | None = None,
+    has_notes: bool | None = None,
+    applied_after: str | None = None,
+    applied_before: str | None = None,
+    search: str | None = None,
+    campaign_id: str | None = None,
+    client_organization_id: str | None = None,
+    assigned_to: str | None = None,
+    tag_ids: str | None = None,
+    talent_pool_only: bool = False,
+    validation_issues: bool | None = None,
+    sort_by: str = "applied_at",
+    sort_order: str = "desc",
+):
+    """
+    Export ALL candidates matching the current Candidates Workspace filters
+    (not just the current page) as CSV, Excel/XLSX, or a formatted PDF report.
+
+    Reuses the exact same filter-building and access-control logic as
+    GET /applications (see _build_candidate_filter_clause) so export results
+    always match what the recruiter sees in the workspace, scoped to their
+    tenant and client access.
+    """
+    fmt = (format or "csv").lower()
+    if fmt not in ("csv", "xlsx", "excel", "pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported export format. Supported formats: csv, xlsx, pdf.",
+        )
+
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
+    sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
+    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+
+    where_clause, params = _build_candidate_filter_clause(
+        current_user,
+        is_admin,
+        job_id=job_id,
+        workflow_status=workflow_status,
+        processing_status=processing_status,
+        ai_decision=ai_decision,
+        possible_duplicate=possible_duplicate,
+        has_notes=has_notes,
+        applied_after=applied_after,
+        applied_before=applied_before,
+        search=search,
+        campaign_id=campaign_id,
+        client_organization_id=client_organization_id,
+        assigned_to=assigned_to,
+        tag_ids=tag_ids,
+        talent_pool_only=talent_pool_only,
+        validation_issues=validation_issues,
+    )
+
+    sort_column = {
+        "applied_at": "a.applied_at",
+        "updated_at": "a.scored_at",
+        "score": "s.final_score",
+        "candidate_name": "a.candidate_name",
+    }.get(sort_by, "a.applied_at")
+
+    # No LIMIT/OFFSET — export must cover every matching record, not one page.
+    data_query = f"""
+        SELECT
+            a.candidate_name,
+            a.candidate_email,
+            j.title                          AS job_title,
+            j.job_code,
+            jc.name                          AS campaign_name,
+            co.organization_name             AS client_org_name,
+            s.final_score                    AS score,
+            a.decision                       AS status,
+            a.processing_status,
+            a.workflow_status,
+            COALESCE(au.full_name, au.email) AS assigned_user_name,
+            a.applied_at,
+            a.security_check_status,
+            a.duplicate_status,
+            a.is_talent_pool,
+            a.recruiter_notes
+        FROM applications a
+        JOIN jobs j ON j.job_id = a.job_id
+        LEFT JOIN application_scores s ON s.application_id = a.application_id
+        LEFT JOIN job_campaigns jc ON jc.campaign_id = j.campaign_id
+        LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
+        LEFT JOIN users au ON au.user_id = a.assigned_user_id
+        WHERE {where_clause}
+        ORDER BY {sort_column} {sort_order}
+    """
+
+    rows = await db.execute(text(data_query), params)
+    records = list(rows.mappings())
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+    if fmt == "csv":
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(_EXPORT_COLUMNS)
+        for r in records:
+            writer.writerow(_export_row(r))
+        buffer.seek(0)
+        filename = f"candidates_export_{timestamp}.csv"
+        return StreamingResponse(
+            iter([buffer.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    if fmt in ("xlsx", "excel"):
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Candidates"
+        ws.append(_EXPORT_COLUMNS)
+        for r in records:
+            ws.append(_export_row(r))
+
+        xlsx_buffer = io.BytesIO()
+        wb.save(xlsx_buffer)
+        xlsx_buffer.seek(0)
+        filename = f"candidates_export_{timestamp}.xlsx"
+        return StreamingResponse(
+            iter([xlsx_buffer.getvalue()]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # PDF report
+    filter_labels = await _describe_active_filters(
+        db, current_user,
+        job_id=job_id, workflow_status=workflow_status, processing_status=processing_status,
+        ai_decision=ai_decision, possible_duplicate=possible_duplicate, has_notes=has_notes,
+        applied_after=applied_after, applied_before=applied_before, search=search,
+        campaign_id=campaign_id, client_organization_id=client_organization_id,
+        assigned_to=assigned_to, tag_ids=tag_ids, talent_pool_only=talent_pool_only,
+        validation_issues=validation_issues,
+    )
+    pdf_bytes = _build_pdf_export(
+        records,
+        filter_labels,
+        generated_by=current_user.full_name or current_user.email,
+        generated_at=datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+    )
+    filename = f"candidates_export_{timestamp}.pdf"
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/details")
@@ -506,33 +1234,49 @@ async def get_application_details(
                 "applied_at":     ref["applied_at"].isoformat() if ref["applied_at"] else None,
             }
 
-    # Fetch knockout question answers with question metadata
+    # Fetch all knockout questions for this job, LEFT JOINing answers so unanswered
+    # questions also appear (answer fields will be NULL for those rows).
     ko_rows = await db.execute(
         text("""
             SELECT
                 a.answer_id,
-                a.question_id,
+                q.question_id,
                 a.answer_value,
                 a.is_disqualifying,
+                a.answer_source,
+                a.answer_method,
+                a.evidence_text,
+                a.confidence,
+                a.updated_at   AS answer_updated_at,
+                u.full_name    AS updated_by_name,
                 q.question_text,
                 q.question_type,
                 q.is_required,
                 q.options,
                 q.passing_criteria,
                 q.display_order
-            FROM application_knockout_answers a
-            JOIN job_knockout_questions q ON q.question_id = a.question_id
-            WHERE a.application_id = CAST(:aid AS uuid)
+            FROM job_knockout_questions q
+            LEFT JOIN application_knockout_answers a
+                   ON a.question_id = q.question_id
+                  AND a.application_id = CAST(:aid AS uuid)
+            LEFT JOIN users u ON u.user_id = a.updated_by
+            WHERE q.job_id = :jid
             ORDER BY q.display_order, q.created_at
         """),
-        {"aid": application_id},
+        {"aid": application_id, "jid": str(app["job_id"])},
     )
     knockout_answers = [
         {
-            "answer_id":        str(r["answer_id"]),
+            "answer_id":        str(r["answer_id"]) if r["answer_id"] else None,
             "question_id":      str(r["question_id"]),
             "answer_value":     r["answer_value"],
             "is_disqualifying": r["is_disqualifying"],
+            "answer_source":    r["answer_source"],
+            "answer_method":    r["answer_method"],
+            "evidence_text":    r["evidence_text"],
+            "confidence":       float(r["confidence"]) if r["confidence"] is not None else None,
+            "updated_at":       r["answer_updated_at"].isoformat() if r["answer_updated_at"] else None,
+            "updated_by_name":  r["updated_by_name"],
             "question_text":    r["question_text"],
             "question_type":    r["question_type"],
             "is_required":      r["is_required"],
@@ -542,6 +1286,13 @@ async def get_application_details(
         }
         for r in ko_rows.mappings()
     ]
+
+    # Fetch AI knockout suggestions
+    knockout_suggestions = await get_knockout_suggestions(db, application_id)
+
+    # Fetch screening validation results
+    knockout_validations = await get_knockout_validations(db, application_id)
+    latest_validation_run = await get_latest_validation_run(db, application_id)
 
     # Fetch workflow history
     wf_rows = await db.execute(
@@ -682,7 +1433,18 @@ async def get_application_details(
         "security_detected_snippets": list(app["security_detected_snippets"] or []),
         "security_checked_at":        app["security_checked_at"].isoformat() if app["security_checked_at"] else None,
         "knockout_answers":           knockout_answers,
-        "workflow_status":            app["workflow_status"] or "new",
+        "knockout_suggestions":       knockout_suggestions,
+        "knockout_validations":       knockout_validations,
+        "latest_validation_run":      latest_validation_run,
+        # Same business rule as the list endpoint (line ~465): only ai_scored
+        # candidates get the 'awaiting_review' null-fallback; other processing
+        # states return their actual DB value (None/null). Never surface the
+        # legacy 'new' placeholder — it is not a valid recruiter workflow status.
+        "workflow_status": (
+            app["workflow_status"] or "awaiting_review"
+            if app["processing_status"] == "ai_scored"
+            else app["workflow_status"]
+        ),
         "recruiter_notes":            app["recruiter_notes"],
         "workflow_history":           workflow_history,
     }
@@ -1037,7 +1799,8 @@ async def update_workflow_status(
 
     row = await db.execute(
         text("""
-            SELECT a.application_id, a.workflow_status, a.job_id, j.allow_advanced_workflow_move
+            SELECT a.application_id, a.workflow_status, a.processing_status, a.job_id,
+                   j.allow_advanced_workflow_move
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             WHERE a.application_id = :aid AND a.tenant_id = :tid
@@ -1063,9 +1826,22 @@ async def update_workflow_status(
     if not rec:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
 
-    current_status = rec["workflow_status"] or "awaiting_review"
-    if new_status == current_status:
-        return {"workflow_status": current_status}
+    # Only AI-scored candidates are managed through the recruiter workflow.
+    # Stopped-before-AI candidates (processing_status != 'ai_scored') are system-managed
+    # and must not be transitioned through recruiter workflow moves.
+    if rec["processing_status"] != "ai_scored":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only AI-scored applications can be moved through the recruiter workflow.",
+        )
+
+    # Null-safe effective status: migration 077 made workflow_status nullable for
+    # stopped-before-AI candidates. For ai_scored candidates, NULL means the record
+    # predates the initial awaiting_review assignment and should be treated as such.
+    effective_current_status: str = rec["workflow_status"] if rec["workflow_status"] else "awaiting_review"
+
+    if new_status == effective_current_status:
+        return {"workflow_status": effective_current_status}
 
     is_advanced = body.advanced_move
 
@@ -1104,11 +1880,11 @@ async def update_workflow_status(
         # Target must still be a valid workflow status, but no transition-graph check
     else:
         # Normal move: enforce the state-machine graph
-        allowed = VALID_WORKFLOW_TRANSITIONS.get(current_status, frozenset())
+        allowed = VALID_WORKFLOW_TRANSITIONS.get(effective_current_status, frozenset())
         if new_status not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Cannot transition workflow from '{current_status}' to '{new_status}'.",
+                detail=f"Cannot transition workflow from '{effective_current_status}' to '{new_status}'.",
             )
 
     # ── Workflow policy enforcement ────────────────────────────────────────────
@@ -1215,7 +1991,7 @@ async def update_workflow_status(
             "tid":    current_user.tenant_id,
             "uid":    current_user.user_id,
             "uname":  current_user.full_name or current_user.email,
-            "from_s": current_status,
+            "from_s": effective_current_status,
             "to_s":   new_status,
             "note":   body.note,
             "is_adv": is_advanced,
@@ -1286,6 +2062,248 @@ async def update_recruiter_notes(
     )
     await db.commit()
     return {"recruiter_notes": body.recruiter_notes}
+
+
+@router.patch("/{application_id}/knockout-answers", status_code=status.HTTP_200_OK)
+async def update_knockout_answer(
+    application_id: str,
+    body: KnockoutAnswerRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Allow authenticated recruiters/admins to add or update a single knockout answer."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    # Verify the application belongs to this tenant
+    row = await db.execute(
+        text("""
+            SELECT a.job_id FROM applications a
+            WHERE a.application_id = CAST(:aid AS uuid) AND a.tenant_id = :tid
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    app_row = row.mappings().first()
+    if not app_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    await save_knockout_answers(
+        db=db,
+        application_id=application_id,
+        job_id=str(app_row["job_id"]),
+        answers=[{"question_id": body.question_id, "answer_value": body.answer_value}],
+        answer_source="recruiter_entered",
+        answer_method="manual_entry",
+        updated_by=current_user.user_id,
+    )
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/{application_id}/knockout-analysis", status_code=status.HTTP_200_OK)
+async def trigger_knockout_analysis(
+    application_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    force_all: bool = False,
+):
+    """Manually trigger AI knockout answer analysis for an application.
+
+    force_all=true re-analyses even questions that already have a final answer.
+
+    Returns:
+        status "ok"       — success; suggestions list may be empty if all questions are answered
+        status "no_content" — no CV text or email content available
+        status "error"    — AI call or other failure; reason field contains safe message
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT a.job_id FROM applications a
+            WHERE a.application_id = CAST(:aid AS uuid) AND a.tenant_id = :tid
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    app_row = row.mappings().first()
+    if not app_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    suggestions_raw, error_reason = await run_knockout_analysis(
+        db=db,
+        application_id=application_id,
+        job_id=str(app_row["job_id"]),
+        tenant_id=current_user.tenant_id,
+        force_all=force_all,
+    )
+
+    if suggestions_raw:
+        await db.commit()
+        # Re-apply RLS context (SET LOCAL resets after commit)
+        await set_rls_context(db, current_user.tenant_id, current_user.role)
+        full_suggestions = await get_knockout_suggestions(db, application_id)
+    else:
+        full_suggestions = []
+
+    if error_reason:
+        # Distinguish "no content" from hard errors for frontend messaging
+        outcome = "no_content" if "no cv text" in error_reason.lower() else "error"
+        return {
+            "status": outcome,
+            "reason": error_reason,
+            "suggestions": [],
+            "suggestions_generated": 0,
+        }
+
+    return {
+        "status": "ok",
+        "reason": None,
+        "suggestions": full_suggestions,
+        "suggestions_generated": len(full_suggestions),
+    }
+
+
+@router.post("/{application_id}/screening-validation", status_code=status.HTTP_200_OK)
+async def trigger_screening_validation(
+    application_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Run Screening Answer Validation for all knockout questions.
+
+    For each question:
+    - If a final answer exists: validates it against CV evidence and returns
+      supported_by_cv | contradicted_by_cv | not_supported_by_cv | cannot_validate
+    - If no final answer exists: suggests an answer when CV evidence is strong,
+      or returns cannot_determine when evidence is insufficient
+
+    AI does not force answers. Existing final answers are never overwritten.
+    Suggestions for unanswered questions are stored as pending and require
+    recruiter acceptance before becoming final answers.
+
+    Returns:
+        status "ok"         — success; validations and suggestions populated
+        status "no_content" — no CV text or email content available
+        status "error"      — AI call or other failure
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT a.job_id FROM applications a
+            WHERE a.application_id = CAST(:aid AS uuid) AND a.tenant_id = :tid
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    app_row = row.mappings().first()
+    if not app_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    validations_raw, error_reason = await run_screening_validation(
+        db=db,
+        application_id=application_id,
+        job_id=str(app_row["job_id"]),
+        tenant_id=current_user.tenant_id,
+    )
+
+    if error_reason == "already_completed":
+        await set_rls_context(db, current_user.tenant_id, current_user.role)
+        full_validations = await get_knockout_validations(db, application_id)
+        latest_run = await get_latest_validation_run(db, application_id)
+        return {
+            "status":     "already_completed",
+            "reason":     "Screening validation has already been completed for this application.",
+            "validations": full_validations,
+            "suggestions": [],
+            "run":         latest_run,
+        }
+
+    if error_reason:
+        outcome = "no_content" if "no cv text" in error_reason.lower() else "error"
+        return {
+            "status": outcome,
+            "reason": error_reason,
+            "validations": [],
+            "suggestions": [],
+        }
+
+    await db.commit()
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    full_validations = await get_knockout_validations(db, application_id)
+    full_suggestions = await get_knockout_suggestions(db, application_id)
+    latest_run = await get_latest_validation_run(db, application_id)
+
+    return {
+        "status":           "ok",
+        "reason":           None,
+        "validations":      full_validations,
+        "suggestions":      full_suggestions,
+        "validations_count": len(full_validations),
+        "run":              latest_run,
+    }
+
+
+@router.patch("/{application_id}/knockout-suggestions/accept", status_code=status.HTTP_200_OK)
+async def accept_knockout_suggestion_endpoint(
+    application_id: str,
+    body: KnockoutAcceptRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Accept an AI suggestion (optionally with an edited answer), saving it as a final answer.
+
+    Accept without edit (or edit to same value): answer_source = AI source, answer_method = recruiter_approved.
+    Edit to a different value: answer_source = recruiter_entered, answer_method = manual_entry.
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT a.job_id FROM applications a
+            WHERE a.application_id = CAST(:aid AS uuid) AND a.tenant_id = :tid
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    app_row = row.mappings().first()
+    if not app_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    await accept_knockout_suggestion(
+        db=db,
+        application_id=application_id,
+        job_id=str(app_row["job_id"]),
+        question_id=body.question_id,
+        accepted_by_user_id=current_user.user_id,
+        override_answer=body.override_answer,
+    )
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.patch("/{application_id}/knockout-suggestions/ignore", status_code=status.HTTP_200_OK)
+async def ignore_knockout_suggestion_endpoint(
+    application_id: str,
+    body: KnockoutAnswerRequest,   # reuse: only question_id matters, answer_value ignored
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Mark an AI suggestion as ignored (dismissed without accepting)."""
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+
+    row = await db.execute(
+        text("""
+            SELECT application_id FROM applications
+            WHERE application_id = CAST(:aid AS uuid) AND tenant_id = :tid
+        """),
+        {"aid": application_id, "tid": current_user.tenant_id},
+    )
+    if not row.mappings().first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    await ignore_knockout_suggestion(db=db, application_id=application_id, question_id=body.question_id)
+    await db.commit()
+    return {"status": "ok"}
 
 
 @router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)

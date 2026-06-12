@@ -21,7 +21,7 @@
  *   - For exceptional operational corrections only — not routine workflow
  *   - Shows all statuses except current, grouped identically
  *   - Note/reason is always required
- *   - Visually demoted: small muted text link below primary Move button
+ *   - Visually separated from Standard Move: amber button with divider
  *   - Rendered only when advancedMoveEnabled && userRole is in ADVANCED_MOVE_ALLOWED_ROLES
  *   - Backend independently enforces permission + required note
  *
@@ -122,7 +122,8 @@ function calcMenuPos(btn: HTMLElement, menuMinWidth: number): MenuPos {
 
 export interface WorkflowActionMenuProps {
   applicationId: string;
-  currentStatus: WorkflowStatus;
+  /** Nullable at runtime: DB column has been nullable since migration 077. Component applies safe fallback. */
+  currentStatus: WorkflowStatus | null | undefined;
   candidateName?: string;
   /**
    * Only 'ai_scored' applications are recruiter-actionable.
@@ -233,14 +234,22 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
     );
   }
 
-  const transitions = VALID_WORKFLOW_TRANSITIONS[currentStatus] ?? [];
-  const groups = groupTransitions(currentStatus, transitions);
+  // Runtime null guard: DB column is nullable since migration 077.
+  // For ai_scored candidates, null/unknown status defaults to 'awaiting_review',
+  // matching the backend's own fallback rule in applications.py.
+  const safeStatus: WorkflowStatus =
+    currentStatus != null && (currentStatus as string) in VALID_WORKFLOW_TRANSITIONS
+      ? currentStatus
+      : 'awaiting_review';
+
+  const transitions = VALID_WORKFLOW_TRANSITIONS[safeStatus] ?? [];
+  const groups = groupTransitions(safeStatus, transitions);
   const hasNormalOptions = Object.values(groups).some(g => g.length > 0);
 
   if (!hasNormalOptions && !canDoAdvancedMove) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-slate-400 bg-slate-50 border border-slate-200">
-        —
+        No standard moves available
       </span>
     );
   }
@@ -287,7 +296,7 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   };
 
   const selectStatus = (toStatus: WorkflowStatus) => {
-    const requirement = getNoteRequirement(toStatus, currentStatus);
+    const requirement = getNoteRequirement(toStatus, safeStatus);
     if (requirement === 'required' || requirement === 'recommended') {
       setPendingStatus(toStatus);
       setPendingIsAdvanced(false);
@@ -344,8 +353,8 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
   };
 
   // Advanced targets: all statuses except current
-  const advancedTargets = ALL_WORKFLOW_STATUSES.filter(s => s !== currentStatus);
-  const advancedGroups = groupTransitions(currentStatus, advancedTargets);
+  const advancedTargets = ALL_WORKFLOW_STATUSES.filter(s => s !== safeStatus);
+  const advancedGroups = groupTransitions(safeStatus, advancedTargets);
 
   // ── Shared note confirmation panel ────────────────────────────────────────
 
@@ -415,37 +424,46 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
     <div ref={wrapperRef} className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
 
       {/* ── Normal Move button ── */}
-      {hasNormalOptions && (
+      {hasNormalOptions ? (
         <button
           ref={normalBtnRef}
           disabled={isUpdating}
           onClick={openNormal}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 bg-white hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-indigo-200 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isUpdating ? (
             <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin inline-block" />
           ) : (
             <>
-              Move
+              Move to...
               <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
                 <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </>
           )}
         </button>
+      ) : (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-slate-400 bg-slate-50 border border-slate-200">
+          No standard moves
+        </span>
       )}
 
-      {/* ── Exceptional Move trigger ── */}
+      {/* ── Separator between standard and exceptional ── */}
+      {canDoAdvancedMove && <span className="w-px h-4 bg-slate-200 flex-shrink-0" />}
+
+      {/* ── Exceptional Move trigger — deliberately understated: plain text link
+            styling (no border, no fill, italic, very small, muted gray) so it
+            reads as a rare administrative override, never a normal workflow action. ── */}
       {canDoAdvancedMove && (
         <button
           ref={advancedBtnRef}
           disabled={isUpdating}
           onClick={openAdvanced}
-          title="Exceptional Move — use only for exceptional operational corrections. Bypasses standard recruitment workflow."
-          className="inline-flex items-center gap-0.5 text-[10px] text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed underline underline-offset-2"
+          title="Administrative override. Use only when bypassing the normal workflow."
+          className="inline-flex items-center gap-0.5 px-1 py-1 text-[9px] italic font-normal text-slate-400 bg-transparent border-0 hover:text-slate-500 hover:underline transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Exceptional
-          <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none">
+          exceptional
+          <svg className="w-2 h-2" viewBox="0 0 12 12" fill="none">
             <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
@@ -469,6 +487,10 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
             <NotePanel />
           ) : (
             <>
+              <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-100 rounded-t-xl">
+                <p className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider">Standard Move</p>
+                <p className="text-[10px] text-indigo-600 mt-0.5">Allowed transitions from current stage</p>
+              </div>
               <GroupSection label="Forward" statuses={groups.forward} wfLabels={wfLabels} onSelect={selectStatus} prev={false} />
               <GroupSection label="Back / Reopen" statuses={groups.back_reopen} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0} />
               <GroupSection label="Pause / Close" statuses={groups.pause_close} wfLabels={wfLabels} onSelect={selectStatus} prev={groups.forward.length > 0 || groups.back_reopen.length > 0} />
@@ -543,8 +565,8 @@ export const WorkflowActionMenu: React.FC<WorkflowActionMenuProps> = ({
               <div className="grid grid-cols-3 gap-2 items-center text-sm">
                 <div>
                   <p className="text-xs font-semibold text-slate-600 uppercase mb-1">From</p>
-                  <div className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${WORKFLOW_STATUS_STYLES[currentStatus] ?? 'bg-slate-100 text-slate-700'}`}>
-                    {wfLabels[currentStatus]}
+                  <div className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${WORKFLOW_STATUS_STYLES[safeStatus] ?? 'bg-slate-100 text-slate-700'}`}>
+                    {wfLabels[safeStatus]}
                   </div>
                 </div>
                 <div className="flex justify-center">

@@ -1147,6 +1147,44 @@ async def _score_cv_async(
                     application_id, email_exc,
                 )
 
+            # ── Post-scoring: AI knockout analysis ────────────────────────────
+            # Only runs automatically for email intake (email_forwarding,
+            # platform_email).  Public apply fills answers via form; manual
+            # upload can trigger analysis manually from the UI.
+            try:
+                from services.knockout_questions_service import job_has_active_knockout_questions
+                from services.knockout_analysis_service import run_knockout_analysis
+                from sqlalchemy import text as _text
+                _src_row = await db.execute(
+                    _text("SELECT submission_source FROM applications WHERE application_id = :aid"),
+                    {"aid": application_id},
+                )
+                _submission_source = _src_row.scalar_one_or_none() or ""
+                _email_intake = _submission_source in ("email_forwarding", "platform_email")
+                if _email_intake and await job_has_active_knockout_questions(db, job_id):
+                    suggestions, _ko_reason = await run_knockout_analysis(
+                        db=db,
+                        application_id=application_id,
+                        job_id=job_id,
+                        tenant_id=tenant_id,
+                    )
+                    if suggestions:
+                        await db.commit()
+                        logger.info(
+                            "[%s] Knockout analysis stored %d suggestions (source=%s)",
+                            application_id, len(suggestions), _submission_source,
+                        )
+                elif not _email_intake:
+                    logger.debug(
+                        "[%s] Skipping auto knockout analysis for source=%s",
+                        application_id, _submission_source,
+                    )
+            except Exception as ko_exc:
+                logger.warning(
+                    "[%s] Knockout analysis failed (non-critical): %s",
+                    application_id, ko_exc,
+                )
+
     except Exception as exc:
         # Session context manager has already rolled back and closed the
         # connection by the time we reach here — safe to open a new session.

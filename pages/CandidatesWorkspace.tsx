@@ -10,11 +10,11 @@
  * Navigation: clicking a candidate name or the View button opens the job-scoped
  * application detail: /applications?job_id=<job_id>&app_id=<application_id>
  *
- * Phase 4 separation: failed/blocked/pre-AI applications are excluded from
- * recruiter-operational views at the query level. The Awaiting Review quick
- * view always adds processing_status=ai_scored so only recruiter-actionable
- * candidates appear. Failed/Blocked uses the 'failed_or_blocked' backend alias
- * that expands to all system-stopped processing statuses.
+ * Queue structure: two groups — Recruitment Pipeline (all, awaiting_review,
+ * under_review, interviewing, hired, recent) and Attention & Exceptions
+ * (validation_issues, stopped_before_ai). Stopped-before-AI records are excluded
+ * from all pipeline views by default; only the stopped_before_ai exception queue
+ * shows them (processing_status=pre_ai_stopped backend alias).
  *
  * Phase 3d: Inline workflow actions. Each ai_scored row shows a compact "Move
  * to" dropdown driven by VALID_WORKFLOW_TRANSITIONS. Non-ai_scored rows show a
@@ -22,7 +22,7 @@
  * with optimistic UI and toast feedback.
  */
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiService, APIService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
@@ -31,7 +31,6 @@ import {
   CandidateInterview, InterviewFeedback, CandidateApproval, CandidateTag,
   MessageTemplate, CandidateCommunication,
 } from '../types';
-import { APIService } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import {
@@ -62,7 +61,7 @@ interface Candidate {
   client_org_name: string | null;
   status: string | null;           // AI decision: qualified/partial/rejected/null
   processing_status: string;
-  workflow_status: WorkflowStatus;
+  workflow_status: WorkflowStatus | null;
   score: number | null;
   applied_at: string | null;
   updated_at: string | null;
@@ -80,6 +79,11 @@ interface Candidate {
   is_talent_pool?: boolean;
   preferred_contact_email?: string | null;
   preferred_contact_source?: string | null;
+  stopped_reason?: string | null;
+  security_check_status?: 'passed' | 'warning' | 'blocked' | null;
+  security_risk_level?: 'low' | 'medium' | 'high' | null;
+  /** null = not validated; 'validated'|'not_supported'|'suggestion'|'cannot_determine'|'contradiction' */
+  validation_summary?: 'validated' | 'not_supported' | 'suggestion' | 'cannot_determine' | 'contradiction' | null;
 }
 
 interface Pagination {
@@ -96,10 +100,15 @@ interface SavedViewFilters {
   aiResultFilter?:   string;
   campaignFilter?:   string;
   clientFilter?:     string;
+  jobFilter?:        string;
   search?:           string;
   assignedFilter?:   string;
-  tagFilter?:        string[];
-  talentPoolOnly?:   boolean;
+  tagFilter?:             string[];
+  talentPoolOnly?:        boolean;
+  hasNotesFilter?:        boolean;
+  possibleDuplicateFilter?: boolean;
+  appliedAfter?:          string;
+  appliedBefore?:         string;
 }
 
 interface SavedView {
@@ -130,10 +139,10 @@ type QuickView =
   | 'awaiting_review'
   | 'under_review'
   | 'interviewing'
-  | 'in_process'
   | 'hired'
-  | 'failed_blocked'
-  | 'recent';
+  | 'recent'
+  | 'stopped_before_ai'
+  | 'validation_issues';
 
 interface QuickViewDef {
   id: QuickView;
@@ -142,12 +151,18 @@ interface QuickViewDef {
   params: Record<string, string>;
 }
 
-const QUICK_VIEWS: QuickViewDef[] = [
+// Group A: recruiter workflow pipeline
+const PIPELINE_VIEWS: QuickViewDef[] = [
+  {
+    id: 'all',
+    labelEn: 'All Candidates',
+    labelAr: 'جميع المرشحين',
+    params: {},
+  },
   {
     id: 'awaiting_review',
     labelEn: 'Awaiting Review',
     labelAr: 'في انتظار المراجعة',
-    // Only recruiter-actionable: must be ai_scored, not failed/blocked
     params: { workflow_status: 'awaiting_review', processing_status: 'ai_scored' },
   },
   {
@@ -163,29 +178,32 @@ const QUICK_VIEWS: QuickViewDef[] = [
     params: { workflow_status: 'interviewing' },
   },
   {
-    id: 'in_process',
-    labelEn: 'In Process',
-    labelAr: 'قيد المعالجة',
-    params: {},
-  },
-  {
     id: 'hired',
     labelEn: 'Hired',
     labelAr: 'تم التعيين',
     params: { workflow_status: 'hired' },
   },
   {
-    id: 'failed_blocked',
-    labelEn: 'Failed / Blocked',
-    labelAr: 'فشل / محظور',
-    // 'failed_or_blocked' is a backend alias that expands to all system-stopped statuses
-    params: { processing_status: 'failed_or_blocked' },
-  },
-  {
     id: 'recent',
     labelEn: 'Recent',
     labelAr: 'حديثاً',
     params: { sort_by: 'applied_at', sort_order: 'desc' },
+  },
+];
+
+// Group B: exception / attention queues
+const ATTENTION_VIEWS: QuickViewDef[] = [
+  {
+    id: 'validation_issues',
+    labelEn: 'Validation Issues',
+    labelAr: 'مشاكل التحقق',
+    params: { validation_issues: 'true' },
+  },
+  {
+    id: 'stopped_before_ai',
+    labelEn: 'Stopped Before AI',
+    labelAr: 'موقوف قبل الذكاء',
+    params: { processing_status: 'pre_ai_stopped' },
   },
 ];
 
@@ -200,12 +218,15 @@ const T = {
     // Table columns
     colCandidate: 'Candidate',
     colJob: 'Job',
-    colAiMatch: 'AI Match',
-    colAiResult: 'AI Result',
+    colAiScore: 'AI Score',
+    colDecision: 'AI Recommendation',
     colWorkflow: 'Workflow',
     colProcessing: 'Processing',
     colApplied: 'Applied',
     colActions: '',
+    // Queue group labels
+    queueGroupPipeline: 'Pipeline',
+    queueGroupAttention: 'Attention',
     // Action
     actionView: 'View',
     // Filters
@@ -217,6 +238,12 @@ const T = {
     filterSearch: 'Search candidate…',
     clearFilters: 'Clear filters',
     allStatuses: 'All',
+    exportButton: 'Export',
+    exportCsv: 'Export CSV',
+    exportExcel: 'Export Excel',
+    exportPdf: 'Export PDF',
+    exporting: 'Exporting…',
+    exportError: 'Export failed. Please try again.',
     // Pagination
     showing: 'Showing',
     of: 'of',
@@ -229,7 +256,10 @@ const T = {
     decNotScored: 'Not Scored',
     // Processing labels
     procPending: 'Pending',
+    procInProgress: 'In Progress',
     procAiScored: 'AI Scored',
+    procStoppedBeforeAi: 'Stopped Before AI',
+    // Legacy labels kept for existing saved-view backward compat
     procFailed: 'Failed',
     procSecurityBlocked: 'Security Blocked',
     procDuplicateBlocked: 'Duplicate Blocked',
@@ -357,6 +387,101 @@ const T = {
       talent_pool: 'Talent Pool',
       general: 'General',
     } as Record<string, string>,
+    // Screening tab
+    screeningTab: 'Screening',
+    screeningNoQuestions: 'No knockout questions configured for this job.',
+    knockoutNotAnswered: 'Not Answered',
+    knockoutSource: 'Source',
+    knockoutSourceCandidate: 'Candidate (Form)',
+    knockoutSourceCandidateEmail: 'Candidate (Email)',
+    knockoutSourceRecruiter: 'Recruiter Entered',
+    knockoutSourceAI: 'AI Extracted',
+    knockoutSourceAICV: 'AI (CV)',
+    knockoutSourceAIEmail: 'AI (Email)',
+    knockoutSourceAICVEmail: 'AI (CV + Email)',
+    knockoutMethodDirect: 'Direct',
+    knockoutMethodInferred: 'Inferred',
+    knockoutMethodApproved: 'Approved',
+    knockoutMethodManual: 'Manual',
+    knockoutMethodNotFound: 'Not Found',
+    knockoutEditAnswer: 'Edit',
+    knockoutSaveAnswer: 'Save',
+    knockoutCancelEdit: 'Cancel',
+    knockoutEditPlaceholder: 'Enter answer',
+    knockoutRequired: 'Required',
+    knockoutPassingCriteria: 'Passing Criteria',
+    knockoutPassed: 'Passed',
+    knockoutFailed: 'Failed',
+    knockoutNoCriteria: 'No Criteria',
+    knockoutNotEvaluated: 'Not Evaluated',
+    knockoutAnswer: 'Answer',
+    knockoutCriteriaPass: (op: string, val: string) => `Pass if ${op} ${val}`,
+    knockoutCriteriaAnswers: (answers: string[]) => `Must answer: ${answers.join(' or ')}`,
+    knockoutGenerateSuggestions: 'Run Screening Validation',
+    knockoutValidationCompleted: '✓ Validation Completed',
+    knockoutValidationOutdated: '⚠ Outdated',
+    knockoutAlreadyCompleted: 'Screening validation already completed. No changes detected since last run.',
+    knockoutGenerating: 'Validating…',
+    knockoutAISuggested: 'Suggested from CV',
+    knockoutAllAnswered: 'All screening questions have answers.',
+    knockoutNoSuggestionsFound: 'No validation results could be generated.',
+    knockoutNoContentForAI: 'No CV/email content available for screening validation.',
+    knockoutAnalysisFailed: 'Screening validation failed.',
+    knockoutCvValidation: 'Screening Validation',
+    knockoutSupportedByCv: 'Supported by CV',
+    knockoutContradictedByCv: 'Contradicted by CV',
+    knockoutNotSupportedByCv: 'Not in CV',
+    knockoutCannotValidate: 'Cannot Validate',
+    knockoutCannotDetermine: 'Cannot Determine',
+    knockoutSuggestionSourceCV: 'from CV',
+    knockoutSuggestionSourceEmail: 'from Email',
+    knockoutSuggestionSourceBoth: 'from CV + Email',
+    knockoutSuggestionSourceCandidateEmail: 'Candidate wrote in email',
+    knockoutSuggestionConfidence: 'Confidence',
+    knockoutSuggestionEvidence: 'Evidence',
+    knockoutSuggestionAccept: 'Accept',
+    knockoutSuggestionIgnore: 'Ignore',
+    knockoutAccept: 'Accept',
+    knockoutEditAndAccept: 'Edit & Accept',
+    knockoutAcceptEdited: 'Accept Edited',
+    knockoutIgnore: 'Ignore',
+    knockoutVerified: 'Verified',
+    knockoutInferred: 'Inferred',
+    knockoutNoEvidence: 'No Evidence',
+    knockoutContradiction: 'Contradiction',
+    knockoutValidationLastRun: 'Last Run',
+    knockoutValidationQuestionsProcessed: 'Questions',
+    knockoutValidationPromptVersion: 'Prompt',
+    knockoutValidationModel: 'Model',
+    knockoutValidationStatusLabel: 'Status',
+    knockoutValidationAnswersValidated: 'validated',
+    knockoutValidationSuggested: 'suggested',
+    knockoutValidationCannotDetermine: 'cannot determine',
+    knockoutSeeMore: 'More',
+    knockoutSeeLess: 'Less',
+    knockoutReasoning: 'Reasoning',
+    knockoutFinalAnswer: 'Final Answer',
+    knockoutCannotDetermineHelper: 'The AI could not find sufficient evidence in the CV or email to determine an answer.',
+    knockoutCannotValidateHelper: 'The AI could not validate the existing answer using available CV evidence.',
+    // CW-1: new view labels
+    viewStoppedBeforeAi: 'Stopped Before AI',
+    viewValidationIssues: 'Validation Issues',
+    colStopReason: 'Stop Reason',
+    // CW-1: flags
+    flagDuplicate: 'Duplicate',
+    flagConfirmedDuplicate: 'Confirmed Duplicate',
+    flagSecurity: 'Security',
+    flagTalentPool: 'Talent Pool',
+    // CW-1: new filters
+    filterHasNotes: 'Has Notes',
+    filterPossibleDuplicate: 'Possible Duplicate',
+    filterAppliedAfter: 'From',
+    filterAppliedBefore: 'To',
+    filterAppliedDateRange: 'Applied Date',
+    // CW-1: attention indicator tooltips — application-level concerns only
+    // (knockout/screening validation lives in Application Details, not the row)
+    attentionRed: 'Needs attention: confirmed duplicate or security block',
+    attentionYellow: 'Review recommended: possible duplicate or security warning',
   },
   ar: {
     pageTitle: 'المرشحون',
@@ -365,12 +490,15 @@ const T = {
     noResultsHint: 'حاول مسح الفلاتر أو اختيار عرض مختلف.',
     colCandidate: 'المرشح',
     colJob: 'الوظيفة',
-    colAiMatch: 'تطابق الذكاء',
-    colAiResult: 'نتيجة الذكاء',
+    colAiScore: 'درجة الذكاء',
+    colDecision: 'توصية الذكاء الاصطناعي',
     colWorkflow: 'مرحلة التوظيف',
     colProcessing: 'حالة المعالجة',
     colApplied: 'تاريخ التقديم',
     colActions: '',
+    // Queue group labels
+    queueGroupPipeline: 'خط التوظيف',
+    queueGroupAttention: 'تنبيهات',
     actionView: 'عرض',
     filterWorkflow: 'مرحلة التوظيف',
     filterProcessing: 'حالة المعالجة',
@@ -380,6 +508,12 @@ const T = {
     filterSearch: 'بحث عن مرشح…',
     clearFilters: 'مسح الفلاتر',
     allStatuses: 'الكل',
+    exportButton: 'تصدير',
+    exportCsv: 'تصدير CSV',
+    exportExcel: 'تصدير Excel',
+    exportPdf: 'تصدير PDF',
+    exporting: 'جارٍ التصدير…',
+    exportError: 'فشل التصدير. حاول مرة أخرى.',
     showing: 'عرض',
     of: 'من',
     prev: 'السابق',
@@ -389,7 +523,10 @@ const T = {
     decRejected: 'مرفوض',
     decNotScored: 'غير مقيَّم',
     procPending: 'معلق',
+    procInProgress: 'قيد المعالجة',
     procAiScored: 'مقيَّم بالذكاء',
+    procStoppedBeforeAi: 'توقف قبل الذكاء',
+    // Legacy labels kept for backward compat
     procFailed: 'فشل',
     procSecurityBlocked: 'محظور أمنياً',
     procDuplicateBlocked: 'مكرر موقوف',
@@ -517,6 +654,100 @@ const T = {
       talent_pool: 'مجموعة مواهب',
       general: 'عام',
     } as Record<string, string>,
+    // Screening tab
+    screeningTab: 'الفرز',
+    screeningNoQuestions: 'لا توجد أسئلة فرز مسبق لهذه الوظيفة.',
+    knockoutNotAnswered: 'لم تُجب',
+    knockoutSource: 'المصدر',
+    knockoutSourceCandidate: 'المتقدم (نموذج)',
+    knockoutSourceCandidateEmail: 'المتقدم (بريد)',
+    knockoutSourceRecruiter: 'أدخله المسؤول',
+    knockoutSourceAI: 'مستخرج بالذكاء الاصطناعي',
+    knockoutSourceAICV: 'ذكاء اصطناعي (السيرة)',
+    knockoutSourceAIEmail: 'ذكاء اصطناعي (البريد)',
+    knockoutSourceAICVEmail: 'ذكاء اصطناعي (السيرة + البريد)',
+    knockoutMethodDirect: 'مباشر',
+    knockoutMethodInferred: 'استنتاج',
+    knockoutMethodApproved: 'موافقة',
+    knockoutMethodManual: 'يدوي',
+    knockoutMethodNotFound: 'غير موجود',
+    knockoutEditAnswer: 'تعديل',
+    knockoutSaveAnswer: 'حفظ',
+    knockoutCancelEdit: 'إلغاء',
+    knockoutEditPlaceholder: 'أدخل الإجابة',
+    knockoutRequired: 'إلزامي',
+    knockoutPassingCriteria: 'معايير الاجتياز',
+    knockoutPassed: 'اجتاز',
+    knockoutFailed: 'لم يجتز',
+    knockoutNoCriteria: 'لا معايير',
+    knockoutNotEvaluated: 'غير مُقيَّم',
+    knockoutAnswer: 'الإجابة',
+    knockoutCriteriaPass: (op: string, val: string) => `ينجح إذا ${op} ${val}`,
+    knockoutCriteriaAnswers: (answers: string[]) => `يجب الإجابة بـ: ${answers.join(' أو ')}`,
+    knockoutGenerateSuggestions: 'تشغيل التحقق من الفرز',
+    knockoutValidationCompleted: '✓ اكتمل التحقق',
+    knockoutValidationOutdated: '⚠ قديم',
+    knockoutAlreadyCompleted: 'اكتمل التحقق من الفرز. لم يُكتشف أي تغيير.',
+    knockoutGenerating: 'جارٍ التحقق…',
+    knockoutAISuggested: 'مقترح من السيرة الذاتية',
+    knockoutAllAnswered: 'جميع أسئلة الفرز لها إجابات.',
+    knockoutNoSuggestionsFound: 'لم يتم توليد نتائج تحقق.',
+    knockoutNoContentForAI: 'لا يوجد محتوى CV/بريد للتحقق.',
+    knockoutAnalysisFailed: 'فشل التحقق من الفرز.',
+    knockoutCvValidation: 'التحقق من الفرز',
+    knockoutSupportedByCv: 'مدعوم',
+    knockoutContradictedByCv: 'متناقض',
+    knockoutNotSupportedByCv: 'غير مذكور',
+    knockoutCannotValidate: 'لا يمكن التحقق',
+    knockoutCannotDetermine: 'لا يمكن التحديد',
+    knockoutSuggestionSourceCV: 'من السيرة الذاتية',
+    knockoutSuggestionSourceEmail: 'من البريد',
+    knockoutSuggestionSourceBoth: 'من السيرة + البريد',
+    knockoutSuggestionSourceCandidateEmail: 'كتبه المتقدم في البريد',
+    knockoutSuggestionConfidence: 'الثقة',
+    knockoutSuggestionEvidence: 'الدليل',
+    knockoutSuggestionAccept: 'قبول',
+    knockoutSuggestionIgnore: 'تجاهل',
+    knockoutAccept: 'قبول',
+    knockoutEditAndAccept: 'تعديل وقبول',
+    knockoutAcceptEdited: 'قبول المعدَّل',
+    knockoutIgnore: 'تجاهل',
+    knockoutVerified: 'مُتحقَّق',
+    knockoutInferred: 'مستنتَج',
+    knockoutNoEvidence: 'لا دليل',
+    knockoutContradiction: 'تناقض',
+    knockoutValidationLastRun: 'آخر تشغيل',
+    knockoutValidationQuestionsProcessed: 'الأسئلة',
+    knockoutValidationPromptVersion: 'النظام',
+    knockoutValidationModel: 'النموذج',
+    knockoutValidationStatusLabel: 'الحالة',
+    knockoutValidationAnswersValidated: 'تم التحقق',
+    knockoutValidationSuggested: 'مقترح',
+    knockoutValidationCannotDetermine: 'لا يمكن التحديد',
+    knockoutSeeMore: 'المزيد',
+    knockoutSeeLess: 'أقل',
+    knockoutReasoning: 'التفسير',
+    knockoutFinalAnswer: 'الإجابة النهائية',
+    knockoutCannotDetermineHelper: 'لم يتمكن الذكاء الاصطناعي من إيجاد أدلة كافية لتحديد إجابة.',
+    knockoutCannotValidateHelper: 'لم يتمكن الذكاء الاصطناعي من التحقق من الإجابة باستخدام الأدلة المتاحة.',
+    // CW-1: new view labels
+    viewStoppedBeforeAi: 'موقوف قبل الذكاء',
+    viewValidationIssues: 'مشاكل التحقق',
+    colStopReason: 'سبب الإيقاف',
+    // CW-1: flags
+    flagDuplicate: 'مكرر',
+    flagConfirmedDuplicate: 'مكرر مؤكد',
+    flagSecurity: 'أمني',
+    flagTalentPool: 'مجموعة مواهب',
+    // CW-1: new filters
+    filterHasNotes: 'يحتوي ملاحظات',
+    filterPossibleDuplicate: 'مكرر محتمل',
+    filterAppliedAfter: 'من',
+    filterAppliedBefore: 'إلى',
+    filterAppliedDateRange: 'تاريخ التقديم',
+    // CW-1: attention indicator tooltips — application-level concerns only
+    attentionRed: 'يحتاج انتباهاً: مكرر مؤكد أو محظور أمنياً',
+    attentionYellow: 'مراجعة موصى بها: مكرر محتمل أو تحذير أمني',
   },
 };
 
@@ -547,16 +778,18 @@ function processingStyle(status: string): string {
 
 function processingLabel(status: string, t: typeof T['en']): string {
   const map: Record<string, string> = {
+    // Primary display labels
     ai_scored:          t.procAiScored,
-    failed:             t.procFailed,
-    processing_failed:  t.procProcessingFailed,
-    extraction_failed:  t.procExtractionFailed,
+    pending:            t.procPending,
+    queued:             t.procInProgress,
+    processing:         t.procInProgress,
+    // All failed sub-types map to the same recruiter-facing label
+    failed:             t.procStoppedBeforeAi,
     security_blocked:   t.procSecurityBlocked,
     duplicate_blocked:  t.procDuplicateBlocked,
-    stopped:            t.procStopped,
-    queued:             t.procQueued,
-    processing:         t.procProcessing,
-    pending:            t.procPending,
+    extraction_failed:  t.procExtractionFailed,
+    processing_failed:  t.procProcessingFailed,
+    stopped:            t.procStoppedBeforeAi,
   };
   return map[status] ?? status;
 }
@@ -810,10 +1043,25 @@ interface AppAnalysis {
   evaluation_notes?: string;
 }
 
+interface ScoreDimension {
+  achieved: number;
+  max: number;
+  weight: number | null;
+}
+
 interface AppDetail {
   application_id: string;
   overall_score?: number;
   decision?: string;
+  scores?: {
+    skills?: ScoreDimension;
+    experience?: ScoreDimension;
+    education?: ScoreDimension;
+    certifications?: ScoreDimension;
+    soft_skills?: ScoreDimension;
+    domain_knowledge?: ScoreDimension;
+    other_requirements?: ScoreDimension;
+  };
   analysis?: AppAnalysis;
   recruiter_notes?: string | null;
   workflow_history?: Array<{
@@ -836,7 +1084,11 @@ interface AppDetail {
   email_sender_address?: string | null;
   preferred_contact_email?: string | null;
   preferred_contact_source?: string | null;
+  submission_source?: string | null;
   communications?: CandidateCommunication[];
+  knockout_answers?: import('../types').KnockoutAnswerRecord[];
+  knockout_suggestions?: import('../types').KnockoutSuggestionRecord[];
+  job_id?: string;
 }
 
 interface CandidateDetailDrawerProps {
@@ -890,7 +1142,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const detailForRef = useRef<string | null>(null);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'overview' | 'discussion' | 'interviews' | 'approvals' | 'communication'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'discussion' | 'interviews' | 'approvals' | 'communication' | 'screening'>('overview');
   const [comments, setComments] = useState<CandidateComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
@@ -966,6 +1218,17 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const [savingPrefContact, setSavingPrefContact] = useState(false);
   const [localPreferred, setLocalPreferred] = useState<{ email: string | null; source: string | null } | null>(null);
 
+  // Knockout AI suggestion state
+  const [wsSuggestions, setWsSuggestions] = useState<import('../types').KnockoutSuggestionRecord[]>([]);
+  const [wsValidations, setWsValidations] = useState<import('../types').KnockoutValidationRecord[]>([]);
+  const [wsValidationRun, setWsValidationRun] = useState<import('../types').KnockoutValidationRun | null>(null);
+  const [wsValidationLocalStale, setWsValidationLocalStale] = useState(false);
+  const [wsEvidenceExpanded, setWsEvidenceExpanded] = useState<Set<string>>(new Set());
+  const [wsKoAnalyzing, setWsKoAnalyzing] = useState(false);
+  const [wsKoError, setWsKoError] = useState<string | null>(null);
+  const [wsEditingSuggQid, setWsEditingSuggQid] = useState<string | null>(null);
+  const [wsEditingSuggValue, setWsEditingSuggValue] = useState('');
+
   // Must come before any early return — Rules of Hooks
 
   // Sync notes text when candidate changes; do not overwrite unsaved edits
@@ -1020,6 +1283,18 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate?.application_id, open, token, detailVersion]);
+
+  // Sync knockout suggestions when detail loads or candidate changes
+  useEffect(() => {
+    setWsSuggestions(detail?.knockout_suggestions ?? []);
+    setWsValidations(detail?.knockout_validations ?? []);
+    setWsValidationRun((detail as any)?.latest_validation_run ?? null);
+    setWsValidationLocalStale(false);
+    setWsEvidenceExpanded(new Set());
+    setWsKoError(null);
+    setWsEditingSuggQid(null);
+    setWsEditingSuggValue('');
+  }, [detail]);
 
   // Load comments when switching to Discussion tab or when candidate changes
   useEffect(() => {
@@ -1180,6 +1455,72 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
       setDetail(prev => prev ? { ...prev, communications: updated } : prev);
     } catch {
       // silently ignore — optimistic state already applied
+    }
+  };
+
+  const handleWsGenerateSuggestions = async () => {
+    if (!candidate?.application_id || !token || wsKoAnalyzing) return;
+    setWsKoAnalyzing(true);
+    setWsKoError(null);
+    try {
+      const api = new APIService(token);
+      const result = await api.triggerScreeningValidation(candidate.application_id);
+      if (result?.validations && Array.isArray(result.validations)) {
+        setWsValidations(result.validations);
+      }
+      if (result?.suggestions && Array.isArray(result.suggestions)) {
+        setWsSuggestions(result.suggestions);
+      }
+      if (result?.run) {
+        setWsValidationRun(result.run);
+        setWsValidationLocalStale(false);
+      }
+      if (result?.status === 'already_completed') {
+        setWsKoError(t.knockoutAlreadyCompleted);
+      }
+    } catch (err: any) {
+      setWsKoError(err?.message || t.knockoutAnalysisFailed);
+    } finally {
+      setWsKoAnalyzing(false);
+    }
+  };
+
+  const handleWsAcceptSuggestion = async (suggestionId: string, questionId: string, overrideAnswer?: string) => {
+    if (!candidate?.application_id || !token) return;
+    try {
+      const api = new APIService(token);
+      await api.acceptKnockoutSuggestion(candidate.application_id, questionId, overrideAnswer);
+      setWsSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestionId));
+      setWsEditingSuggQid(null);
+      setWsEditingSuggValue('');
+      setWsValidationLocalStale(true);
+      addToastRef.current('Answer accepted.', 'success');
+      // Refresh detail to pick up the saved answer
+      detailForRef.current = null;
+      const raw: any = await apiService.get(
+        WEBHOOK_CONFIG.APPLICATION_DETAILS_WEBHOOK_URL,
+        { application_id: candidate.application_id },
+        token,
+      );
+      const detailObj: AppDetail | null = Array.isArray(raw) ? raw[0] : raw;
+      if (detailObj) {
+        detailObj.communications = detail?.communications || [];
+        setDetail(detailObj);
+      }
+    } catch (err: any) {
+      addToastRef.current(err?.message || 'Failed to accept suggestion.', 'error');
+    }
+  };
+
+  const handleWsIgnoreSuggestion = async (suggestionId: string, questionId: string) => {
+    if (!candidate?.application_id || !token) return;
+    try {
+      const api = new APIService(token);
+      await api.ignoreKnockoutSuggestion(candidate.application_id, questionId);
+      setWsSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestionId));
+      setWsValidationLocalStale(true);
+    } catch (err: any) {
+      addToastRef.current(err?.message || 'Failed to ignore suggestion.', 'error');
     }
   };
 
@@ -1506,8 +1847,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     }
   };
 
-  const wfStyle = WORKFLOW_STATUS_STYLES[candidate.workflow_status] ?? 'bg-slate-100 text-slate-600';
-  const wfLabel = wfLabels[candidate.workflow_status] ?? candidate.workflow_status;
+  const wfStyle = WORKFLOW_STATUS_STYLES[candidate.workflow_status ?? 'awaiting_review'] ?? 'bg-slate-100 text-slate-600';
+  const wfLabel = wfLabels[candidate.workflow_status ?? 'awaiting_review'] ?? candidate.workflow_status;
   const procStyle = processingStyle(candidate.processing_status);
   const procLabel = processingLabel(candidate.processing_status, t);
   const aiStyle = aiDecisionStyle(candidate.status);
@@ -1526,39 +1867,42 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 
       {/* Drawer panel */}
       <div
-        className={`fixed right-0 top-0 bottom-0 w-full sm:w-96 bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto transition-transform duration-300 ${
+        className={`fixed right-0 top-0 bottom-0 w-full md:w-[700px] bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto transition-transform duration-300 ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-semibold text-slate-900 truncate">{candidate.candidate_name || '—'}</h2>
-            <p className="text-xs text-slate-500 mt-0.5 truncate">{candidate.job_title || '—'}</p>
-            {/* Assignee chip */}
-            {candidate.assigned_user_name && (
-              <div className="flex items-center gap-1 mt-1.5">
-                <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold flex items-center justify-center">
-                  {candidate.assigned_user_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+        {/* Header + Tabs wrapper — single sticky block to avoid gaps */}
+        <div className="sticky top-0 z-10 bg-white">
+          {/* Header */}
+          <div className="border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-semibold text-slate-900 truncate">{candidate.candidate_name || '—'}</h2>
+              <p className="text-xs text-slate-500 mt-0.5 truncate">{candidate.job_title || '—'}</p>
+              {/* Assignee chip */}
+              {candidate.assigned_user_name && (
+                <div className="flex items-center gap-1 mt-1.5">
+                  <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold flex items-center justify-center">
+                    {candidate.assigned_user_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                  </div>
+                  <span className="text-[10px] text-emerald-700">{candidate.assigned_user_name}</span>
                 </div>
-                <span className="text-[10px] text-emerald-700">{candidate.assigned_user_name}</span>
-              </div>
-            )}
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
-          >
-            <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
 
-        {/* Tab navigation */}
-        <div className="sticky top-[88px] bg-white border-b border-slate-200 px-6 flex gap-1 overflow-x-auto">
+          {/* Tab navigation */}
+          <div className="border-b border-slate-200 px-6 flex gap-1 overflow-x-auto">
           {([
             { key: 'overview', label: 'Overview', badge: null },
+            { key: 'screening', label: t.screeningTab, badge: (detail?.knockout_answers?.length ?? 0) > 0 ? detail!.knockout_answers!.length : null },
             { key: 'interviews', label: t.interviews, badge: interviews.length > 0 ? interviews.length : null },
             { key: 'approvals', label: t.approvalsTab, badge: approvals.length > 0 ? approvals.length : null },
             { key: 'discussion', label: t.discussion, badge: comments.length > 0 ? comments.length : null },
@@ -1581,6 +1925,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               )}
             </button>
           ))}
+          </div>
         </div>
 
         {/* Discussion Tab */}
@@ -2194,10 +2539,33 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 
         {/* Communication Tab */}
         {activeTab === 'communication' && (() => {
-          // Effective preferred contact: local state takes precedence over candidate prop (updated after save)
+          // Resolve the best candidate email from detail when no preferred contact is manually set.
+          // For forwarded/platform/manual intake the submission email may belong to a recruiter —
+          // prefer the CV-extracted email instead. For public apply, submission email is the candidate.
+          const forwarderIntake = (
+            detail?.submission_source === 'email_forwarding' ||
+            detail?.submission_source === 'platform_email' ||
+            detail?.submission_source === 'manual_upload'
+          );
+          const resolvedFromDetail: { email: string | null; source: string | null } = (() => {
+            if (!detail) return { email: null, source: null };
+            if (forwarderIntake) {
+              if (detail.candidate_email_from_cv)
+                return { email: detail.candidate_email_from_cv, source: 'cv_extracted' };
+              return { email: null, source: null };
+            }
+            // public_apply (or unknown): submission email is the candidate's own address
+            if (detail.candidate_email)
+              return { email: detail.candidate_email, source: detail.submission_source || null };
+            if (detail.candidate_email_from_cv)
+              return { email: detail.candidate_email_from_cv, source: 'cv_extracted' };
+            return { email: null, source: null };
+          })();
+
+          // Effective preferred contact: local state → DB preferred → resolved from intake
           const effectivePreferred = localPreferred ?? {
-            email: candidate.preferred_contact_email ?? null,
-            source: candidate.preferred_contact_source ?? null,
+            email: candidate.preferred_contact_email ?? resolvedFromDetail.email,
+            source: candidate.preferred_contact_source ?? resolvedFromDetail.source,
           };
           const sourceLabels: Record<string, string> = {
             manual_upload: 'Manual Upload', email_forwarding: 'Email Fwd',
@@ -2676,6 +3044,346 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           );
         })()}
 
+        {/* Screening Tab */}
+        {activeTab === 'screening' && (
+          <div className="px-6 py-4">
+            {detailLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 py-6">
+                <span className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin inline-block" />
+                Loading…
+              </div>
+            ) : (() => {
+              const koAnswers = detail?.knockout_answers ?? [];
+              if (koAnswers.length === 0) {
+                return <p className="text-sm text-slate-400 italic py-4">{t.screeningNoQuestions}</p>;
+              }
+
+              type EvalResult = 'passed' | 'failed' | 'no_criteria' | 'not_evaluated' | 'not_answered';
+
+              const evaluateAnswer = (qa: import('../types').KnockoutAnswerRecord, rawVal: string | null | undefined): EvalResult => {
+                if (rawVal == null || rawVal === '') return 'not_answered';
+                const pc = qa.passing_criteria;
+                if (!pc) return 'no_criteria';
+                if ((qa.question_type === 'yes_no' || qa.question_type === 'single_choice') && pc.passing_answers?.length) {
+                  return pc.passing_answers.some(a => a.toLowerCase() === rawVal.toLowerCase()) ? 'passed' : 'failed';
+                }
+                if (qa.question_type === 'number' && pc.operator != null && pc.value != null) {
+                  const num = parseFloat(rawVal);
+                  if (isNaN(num)) return 'not_evaluated';
+                  const ops: Record<string, boolean> = { '>=': num >= pc.value!, '>': num > pc.value!, '=': num === pc.value!, '<=': num <= pc.value!, '<': num < pc.value! };
+                  const r = ops[pc.operator!];
+                  return r === undefined ? 'not_evaluated' : (r ? 'passed' : 'failed');
+                }
+                return 'not_evaluated';
+              };
+
+              const evalBadge = (result: EvalResult) => {
+                if (result === 'not_answered') return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-400 italic">{t.knockoutNotAnswered}</span>;
+                if (result === 'passed') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-700"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>{t.knockoutPassed}</span>;
+                if (result === 'failed') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-700"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>{t.knockoutFailed}</span>;
+                if (result === 'no_criteria') return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-500">{t.knockoutNoCriteria}</span>;
+                return <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-700">{t.knockoutNotEvaluated}</span>;
+              };
+
+              const formatCriteria = (qa: import('../types').KnockoutAnswerRecord): string | null => {
+                const pc = qa.passing_criteria;
+                if (!pc) return null;
+                if (qa.question_type === 'number' && pc.operator != null && pc.value != null) return t.knockoutCriteriaPass(pc.operator!, String(pc.value));
+                if ((qa.question_type === 'yes_no' || qa.question_type === 'single_choice') && pc.passing_answers?.length) return t.knockoutCriteriaAnswers(pc.passing_answers);
+                return null;
+              };
+
+              const sourceLabel = (src: string | null | undefined) => {
+                if (!src || src === 'candidate_provided' || src === 'candidate_form') return t.knockoutSourceCandidate;
+                if (src === 'candidate_email') return t.knockoutSourceCandidateEmail;
+                if (src === 'recruiter_entered') return t.knockoutSourceRecruiter;
+                if (src === 'ai_extracted' || src === 'ai_cv') return t.knockoutSourceAICV;
+                if (src === 'ai_email') return t.knockoutSourceAIEmail;
+                if (src === 'ai_cv_email') return t.knockoutSourceAICVEmail;
+                return src;
+              };
+
+              const methodBadge = (method: string | null | undefined) => {
+                if (!method || method === 'direct_statement') {
+                  return (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-green-50 text-green-700 text-[8px] font-black uppercase tracking-widest">
+                      {t.knockoutMethodDirect}
+                    </span>
+                  );
+                }
+                if (method === 'ai_inference') {
+                  return (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[8px] font-black uppercase tracking-widest">
+                      {t.knockoutMethodInferred}
+                    </span>
+                  );
+                }
+                if (method === 'recruiter_approved') {
+                  return (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[8px] font-black uppercase tracking-widest">
+                      {t.knockoutMethodApproved}
+                    </span>
+                  );
+                }
+                if (method === 'manual_entry') {
+                  return (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[8px] font-black uppercase tracking-widest">
+                      {t.knockoutMethodManual}
+                    </span>
+                  );
+                }
+                if (method === 'not_found') {
+                  return (
+                    <span className="inline-flex items-center px-1 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[8px] font-black uppercase tracking-widest">
+                      {t.knockoutMethodNotFound}
+                    </span>
+                  );
+                }
+                return null;
+              };
+
+              const isPublicApply = detail?.submission_source === 'public_apply';
+              const hasMissing = koAnswers.some(qa => qa.answer_value == null || qa.answer_value === '');
+              const allAnswered = !hasMissing;
+
+              const suggSourceLabel = (src: string | null | undefined) => {
+                if (src === 'candidate_email') return t.knockoutSourceCandidateEmail;
+                if (src === 'ai_cv') return t.knockoutSourceAICV;
+                if (src === 'ai_email') return t.knockoutSourceAIEmail;
+                if (src === 'ai_cv_email') return t.knockoutSourceAICVEmail;
+                if (src === 'not_found') return t.knockoutNotAnswered;
+                return src || '';
+              };
+
+              const isWsValidationFresh = Boolean(wsValidationRun && !wsValidationRun.is_stale && !wsValidationLocalStale);
+
+              return (
+                <div>
+                  {/* Section header: Run button with freshness state */}
+                  {!isPublicApply && (
+                    <div className="flex items-center justify-end mb-3">
+                      {isWsValidationFresh ? (
+                        <button disabled className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg opacity-80 cursor-default">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          {t.knockoutValidationCompleted}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleWsGenerateSuggestions}
+                          disabled={wsKoAnalyzing}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${wsValidationRun && !isWsValidationFresh ? 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100' : 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'}`}
+                        >
+                          {wsKoAnalyzing ? (
+                            <><span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />{t.knockoutGenerating}</>
+                          ) : wsValidationRun && !isWsValidationFresh ? (
+                            <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>{t.knockoutValidationOutdated}</>
+                          ) : (
+                            <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>{t.knockoutGenerateSuggestions}</>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Validation run summary */}
+                  {wsValidationRun && (
+                    <div className={`rounded-lg px-3 py-2 mb-3 flex flex-wrap gap-x-4 gap-y-1 text-[9px] ${wsValidationRun.is_stale || wsValidationLocalStale ? 'bg-amber-50 border border-amber-100' : 'bg-green-50 border border-green-100'}`}>
+                      <span className="font-black uppercase tracking-widest text-slate-400">{t.knockoutValidationStatusLabel}: <span className={wsValidationRun.is_stale || wsValidationLocalStale ? 'text-amber-600' : 'text-green-600'}>{wsValidationRun.is_stale || wsValidationLocalStale ? t.knockoutValidationOutdated : '✓'}</span></span>
+                      <span className="text-slate-400">{t.knockoutValidationLastRun}: <span className="text-slate-500">{new Date(wsValidationRun.created_at).toLocaleString()}</span></span>
+                      {wsValidationRun.questions_count > 0 && <span className="text-slate-400">{t.knockoutValidationQuestionsProcessed}: <span className="text-slate-500">{wsValidationRun.questions_count}</span></span>}
+                      {wsValidationRun.prompt_version && <span className="text-slate-400">{t.knockoutValidationPromptVersion}: <span className="text-slate-500">v{wsValidationRun.prompt_version}</span></span>}
+                      {wsValidationRun.validated_count > 0 && <span className="text-green-600">✓ {wsValidationRun.validated_count} {t.knockoutValidationAnswersValidated}</span>}
+                      {wsValidationRun.suggested_count > 0 && <span className="text-indigo-600">● {wsValidationRun.suggested_count} {t.knockoutValidationSuggested}</span>}
+                    </div>
+                  )}
+
+                  {wsKoError && wsKoError !== t.knockoutAlreadyCompleted && (
+                    <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2 mb-3">{wsKoError}</p>
+                  )}
+                  <div className="divide-y divide-slate-100 -mx-6 px-0">
+                    {koAnswers.map((qa, idx) => {
+                      const displayVal = qa.answer_value;
+                      const evalResult = evaluateAnswer(qa, displayVal);
+                      const criteriaLabel = formatCriteria(qa);
+                      const suggestion = wsSuggestions.find(s => s.question_id === qa.question_id && s.status === 'pending');
+                      const wsValidation = wsValidations.find(v => v.question_id === qa.question_id);
+                      const isEditingThis = wsEditingSuggQid === qa.question_id;
+                      return (
+                        <div key={qa.question_id} className="px-6 py-4 grid grid-cols-1 gap-y-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{idx + 1}. {qa.question_text}
+                                {qa.is_required && <span className="ml-1.5 px-1 py-0.5 bg-slate-100 text-slate-400 text-[9px] font-black uppercase rounded">{t.knockoutRequired}</span>}
+                              </p>
+                            </div>
+                            <div className="flex-shrink-0">{evalBadge(evalResult)}</div>
+                          </div>
+                          <div className="flex items-center gap-4 flex-wrap">
+                            <div>
+                              <span className="text-[10px] font-semibold text-slate-400 uppercase mr-1">{t.knockoutFinalAnswer}:</span>
+                              {displayVal != null && displayVal !== '' ? (
+                                <span className="text-sm font-semibold text-slate-800 capitalize">{displayVal}</span>
+                              ) : (
+                                <span className="text-sm text-slate-400 italic">{t.knockoutNotAnswered}</span>
+                              )}
+                            </div>
+                            {criteriaLabel && (
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-400 uppercase mr-1">{t.knockoutPassingCriteria}:</span>
+                                <span className="text-xs text-slate-600">{criteriaLabel}</span>
+                              </div>
+                            )}
+                            {displayVal != null && displayVal !== '' && qa.answer_source && (
+                              <div className="flex flex-col gap-0.5">
+                                <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                                  {t.knockoutSource}: {sourceLabel(qa.answer_source)}
+                                  {qa.answer_method && methodBadge(qa.answer_method)}
+                                  {qa.confidence != null && (
+                                    <span className="font-mono">{Math.round(qa.confidence * 100)}%</span>
+                                  )}
+                                </span>
+                                {qa.evidence_text && qa.answer_source === 'candidate_email' && qa.answer_method === 'direct_statement' && (
+                                  <span className="text-[10px] text-slate-400 italic line-clamp-1">"{qa.evidence_text}"</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          {/* Screening Validation panel */}
+                          {wsValidation && (() => {
+                            const vstatus = wsValidation.validation_status;
+                            const ev = wsValidation.evidence_text ?? '';
+                            const isExpanded = wsEvidenceExpanded.has(qa.question_id);
+                            const EVIDENCE_PREVIEW = 120;
+                            const showToggle = ev.length > EVIDENCE_PREVIEW;
+                            const displayEvidence = showToggle && !isExpanded ? ev.slice(0, EVIDENCE_PREVIEW) + '…' : ev;
+                            const vsColors: Record<string, string> = {
+                              supported_by_cv:     'bg-green-50 text-green-700',
+                              contradicted_by_cv:  'bg-red-50 text-red-700',
+                              not_supported_by_cv: 'bg-slate-100 text-slate-500',
+                              cannot_validate:     'bg-amber-50 text-amber-600',
+                              suggested:           'bg-indigo-50 text-indigo-600',
+                              cannot_determine:    'bg-slate-100 text-slate-400',
+                            };
+                            const vsLabels: Record<string, string> = {
+                              supported_by_cv:     t.knockoutSupportedByCv,
+                              contradicted_by_cv:  t.knockoutContradictedByCv,
+                              not_supported_by_cv: t.knockoutNotSupportedByCv,
+                              cannot_validate:     t.knockoutCannotValidate,
+                              suggested:           t.knockoutAISuggested,
+                              cannot_determine:    t.knockoutCannotDetermine,
+                            };
+                            const containerClass = vstatus === 'contradicted_by_cv'
+                              ? 'mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 space-y-2'
+                              : vstatus === 'suggested'
+                              ? 'mt-2 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2.5 space-y-2'
+                              : 'mt-2 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2.5 space-y-2';
+                            return (
+                              <div className={containerClass}>
+                                {/* Header */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{t.knockoutCvValidation}</span>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${vsColors[vstatus] ?? 'bg-slate-100 text-slate-500'}`}>
+                                    {vsLabels[vstatus] ?? vstatus}
+                                  </span>
+                                  {wsValidation.confidence != null && wsValidation.confidence > 0 && (
+                                    <span className="text-[9px] text-slate-400 font-mono">{t.knockoutSuggestionConfidence}: {Math.round(wsValidation.confidence * 100)}%</span>
+                                  )}
+                                </div>
+
+                                {/* Helper text for cannot_* statuses */}
+                                {vstatus === 'cannot_determine' && (
+                                  <p className="text-[10px] text-slate-500 italic">{t.knockoutCannotDetermineHelper}</p>
+                                )}
+                                {vstatus === 'cannot_validate' && (
+                                  <p className="text-[10px] text-slate-500 italic">{t.knockoutCannotValidateHelper}</p>
+                                )}
+
+                                {/* Suggested answer + action buttons */}
+                                {vstatus === 'suggested' && wsValidation.suggested_answer && (() => {
+                                  const pendingSugg = suggestion;
+                                  if (!pendingSugg) return null;
+                                  return (
+                                    <>
+                                      <p className="text-sm font-semibold text-indigo-800 capitalize">{wsValidation.suggested_answer}</p>
+                                      {isEditingThis ? (
+                                        <div className="space-y-1.5">
+                                          <input
+                                            type="text"
+                                            value={wsEditingSuggValue}
+                                            onChange={e => setWsEditingSuggValue(e.target.value)}
+                                            className="w-full text-xs border border-indigo-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                                            placeholder={wsValidation.suggested_answer}
+                                          />
+                                          <div className="flex gap-2">
+                                            <button
+                                              onClick={() => handleWsAcceptSuggestion(pendingSugg.suggestion_id, qa.question_id, wsEditingSuggValue.trim() || undefined)}
+                                              className="text-xs font-semibold text-white bg-indigo-600 rounded px-2.5 py-1 hover:bg-indigo-700"
+                                            >{t.knockoutAcceptEdited}</button>
+                                            <button
+                                              onClick={() => { setWsEditingSuggQid(null); setWsEditingSuggValue(''); }}
+                                              className="text-xs text-slate-500 hover:text-slate-700"
+                                            >{t.knockoutCancelEdit}</button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex gap-3 flex-wrap">
+                                          <button
+                                            onClick={() => handleWsAcceptSuggestion(pendingSugg.suggestion_id, qa.question_id)}
+                                            className="text-xs font-semibold text-indigo-700 hover:text-indigo-900"
+                                          >{t.knockoutAccept}</button>
+                                          <button
+                                            onClick={() => { setWsEditingSuggQid(qa.question_id); setWsEditingSuggValue(wsValidation.suggested_answer ?? ''); }}
+                                            className="text-xs font-semibold text-slate-600 hover:text-slate-900"
+                                          >{t.knockoutEditAndAccept}</button>
+                                          <button
+                                            onClick={() => handleWsIgnoreSuggestion(pendingSugg.suggestion_id, qa.question_id)}
+                                            className="text-xs text-slate-400 hover:text-slate-600 ml-auto"
+                                          >{t.knockoutIgnore}</button>
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+
+                                {/* Evidence — collapsible */}
+                                {ev && (
+                                  <div>
+                                    <p className="text-[10px] text-slate-500 italic leading-snug">
+                                      <span className="not-italic font-semibold text-slate-400">{t.knockoutSuggestionEvidence}: </span>
+                                      "{displayEvidence}"
+                                      {showToggle && (
+                                        <button
+                                          onClick={() => setWsEvidenceExpanded(prev => {
+                                            const next = new Set(prev);
+                                            next.has(qa.question_id) ? next.delete(qa.question_id) : next.add(qa.question_id);
+                                            return next;
+                                          })}
+                                          className="ml-1 not-italic text-indigo-500 hover:text-indigo-700 font-semibold"
+                                        >{isExpanded ? t.knockoutSeeLess : t.knockoutSeeMore}</button>
+                                      )}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* Reasoning */}
+                                {wsValidation.reasoning_summary && (
+                                  <p className="text-[10px] text-slate-500 leading-snug">
+                                    <span className="font-semibold">{t.knockoutReasoning}:</span> {wsValidation.reasoning_summary}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {/* Overview Tab */}
         {activeTab === 'overview' && (
         <div className="px-6 py-4 space-y-6">
@@ -2683,12 +3391,12 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           <div className="grid grid-cols-2 gap-4">
             {candidate.score !== null && (
               <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-500 uppercase">{t.colAiMatch}</label>
+                <label className="block text-xs font-medium text-slate-500 uppercase">{t.colAiScore}</label>
                 <p className="text-2xl font-bold text-slate-900">{candidate.score.toFixed(0)}%</p>
               </div>
             )}
             <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-500 uppercase">{t.colAiResult}</label>
+              <label className="block text-xs font-medium text-slate-500 uppercase">{t.colDecision}</label>
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiStyle}`}>
                 {aiLabel}
               </span>
@@ -2973,6 +3681,67 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           {candidate.processing_status === 'ai_scored' && (
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-slate-900">AI Evaluation</h3>
+
+              {/* Compact score breakdown — overall score, AI recommendation, and
+                  per-dimension achieved/weight rows sized for the drawer's width.
+                  Full detail (reasoning, evidence, comparisons) stays in
+                  Application Details; this is a quick-glance summary only. */}
+              <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Overall AI Score</span>
+                  <span className="text-sm font-bold text-slate-900">
+                    {candidate.score != null ? `${candidate.score} / 100` : '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">AI Recommendation</span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiStyle}`}>
+                    {aiLabel}
+                  </span>
+                </div>
+
+                {detail?.scores && (() => {
+                  const dims: Array<[string, ScoreDimension | undefined]> = [
+                    ['Technical Skills',     detail.scores!.skills],
+                    ['Relevant Experience',  detail.scores!.experience],
+                    ['Education Alignment',  detail.scores!.education],
+                    ['Certifications',       detail.scores!.certifications],
+                    ['Soft Skills',          detail.scores!.soft_skills],
+                    ['Domain Knowledge',     detail.scores!.domain_knowledge],
+                    ['Other Criteria',       detail.scores!.other_requirements],
+                  ];
+                  const visibleDims = dims.filter(([, dim]) => dim && dim.max > 0);
+                  if (visibleDims.length === 0) return null;
+
+                  return (
+                    <div className="pt-1 mt-1 border-t border-slate-200 divide-y divide-slate-100">
+                      {visibleDims.map(([label, dim]) => {
+                        const hasWeight = dim!.weight != null && dim!.weight > 0;
+                        return (
+                          <div key={label} className="flex items-center gap-2 py-1.5">
+                            <span className="flex-1 text-xs text-slate-600 truncate">{label}</span>
+                            <span className="text-xs font-semibold text-slate-700 tabular-nums">
+                              {dim!.achieved}/{dim!.max}
+                            </span>
+                            {hasWeight ? (
+                              <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold w-9 text-center flex-shrink-0">
+                                {dim!.weight}%
+                              </span>
+                            ) : (
+                              <span
+                                className="px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded text-[10px] font-medium flex-shrink-0"
+                                title="This dimension was not weighted in the final score for this job"
+                              >
+                                Not included
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
 
               {detailLoading && (
                 <div className="flex items-center gap-2 text-sm text-slate-400">
@@ -3296,11 +4065,16 @@ function buildApiParams(
   aiResultFilter: string,
   campaignFilter: string,
   clientFilter: string,
+  jobFilter: string,
   search: string,
   assignedFilter: string,
   page: number,
   tagFilter: string[] = [],
   talentPoolOnly: boolean = false,
+  hasNotesFilter: boolean = false,
+  possibleDuplicateFilter: boolean = false,
+  appliedAfter: string = '',
+  appliedBefore: string = '',
 ): Record<string, string> {
   const p: Record<string, string> = {
     limit: '50',
@@ -3310,26 +4084,30 @@ function buildApiParams(
   };
 
   // Quick view overrides specific params
-  // awaiting_review: recruiter-actionable only (ai_scored excludes failed/blocked)
-  if (view === 'awaiting_review')   { p.workflow_status = 'awaiting_review'; p.processing_status = 'ai_scored'; }
-  else if (view === 'under_review') p.workflow_status = 'under_review';
-  else if (view === 'interviewing') p.workflow_status = 'interviewing';
-  else if (view === 'hired')        p.workflow_status = 'hired';
-  // failed_or_blocked: backend alias for all system-stopped processing statuses
-  else if (view === 'failed_blocked') { p.processing_status = 'failed_or_blocked'; }
-  else if (view === 'recent')       { p.sort_by = 'applied_at'; p.sort_order = 'desc'; }
-  // in_process: applied by manual workflowFilter below
+  if (view === 'awaiting_review')        { p.workflow_status = 'awaiting_review'; p.processing_status = 'ai_scored'; }
+  else if (view === 'under_review')      p.workflow_status = 'under_review';
+  else if (view === 'interviewing')      p.workflow_status = 'interviewing';
+  else if (view === 'hired')             p.workflow_status = 'hired';
+  else if (view === 'recent')            { p.sort_by = 'applied_at'; p.sort_order = 'desc'; }
+  else if (view === 'stopped_before_ai') { p.processing_status = 'pre_ai_stopped'; }
+  else if (view === 'validation_issues') { p.validation_issues = 'true'; }
+  // 'all': no extra params — backend default exclusions apply
 
   // Manual filters (override quick view if set)
   if (workflowFilter)   p.workflow_status = workflowFilter;
   if (processingFilter) p.processing_status = processingFilter;
-  if (aiResultFilter)   p.ai_decision = aiResultFilter;
+  if (aiResultFilter)   p.ai_decision = aiResultFilter === 'rejected_low_match' ? 'rejected' : aiResultFilter;
+  if (jobFilter)        p.job_id = jobFilter;
   if (campaignFilter)   p.campaign_id = campaignFilter;
   if (clientFilter)     p.client_organization_id = clientFilter;
   if (search.trim())    p.search = search.trim();
   if (assignedFilter)   p.assigned_to = assignedFilter;
   if (tagFilter.length > 0) p.tag_ids = tagFilter.join(',');
   if (talentPoolOnly)   p.talent_pool_only = 'true';
+  if (hasNotesFilter)   p.has_notes = 'true';
+  if (possibleDuplicateFilter) p.possible_duplicate = 'true';
+  if (appliedAfter.trim())  p.applied_after  = appliedAfter.trim();
+  if (appliedBefore.trim()) p.applied_before = appliedBefore.trim();
 
   console.debug('[buildApiParams]', { tagFilter, talentPoolOnly, params: p });
   return p;
@@ -3357,6 +4135,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const initialAiResult = searchParams.get('ai_decision') || '';
   const initialCampaign = searchParams.get('campaign_id') || '';
   const initialClient = searchParams.get('client_organization_id') || '';
+  const initialJob = searchParams.get('job_id') || '';
   const initialSearch = searchParams.get('search') || '';
   const initialPage = parseInt(searchParams.get('page') || '1', 10);
   const initialAppId = searchParams.get('app_id') || '';
@@ -3369,6 +4148,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [aiResultFilter, setAiResultFilter] = useState(initialAiResult);
   const [campaignFilter, setCampaignFilter] = useState(initialCampaign);
   const [clientFilter, setClientFilter] = useState(initialClient);
+  const [jobFilter, setJobFilter] = useState(initialJob);
   const [search, setSearch] = useState(initialSearch);
   const [assignedFilter, setAssignedFilter] = useState(searchParams.get('assigned_to') || '');
   const [page, setPage] = useState(initialPage);
@@ -3377,6 +4157,12 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   // Initialize tagFilter and talentPoolOnly from URL params
   const [tagFilter, setTagFilter] = useState<string[]>(initialTagFilter);
   const [talentPoolOnly, setTalentPoolOnly] = useState(initialTalentPoolOnly);
+
+  // CW-1: new filter state (initialised from URL)
+  const [hasNotesFilter, setHasNotesFilter]               = useState(searchParams.get('has_notes') === 'true');
+  const [possibleDuplicateFilter, setPossibleDuplicateFilter] = useState(searchParams.get('possible_duplicate') === 'true');
+  const [appliedAfter, setAppliedAfter]                   = useState(searchParams.get('applied_after') || '');
+  const [appliedBefore, setAppliedBefore]                 = useState(searchParams.get('applied_before') || '');
 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -3404,6 +4190,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [saveViewName, setSaveViewName] = useState('');
   const [savingView, setSavingView] = useState(false);
   const [makeViewShared, setMakeViewShared] = useState(false);
+
+  // Export (CSV / Excel) — exports ALL candidates matching current filters
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -3436,6 +4226,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
 
   useEffect(() => {
     setPageTitle(t.pageTitle);
+    return () => { setPageTitle(null); };
   }, [setPageTitle, t.pageTitle]);
 
   // Fetch campaigns once on mount
@@ -3526,16 +4317,31 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       .catch(() => {}); // non-critical
   }, [auth.token]);
 
-  // Load available jobs for reuse candidate modal
+  // Load available jobs (reuse modal + Job filter dropdown)
   useEffect(() => {
     if (!auth.token) return;
-    apiService.get(WEBHOOK_CONFIG.JOBS_URL, {}, auth.token)
+    apiService.get(WEBHOOK_CONFIG.GET_JOBS_WEBHOOK_URL, {}, auth.token)
       .then((data: any) => {
         if (Array.isArray(data)) setAvailableJobs(data);
         else if (data?.jobs) setAvailableJobs(data.jobs);
       })
       .catch(() => {});
   }, [auth.token]);
+
+  // Job options filtered by currently selected campaign/client
+  const jobOptions = useMemo(() => {
+    return availableJobs.filter((j: any) =>
+      (!clientFilter || j.client_organization_id === clientFilter) &&
+      (!campaignFilter || j.campaign_id === campaignFilter)
+    );
+  }, [availableJobs, clientFilter, campaignFilter]);
+
+  // Reset job filter when it no longer belongs to the selected campaign/client
+  useEffect(() => {
+    if (jobFilter && !jobOptions.some((j: any) => j.job_id === jobFilter)) {
+      setJobFilter('');
+    }
+  }, [jobOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleApplySavedView = (view: SavedView) => {
     const f = view.filters;
@@ -3545,11 +4351,16 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setAiResultFilter(f.aiResultFilter || '');
     setCampaignFilter(f.campaignFilter || '');
     setClientFilter(f.clientFilter || '');
+    setJobFilter(f.jobFilter || '');
     setSearch(f.search || '');
     setDebouncedSearch(f.search || '');
     setAssignedFilter(f.assignedFilter || '');
     setTagFilter(f.tagFilter || []);
     setTalentPoolOnly(f.talentPoolOnly || false);
+    setHasNotesFilter(f.hasNotesFilter || false);
+    setPossibleDuplicateFilter(f.possibleDuplicateFilter || false);
+    setAppliedAfter(f.appliedAfter || '');
+    setAppliedBefore(f.appliedBefore || '');
     setPage(1);
     clearSelection();
     addToastRef.current(t.savedViewApplied, 'success');
@@ -3567,10 +4378,15 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       if (aiResultFilter)   filters.aiResultFilter   = aiResultFilter;
       if (campaignFilter)   filters.campaignFilter   = campaignFilter;
       if (clientFilter)     filters.clientFilter     = clientFilter;
+      if (jobFilter)        filters.jobFilter        = jobFilter;
       if (debouncedSearch)  filters.search           = debouncedSearch;
       if (assignedFilter)   filters.assignedFilter   = assignedFilter;
       if (tagFilter.length > 0) filters.tagFilter = tagFilter;
       if (talentPoolOnly) filters.talentPoolOnly = talentPoolOnly;
+      if (hasNotesFilter) filters.hasNotesFilter = hasNotesFilter;
+      if (possibleDuplicateFilter) filters.possibleDuplicateFilter = possibleDuplicateFilter;
+      if (appliedAfter)  filters.appliedAfter  = appliedAfter;
+      if (appliedBefore) filters.appliedBefore = appliedBefore;
 
       const data: any = await apiService.post(
         WEBHOOK_CONFIG.CANDIDATE_SAVED_VIEWS_URL,
@@ -3957,14 +4773,19 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (aiResultFilter)           p.ai_decision = aiResultFilter;
     if (campaignFilter)           p.campaign_id = campaignFilter;
     if (clientFilter)             p.client_organization_id = clientFilter;
+    if (jobFilter)                p.job_id = jobFilter;
     if (debouncedSearch)          p.search = debouncedSearch;
     if (assignedFilter)           p.assigned_to = assignedFilter;
     if (page > 1)                 p.page = String(page);
     if (selectedAppId)            p.app_id = selectedAppId;
     if (tagFilter.length > 0)     p.tags = tagFilter.join(',');
     if (talentPoolOnly)           p.talent_pool = 'true';
+    if (hasNotesFilter)           p.has_notes = 'true';
+    if (possibleDuplicateFilter)  p.possible_duplicate = 'true';
+    if (appliedAfter)             p.applied_after  = appliedAfter;
+    if (appliedBefore)            p.applied_before = appliedBefore;
     setSearchParams(p, { replace: true });
-  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, selectedAppId, tagFilter, talentPoolOnly, setSearchParams]);
+  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, selectedAppId, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore, setSearchParams]);
 
   // Debounce search field
   const handleSearchChange = (value: string) => {
@@ -3981,7 +4802,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (!auth.token) return;
     setLoading(true);
     try {
-      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly);
+      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore);
       const data = await apiService.get(WEBHOOK_CONFIG.CANDIDATES_SEARCH_URL, params, auth.token);
       // Tenant-wide mode returns { candidates, pagination }
       if (data && typeof data === 'object' && Array.isArray(data.candidates)) {
@@ -4003,7 +4824,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       setLoading(false);
     }
   // addToast intentionally omitted — using ref to avoid infinite loop
-  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchCandidates();
@@ -4022,6 +4843,10 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setAssignedFilter('');
     setTagFilter([]);
     setTalentPoolOnly(false);
+    setHasNotesFilter(false);
+    setPossibleDuplicateFilter(false);
+    setAppliedAfter('');
+    setAppliedBefore('');
     setPage(1);
     clearSelection();
   };
@@ -4033,16 +4858,40 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setAiResultFilter('');
     setCampaignFilter('');
     setClientFilter('');
+    setJobFilter('');
     setSearch('');
     setDebouncedSearch('');
     setAssignedFilter('');
     setTagFilter([]);
     setTalentPoolOnly(false);
+    setHasNotesFilter(false);
+    setPossibleDuplicateFilter(false);
+    setAppliedAfter('');
+    setAppliedBefore('');
     setPage(1);
     clearSelection();
   };
 
-  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || debouncedSearch || assignedFilter || tagFilter.length > 0 || talentPoolOnly;
+  const hasManualFilters = workflowFilter || processingFilter || aiResultFilter || campaignFilter || clientFilter || jobFilter || debouncedSearch || assignedFilter || tagFilter.length > 0 || talentPoolOnly || hasNotesFilter || possibleDuplicateFilter || appliedAfter || appliedBefore;
+
+  // Export ALL candidates matching the current filters (CSV / Excel) — reuses the
+  // exact same filter-building logic as the live list query (buildApiParams), so
+  // the export always matches what's shown in the workspace for these filters.
+  const handleExport = async (fmt: 'csv' | 'xlsx' | 'pdf') => {
+    setShowExportMenu(false);
+    setExporting(true);
+    try {
+      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore);
+      delete params.page;
+      delete params.limit;
+      params.format = fmt;
+      await apiService.downloadFile(WEBHOOK_CONFIG.CANDIDATES_EXPORT_URL, params, auth.token);
+    } catch (err: any) {
+      addToastRef.current(err?.message || t.exportError, 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const openCandidate = (c: Candidate) => {
     setSelectedAppId(c.application_id);
@@ -4070,13 +4919,36 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       )
     );
 
+    // Track whether the HTTP PATCH itself succeeded so the catch block only
+    // reverts and errors on a real server/network failure, not on any JS
+    // exception that might occur in the post-success side-effect code.
+    let patchSucceeded = false;
     try {
-      await apiService.patch(
+      const res = await apiService.patch(
         `${WEBHOOK_CONFIG.APPLICATION_WORKFLOW_STATUS_URL}/${applicationId}/workflow-status`,
         { workflow_status: toStatus, note: note || null, advanced_move: isAdvancedMove || false },
-        auth.token,
+        auth.token ?? undefined,
       );
-      const label = WORKFLOW_STATUS_LABELS_EN[toStatus];
+      // HTTP 200 received — treat as success regardless of response body shape.
+      // Backend returns {"workflow_status": new_status}; we use toStatus we already have.
+      patchSucceeded = true;
+
+      const confirmedStatus: WorkflowStatus =
+        (res?.workflow_status && res.workflow_status in VALID_WORKFLOW_TRANSITIONS)
+          ? res.workflow_status as WorkflowStatus
+          : toStatus;
+
+      // Sync local state to the server's confirmed status (defensive: avoids
+      // drift if backend normalised the status string e.g. trimmed whitespace).
+      if (confirmedStatus !== toStatus) {
+        setCandidates(prev =>
+          prev.map(c =>
+            c.application_id === applicationId ? { ...c, workflow_status: confirmedStatus } : c
+          )
+        );
+      }
+
+      const label = WORKFLOW_STATUS_LABELS_EN[confirmedStatus];
       addToastRef.current(
         isAdvancedMove ? `Exceptional Move → ${label}` : `Moved to ${label}`,
         'success',
@@ -4086,9 +4958,12 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         setDrawerDetailVersion(v => v + 1);
       }
     } catch (err: any) {
-      // Revert optimistic update on failure
-      setCandidates(prevCandidates);
-      addToastRef.current(err.message || 'Failed to update workflow status', 'error');
+      if (!patchSucceeded) {
+        // Revert optimistic update only when the PATCH itself failed (network
+        // error, 4xx/5xx response). Do NOT revert for post-success JS errors.
+        setCandidates(prevCandidates);
+        addToastRef.current(err.message || 'Failed to update workflow status', 'error');
+      }
     } finally {
       setUpdatingId(null);
     }
@@ -4129,31 +5004,69 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
 
-      {/* Quick View Pills */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => handleViewChange('all')}
-          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-            activeView === 'all'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
-          }`}
-        >
-          All
-        </button>
-        {QUICK_VIEWS.map(v => (
-          <button
-            key={v.id}
-            onClick={() => handleViewChange(v.id)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              activeView === v.id
-                ? 'bg-indigo-600 text-white'
-                : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
-            }`}
-          >
-            {lang === 'ar' ? v.labelAr : v.labelEn}
-          </button>
-        ))}
+      {/* Quick View Pills — two groups: pipeline (recruiter workflow) + attention (exceptions) */}
+      <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 space-y-2.5">
+
+        {/* Group A: Recruitment Pipeline */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-16 shrink-0 select-none">
+            {t.queueGroupPipeline}
+          </span>
+          {PIPELINE_VIEWS.map(v => {
+            const isActive = activeView === v.id;
+            return (
+              <button
+                key={v.id}
+                onClick={() => handleViewChange(v.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600'
+                }`}
+              >
+                {lang === 'ar' ? v.labelAr : v.labelEn}
+                {isActive && pagination && pagination.total > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/25 text-[10px] font-bold tabular-nums">
+                    {pagination.total}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-slate-100" />
+
+        {/* Group B: Attention & Exceptions */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider w-16 shrink-0 select-none">
+            {t.queueGroupAttention}
+          </span>
+          {ATTENTION_VIEWS.map(v => {
+            const isActive = activeView === v.id;
+            const isStoppedView = v.id === 'stopped_before_ai';
+            const activeClass   = isStoppedView ? 'bg-orange-600 text-white' : 'bg-amber-500 text-white';
+            const inactiveClass = isStoppedView
+              ? 'bg-white border border-orange-200 text-orange-700 hover:border-orange-400 hover:text-orange-800'
+              : 'bg-white border border-amber-200 text-amber-700 hover:border-amber-400 hover:text-amber-800';
+            return (
+              <button
+                key={v.id}
+                onClick={() => handleViewChange(v.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${isActive ? activeClass : inactiveClass}`}
+              >
+                {lang === 'ar' ? v.labelAr : v.labelEn}
+                {isActive && pagination && pagination.total > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/25 text-[10px] font-bold tabular-nums">
+                    {pagination.total}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
       </div>
 
       {/* Saved Views Row */}
@@ -4275,27 +5188,31 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         {/* Processing filter */}
         <select
           value={processingFilter}
-          onChange={e => { setProcessingFilter(e.target.value); setPage(1); }}
+          onChange={e => {
+            const newProcessing = e.target.value;
+            // If changing to pending, in_progress, or stopped_before_ai, reset AI Result filter
+            // (AI Result only applies to ai_scored apps)
+            if (newProcessing && newProcessing !== 'ai_scored') {
+              setAiResultFilter('');
+            }
+            setProcessingFilter(newProcessing);
+            setPage(1);
+          }}
           className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
         >
           <option value="">{t.filterProcessing}</option>
-          <option value="pending">Pending</option>
-          <option value="ai_scored">AI Scored</option>
-          <option value="failed">Failed</option>
-          <option value="processing_failed">Processing Failed</option>
-          <option value="extraction_failed">Extraction Failed</option>
-          <option value="security_blocked">Security Blocked</option>
-          <option value="duplicate_blocked">Duplicate Blocked</option>
-          <option value="stopped">Stopped</option>
-          <option value="queued">Queued</option>
-          <option value="processing">Processing</option>
+          <option value="pending">{t.procPending}</option>
+          <option value="in_progress">{t.procInProgress}</option>
+          <option value="ai_scored">{t.procAiScored}</option>
+          <option value="stopped_before_ai">{t.procStoppedBeforeAi}</option>
         </select>
 
         {/* AI result filter */}
         <select
           value={aiResultFilter}
           onChange={e => { setAiResultFilter(e.target.value); setPage(1); }}
-          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          disabled={processingFilter !== '' && processingFilter !== 'ai_scored'}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <option value="">{t.filterAiResult}</option>
           <option value="qualified">Qualified</option>
@@ -4330,6 +5247,21 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
             ))}
           </select>
         )}
+
+        {/* Job filter */}
+        <select
+          value={jobFilter}
+          onChange={e => { setJobFilter(e.target.value); setPage(1); }}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50"
+          disabled={availableJobs.length === 0}
+        >
+          <option value="">{lang === 'ar' ? 'كل الوظائف' : 'All Jobs'}</option>
+          {jobOptions.map((j: any) => (
+            <option key={j.job_id} value={j.job_id}>
+              {j.job_title}{j.job_code ? ` (${j.job_code})` : ''}
+            </option>
+          ))}
+        </select>
 
         {/* Assigned filter */}
         <select
@@ -4385,7 +5317,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         </div>
 
         {/* Talent Pool Filter */}
-        <label className="flex items-center gap-2 mt-3 cursor-pointer">
+        <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={talentPoolOnly}
@@ -4397,6 +5329,48 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           />
           <span className="text-xs font-medium text-gray-700">Talent Pool Only</span>
         </label>
+
+        {/* CW-1: Has Notes filter */}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={hasNotesFilter}
+            onChange={(e) => { setHasNotesFilter(e.target.checked); setPage(1); }}
+            className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-300"
+          />
+          <span className="text-xs font-medium text-gray-700">{t.filterHasNotes}</span>
+        </label>
+
+        {/* CW-1: Possible Duplicate filter */}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={possibleDuplicateFilter}
+            onChange={(e) => { setPossibleDuplicateFilter(e.target.checked); setPage(1); }}
+            className="w-4 h-4 rounded text-amber-600 border-slate-300 focus:ring-amber-300"
+          />
+          <span className="text-xs font-medium text-gray-700">{t.filterPossibleDuplicate}</span>
+        </label>
+
+        {/* CW-1: Applied date range */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium text-slate-500 whitespace-nowrap">{t.filterAppliedDateRange}:</span>
+          <input
+            type="date"
+            value={appliedAfter}
+            onChange={e => { setAppliedAfter(e.target.value); setPage(1); }}
+            title={t.filterAppliedAfter}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+          <span className="text-xs text-slate-400">–</span>
+          <input
+            type="date"
+            value={appliedBefore}
+            onChange={e => { setAppliedBefore(e.target.value); setPage(1); }}
+            title={t.filterAppliedBefore}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+        </div>
 
         {/* Name search */}
         <input
@@ -4416,6 +5390,44 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
             {t.clearFilters}
           </button>
         )}
+
+        {/* Export (CSV / Excel) — exports ALL candidates matching current filters */}
+        <div className="relative">
+          <button
+            onClick={() => setShowExportMenu(v => !v)}
+            disabled={exporting}
+            className="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 transition-colors bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M7 10l5 5 5-5M12 15V3" /></svg>
+            {exporting ? t.exporting : t.exportButton}
+            <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          {showExportMenu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
+              <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg z-20 overflow-hidden">
+                <button
+                  onClick={() => handleExport('csv')}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  {t.exportCsv}
+                </button>
+                <button
+                  onClick={() => handleExport('xlsx')}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100"
+                >
+                  {t.exportExcel}
+                </button>
+                <button
+                  onClick={() => handleExport('pdf')}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100"
+                >
+                  {t.exportPdf}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Result count */}
         {pagination && (
@@ -4559,7 +5571,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         // Detect mixed workflow states across selected candidates
         const selectedCandidates = candidates.filter(c => selectedIds.has(c.application_id));
         const statusCounts = selectedCandidates.reduce<Record<string, number>>((acc, c) => {
-          acc[c.workflow_status] = (acc[c.workflow_status] || 0) + 1;
+          const ws = c.workflow_status ?? 'awaiting_review';
+          acc[ws] = (acc[ws] || 0) + 1;
           return acc;
         }, {});
         const isMixed = Object.keys(statusCounts).length > 1;
@@ -4795,7 +5808,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       )}
 
       {/* Candidate Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-7 h-7 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -4826,25 +5839,64 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colCandidate}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colJob}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiMatch}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiResult}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiScore}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colDecision}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colWorkflow}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden xl:table-cell">{t.colAssigned}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">{t.colProcessing}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">{t.colApplied}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colActions}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {candidates.map(c => {
-                const wfStyle = WORKFLOW_STATUS_STYLES[c.workflow_status] ?? 'bg-slate-100 text-slate-600';
-                const wfLabel = wfLabels[c.workflow_status] ?? c.workflow_status;
+                const wfStyle = WORKFLOW_STATUS_STYLES[c.workflow_status ?? 'awaiting_review'] ?? 'bg-slate-100 text-slate-600';
+                const wfLabel = wfLabels[c.workflow_status ?? 'awaiting_review'] ?? c.workflow_status;
                 const isUpdating = updatingId === c.application_id;
                 const isBulkEligible = c.processing_status === 'ai_scored';
+                const isStoppedRow  = activeView === 'stopped_before_ai';
+
+                // ── CW-1: Attention indicator (Decision 2) ───────────────────
+                // Application-level concerns only — knockout/screening validation
+                // (contradiction, cannot determine, cannot validate, not supported,
+                // suggestions) belongs to individual screening questions, not the
+                // application as a whole, and is surfaced in Application Details
+                // (Screening tab → Knockout Questions) and the Validation Issues queue.
+                const hasSecurityBlocked  = c.security_check_status === 'blocked';
+                const hasSecurityWarn     = c.security_check_status === 'warning';
+                const hasConfirmedDup     = c.duplicate_status === 'confirmed_duplicate';
+                const hasPossibleDup      = c.duplicate_status === 'possible_duplicate';
+                // RED: confirmed_duplicate or security blocked
+                const isRed    = hasSecurityBlocked || hasConfirmedDup;
+                // YELLOW: security warning or possible_duplicate
+                const isYellow = !isRed && (hasSecurityWarn || hasPossibleDup);
+                const attentionDot = isRed
+                  ? <span className="inline-block w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title={t.attentionRed} />
+                  : isYellow
+                  ? <span className="inline-block w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title={t.attentionYellow} />
+                  : null;
+
+                // ── CW-1: Compact flags — application-level only ─────────────
+                const flagBadges: React.ReactNode[] = [];
+                if (c.is_talent_pool) flagBadges.push(
+                  <span key="tp" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-green-100 text-green-700">{t.flagTalentPool}</span>
+                );
+                if (hasConfirmedDup) flagBadges.push(
+                  <span key="cdup" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-700">{t.flagConfirmedDuplicate}</span>
+                );
+                if (hasPossibleDup) flagBadges.push(
+                  <span key="dup" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-700">{t.flagDuplicate}</span>
+                );
+                if (hasSecurityBlocked) flagBadges.push(
+                  <span key="secb" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-700">{t.flagSecurity}</span>
+                );
+                if (hasSecurityWarn) flagBadges.push(
+                  <span key="sec" className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-100 text-orange-700">{t.flagSecurity}</span>
+                );
+
                 return (
                   <tr
                     key={c.application_id}
-                    className={`hover:bg-slate-50 transition-colors ${isUpdating ? 'opacity-70' : ''} ${selectedIds.has(c.application_id) ? 'bg-indigo-50' : ''}`}
+                    className={`hover:bg-slate-50 transition-colors ${isUpdating ? 'opacity-70' : ''} ${selectedIds.has(c.application_id) ? 'bg-indigo-50' : ''} ${isRed ? 'border-l-2 border-l-red-400' : ''}`}
                   >
                     {/* Checkbox — disabled for system-managed (non-ai_scored) rows */}
                     <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
@@ -4859,14 +5911,16 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                     </td>
                     {/* Candidate name — click navigates to detail */}
                     <td className="px-4 py-3 cursor-pointer" onClick={() => openCandidate(c)}>
-                      <div className="font-medium text-slate-900 leading-tight">{c.candidate_name || '—'}</div>
+                      <div className="flex items-center gap-1.5">
+                        {attentionDot}
+                        <span className="font-medium text-slate-900 leading-tight">{c.candidate_name || '—'}</span>
+                      </div>
                       {c.client_org_name && (
                         <div className="text-xs text-slate-400 mt-0.5">{c.client_org_name}</div>
                       )}
-                      {(c as any).is_talent_pool && (
-                        <span className="inline-block mt-1 px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
-                          Talent Pool
-                        </span>
+                      {/* CW-1: Compact flags row */}
+                      {flagBadges.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">{flagBadges}</div>
                       )}
                     </td>
 
@@ -4879,11 +5933,17 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       {c.job_code && (
                         <div className="text-xs text-slate-400 mt-0.5">{c.job_code}</div>
                       )}
+                      {/* CW-1: For stopped rows show stop reason inline under job */}
+                      {isStoppedRow && c.stopped_reason && (
+                        <div className="text-[10px] text-red-600 mt-0.5 italic leading-tight line-clamp-1" title={c.stopped_reason}>
+                          {c.stopped_reason}
+                        </div>
+                      )}
                     </td>
 
-                    {/* AI Match score */}
+                    {/* AI Score */}
                     <td className="px-4 py-3">
-                      {c.score !== null ? (
+                      {c.score !== null && c.score !== undefined ? (
                         <span className="font-semibold text-slate-800 tabular-nums">
                           {c.score.toFixed(0)}%
                         </span>
@@ -4892,7 +5952,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       )}
                     </td>
 
-                    {/* AI Result */}
+                    {/* Decision — AI scoring outcome only */}
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiDecisionStyle(c.status)}`}>
                         {aiDecisionLabel(c.status, t)}
@@ -4918,13 +5978,6 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                       ) : (
                         <span className="text-xs text-slate-300">—</span>
                       )}
-                    </td>
-
-                    {/* Processing status */}
-                    <td className="px-4 py-3 hidden lg:table-cell">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${processingStyle(c.processing_status)}`}>
-                        {processingLabel(c.processing_status, t)}
-                      </span>
                     </td>
 
                     {/* Applied date */}

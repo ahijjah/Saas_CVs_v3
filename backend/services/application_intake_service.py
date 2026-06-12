@@ -28,6 +28,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from database import set_rls_context
 from services.subscription_service import can_process_cv, increment_monthly_usage
 
 logger = logging.getLogger(__name__)
@@ -289,6 +290,7 @@ async def log_intake(
     sender_email: str | None = None,
     recipient_email: str | None = None,
     subject: str | None = None,
+    email_body_plain: str | None = None,
     original_filename: str | None = None,
     file_hash: str | None = None,
     file_size_bytes: int | None = None,
@@ -307,7 +309,7 @@ async def log_intake(
                 intake_method, status,
                 candidate_email, candidate_name,
                 source_identifier, source_message_id,
-                sender_email, recipient_email, subject,
+                sender_email, recipient_email, subject, email_body_plain,
                 original_filename, file_hash, file_size_bytes, mime_type,
                 error_message,
                 duplicate_reference_application_id, duplicate_log_id,
@@ -319,7 +321,7 @@ async def log_intake(
                 :method, :status,
                 :c_email, :c_name,
                 :src_id, :msg_id,
-                :sender, :recipient, :subject,
+                :sender, :recipient, :subject, :body_plain,
                 :orig_name, :hash, :fsize, :mime,
                 :err_msg,
                 CAST(:dup_ref AS uuid), CAST(:dup_log AS uuid),
@@ -328,25 +330,26 @@ async def log_intake(
             RETURNING intake_log_id
         """),
         {
-            "tid":       tenant_id,
-            "jid":       job_id,
-            "aid":       application_id,
-            "method":    intake_method,
-            "status":    status,
-            "c_email":   candidate_email,
-            "c_name":    candidate_name,
-            "src_id":    source_identifier,
-            "msg_id":    source_message_id,
-            "sender":    sender_email,
-            "recipient": recipient_email,
-            "subject":   subject,
-            "orig_name": original_filename,
-            "hash":      file_hash,
-            "fsize":     file_size_bytes,
-            "mime":      mime_type,
-            "err_msg":   error_message,
-            "dup_ref":   duplicate_reference_application_id,
-            "dup_log":   duplicate_log_id,
+            "tid":        tenant_id,
+            "jid":        job_id,
+            "aid":        application_id,
+            "method":     intake_method,
+            "status":     status,
+            "c_email":    candidate_email,
+            "c_name":     candidate_name,
+            "src_id":     source_identifier,
+            "msg_id":     source_message_id,
+            "sender":     sender_email,
+            "recipient":  recipient_email,
+            "subject":    subject,
+            "body_plain": email_body_plain,
+            "orig_name":  original_filename,
+            "hash":       file_hash,
+            "fsize":      file_size_bytes,
+            "mime":       mime_type,
+            "err_msg":    error_message,
+            "dup_ref":    duplicate_reference_application_id,
+            "dup_log":    duplicate_log_id,
             "received_at": received_at,
             "started_at":  processing_started_at,
         },
@@ -436,6 +439,7 @@ async def process_cv_intake(
     sender_email: str | None = None,
     recipient_email: str | None = None,
     subject: str | None = None,
+    email_body_plain: str | None = None,
     processing_started_at: datetime | None = None,
     received_at: datetime | None = None,
 ) -> IntakeResult:
@@ -631,13 +635,23 @@ async def process_cv_intake(
 
     # ── Step 8: commit ────────────────────────────────────────────────────────
     await db.commit()
+    # set_config(..., true) is LOCAL to the current transaction — it resets after
+    # every COMMIT.  Re-establish the RLS context so the steps that follow can
+    # still write to RLS-protected tables (application_intake_log, etc.).
+    await set_rls_context(db, tenant_id, "recruiter")
 
     # ── Step 8b: increment monthly usage counter (non-fatal) ─────────────────
     try:
         await increment_monthly_usage(tenant_id, db)
         await db.commit()
+        await set_rls_context(db, tenant_id, "recruiter")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to increment monthly usage for tenant %s: %s", tenant_id, exc)
+        # Still re-establish context so Step 10 can proceed
+        try:
+            await set_rls_context(db, tenant_id, "recruiter")
+        except Exception:
+            pass
 
     # ── Step 9: enqueue scoring (non-fatal if Celery is down) ─────────────────
     scoring_enqueued_at: datetime | None = None
@@ -660,6 +674,13 @@ async def process_cv_intake(
     processed_at = datetime.now(timezone.utc)
     duration_ms = int((processed_at - started).total_seconds() * 1000)
 
+    logger.info(
+        "Intake Step 10: writing log for application=%s method=%s body_chars=%d subject=%s sender=%s",
+        application_id, intake_method,
+        len(email_body_plain) if email_body_plain else 0,
+        bool(subject), bool(sender_email),
+    )
+
     log_id = await _safe_log(
         db,
         tenant_id=tenant_id,
@@ -678,15 +699,25 @@ async def process_cv_intake(
         sender_email=sender_email,
         recipient_email=recipient_email,
         subject=subject,
+        email_body_plain=email_body_plain,
         processing_started_at=started,
         received_at=received,
     )
     if log_id:
+        logger.info(
+            "Intake Step 10: log written — log_id=%s body_stored=%s",
+            log_id, bool(email_body_plain),
+        )
         await update_intake_log_completion(
             db, log_id,
             processed_at=processed_at,
             duration_ms=duration_ms,
             scoring_enqueued_at=scoring_enqueued_at,
+        )
+    else:
+        logger.error(
+            "Intake Step 10: _safe_log returned None for application=%s — intake log NOT written",
+            application_id,
         )
     await db.commit()
 

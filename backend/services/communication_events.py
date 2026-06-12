@@ -100,6 +100,7 @@ async def process_communication_event(
                        a.candidate_email,
                        a.candidate_email_from_cv,
                        a.email_sender_address,
+                       a.submission_source,
                        j.title AS job_title
                 FROM applications a
                 JOIN jobs j ON j.job_id = a.job_id
@@ -112,14 +113,25 @@ async def process_communication_event(
         if not app:
             return
 
-        # 4. Resolve recipient using preferred_contact_email fallback chain
-        to_email = (
-            app["preferred_contact_email"]
-            or app["confirmation_email_recipient"]
-            or app["candidate_email"]
-            or app["candidate_email_from_cv"]
-            or app["email_sender_address"]
-        ) or None
+        # 4. Resolve recipient — for forwarded/platform/manual intake the submission
+        #    email may belong to a recruiter, not the candidate; prefer CV-extracted.
+        _forwarder_sources = {"email_forwarding", "platform_email", "manual_upload"}
+        _src = app.get("submission_source") or ""
+        if _src in _forwarder_sources:
+            to_email = (
+                app["preferred_contact_email"]
+                or app["confirmation_email_recipient"]
+                or app["candidate_email_from_cv"]
+                or app["candidate_email"]
+            ) or None
+        else:
+            to_email = (
+                app["preferred_contact_email"]
+                or app["confirmation_email_recipient"]
+                or app["candidate_email"]
+                or app["candidate_email_from_cv"]
+                or app["email_sender_address"]
+            ) or None
 
         # 5. Render template with available context variables
         tpl_ctx = {

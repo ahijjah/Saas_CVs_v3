@@ -57,7 +57,7 @@ async def _count_rolling_cvs(tenant_id: str, db: AsyncSession) -> int:
             SELECT COUNT(*) FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             WHERE j.tenant_id = CAST(:tid AS uuid)
-              AND a.processing_status = 'scored'
+              AND a.processing_status = 'ai_scored'
               AND COALESCE(a.scored_at, a.created_at) >= now() - INTERVAL '30 days'
         """),
         {"tid": tenant_id},

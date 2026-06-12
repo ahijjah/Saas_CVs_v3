@@ -94,6 +94,46 @@ export const apiService = {
     return handleResponse(response);
   },
 
+  // Downloads a binary/file response (e.g. CSV/Excel export) and triggers a
+  // browser save dialog using the filename from Content-Disposition (if present).
+  async downloadFile(url: string, params: Record<string, string> = {}, token?: string) {
+    const headers: HeadersInit = {};
+    const activeToken = token || localStorage.getItem(TOKEN_KEY);
+    if (activeToken) {
+      headers['Authorization'] = `Bearer ${activeToken}`;
+    }
+
+    const queryString = new URLSearchParams(params).toString();
+    const fullUrl = queryString ? `${url}?${queryString}` : url;
+
+    const response = await fetch(fullUrl, { method: 'GET', headers });
+    if (!response.ok) {
+      let message = `Export failed (${response.status})`;
+      try {
+        const body = await response.json();
+        message = body?.detail || message;
+      } catch {
+        // response was not JSON (e.g. binary error body) — keep default message
+      }
+      throw new Error(message);
+    }
+
+    const blob = await response.blob();
+    let filename = 'export';
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match) filename = match[1];
+
+    const objectUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(objectUrl);
+  },
+
   async patch(url: string, data: any, token?: string) {
     const headers: HeadersInit = { 'Content-Type': 'application/json' };
     const activeToken = token || localStorage.getItem(TOKEN_KEY);
@@ -122,7 +162,32 @@ export const apiService = {
 
   async requestPasswordReset(email: string) {
     return this.post(WEBHOOK_CONFIG.FORGOT_PASSWORD_WEBHOOK_URL, { email });
-  }
+  },
+
+  async saveKnockoutAnswer(applicationId: string, questionId: string, answerValue: string, token?: string) {
+    const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANSWERS_BASE_URL}/${applicationId}/knockout-answers`;
+    return this.patch(url, { question_id: questionId, answer_value: answerValue }, token);
+  },
+
+  async triggerKnockoutAnalysis(applicationId: string, forceAll = false, token?: string) {
+    const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANALYSIS_BASE_URL}/${applicationId}/knockout-analysis${forceAll ? '?force_all=true' : ''}`;
+    return this.post(url, {}, token);
+  },
+
+  async triggerScreeningValidation(applicationId: string, token?: string) {
+    const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANALYSIS_BASE_URL}/${applicationId}/screening-validation`;
+    return this.post(url, {}, token);
+  },
+
+  async acceptKnockoutSuggestion(applicationId: string, questionId: string, overrideAnswer?: string | null, token?: string) {
+    const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANALYSIS_BASE_URL}/${applicationId}/knockout-suggestions/accept`;
+    return this.patch(url, { question_id: questionId, override_answer: overrideAnswer ?? null }, token);
+  },
+
+  async ignoreKnockoutSuggestion(applicationId: string, questionId: string, token?: string) {
+    const url = `${WEBHOOK_CONFIG.KNOCKOUT_ANALYSIS_BASE_URL}/${applicationId}/knockout-suggestions/ignore`;
+    return this.patch(url, { question_id: questionId, answer_value: '' }, token);
+  },
 };
 
 export class APIService {
@@ -175,6 +240,23 @@ export class APIService {
 
   async getInsights() {
     return apiService.get(WEBHOOK_CONFIG.ANALYTICS_INSIGHTS_URL, {}, this.token);
+  }
+
+  async getRecruitmentEfficiency(filters: {
+    job_id?: string;
+    campaign_id?: string;
+    recruiter_id?: string;
+    date_from?: string;
+    date_to?: string;
+  }) {
+    const params: Record<string, string> = {};
+    if (filters.date_from) params.date_from = filters.date_from;
+    if (filters.date_to) params.date_to = filters.date_to;
+    if (filters.job_id) params.job_id = filters.job_id;
+    if (filters.campaign_id) params.campaign_id = filters.campaign_id;
+    if (filters.recruiter_id) params.recruiter_id = filters.recruiter_id;
+
+    return apiService.get(WEBHOOK_CONFIG.ANALYTICS_EFFICIENCY_URL, params, this.token);
   }
 
   // ── Candidate Tags ────────────────────────────────────────────────────────

@@ -5,8 +5,14 @@ import {
   AgingMetricsResponse,
   InsightsResponse,
   RecruitmentInsight,
+  RecruitmentEfficiencyResponse,
 } from '../types';
 import { APIService } from '../services/api';
+import { usePageTitle } from '../context/PageTitleContext';
+import { FunnelStagesChart } from '../components/charts/FunnelStagesChart';
+import { RecruiterProductivityChart } from '../components/charts/RecruiterProductivityChart';
+import { SLADistributionChart } from '../components/charts/SLADistributionChart';
+import { RecruiterEfficiencyChart } from '../components/charts/RecruiterEfficiencyChart';
 import '../styles/analytics.css';
 
 interface AnalyticsDashboardProps {
@@ -20,7 +26,35 @@ const SLA_LABELS: Record<string, string> = {
   red: 'Overdue',
 };
 
+const SEVERITY_ORDER: Record<string, number> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
+
+const SEVERITY_ICONS: Record<string, string> = {
+  critical: '⛔',
+  warning: '⚠',
+  info: 'ℹ',
+};
+
+const REVIEW_CYCLE_LABELS: Record<string, string> = {
+  awaiting_review: 'Awaiting Review',
+  under_review: 'Under Review',
+  interviewing: 'Interviewing',
+  offer_made: 'Offer Made',
+};
+
+const fmtDays = (value: number | null): string => (value !== null ? `${value.toFixed(1)}d` : '—');
+
 const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast }) => {
+  const { setPageTitle } = usePageTitle();
+
+  useEffect(() => {
+    setPageTitle('Analytics');
+    return () => { setPageTitle(null); };
+  }, [setPageTitle]);
+
   const [dateFrom, setDateFrom] = useState<string>(
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   );
@@ -33,6 +67,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
   const [agingCurrentPage, setAgingCurrentPage] = useState(1);
   const [slaFilter, setSlaFilter] = useState<string | null>(null);
   const [insights, setInsights] = useState<InsightsResponse | null>(null);
+  const [efficiency, setEfficiency] = useState<RecruitmentEfficiencyResponse | null>(null);
   const pageSize = 10;
 
   const api = new APIService(auth.token);
@@ -42,17 +77,19 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
       setLoading(true);
       setAgingCurrentPage(1);
 
-      const [funnel, productivity, aging, insightsData] = await Promise.all([
+      const [funnel, productivity, aging, insightsData, efficiencyData] = await Promise.all([
         api.getFunnelMetrics({ date_from: dateFrom, date_to: dateTo }),
         api.getRecruiterProductivity({ date_from: dateFrom, date_to: dateTo }),
         api.getAgingMetrics({ days_threshold: 0 }),
         api.getInsights(),
+        api.getRecruitmentEfficiency({ date_from: dateFrom, date_to: dateTo }),
       ]);
 
       setFunnelMetrics(funnel);
       setRecruiterMetrics(productivity);
       setAgingMetrics(aging);
       setInsights(insightsData);
+      setEfficiency(efficiencyData);
     } catch (error: any) {
       addToast(error.message || 'Failed to load analytics', 'error');
     } finally {
@@ -62,7 +99,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
 
   useEffect(() => {
     loadAnalytics();
-  }, [dateFrom, dateTo]);
+  }, []);
 
   useEffect(() => {
     setAgingCurrentPage(1);
@@ -128,6 +165,9 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
       {/* Funnel Stages */}
       <section className="analytics-section">
         <h2>Recruitment Funnel</h2>
+        <div className="chart-card">
+          <FunnelStagesChart stages={funnelMetrics?.stages || []} />
+        </div>
         <div className="funnel-table">
           <table>
             <thead>
@@ -167,6 +207,9 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
       {/* Recruiter Productivity */}
       <section className="analytics-section">
         <h2>Recruiter Productivity</h2>
+        <div className="chart-card">
+          <RecruiterProductivityChart recruiters={recruiterMetrics?.recruiters || []} />
+        </div>
         <div className="productivity-table">
           <table>
             <thead>
@@ -200,6 +243,16 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
       {/* SLA Aging */}
       <section className="analytics-section">
         <h2>SLA Monitoring</h2>
+        <div className="sla-overview">
+          <div className="chart-card sla-chart-card">
+            <SLADistributionChart
+              redCount={agingMetrics?.red_count || 0}
+              amberCount={agingMetrics?.amber_count || 0}
+              greenCount={agingMetrics?.green_count || 0}
+              activeFilter={slaFilter}
+              onSliceClick={(status) => setSlaFilter(slaFilter === status ? null : status)}
+            />
+          </div>
         <div className="sla-alert-zones">
           <div
             className={`alert-zone red ${slaFilter === 'red' ? 'active' : ''}`}
@@ -225,6 +278,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
             <div className="zone-count">{agingMetrics?.green_count || 0}</div>
             <div className="zone-label">On Track</div>
           </div>
+        </div>
         </div>
 
         {slaFilter && (
@@ -350,9 +404,14 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
           </div>
         ) : (
           <div className="insights-list">
-            {insights.insights.map((insight: RecruitmentInsight) => (
+            {[...insights.insights]
+              .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+              .map((insight: RecruitmentInsight) => (
               <div key={insight.insight_id} className={`insight-card insight-${insight.severity}`}>
                 <div className="insight-card-header">
+                  <span className={`insight-severity-icon severity-${insight.severity}`} aria-hidden="true">
+                    {SEVERITY_ICONS[insight.severity] ?? '•'}
+                  </span>
                   <span className={`insight-severity-badge severity-${insight.severity}`}>
                     {insight.severity.toUpperCase()}
                   </span>
@@ -373,6 +432,173 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ auth, addToast 
           </div>
         )}
       </section>
+
+      {/* ── Recruitment Efficiency ───────────────────────────────────────── */}
+      {efficiency && (
+        <section className="analytics-section">
+          <h2>Recruitment Efficiency</h2>
+
+          <div className="efficiency-kpi-grid">
+            <div className="efficiency-kpi-card">
+              <h3>Time to Hire</h3>
+              <div className="efficiency-kpi-row">
+                <div className="efficiency-kpi-stat">
+                  <span className="efficiency-kpi-label">Average</span>
+                  <span className="efficiency-kpi-value">{fmtDays(efficiency.time_to_hire.avg_days)}</span>
+                </div>
+                <div className="efficiency-kpi-stat">
+                  <span className="efficiency-kpi-label">Median</span>
+                  <span className="efficiency-kpi-value">{fmtDays(efficiency.time_to_hire.median_days)}</span>
+                </div>
+                <div className="efficiency-kpi-stat">
+                  <span className="efficiency-kpi-label">Min</span>
+                  <span className="efficiency-kpi-value">{fmtDays(efficiency.time_to_hire.min_days)}</span>
+                </div>
+                <div className="efficiency-kpi-stat">
+                  <span className="efficiency-kpi-label">Max</span>
+                  <span className="efficiency-kpi-value">{fmtDays(efficiency.time_to_hire.max_days)}</span>
+                </div>
+              </div>
+              <p className="efficiency-kpi-note">
+                Application created → hired, based on {efficiency.time_to_hire.sample_size} hire
+                {efficiency.time_to_hire.sample_size !== 1 ? 's' : ''} in range
+              </p>
+            </div>
+
+            <div className="efficiency-kpi-card">
+              <h3>Time to Fill</h3>
+              <div className="efficiency-kpi-row">
+                <div className="efficiency-kpi-stat">
+                  <span className="efficiency-kpi-label">Average</span>
+                  <span className="efficiency-kpi-value">{fmtDays(efficiency.time_to_fill.avg_days)}</span>
+                </div>
+                <div className="efficiency-kpi-stat">
+                  <span className="efficiency-kpi-label">Median</span>
+                  <span className="efficiency-kpi-value">{fmtDays(efficiency.time_to_fill.median_days)}</span>
+                </div>
+              </div>
+              <div className="efficiency-fill-extremes">
+                <div>
+                  <span className="efficiency-kpi-label">Fastest filled</span>
+                  <span className="efficiency-fill-job">
+                    {efficiency.time_to_fill.fastest_job
+                      ? `${efficiency.time_to_fill.fastest_job.job_title} — ${fmtDays(efficiency.time_to_fill.fastest_job.days_to_fill)}`
+                      : '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="efficiency-kpi-label">Slowest filled</span>
+                  <span className="efficiency-fill-job">
+                    {efficiency.time_to_fill.slowest_job
+                      ? `${efficiency.time_to_fill.slowest_job.job_title} — ${fmtDays(efficiency.time_to_fill.slowest_job.days_to_fill)}`
+                      : '—'}
+                  </span>
+                </div>
+              </div>
+              <p className="efficiency-kpi-note">
+                Job opened → first hire, based on {efficiency.time_to_fill.sample_size} filled job
+                {efficiency.time_to_fill.sample_size !== 1 ? 's' : ''} in range
+              </p>
+            </div>
+          </div>
+
+          {/* Review Cycle Metrics */}
+          <h3 className="efficiency-subheading">Review Cycle (avg days per stage)</h3>
+          <div className="review-cycle-grid">
+            {efficiency.review_cycle.map((stage) => (
+              <div key={stage.workflow_status} className="review-cycle-card">
+                <span className="review-cycle-label">
+                  {REVIEW_CYCLE_LABELS[stage.workflow_status] ?? stage.workflow_status.replace(/_/g, ' ')}
+                </span>
+                <span className="review-cycle-value">{fmtDays(stage.avg_days)}</span>
+                <span className="review-cycle-note">
+                  {stage.sample_size} sample{stage.sample_size !== 1 ? 's' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Recruiter Efficiency */}
+          <h3 className="efficiency-subheading">Recruiter Efficiency</h3>
+          <div className="chart-card">
+            <RecruiterEfficiencyChart
+              recruiters={efficiency.recruiter_efficiency}
+              emptyText="No completed hires in range to compare recruiters."
+            />
+          </div>
+          <div className="efficiency-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Recruiter</th>
+                  <th>Avg Time to Hire</th>
+                  <th>Hires Completed</th>
+                  <th>Candidates Managed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {efficiency.recruiter_efficiency.length > 0 ? (
+                  efficiency.recruiter_efficiency.map((r) => (
+                    <tr key={r.user_id}>
+                      <td>{r.recruiter_name}</td>
+                      <td>{fmtDays(r.avg_time_to_hire_days)}</td>
+                      <td>{r.hires_completed}</td>
+                      <td>{r.candidates_managed}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+                      No recruiter activity in range
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Longest Open Jobs */}
+          <h3 className="efficiency-subheading">Longest Open Jobs</h3>
+          <div className="efficiency-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Job Title</th>
+                  <th>Job Code</th>
+                  <th>Days Open</th>
+                  <th>Applications</th>
+                  <th>Awaiting Review</th>
+                  <th>Under Review</th>
+                  <th>Interviewing</th>
+                  <th>Hired</th>
+                </tr>
+              </thead>
+              <tbody>
+                {efficiency.longest_open_jobs.length > 0 ? (
+                  efficiency.longest_open_jobs.map((job) => (
+                    <tr key={job.job_id}>
+                      <td className="stage-name">{job.job_title}</td>
+                      <td>{job.job_code || '—'}</td>
+                      <td>{job.days_open.toFixed(1)}d</td>
+                      <td>{job.applications}</td>
+                      <td>{job.awaiting_review}</td>
+                      <td>{job.under_review}</td>
+                      <td>{job.interviewing}</td>
+                      <td>{job.hired}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+                      No active jobs to display
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 };

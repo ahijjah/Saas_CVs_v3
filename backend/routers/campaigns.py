@@ -417,7 +417,7 @@ async def get_campaign(
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')     AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')       AS applications_partial,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')      AS applications_rejected,
-                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'scored') AS applications_scored
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored') AS applications_scored
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             WHERE j.campaign_id = CAST(:cid AS uuid)
@@ -740,6 +740,7 @@ async def get_campaign_candidates(
                 a.job_id,
                 a.candidate_name,
                 a.workflow_status,
+                a.processing_status,
                 a.applied_at,
                 s.final_score AS ai_score,
                 j.title       AS job_title
@@ -759,7 +760,11 @@ async def get_campaign_candidates(
             "job_id":          str(r["job_id"]),
             "candidate_name":  r["candidate_name"],
             "job_title":       r["job_title"],
-            "workflow_status": r["workflow_status"] or "awaiting_review",
+            "workflow_status": (
+                r["workflow_status"] or "awaiting_review"
+                if r["processing_status"] == "ai_scored"
+                else r["workflow_status"]
+            ),
             "ai_score":        float(r["ai_score"]) if r["ai_score"] is not None else None,
             "applied_at":      r["applied_at"].isoformat() if r["applied_at"] else None,
         })

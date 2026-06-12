@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { AuthState, PlanFeature } from '../types';
+import { usePageTitle } from '../context/PageTitleContext';
 
 interface Props {
   auth: AuthState;
@@ -187,6 +188,7 @@ function featureValClass(feat: PlanFeature): string {
 export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
   const lang = (document.documentElement.lang as 'en' | 'ar') === 'ar' ? 'ar' : 'en';
   const t = T[lang];
+  const { setPageTitle } = usePageTitle();
 
   const role = auth.user?.role?.toLowerCase() ?? '';
   const isAdmin = role === 'admin';
@@ -198,14 +200,24 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [showFeatures, setShowFeatures] = useState(false);
 
+  useEffect(() => {
+    setPageTitle(t.title);
+    return () => { setPageTitle(null); };
+  }, [setPageTitle, t.title]);
+
   const loadAll = useCallback(async () => {
     if (!isAdmin) return;
     setLoading(true);
     try {
-      const [usageData, plansData] = await Promise.all([
+      const [usageData, dashboardData, plansData] = await Promise.all([
         apiService.get(WEBHOOK_CONFIG.TENANT_USAGE_URL, {}, auth.token!),
+        apiService.get(WEBHOOK_CONFIG.DASHBOARD_SUMMARY_URL, {}, auth.token!).catch(() => null),
         fetch(WEBHOOK_CONFIG.SUBSCRIPTION_PUBLIC_URL).then((r) => r.json()).catch(() => ({ plans: [] })),
       ]);
+      // Use active_campaigns from dashboard summary (more reliable) if available
+      if (dashboardData?.kpis?.active_campaigns !== undefined) {
+        usageData.usage.active_campaigns = dashboardData.kpis.active_campaigns;
+      }
       setUsage(usageData);
       setPublicPlans(plansData.plans || []);
     } catch (err: any) {
@@ -349,18 +361,18 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
             return (
               <div
                 key={plan.plan_id}
-                className={`relative rounded-2xl border overflow-hidden flex flex-col transition-all ${
+                className={`rounded-2xl border overflow-hidden flex flex-col transition-all ${
                   isHighlight
                     ? 'border-violet-400 shadow-xl shadow-violet-100'
                     : 'border-border hover:border-violet-200 hover:shadow-md'
                 }`}
               >
-                {isHighlight && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-violet-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full whitespace-nowrap">
-                    Most Popular
-                  </div>
-                )}
-                <div className={`bg-gradient-to-br ${gradient} p-5 text-white`}>
+                <div className={`bg-gradient-to-br ${gradient} ${isHighlight ? 'pt-4 px-5 pb-5' : 'p-5'} text-white`}>
+                  {isHighlight && (
+                    <div className="inline-block bg-white/25 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full whitespace-nowrap mb-2">
+                      Most Popular
+                    </div>
+                  )}
                   <div className="font-black text-sm uppercase tracking-widest opacity-80">{localPlanName(plan.plan_code, plan.plan_name, lang)}</div>
                   <div className="text-3xl font-black mt-1">
                     {plan.monthly_price === 0 ? t.free : `$${plan.monthly_price}`}

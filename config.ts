@@ -9,6 +9,7 @@ export const WEBHOOK_CONFIG = {
   CREATE_JOB_WEBHOOK_URL:        `${API_BASE}/jobs`,
   GET_APPLICATIONS_WEBHOOK_URL:  `${API_BASE}/applications`,
   CANDIDATES_SEARCH_URL:         `${API_BASE}/applications`,  // tenant-wide mode (no job_id)
+  CANDIDATES_EXPORT_URL:         `${API_BASE}/applications/export`,
   APPLICATION_DETAILS_WEBHOOK_URL: `${API_BASE}/applications/details`,
   GET_PROFILE_WEBHOOK_URL:       `${API_BASE}/auth/me`,
   UPDATE_PROFILE_WEBHOOK_URL:    `${API_BASE}/auth/me`,
@@ -38,6 +39,7 @@ export const WEBHOOK_CONFIG = {
   TENANT_USAGE_URL:          `${API_BASE}/tenant/usage`,
   // Dashboard
   DASHBOARD_SUMMARY_URL:     `${API_BASE}/dashboard/summary`,
+  DASHBOARD_TRENDS_URL:      `${API_BASE}/dashboard/trends`,
   // Platform Control (super_admin)
   PLATFORM_CONFIG_URL:          `${API_BASE}/admin/platform-config`,
   SUBSCRIPTION_PLANS_URL:       `${API_BASE}/admin/subscription-plans`,
@@ -108,6 +110,7 @@ export const WEBHOOK_CONFIG = {
   ANALYTICS_RECRUITER_PRODUCTIVITY_URL: `${API_BASE}/analytics/recruiter-productivity`,
   ANALYTICS_AGING_URL:          `${API_BASE}/analytics/aging`,
   ANALYTICS_INSIGHTS_URL:       `${API_BASE}/analytics/insights`,
+  ANALYTICS_EFFICIENCY_URL:     `${API_BASE}/analytics/efficiency`,
   // Candidate tags & talent pool
   TAGS_URL:                     `${API_BASE}/tags`,
   TALENT_POOL_URL:              `${API_BASE}/applications/talent-pool`,
@@ -116,6 +119,11 @@ export const WEBHOOK_CONFIG = {
   COMMUNICATION_BASE_URL:       `${API_BASE}/applications`,
   // Communication automation rules (admin only)
   COMMUNICATION_AUTOMATION_RULES_URL: `${API_BASE}/communication/automation-rules`,
+  // Knockout answers — append /{application_id}/knockout-answers
+  KNOCKOUT_ANSWERS_BASE_URL:          `${API_BASE}/applications`,
+  // Knockout AI analysis — append /{application_id}/knockout-analysis
+  // Knockout suggestion accept/ignore — append /{application_id}/knockout-suggestions/accept|ignore
+  KNOCKOUT_ANALYSIS_BASE_URL:         `${API_BASE}/applications`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';
