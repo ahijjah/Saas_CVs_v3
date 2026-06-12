@@ -206,6 +206,7 @@ async def _score_cv_async(
         compute_final_score,
         determine_decision,
         load_active_prompt,
+        reconstruct_narrative_fields,
         remove_contradicted_gaps,
         score_cv,
         validate_scoring_result,
@@ -947,6 +948,14 @@ async def _score_cv_async(
             # Operates only when gaps were actually suppressed; never blocks.
             if _gap_suppressions:
                 ai_result = clean_narrative_contradictions(ai_result, _gap_suppressions)
+
+            # ── Narrative reconstruction ───────────────────────────────────────
+            # Rebuild any reasoning dim / evaluation_notes field that was left
+            # empty or too short by the cleanup pass.  Uses only evidence already
+            # present in the AI result (score_details positives, strengths list).
+            # Never changes numeric scores.  Always runs so it also catches rare
+            # cases where the AI itself left a field blank.
+            ai_result = reconstruct_narrative_fields(ai_result)
 
             final_score = compute_final_score(ai_result, weights)
             q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)

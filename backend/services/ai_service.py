@@ -945,6 +945,136 @@ def clean_narrative_contradictions(
         return result
 
 
+# Maps reasoning key → (score_key, score_details_key) for Fix 6 reconstruction.
+_REASONING_DIMS: tuple[tuple[str, str, str], ...] = (
+    ("skills",           "score_skills",           "skills"),
+    ("experience",       "score_experience",        "experience"),
+    ("education",        "score_education",         "education"),
+    ("certifications",   "score_certifications",    "certifications"),
+    ("soft_skills",      "score_soft_skills",       "soft_skills"),
+    ("domain_knowledge", "score_domain_knowledge",  "domain_knowledge"),
+    ("other",            "score_other",             "other"),
+)
+
+# Minimum character count (after stripping whitespace and punctuation) for a
+# reasoning field to be considered non-degraded and safe to leave as-is.
+_MIN_NARRATIVE_CHARS: int = 20
+
+
+def _is_narrative_degraded(text: str) -> bool:
+    """True when text is empty, whitespace-only, punctuation-only, or too short."""
+    return len(text.strip().strip(".,;:!?-– ")) < _MIN_NARRATIVE_CHARS
+
+
+def reconstruct_narrative_fields(result: dict[str, Any]) -> dict[str, Any]:
+    """Rebuild reasoning / evaluation_notes fields left degraded after cleanup.
+
+    For every reasoning.<dim> that is empty, whitespace-only, or shorter than
+    _MIN_NARRATIVE_CHARS, rebuilds a concise positive summary from:
+      • score_details.<dim>.positive
+      • score_details.<dim>.additional_strengths
+      • global strengths list (fallback)
+
+    evaluation_notes is rebuilt from the now-clean reasoning dim texts when
+    it is similarly degraded.
+
+    score_details.<dim>.negative: empty strings are stripped to [] — no new
+    gaps are invented.
+
+    Does NOT modify any numeric score field.
+    Appends rebuild notes to reasoning._consistency_warning.
+    Never raises.
+    """
+    try:
+        updated: dict[str, Any] = dict(result)
+        reasoning: dict[str, Any] = dict(result.get("reasoning") or {})
+        score_details = result.get("score_details") or {}
+        strengths_list: list[str] = list(result.get("strengths") or [])
+        rebuild_notes: list[str] = []
+
+        for dim_key, score_key, sd_key in _REASONING_DIMS:
+            current = reasoning.get(dim_key) or ""
+            if not _is_narrative_degraded(current):
+                continue
+
+            sd_dim: dict = (
+                score_details.get(sd_key) or {}
+                if isinstance(score_details, dict)
+                else {}
+            )
+            positives = list(sd_dim.get("positive") or []) if isinstance(sd_dim, dict) else []
+            add_str   = list(sd_dim.get("additional_strengths") or []) if isinstance(sd_dim, dict) else []
+            evidence  = [e for e in (positives + add_str) if isinstance(e, str) and e.strip()]
+
+            if not evidence:
+                evidence = [s for s in strengths_list if isinstance(s, str) and s.strip()]
+
+            if not evidence:
+                continue
+
+            joined = "; ".join(e.rstrip(".") for e in evidence[:3])
+            reasoning[dim_key] = f"The candidate demonstrates {joined}."
+            score_val = result.get(score_key, 0)
+            rebuild_notes.append(f"reasoning.{dim_key} rebuilt from positive evidence")
+            logger.info(
+                "reconstruct_narrative_fields: reasoning.%s rebuilt "
+                "(score=%d, evidence_items=%d)",
+                dim_key, score_val, len(evidence),
+            )
+
+        # ── evaluation_notes ──────────────────────────────────────────────────
+        eval_notes = updated.get("evaluation_notes") or ""
+        if isinstance(eval_notes, str) and _is_narrative_degraded(eval_notes):
+            summary_parts = [
+                reasoning[dk].strip()
+                for dk, _, _ in _REASONING_DIMS
+                if reasoning.get(dk) and not _is_narrative_degraded(reasoning.get(dk, ""))
+            ]
+            if not summary_parts:
+                summary_parts = [s.strip() for s in strengths_list[:3] if s.strip()]
+            if summary_parts:
+                new_notes = " ".join(summary_parts[:3])
+                if not new_notes.rstrip().endswith("."):
+                    new_notes = new_notes.rstrip() + "."
+                updated["evaluation_notes"] = new_notes
+                rebuild_notes.append("evaluation_notes rebuilt from remaining evidence")
+                logger.info("reconstruct_narrative_fields: evaluation_notes rebuilt")
+
+        # ── score_details.*.negative — strip empty strings ────────────────────
+        if isinstance(score_details, dict):
+            sd_copy = dict(score_details)
+            sd_changed = False
+            for sd_k, detail in list(sd_copy.items()):
+                if not isinstance(detail, dict):
+                    continue
+                negatives = detail.get("negative")
+                if not isinstance(negatives, list):
+                    continue
+                clean_neg = [
+                    item for item in negatives
+                    if isinstance(item, str) and item.strip()
+                ]
+                if len(clean_neg) != len(negatives):
+                    sd_copy[sd_k] = {**detail, "negative": clean_neg}
+                    sd_changed = True
+            if sd_changed:
+                updated["score_details"] = sd_copy
+
+        if rebuild_notes:
+            existing_warn = reasoning.get("_consistency_warning") or ""
+            note = "narrative_rebuild: " + "; ".join(rebuild_notes)
+            reasoning["_consistency_warning"] = (
+                f"{existing_warn} | {note}" if existing_warn else note
+            )
+
+        updated["reasoning"] = reasoning
+        return updated
+
+    except Exception as exc:
+        logger.warning("reconstruct_narrative_fields failed (non-critical): %s", exc)
+        return result
+
+
 def compute_final_score(scores: dict[str, int], weights: dict[str, int]) -> int:
     """Compute weighted final score (0-100) as integer with ceiling rounding."""
     import math
