@@ -676,7 +676,135 @@ def check_soft_skills_consistency(result: dict[str, Any]) -> str | None:
     return None
 
 
-def compute_final_score(scores: dict[str, int], weights: dict[str, int]) -> int:
+# ── Semantic gap contradiction rules ─────────────────────────────────────────
+# Each rule: if any gap_pattern substring is found (case-insensitive) in a gap
+# entry AND any evidence_keyword is found in the strengths+reasoning corpus,
+# that gap is contradicted by evidence already in the AI response.
+
+_GAP_CONTRADICTION_RULES: tuple[dict, ...] = (
+    {
+        "label": "computer_literacy",
+        "gap_patterns": [
+            "computer literacy", "computer skills", "digital literacy",
+            "basic computer", "it literacy", "computer knowledge",
+            "مهارات الحاسوب", "محو الأمية الرقمية", "مهارات الكمبيوتر",
+            "الأمية الحاسوبية",
+        ],
+        "evidence_keywords": [
+            "excel", "word", "microsoft office", "ms office", "office suite",
+            "powerpoint", "outlook", "spreadsheet", "libreoffice",
+            "google docs", "google sheets", "office 365", "microsoft 365",
+            "إكسل", "وورد", "مايكروسوفت أوفيس", "أوفيس",
+        ],
+    },
+    {
+        "label": "archiving_filing",
+        "gap_patterns": [
+            "archiving", "filing", "records management", "document management",
+            "file management", "document control",
+            "الأرشفة", "الحفظ", "إدارة السجلات", "إدارة الوثائق",
+        ],
+        "evidence_keywords": [
+            "archiv", "filing", "records management", "document control",
+            "document management", "file organiz", "records system",
+            "الأرشفة", "الحفظ", "إدارة السجلات", "الوثائق",
+        ],
+    },
+    {
+        "label": "digitization",
+        "gap_patterns": [
+            "digitization", "digital records", "electronic records",
+            "document scanning", "no digitization",
+            "الرقمنة", "السجلات الإلكترونية", "التحول الرقمي للوثائق",
+        ],
+        "evidence_keywords": [
+            "digitiz", "scanning", "digital records", "electronic records",
+            "digital archiv", "ecm",
+            "الرقمنة", "المسح الضوئي", "السجلات الإلكترونية",
+        ],
+    },
+    {
+        "label": "confidentiality",
+        "gap_patterns": [
+            "confidentiality", "data protection", "privacy", "sensitive data",
+            "information security",
+            "السرية", "حماية البيانات", "الخصوصية",
+        ],
+        "evidence_keywords": [
+            "confidential", "sensitive records", "compliance", "regulated",
+            "data protection", "gdpr", "hipaa", "nda", "classified",
+            "السرية", "البيانات الحساسة", "الامتثال",
+        ],
+    },
+)
+
+
+def remove_contradicted_gaps(
+    result: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Remove gaps_identified entries that are contradicted by strengths/reasoning.
+
+    For each gap, checks whether it matches a gap_pattern in any rule AND whether
+    the corresponding evidence_keywords appear in the strengths+reasoning corpus.
+    If both conditions are true the gap is suppressed: it contradicts evidence the
+    AI itself cited.
+
+    Returns (updated_result, suppression_messages).
+    Never raises — returns the original result unchanged on any error.
+    raw_ai_response is NOT modified here; callers must preserve it separately.
+    """
+    try:
+        gaps = list(result.get("gaps_identified") or [])
+        if not gaps:
+            return result, []
+
+        # Evidence corpus: strengths list + all reasoning values
+        evidence_parts: list[str] = list(result.get("strengths") or [])
+        reasoning = result.get("reasoning") or {}
+        if isinstance(reasoning, dict):
+            evidence_parts.extend(str(v) for v in reasoning.values() if v)
+        evidence_lower = " ".join(evidence_parts).lower()
+
+        kept: list[str] = []
+        suppressed: list[str] = []
+
+        for gap in gaps:
+            gap_lower = gap.lower()
+            contradiction_label: str | None = None
+
+            for rule in _GAP_CONTRADICTION_RULES:
+                if not any(pat in gap_lower for pat in rule["gap_patterns"]):
+                    continue
+                if any(ev in evidence_lower for ev in rule["evidence_keywords"]):
+                    contradiction_label = rule["label"]
+                    break
+
+            if contradiction_label:
+                suppressed.append(
+                    f"[{contradiction_label}] gap suppressed — contradicted by evidence in "
+                    f"strengths/reasoning: {gap!r}"
+                )
+            else:
+                kept.append(gap)
+
+        if not suppressed:
+            return result, []
+
+        # Append suppression notes to _consistency_warning in reasoning
+        updated_reasoning = dict(result.get("reasoning") or {})
+        existing_warn = updated_reasoning.get("_consistency_warning") or ""
+        gap_warn = "; ".join(suppressed)
+        updated_reasoning["_consistency_warning"] = (
+            f"{existing_warn} | {gap_warn}" if existing_warn else gap_warn
+        )
+
+        return (
+            {**result, "gaps_identified": kept, "reasoning": updated_reasoning},
+            suppressed,
+        )
+    except Exception as exc:
+        logger.warning("remove_contradicted_gaps failed (non-critical): %s", exc)
+        return result, [](scores: dict[str, int], weights: dict[str, int]) -> int:
     """Compute weighted final score (0-100) as integer with ceiling rounding."""
     import math
     pairs = [

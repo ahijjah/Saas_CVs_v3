@@ -205,6 +205,7 @@ async def _score_cv_async(
         compute_final_score,
         determine_decision,
         load_active_prompt,
+        remove_contradicted_gaps,
         score_cv,
         validate_scoring_result,
     )
@@ -898,6 +899,10 @@ async def _score_cv_async(
                 },
             )
 
+            # Preserve the exact AI response before any post-processing edits so
+            # raw_ai_response in application_scores always reflects true AI output.
+            _raw_ai_response_str = json.dumps(ai_result, ensure_ascii=False)
+
             # ── Guard: reject structurally invalid AI output ──────────────────
             # Raises ValueError when all 7 scores are 0 but narrative is
             # populated — indicates a truncated / malformed AI response.
@@ -913,7 +918,7 @@ async def _score_cv_async(
                     "raw_response=%.2000s",
                     application_id,
                     _val_err,
-                    json.dumps(ai_result, ensure_ascii=False),
+                    _raw_ai_response_str,
                 )
                 raise
 
@@ -925,6 +930,15 @@ async def _score_cv_async(
                 _reasoning = dict(ai_result.get("reasoning") or {})
                 _reasoning["_consistency_warning"] = _soft_warn
                 ai_result = {**ai_result, "reasoning": _reasoning}
+
+            # ── Semantic gap contradiction removal ────────────────────────────
+            # Removes gaps_identified entries that contradict evidence already
+            # cited by the AI in strengths/reasoning (e.g. "no computer literacy"
+            # when Excel/Word are listed as strengths).  Never blocks scoring.
+            ai_result, _gap_suppressions = remove_contradicted_gaps(ai_result)
+            if _gap_suppressions:
+                for _gs in _gap_suppressions:
+                    logger.info("[%s] Gap contradiction removed: %s", application_id, _gs)
 
             final_score = compute_final_score(ai_result, weights)
             q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
@@ -1003,7 +1017,7 @@ async def _score_cv_async(
                     "notes":      ai_result.get("evaluation_notes"),
                     "questions":  ai_result.get("interview_questions", []),
                     "reasoning":  json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
-                    "raw":        json.dumps(ai_result, ensure_ascii=False),
+                    "raw":        _raw_ai_response_str,
                     "sim":        gatekeeper_result.semantic_similarity_pct,
                     "skill_ratio": gatekeeper_result.skill_match_ratio,
                     "matched":    gatekeeper_result.matched_skills,
