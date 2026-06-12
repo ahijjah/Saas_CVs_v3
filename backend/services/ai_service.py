@@ -804,7 +804,10 @@ def remove_contradicted_gaps(
         )
     except Exception as exc:
         logger.warning("remove_contradicted_gaps failed (non-critical): %s", exc)
-        return result, [](scores: dict[str, int], weights: dict[str, int]) -> int:
+        return result, []
+
+
+def compute_final_score(scores: dict[str, int], weights: dict[str, int]) -> int:
     """Compute weighted final score (0-100) as integer with ceiling rounding."""
     import math
     pairs = [
