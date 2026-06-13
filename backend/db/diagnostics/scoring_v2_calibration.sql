@@ -513,6 +513,114 @@ GROUP BY rule_status, llm_status
 ORDER BY rule_status, llm_status;
 
 \echo ''
+-- ── Section 9: D-01.7 Evidence Quality Metrics ───────────────────────────────
+-- Diagnostics for evidence retrieval quality after D-01.7 improvements.
+-- Shows average evidence density, zero-evidence rates, and dimension breakdown.
+
+\echo ''
+\echo '=== 9. D-01.7 EVIDENCE QUALITY METRICS ==='
+
+-- 9a. Average supporting_evidence count per assessment
+\echo ''
+\echo '--- 9a. Average evidence items per assessment (by status) ---'
+SELECT
+    a ->> 'status'                             AS status,
+    COUNT(*)                                   AS n_assessments,
+    ROUND(AVG(jsonb_array_length(a -> 'supporting_evidence')), 2) AS avg_evidence_items,
+    COUNT(*) FILTER (WHERE jsonb_array_length(a -> 'supporting_evidence') = 0) AS zero_evidence_count,
+    ROUND(
+        COUNT(*) FILTER (WHERE jsonb_array_length(a -> 'supporting_evidence') = 0)::NUMERIC
+        / NULLIF(COUNT(*), 0) * 100, 1
+    )                                          AS zero_evidence_pct
+FROM application_scores,
+     jsonb_array_elements(llm_match_results_json -> 'assessments') AS a
+WHERE llm_match_results_json IS NOT NULL
+  AND jsonb_typeof(llm_match_results_json -> 'assessments') = 'array'
+GROUP BY a ->> 'status'
+ORDER BY a ->> 'status';
+
+-- 9b. Integrity check: MATCHED/PARTIAL with zero evidence (should be 0 after D-01.6 C4)
+\echo ''
+\echo '--- 9b. Integrity check: MATCHED or PARTIAL with zero supporting_evidence ---'
+\echo '    Expected: 0 rows after D-01.6 C4 validation.'
+SELECT
+    application_id,
+    a ->> 'status'         AS status,
+    a ->> 'criterion_text' AS criterion_text,
+    a ->> 'dimension'      AS dimension,
+    a -> 'risk_flags'      AS risk_flags
+FROM application_scores,
+     jsonb_array_elements(llm_match_results_json -> 'assessments') AS a
+WHERE llm_match_results_json IS NOT NULL
+  AND a ->> 'status' IN ('MATCHED', 'PARTIAL')
+  AND jsonb_array_length(a -> 'supporting_evidence') = 0
+ORDER BY application_id, a ->> 'status'
+LIMIT 30;
+
+-- 9c. Evidence density by dimension (soft_skills focus)
+\echo ''
+\echo '--- 9c. Evidence density by dimension ---'
+SELECT
+    a ->> 'dimension'                          AS dimension,
+    COUNT(*)                                   AS n_assessments,
+    ROUND(AVG(jsonb_array_length(a -> 'supporting_evidence')), 2) AS avg_evidence_items,
+    COUNT(*) FILTER (WHERE a ->> 'status' = 'MATCHED') AS matched,
+    COUNT(*) FILTER (WHERE a ->> 'status' = 'PARTIAL') AS partial,
+    COUNT(*) FILTER (WHERE a ->> 'status' = 'ABSENT')  AS absent,
+    ROUND(
+        COUNT(*) FILTER (WHERE a ->> 'status' = 'ABSENT')::NUMERIC
+        / NULLIF(COUNT(*), 0) * 100, 1
+    )                                          AS absent_pct
+FROM application_scores,
+     jsonb_array_elements(llm_match_results_json -> 'assessments') AS a
+WHERE llm_match_results_json IS NOT NULL
+  AND jsonb_typeof(llm_match_results_json -> 'assessments') = 'array'
+GROUP BY a ->> 'dimension'
+ORDER BY absent_pct DESC;
+
+-- 9d. Soft skill criterion class focus
+\echo ''
+\echo '--- 9d. soft_skill class distribution and evidence density ---'
+SELECT
+    a ->> 'criterion_class'                    AS criterion_class,
+    COUNT(*)                                   AS n,
+    ROUND(AVG(jsonb_array_length(a -> 'supporting_evidence')), 2) AS avg_evidence,
+    COUNT(*) FILTER (WHERE a ->> 'status' = 'MATCHED') AS matched,
+    COUNT(*) FILTER (WHERE a ->> 'status' = 'PARTIAL') AS partial,
+    COUNT(*) FILTER (WHERE a ->> 'status' = 'ABSENT')  AS absent
+FROM application_scores,
+     jsonb_array_elements(llm_match_results_json -> 'assessments') AS a
+WHERE llm_match_results_json IS NOT NULL
+  AND jsonb_typeof(llm_match_results_json -> 'assessments') = 'array'
+  AND a ->> 'criterion_class' IN ('soft_skill', 'flexible', 'strict')
+GROUP BY a ->> 'criterion_class'
+ORDER BY a ->> 'criterion_class';
+
+-- 9e. Missing-evidence risk flag audit (tracks C4 downgrade rate)
+\echo ''
+\echo '--- 9e. missing_supporting_evidence risk flag rate ---'
+SELECT
+    COUNT(*) FILTER (
+        WHERE EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(a -> 'risk_flags') rf
+            WHERE rf = 'missing_supporting_evidence'
+        )
+    )                                          AS c4_downgrade_count,
+    COUNT(*)                                   AS total_assessments,
+    ROUND(
+        COUNT(*) FILTER (
+            WHERE EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(a -> 'risk_flags') rf
+                WHERE rf = 'missing_supporting_evidence'
+            )
+        )::NUMERIC / NULLIF(COUNT(*), 0) * 100, 1
+    )                                          AS c4_downgrade_pct
+FROM application_scores,
+     jsonb_array_elements(llm_match_results_json -> 'assessments') AS a
+WHERE llm_match_results_json IS NOT NULL
+  AND jsonb_typeof(llm_match_results_json -> 'assessments') = 'array';
+
+\echo ''
 \echo '=== END OF CALIBRATION REPORT ==='
 \echo ''
 \echo 'Interpretation guide (Sections 1–7):'
@@ -526,10 +634,17 @@ ORDER BY rule_status, llm_status;
 \echo '  blocking_gaps>0, high final → LLM diverging upward from rule engine (over-generous)'
 \echo ''
 \echo 'Interpretation guide (Section 8 — D-01 LLM Mapping):'
-\echo '  Section 8 will be empty until SCORING_V2_LLM_MAPPING=1 is set on the worker.'
+\echo '  Section 8 will be empty until scoring_v2.llm_criteria_mapping_enabled=true.'
 \echo '  8c status: healthy mix of MATCHED/PARTIAL/ABSENT shows the mapper is discriminating.'
 \echo '  8d match_type: heavy "inferred" share → criteria may be underspecified.'
 \echo '  8e criterion_class: distribution should reflect job type (e.g. tech roles → more strict).'
 \echo '  8f low-confidence: investigate dimensions with high counts — may need prompt revision.'
 \echo '  8g rule-vs-LLM: agreement is a diagnostic signal, NOT the success metric.'
 \echo '     Real accuracy benchmark requires human-reviewed ground truth.'
+\echo ''
+\echo 'Interpretation guide (Section 9 — D-01.7 Evidence Quality):'
+\echo '  9a avg_evidence_items=0 for MATCHED/PARTIAL → C4 validation not applied (check version).'
+\echo '  9b should return 0 rows after D-01.6 C4 is deployed.'
+\echo '  9c soft_skills absent_pct < 50% is target after D-01.7 (was 65%+ before).'
+\echo '  9d soft_skill class count >> 1 confirms D-01.6 C2/C3 are working.'
+\echo '  9e c4_downgrade_pct > 10% → evidence window still too narrow; consider further expansion.'

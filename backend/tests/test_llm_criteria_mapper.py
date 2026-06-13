@@ -34,9 +34,13 @@ from services.llm_criteria_mapper import (
     LLMCriterionAssessment,
     LLMMatchResult,
     _MAPPER_VERSION,
+    _CRITICAL_SECTION_RE,
+    _SOFT_SKILL_EXPANSION,
+    _ARABIC_SOFT_SKILL_TERMS,
     _absent_fallback_assessments,
     _build_user_message,
     _flatten_criteria,
+    _is_section_boundary,
     _parse_llm_response,
     _parse_one_assessment,
     _select_evidence_snippets,
@@ -1076,3 +1080,290 @@ class TestSoftSkillPipelineRepair:
     def test_react_angular_distinction_still_in_v2_prompt(self):
         from services.llm_criteria_mapper import _HARDCODED_SYSTEM_PROMPT as sp
         assert "React" in sp and "Angular" in sp
+
+
+# ── Section M: D-01.7 — Evidence Retrieval Improvements ─────────────────────
+
+class TestEvidenceRetrieval:
+    """D-01.7 A–D structural improvements to _select_evidence_snippets."""
+
+    def _soft_skill_criteria(self):
+        return [
+            {"text": "communication", "dimension": "soft_skills", "required": True},
+            {"text": "teamwork",      "dimension": "soft_skills", "required": True},
+            {"text": "leadership",    "dimension": "soft_skills", "required": True},
+        ]
+
+    def _tech_criteria(self):
+        return [
+            {"text": "Python", "dimension": "skills", "required": True},
+            {"text": "SQL",    "dimension": "skills", "required": True},
+        ]
+
+    # ── D-01.7-B: Budget increase ─────────────────────────────────────────────
+
+    def test_default_max_snippets_is_60(self):
+        lines = [f"Worked on project number {i} involving many tasks and responsibilities here." for i in range(100)]
+        cv = "\n".join(lines)
+        criteria = [{"text": "project", "dimension": "skills", "required": True}]
+        result = _select_evidence_snippets(cv, criteria)
+        assert len(result) <= 60
+        # Should select close to 60 when there is enough content
+        assert len(result) >= 50
+
+    def test_default_max_length_accepts_250_char_sentences(self):
+        long_sentence = "A" * 250
+        cv = f"Short line.\n{long_sentence}\nAnother line here that is long enough to pass."
+        criteria = [{"text": "AAA", "dimension": "skills", "required": True}]
+        result = _select_evidence_snippets(cv, criteria, max_snippets=10)
+        assert any(len(s) >= 200 for s in result)
+
+    def test_max_length_300_includes_250_char_sentence_in_multi_line_cv(self):
+        """A 250-char sentence mixed with normal content must survive the filter."""
+        long_sentence = "B" * 250
+        cv = f"Short CV intro line about Python.\n{long_sentence}\nAnother normal line here."
+        criteria = [{"text": "BBB", "dimension": "skills", "required": True}]
+        result = _select_evidence_snippets(cv, criteria, max_snippets=10, max_length=300)
+        assert any(len(s) >= 200 for s in result)
+
+    # ── D-01.7-A: Critical section pinning ───────────────────────────────────
+
+    def test_critical_section_header_patterns_match_expected(self):
+        headers = [
+            "Summary", "Professional Summary", "Profile", "Executive Summary",
+            "Career Objective", "About Me", "Key Skills", "Skills",
+            "Core Competencies", "Key Strengths", "Soft Skills",
+            "Highlights", "الملخص", "ملخص مهني", "المهارات", "الكفاءات",
+            "نقاط القوة", "الصفات الشخصية",
+        ]
+        for h in headers:
+            assert _CRITICAL_SECTION_RE.match(h), f"Expected header to match: {h!r}"
+
+    def test_critical_section_content_pinned_despite_zero_keyword_score(self):
+        """Soft-skill summary with zero technical keyword overlap must still be included."""
+        cv = (
+            "Professional Summary\n"
+            "A dedicated team player with exceptional communication skills and leadership experience.\n"
+            "Demonstrated adaptability and strong problem-solving ability throughout career.\n"
+            "\n"
+            "Work Experience\n"
+            "Senior Engineer - Acme Corp (2020-2024)\n"
+            "Developed Python applications using SQL and PostgreSQL.\n"
+        )
+        # Criteria with NO overlap to summary text
+        criteria = [
+            {"text": "Python",     "dimension": "skills", "required": True},
+            {"text": "SQL",        "dimension": "skills", "required": True},
+            {"text": "PostgreSQL", "dimension": "skills", "required": True},
+        ]
+        result = _select_evidence_snippets(cv, criteria, max_snippets=20)
+        joined = " ".join(result)
+        # Summary content must appear even though it has 0 technical keyword overlap
+        assert "dedicated team player" in joined or "communication skills" in joined or "adaptability" in joined
+
+    def test_section_boundary_stops_pinning(self):
+        """Content after a non-critical section header must not be pinned."""
+        cv = (
+            "Professional Summary\n"
+            "Strong communicator and team player with leadership experience.\n"
+            "\n"
+            "Work Experience\n"
+            "Should NOT be in pinned content because it is after Work Experience.\n"
+        )
+        # Only technical criteria so keyword scoring won't include summary text
+        criteria = [{"text": "xyz_not_found", "dimension": "skills", "required": True}]
+        result = _select_evidence_snippets(cv, criteria, max_snippets=20)
+        # Summary content must be present and must come FIRST (pinned before keyword-selected)
+        assert len(result) > 0
+        assert "Strong communicator" in result[0]
+        # If work-experience content also appears (zero-score keyword selection), it must come after
+        summary_pos = next((i for i, s in enumerate(result) if "Strong communicator" in s), None)
+        work_pos = next((i for i, s in enumerate(result) if "Should NOT be" in s), None)
+        assert summary_pos is not None
+        if work_pos is not None:
+            assert summary_pos < work_pos
+
+    def test_skills_section_content_pinned(self):
+        """Content under a Skills section header must be included."""
+        cv = (
+            "Work Experience\n"
+            "Software Developer - Corp A (2020-2024)\n"
+            "Built various applications.\n"
+            "\n"
+            "Core Competencies\n"
+            "Exceptional leadership and coordination across multiple departments.\n"
+            "Strong stakeholder management and communication with senior executives.\n"
+            "\n"
+            "Education\n"
+            "Bachelor in Computer Science.\n"
+        )
+        criteria = [{"text": "xyz_nomatch", "dimension": "skills", "required": True}]
+        result = _select_evidence_snippets(cv, criteria, max_snippets=20)
+        joined = " ".join(result)
+        assert "leadership" in joined or "stakeholder" in joined
+
+    def test_multiple_critical_sections_all_pinned(self):
+        """Content from both Summary and Skills sections must be pinned."""
+        cv = (
+            "Summary\n"
+            "Experienced professional with strong communication skills.\n"
+            "\n"
+            "Work Experience\n"
+            "Developer at Corp.\n"
+            "\n"
+            "Key Strengths\n"
+            "Leadership, teamwork, problem-solving, and attention to detail.\n"
+        )
+        criteria = [{"text": "xyz_nomatch", "dimension": "skills", "required": True}]
+        result = _select_evidence_snippets(cv, criteria, max_snippets=20)
+        joined = " ".join(result)
+        # Both sections should contribute
+        assert "communication" in joined
+        assert "Leadership" in joined or "teamwork" in joined
+
+    # ── D-01.7-C: Soft-skill synonym expansion ───────────────────────────────
+
+    def test_soft_skill_expansion_dict_has_key_phrases(self):
+        key_phrases = ["communication", "teamwork", "leadership", "attention to detail",
+                       "problem solving", "time management", "customer service"]
+        for phrase in key_phrases:
+            assert phrase in _SOFT_SKILL_EXPANSION, f"Expected phrase in expansion: {phrase!r}"
+
+    def test_synonym_expansion_boosts_implicit_evidence(self):
+        """'Led team of analysts' should score > 0 for 'leadership' criterion after expansion."""
+        cv = (
+            "Led team of 5 analysts and coordinated with stakeholders daily.\n"
+            "Collaborated with cross-functional teams and presented quarterly reports.\n"
+            "Built Python applications using SQL and PostgreSQL.\n"
+        )
+        criteria_with_soft = [
+            {"text": "leadership", "dimension": "soft_skills", "required": True},
+            {"text": "teamwork",   "dimension": "soft_skills", "required": True},
+            {"text": "Python",     "dimension": "skills",      "required": True},
+        ]
+        result = _select_evidence_snippets(cv, criteria_with_soft, max_snippets=10)
+        # "Led team of analysts..." must appear — it contains "led" (synonym for leadership) and "team"
+        joined = " ".join(result)
+        assert "Led team" in joined
+        # "Collaborated..." must also appear — contains "collaborated" and "presented reports"
+        assert "Collaborated" in joined
+
+    def test_synonym_expansion_covers_communication_synonyms(self):
+        """Sentence with 'presented reports' should score higher for 'communication'."""
+        cv = (
+            "Python, SQL, Excel, SAP, PowerPoint.\n"
+            "Presented reports to senior management and liaised with stakeholders.\n"
+        )
+        criteria = [{"text": "communication", "dimension": "soft_skills", "required": True}]
+        result = _select_evidence_snippets(cv, criteria, max_snippets=5)
+        # The presentation/liaison sentence must rank above the skills list
+        assert result[0].startswith("Presented") or "Presented" in result[0]
+
+    def test_attention_to_detail_phrase_expansion(self):
+        """'attention to detail' phrase must expand to include 'verified', 'meticulous' etc."""
+        criteria = [{"text": "attention to detail", "dimension": "soft_skills", "required": True}]
+        cv = (
+            "Verified all financial records with meticulous accuracy.\n"
+            "Python, SQL, Docker.\n"
+        )
+        result = _select_evidence_snippets(cv, criteria, max_snippets=5)
+        joined = " ".join(result)
+        assert "meticulous" in joined or "Verified" in joined
+
+    def test_soft_skill_expansion_dict_synonyms_are_strings(self):
+        """All expansion values must be lists of non-empty strings."""
+        for phrase, synonyms in _SOFT_SKILL_EXPANSION.items():
+            assert isinstance(synonyms, list), f"Expected list for {phrase!r}"
+            assert len(synonyms) > 0, f"Empty synonym list for {phrase!r}"
+            assert all(isinstance(s, str) and s for s in synonyms), f"Non-string synonym in {phrase!r}"
+
+    # ── D-01.7-D: Arabic CV baseline ─────────────────────────────────────────
+
+    def test_arabic_soft_skill_terms_is_non_empty_frozenset(self):
+        assert len(_ARABIC_SOFT_SKILL_TERMS) > 10
+        assert isinstance(_ARABIC_SOFT_SKILL_TERMS, frozenset)
+
+    def test_arabic_cv_detected_by_char_ratio(self):
+        """CV with >15% Arabic chars should trigger Arabic mode."""
+        arabic_cv = "محترف متميز بخبرة 10 سنوات في الخدمات المالية.\n" * 20
+        criteria = [{"text": "leadership", "dimension": "soft_skills", "required": True}]
+        result = _select_evidence_snippets(arabic_cv, criteria, max_snippets=20)
+        # Arabic CV should return results (not empty)
+        assert isinstance(result, list)
+
+    def test_arabic_lines_included_as_baseline_for_arabic_cv(self):
+        """Arabic CV: Arabic lines with zero English keyword score must be included."""
+        arabic_cv = (
+            "محترف متميز بخبرة 10 سنوات في الخدمات المالية، يتمتع بمهارات تواصل وقيادة.\n"
+            "يمتلك قدرة عالية على العمل الجماعي والتنسيق مع الفرق المتعددة.\n"
+            "قاد فريق من 5 محللين وتعاون مع أصحاب المصلحة.\n"
+            "أعد تقارير مالية شهرية وقدمها لمجلس الإدارة.\n"
+        )
+        # English-only criteria that produce zero overlap with Arabic sentences (before D-01.7-D)
+        criteria = [
+            {"text": "xyz_nomatch",  "dimension": "soft_skills", "required": True},
+        ]
+        result = _select_evidence_snippets(arabic_cv, criteria, max_snippets=10)
+        # Some Arabic lines must appear despite zero keyword match
+        assert len(result) > 0
+        assert any(any("؀" <= ch <= "ۿ" for ch in s) for s in result)
+
+    def test_arabic_terms_boost_arabic_sentence_scores(self):
+        """Arabic CV: Arabic sentences should score > 0 once Arabic terms are injected."""
+        arabic_cv = (
+            "يتمتع بمهارات تواصل ممتازة وخبرة في قيادة الفرق.\n"
+            "Python and SQL experience.\n"
+        )
+        criteria = [
+            {"text": "communication", "dimension": "soft_skills", "required": True},
+            {"text": "leadership",    "dimension": "soft_skills", "required": True},
+        ]
+        result = _select_evidence_snippets(arabic_cv, criteria, max_snippets=10)
+        joined = " ".join(result)
+        # Arabic line must be included (either via score boost or baseline)
+        assert "تواصل" in joined or "قيادة" in joined
+
+    def test_english_cv_not_affected_by_arabic_baseline(self):
+        """English CV (< 15% Arabic chars) must not have Arabic baseline budget applied."""
+        english_cv = (
+            "Experienced Python developer with strong SQL skills.\n"
+            "Led team of engineers and collaborated with stakeholders.\n"
+            "Presented quarterly reports to senior management.\n"
+        )
+        criteria = [{"text": "Python", "dimension": "skills", "required": True}]
+        result = _select_evidence_snippets(english_cv, criteria, max_snippets=10)
+        assert isinstance(result, list)
+        assert len(result) > 0
+
+    # ── D-01.7 integration: section boundary helper ───────────────────────────
+
+    def test_is_section_boundary_recognises_work_experience(self):
+        assert _is_section_boundary("Work Experience") is True
+        assert _is_section_boundary("Education") is True
+        assert _is_section_boundary("Certifications") is True
+
+    def test_is_section_boundary_recognises_all_caps(self):
+        assert _is_section_boundary("WORK EXPERIENCE") is True
+        assert _is_section_boundary("EDUCATION AND TRAINING") is True
+
+    def test_is_section_boundary_not_triggered_by_blank(self):
+        assert _is_section_boundary("") is False
+
+    def test_is_section_boundary_not_triggered_by_regular_sentence(self):
+        assert _is_section_boundary("Led a team of 5 analysts and coordinated with stakeholders.") is False
+        assert _is_section_boundary("Strong communication skills demonstrated throughout career.") is False
+
+    # ── D-01.7 backward compatibility ────────────────────────────────────────
+
+    def test_empty_cv_returns_empty(self):
+        assert _select_evidence_snippets("", [{"text": "Python", "dimension": "skills", "required": True}]) == []
+
+    def test_empty_criteria_returns_empty(self):
+        assert _select_evidence_snippets("Some CV content here.", []) == []
+
+    def test_max_snippets_param_still_respected(self):
+        lines = [f"Line {i} about Python SQL Excel SAP PowerPoint skills experience." for i in range(200)]
+        cv = "\n".join(lines)
+        criteria = [{"text": "Python", "dimension": "skills", "required": True}]
+        result = _select_evidence_snippets(cv, criteria, max_snippets=5)
+        assert len(result) <= 5

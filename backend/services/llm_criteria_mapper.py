@@ -301,53 +301,258 @@ def _flatten_criteria(analysis_json: dict) -> list[dict]:
     return items
 
 
+# ── D-01.7 Evidence Retrieval constants ──────────────────────────────────────
+
+# D-01.7-A: Section headers whose content is always pinned in the snippet window
+_CRITICAL_SECTION_RE = re.compile(
+    r"""(?ix)
+    ^(?:
+        # English — summary / profile
+        (?:professional\s+|career\s+|executive\s+|personal\s+)?summary|
+        (?:professional\s+|personal\s+)?profile|
+        career\s+objective|objective|about\s+me|overview|highlights?|
+        personal\s+statement|qualifications\s+summary|
+        # English — skills / competencies
+        (?:key\s+|core\s+|technical\s+|professional\s+)?
+            skills?(?:\s+(?:summary|set|overview|highlights?))?|
+        (?:core\s+|key\s+|professional\s+)?competenc(?:y|ies)|
+        skill\s+(?:set|summary)|areas\s+of\s+expertise|
+        # English — strengths / attributes
+        (?:key\s+)?strengths?|soft\s+skills?|
+        personal\s+(?:attributes|qualities|strengths?)|
+        interpersonal\s+skills?|
+        # Arabic equivalents
+        الملخص(?:\s+(?:المهني|التنفيذي))?|ملخص(?:\s+مهني)?|
+        نبذة(?:\s+(?:شخصية|تعريفية))?|هدف\s+مهني|
+        المهارات(?:\s+(?:الأساسية|التقنية|الشخصية))?|مهارات|
+        الكفاءات(?:\s+الأساسية)?|الكفاءات|
+        نقاط\s+القوة|الصفات\s+الشخصية|السمات\s+الشخصية
+    )\s*:?\s*$
+    """,
+)
+
+# D-01.7-A: Generic section headers that end critical-section capture
+_GENERIC_SECTION_RE = re.compile(
+    r"""(?ix)
+    ^(?:
+        # English
+        (?:work\s+)?experience|employment(?:\s+history)?|career\s+history|
+        professional\s+experience|work\s+history|
+        education(?:al)?(?:\s+(?:background|history))?|academic(?:\s+background)?|
+        certifications?(?:\s+(?:and\s+licenses?|and\s+awards?))?|
+        licenses?(?:\s+and\s+certifications?)?|
+        awards?|achievements?|accomplishments?|honours?|honors?|
+        projects?|publications?|research|
+        languages?|volunteer(?:ing)?(?:\s+experience)?|
+        references?|hobbies?|interests?|activities?|
+        contact(?:\s+(?:info(?:rmation)?|details))?|
+        # Arabic
+        الخبرات?|خبرة(?:\s+مهنية)?|السيرة\s+المهنية|التاريخ\s+الوظيفي|
+        التعليم|المؤهلات(?:\s+العلمية)?|الشهادات|المعتمدات|
+        الإنجازات|الجوائز|المشاريع|الأنشطة|الاهتمامات|
+        اللغات|المراجع|معلومات\s+الاتصال
+    )\s*:?\s*$
+    """,
+)
+
+# D-01.7-C: Soft-skill phrase → expanded retrieval vocabulary
+# Keys are substrings of criterion texts; values are related terms found in CVs.
+_SOFT_SKILL_EXPANSION: dict[str, list[str]] = {
+    "communication":          ["communicated", "presented", "reports", "wrote", "verbal", "liaised", "briefed", "correspondence", "articulated"],
+    "teamwork":               ["team", "collaborated", "joint", "cross-functional", "partnership", "collective", "together"],
+    "collaboration":          ["collaborated", "partnered", "coordinated", "team", "joint", "together"],
+    "leadership":             ["led", "managed", "supervised", "mentored", "coached", "directed", "guided", "oversaw", "head"],
+    "management":             ["managed", "supervised", "directed", "oversaw", "coordinated", "administered"],
+    "problem solving":        ["resolved", "solution", "troubleshot", "investigated", "diagnosed", "addressed"],
+    "analytical thinking":    ["analyzed", "analysis", "insights", "evaluated", "assessed", "investigated"],
+    "analytical":             ["analyzed", "analysis", "insights", "evaluated", "assessed"],
+    "adaptability":           ["adapted", "flexible", "versatile", "adjusted", "transition"],
+    "time management":        ["deadlines", "prioritized", "scheduled", "organized", "timely", "efficient"],
+    "customer service":       ["clients", "customers", "stakeholders", "satisfaction", "support", "served"],
+    "customer-facing":        ["clients", "customers", "front-line", "service", "support"],
+    "attention to detail":    ["accurate", "precision", "reviewed", "quality", "checked", "verified", "meticulous"],
+    "initiative":             ["initiated", "proposed", "proactively", "self-motivated", "independent"],
+    "negotiation":            ["negotiated", "agreement", "contract", "deal", "mediated", "persuaded"],
+    "coaching":               ["trained", "mentored", "coached", "developed", "onboarded"],
+    "mentoring":              ["mentored", "coached", "guided", "trained", "developed"],
+    "stakeholder management": ["stakeholders", "executives", "management", "clients", "board", "senior"],
+    "coordination":           ["coordinated", "organized", "arranged", "facilitated", "scheduled"],
+    "presentation":           ["presented", "presentations", "delivered", "demonstrated", "showcased"],
+    "reporting":              ["reports", "reported", "prepared", "compiled", "documented"],
+    "multitasking":           ["multiple", "simultaneous", "parallel", "diverse", "concurrent"],
+    "organisational":         ["organized", "structured", "planned", "systematic", "coordinated"],
+    "organizational":         ["organized", "structured", "planned", "systematic", "coordinated"],
+    "interpersonal":          ["relationship", "rapport", "collaborated", "engaged", "communicated"],
+    "creativity":             ["creative", "innovative", "designed", "developed", "novel"],
+    "critical thinking":      ["evaluated", "assessed", "analyzed", "reasoned", "critiqued"],
+    "flexibility":            ["adapted", "flexible", "versatile", "adjusted", "dynamic"],
+}
+
+# D-01.7-D: Arabic soft-skill vocabulary — injected into keyword set for Arabic CVs
+# Allows Arabic sentences to score against English criteria via Arabic translations.
+_ARABIC_SOFT_SKILL_TERMS: frozenset[str] = frozenset({
+    "تواصل", "التواصل", "العمل", "الجماعي", "فريق", "قيادة", "القيادة",
+    "إشراف", "الإشراف", "تنسيق", "التنسيق", "إدارة", "خدمة", "العملاء",
+    "تقارير", "عروض", "تقديم", "حل", "المشكلات", "تحليل", "التحليل",
+    "مرونة", "المرونة", "التفاوض", "تفاوض", "تدريب", "التدريب",
+    "الإرشاد", "تعاون", "التعاون", "مبادرة", "المبادرة", "دقة", "الدقة",
+    "أصحاب", "المصلحة", "الفريق", "مهارات", "إدارة الفرق",
+    "خدمة العملاء", "العمل الجماعي", "مهارات التواصل",
+})
+
+
+def _is_section_boundary(line: str) -> bool:
+    """True when a non-blank line marks the start of a CV section."""
+    if not line:
+        return False
+    if _CRITICAL_SECTION_RE.match(line):
+        return True
+    if _GENERIC_SECTION_RE.match(line):
+        return True
+    # ALL-CAPS multi-word phrase (e.g. "WORK EXPERIENCE", "PROFESSIONAL SUMMARY")
+    if line.isupper() and 3 <= len(line) <= 55 and " " in line:
+        return True
+    return False
+
+
 def _select_evidence_snippets(
     raw_cv_text: str,
     criteria_list: list[dict],
-    max_snippets: int = 40,
+    max_snippets: int = 60,    # D-01.7-B: increased from 40
     min_length: int = 20,
-    max_length: int = 220,
+    max_length: int = 300,     # D-01.7-B: increased from 220
+    pin_budget: int = 15,      # D-01.7-A: max lines pinned from critical sections
 ) -> list[str]:
-    """Select the most relevant CV sentences by keyword overlap with all criteria.
+    """Select the most relevant CV sentences for the LLM evidence window.
 
-    Scores each sentence by how many criterion keywords it contains, then
-    returns the top-N unique sentences. This gives the LLM focused evidence
-    without sending the entire raw CV.
+    D-01.7 improvements:
+    A — Critical-section pinning: profile/summary/skills/competencies content
+        always included regardless of keyword score.
+    B — Budget: max_snippets 40→60, max_length 220→300.
+    C — Soft-skill synonym expansion: vocabulary for soft-skill criteria expanded
+        with action verbs and related terms found in typical CV language.
+    D — Arabic baseline: for Arabic CVs, Arabic-only zero-scored lines are
+        included proportionally so Arabic evidence is not drowned out by
+        English keyword matching.
     """
     if not raw_cv_text or not criteria_list:
         return []
 
-    # Build keyword set from all criterion texts
+    # ── D-01.7-A: Pin critical-section content ────────────────────────────────
+    all_lines = raw_cv_text.split("\n")
+    pinned: list[str] = []
+    in_critical = False
+    section_line_count = 0
+    _MAX_SECTION_LINES = 20   # safety cap: max lines captured per critical section
+
+    for line in all_lines:
+        stripped = line.strip()
+
+        # New critical section header: start (or restart) pinning
+        if _CRITICAL_SECTION_RE.match(stripped):
+            in_critical = True
+            section_line_count = 0
+            continue  # skip the header line itself
+
+        # Non-critical section boundary: stop pinning
+        if in_critical and _is_section_boundary(stripped):
+            in_critical = False
+            continue
+
+        if in_critical:
+            if min_length <= len(stripped) <= max_length:
+                pinned.append(stripped)
+            section_line_count += 1
+            if section_line_count >= _MAX_SECTION_LINES:
+                in_critical = False
+
+    seen: set[str] = set()
+    pinned_dedup: list[str] = []
+    for s in pinned:
+        key = s.lower()[:80]
+        if key not in seen:
+            seen.add(key)
+            pinned_dedup.append(s)
+            if len(pinned_dedup) >= pin_budget:
+                break
+
+    # ── D-01.7-C: Build expanded keyword set ─────────────────────────────────
     keywords: set[str] = set()
     for c in criteria_list:
-        words = re.findall(r"[\w؀-ۿ]{3,}", c["text"].lower())
+        text_lower = c["text"].lower()
+        words = re.findall(r"[\w؀-ۿ]{3,}", text_lower)
         keywords.update(words)
+        # Phrase-level expansion (handles multi-word criteria like "attention to detail")
+        for phrase, synonyms in _SOFT_SKILL_EXPANSION.items():
+            if phrase in text_lower:
+                keywords.update(w.lower() for w in synonyms)
+        # Word-level expansion for soft_skills dimension criteria
+        if c.get("dimension") == "soft_skills":
+            for kw in words:
+                keywords.update(
+                    w.lower() for w in _SOFT_SKILL_EXPANSION.get(kw, [])
+                )
 
-    # Tokenise CV into lines / sentences
-    raw_lines = re.split(r"\n+|(?<=[.!?؟])\s+", raw_cv_text)
-    sentences = [ln.strip() for ln in raw_lines if min_length <= len(ln.strip()) <= max_length]
+    # ── D-01.7-D: Arabic CV detection ────────────────────────────────────────
+    arabic_chars = sum(1 for ch in raw_cv_text if "؀" <= ch <= "ۿ")
+    is_arabic_cv = (arabic_chars / max(len(raw_cv_text), 1)) > 0.15
+    if is_arabic_cv:
+        keywords.update(_ARABIC_SOFT_SKILL_TERMS)
 
-    if not sentences:
-        # Fallback: return first N chars as single snippet
+    # ── Tokenise into candidate sentences ────────────────────────────────────
+    raw_segments = re.split(r"\n+|(?<=[.!?؟])\s+", raw_cv_text)
+    candidates = [
+        seg.strip() for seg in raw_segments
+        if min_length <= len(seg.strip()) <= max_length
+    ]
+
+    if not candidates and not pinned_dedup:
         return [raw_cv_text[:400].strip()]
 
     def _score(s: str) -> int:
         s_lower = s.lower()
         return sum(1 for kw in keywords if kw in s_lower)
 
-    ranked = sorted(sentences, key=_score, reverse=True)
+    remaining = max_snippets - len(pinned_dedup)
+    if remaining <= 0:
+        return pinned_dedup[:max_snippets]
 
-    seen: set[str] = set()
-    result: list[str] = []
-    for s in ranked:
-        key = s.lower()[:80]
+    # D-01.7-D: Reserve a baseline slot budget for unscored Arabic lines
+    arabic_baseline_budget = min(10, remaining // 4) if is_arabic_cv else 0
+    keyword_budget = remaining - arabic_baseline_budget
+
+    arabic_baseline: list[str] = []
+    keyword_pool: list[tuple[str, int]] = []
+
+    for seg in candidates:
+        key = seg.lower()[:80]
+        if key in seen:
+            continue
+        score = _score(seg)
+        is_arabic_line = (
+            sum(1 for ch in seg if "؀" <= ch <= "ۿ") / max(len(seg), 1) > 0.3
+        )
+        if (
+            is_arabic_cv and is_arabic_line and score == 0
+            and len(arabic_baseline) < arabic_baseline_budget
+        ):
+            arabic_baseline.append(seg)
+            seen.add(key)
+        else:
+            keyword_pool.append((seg, score))
+
+    keyword_pool.sort(key=lambda x: x[1], reverse=True)
+
+    keyword_selected: list[str] = []
+    for seg, _ in keyword_pool:
+        key = seg.lower()[:80]
         if key not in seen:
             seen.add(key)
-            result.append(s)
-            if len(result) >= max_snippets:
+            keyword_selected.append(seg)
+            if len(keyword_selected) >= keyword_budget:
                 break
 
-    return result
+    return (pinned_dedup + keyword_selected + arabic_baseline)[:max_snippets]
 
 
 def _build_user_message(
