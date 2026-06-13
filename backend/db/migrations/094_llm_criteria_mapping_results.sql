@@ -83,4 +83,24 @@ INSERT INTO ai_prompts (
 )
 ON CONFLICT (prompt_code, version) DO NOTHING;
 
+-- ── Part 4: Seed system_config — LLM Criteria Mapping toggle ─────────────────
+-- key:      scoring_v2.llm_criteria_mapping_enabled
+-- default:  false  (silent mode — mapper does NOT run unless explicitly enabled)
+-- category: scoring
+-- Set to 'true' via the Platform Config API or direct SQL to activate D-01.
+
+INSERT INTO system_config (key, value, type, category, editable, description)
+VALUES (
+    'scoring_v2.llm_criteria_mapping_enabled',
+    'false',
+    'boolean',
+    'scoring',
+    TRUE,
+    'Scoring V2 D-01: Run the LLM Criteria Mapper in silent mode after '
+    'rule-based matching and store llm_match_results_json. '
+    'Does not affect final_score or any existing scoring behaviour. '
+    'Default: false. Enable only on the worker container.'
+)
+ON CONFLICT (key) DO NOTHING;
+
 COMMIT;

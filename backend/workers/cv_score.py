@@ -843,9 +843,8 @@ async def _score_cv_async(
                     matchresult_to_dict(_match_result), ensure_ascii=False
                 )
 
-                # ── D-01: LLM criteria mapping (gated by env flag, default OFF) ──
-                import os as _os
-                if _os.environ.get("SCORING_V2_LLM_MAPPING", "0") == "1":
+                # ── D-01: LLM criteria mapping (gated by platform config, default OFF) ──
+                if prompt_cfg.llm_criteria_mapping_enabled:
                     from services.llm_criteria_mapper import LLMCriteriaMapper
                     _llm_result = await LLMCriteriaMapper().assess(
                         cv_facts=_cv_facts,

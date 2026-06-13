@@ -101,6 +101,8 @@ class PromptConfig:
     min_extracted_text_chars: int = 300
     # ── AI comparison default ─────────────────────────────────────────────────
     enable_ai_comparison_default: bool = False
+    # ── Scoring V2 — LLM Criteria Mapping (D-01) ─────────────────────────────
+    llm_criteria_mapping_enabled: bool = False
     # Per-job mandatory skills (if non-empty, missing any = automatic penalty)
     mandatory_skills: list[str] = field(default_factory=list)
     mandatory_skills_weight: float = 0.0
@@ -145,7 +147,8 @@ async def load_prompt_config(
                 'gatekeeper_non_english_similarity_reject_below',
                 'gatekeeper_non_english_skill_ratio_reject_below',
                 'min_extracted_text_chars',
-                'enable_ai_comparison_default'
+                'enable_ai_comparison_default',
+                'scoring_v2.llm_criteria_mapping_enabled'
             )
         """)
     )
@@ -220,6 +223,9 @@ async def load_prompt_config(
     enable_ai_comparison_default = (
         sys_map.get("enable_ai_comparison_default", "false").lower() == "true"
     )
+    llm_criteria_mapping_enabled = (
+        sys_map.get("scoring_v2.llm_criteria_mapping_enabled", "false").lower() == "true"
+    )
 
     return PromptConfig(
         weight_profile=weight_profile_name,
@@ -238,6 +244,7 @@ async def load_prompt_config(
         gatekeeper_non_english_skill_ratio_reject_below=gk_non_en_skill,
         min_extracted_text_chars=min_extracted_text_chars,
         enable_ai_comparison_default=enable_ai_comparison_default,
+        llm_criteria_mapping_enabled=llm_criteria_mapping_enabled,
         mandatory_skills=overrides.get("mandatory_skills", []) if overrides else [],
         mandatory_skills_weight=float(overrides.get("mandatory_skills_weight", 0)) if overrides else 0.0,
     )

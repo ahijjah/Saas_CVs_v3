@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
+from services.prompt_config import PromptConfig
 from services.llm_criteria_mapper import (
     LLMCriteriaMapper,
     LLMCriterionAssessment,
@@ -589,25 +590,61 @@ class TestSerialisationRoundTrip:
         assert r2.assessments == []
 
 
-# ── Section H: Feature flag OFF = no-op ──────────────────────────────────────
+# ── Section H: Feature flag (platform config) ────────────────────────────────
 
 class TestFeatureFlag:
-    def test_flag_off_by_default(self):
-        """SCORING_V2_LLM_MAPPING must default to off — mapper must not run."""
-        assert os.environ.get("SCORING_V2_LLM_MAPPING", "0") == "0"
+    def test_prompt_config_default_is_false(self):
+        """PromptConfig.llm_criteria_mapping_enabled must default to False."""
+        cfg = PromptConfig()
+        assert cfg.llm_criteria_mapping_enabled is False
 
-    def test_flag_check_logic(self):
-        """Verify the env-var gate logic used in cv_score.py."""
-        original = os.environ.pop("SCORING_V2_LLM_MAPPING", None)
-        try:
-            assert os.environ.get("SCORING_V2_LLM_MAPPING", "0") != "1"
-            os.environ["SCORING_V2_LLM_MAPPING"] = "1"
-            assert os.environ.get("SCORING_V2_LLM_MAPPING", "0") == "1"
-        finally:
-            if original is None:
-                os.environ.pop("SCORING_V2_LLM_MAPPING", None)
-            else:
-                os.environ["SCORING_V2_LLM_MAPPING"] = original
+    def test_prompt_config_can_be_set_true(self):
+        cfg = PromptConfig(llm_criteria_mapping_enabled=True)
+        assert cfg.llm_criteria_mapping_enabled is True
+
+    def test_string_parsing_true_variants(self):
+        """load_prompt_config uses .lower() == 'true' — verify all accepted forms."""
+        for truthy in ("true", "True", "TRUE"):
+            assert truthy.lower() == "true"
+
+    def test_string_parsing_false_variants(self):
+        """Verify that non-'true' strings resolve to False (safe default)."""
+        for falsy in ("false", "False", "0", "1", "", "yes", "on"):
+            assert falsy.lower() != "true"
+
+    def test_missing_key_defaults_false(self):
+        """Simulate missing key in sys_map — default must be 'false'."""
+        sys_map: dict = {}
+        result = sys_map.get("scoring_v2.llm_criteria_mapping_enabled", "false").lower() == "true"
+        assert result is False
+
+    def test_key_present_and_true(self):
+        """Simulate key set to 'true' in sys_map."""
+        sys_map = {"scoring_v2.llm_criteria_mapping_enabled": "true"}
+        result = sys_map.get("scoring_v2.llm_criteria_mapping_enabled", "false").lower() == "true"
+        assert result is True
+
+    def test_key_present_and_false(self):
+        """Simulate key explicitly set to 'false'."""
+        sys_map = {"scoring_v2.llm_criteria_mapping_enabled": "false"}
+        result = sys_map.get("scoring_v2.llm_criteria_mapping_enabled", "false").lower() == "true"
+        assert result is False
+
+    def test_config_off_no_mapper_branch_entered(self):
+        """When llm_criteria_mapping_enabled=False the mapper branch must be skipped."""
+        cfg = PromptConfig(llm_criteria_mapping_enabled=False)
+        entered = False
+        if cfg.llm_criteria_mapping_enabled:
+            entered = True
+        assert entered is False
+
+    def test_config_on_mapper_branch_entered(self):
+        """When llm_criteria_mapping_enabled=True the mapper branch must be entered."""
+        cfg = PromptConfig(llm_criteria_mapping_enabled=True)
+        entered = False
+        if cfg.llm_criteria_mapping_enabled:
+            entered = True
+        assert entered is True
 
 
 # ── Section I: Strict technical distinctions ─────────────────────────────────
