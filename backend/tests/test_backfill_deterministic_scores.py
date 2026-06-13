@@ -20,6 +20,7 @@ import pytest
 
 # ── Module under test ─────────────────────────────────────────────────────────
 from scripts.backfill_deterministic_scores import (
+    _apply_soft_skill_routing,
     _parse_weights,
     _process_row,
 )
@@ -129,14 +130,14 @@ class TestProcessRow:
 
     def test_returns_int_score_and_json_string(self):
         llm_json = self._serialised_llm()
-        score, json_str = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        score, json_str, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
         assert isinstance(score, int)
         assert 0 <= score <= 100
         assert isinstance(json_str, str)
 
     def test_json_string_is_valid_json(self):
         llm_json = self._serialised_llm()
-        _, json_str = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        _, json_str, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
         parsed = json.loads(json_str)
         assert parsed["_schema"] == "det_score_v1"
         assert "final_score" in parsed
@@ -162,7 +163,7 @@ class TestProcessRow:
         ]
         from services.evidence_serialiser import llm_matchresult_to_dict
         llm_json = llm_matchresult_to_dict(_make_llm_result(assessments))
-        score, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        score, _, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
         assert score == 100
 
     def test_all_absent_gives_zero(self):
@@ -178,14 +179,14 @@ class TestProcessRow:
         ]
         from services.evidence_serialiser import llm_matchresult_to_dict
         llm_json = llm_matchresult_to_dict(_make_llm_result(assessments))
-        score, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        score, _, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
         assert score == 0
 
     def test_weights_as_string_also_work(self):
         """weights_snapshot may arrive as JSON string in edge cases."""
         llm_json = self._serialised_llm()
         weights_str = json.dumps(_DEFAULT_WEIGHTS)
-        score, json_str = _process_row(llm_json, weights_str, _DEFAULT_CFG)
+        score, _, _ = _process_row(llm_json, weights_str, _DEFAULT_CFG)
         assert isinstance(score, int)
 
     def test_partial_credit_config_affects_score(self):
@@ -207,8 +208,8 @@ class TestProcessRow:
         cfg_low  = DeterministicScoringConfig(partial_credit=0.30)
         cfg_high = DeterministicScoringConfig(partial_credit=0.70)
 
-        score_low,  _ = _process_row(llm_json, _DEFAULT_WEIGHTS, cfg_low)
-        score_high, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, cfg_high)
+        score_low,  _, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, cfg_low)
+        score_high, _, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, cfg_high)
         assert score_high > score_low
 
     def test_invalid_llm_json_raises(self):
@@ -224,28 +225,210 @@ class TestProcessRow:
         """No criteria → all dimension averages are 0 → final_score = 0."""
         from services.evidence_serialiser import llm_matchresult_to_dict
         llm_json = llm_matchresult_to_dict(_make_llm_result([]))
-        score, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        score, _, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
         assert score == 0
 
     def test_det_score_json_schema_key(self):
         llm_json = self._serialised_llm()
-        _, json_str = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        _, json_str, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
         parsed = json.loads(json_str)
         assert parsed["_schema"] == "det_score_v1"
 
     def test_mapper_version_preserved_in_output(self):
         llm_json = self._serialised_llm()
-        _, json_str = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        _, json_str, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
         parsed = json.loads(json_str)
         assert parsed.get("mapper_version") == "1.2.3"
 
     def test_deterministic_same_input_same_output(self):
         """Same input always produces the same output (no randomness)."""
         llm_json = self._serialised_llm()
-        score1, json1 = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
-        score2, json2 = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        score1, json1, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        score2, json2, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
         assert score1 == score2
         assert json.loads(json1)["final_score"] == json.loads(json2)["final_score"]
+
+    def test_rerouted_count_returned(self):
+        """Third return value is count of assessments whose dimension was corrected."""
+        assessments = [
+            LLMCriterionAssessment(
+                criterion_text="Communication", dimension="skills",  # wrong dimension
+                required=True, status="MATCHED", confidence=0.80,
+                supporting_evidence=["Strong communicator noted throughout."],
+                match_reason="Evidence found.", match_type="inferred",
+                criterion_class="soft_skill",  # should be in soft_skills
+                risk_flags=[],
+                prompt_code="recruitment.criteria_mapping", prompt_version="2",
+                llm_model="gpt-4o-mini",
+            ),
+            LLMCriterionAssessment(
+                criterion_text="Python", dimension="skills",  # correct dimension
+                required=True, status="MATCHED", confidence=0.95,
+                supporting_evidence=["Python listed."],
+                match_reason="Direct match.", match_type="direct",
+                criterion_class="strict",
+                risk_flags=[],
+                prompt_code="recruitment.criteria_mapping", prompt_version="2",
+                llm_model="gpt-4o-mini",
+            ),
+        ]
+        from services.evidence_serialiser import llm_matchresult_to_dict
+        llm_json = llm_matchresult_to_dict(_make_llm_result(assessments))
+        _, _, rerouted = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        assert rerouted == 1  # only the soft_skill criterion was rerouted
+
+    def test_rerouted_soft_skill_lands_in_soft_skills_bucket(self):
+        """After routing correction the det engine scores the criterion in soft_skills."""
+        assessments = [
+            LLMCriterionAssessment(
+                criterion_text="Teamwork", dimension="skills",  # pre-F-01.4 misrouting
+                required=True, status="MATCHED", confidence=0.85,
+                supporting_evidence=["Led cross-functional projects."],
+                match_reason="Evidence found.", match_type="transferable",
+                criterion_class="soft_skill",
+                risk_flags=[],
+                prompt_code="recruitment.criteria_mapping", prompt_version="2",
+                llm_model="gpt-4o-mini",
+            ),
+        ]
+        from services.evidence_serialiser import llm_matchresult_to_dict
+        llm_json = llm_matchresult_to_dict(_make_llm_result(assessments))
+        _, json_str, rerouted = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        parsed = json.loads(json_str)
+        assert rerouted == 1
+        # soft_skills dimension must have the required criterion; skills must have none
+        ss = parsed["dimensions"]["soft_skills"]
+        assert ss["n_required"] + ss["n_preferred"] == 1
+        sk = parsed["dimensions"]["skills"]
+        assert sk["n_required"] + sk["n_preferred"] == 0
+
+    def test_no_rerouting_when_already_correct(self):
+        """Criteria already in soft_skills dimension are not double-counted."""
+        assessments = [
+            LLMCriterionAssessment(
+                criterion_text="Leadership", dimension="soft_skills",
+                required=True, status="MATCHED", confidence=0.90,
+                supporting_evidence=["Managed a team of 8."],
+                match_reason="Direct evidence.", match_type="direct",
+                criterion_class="soft_skill",
+                risk_flags=[],
+                prompt_code="recruitment.criteria_mapping", prompt_version="2",
+                llm_model="gpt-4o-mini",
+            ),
+        ]
+        from services.evidence_serialiser import llm_matchresult_to_dict
+        llm_json = llm_matchresult_to_dict(_make_llm_result(assessments))
+        _, _, rerouted = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
+        assert rerouted == 0  # already correct — no rerouting needed
+
+
+# ── _apply_soft_skill_routing ─────────────────────────────────────────────────
+
+class TestApplySoftSkillRouting:
+    """Unit tests for the F-01.6 in-memory routing correction function."""
+
+    def _make_assessment(self, criterion_class: str, dimension: str) -> LLMCriterionAssessment:
+        return LLMCriterionAssessment(
+            criterion_text="Test criterion",
+            dimension=dimension,
+            required=True,
+            status="MATCHED",
+            confidence=0.80,
+            supporting_evidence=["Some evidence."],
+            match_reason="Matches.",
+            match_type="direct",
+            criterion_class=criterion_class,
+            risk_flags=[],
+            prompt_code="recruitment.criteria_mapping",
+            prompt_version="2",
+            llm_model="gpt-4o-mini",
+        )
+
+    def _make_result(self, assessments) -> LLMMatchResult:
+        return LLMMatchResult(
+            application_id="app-test",
+            job_id="job-test",
+            assessments=assessments,
+            processing_ms=100,
+            created_at="2026-01-01T00:00:00+00:00",
+            prompt_code="recruitment.criteria_mapping",
+            prompt_version="2",
+            model="gpt-4o-mini",
+        )
+
+    def test_soft_skill_in_skills_is_corrected(self):
+        a = self._make_assessment("soft_skill", "skills")
+        r = self._make_result([a])
+        count = _apply_soft_skill_routing(r)
+        assert count == 1
+        assert r.assessments[0].dimension == "soft_skills"
+
+    def test_soft_skill_in_experience_is_corrected(self):
+        a = self._make_assessment("soft_skill", "experience")
+        r = self._make_result([a])
+        count = _apply_soft_skill_routing(r)
+        assert count == 1
+        assert r.assessments[0].dimension == "soft_skills"
+
+    def test_soft_skill_already_correct_not_counted(self):
+        a = self._make_assessment("soft_skill", "soft_skills")
+        r = self._make_result([a])
+        count = _apply_soft_skill_routing(r)
+        assert count == 0
+        assert r.assessments[0].dimension == "soft_skills"
+
+    def test_soft_skill_in_other_preserved(self):
+        """explicit 'other' classification is intentional — do not override."""
+        a = self._make_assessment("soft_skill", "other")
+        r = self._make_result([a])
+        count = _apply_soft_skill_routing(r)
+        assert count == 0
+        assert r.assessments[0].dimension == "other"
+
+    def test_non_soft_skill_class_not_affected(self):
+        a = self._make_assessment("strict", "skills")
+        r = self._make_result([a])
+        count = _apply_soft_skill_routing(r)
+        assert count == 0
+        assert r.assessments[0].dimension == "skills"
+
+    def test_mixed_assessments_only_soft_skill_corrected(self):
+        assessments = [
+            self._make_assessment("soft_skill", "skills"),    # should be corrected
+            self._make_assessment("strict", "skills"),         # must not change
+            self._make_assessment("soft_skill", "soft_skills"), # already correct
+            self._make_assessment("soft_skill", "experience"),  # should be corrected
+        ]
+        r = self._make_result(assessments)
+        count = _apply_soft_skill_routing(r)
+        assert count == 2
+        assert r.assessments[0].dimension == "soft_skills"
+        assert r.assessments[1].dimension == "skills"          # unchanged
+        assert r.assessments[2].dimension == "soft_skills"     # unchanged
+        assert r.assessments[3].dimension == "soft_skills"
+
+    def test_empty_assessments_returns_zero(self):
+        r = self._make_result([])
+        assert _apply_soft_skill_routing(r) == 0
+
+    def test_mutates_in_place_not_input_dict(self):
+        """llm_match_results_json input dict is never modified."""
+        from services.evidence_serialiser import llm_matchresult_to_dict, llm_matchresult_from_dict
+        assessment = self._make_assessment("soft_skill", "skills")
+        result = self._make_result([assessment])
+        original_dict = llm_matchresult_to_dict(result)
+        # Check stored value before
+        stored_dim = original_dict["assessments"][0]["dimension"]
+        assert stored_dim == "skills"
+
+        # Deserialise fresh copy and apply routing
+        fresh = llm_matchresult_from_dict(original_dict)
+        _apply_soft_skill_routing(fresh)
+
+        # Original dict must be unchanged
+        assert original_dict["assessments"][0]["dimension"] == "skills"
+        # But fresh object is corrected
+        assert fresh.assessments[0].dimension == "soft_skills"
 
 
 # ── Idempotency — _update_row guard ──────────────────────────────────────────
@@ -378,7 +561,7 @@ class TestFailureIsolation:
 
         call_count = {"n": 0}
 
-        def _side_effect(conn, app_id):
+        def _side_effect(conn, app_id, *, recalculate=False):
             call_count["n"] += 1
             if app_id == "app-bad":
                 return bad_row
@@ -408,7 +591,9 @@ class TestFailureIsolation:
             ),
             patch(
                 "scripts.backfill_deterministic_scores._update_row",
-                side_effect=lambda conn, aid, score, jsn: update_calls.append(aid) or True,
+                side_effect=lambda conn, aid, score, jsn, *, recalculate=False: (
+                    update_calls.append(aid) or True
+                ),
             ),
         ):
             mock_conn = MagicMock()
