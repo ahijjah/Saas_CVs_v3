@@ -658,6 +658,15 @@ def _parse_one_assessment(
     if dimension not in _VALID_DIMENSION:
         dimension = "other"
 
+    # F-01.4: anchor soft_skill criteria to the soft_skills dimension.
+    # criteria_extraction v1 placed soft skills inside analysis_json.skills,
+    # so D-01 returns dimension="skills" for these criteria even though
+    # criterion_class="soft_skill".  Without this correction the det engine
+    # counts them in the skills bucket and soft_skills collapses to 0.
+    # "other" is intentionally preserved (explicit unknown classification).
+    if criterion_class == "soft_skill" and dimension not in ("soft_skills", "other"):
+        dimension = "soft_skills"
+
     confidence = 0.0
     try:
         confidence = float(d.get("confidence", 0.0))

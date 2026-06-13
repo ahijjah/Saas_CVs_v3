@@ -518,6 +518,59 @@ class TestParseOneAssessment:
         a = _parse_one_assessment(self._base(risk_flags=None), **PROMPT_META)
         assert a.risk_flags == []
 
+    # ── F-01.4: soft_skill dimension routing ─────────────────────────────────
+
+    def test_soft_skill_class_with_skills_dimension_is_rerouted(self):
+        """criterion_class=soft_skill + dimension=skills → dimension corrected to soft_skills."""
+        a = _parse_one_assessment(
+            self._base(criterion_class="soft_skill", dimension="skills"),
+            **PROMPT_META,
+        )
+        assert a.dimension == "soft_skills"
+        assert a.criterion_class == "soft_skill"
+
+    def test_soft_skill_class_already_correct_dimension_unchanged(self):
+        """criterion_class=soft_skill + dimension=soft_skills → no change."""
+        a = _parse_one_assessment(
+            self._base(criterion_class="soft_skill", dimension="soft_skills"),
+            **PROMPT_META,
+        )
+        assert a.dimension == "soft_skills"
+
+    def test_soft_skill_class_with_other_dimension_preserved(self):
+        """criterion_class=soft_skill + dimension=other → other is preserved (explicit unknown)."""
+        a = _parse_one_assessment(
+            self._base(criterion_class="soft_skill", dimension="other"),
+            **PROMPT_META,
+        )
+        assert a.dimension == "other"
+
+    def test_soft_skill_class_rerouted_from_experience_dimension(self):
+        """criterion_class=soft_skill + dimension=experience → corrected to soft_skills."""
+        a = _parse_one_assessment(
+            self._base(criterion_class="soft_skill", dimension="experience"),
+            **PROMPT_META,
+        )
+        assert a.dimension == "soft_skills"
+
+    def test_non_soft_skill_class_dimension_unchanged(self):
+        """criterion_class=certification + dimension=skills → no rerouting applied."""
+        a = _parse_one_assessment(
+            self._base(criterion_class="certification", dimension="skills"),
+            **PROMPT_META,
+        )
+        assert a.dimension == "skills"
+        assert a.criterion_class == "certification"
+
+    def test_education_class_education_dimension_unchanged(self):
+        """criterion_class=education + dimension=education → no change."""
+        a = _parse_one_assessment(
+            self._base(criterion_class="education", dimension="education"),
+            **PROMPT_META,
+        )
+        assert a.dimension == "education"
+        assert a.criterion_class == "education"
+
 
 # ── Section G: Serialisation round-trip ──────────────────────────────────────
 
