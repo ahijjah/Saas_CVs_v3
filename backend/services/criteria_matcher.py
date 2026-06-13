@@ -1,20 +1,26 @@
 """
-Layer 2 — Criteria Matching dataclasses.
+Layer 2 — Criteria Matching dataclasses and CriteriaMatchEngine.
 
-These dataclasses define the result of matching a parsed CVFacts object against
-a job's criteria (sourced from analysis_json).  They are produced by the
-CriteriaMatchEngine (Batch 2A-5) and persisted to
-application_scores.match_results_json (Batch 2A-3).
+Dataclasses (Batch 2A-1): CriterionMatch, GapCandidate, MatchResult.
+CriteriaMatchEngine (Batch 2A-5): rule-based matching of CVFacts against
+analysis_json job criteria.
 
-No matching logic lives here — this file is pure data contracts.
 No LLM calls, no DB access, no scoring changes.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import re
+from collections import Counter
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, Optional
 
-from services.cv_evidence import MatchMethod
+from services.cv_evidence import (
+    CVFacts,
+    EDUCATION_LEVELS,
+    MatchMethod,
+)
 
 
 # ── Type aliases ──────────────────────────────────────────────────────────────
@@ -196,3 +202,675 @@ class MatchResult:
 
     matching_method_summary: dict[str, int] = field(default_factory=dict)
     """Count of each MatchMethod used: {'exact': 3, 'fuzzy': 2, 'absent': 1}."""
+
+
+# ── CriteriaMatchEngine — Batch 2A-5 ─────────────────────────────────────────
+
+_MATCHER_VERSION = "1.0.0"
+
+# All dimensions that always appear in algorithmic_scores.
+_ALL_DIMENSIONS: tuple[str, ...] = (
+    "skills", "experience", "education", "certifications",
+    "soft_skills", "domain_knowledge", "other",
+)
+
+# ---------------------------------------------------------------------------
+# Skill synonym map
+# Keys and values are lowercase.  Maps common abbreviations/variants and
+# Arabic terms to the canonical normalised form used in CVFacts.skill_names.
+# ---------------------------------------------------------------------------
+_SKILL_SYNONYMS: dict[str, str] = {
+    # Microsoft Office short forms
+    "excel":                    "microsoft excel",
+    "ms excel":                 "microsoft excel",
+    "إكسل":                     "microsoft excel",
+    "word":                     "microsoft word",
+    "ms word":                  "microsoft word",
+    "وورد":                     "microsoft word",
+    "powerpoint":               "microsoft powerpoint",
+    "ppt":                      "microsoft powerpoint",
+    "ms powerpoint":            "microsoft powerpoint",
+    "باوربوينت":                "microsoft powerpoint",
+    "ms office":                "microsoft office",
+    "office 365":               "microsoft office",
+    "office365":                "microsoft office",
+    # Database
+    "postgres":                 "postgresql",
+    "mongo":                    "mongodb",
+    "mssql":                    "sql server",
+    # Cloud
+    "gcp":                      "google cloud",
+    "amazon web services":      "aws",
+    # JavaScript ecosystem
+    "react.js":                 "react",
+    "reactjs":                  "react",
+    "ريأكت":                    "react",
+    "vue.js":                   "vue.js",
+    "vuejs":                    "vue.js",
+    "node.js":                  "node.js",
+    "nodejs":                   "node.js",
+    "next.js":                  "next.js",
+    "nextjs":                   "next.js",
+    # Data science
+    "sklearn":                  "scikit-learn",
+    "pyspark":                  "apache spark",
+    # DevOps
+    "k8s":                      "kubernetes",
+    # Arabic programming terms
+    "بايثون":                   "python",
+    "جافا":                     "java",
+    "جافاسكريبت":               "javascript",
+    "فوتوشوب":                  "adobe photoshop",
+    "قواعد البيانات":           "sql",
+}
+
+# Soft skill keywords to scan in criteria text → category label.
+_SOFT_SKILL_INDICATORS: dict[str, list[str]] = {
+    "leadership":      ["leadership", "team management", "supervise", "manage team", "manage staff"],
+    "communication":   ["communication", "presentation", "report writing", "liaison"],
+    "teamwork":        ["teamwork", "collaboration", "cross-functional", "work with team"],
+    "problem_solving": ["problem solving", "analytical", "troubleshooting", "critical thinking"],
+    "time_management": ["time management", "deadline", "multitasking", "prioritis", "prioritiz"],
+    "adaptability":    ["adaptability", "flexible", "fast-paced", "adapt"],
+}
+
+_WS_RE = re.compile(r"\s+")
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
+
+def _normalize_text(text: str) -> str:
+    """Lowercase and collapse whitespace — keeps Arabic chars and symbols."""
+    return _WS_RE.sub(" ", text.lower().strip())
+
+
+def _canonicalize(text: str) -> str:
+    """Normalize then apply synonym expansion."""
+    norm = _normalize_text(text)
+    return _SKILL_SYNONYMS.get(norm, norm)
+
+
+def _confidence_to_status(confidence: float) -> "MatchStatus":
+    if confidence >= 0.60:
+        return "MATCHED"
+    if confidence >= 0.20:
+        return "PARTIAL"
+    return "ABSENT"
+
+
+def _criteria_version(criteria: dict) -> str:
+    canonical = json.dumps(criteria, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def _method_summary(matches: list["CriterionMatch"]) -> dict[str, int]:
+    return dict(Counter(m.match_method for m in matches))
+
+
+def _compute_stats(
+    matches: list["CriterionMatch"],
+) -> tuple[float, float, float, int]:
+    """Returns (required_match_pct, preferred_match_pct, partial_match_pct, blocking_gap_count)."""
+    required = [m for m in matches if m.required]
+    preferred = [m for m in matches if not m.required]
+
+    req_matched = sum(1 for m in required if m.status == "MATCHED")
+    req_pct = round(req_matched / len(required) * 100, 1) if required else 0.0
+
+    pref_matched = sum(1 for m in preferred if m.status == "MATCHED")
+    pref_pct = round(pref_matched / len(preferred) * 100, 1) if preferred else 0.0
+
+    partial = sum(1 for m in matches if m.status == "PARTIAL")
+    partial_pct = round(partial / len(matches) * 100, 1) if matches else 0.0
+
+    blocking = sum(1 for m in required if m.status == "ABSENT")
+    return req_pct, pref_pct, partial_pct, blocking
+
+
+def _build_gap_candidates(
+    matches: list["CriterionMatch"],
+) -> list["GapCandidate"]:
+    _ORDER = {"BLOCKING": 0, "SIGNIFICANT": 1, "MINOR": 2}
+    gaps: list[GapCandidate] = []
+
+    for m in matches:
+        if m.status == "ABSENT":
+            severity: GapSeverity = "BLOCKING" if m.required else "MINOR"
+            gaps.append(GapCandidate(criterion=m, severity=severity))
+        elif m.status == "PARTIAL":
+            severity = "SIGNIFICANT" if m.required else "MINOR"
+            gaps.append(GapCandidate(criterion=m, severity=severity))
+
+    gaps.sort(key=lambda g: _ORDER.get(g.severity, 3))
+    return gaps
+
+
+def _compute_algorithmic_scores(
+    matches: list["CriterionMatch"],
+) -> dict[str, float]:
+    """Weighted average confidence per dimension, scaled to 0–100.
+
+    Required criteria carry weight 2; preferred carry weight 1.
+    All seven standard dimensions always appear in the result.
+    """
+    by_dim: dict[str, list[CriterionMatch]] = {}
+    for m in matches:
+        by_dim.setdefault(m.dimension, []).append(m)
+
+    scores: dict[str, float] = {}
+    for dim, dim_matches in by_dim.items():
+        total_w = sum(2.0 if m.required else 1.0 for m in dim_matches)
+        if total_w == 0:
+            scores[dim] = 0.0
+        else:
+            weighted = sum(
+                m.confidence * (2.0 if m.required else 1.0)
+                for m in dim_matches
+            )
+            scores[dim] = round(weighted / total_w * 100, 1)
+
+    for dim in _ALL_DIMENSIONS:
+        scores.setdefault(dim, 0.0)
+
+    return scores
+
+
+# ---------------------------------------------------------------------------
+# Dimension-specific matching functions
+# ---------------------------------------------------------------------------
+
+def _match_skill_criterion(
+    criterion: str,
+    cv_facts: CVFacts,
+    required: bool,
+) -> "CriterionMatch":
+    """Match one skill criterion against all CVFacts skills."""
+    crit_canonical = _canonicalize(criterion)
+
+    # Build canonical → SkillEvidence lookup from CVFacts
+    skill_lookup: dict[str, "SkillEvidence"] = {}  # noqa: F821
+    from services.cv_evidence import SkillEvidence  # local import to avoid circularity hint
+    for ev in cv_facts.skills:
+        skill_lookup[_canonicalize(ev.skill_name)] = ev
+
+    # 1. Exact canonical match (handles synonym expansion, e.g. "excel" → "microsoft excel")
+    if crit_canonical in skill_lookup:
+        ev = skill_lookup[crit_canonical]
+        via_translation = (ev.language == "ar")
+        return CriterionMatch(
+            criterion_text=criterion,
+            dimension="skills",
+            required=required,
+            status=_confidence_to_status(ev.confidence),
+            confidence=ev.confidence,
+            match_method="exact" if not via_translation else "normalised",
+            supporting_evidence=[ev.context_snippet[:200]] if ev.context_snippet else [],
+            evidence_confidence=[ev.confidence],
+            matched_via_translation=via_translation,
+            original_cv_term=ev.raw_text if via_translation else "",
+        )
+
+    # 2. Fuzzy match — conservative threshold (85) guards against broad-term false positives
+    try:
+        from rapidfuzz import fuzz
+        best_score = 0
+        best_ev = None
+        for canonical_name, ev in skill_lookup.items():
+            score = fuzz.token_set_ratio(crit_canonical, canonical_name)
+            if score > best_score:
+                best_score = score
+                best_ev = ev
+        if best_score >= 85 and best_ev is not None:
+            fuzzy_conf = best_ev.confidence * (best_score / 100)
+            return CriterionMatch(
+                criterion_text=criterion,
+                dimension="skills",
+                required=required,
+                status=_confidence_to_status(fuzzy_conf),
+                confidence=round(fuzzy_conf, 3),
+                match_method="fuzzy",
+                supporting_evidence=[best_ev.context_snippet[:200]] if best_ev.context_snippet else [],
+                evidence_confidence=[round(fuzzy_conf, 3)],
+            )
+    except ImportError:
+        pass
+
+    # 3. Absent
+    return CriterionMatch(
+        criterion_text=criterion,
+        dimension="skills",
+        required=required,
+        status="ABSENT",
+        confidence=0.0,
+        match_method="absent",
+    )
+
+
+def _match_experience(
+    cv_facts: CVFacts,
+    criteria: dict,
+) -> list["CriterionMatch"]:
+    exp_criteria = criteria.get("experience", {})
+    if not isinstance(exp_criteria, dict):
+        return []
+    min_years = exp_criteria.get("minimum_years", 0)
+    if not min_years or min_years <= 0:
+        return []
+
+    actual = cv_facts.total_experience_years
+    criterion_text = f"Minimum {min_years} years experience"
+
+    if actual >= min_years:
+        status, confidence, partial_reason = "MATCHED", 0.90, ""
+    elif actual >= min_years * 0.6:
+        ratio = actual / min_years
+        confidence = round(0.30 + ratio * 0.25, 3)
+        status, partial_reason = "PARTIAL", f"{actual:.0f} of {min_years} required years found"
+    else:
+        confidence = round(min(0.15, actual / min_years * 0.30), 3) if actual > 0 else 0.0
+        status = "ABSENT"
+        partial_reason = f"{actual:.0f} of {min_years} required years found" if actual > 0 else ""
+
+    evidence = [f"{actual:.1f} years total experience extracted from CV"] if actual > 0 else []
+    return [CriterionMatch(
+        criterion_text=criterion_text,
+        dimension="experience",
+        required=True,
+        status=status,
+        confidence=confidence,
+        match_method="inferred",
+        supporting_evidence=evidence,
+        evidence_confidence=[confidence] if evidence else [],
+        partial_reason=partial_reason,
+    )]
+
+
+def _match_education(
+    cv_facts: CVFacts,
+    criteria: dict,
+) -> list["CriterionMatch"]:
+    edu_criteria = criteria.get("education", {})
+    if not isinstance(edu_criteria, dict):
+        return []
+    min_level = edu_criteria.get("minimum_level", "None")
+    if not min_level or min_level == "None":
+        return []
+
+    levels = list(EDUCATION_LEVELS)
+    try:
+        required_idx = levels.index(min_level)
+    except ValueError:
+        return []
+
+    highest = cv_facts.highest_education_level
+    try:
+        actual_idx = levels.index(highest)
+    except ValueError:
+        actual_idx = 0
+
+    if actual_idx >= required_idx:
+        status, confidence, partial_reason = "MATCHED", 0.90, ""
+        method = "exact"
+    elif actual_idx >= required_idx - 2 and actual_idx > 0:
+        # Within two levels of the requirement (e.g. Diploma vs Bachelor's)
+        status, confidence = "PARTIAL", 0.55
+        partial_reason = f"CV shows {highest}; {min_level} required"
+        method = "inferred"
+    else:
+        confidence = 0.10 if actual_idx > 0 else 0.0
+        status = "ABSENT"
+        partial_reason = f"CV shows {highest}; {min_level} required"
+        method = "absent" if confidence < 0.20 else "inferred"
+
+    evidence = [e.raw_text[:150] for e in cv_facts.education[:2] if e.raw_text]
+    return [CriterionMatch(
+        criterion_text=f"Minimum education: {min_level}",
+        dimension="education",
+        required=True,
+        status=status,
+        confidence=confidence,
+        match_method=method,
+        supporting_evidence=evidence,
+        evidence_confidence=[confidence] * len(evidence),
+        partial_reason=partial_reason,
+    )]
+
+
+def _match_certifications(
+    cv_facts: CVFacts,
+    criteria: dict,
+) -> list["CriterionMatch"]:
+    cert_criteria = criteria.get("certifications", [])
+    if not isinstance(cert_criteria, list):
+        return []
+
+    cv_certs = cv_facts.certifications
+    cv_norm_names = [_normalize_text(c.name) for c in cv_certs]
+    matches: list[CriterionMatch] = []
+
+    for cert_criterion in cert_criteria:
+        crit_norm = _normalize_text(cert_criterion)
+
+        # 1. Direct normalised match
+        if crit_norm in cv_norm_names:
+            idx = cv_norm_names.index(crit_norm)
+            ev = cv_certs[idx]
+            matches.append(CriterionMatch(
+                criterion_text=cert_criterion,
+                dimension="certifications",
+                required=True,
+                status="MATCHED",
+                confidence=0.90,
+                match_method="exact",
+                supporting_evidence=[ev.raw_text[:150]] if ev.raw_text else [],
+                evidence_confidence=[0.90],
+            ))
+            continue
+
+        # 2. Fuzzy match
+        best_score = 0
+        best_raw = ""
+        try:
+            from rapidfuzz import fuzz
+            for i, cv_name in enumerate(cv_norm_names):
+                score = fuzz.token_set_ratio(crit_norm, cv_name)
+                if score > best_score:
+                    best_score = score
+                    best_raw = cv_certs[i].raw_text
+        except ImportError:
+            pass
+
+        if best_score >= 80:
+            conf = 0.80 if best_score >= 92 else 0.65
+            matches.append(CriterionMatch(
+                criterion_text=cert_criterion,
+                dimension="certifications",
+                required=True,
+                status=_confidence_to_status(conf),
+                confidence=conf,
+                match_method="fuzzy",
+                supporting_evidence=[best_raw[:150]] if best_raw else [],
+                evidence_confidence=[conf],
+            ))
+        else:
+            matches.append(CriterionMatch(
+                criterion_text=cert_criterion,
+                dimension="certifications",
+                required=True,
+                status="ABSENT",
+                confidence=0.0,
+                match_method="absent",
+            ))
+
+    return matches
+
+
+def _match_domain_knowledge(
+    cv_facts: CVFacts,
+    criteria: dict,
+) -> list["CriterionMatch"]:
+    domain_criteria = criteria.get("domain_knowledge", [])
+    if not isinstance(domain_criteria, list):
+        return []
+
+    cv_domains = {_normalize_text(d.domain_term): d for d in cv_facts.domain_signals}
+    matches: list[CriterionMatch] = []
+
+    for domain_criterion in domain_criteria:
+        crit_norm = _normalize_text(domain_criterion)
+
+        if crit_norm in cv_domains:
+            sig = cv_domains[crit_norm]
+            snippet = sig.context_snippets[0] if sig.context_snippets else ""
+            matches.append(CriterionMatch(
+                criterion_text=domain_criterion,
+                dimension="domain_knowledge",
+                required=True,
+                status="MATCHED",
+                confidence=0.85,
+                match_method="exact",
+                supporting_evidence=[snippet[:150]] if snippet else [],
+                evidence_confidence=[0.85],
+            ))
+            continue
+
+        # Fuzzy fallback
+        best_score = 0
+        best_sig = None
+        try:
+            from rapidfuzz import fuzz
+            for term, sig in cv_domains.items():
+                score = fuzz.token_set_ratio(crit_norm, term)
+                if score > best_score:
+                    best_score = score
+                    best_sig = sig
+        except ImportError:
+            pass
+
+        if best_score >= 75 and best_sig is not None:
+            conf = 0.72 if best_score >= 88 else 0.55
+            snippet = best_sig.context_snippets[0] if best_sig.context_snippets else ""
+            matches.append(CriterionMatch(
+                criterion_text=domain_criterion,
+                dimension="domain_knowledge",
+                required=True,
+                status=_confidence_to_status(conf),
+                confidence=conf,
+                match_method="fuzzy",
+                supporting_evidence=[snippet[:150]] if snippet else [],
+                evidence_confidence=[conf],
+            ))
+        else:
+            matches.append(CriterionMatch(
+                criterion_text=domain_criterion,
+                dimension="domain_knowledge",
+                required=True,
+                status="ABSENT",
+                confidence=0.0,
+                match_method="absent",
+            ))
+
+    return matches
+
+
+def _match_soft_skills(
+    cv_facts: CVFacts,
+    criteria: dict,
+) -> list["CriterionMatch"]:
+    """Infer soft skill criteria from key_responsibilities + other_requirements."""
+    exp_block = criteria.get("experience", {})
+    key_responsibilities: list[str] = (
+        exp_block.get("key_responsibilities", []) if isinstance(exp_block, dict) else []
+    )
+    other_req: list[str] = criteria.get("other_requirements", []) or []
+    combined_text = " ".join(key_responsibilities + other_req).lower()
+
+    if not combined_text.strip():
+        return []
+
+    cv_soft = {s.soft_skill_category: s for s in cv_facts.soft_skill_signals}
+    matches: list[CriterionMatch] = []
+
+    for category, keywords in _SOFT_SKILL_INDICATORS.items():
+        if not any(kw in combined_text for kw in keywords):
+            continue
+
+        criterion_text = f"{category.replace('_', ' ').title()} skills"
+
+        if category in cv_soft:
+            ev = cv_soft[category]
+            matches.append(CriterionMatch(
+                criterion_text=criterion_text,
+                dimension="soft_skills",
+                required=False,
+                status=_confidence_to_status(ev.confidence),
+                confidence=ev.confidence,
+                match_method="inferred",
+                supporting_evidence=[ev.evidence_phrase[:150]] if ev.evidence_phrase else [],
+                evidence_confidence=[ev.confidence],
+            ))
+        else:
+            matches.append(CriterionMatch(
+                criterion_text=criterion_text,
+                dimension="soft_skills",
+                required=False,
+                status="ABSENT",
+                confidence=0.0,
+                match_method="absent",
+            ))
+
+    return matches
+
+
+def _match_other_requirements(
+    cv_facts: CVFacts,
+    criteria: dict,
+) -> list["CriterionMatch"]:
+    other_criteria = criteria.get("other_requirements", [])
+    if not isinstance(other_criteria, list) or not other_criteria:
+        return []
+
+    # Build token pool from all CV evidence for best-effort matching
+    cv_pool = set()
+    cv_pool.update(_normalize_text(s) for s in cv_facts.skill_names_normalised)
+    cv_pool.update(_normalize_text(d.domain_term) for d in cv_facts.domain_signals)
+    cv_pool.update(_normalize_text(c.name) for c in cv_facts.certifications)
+    cv_pool.discard("")
+
+    matches: list[CriterionMatch] = []
+
+    for req in other_criteria:
+        req_norm = _normalize_text(req)
+        best_score = 0
+        try:
+            from rapidfuzz import fuzz
+            for item in cv_pool:
+                score = fuzz.token_set_ratio(req_norm, item)
+                if score > best_score:
+                    best_score = score
+        except ImportError:
+            pass
+
+        if best_score >= 75:
+            conf = round(min(0.70, best_score / 100 * 0.82), 3)
+            matches.append(CriterionMatch(
+                criterion_text=req,
+                dimension="other",
+                required=True,
+                status=_confidence_to_status(conf),
+                confidence=conf,
+                match_method="fuzzy",
+            ))
+        else:
+            matches.append(CriterionMatch(
+                criterion_text=req,
+                dimension="other",
+                required=True,
+                status="ABSENT",
+                confidence=0.0,
+                match_method="absent",
+            ))
+
+    return matches
+
+
+# ---------------------------------------------------------------------------
+# Public engine class
+# ---------------------------------------------------------------------------
+
+class CriteriaMatchEngine:
+    """Rule-based engine that matches a CVFacts object against job criteria.
+
+    Input:  CVFacts (from CVFactsExtractor) + analysis_json-compatible criteria dict.
+    Output: MatchResult with per-criterion verdicts, gap candidates, and
+            algorithmic_scores per dimension.
+
+    No LLM calls.  No DB access.  No changes to existing scoring flow.
+    Safe to call multiple times — all state is local to ``match()``.
+    """
+
+    VERSION = _MATCHER_VERSION
+
+    def match(
+        self,
+        cv_facts: CVFacts,
+        criteria: dict,
+        application_id: str = "",
+        job_id: str = "",
+    ) -> MatchResult:
+        """Match CVFacts against job criteria and return a MatchResult.
+
+        Parameters
+        ----------
+        cv_facts:
+            Structured CV evidence from CVFactsExtractor.
+        criteria:
+            analysis_json-compatible dict with keys:
+            ``skills`` (required/preferred lists),
+            ``experience`` (minimum_years, key_responsibilities),
+            ``education`` (minimum_level),
+            ``certifications``, ``domain_knowledge``, ``other_requirements``.
+        application_id:
+            UUID of the application (stored for traceability).
+        job_id:
+            UUID of the job (stored for traceability).
+
+        Returns
+        -------
+        MatchResult
+        """
+        if not isinstance(criteria, dict):
+            criteria = {}
+
+        all_matches: list[CriterionMatch] = []
+
+        # ── Skills ───────────────────────────────────────────────────────
+        skills_block = criteria.get("skills", {}) or {}
+        required_skills: list[str] = skills_block.get("required", []) or []
+        preferred_skills: list[str] = skills_block.get("preferred", []) or []
+
+        for skill in required_skills:
+            all_matches.append(_match_skill_criterion(skill, cv_facts, required=True))
+        for skill in preferred_skills:
+            all_matches.append(_match_skill_criterion(skill, cv_facts, required=False))
+
+        # ── Experience ────────────────────────────────────────────────────
+        all_matches.extend(_match_experience(cv_facts, criteria))
+
+        # ── Education ─────────────────────────────────────────────────────
+        all_matches.extend(_match_education(cv_facts, criteria))
+
+        # ── Certifications ────────────────────────────────────────────────
+        all_matches.extend(_match_certifications(cv_facts, criteria))
+
+        # ── Domain knowledge ──────────────────────────────────────────────
+        all_matches.extend(_match_domain_knowledge(cv_facts, criteria))
+
+        # ── Soft skills (inferred from key_responsibilities) ──────────────
+        all_matches.extend(_match_soft_skills(cv_facts, criteria))
+
+        # ── Other requirements ────────────────────────────────────────────
+        all_matches.extend(_match_other_requirements(cv_facts, criteria))
+
+        # ── Aggregate ─────────────────────────────────────────────────────
+        req_pct, pref_pct, partial_pct, blocking = _compute_stats(all_matches)
+        gaps = _build_gap_candidates(all_matches)
+        algo_scores = _compute_algorithmic_scores(all_matches)
+        summary = _method_summary(all_matches)
+
+        return MatchResult(
+            application_id=application_id,
+            job_id=job_id,
+            criteria_version=_criteria_version(criteria),
+            matches=all_matches,
+            gap_candidates=gaps,
+            required_match_pct=req_pct,
+            preferred_match_pct=pref_pct,
+            partial_match_pct=partial_pct,
+            blocking_gap_count=blocking,
+            algorithmic_scores=algo_scores,
+            matcher_version=self.VERSION,
+            matching_method_summary=summary,
+        )

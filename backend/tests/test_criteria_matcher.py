@@ -21,9 +21,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 
 from services.criteria_matcher import (
+    CriteriaMatchEngine,
     CriterionMatch,
     GapCandidate,
     MatchResult,
+)
+from services.cv_evidence import (
+    CVFacts,
+    CertificationEvidence,
+    DomainSignal,
+    EducationEvidence,
+    ExperienceEvidence,
+    SkillEvidence,
+    SoftSkillSignal,
 )
 
 
@@ -412,3 +422,447 @@ class TestMatchResult:
         assert len(mr.gap_candidates) == 3
         assert mr.gap_candidates[0].severity == "BLOCKING"
         assert mr.gap_candidates[1].severity == "SIGNIFICANT"
+
+
+# ── CriteriaMatchEngine — Batch 2A-5 ─────────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+# Test fixtures
+# ---------------------------------------------------------------------------
+
+def _skill_ev(
+    name: str,
+    raw: str = "",
+    language: str = "en",
+    confidence: float = 0.90,
+    section: str = "skills",
+) -> SkillEvidence:
+    return SkillEvidence(
+        skill_name=name,
+        raw_text=raw or name,
+        explicit=True,
+        confidence=confidence,
+        context_snippet=f"{name} proficiency",
+        language=language,
+        section_hint=section,
+    )
+
+
+def _make_cv_facts(
+    skills: list[str] | None = None,
+    experience_years: float = 0.0,
+    education_level: str = "None",
+    certifications: list[str] | None = None,
+    domain_signals: list[str] | None = None,
+    soft_skill_categories: list[str] | None = None,
+) -> CVFacts:
+    skill_evs = [_skill_ev(s) for s in (skills or [])]
+    cert_evs = [
+        CertificationEvidence(name=c, raw_text=c)
+        for c in (certifications or [])
+    ]
+    domain_evs = [
+        DomainSignal(domain_term=t, frequency=1, context_snippets=[f"experience with {t}"])
+        for t in (domain_signals or [])
+    ]
+    soft_evs = [
+        SoftSkillSignal(
+            soft_skill_category=cat,
+            evidence_phrase=f"demonstrated {cat.replace('_', ' ')}",
+            confidence=0.75,
+        )
+        for cat in (soft_skill_categories or [])
+    ]
+    edu_evs = (
+        [EducationEvidence(degree_level=education_level, field_of_study="", institution="", year=None)]
+        if education_level != "None" else []
+    )
+    return CVFacts(
+        language="en",
+        total_char_count=1000,
+        skills=skill_evs,
+        experience=[],
+        education=edu_evs,
+        certifications=cert_evs,
+        soft_skill_signals=soft_evs,
+        domain_signals=domain_evs,
+        total_experience_years=experience_years,
+        highest_education_level=education_level,
+        skill_names_normalised=[s.skill_name for s in skill_evs],
+        extractor_version="1.0.0",
+        extraction_method="rule_based_v1",
+    )
+
+
+def _make_criteria(
+    required_skills: list[str] | None = None,
+    preferred_skills: list[str] | None = None,
+    min_years: int = 0,
+    min_education: str = "None",
+    certifications: list[str] | None = None,
+    domain_knowledge: list[str] | None = None,
+    other_requirements: list[str] | None = None,
+    key_responsibilities: list[str] | None = None,
+) -> dict:
+    return {
+        "skills": {
+            "required": required_skills or [],
+            "preferred": preferred_skills or [],
+        },
+        "experience": {
+            "minimum_years": min_years,
+            "relevant_roles": [],
+            "key_responsibilities": key_responsibilities or [],
+        },
+        "education": {
+            "minimum_level": min_education,
+            "fields_of_study": [],
+        },
+        "certifications": certifications or [],
+        "domain_knowledge": domain_knowledge or [],
+        "other_requirements": other_requirements or [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Engine tests
+# ---------------------------------------------------------------------------
+
+class TestCriteriaMatchEngine:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.engine = CriteriaMatchEngine()
+
+    # ── Skill matching ─────────────────────────────────────────────────────
+
+    def test_exact_skill_match_python(self):
+        facts = _make_cv_facts(skills=["Python"])
+        criteria = _make_criteria(required_skills=["Python"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if "python" in x.criterion_text.lower())
+        assert m.status == "MATCHED"
+        assert m.match_method == "exact"
+        assert m.confidence >= 0.85
+
+    def test_no_false_positive_computer_literacy_vs_python_docker(self):
+        """'computer literacy' must NOT fuzzy-match Python or Docker."""
+        facts = _make_cv_facts(skills=["Python", "Docker"])
+        criteria = _make_criteria(required_skills=["computer literacy"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if "computer literacy" in x.criterion_text.lower())
+        assert m.status == "ABSENT"
+
+    def test_abbreviated_skill_matches_via_synonym(self):
+        """'Excel' criterion matches 'Microsoft Excel' in CVFacts via synonym map."""
+        facts = _make_cv_facts(skills=["Microsoft Excel"])
+        criteria = _make_criteria(required_skills=["Excel"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if "excel" in x.criterion_text.lower())
+        assert m.status == "MATCHED"
+
+    def test_arabic_excel_matches_english_criterion(self):
+        """Microsoft Excel criterion matches إكسل raw_text in CVFacts."""
+        facts = CVFacts(
+            language="ar",
+            total_char_count=300,
+            skills=[_skill_ev("Microsoft Excel", raw="إكسل", language="ar")],
+            skill_names_normalised=["Microsoft Excel"],
+        )
+        criteria = _make_criteria(required_skills=["Microsoft Excel"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if "excel" in x.criterion_text.lower())
+        assert m.status == "MATCHED"
+        assert m.matched_via_translation is True
+        assert m.original_cv_term == "إكسل"
+
+    def test_arabic_word_matches_english_criterion(self):
+        """Microsoft Word criterion matches وورد raw_text in CVFacts."""
+        facts = CVFacts(
+            language="ar",
+            total_char_count=300,
+            skills=[_skill_ev("Microsoft Word", raw="وورد", language="ar")],
+            skill_names_normalised=["Microsoft Word"],
+        )
+        criteria = _make_criteria(required_skills=["Microsoft Word"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if "word" in x.criterion_text.lower())
+        assert m.status == "MATCHED"
+        assert m.matched_via_translation is True
+
+    def test_required_vs_preferred_distinction(self):
+        facts = _make_cv_facts(skills=["Python"])
+        criteria = _make_criteria(required_skills=["Python"], preferred_skills=["Tableau"])
+        result = self.engine.match(facts, criteria)
+        python_m = next(x for x in result.matches if x.criterion_text == "Python")
+        tableau_m = next(x for x in result.matches if x.criterion_text == "Tableau")
+        assert python_m.required is True
+        assert tableau_m.required is False
+
+    def test_preferred_skill_absent_method(self):
+        facts = _make_cv_facts(skills=[])
+        criteria = _make_criteria(preferred_skills=["Tableau"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.criterion_text == "Tableau")
+        assert m.required is False
+        assert m.status == "ABSENT"
+
+    # ── Gap counting ───────────────────────────────────────────────────────
+
+    def test_missing_required_skill_increases_blocking_gap_count(self):
+        facts = _make_cv_facts(skills=["Python"])
+        criteria = _make_criteria(required_skills=["Python", "SAP"])
+        result = self.engine.match(facts, criteria)
+        assert result.blocking_gap_count >= 1
+        sap_gap = next(g for g in result.gap_candidates if "SAP" in g.criterion.criterion_text)
+        assert sap_gap.severity == "BLOCKING"
+
+    def test_missing_preferred_does_not_increase_blocking_gap_count(self):
+        facts = _make_cv_facts(skills=["Python"])
+        criteria = _make_criteria(required_skills=[], preferred_skills=["Tableau"])
+        result = self.engine.match(facts, criteria)
+        assert result.blocking_gap_count == 0
+        tableau_gap = next(g for g in result.gap_candidates if "Tableau" in g.criterion.criterion_text)
+        assert tableau_gap.severity == "MINOR"
+
+    def test_required_match_pct_correct(self):
+        facts = _make_cv_facts(skills=["Python"])
+        criteria = _make_criteria(required_skills=["Python", "SAP"])
+        result = self.engine.match(facts, criteria)
+        assert result.required_match_pct == 50.0
+
+    def test_preferred_match_pct_independent_of_blocking(self):
+        facts = _make_cv_facts(skills=["Python"])
+        criteria = _make_criteria(preferred_skills=["Python", "Tableau"])
+        result = self.engine.match(facts, criteria)
+        assert result.blocking_gap_count == 0
+        assert result.preferred_match_pct == 50.0
+
+    # ── Experience matching ────────────────────────────────────────────────
+
+    def test_experience_years_matched(self):
+        facts = _make_cv_facts(experience_years=6.0)
+        criteria = _make_criteria(min_years=5)
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "experience")
+        assert m.status == "MATCHED"
+
+    def test_experience_years_partial(self):
+        facts = _make_cv_facts(experience_years=3.0)
+        criteria = _make_criteria(min_years=5)
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "experience")
+        assert m.status == "PARTIAL"
+        assert "3" in m.partial_reason
+
+    def test_experience_years_absent(self):
+        facts = _make_cv_facts(experience_years=0.0)
+        criteria = _make_criteria(min_years=5)
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "experience")
+        assert m.status == "ABSENT"
+
+    def test_experience_years_zero_required_produces_no_criterion(self):
+        facts = _make_cv_facts(experience_years=2.0)
+        criteria = _make_criteria(min_years=0)
+        result = self.engine.match(facts, criteria)
+        exp_matches = [x for x in result.matches if x.dimension == "experience"]
+        assert exp_matches == []
+
+    # ── Education matching ─────────────────────────────────────────────────
+
+    def test_education_matched(self):
+        facts = _make_cv_facts(education_level="Bachelor's")
+        criteria = _make_criteria(min_education="Bachelor's")
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "education")
+        assert m.status == "MATCHED"
+
+    def test_education_above_requirement_is_matched(self):
+        facts = _make_cv_facts(education_level="Master's")
+        criteria = _make_criteria(min_education="Bachelor's")
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "education")
+        assert m.status == "MATCHED"
+
+    def test_education_partial_one_level_below(self):
+        facts = _make_cv_facts(education_level="Diploma")
+        criteria = _make_criteria(min_education="Bachelor's")
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "education")
+        assert m.status == "PARTIAL"
+
+    def test_education_absent_far_below(self):
+        facts = _make_cv_facts(education_level="High School")
+        criteria = _make_criteria(min_education="Master's")
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "education")
+        assert m.status == "ABSENT"
+
+    def test_education_none_required_produces_no_criterion(self):
+        facts = _make_cv_facts(education_level="Bachelor's")
+        criteria = _make_criteria(min_education="None")
+        result = self.engine.match(facts, criteria)
+        edu_matches = [x for x in result.matches if x.dimension == "education"]
+        assert edu_matches == []
+
+    # ── Certification matching ─────────────────────────────────────────────
+
+    def test_certification_exact_match(self):
+        facts = _make_cv_facts(certifications=["PMP"])
+        criteria = _make_criteria(certifications=["PMP"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "certifications")
+        assert m.status == "MATCHED"
+        assert m.match_method == "exact"
+
+    def test_certification_absent(self):
+        facts = _make_cv_facts(certifications=[])
+        criteria = _make_criteria(certifications=["PMP"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "certifications")
+        assert m.status == "ABSENT"
+
+    # ── Domain signal matching ─────────────────────────────────────────────
+
+    def test_domain_signal_exact_match(self):
+        facts = _make_cv_facts(domain_signals=["records management"])
+        criteria = _make_criteria(domain_knowledge=["records management"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "domain_knowledge")
+        assert m.status == "MATCHED"
+        assert m.match_method == "exact"
+
+    def test_domain_signal_absent(self):
+        facts = _make_cv_facts(domain_signals=[])
+        criteria = _make_criteria(domain_knowledge=["records management"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "domain_knowledge")
+        assert m.status == "ABSENT"
+
+    # ── Soft skill matching ────────────────────────────────────────────────
+
+    def test_soft_skill_signal_match_leadership(self):
+        facts = _make_cv_facts(soft_skill_categories=["leadership"])
+        criteria = _make_criteria(key_responsibilities=["team leadership required"])
+        result = self.engine.match(facts, criteria)
+        soft = [x for x in result.matches if x.dimension == "soft_skills"]
+        leadership = [x for x in soft if "leadership" in x.criterion_text.lower()]
+        assert leadership, "leadership criterion should be generated from key_responsibilities"
+        assert leadership[0].status in ("MATCHED", "PARTIAL")
+
+    def test_soft_skill_absent_when_not_in_cv(self):
+        facts = _make_cv_facts(soft_skill_categories=[])
+        criteria = _make_criteria(key_responsibilities=["team leadership required"])
+        result = self.engine.match(facts, criteria)
+        soft = [x for x in result.matches if x.dimension == "soft_skills"]
+        leadership = [x for x in soft if "leadership" in x.criterion_text.lower()]
+        assert leadership
+        assert leadership[0].status == "ABSENT"
+
+    def test_soft_skill_no_criteria_no_matches(self):
+        facts = _make_cv_facts(soft_skill_categories=["leadership"])
+        criteria = _make_criteria()  # no key_responsibilities
+        result = self.engine.match(facts, criteria)
+        soft = [x for x in result.matches if x.dimension == "soft_skills"]
+        assert soft == []
+
+    # ── Algorithmic scores ─────────────────────────────────────────────────
+
+    def test_algorithmic_scores_all_dimensions_present(self):
+        facts = _make_cv_facts(skills=["Python"])
+        criteria = _make_criteria(required_skills=["Python"])
+        result = self.engine.match(facts, criteria)
+        for dim in ("skills", "experience", "education", "certifications",
+                    "soft_skills", "domain_knowledge", "other"):
+            assert dim in result.algorithmic_scores
+
+    def test_algorithmic_scores_in_range(self):
+        facts = _make_cv_facts(skills=["Python", "SQL"], experience_years=5.0)
+        criteria = _make_criteria(required_skills=["Python"], min_years=5)
+        result = self.engine.match(facts, criteria)
+        for dim, score in result.algorithmic_scores.items():
+            assert 0.0 <= score <= 100.0, f"Score for {dim} out of range: {score}"
+
+    def test_algorithmic_score_skills_high_when_all_matched(self):
+        facts = _make_cv_facts(skills=["Python", "SQL"])
+        criteria = _make_criteria(required_skills=["Python", "SQL"])
+        result = self.engine.match(facts, criteria)
+        assert result.algorithmic_scores["skills"] >= 80.0
+
+    def test_algorithmic_score_skills_zero_when_all_absent(self):
+        facts = _make_cv_facts(skills=[])
+        criteria = _make_criteria(required_skills=["Python", "SAP"])
+        result = self.engine.match(facts, criteria)
+        assert result.algorithmic_scores["skills"] == 0.0
+
+    # ── MatchResult serialisation ──────────────────────────────────────────
+
+    def test_match_result_serializes_with_evidence_serialiser(self):
+        from services.evidence_serialiser import matchresult_to_dict, matchresult_from_dict
+        facts = _make_cv_facts(
+            skills=["Python"],
+            experience_years=3.0,
+            education_level="Bachelor's",
+        )
+        criteria = _make_criteria(
+            required_skills=["Python"],
+            min_years=5,
+            min_education="Bachelor's",
+        )
+        result = self.engine.match(facts, criteria)
+
+        d = matchresult_to_dict(result)
+        assert "_schema" in d
+        assert isinstance(d["matches"], list)
+
+        restored = matchresult_from_dict(d)
+        assert len(restored.matches) == len(result.matches)
+        assert restored.matcher_version == result.matcher_version
+        assert restored.blocking_gap_count == result.blocking_gap_count
+
+    # ── Misc / edge cases ──────────────────────────────────────────────────
+
+    def test_empty_criteria_returns_valid_result(self):
+        facts = _make_cv_facts(skills=["Python"])
+        result = self.engine.match(facts, {})
+        assert isinstance(result, MatchResult)
+        assert result.matches == []
+        assert result.blocking_gap_count == 0
+
+    def test_none_criteria_handled(self):
+        facts = _make_cv_facts()
+        result = self.engine.match(facts, None)
+        assert isinstance(result, MatchResult)
+
+    def test_criteria_version_is_non_empty_string(self):
+        facts = _make_cv_facts()
+        criteria = _make_criteria(required_skills=["Python"])
+        result = self.engine.match(facts, criteria)
+        assert isinstance(result.criteria_version, str)
+        assert len(result.criteria_version) == 16
+
+    def test_matcher_version(self):
+        result = self.engine.match(_make_cv_facts(), {})
+        assert result.matcher_version == "1.0.0"
+
+    def test_gap_candidates_ordered_blocking_first(self):
+        facts = _make_cv_facts(skills=[])
+        criteria = _make_criteria(required_skills=["SAP"], preferred_skills=["Tableau"])
+        result = self.engine.match(facts, criteria)
+        _ORDER = {"BLOCKING": 0, "SIGNIFICANT": 1, "MINOR": 2}
+        severities = [_ORDER[g.severity] for g in result.gap_candidates]
+        assert severities == sorted(severities)
+
+    def test_matching_method_summary_populated(self):
+        facts = _make_cv_facts(skills=["Python"])
+        criteria = _make_criteria(required_skills=["Python", "SAP"])
+        result = self.engine.match(facts, criteria)
+        assert result.matching_method_summary
+        assert "absent" in result.matching_method_summary
+
+    def test_supporting_evidence_populated_for_matched_skill(self):
+        facts = _make_cv_facts(skills=["Python"])
+        criteria = _make_criteria(required_skills=["Python"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.criterion_text == "Python")
+        assert m.supporting_evidence  # should have a context snippet
