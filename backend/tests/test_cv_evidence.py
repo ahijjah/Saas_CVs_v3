@@ -23,6 +23,7 @@ import pytest
 from services.cv_evidence import (
     EDUCATION_LEVELS,
     CVFacts,
+    CVFactsExtractor,
     CertificationEvidence,
     DomainSignal,
     EducationEvidence,
@@ -448,3 +449,316 @@ class TestCVFacts:
             extraction_warnings=["no skills section found", "date unparseable"]
         )
         assert len(facts.extraction_warnings) == 2
+
+
+# ── CVFactsExtractor — Batch 2A-4 ────────────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+# Synthetic CV fixtures
+# ---------------------------------------------------------------------------
+
+_EN_CV = """
+John Smith
+john@example.com
+
+Summary:
+Experienced software developer with 7 years in backend systems.
+Delivered projects on time and led a team of 5 engineers.
+
+Skills:
+Python, Java, SQL, PostgreSQL, Docker, Microsoft Excel, Git, Scrum
+
+Work Experience:
+Senior Developer - TechCorp (2019 - 2023)
+Led a team of 5 developers to build cloud-based solutions.
+Collaborated with cross-functional teams on multiple projects.
+Resolved complex technical issues and met deadlines consistently.
+
+Software Engineer - StartupXYZ (2016 - 2019)
+Developed Python microservices and REST APIs.
+
+Education:
+Bachelor's in Computer Science, State University, 2015
+
+Certifications:
+PMP Certification (2022)
+AWS Certified Solutions Architect (2021)
+"""
+
+_AR_CV = """
+الاسم: أحمد محمد
+البريد الإلكتروني: ahmed@example.com
+
+الملخص:
+مهندس برمجيات ذو خبرة في تطوير التطبيقات وإدارة الفرق.
+
+المهارات:
+بايثون، إكسل، وورد، جافا، قواعد البيانات
+
+الخبرة:
+مطور أول - شركة تقنية (2018 - 2022)
+أدار فريق من المطورين وطور حلول تقنية.
+تواصل مع العملاء وقدم التقارير للإدارة.
+
+التعليم:
+بكالوريوس في علوم الحاسوب، جامعة الملك عبدالله، 2017
+
+الشهادات:
+شهادة PMP في إدارة المشاريع (2021)
+"""
+
+_MIXED_CV = """
+Sara Al-Hassan
+
+Skills:
+Python, SQL, إكسل, Power BI, SharePoint
+
+Experience:
+Records Manager - Government Ministry (2015 - Present)
+Managed records management system for 3000+ employees.
+Implemented digitization project and ISO 15489 compliance.
+Led team of 5 archivists and supervised filing system migration.
+
+Education:
+Master's in Information Science, 2014
+
+Certifications:
+ISO 9001 Lead Auditor
+Certified Records Manager
+"""
+
+_NO_SKILLS_CV = """
+Name: Anonymous
+A person who exists but lists no technical skills whatsoever.
+Graduated from somewhere in some year.
+"""
+
+
+class TestCVFactsExtractor:
+    """Batch 2A-4: CVFactsExtractor integration tests."""
+
+    @pytest.fixture(autouse=True)
+    def extractor(self):
+        self.ex = CVFactsExtractor()
+
+    # ── Basic metadata ─────────────────────────────────────────────────────
+
+    def test_extractor_version(self):
+        facts = self.ex.extract(_EN_CV)
+        assert facts.extractor_version == "1.0.0"
+
+    def test_extraction_method(self):
+        facts = self.ex.extract(_EN_CV)
+        assert facts.extraction_method == "rule_based_v1"
+
+    def test_total_char_count_positive(self):
+        facts = self.ex.extract(_EN_CV)
+        assert facts.total_char_count > 0
+
+    def test_empty_cv_returns_warning(self):
+        facts = self.ex.extract("")
+        assert "empty cv text" in facts.extraction_warnings
+
+    def test_empty_cv_char_count_zero(self):
+        facts = self.ex.extract("")
+        assert facts.total_char_count == 0
+
+    def test_output_is_cvfacts(self):
+        facts = self.ex.extract(_EN_CV)
+        assert isinstance(facts, CVFacts)
+
+    def test_output_json_serialisable(self):
+        facts = self.ex.extract(_EN_CV)
+        payload = json.dumps(dataclasses.asdict(facts))
+        data = json.loads(payload)
+        assert data["extractor_version"] == "1.0.0"
+
+    # ── Language detection ─────────────────────────────────────────────────
+
+    def test_english_cv_language(self):
+        facts = self.ex.extract(_EN_CV)
+        assert facts.language in ("en", "mixed")
+
+    def test_arabic_cv_language(self):
+        facts = self.ex.extract(_AR_CV)
+        # Might be "ar" or "mixed" depending on langdetect
+        assert facts.language in ("ar", "mixed")
+
+    def test_whitespace_only_cv(self):
+        facts = self.ex.extract("   \n\t  ")
+        assert "empty cv text" in facts.extraction_warnings
+
+    # ── Skill extraction ───────────────────────────────────────────────────
+
+    def test_english_skills_extracted(self):
+        facts = self.ex.extract(_EN_CV)
+        names = facts.skill_names_normalised
+        assert "Python" in names
+        assert "SQL" in names
+
+    def test_docker_extracted(self):
+        facts = self.ex.extract(_EN_CV)
+        assert "Docker" in facts.skill_names_normalised
+
+    def test_excel_extracted(self):
+        facts = self.ex.extract(_EN_CV)
+        assert "Microsoft Excel" in facts.skill_names_normalised
+
+    def test_skills_in_skills_section_are_explicit(self):
+        facts = self.ex.extract(_EN_CV)
+        python_skills = [s for s in facts.skills if s.skill_name == "Python"]
+        assert python_skills, "Python not found"
+        assert python_skills[0].explicit is True
+
+    def test_skill_confidence_high_in_skills_section(self):
+        facts = self.ex.extract(_EN_CV)
+        python_skills = [s for s in facts.skills if s.skill_name == "Python"]
+        assert python_skills, "Python not found"
+        assert python_skills[0].confidence >= 0.85
+
+    def test_arabic_skill_excel_maps_to_english(self):
+        facts = self.ex.extract(_AR_CV)
+        names = facts.skill_names_normalised
+        assert "Microsoft Excel" in names
+
+    def test_arabic_skill_python_maps_to_english(self):
+        facts = self.ex.extract(_AR_CV)
+        names = facts.skill_names_normalised
+        assert "Python" in names
+
+    def test_arabic_skill_word_maps_to_microsoft_word(self):
+        facts = self.ex.extract(_AR_CV)
+        names = facts.skill_names_normalised
+        assert "Microsoft Word" in names
+
+    def test_mixed_cv_contains_english_and_arabic_skills(self):
+        facts = self.ex.extract(_MIXED_CV)
+        names = facts.skill_names_normalised
+        assert "Python" in names
+        assert "Microsoft Excel" in names
+        assert "Power BI" in names
+
+    def test_skill_names_normalised_no_duplicates(self):
+        facts = self.ex.extract(_EN_CV)
+        assert len(facts.skill_names_normalised) == len(set(facts.skill_names_normalised))
+
+    def test_no_skills_warning(self):
+        facts = self.ex.extract(_NO_SKILLS_CV)
+        assert "no skills extracted" in facts.extraction_warnings
+
+    def test_inferred_skill_has_lower_confidence(self):
+        cv = """
+        Skills:
+        (none listed)
+
+        Experience:
+        Software Engineer at TechCo (2018 - 2022)
+        Developed and maintained Python microservices.
+        Used PostgreSQL for data storage.
+        """
+        facts = self.ex.extract(cv)
+        python_skills = [s for s in facts.skills if s.skill_name == "Python"]
+        if python_skills:
+            assert python_skills[0].confidence < 0.50
+
+    # ── Education extraction ───────────────────────────────────────────────
+
+    def test_bachelors_detected(self):
+        facts = self.ex.extract(_EN_CV)
+        levels = [e.degree_level for e in facts.education]
+        assert "Bachelor's" in levels
+
+    def test_masters_detected(self):
+        facts = self.ex.extract(_MIXED_CV)
+        levels = [e.degree_level for e in facts.education]
+        assert "Master's" in levels
+
+    def test_highest_education_level_bachelors(self):
+        facts = self.ex.extract(_EN_CV)
+        assert facts.highest_education_level == "Bachelor's"
+
+    def test_highest_education_level_masters(self):
+        facts = self.ex.extract(_MIXED_CV)
+        assert facts.highest_education_level == "Master's"
+
+    def test_arabic_bachelors_detected(self):
+        facts = self.ex.extract(_AR_CV)
+        levels = [e.degree_level for e in facts.education]
+        assert "Bachelor's" in levels
+
+    # ── Certification extraction ───────────────────────────────────────────
+
+    def test_pmp_detected(self):
+        facts = self.ex.extract(_EN_CV)
+        cert_names = [c.name for c in facts.certifications]
+        assert "PMP" in cert_names
+
+    def test_aws_certified_detected(self):
+        facts = self.ex.extract(_EN_CV)
+        cert_names = [c.name for c in facts.certifications]
+        assert "AWS Certified" in cert_names
+
+    def test_iso_9001_detected(self):
+        facts = self.ex.extract(_MIXED_CV)
+        cert_names = [c.name for c in facts.certifications]
+        assert "ISO 9001" in cert_names
+
+    def test_certified_records_manager_detected(self):
+        facts = self.ex.extract(_MIXED_CV)
+        cert_names = [c.name for c in facts.certifications]
+        assert "Certified Records Manager" in cert_names
+
+    # ── Soft skill signals ─────────────────────────────────────────────────
+
+    def test_leadership_signal_from_led_team(self):
+        facts = self.ex.extract(_EN_CV)
+        categories = [s.soft_skill_category for s in facts.soft_skill_signals]
+        assert "leadership" in categories
+
+    def test_teamwork_signal_from_collaborated(self):
+        facts = self.ex.extract(_EN_CV)
+        categories = [s.soft_skill_category for s in facts.soft_skill_signals]
+        assert "teamwork" in categories
+
+    def test_soft_skill_confidence_in_range(self):
+        facts = self.ex.extract(_EN_CV)
+        for sig in facts.soft_skill_signals:
+            assert 0.0 < sig.confidence <= 1.0
+
+    # ── Domain signals ─────────────────────────────────────────────────────
+
+    def test_records_management_domain_signal(self):
+        facts = self.ex.extract(_MIXED_CV)
+        terms = [d.domain_term for d in facts.domain_signals]
+        assert "records management" in terms
+
+    def test_digitization_domain_signal(self):
+        facts = self.ex.extract(_MIXED_CV)
+        terms = [d.domain_term for d in facts.domain_signals]
+        assert "digitization" in terms
+
+    def test_domain_signal_frequency_positive(self):
+        facts = self.ex.extract(_MIXED_CV)
+        records = [d for d in facts.domain_signals if d.domain_term == "records management"]
+        assert records
+        assert records[0].frequency >= 1
+
+    # ── Experience year extraction ─────────────────────────────────────────
+
+    def test_experience_years_summed_from_date_ranges(self):
+        # EN_CV has 2019-2023 (4 yrs) + 2016-2019 (3 yrs) = 7 yrs
+        facts = self.ex.extract(_EN_CV)
+        assert facts.total_experience_years >= 4.0
+
+    def test_experience_present_included(self):
+        # MIXED_CV has 2015 - Present
+        facts = self.ex.extract(_MIXED_CV)
+        assert facts.total_experience_years >= 5.0
+
+    def test_experience_years_not_negative(self):
+        facts = self.ex.extract(_EN_CV)
+        assert facts.total_experience_years >= 0.0
+
+    def test_experience_years_capped_at_50(self):
+        facts = self.ex.extract(_EN_CV)
+        assert facts.total_experience_years <= 50.0
