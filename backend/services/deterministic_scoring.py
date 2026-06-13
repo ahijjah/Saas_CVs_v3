@@ -41,7 +41,7 @@ from typing import Any
 
 from services.llm_criteria_mapper import LLMMatchResult
 
-_ENGINE_VERSION = "det_score_v1"
+_ENGINE_VERSION = "det_score_v2"
 
 # ── Match-type factors ────────────────────────────────────────────────────────
 
@@ -401,8 +401,93 @@ def _dimension_to_dict(ds: DeterministicDimensionScore) -> dict[str, Any]:
     }
 
 
+def _req_signal(coverage_pct: float | None) -> str:
+    if coverage_pct is None:
+        return "no_required_criteria"
+    if coverage_pct == 100.0:
+        return "fully_covered"
+    if coverage_pct >= 80.0:
+        return "mostly_covered"
+    if coverage_pct >= 50.0:
+        return "partially_covered"
+    return "poorly_covered"
+
+
+def _pref_signal(coverage_pct: float | None) -> str:
+    if coverage_pct is None:
+        return "no_preferred_criteria"
+    if coverage_pct >= 70.0:
+        return "well_covered"
+    if coverage_pct >= 30.0:
+        return "partially_covered"
+    return "poorly_covered"
+
+
+def _recruiter_signal(
+    req_total: int,
+    req_coverage: float | None,
+    pref_coverage: float | None,
+) -> tuple[str, str]:
+    if req_total == 0:
+        return ("NO_REQUIRED_CRITERIA", "No mandatory criteria defined")
+    if req_coverage == 100.0:
+        pc = pref_coverage or 0.0
+        if pc >= 70.0:
+            return ("STRONG_FULL_MATCH", "Excellent match")
+        if pc >= 30.0:
+            return ("STRONG_REQUIRED_WEAK_PREFERRED", "Core match, limited extras")
+        return ("STRONG_REQUIRED_NO_PREFERRED", "Minimum viable match")
+    if req_coverage >= 80.0:
+        return ("NEAR_MATCH", "Near match")
+    if req_coverage >= 50.0:
+        return ("PARTIAL_REQUIRED", "Significant gaps")
+    return ("POOR_REQUIRED_COVERAGE", "Does not meet requirements")
+
+
 def deterministic_score_to_dict(score: DeterministicScore) -> dict[str, Any]:
     """Serialise a DeterministicScore to a JSON-safe dict (det_score_json schema)."""
+    dims = score.dimensions
+
+    req_total   = sum(ds.n_required          for ds in dims.values())
+    req_matched = sum(ds.n_required_matched  for ds in dims.values())
+    req_partial = sum(ds.n_required_partial  for ds in dims.values())
+    req_absent  = sum(ds.n_required_absent   for ds in dims.values())
+    pref_total   = sum(ds.n_preferred         for ds in dims.values())
+    pref_matched = sum(ds.n_preferred_matched for ds in dims.values())
+    pref_partial = sum(ds.n_preferred_partial for ds in dims.values())
+    pref_absent  = sum(ds.n_preferred_absent  for ds in dims.values())
+
+    req_coverage  = round(req_matched / req_total * 100, 1)  if req_total  > 0 else None
+    req_pm_pct    = round((req_matched + req_partial) / req_total * 100, 1) if req_total > 0 else None
+    pref_coverage = round(pref_matched / pref_total * 100, 1) if pref_total > 0 else None
+    pref_pm_pct   = round((pref_matched + pref_partial) / pref_total * 100, 1) if pref_total > 0 else None
+
+    blocking_gaps  = req_absent
+    fully_covered  = req_total > 0 and req_absent == 0 and req_partial == 0
+    signal, label  = _recruiter_signal(req_total, req_coverage, pref_coverage)
+
+    required_summary = {
+        "total":         req_total,
+        "matched":       req_matched,
+        "partial":       req_partial,
+        "absent":        req_absent,
+        "coverage_pct":  req_coverage,
+        "partial_or_matched_pct": req_pm_pct,
+        "blocking_gaps": blocking_gaps,
+        "fully_covered": fully_covered,
+        "signal":        _req_signal(req_coverage),
+    }
+
+    preferred_summary = {
+        "total":         pref_total,
+        "matched":       pref_matched,
+        "partial":       pref_partial,
+        "absent":        pref_absent,
+        "coverage_pct":  pref_coverage,
+        "partial_or_matched_pct": pref_pm_pct,
+        "signal":        _pref_signal(pref_coverage),
+    }
+
     return {
         "_schema":                          score.scoring_version,
         "final_score":                      score.final_score,
@@ -410,6 +495,10 @@ def deterministic_score_to_dict(score: DeterministicScore) -> dict[str, Any]:
         "scored_at":                        score.scored_at,
         "mapper_version":                   score.mapper_version,
         "overqualification_risk_dimensions": score.overqualification_risk_dimensions,
+        "required_summary":                 required_summary,
+        "preferred_summary":                preferred_summary,
+        "recruiter_signal":                 signal,
+        "recruiter_label":                  label,
         "dimensions": {
             dim: _dimension_to_dict(ds)
             for dim, ds in score.dimensions.items()

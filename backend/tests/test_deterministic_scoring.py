@@ -33,6 +33,9 @@ from services.deterministic_scoring import (
     DeterministicScoringConfig,
     DeterministicScoringEngine,
     _match_quality_factor,
+    _pref_signal,
+    _recruiter_signal,
+    _req_signal,
     deterministic_score_to_dict,
 )
 from services.llm_criteria_mapper import LLMCriterionAssessment, LLMMatchResult
@@ -473,7 +476,7 @@ class TestFinalScore:
     def test_scoring_version_set(self):
         a = _assessment()
         result = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
-        assert result.scoring_version == "det_score_v1"
+        assert result.scoring_version == "det_score_v2"
 
     def test_mapper_version_preserved(self):
         a = _assessment()
@@ -510,7 +513,7 @@ class TestSerialisation:
 
     def test_schema_key(self):
         d = deterministic_score_to_dict(self._scored())
-        assert d["_schema"] == "det_score_v1"
+        assert d["_schema"] == "det_score_v2"
 
     def test_final_score_in_dict(self):
         scored = self._scored()
@@ -645,3 +648,176 @@ class TestTechPrecision:
         result = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
         c = result.dimensions["skills"].criteria[0]
         assert c.quality_factor == pytest.approx(1.0)
+
+
+# ── D-02-A: Required / Preferred summary ─────────────────────────────────────
+
+class TestRequiredPreferredSummary:
+    def _score_with(self, assessments: list) -> dict:
+        result = _engine().score(_llm_result(assessments), _DEFAULT_WEIGHTS)
+        return deterministic_score_to_dict(result)
+
+    # required_summary aggregation
+    def test_required_counts_aggregate_across_dimensions(self):
+        a1 = _assessment("Python", "skills",     required=True, status="MATCHED", match_type="direct")
+        a2 = _assessment("5y exp", "experience", required=True, status="ABSENT",  match_type="missing", criterion_class="experience")
+        d = self._score_with([a1, a2])
+        rs = d["required_summary"]
+        assert rs["total"]   == 2
+        assert rs["matched"] == 1
+        assert rs["absent"]  == 1
+        assert rs["partial"] == 0
+
+    def test_preferred_counts_aggregate_across_dimensions(self):
+        a1 = _assessment("Django", "skills",     required=False, status="MATCHED", match_type="direct")
+        a2 = _assessment("Docker", "skills",     required=False, status="PARTIAL", match_type="direct")
+        a3 = _assessment("Kubernetes", "skills", required=False, status="ABSENT",  match_type="missing")
+        d = self._score_with([a1, a2, a3])
+        ps = d["preferred_summary"]
+        assert ps["total"]   == 3
+        assert ps["matched"] == 1
+        assert ps["partial"] == 1
+        assert ps["absent"]  == 1
+
+    def test_required_coverage_pct(self):
+        a1 = _assessment("A", "skills", required=True, status="MATCHED", match_type="direct")
+        a2 = _assessment("B", "skills", required=True, status="MATCHED", match_type="direct")
+        a3 = _assessment("C", "skills", required=True, status="ABSENT",  match_type="missing")
+        a4 = _assessment("D", "skills", required=True, status="ABSENT",  match_type="missing")
+        d = self._score_with([a1, a2, a3, a4])
+        rs = d["required_summary"]
+        assert rs["coverage_pct"] == pytest.approx(50.0)
+
+    def test_required_coverage_pct_none_when_no_required(self):
+        a = _assessment("A", "skills", required=False, status="MATCHED", match_type="direct")
+        d = self._score_with([a])
+        rs = d["required_summary"]
+        assert rs["coverage_pct"] is None
+
+    def test_preferred_coverage_pct_none_when_no_preferred(self):
+        a = _assessment("A", "skills", required=True, status="MATCHED", match_type="direct")
+        d = self._score_with([a])
+        ps = d["preferred_summary"]
+        assert ps["coverage_pct"] is None
+
+    def test_blocking_gaps_equals_required_absent(self):
+        a1 = _assessment("A", "skills",     required=True, status="ABSENT",  match_type="missing")
+        a2 = _assessment("B", "experience", required=True, status="ABSENT",  match_type="missing", criterion_class="experience")
+        a3 = _assessment("C", "skills",     required=True, status="MATCHED", match_type="direct")
+        d = self._score_with([a1, a2, a3])
+        assert d["required_summary"]["blocking_gaps"] == 2
+
+    def test_fully_covered_true_when_all_required_matched(self):
+        a1 = _assessment("A", "skills", required=True, status="MATCHED", match_type="direct")
+        a2 = _assessment("B", "skills", required=True, status="MATCHED", match_type="direct")
+        d = self._score_with([a1, a2])
+        assert d["required_summary"]["fully_covered"] is True
+
+    def test_fully_covered_false_when_partial_exists(self):
+        a1 = _assessment("A", "skills", required=True, status="MATCHED", match_type="direct")
+        a2 = _assessment("B", "skills", required=True, status="PARTIAL", match_type="direct")
+        d = self._score_with([a1, a2])
+        assert d["required_summary"]["fully_covered"] is False
+
+    def test_fully_covered_false_when_no_required_criteria(self):
+        a = _assessment("A", "skills", required=False, status="MATCHED", match_type="direct")
+        d = self._score_with([a])
+        assert d["required_summary"]["fully_covered"] is False
+
+    # _req_signal
+    def test_req_signal_no_required_criteria(self):
+        assert _req_signal(None) == "no_required_criteria"
+
+    def test_req_signal_fully_covered(self):
+        assert _req_signal(100.0) == "fully_covered"
+
+    def test_req_signal_mostly_covered(self):
+        assert _req_signal(80.0) == "mostly_covered"
+        assert _req_signal(90.0) == "mostly_covered"
+
+    def test_req_signal_partially_covered(self):
+        assert _req_signal(50.0) == "partially_covered"
+        assert _req_signal(79.9) == "partially_covered"
+
+    def test_req_signal_poorly_covered(self):
+        assert _req_signal(0.0)  == "poorly_covered"
+        assert _req_signal(49.9) == "poorly_covered"
+
+    # _pref_signal
+    def test_pref_signal_no_preferred_criteria(self):
+        assert _pref_signal(None) == "no_preferred_criteria"
+
+    def test_pref_signal_well_covered(self):
+        assert _pref_signal(70.0)  == "well_covered"
+        assert _pref_signal(100.0) == "well_covered"
+
+    def test_pref_signal_partially_covered(self):
+        assert _pref_signal(30.0) == "partially_covered"
+        assert _pref_signal(69.9) == "partially_covered"
+
+    def test_pref_signal_poorly_covered(self):
+        assert _pref_signal(0.0)  == "poorly_covered"
+        assert _pref_signal(29.9) == "poorly_covered"
+
+    # _recruiter_signal
+    def test_recruiter_signal_no_required_criteria(self):
+        sig, label = _recruiter_signal(0, None, None)
+        assert sig == "NO_REQUIRED_CRITERIA"
+
+    def test_recruiter_signal_strong_full_match(self):
+        sig, label = _recruiter_signal(3, 100.0, 80.0)
+        assert sig == "STRONG_FULL_MATCH"
+        assert "Excellent" in label
+
+    def test_recruiter_signal_strong_required_weak_preferred(self):
+        sig, label = _recruiter_signal(3, 100.0, 50.0)
+        assert sig == "STRONG_REQUIRED_WEAK_PREFERRED"
+
+    def test_recruiter_signal_strong_required_no_preferred(self):
+        sig, label = _recruiter_signal(3, 100.0, 10.0)
+        assert sig == "STRONG_REQUIRED_NO_PREFERRED"
+
+    def test_recruiter_signal_strong_required_pref_none(self):
+        sig, _ = _recruiter_signal(3, 100.0, None)
+        assert sig == "STRONG_REQUIRED_NO_PREFERRED"
+
+    def test_recruiter_signal_near_match(self):
+        sig, _ = _recruiter_signal(5, 80.0, 50.0)
+        assert sig == "NEAR_MATCH"
+
+    def test_recruiter_signal_partial_required(self):
+        sig, _ = _recruiter_signal(5, 60.0, 50.0)
+        assert sig == "PARTIAL_REQUIRED"
+
+    def test_recruiter_signal_poor_required_coverage(self):
+        sig, _ = _recruiter_signal(5, 20.0, 0.0)
+        assert sig == "POOR_REQUIRED_COVERAGE"
+
+    # Top-level keys present in serialised output
+    def test_recruiter_signal_in_dict(self):
+        a = _assessment("A", "skills", required=True, status="MATCHED", match_type="direct")
+        d = self._score_with([a])
+        assert "recruiter_signal" in d
+        assert "recruiter_label" in d
+        assert isinstance(d["recruiter_signal"], str)
+        assert isinstance(d["recruiter_label"], str)
+
+    def test_required_summary_and_preferred_summary_in_dict(self):
+        a = _assessment("A", "skills", required=True, status="MATCHED", match_type="direct")
+        d = self._score_with([a])
+        assert "required_summary" in d
+        assert "preferred_summary" in d
+
+    def test_partial_or_matched_pct_calculation(self):
+        a1 = _assessment("A", "skills", required=True, status="MATCHED", match_type="direct")
+        a2 = _assessment("B", "skills", required=True, status="PARTIAL", match_type="direct")
+        a3 = _assessment("C", "skills", required=True, status="ABSENT",  match_type="missing")
+        d = self._score_with([a1, a2, a3])
+        rs = d["required_summary"]
+        # (matched=1 + partial=1) / total=3 = 66.7%
+        assert rs["partial_or_matched_pct"] == pytest.approx(66.7)
+
+    def test_schema_version_is_v2(self):
+        a = _assessment()
+        d = self._score_with([a])
+        assert d["_schema"] == "det_score_v2"
