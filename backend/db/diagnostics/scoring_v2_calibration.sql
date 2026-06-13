@@ -648,3 +648,188 @@ WHERE llm_match_results_json IS NOT NULL
 \echo '  9c soft_skills absent_pct < 50% is target after D-01.7 (was 65%+ before).'
 \echo '  9d soft_skill class count >> 1 confirms D-01.6 C2/C3 are working.'
 \echo '  9e c4_downgrade_pct > 10% → evidence window still too narrow; consider further expansion.'
+
+-- ── Section 10: F-01 Deterministic Scoring Engine Calibration ────────────────
+-- Compares det_final_score (deterministic) against final_score (LLM) and
+-- reports population coverage, delta statistics, decision agreement, and
+-- per-dimension breakdown.
+-- All queries are safe on pre-F-01 rows (det_final_score IS NULL → excluded).
+
+\echo ''
+\echo '================================================================='
+\echo '=== 10. F-01 DETERMINISTIC SCORING ENGINE CALIBRATION ==='
+\echo '================================================================='
+
+-- 10a. Coverage: how many rows have det_final_score populated?
+\echo ''
+\echo '--- 10a. Deterministic score coverage ---'
+SELECT
+    COUNT(*)                                                           AS total_scored,
+    COUNT(*) FILTER (WHERE det_final_score IS NOT NULL)               AS with_det_score,
+    COUNT(*) FILTER (WHERE det_final_score IS NULL)                   AS without_det_score,
+    ROUND(
+        COUNT(*) FILTER (WHERE det_final_score IS NOT NULL)::NUMERIC
+        / NULLIF(COUNT(*), 0) * 100, 1
+    )                                                                  AS det_coverage_pct,
+    MIN(created_at) FILTER (WHERE det_final_score IS NOT NULL)        AS earliest_det,
+    MAX(created_at) FILTER (WHERE det_final_score IS NOT NULL)        AS latest_det
+FROM application_scores;
+
+-- 10b. LLM vs deterministic — aggregate statistics
+\echo ''
+\echo '--- 10b. LLM final_score vs det_final_score (aggregate) ---'
+\echo '    avg_delta = avg(final_score - det_final_score)'
+\echo '    Pearson r approximated via corr() which requires both series non-null.'
+SELECT
+    COUNT(*)                                                           AS n,
+    ROUND(AVG(final_score), 1)                                        AS avg_llm_score,
+    ROUND(AVG(det_final_score), 1)                                    AS avg_det_score,
+    ROUND(AVG(final_score - det_final_score), 1)                      AS avg_delta,
+    ROUND(STDDEV(final_score - det_final_score)::NUMERIC, 1)         AS stddev_delta,
+    ROUND(MIN(final_score - det_final_score)::NUMERIC, 0)            AS min_delta,
+    ROUND(MAX(final_score - det_final_score)::NUMERIC, 0)            AS max_delta,
+    ROUND(corr(final_score::FLOAT, det_final_score::FLOAT)::NUMERIC, 3) AS pearson_r
+FROM application_scores
+WHERE det_final_score IS NOT NULL;
+
+-- 10c. Decision agreement simulation
+-- Uses production thresholds from the applications table (qualified_threshold_used,
+-- partial_threshold_used).  Simulates what det_final_score would decide.
+\echo ''
+\echo '--- 10c. Decision agreement: LLM decision vs simulated det decision ---'
+\echo '    det_decision uses the same thresholds stored at scoring time.'
+WITH scored AS (
+    SELECT
+        s.application_id,
+        s.final_score,
+        s.det_final_score,
+        a.decision                              AS llm_decision,
+        a.qualified_threshold_used              AS q_thresh,
+        a.partial_threshold_used                AS p_thresh,
+        CASE
+            WHEN s.det_final_score >= a.qualified_threshold_used THEN 'qualified'
+            WHEN s.det_final_score >= a.partial_threshold_used   THEN 'partially_qualified'
+            ELSE 'rejected'
+        END                                     AS det_decision
+    FROM application_scores s
+    JOIN applications a USING (application_id)
+    WHERE s.det_final_score IS NOT NULL
+      AND a.qualified_threshold_used IS NOT NULL
+      AND a.partial_threshold_used   IS NOT NULL
+),
+agreement AS (
+    SELECT
+        llm_decision,
+        det_decision,
+        COUNT(*) AS n
+    FROM scored
+    GROUP BY llm_decision, det_decision
+)
+SELECT
+    llm_decision,
+    det_decision,
+    n,
+    ROUND(n::NUMERIC / NULLIF(SUM(n) OVER (PARTITION BY llm_decision), 0) * 100, 1) AS row_pct,
+    CASE WHEN llm_decision = det_decision THEN 'AGREE' ELSE 'DISAGREE' END           AS verdict
+FROM agreement
+ORDER BY llm_decision, det_decision;
+
+-- 10d. Top 20 largest absolute deltas (outliers for investigation)
+\echo ''
+\echo '--- 10d. Top 20 largest absolute delta rows (|LLM - det| DESC) ---'
+SELECT
+    s.application_id,
+    s.final_score                              AS llm_score,
+    s.det_final_score                          AS det_score,
+    (s.final_score - s.det_final_score)        AS delta,
+    ABS(s.final_score - s.det_final_score)     AS abs_delta,
+    a.decision                                 AS llm_decision,
+    s.created_at                               AS scored_at
+FROM application_scores s
+JOIN applications a USING (application_id)
+WHERE s.det_final_score IS NOT NULL
+ORDER BY abs_delta DESC
+LIMIT 20;
+
+-- 10e. Per-dimension comparison (LLM raw scores vs det dimension scores)
+-- LLM raw dimension scores are 0–100 integers; det dimension scores are
+-- 0.0–1.0 floats.  Multiply det by 100 for comparison.
+\echo ''
+\echo '--- 10e. Dimension comparison: LLM dim score vs det dim score (×100) ---'
+SELECT
+    dim.key                                         AS dimension,
+    ROUND(AVG(
+        CASE dim.key
+            WHEN 'skills'           THEN s.score_skills
+            WHEN 'experience'       THEN s.score_experience
+            WHEN 'education'        THEN s.score_education
+            WHEN 'certifications'   THEN s.score_certifications
+            WHEN 'soft_skills'      THEN s.score_soft_skills
+            WHEN 'domain_knowledge' THEN s.score_domain_knowledge
+            WHEN 'other'            THEN s.score_other
+        END
+    ), 1)                                           AS avg_llm_dim_score,
+    ROUND(AVG(
+        ((s.det_score_json -> 'dimensions' -> dim.key) ->> 'dimension_score')::FLOAT * 100
+    )::NUMERIC, 1)                                  AS avg_det_dim_score_x100,
+    ROUND(AVG(
+        CASE dim.key
+            WHEN 'skills'           THEN s.score_skills
+            WHEN 'experience'       THEN s.score_experience
+            WHEN 'education'        THEN s.score_education
+            WHEN 'certifications'   THEN s.score_certifications
+            WHEN 'soft_skills'      THEN s.score_soft_skills
+            WHEN 'domain_knowledge' THEN s.score_domain_knowledge
+            WHEN 'other'            THEN s.score_other
+        END
+        - ((s.det_score_json -> 'dimensions' -> dim.key) ->> 'dimension_score')::FLOAT * 100
+    )::NUMERIC, 1)                                  AS avg_delta,
+    COUNT(*)                                        AS n
+FROM application_scores s
+CROSS JOIN (
+    SELECT unnest(ARRAY['skills','experience','education','certifications',
+                        'soft_skills','domain_knowledge','other']) AS key
+) AS dim
+WHERE s.det_final_score IS NOT NULL
+  AND s.det_score_json IS NOT NULL
+GROUP BY dim.key
+ORDER BY ABS(AVG(
+    CASE dim.key
+        WHEN 'skills'           THEN s.score_skills
+        WHEN 'experience'       THEN s.score_experience
+        WHEN 'education'        THEN s.score_education
+        WHEN 'certifications'   THEN s.score_certifications
+        WHEN 'soft_skills'      THEN s.score_soft_skills
+        WHEN 'domain_knowledge' THEN s.score_domain_knowledge
+        WHEN 'other'            THEN s.score_other
+    END
+    - ((s.det_score_json -> 'dimensions' -> dim.key) ->> 'dimension_score')::FLOAT * 100
+)) DESC;
+
+-- 10f. det_final_score distribution histogram (10-point buckets)
+\echo ''
+\echo '--- 10f. det_final_score histogram (10-point buckets) ---'
+SELECT
+    FLOOR(det_final_score / 10) * 10    AS bucket_start,
+    FLOOR(det_final_score / 10) * 10 + 9 AS bucket_end,
+    COUNT(*)                             AS n,
+    ROUND(COUNT(*)::NUMERIC / NULLIF(SUM(COUNT(*)) OVER (), 0) * 100, 1) AS pct
+FROM application_scores
+WHERE det_final_score IS NOT NULL
+GROUP BY 1, 2
+ORDER BY 1;
+
+\echo ''
+\echo 'Interpretation guide (Section 10 — F-01 Deterministic Engine):'
+\echo '  10a: Coverage should reach 100% of rows where llm_match_results_json is populated.'
+\echo '  10b: avg_delta measures LLM generosity vs det engine. Positive = LLM scores higher.'
+\echo '       pearson_r > 0.70 → engines broadly agree; safe to use det for bounding (Phase 2).'
+\echo '       pearson_r < 0.50 → significant divergence; investigate 10d outliers before bounding.'
+\echo '  10c: DISAGREE rows identify candidates where det and LLM would bucket differently.'
+\echo '       qualified→rejected disagrees warrant human review before activating det bounding.'
+\echo '  10d: Largest delta rows are the highest-value calibration targets for human review.'
+\echo '  10e: Dimension deltas identify which scoring dimensions drive LLM/det divergence.'
+\echo '       Large positive delta → LLM awards more credit for that dimension than det.'
+\echo '       Large negative delta → det awards more credit (rare with conservative defaults).'
+\echo '  10f: Histogram shape should mirror final_score histogram (section 3b if present).'
+\echo '       Systematic shift (all det scores 10+ lower) may indicate weight recalibration needed.'

@@ -817,6 +817,8 @@ async def _score_cv_async(
             _cv_facts_json_val: str | None = None
             _match_results_json_val: str | None = None
             _llm_match_results_json_val: str | None = None
+            _det_final_score_val: int | None = None
+            _det_score_json_val: str | None = None
             try:
                 from services.cv_evidence import CVFactsExtractor
                 from services.criteria_matcher import CriteriaMatchEngine
@@ -844,6 +846,7 @@ async def _score_cv_async(
                 )
 
                 # ── D-01: LLM criteria mapping (gated by platform config, default OFF) ──
+                _llm_result = None
                 if prompt_cfg.llm_criteria_mapping_enabled:
                     from services.llm_criteria_mapper import LLMCriteriaMapper
                     _llm_result = await LLMCriteriaMapper().assess(
@@ -867,6 +870,41 @@ async def _score_cv_async(
                         llm_matchresult_to_dict(_llm_result), ensure_ascii=False
                     )
                 # ── End D-01 ──────────────────────────────────────────────────
+
+                # ── F-01: Deterministic scoring (silent, gated on D-01 output) ─
+                if _llm_result is not None:
+                    try:
+                        from services.deterministic_scoring import (
+                            DeterministicScoringConfig,
+                            DeterministicScoringEngine,
+                            deterministic_score_to_dict,
+                        )
+                        _det_cfg = DeterministicScoringConfig(
+                            partial_credit=prompt_cfg.det_partial_credit,
+                            required_weight=prompt_cfg.det_required_weight,
+                            preferred_weight=prompt_cfg.det_preferred_weight,
+                            enable_required_absent_floor=prompt_cfg.det_enable_required_absent_floor,
+                            required_absent_floor_threshold=prompt_cfg.det_required_absent_floor_threshold,
+                            required_absent_floor_cap=prompt_cfg.det_required_absent_floor_cap,
+                        )
+                        _det_result = DeterministicScoringEngine(_det_cfg).score(
+                            _llm_result, weights
+                        )
+                        _det_final_score_val = _det_result.final_score
+                        _det_score_json_val = json.dumps(
+                            deterministic_score_to_dict(_det_result), ensure_ascii=False
+                        )
+                        logger.info(
+                            "[%s] F-01 deterministic score: det_final=%d",
+                            application_id,
+                            _det_final_score_val,
+                        )
+                    except Exception as _det_err:
+                        logger.warning(
+                            "[%s] F-01 deterministic scoring failed (non-critical): %s",
+                            application_id, _det_err,
+                        )
+                # ── End F-01 ──────────────────────────────────────────────────
 
             except Exception as _v2_err:
                 logger.warning(
@@ -1066,7 +1104,8 @@ async def _score_cv_async(
                         scoring_prompt_code, scoring_prompt_version,
                         scoring_provider,
                         cv_facts_json, match_results_json,
-                        llm_match_results_json
+                        llm_match_results_json,
+                        det_final_score, det_score_json
                     ) VALUES (
                         :aid,
                         :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
@@ -1081,7 +1120,8 @@ async def _score_cv_async(
                         :sc_code, :sc_ver,
                         'openai',
                         :cv_facts_json, :match_results_json,
-                        :llm_match_results_json
+                        :llm_match_results_json,
+                        :det_final_score, :det_score_json
                     )
                 """),
                 {
@@ -1115,6 +1155,8 @@ async def _score_cv_async(
                     "cv_facts_json":           _cv_facts_json_val,
                     "match_results_json":      _match_results_json_val,
                     "llm_match_results_json":  _llm_match_results_json_val,
+                    "det_final_score":         _det_final_score_val,
+                    "det_score_json":          _det_score_json_val,
                 },
             )
             await db.execute(
