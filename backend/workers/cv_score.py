@@ -142,7 +142,7 @@ def score_cv_task(
         except Exception:
             pass
         asyncio.set_event_loop(None)
-        task_engine.dispose()
+        task_engine.sync_engine.dispose()  # sync context: loop already closed
 
 
 # ── Gatekeeper decision helper ────────────────────────────────────────────────
@@ -1542,4 +1542,4 @@ async def _mark_failed(application_id: str, error: str) -> None:
             exc_info=True,
         )
     finally:
-        fail_engine.dispose()
+        await fail_engine.async_dispose()  # async context: must be awaited
