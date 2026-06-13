@@ -812,6 +812,40 @@ async def _score_cv_async(
                     _analysis_json = json.loads(_analysis_json)
                 except (json.JSONDecodeError, TypeError):
                     _analysis_json = {}
+
+            # ── Scoring V2 Phase 2A — silent evidence capture ─────────────────
+            _cv_facts_json_val: str | None = None
+            _match_results_json_val: str | None = None
+            try:
+                from services.cv_evidence import CVFactsExtractor
+                from services.criteria_matcher import CriteriaMatchEngine
+                from services.evidence_serialiser import cvfacts_to_dict, matchresult_to_dict
+                _cv_facts = CVFactsExtractor().extract(raw_cv_text)
+                logger.info(
+                    "[%s] V2 evidence extraction complete: %d skills extracted",
+                    application_id, len(_cv_facts.skills),
+                )
+                _match_result = CriteriaMatchEngine().match(
+                    _cv_facts, _analysis_json, str(application_id), str(job_id)
+                )
+                logger.info(
+                    "[%s] V2 criteria matching complete: %d matches, %d blocking gaps, scores=%s",
+                    application_id,
+                    len(_match_result.matches),
+                    _match_result.blocking_gap_count,
+                    {k: v for k, v in _match_result.algorithmic_scores.items() if v > 0},
+                )
+                _cv_facts_json_val = json.dumps(cvfacts_to_dict(_cv_facts), ensure_ascii=False)
+                _match_results_json_val = json.dumps(
+                    matchresult_to_dict(_match_result), ensure_ascii=False
+                )
+            except Exception as _v2_err:
+                logger.warning(
+                    "[%s] V2 evidence capture failed (scoring continues): %s",
+                    application_id, _v2_err,
+                )
+            # ── End Scoring V2 Phase 2A ───────────────────────────────────────
+
             _skills_block    = _analysis_json.get("skills", {})
             skills_required  = _skills_block.get("required") or list(criteria.get("skills") or [])
             skills_preferred = _skills_block.get("preferred") or []
@@ -1001,7 +1035,8 @@ async def _score_cv_async(
                         cv_language, gatekeeper_passed,
                         score_details,
                         scoring_prompt_code, scoring_prompt_version,
-                        scoring_provider
+                        scoring_provider,
+                        cv_facts_json, match_results_json
                     ) VALUES (
                         :aid,
                         :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
@@ -1014,7 +1049,8 @@ async def _score_cv_async(
                         :cv_lang, :gk_passed,
                         :score_details,
                         :sc_code, :sc_ver,
-                        'openai'
+                        'openai',
+                        :cv_facts_json, :match_results_json
                     )
                 """),
                 {
@@ -1045,6 +1081,8 @@ async def _score_cv_async(
                     "score_details": json.dumps(score_details, ensure_ascii=False),
                     "sc_code":    (scoring_prompt or {}).get("prompt_code"),
                     "sc_ver":     (scoring_prompt or {}).get("version"),
+                    "cv_facts_json":      _cv_facts_json_val,
+                    "match_results_json": _match_results_json_val,
                 },
             )
             await db.execute(
