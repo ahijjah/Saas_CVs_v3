@@ -251,7 +251,7 @@ class CVFacts:
 
 # ── CVFactsExtractor — Batch 2A-4 ────────────────────────────────────────────
 
-_EXTRACTOR_VERSION = "1.0.0"
+_EXTRACTOR_VERSION = "1.1.0"
 _CURRENT_YEAR: int = datetime.date.today().year
 
 # ---------------------------------------------------------------------------
@@ -308,7 +308,7 @@ _SKILL_REGISTRY: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("CI/CD",                (r"\bci/cd\b",                    r"\bcontinuous\s+integration\b")),
     # ── Microsoft Office & Productivity ────────────────────────────────────
     ("Microsoft Excel",      (r"\bexcel\b",             r"\bms\s+excel\b",       r"\bإكسل\b")),
-    ("Microsoft Word",       (r"\bmicrosoft\s+word\b",  r"\bms\s+word\b",        r"\bوورد\b")),
+    ("Microsoft Word",       (r"\bmicrosoft\s+word\b",  r"\bms\s+word\b",  r"\bword\b",  r"\bوورد\b")),
     ("Microsoft PowerPoint", (r"\bpowerpoint\b",        r"\bppt\b",              r"\bباوربوينت\b")),
     ("Microsoft Office",     (r"\bmicrosoft\s+office\b",r"\bms\s+office\b",      r"\boffice\s+365\b", r"\boffice\s+suite\b")),
     ("Microsoft Outlook",    (r"\boutlook\b",)),
@@ -476,6 +476,7 @@ _DOMAIN_REGISTRY: tuple[tuple[str, tuple[re.Pattern, ...]], ...] = tuple(
         ("recruitment",                   [r"\brecruitment\b",                  r"\bتوظيف"]),
         ("customer service",              [r"\bcustomer\s+service\b",           r"\bخدمة\s+العملاء"]),
         ("information security",          [r"\binformation\s+security\b",       r"\bأمن\s+المعلومات"]),
+        ("confidentiality",               [r"\bconfidentiality\b",              r"\bnon-disclosure\b",    r"\bnda\b",  r"\bسرية\b"]),
         ("enterprise content management", [r"\becm\b",                          r"\bcontent\s+management\b"]),
         ("digital transformation",        [r"\bdigital\s+transform\w*"]),
         ("data analysis",                 [r"\bdata\s+analys\w*",               r"\bتحليل\s+البيانات"]),
@@ -516,10 +517,40 @@ _SECTION_RE: dict[str, re.Pattern] = {
     ),
 }
 
-# Date range pattern for experience year extraction
+# Date range pattern for experience year extraction.
+# Supports English and Arabic separators; many "present" variants.
 _DATE_RANGE_RE = re.compile(
-    r"\b(?P<start>(?:19|20)\d{2})\s*[-–—/to]+\s*"
-    r"(?P<end>(?:(?:19|20)\d{2})|present|current|now|ongoing|till\s+date|حاليا|حالياً|الآن)\b",
+    r"(?:من\s+)?"                                       # optional Arabic "from" prefix
+    r"\b(?P<start>(?:19|20)\d{2})\b"                   # start year (4 digits)
+    r"\s*(?:[-–—/]|\bto\b|\bإلى\b|\bحتى\b)\s*"        # separator (English or Arabic)
+    r"(?P<end>"                                          # end: year or present variant
+    r"(?:(?:19|20)\d{2})"                               # 4-digit year
+    r"|present|current|now|ongoing"                     # English present
+    r"|till\s+date|to\s+date"                           # "till/to date"
+    r"|حاليا|حالياً|الآن"                             # Arabic "now"
+    r"|حتى\s+الآن|إلى\s+الآن"                        # Arabic "until now"
+    r"|الوقت\s+الحاضر|الحالي"                         # Arabic "the present"
+    r")",
+    re.IGNORECASE | re.UNICODE,
+)
+
+# Regex to recognise "present" variants — used when parsing the end group.
+_PRESENT_RE = re.compile(
+    r"^(?:present|current|now|ongoing|till\s+date|to\s+date|"
+    r"حاليا|حالياً|الآن|حتى\s+الآن|إلى\s+الآن|"
+    r"الوقت\s+الحاضر|الحالي)$",
+    re.IGNORECASE | re.UNICODE,
+)
+
+# Explicit total-experience statements, e.g. "10 years experience" / "over 10 years" /
+# "10+ years of relevant experience" / "10 سنوات خبرة" / "أكثر من 10 سنوات خبرة".
+# Group 1 captures the numeric value.
+_EXPLICIT_EXP_RE = re.compile(
+    r"(?:(?:over|more\s+than|above|approximately|around|about|"
+    r"أكثر\s+من|حوالي|نحو)\s+)?"           # optional quantifier prefix
+    r"\b(\d{1,2}(?:\.\d)?)\+?\s*"           # number (1-2 digits, optional +)
+    r"(?:years?|yrs?|سنوات?|عاما?|أعوام|سنة)"  # year word
+    r"(?:['\s]*of)?\s*(?:relevant\s+|work\s+)?(?:experience|خبرة|خبرات)",
     re.IGNORECASE | re.UNICODE,
 )
 
@@ -705,7 +736,15 @@ def _extract_experience(
     sections: dict[str, list[str]],
     full_text: str,
 ) -> tuple[list[ExperienceEvidence], float]:
-    """Return (experience_blocks, total_years)."""
+    """Return (experience_blocks, total_years).
+
+    Three-pass strategy:
+      1. Extract date ranges from experience section (or full text as fallback).
+      2. Detect explicit statements like "10 years experience" in summary +
+         experience sections — used as a lower-bound override when date
+         arithmetic under-counts (e.g. dates in unsupported formats).
+      3. Clamp total to 50 years.
+    """
     exp_section = "\n".join(sections.get("experience", []))
     search_text = exp_section if exp_section.strip() else full_text
 
@@ -714,9 +753,9 @@ def _extract_experience(
 
     for m in _DATE_RANGE_RE.finditer(search_text):
         start_year = int(m.group("start"))
-        end_str = m.group("end").strip().lower()
+        end_str = m.group("end").strip()
 
-        if end_str in ("present", "current", "now", "ongoing", "till date", "حاليا", "حالياً", "الآن"):
+        if _PRESENT_RE.match(end_str):
             end_year = _CURRENT_YEAR
         else:
             try:
@@ -746,6 +785,25 @@ def _extract_experience(
         ))
         total_years += years
 
+    # Pass 2 — explicit statements ("10 years experience", "over 10 years", etc.)
+    # Search experience section + summary + other to catch e.g. "10+ years in banking".
+    explicit_search = "\n".join([
+        search_text,
+        "\n".join(sections.get("summary", [])),
+        "\n".join(sections.get("other", [])),
+    ])
+    explicit_max = 0.0
+    for em in _EXPLICIT_EXP_RE.finditer(explicit_search):
+        try:
+            val = float(em.group(1))
+            if 1.0 <= val <= 45.0:
+                explicit_max = max(explicit_max, val)
+        except (ValueError, IndexError):
+            pass
+
+    # Use explicit statement as lower bound — prevents under-counting from
+    # unsupported date formats while never inflating a correctly-parsed sum.
+    total_years = max(total_years, explicit_max)
     total_years = min(total_years, 50.0)
     return blocks, total_years
 

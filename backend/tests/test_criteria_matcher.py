@@ -759,12 +759,16 @@ class TestCriteriaMatchEngine:
         assert leadership
         assert leadership[0].status == "ABSENT"
 
-    def test_soft_skill_no_criteria_no_matches(self):
+    def test_soft_skill_no_criteria_uses_signal_fallback(self):
+        # When no criteria mention soft skills, CV-detected signals still
+        # produce preferred=False matches (so soft_skills score is non-zero).
         facts = _make_cv_facts(soft_skill_categories=["leadership"])
         criteria = _make_criteria()  # no key_responsibilities
         result = self.engine.match(facts, criteria)
         soft = [x for x in result.matches if x.dimension == "soft_skills"]
-        assert soft == []
+        assert len(soft) >= 1
+        assert soft[0].required is False
+        assert soft[0].status == "MATCHED"
 
     # ── Algorithmic scores ─────────────────────────────────────────────────
 
@@ -843,7 +847,7 @@ class TestCriteriaMatchEngine:
 
     def test_matcher_version(self):
         result = self.engine.match(_make_cv_facts(), {})
-        assert result.matcher_version == "1.0.0"
+        assert result.matcher_version == "1.1.0"
 
     def test_gap_candidates_ordered_blocking_first(self):
         facts = _make_cv_facts(skills=[])
@@ -866,3 +870,139 @@ class TestCriteriaMatchEngine:
         result = self.engine.match(facts, criteria)
         m = next(x for x in result.matches if x.criterion_text == "Python")
         assert m.supporting_evidence  # should have a context snippet
+
+    # ── Batch 2B-2: matching quality fixes ────────────────────────────────────
+
+    # Task 2 — computer literacy umbrella matching
+
+    def test_computer_literacy_matched_by_excel_and_word(self):
+        """Computer literacy MATCHED when CV has multiple office tools."""
+        facts = _make_cv_facts(skills=["Microsoft Excel", "Microsoft Word", "Microsoft Office"])
+        criteria = _make_criteria(required_skills=["Computer literacy"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if "computer literacy" in x.criterion_text.lower())
+        assert m.status in ("MATCHED", "PARTIAL")
+        assert m.match_method == "inferred"
+
+    def test_computer_literacy_matched_by_ms_office_alone(self):
+        """Microsoft Office alone satisfies computer literacy."""
+        facts = _make_cv_facts(skills=["Microsoft Office"])
+        criteria = _make_criteria(required_skills=["Computer literacy"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if "computer literacy" in x.criterion_text.lower())
+        assert m.status in ("MATCHED", "PARTIAL")
+
+    def test_computer_literacy_absent_when_only_dev_tools_present(self):
+        """Python and Docker do NOT satisfy computer literacy (preserved regression)."""
+        facts = _make_cv_facts(skills=["Python", "Docker"])
+        criteria = _make_criteria(required_skills=["Computer literacy"])
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if "computer literacy" in x.criterion_text.lower())
+        assert m.status == "ABSENT"
+
+    def test_computer_literacy_blocking_gap_count_reduced(self):
+        """Candidate with office tools should have 0 blocking gaps for computer literacy."""
+        facts = _make_cv_facts(skills=["Microsoft Excel", "Microsoft Word"])
+        criteria = _make_criteria(required_skills=["Computer literacy"])
+        result = self.engine.match(facts, criteria)
+        assert result.blocking_gap_count == 0
+
+    # Task 3 — Word detection
+
+    def test_word_criterion_matched_when_word_in_cv(self):
+        """'Strong proficiency in Microsoft Word' MATCHED when CV has Word."""
+        facts = _make_cv_facts(skills=["Microsoft Word"])
+        criteria = _make_criteria(required_skills=["Strong proficiency in Microsoft Word"])
+        result = self.engine.match(facts, criteria)
+        m = result.matches[0]
+        assert m.status in ("MATCHED", "PARTIAL")
+
+    def test_microsoft_word_criterion_matched_directly(self):
+        """Plain 'Microsoft Word' criterion matches 'Microsoft Word' in CV."""
+        facts = _make_cv_facts(skills=["Microsoft Word"])
+        criteria = _make_criteria(required_skills=["Microsoft Word"])
+        result = self.engine.match(facts, criteria)
+        m = result.matches[0]
+        assert m.status == "MATCHED"
+
+    # Task 4 — confidentiality / transferable evidence
+
+    def test_confidentiality_criterion_matched_via_domain_signal(self):
+        """Confidentiality requirement MATCHED when CV has confidentiality domain signal."""
+        facts = _make_cv_facts(
+            domain_signals=["confidentiality", "information security"],
+        )
+        criteria = _make_criteria(
+            other_requirements=["Adhere to confidentiality and non-disclosure agreements"]
+        )
+        result = self.engine.match(facts, criteria)
+        other_matches = [x for x in result.matches if x.dimension == "other"]
+        assert other_matches, "No other_requirements matches generated"
+        assert other_matches[0].status in ("MATCHED", "PARTIAL")
+
+    def test_information_security_domain_supports_confidentiality_requirement(self):
+        """Information security domain signal supports a confidentiality requirement."""
+        facts = _make_cv_facts(domain_signals=["information security", "compliance"])
+        criteria = _make_criteria(
+            other_requirements=["Maintain confidentiality of sensitive records"]
+        )
+        result = self.engine.match(facts, criteria)
+        other_matches = [x for x in result.matches if x.dimension == "other"]
+        # information security is in the cv_pool and 'confidentiality' is a token
+        # in the requirement → token_set_ratio should be high enough to match
+        assert other_matches[0].status in ("MATCHED", "PARTIAL")
+
+    # Task 5 — soft skill scoring
+
+    def test_soft_skills_score_nonzero_when_signals_detected(self):
+        """soft_skills algorithmic score > 0 when CVFacts has soft skill signals."""
+        facts = _make_cv_facts(soft_skill_categories=["communication", "leadership"])
+        criteria = _make_criteria()  # no explicit soft skill criteria
+        result = self.engine.match(facts, criteria)
+        assert result.algorithmic_scores["soft_skills"] > 0.0
+
+    def test_soft_skills_score_reflects_signal_confidence(self):
+        """soft_skills score should roughly match signal confidence × 100."""
+        facts = _make_cv_facts(soft_skill_categories=["communication"])
+        criteria = _make_criteria()
+        result = self.engine.match(facts, criteria)
+        # Signal confidence is 0.75 in _make_cv_facts fixture → score ≈ 75
+        score = result.algorithmic_scores["soft_skills"]
+        assert 50.0 <= score <= 100.0
+
+    def test_soft_skills_criteria_driven_plus_fallback_no_duplicates(self):
+        """Criteria-driven match and fallback do not produce duplicate categories."""
+        facts = _make_cv_facts(soft_skill_categories=["communication"])
+        criteria = _make_criteria(
+            key_responsibilities=["Strong communication and presentation skills required"]
+        )
+        result = self.engine.match(facts, criteria)
+        soft = [x for x in result.matches if x.dimension == "soft_skills"]
+        categories = [m.criterion_text for m in soft]
+        # "Communication skills" should appear exactly once
+        comm = [c for c in categories if "communication" in c.lower()]
+        assert len(comm) == 1
+
+    # Task 6 — blocking gap count
+
+    def test_blocking_gap_reduced_when_broad_skills_satisfied(self):
+        """Candidate with office tools: computer literacy is not a blocking gap."""
+        facts = _make_cv_facts(
+            skills=["Microsoft Excel", "Microsoft Word", "Microsoft Office"],
+            experience_years=10.0,
+        )
+        criteria = _make_criteria(
+            required_skills=["Computer literacy", "Microsoft Excel"],
+            min_years=5,
+        )
+        result = self.engine.match(facts, criteria)
+        # Neither computer literacy nor Excel should be ABSENT
+        assert result.blocking_gap_count == 0
+
+    def test_blocking_count_only_increments_for_genuinely_absent(self):
+        """A genuinely absent required skill still creates a blocking gap."""
+        facts = _make_cv_facts(skills=["Microsoft Excel"])
+        criteria = _make_criteria(required_skills=["Computer literacy", "SAP"])
+        result = self.engine.match(facts, criteria)
+        # Computer literacy: satisfied (Excel present); SAP: absent → 1 blocking gap
+        assert result.blocking_gap_count == 1

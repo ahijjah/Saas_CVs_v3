@@ -545,7 +545,7 @@ class TestCVFactsExtractor:
 
     def test_extractor_version(self):
         facts = self.ex.extract(_EN_CV)
-        assert facts.extractor_version == "1.0.0"
+        assert facts.extractor_version == "1.1.0"
 
     def test_extraction_method(self):
         facts = self.ex.extract(_EN_CV)
@@ -571,7 +571,7 @@ class TestCVFactsExtractor:
         facts = self.ex.extract(_EN_CV)
         payload = json.dumps(dataclasses.asdict(facts))
         data = json.loads(payload)
-        assert data["extractor_version"] == "1.0.0"
+        assert data["extractor_version"] == "1.1.0"
 
     # ── Language detection ─────────────────────────────────────────────────
 
@@ -762,3 +762,107 @@ class TestCVFactsExtractor:
     def test_experience_years_capped_at_50(self):
         facts = self.ex.extract(_EN_CV)
         assert facts.total_experience_years <= 50.0
+
+    # ── Batch 2B-2: experience aggregation & explicit statements ──────────────
+
+    def test_multi_job_experience_summed(self):
+        cv = """
+Work Experience:
+Senior Analyst - Bank of Jordan (2010 - 2015)
+Managed financial records and customer data.
+
+Records Officer - Ministry of Finance (2015 - 2020)
+Maintained document control systems.
+
+Head of Records - National Archives (2020 - Present)
+Led archiving and digitization initiatives.
+"""
+        facts = self.ex.extract(cv)
+        # 5 + 5 + (current_year - 2020) ≥ 10 years
+        assert facts.total_experience_years >= 10.0
+
+    def test_explicit_10_years_experience_statement(self):
+        cv = """
+Summary:
+A seasoned banking professional with 10 years experience in records management.
+
+Skills:
+Microsoft Excel, Word, Data Management
+"""
+        facts = self.ex.extract(cv)
+        assert facts.total_experience_years >= 10.0
+
+    def test_explicit_over_ten_years(self):
+        cv = """
+Profile:
+Records management specialist with over 12 years of relevant experience
+in banking and financial services.
+
+Skills:
+Microsoft Office, Reporting, Filing Systems
+"""
+        facts = self.ex.extract(cv)
+        assert facts.total_experience_years >= 12.0
+
+    def test_explicit_years_does_not_override_higher_sum(self):
+        # If date ranges sum to more than explicit statement, keep the higher sum.
+        cv = """
+Summary:
+Professional with 5 years experience in finance.
+
+Work Experience:
+Analyst - Bank A (2008 - 2014)
+Manager - Bank B (2014 - 2020)
+"""
+        facts = self.ex.extract(cv)
+        # Date ranges give 12 years; explicit says 5; max = 12
+        assert facts.total_experience_years >= 10.0
+
+    def test_arabic_date_range_with_arabic_separator(self):
+        cv = """
+الخبرة:
+محاسب - بنك الأردن (2012 إلى 2018)
+إدارة السجلات المالية والمستندات.
+مسؤول سجلات - وزارة المالية (2018 حتى الآن)
+"""
+        facts = self.ex.extract(cv)
+        # 2012-2018 = 6 years + (current - 2018) ≥ 6
+        assert facts.total_experience_years >= 6.0
+
+    def test_standalone_word_extracted_from_skills_section(self):
+        cv = """
+Skills:
+Microsoft Excel, Word, PowerPoint, Data Entry, Reporting
+"""
+        facts = self.ex.extract(cv)
+        assert "Microsoft Word" in facts.skill_names_normalised
+
+    def test_standalone_word_not_matched_in_isolation_avoidance(self):
+        # Ensure Word is detected even without "Microsoft" prefix
+        cv = """
+Skills:
+Word, Excel, Outlook
+"""
+        facts = self.ex.extract(cv)
+        assert "Microsoft Word" in facts.skill_names_normalised
+        assert "Microsoft Excel" in facts.skill_names_normalised
+
+    def test_confidentiality_domain_signal_detected(self):
+        cv = """
+Experience:
+Records Officer - ABC Bank (2015 - 2022)
+Ensured strict confidentiality of sensitive customer data.
+Maintained information security protocols and compliance standards.
+"""
+        facts = self.ex.extract(cv)
+        domain_terms = [d.domain_term for d in facts.domain_signals]
+        assert "confidentiality" in domain_terms
+
+    def test_non_disclosure_domain_signal_detected(self):
+        cv = """
+Professional bound by non-disclosure agreements and data protection laws.
+Experience in compliance and information security management.
+"""
+        facts = self.ex.extract(cv)
+        domain_terms = [d.domain_term for d in facts.domain_signals]
+        assert "confidentiality" in domain_terms

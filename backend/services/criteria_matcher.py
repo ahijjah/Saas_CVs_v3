@@ -206,7 +206,7 @@ class MatchResult:
 
 # ── CriteriaMatchEngine — Batch 2A-5 ─────────────────────────────────────────
 
-_MATCHER_VERSION = "1.0.0"
+_MATCHER_VERSION = "1.1.0"
 
 # All dimensions that always appear in algorithmic_scores.
 _ALL_DIMENSIONS: tuple[str, ...] = (
@@ -264,6 +264,43 @@ _SKILL_SYNONYMS: dict[str, str] = {
     "قواعد البيانات":           "sql",
 }
 
+# Broad / umbrella skill criteria → list of specific CV skills that satisfy them.
+# When a criterion matches a key (exact substring), the engine checks whether the
+# CV contains any of the listed constituent skills.  Only skills genuinely implied
+# by "computer literacy" are included; Python / Docker are NOT (see test).
+_BROAD_SKILL_MAP: dict[str, list[str]] = {
+    "computer literacy": [
+        "microsoft office", "microsoft excel", "microsoft word",
+        "microsoft powerpoint", "microsoft outlook", "office 365",
+        "ms office", "erp", "crm", "sap", "oracle database",
+        "sharepoint", "google sheets", "sql",
+    ],
+    "computer skills": [
+        "microsoft office", "microsoft excel", "microsoft word",
+        "microsoft powerpoint", "erp", "crm", "sap", "sql",
+    ],
+    "it skills": [
+        "microsoft office", "microsoft excel", "microsoft word",
+        "erp", "crm", "sap",
+    ],
+    "digital literacy": [
+        "microsoft office", "microsoft excel", "microsoft word",
+        "microsoft powerpoint", "erp", "crm",
+    ],
+    "office suite": [
+        "microsoft office", "microsoft excel", "microsoft word",
+        "microsoft powerpoint", "microsoft outlook",
+    ],
+    "ms office proficiency": [
+        "microsoft office", "microsoft excel", "microsoft word",
+        "microsoft powerpoint", "microsoft outlook",
+    ],
+    "proficiency in microsoft office": [
+        "microsoft office", "microsoft excel", "microsoft word",
+        "microsoft powerpoint", "microsoft outlook",
+    ],
+}
+
 # Soft skill keywords to scan in criteria text → category label.
 _SOFT_SKILL_INDICATORS: dict[str, list[str]] = {
     "leadership":      ["leadership", "team management", "supervise", "manage team", "manage staff"],
@@ -272,6 +309,21 @@ _SOFT_SKILL_INDICATORS: dict[str, list[str]] = {
     "problem_solving": ["problem solving", "analytical", "troubleshooting", "critical thinking"],
     "time_management": ["time management", "deadline", "multitasking", "prioritis", "prioritiz"],
     "adaptability":    ["adaptability", "flexible", "fast-paced", "adapt"],
+}
+
+# Maps requirement keywords to CV evidence terms that satisfy them when a
+# direct fuzzy match falls below threshold.  Used in _match_other_requirements.
+_REQUIREMENT_EVIDENCE_MAP: dict[str, list[str]] = {
+    "confidential":    ["confidentiality", "information security", "data protection", "compliance"],
+    "non-disclosure":  ["confidentiality", "information security", "non-disclosure"],
+    "privacy":         ["confidentiality", "data protection", "information security"],
+    "data protection": ["data protection", "information security", "compliance", "confidentiality"],
+    "compliance":      ["compliance", "information security", "data protection"],
+    "reporting":       ["reporting", "data analysis", "documentation"],
+    "data management": ["data management", "records management", "database", "data entry"],
+    "customer":        ["customer service", "customer", "client"],
+    "banking":         ["banking", "finance", "financial services"],
+    "archiving":       ["archiving", "records management", "document control", "filing system"],
 }
 
 _WS_RE = re.compile(r"\s+")
@@ -437,7 +489,31 @@ def _match_skill_criterion(
     except ImportError:
         pass
 
-    # 3. Absent
+    # 3. Broad / umbrella skill matching — e.g. "computer literacy" satisfied by
+    #    the presence of any constituent office/ERP skill.
+    #    Checked AFTER fuzzy so a direct fuzzy hit takes priority.
+    for broad_key, sub_skills in _BROAD_SKILL_MAP.items():
+        if broad_key not in crit_canonical and crit_canonical not in broad_key:
+            continue
+        matched_subs = [s for s in sub_skills if s in skill_lookup]
+        if matched_subs:
+            # Confidence scales with how many constituent skills were found.
+            confidence = round(min(0.80, 0.50 + len(matched_subs) * 0.10), 3)
+            ev = skill_lookup[matched_subs[0]]
+            return CriterionMatch(
+                criterion_text=criterion,
+                dimension="skills",
+                required=required,
+                status=_confidence_to_status(confidence),
+                confidence=confidence,
+                match_method="inferred",
+                supporting_evidence=[ev.context_snippet[:200]] if ev.context_snippet else [matched_subs[0]],
+                evidence_confidence=[confidence],
+                partial_reason=f"Inferred from: {', '.join(matched_subs[:3])}",
+            )
+        break  # broad key matched the concept but no sub-skills found → ABSENT
+
+    # 4. Absent
     return CriterionMatch(
         criterion_text=criterion,
         dimension="skills",
@@ -679,7 +755,17 @@ def _match_soft_skills(
     cv_facts: CVFacts,
     criteria: dict,
 ) -> list["CriterionMatch"]:
-    """Infer soft skill criteria from key_responsibilities + other_requirements."""
+    """Match soft skills from criteria requirements + CV-detected signals.
+
+    Phase 1: criteria-driven — scan key_responsibilities / other_requirements
+    for soft skill keywords and produce a match for each category found.
+
+    Phase 2: signal-based fallback — always credit soft skill signals detected
+    in CVFacts even when the criteria don't explicitly name them.  This ensures
+    the soft_skills algorithmic score is non-zero whenever the extractor found
+    evidence (e.g. communication signals).  All fallback matches are preferred
+    (required=False) so they never contribute to blocking_gap_count.
+    """
     exp_block = criteria.get("experience", {})
     key_responsibilities: list[str] = (
         exp_block.get("key_responsibilities", []) if isinstance(exp_block, dict) else []
@@ -687,39 +773,53 @@ def _match_soft_skills(
     other_req: list[str] = criteria.get("other_requirements", []) or []
     combined_text = " ".join(key_responsibilities + other_req).lower()
 
-    if not combined_text.strip():
-        return []
-
     cv_soft = {s.soft_skill_category: s for s in cv_facts.soft_skill_signals}
     matches: list[CriterionMatch] = []
+    covered_categories: set[str] = set()
 
-    for category, keywords in _SOFT_SKILL_INDICATORS.items():
-        if not any(kw in combined_text for kw in keywords):
+    # Phase 1 — criteria-driven matching
+    if combined_text.strip():
+        for category, keywords in _SOFT_SKILL_INDICATORS.items():
+            if not any(kw in combined_text for kw in keywords):
+                continue
+            covered_categories.add(category)
+            criterion_text = f"{category.replace('_', ' ').title()} skills"
+            if category in cv_soft:
+                ev = cv_soft[category]
+                matches.append(CriterionMatch(
+                    criterion_text=criterion_text,
+                    dimension="soft_skills",
+                    required=False,
+                    status=_confidence_to_status(ev.confidence),
+                    confidence=ev.confidence,
+                    match_method="inferred",
+                    supporting_evidence=[ev.evidence_phrase[:150]] if ev.evidence_phrase else [],
+                    evidence_confidence=[ev.confidence],
+                ))
+            else:
+                matches.append(CriterionMatch(
+                    criterion_text=criterion_text,
+                    dimension="soft_skills",
+                    required=False,
+                    status="ABSENT",
+                    confidence=0.0,
+                    match_method="absent",
+                ))
+
+    # Phase 2 — signal-based fallback (for categories not yet covered above)
+    for sig in cv_facts.soft_skill_signals:
+        if sig.soft_skill_category in covered_categories:
             continue
-
-        criterion_text = f"{category.replace('_', ' ').title()} skills"
-
-        if category in cv_soft:
-            ev = cv_soft[category]
-            matches.append(CriterionMatch(
-                criterion_text=criterion_text,
-                dimension="soft_skills",
-                required=False,
-                status=_confidence_to_status(ev.confidence),
-                confidence=ev.confidence,
-                match_method="inferred",
-                supporting_evidence=[ev.evidence_phrase[:150]] if ev.evidence_phrase else [],
-                evidence_confidence=[ev.confidence],
-            ))
-        else:
-            matches.append(CriterionMatch(
-                criterion_text=criterion_text,
-                dimension="soft_skills",
-                required=False,
-                status="ABSENT",
-                confidence=0.0,
-                match_method="absent",
-            ))
+        matches.append(CriterionMatch(
+            criterion_text=f"{sig.soft_skill_category.replace('_', ' ').title()} skills",
+            dimension="soft_skills",
+            required=False,
+            status=_confidence_to_status(sig.confidence),
+            confidence=sig.confidence,
+            match_method="inferred",
+            supporting_evidence=[sig.evidence_phrase[:150]] if sig.evidence_phrase else [],
+            evidence_confidence=[sig.confidence],
+        ))
 
     return matches
 
@@ -762,6 +862,34 @@ def _match_other_requirements(
                 status=_confidence_to_status(conf),
                 confidence=conf,
                 match_method="fuzzy",
+            ))
+            continue
+
+        # Transferable evidence: check if any requirement keyword maps to
+        # CV evidence terms that are present in cv_pool.
+        transferred_ev: str = ""
+        for ev_key, ev_terms in _REQUIREMENT_EVIDENCE_MAP.items():
+            if ev_key not in req_norm:
+                continue
+            for ev_term in ev_terms:
+                if _normalize_text(ev_term) in cv_pool:
+                    transferred_ev = ev_term
+                    break
+            if transferred_ev:
+                break
+
+        if transferred_ev:
+            conf = 0.55  # moderate confidence — inferred, not direct
+            matches.append(CriterionMatch(
+                criterion_text=req,
+                dimension="other",
+                required=True,
+                status=_confidence_to_status(conf),
+                confidence=conf,
+                match_method="inferred",
+                supporting_evidence=[f"Inferred from: {transferred_ev}"],
+                evidence_confidence=[conf],
+                partial_reason=f"Transferable evidence: {transferred_ev}",
             ))
         else:
             matches.append(CriterionMatch(
