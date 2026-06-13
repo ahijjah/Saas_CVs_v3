@@ -473,7 +473,9 @@ class TestParseOneAssessment:
             "required": True,
             "status": "MATCHED",
             "confidence": 0.85,
-            "supporting_evidence": [],
+            # Non-empty by default so C4 (empty-evidence downgrade) does not fire
+            # unless the test explicitly overrides supporting_evidence=[].
+            "supporting_evidence": ["Candidate listed Python as primary language."],
             "match_reason": "ok",
             "match_type": "direct",
             "criterion_class": "strict",
@@ -794,3 +796,283 @@ class TestEmptyMalformedCriteria:
         msg = _build_user_message("Analyst", [], _minimal_cv_facts(), [])
         assert "Job Title" in msg
         assert isinstance(msg, str)
+
+
+# ── Section L: D-01.6 — Soft Skill Pipeline Repair ───────────────────────────
+
+class TestSoftSkillPipelineRepair:
+    """D-01.6 C1–C4 structural repairs."""
+
+    # ── C2: _flatten_criteria reads soft_skills block ─────────────────────────
+
+    def test_flatten_reads_soft_skills_required(self):
+        items = _flatten_criteria({
+            "soft_skills": {
+                "required": ["communication", "teamwork"],
+                "preferred": [],
+            }
+        })
+        soft = [i for i in items if i["dimension"] == "soft_skills"]
+        assert len(soft) == 2
+        assert all(i["required"] for i in soft)
+        assert {i["text"] for i in soft} == {"communication", "teamwork"}
+
+    def test_flatten_reads_soft_skills_preferred(self):
+        items = _flatten_criteria({
+            "soft_skills": {
+                "required": [],
+                "preferred": ["leadership", "adaptability"],
+            }
+        })
+        soft = [i for i in items if i["dimension"] == "soft_skills"]
+        assert len(soft) == 2
+        assert all(not i["required"] for i in soft)
+
+    def test_flatten_soft_skills_mixed_required_preferred(self):
+        items = _flatten_criteria({
+            "soft_skills": {
+                "required": ["attention to detail"],
+                "preferred": ["creativity"],
+            }
+        })
+        soft = [i for i in items if i["dimension"] == "soft_skills"]
+        assert len(soft) == 2
+        req = [i for i in soft if i["required"]]
+        pref = [i for i in soft if not i["required"]]
+        assert len(req) == 1 and req[0]["text"] == "attention to detail"
+        assert len(pref) == 1 and pref[0]["text"] == "creativity"
+
+    def test_flatten_soft_skills_absent_key_is_safe(self):
+        """analysis_json with no soft_skills key (v1 prompt) must not raise."""
+        items = _flatten_criteria({"skills": {"required": ["Python"], "preferred": []}})
+        soft = [i for i in items if i["dimension"] == "soft_skills"]
+        assert soft == []
+
+    def test_flatten_soft_skills_null_block_is_safe(self):
+        items = _flatten_criteria({"soft_skills": None})
+        soft = [i for i in items if i["dimension"] == "soft_skills"]
+        assert soft == []
+
+    def test_flatten_soft_skills_empty_lists_produce_no_items(self):
+        items = _flatten_criteria({"soft_skills": {"required": [], "preferred": []}})
+        soft = [i for i in items if i["dimension"] == "soft_skills"]
+        assert soft == []
+
+    def test_flatten_soft_skills_none_values_skipped(self):
+        items = _flatten_criteria({
+            "soft_skills": {"required": [None, "", "problem solving"], "preferred": [None]}
+        })
+        soft = [i for i in items if i["dimension"] == "soft_skills"]
+        assert len(soft) == 1
+        assert soft[0]["text"] == "problem solving"
+
+    def test_flatten_all_dimensions_with_soft_skills(self):
+        analysis = dict(_minimal_analysis_json())
+        analysis["soft_skills"] = {"required": ["teamwork"], "preferred": ["initiative"]}
+        items = _flatten_criteria(analysis)
+        dims = {i["dimension"] for i in items}
+        assert "soft_skills" in dims
+        assert "skills" in dims
+        assert "experience" in dims
+
+    # ── C3: soft_skill vs flexible disambiguation in system prompt ────────────
+
+    def test_soft_skill_class_described_in_hardcoded_prompt(self):
+        from services.llm_criteria_mapper import _HARDCODED_SYSTEM_PROMPT as sp
+        assert "soft_skill" in sp
+        # Prompt must mention concrete soft skill examples
+        assert "communication" in sp.lower()
+        assert "teamwork" in sp.lower()
+        assert "attention to detail" in sp.lower()
+
+    def test_flexible_not_for_behaviours_stated_in_prompt(self):
+        from services.llm_criteria_mapper import _HARDCODED_SYSTEM_PROMPT as sp
+        # Prompt must explicitly say flexible is NOT for behaviours
+        assert "NOT for behaviour" in sp or "not soft_skill" in sp.lower() or "not flexible" in sp.lower()
+
+    def test_disambiguation_rules_in_hardcoded_prompt(self):
+        from services.llm_criteria_mapper import _HARDCODED_SYSTEM_PROMPT as sp
+        # Must contain explicit disambiguation rules
+        assert "DISAMBIGUATION RULES" in sp or "Disambiguation" in sp
+        assert "R1" in sp or "R2" in sp
+
+    def test_soft_skill_parser_accepts_soft_skill_class(self):
+        """Parser must accept criterion_class=soft_skill as a valid value."""
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "communication skills",
+                "dimension": "soft_skills",
+                "required": True,
+                "status": "MATCHED",
+                "confidence": 0.75,
+                "supporting_evidence": ["Presented findings to senior management."],
+                "match_reason": "CV demonstrates strong communication.",
+                "match_type": "inferred",
+                "criterion_class": "soft_skill",
+                "risk_flags": [],
+            }]
+        })
+        result = _parse_llm_response(
+            raw,
+            [{"text": "communication skills", "dimension": "soft_skills", "required": True}],
+            **PROMPT_META,
+        )
+        assert len(result) == 1
+        assert result[0].criterion_class == "soft_skill"
+        assert result[0].dimension == "soft_skills"
+        assert result[0].status == "MATCHED"
+
+    def test_flexible_not_used_for_communication(self):
+        """Parser must accept flexible=False correction if we pass through — not a block,
+        but we verify flexible class is still accepted for non-behavioural umbrella terms."""
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "MS Office proficiency",
+                "dimension": "skills",
+                "required": True,
+                "status": "MATCHED",
+                "confidence": 0.80,
+                "supporting_evidence": ["Candidate listed Excel, Word, and Outlook."],
+                "match_reason": "Broad criterion satisfied by documented Office tools.",
+                "match_type": "equivalent",
+                "criterion_class": "flexible",
+                "risk_flags": [],
+            }]
+        })
+        result = _parse_llm_response(
+            raw,
+            [{"text": "MS Office proficiency", "dimension": "skills", "required": True}],
+            **PROMPT_META,
+        )
+        assert result[0].criterion_class == "flexible"  # still valid for non-behavioural
+
+    # ── C4: Post-parse validation — empty evidence downgrades status ──────────
+
+    def test_matched_without_evidence_downgraded_to_absent(self):
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "Python",
+                "dimension": "skills",
+                "required": True,
+                "status": "MATCHED",
+                "confidence": 0.70,
+                "supporting_evidence": [],  # empty!
+                "match_reason": "Python assumed present.",
+                "match_type": "inferred",
+                "criterion_class": "strict",
+                "risk_flags": [],
+            }]
+        })
+        result = _parse_llm_response(raw, [{"text": "Python", "dimension": "skills", "required": True}], **PROMPT_META)
+        assert result[0].status == "ABSENT"
+        assert result[0].match_type == "missing"
+        assert result[0].confidence == pytest.approx(0.0)
+        assert "missing_supporting_evidence" in result[0].risk_flags
+
+    def test_partial_without_evidence_downgraded_to_absent(self):
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "teamwork",
+                "dimension": "soft_skills",
+                "required": False,
+                "status": "PARTIAL",
+                "confidence": 0.45,
+                "supporting_evidence": [],  # empty!
+                "match_reason": "Some indication but unclear.",
+                "match_type": "inferred",
+                "criterion_class": "soft_skill",
+                "risk_flags": [],
+            }]
+        })
+        result = _parse_llm_response(
+            raw,
+            [{"text": "teamwork", "dimension": "soft_skills", "required": False}],
+            **PROMPT_META,
+        )
+        assert result[0].status == "ABSENT"
+        assert "missing_supporting_evidence" in result[0].risk_flags
+
+    def test_matched_with_evidence_not_downgraded(self):
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "Python",
+                "dimension": "skills",
+                "required": True,
+                "status": "MATCHED",
+                "confidence": 0.90,
+                "supporting_evidence": ["Candidate listed Python as primary language."],
+                "match_reason": "Direct match.",
+                "match_type": "direct",
+                "criterion_class": "strict",
+                "risk_flags": [],
+            }]
+        })
+        result = _parse_llm_response(raw, [{"text": "Python", "dimension": "skills", "required": True}], **PROMPT_META)
+        assert result[0].status == "MATCHED"
+        assert result[0].confidence == pytest.approx(0.90)
+        assert "missing_supporting_evidence" not in result[0].risk_flags
+
+    def test_absent_without_evidence_not_changed(self):
+        """ABSENT with empty evidence is correct — must not be modified."""
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "Docker",
+                "dimension": "skills",
+                "required": False,
+                "status": "ABSENT",
+                "confidence": 0.05,
+                "supporting_evidence": [],
+                "match_reason": "No Docker evidence found.",
+                "match_type": "missing",
+                "criterion_class": "strict",
+                "risk_flags": [],
+            }]
+        })
+        result = _parse_llm_response(raw, [{"text": "Docker", "dimension": "skills", "required": False}], **PROMPT_META)
+        assert result[0].status == "ABSENT"
+        assert "missing_supporting_evidence" not in result[0].risk_flags
+
+    def test_downgrade_preserves_existing_risk_flags(self):
+        """Existing risk_flags must be preserved when downgrading."""
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "leadership",
+                "dimension": "soft_skills",
+                "required": True,
+                "status": "PARTIAL",
+                "confidence": 0.40,
+                "supporting_evidence": [],
+                "match_reason": "Self-assessed only.",
+                "match_type": "inferred",
+                "criterion_class": "soft_skill",
+                "risk_flags": ["self_assessed_only"],
+            }]
+        })
+        result = _parse_llm_response(
+            raw,
+            [{"text": "leadership", "dimension": "soft_skills", "required": True}],
+            **PROMPT_META,
+        )
+        assert result[0].status == "ABSENT"
+        assert "self_assessed_only" in result[0].risk_flags
+        assert "missing_supporting_evidence" in result[0].risk_flags
+
+    # ── Feature flag still gates the mapper ──────────────────────────────────
+
+    def test_feature_flag_off_skips_mapper_branch(self):
+        from services.prompt_config import PromptConfig
+        cfg = PromptConfig(llm_criteria_mapping_enabled=False)
+        mapper_called = False
+        if cfg.llm_criteria_mapping_enabled:
+            mapper_called = True
+        assert mapper_called is False
+
+    # ── Java ≠ JavaScript / React ≠ Angular still enforced ───────────────────
+
+    def test_java_javascript_distinction_still_in_v2_prompt(self):
+        from services.llm_criteria_mapper import _HARDCODED_SYSTEM_PROMPT as sp
+        assert "Java ≠ JavaScript" in sp or "Java != JavaScript" in sp.replace("≠", "!=")
+
+    def test_react_angular_distinction_still_in_v2_prompt(self):
+        from services.llm_criteria_mapper import _HARDCODED_SYSTEM_PROMPT as sp
+        assert "React" in sp and "Angular" in sp

@@ -158,15 +158,32 @@ MATCH TYPE GUIDE:
                  implied by "prepared monthly financial reports in spreadsheets").
 - missing:       No supporting evidence found.
 
-CRITERION CLASS GUIDE:
-- strict:          Technical skills where exact match matters (programming languages, tools).
-- flexible:        Soft skills, generic competencies where equivalence is acceptable.
-- certification:   Named certifications or licenses.
+CRITERION CLASS GUIDE — choose the MOST SPECIFIC class that applies:
+- strict:          Exact match required: named programming languages, tools, databases,
+                   platforms, or frameworks (Java, Python, React, PostgreSQL, SAP,
+                   Salesforce). Java ≠ JavaScript; PostgreSQL ≠ MySQL.
+- soft_skill:      Behavioural / interpersonal traits. Use for: communication, teamwork,
+                   leadership, adaptability, attention to detail, problem solving, time
+                   management, customer service orientation, collaboration, initiative,
+                   creativity, conflict resolution, interpersonal skills, organisational
+                   ability. USE soft_skill — NOT flexible — for any behavioural criterion.
+- flexible:        Non-behavioural criteria with multiple equivalent satisfying forms:
+                   "MS Office" (any of Word/Excel/PowerPoint), "computer literacy"
+                   (any office/technical software), "digital skills". NOT for behaviours.
+- certification:   Named certifications or licenses (PMP, CPA, CIPS, ISO, etc.).
 - education:       Degree level and field-of-study requirements.
-- experience:      Years of experience, role titles, responsibilities.
-- soft_skill:      Communication, leadership, teamwork, adaptability.
-- domain_knowledge: Industry or sector knowledge.
-- other:           Requirements not fitting other categories.
+- experience:      Years of experience, role titles, responsibilities, industry tenure.
+- domain_knowledge: Industry or sector knowledge (finance, healthcare, logistics, etc.).
+- other:           Requirements not fitting any category above.
+
+DISAMBIGUATION RULES (apply strictly — these override any other interpretation):
+R1. Communication / teamwork / leadership / adaptability → soft_skill (never strict or flexible).
+R2. Customer service orientation / customer-facing skills → soft_skill.
+R3. Attention to detail / problem solving / analytical thinking → soft_skill.
+R4. Time management / organisational skills / multitasking → soft_skill.
+R5. "MS Office" / "computer literacy" / "digital skills" → flexible (not soft_skill).
+R6. Named technology (Java, Python, SAP, React, PostgreSQL) → strict.
+R7. Sector or industry knowledge → domain_knowledge (not soft_skill).
 
 CONFIDENCE GUIDE:
 - 0.85–1.00: Direct, unambiguous evidence stated clearly in CV.
@@ -271,6 +288,15 @@ def _flatten_criteria(analysis_json: dict) -> list[dict]:
     for other in (analysis_json.get("other_requirements") or []):
         if other:
             items.append({"text": str(other), "dimension": "other", "required": False})
+
+    # C2: Read soft_skills block produced by criteria_extraction v2+
+    soft_skills_block = analysis_json.get("soft_skills") or {}
+    for s in (soft_skills_block.get("required") or []):
+        if s:
+            items.append({"text": str(s), "dimension": "soft_skills", "required": True})
+    for s in (soft_skills_block.get("preferred") or []):
+        if s:
+            items.append({"text": str(s), "dimension": "soft_skills", "required": False})
 
     return items
 
@@ -443,6 +469,14 @@ def _parse_one_assessment(
     if not isinstance(risk_flags, list):
         risk_flags = []
     risk_flags = [str(f) for f in risk_flags if f][:10]
+
+    # C4: MATCHED/PARTIAL without supporting evidence is internally contradictory.
+    # Downgrade to ABSENT so callers can trust that any non-ABSENT result has evidence.
+    if status in ("MATCHED", "PARTIAL") and not supporting_evidence:
+        status = "ABSENT"
+        match_type = "missing"
+        confidence = 0.0
+        risk_flags = list(risk_flags) + ["missing_supporting_evidence"]
 
     return LLMCriterionAssessment(
         criterion_text=str(d.get("criterion_text", "")),
