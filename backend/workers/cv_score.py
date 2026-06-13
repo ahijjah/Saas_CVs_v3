@@ -816,10 +816,13 @@ async def _score_cv_async(
             # ── Scoring V2 Phase 2A — silent evidence capture ─────────────────
             _cv_facts_json_val: str | None = None
             _match_results_json_val: str | None = None
+            _llm_match_results_json_val: str | None = None
             try:
                 from services.cv_evidence import CVFactsExtractor
                 from services.criteria_matcher import CriteriaMatchEngine
-                from services.evidence_serialiser import cvfacts_to_dict, matchresult_to_dict
+                from services.evidence_serialiser import (
+                    cvfacts_to_dict, matchresult_to_dict, llm_matchresult_to_dict,
+                )
                 _cv_facts = CVFactsExtractor().extract(raw_cv_text)
                 logger.info(
                     "[%s] V2 evidence extraction complete: %d skills extracted",
@@ -839,6 +842,33 @@ async def _score_cv_async(
                 _match_results_json_val = json.dumps(
                     matchresult_to_dict(_match_result), ensure_ascii=False
                 )
+
+                # ── D-01: LLM criteria mapping (gated by env flag, default OFF) ──
+                import os as _os
+                if _os.environ.get("SCORING_V2_LLM_MAPPING", "0") == "1":
+                    from services.llm_criteria_mapper import LLMCriteriaMapper
+                    _llm_result = await LLMCriteriaMapper().assess(
+                        cv_facts=_cv_facts,
+                        analysis_json=_analysis_json,
+                        raw_cv_text=raw_cv_text,
+                        application_id=str(application_id),
+                        job_id=str(job_id),
+                        db=db,
+                    )
+                    logger.info(
+                        "[%s] V2 LLM mapping complete: total=%d matched=%d partial=%d absent=%d ms=%d",
+                        application_id,
+                        _llm_result.total_criteria,
+                        _llm_result.matched_count,
+                        _llm_result.partial_count,
+                        _llm_result.absent_count,
+                        _llm_result.processing_ms,
+                    )
+                    _llm_match_results_json_val = json.dumps(
+                        llm_matchresult_to_dict(_llm_result), ensure_ascii=False
+                    )
+                # ── End D-01 ──────────────────────────────────────────────────
+
             except Exception as _v2_err:
                 logger.warning(
                     "[%s] V2 evidence capture failed (scoring continues): %s",
@@ -1036,7 +1066,8 @@ async def _score_cv_async(
                         score_details,
                         scoring_prompt_code, scoring_prompt_version,
                         scoring_provider,
-                        cv_facts_json, match_results_json
+                        cv_facts_json, match_results_json,
+                        llm_match_results_json
                     ) VALUES (
                         :aid,
                         :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
@@ -1050,7 +1081,8 @@ async def _score_cv_async(
                         :score_details,
                         :sc_code, :sc_ver,
                         'openai',
-                        :cv_facts_json, :match_results_json
+                        :cv_facts_json, :match_results_json,
+                        :llm_match_results_json
                     )
                 """),
                 {
@@ -1081,8 +1113,9 @@ async def _score_cv_async(
                     "score_details": json.dumps(score_details, ensure_ascii=False),
                     "sc_code":    (scoring_prompt or {}).get("prompt_code"),
                     "sc_ver":     (scoring_prompt or {}).get("version"),
-                    "cv_facts_json":      _cv_facts_json_val,
-                    "match_results_json": _match_results_json_val,
+                    "cv_facts_json":           _cv_facts_json_val,
+                    "match_results_json":      _match_results_json_val,
+                    "llm_match_results_json":  _llm_match_results_json_val,
                 },
             )
             await db.execute(

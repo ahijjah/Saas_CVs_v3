@@ -357,10 +357,165 @@ SELECT
 FROM quadrants
 ORDER BY "agreement_pct";
 
+-- ── 8. D-01 LLM Criteria Mapping diagnostics ─────────────────────────────────
+\echo ''
+\echo '=== 8. D-01 LLM CRITERIA MAPPING POPULATION ==='
+\echo '    Counts rows with llm_match_results_json populated.'
+\echo '    SCORING_V2_LLM_MAPPING must be enabled for new rows to appear here.'
+
+SELECT
+    COUNT(*)                                                             AS total_scored,
+    COUNT(*) FILTER (WHERE llm_match_results_json IS NOT NULL)          AS with_llm_mapping,
+    COUNT(*) FILTER (WHERE llm_match_results_json IS NULL)              AS without_llm_mapping,
+    ROUND(
+        COUNT(*) FILTER (WHERE llm_match_results_json IS NOT NULL)::NUMERIC
+        / NULLIF(COUNT(*), 0) * 100, 1
+    )                                                                    AS llm_mapping_coverage_pct,
+    MIN(created_at) FILTER (WHERE llm_match_results_json IS NOT NULL)   AS earliest_mapped,
+    MAX(created_at) FILTER (WHERE llm_match_results_json IS NOT NULL)   AS latest_mapped
+FROM application_scores;
+
+\echo ''
+\echo '=== 8b. LLM MAPPING — AGGREGATE COUNTS PER ROW ==='
+\echo '    matched_count / partial_count / absent_count stored in llm_match_results_json.'
+
+SELECT
+    ROUND(AVG((llm_match_results_json ->> 'total_criteria')::INT),   1) AS avg_total_criteria,
+    ROUND(AVG((llm_match_results_json ->> 'matched_count')::INT),    1) AS avg_matched,
+    ROUND(AVG((llm_match_results_json ->> 'partial_count')::INT),    1) AS avg_partial,
+    ROUND(AVG((llm_match_results_json ->> 'absent_count')::INT),     1) AS avg_absent,
+    ROUND(AVG((llm_match_results_json ->> 'high_confidence_count')::INT), 1) AS avg_high_conf,
+    ROUND(AVG((llm_match_results_json ->> 'low_confidence_count')::INT),  1) AS avg_low_conf,
+    ROUND(AVG((llm_match_results_json ->> 'processing_ms')::INT),    0) AS avg_processing_ms,
+    COUNT(*)                                                             AS n
+FROM application_scores
+WHERE llm_match_results_json IS NOT NULL;
+
+\echo ''
+\echo '=== 8c. LLM MAPPING — STATUS DISTRIBUTION (across all assessments) ==='
+
+WITH assessments AS (
+    SELECT
+        jsonb_array_elements(llm_match_results_json -> 'assessments') AS a
+    FROM application_scores
+    WHERE llm_match_results_json IS NOT NULL
+      AND jsonb_typeof(llm_match_results_json -> 'assessments') = 'array'
+)
+SELECT
+    a ->> 'status'          AS status,
+    COUNT(*)                AS n,
+    ROUND(COUNT(*)::NUMERIC / NULLIF(SUM(COUNT(*)) OVER (), 0) * 100, 1) AS pct
+FROM assessments
+GROUP BY 1
+ORDER BY n DESC;
+
+\echo ''
+\echo '=== 8d. LLM MAPPING — MATCH TYPE DISTRIBUTION ==='
+
+WITH assessments AS (
+    SELECT
+        jsonb_array_elements(llm_match_results_json -> 'assessments') AS a
+    FROM application_scores
+    WHERE llm_match_results_json IS NOT NULL
+      AND jsonb_typeof(llm_match_results_json -> 'assessments') = 'array'
+)
+SELECT
+    a ->> 'match_type'      AS match_type,
+    COUNT(*)                AS n,
+    ROUND(COUNT(*)::NUMERIC / NULLIF(SUM(COUNT(*)) OVER (), 0) * 100, 1) AS pct
+FROM assessments
+GROUP BY 1
+ORDER BY n DESC;
+
+\echo ''
+\echo '=== 8e. LLM MAPPING — CRITERION CLASS DISTRIBUTION ==='
+
+WITH assessments AS (
+    SELECT
+        jsonb_array_elements(llm_match_results_json -> 'assessments') AS a
+    FROM application_scores
+    WHERE llm_match_results_json IS NOT NULL
+      AND jsonb_typeof(llm_match_results_json -> 'assessments') = 'array'
+)
+SELECT
+    a ->> 'criterion_class' AS criterion_class,
+    COUNT(*)                AS n,
+    ROUND(COUNT(*)::NUMERIC / NULLIF(SUM(COUNT(*)) OVER (), 0) * 100, 1) AS pct
+FROM assessments
+GROUP BY 1
+ORDER BY n DESC;
+
+\echo ''
+\echo '=== 8f. LLM MAPPING — LOW CONFIDENCE ASSESSMENTS (confidence < 0.40) ==='
+\echo '    High count here signals ambiguous evidence or criteria needing clarification.'
+
+WITH assessments AS (
+    SELECT
+        application_id,
+        jsonb_array_elements(llm_match_results_json -> 'assessments') AS a
+    FROM application_scores
+    WHERE llm_match_results_json IS NOT NULL
+      AND jsonb_typeof(llm_match_results_json -> 'assessments') = 'array'
+)
+SELECT
+    a ->> 'dimension'       AS dimension,
+    a ->> 'criterion_class' AS criterion_class,
+    COUNT(*)                AS low_conf_count,
+    ROUND(AVG((a ->> 'confidence')::FLOAT)::NUMERIC, 3) AS avg_confidence
+FROM assessments
+WHERE (a ->> 'confidence')::FLOAT < 0.40
+GROUP BY 1, 2
+ORDER BY low_conf_count DESC
+LIMIT 20;
+
+\echo ''
+\echo '=== 8g. LLM vs RULE-BASED — STATUS COMPARISON (where both exist) ==='
+\echo '    Diagnostic only. Agreement rate is NOT the success metric.'
+\echo '    Real benchmark will be human-reviewed sample accuracy.'
+
+WITH
+rule_matches AS (
+    SELECT
+        application_id,
+        jsonb_array_elements(match_results_json -> 'matches') AS rm
+    FROM application_scores
+    WHERE match_results_json IS NOT NULL
+      AND llm_match_results_json IS NOT NULL
+      AND jsonb_typeof(match_results_json -> 'matches') = 'array'
+),
+llm_assessments AS (
+    SELECT
+        application_id,
+        jsonb_array_elements(llm_match_results_json -> 'assessments') AS la
+    FROM application_scores
+    WHERE match_results_json IS NOT NULL
+      AND llm_match_results_json IS NOT NULL
+      AND jsonb_typeof(llm_match_results_json -> 'assessments') = 'array'
+),
+paired AS (
+    SELECT
+        r.application_id,
+        r.rm ->> 'status'         AS rule_status,
+        l.la ->> 'status'         AS llm_status,
+        r.rm ->> 'criterion_text' AS criterion_text
+    FROM rule_matches r
+    JOIN llm_assessments l
+      ON r.application_id = l.application_id
+     AND lower(trim(r.rm ->> 'criterion_text')) = lower(trim(l.la ->> 'criterion_text'))
+)
+SELECT
+    rule_status,
+    llm_status,
+    COUNT(*)                                                         AS n,
+    ROUND(COUNT(*)::NUMERIC / NULLIF(SUM(COUNT(*)) OVER (), 0) * 100, 1) AS pct
+FROM paired
+GROUP BY rule_status, llm_status
+ORDER BY rule_status, llm_status;
+
 \echo ''
 \echo '=== END OF CALIBRATION REPORT ==='
 \echo ''
-\echo 'Interpretation guide:'
+\echo 'Interpretation guide (Sections 1–7):'
 \echo '  avg_delta > +15  → algorithmic engine is too strict; needs score floor or weight boost'
 \echo '  avg_delta > +5   → algorithmic engine under-detects; consider synonym expansion'
 \echo '  avg_delta < -15  → algorithmic engine is too generous; fuzzy threshold too loose'
@@ -369,3 +524,12 @@ ORDER BY "agreement_pct";
 \echo '  pearson_r < 0.4  → weak alignment; Phase 3 bounding should not be activated yet'
 \echo '  blocking_gaps=0, low final → LLM diverging downward from rule engine (unexpected)'
 \echo '  blocking_gaps>0, high final → LLM diverging upward from rule engine (over-generous)'
+\echo ''
+\echo 'Interpretation guide (Section 8 — D-01 LLM Mapping):'
+\echo '  Section 8 will be empty until SCORING_V2_LLM_MAPPING=1 is set on the worker.'
+\echo '  8c status: healthy mix of MATCHED/PARTIAL/ABSENT shows the mapper is discriminating.'
+\echo '  8d match_type: heavy "inferred" share → criteria may be underspecified.'
+\echo '  8e criterion_class: distribution should reflect job type (e.g. tech roles → more strict).'
+\echo '  8f low-confidence: investigate dimensions with high counts — may need prompt revision.'
+\echo '  8g rule-vs-LLM: agreement is a diagnostic signal, NOT the success metric.'
+\echo '     Real accuracy benchmark requires human-reviewed ground truth.'

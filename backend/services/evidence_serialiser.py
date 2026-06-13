@@ -45,6 +45,10 @@ from services.criteria_matcher import (
     GapCandidate,
     MatchResult,
 )
+from services.llm_criteria_mapper import (
+    LLMCriterionAssessment,
+    LLMMatchResult,
+)
 
 T = TypeVar("T")
 
@@ -370,4 +374,68 @@ def matchresult_from_dict(data: Any) -> MatchResult:
         algorithmic_scores=_dict_of_float(data, "algorithmic_scores"),
         matcher_version=_s(data, "matcher_version", "0.0.0"),
         matching_method_summary=_dict_of_int(data, "matching_method_summary"),
+    )
+
+
+# ── Layer 3: LLMMatchResult serialisation ─────────────────────────────────────
+
+_LLM_MATCHRESULT_SCHEMA: str = "llm_match_result_v1"
+
+
+def _llm_assessment_from_dict(d: dict) -> LLMCriterionAssessment:
+    return LLMCriterionAssessment(
+        criterion_text=_s(d, "criterion_text"),
+        dimension=_s(d, "dimension", "other"),
+        required=_b(d, "required", True),
+        status=_s(d, "status", "ABSENT"),
+        confidence=_f(d, "confidence"),
+        supporting_evidence=_str_list(d, "supporting_evidence"),
+        match_reason=_s(d, "match_reason"),
+        match_type=_s(d, "match_type", "missing"),
+        criterion_class=_s(d, "criterion_class", "other"),
+        risk_flags=_str_list(d, "risk_flags"),
+        prompt_code=_s(d, "prompt_code"),
+        prompt_version=_s(d, "prompt_version"),
+        llm_model=_s(d, "llm_model"),
+    )
+
+
+def llm_matchresult_to_dict(result: LLMMatchResult) -> dict[str, Any]:
+    """Convert an LLMMatchResult dataclass to a JSON-safe dictionary.
+
+    Adds a top-level ``_schema`` key (``llm_match_result_v1``) so consumers
+    can detect the format version.  All nested LLMCriterionAssessment objects
+    are recursively converted via dataclasses.asdict().
+    """
+    d = dataclasses.asdict(result)
+    d["_schema"] = _LLM_MATCHRESULT_SCHEMA
+    return d
+
+
+def llm_matchresult_from_dict(data: Any) -> LLMMatchResult:
+    """Reconstruct an LLMMatchResult from a previously serialised dict.
+
+    Raises SerialisationError when ``data`` is not a dict.
+    Missing or wrong-typed fields fall back to their dataclass defaults.
+    """
+    if not isinstance(data, dict):
+        raise SerialisationError(
+            f"llm_matchresult_from_dict expects a dict, got {type(data).__name__!r}"
+        )
+    return LLMMatchResult(
+        application_id=_s(data, "application_id"),
+        job_id=_s(data, "job_id"),
+        assessments=_nested_list(data, "assessments", _llm_assessment_from_dict),
+        processing_ms=_i(data, "processing_ms"),
+        created_at=_s(data, "created_at"),
+        prompt_code=_s(data, "prompt_code"),
+        prompt_version=_s(data, "prompt_version"),
+        model=_s(data, "model"),
+        mapper_version=_s(data, "mapper_version", "0.0.0"),
+        total_criteria=_i(data, "total_criteria"),
+        matched_count=_i(data, "matched_count"),
+        partial_count=_i(data, "partial_count"),
+        absent_count=_i(data, "absent_count"),
+        high_confidence_count=_i(data, "high_confidence_count"),
+        low_confidence_count=_i(data, "low_confidence_count"),
     )
