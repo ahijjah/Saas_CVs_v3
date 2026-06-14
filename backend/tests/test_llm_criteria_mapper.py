@@ -37,8 +37,16 @@ from services.llm_criteria_mapper import (
     _CRITICAL_SECTION_RE,
     _SOFT_SKILL_EXPANSION,
     _ARABIC_SOFT_SKILL_TERMS,
+    _OFFICE_SUITE_UMBRELLA,
+    _OFFICE_SUITE_MEMBERS,
+    _GOOGLE_WORKSPACE_UMBRELLA,
+    _GOOGLE_WORKSPACE_MEMBERS,
+    _SKILL_FAMILY_RULES,
+    _SKILL_FAMILY_UPGRADE_CONFIDENCE,
     _absent_fallback_assessments,
+    _apply_skill_family_upgrade,
     _build_user_message,
+    _criterion_matches_family_member,
     _flatten_criteria,
     _is_section_boundary,
     _parse_llm_response,
@@ -1420,3 +1428,400 @@ class TestEvidenceRetrieval:
         criteria = [{"text": "Python", "dimension": "skills", "required": True}]
         result = _select_evidence_snippets(cv, criteria, max_snippets=5)
         assert len(result) <= 5
+
+
+# ── D-01.8: _criterion_matches_family_member ─────────────────────────────────
+
+class TestCriterionMatchesFamilyMember:
+    """Unit tests for the member-matching helper."""
+
+    def test_long_form_exact_match(self):
+        assert _criterion_matches_family_member("microsoft excel", _OFFICE_SUITE_MEMBERS)
+
+    def test_long_form_embedded(self):
+        assert _criterion_matches_family_member("proficiency in microsoft excel", _OFFICE_SUITE_MEMBERS)
+
+    def test_short_alias_word_boundary(self):
+        assert _criterion_matches_family_member("excel", _OFFICE_SUITE_MEMBERS)
+        assert _criterion_matches_family_member("excel skills", _OFFICE_SUITE_MEMBERS)
+        assert _criterion_matches_family_member("advanced excel", _OFFICE_SUITE_MEMBERS)
+
+    def test_short_alias_no_false_positive_excellent(self):
+        assert not _criterion_matches_family_member("excellent communication", _OFFICE_SUITE_MEMBERS)
+
+    def test_short_alias_no_false_positive_password(self):
+        assert not _criterion_matches_family_member("password management", _OFFICE_SUITE_MEMBERS)
+
+    def test_ms_word_matches(self):
+        assert _criterion_matches_family_member("ms word", _OFFICE_SUITE_MEMBERS)
+        assert _criterion_matches_family_member("ms word proficiency", _OFFICE_SUITE_MEMBERS)
+
+    def test_powerpoint_short_matches(self):
+        assert _criterion_matches_family_member("powerpoint presentations", _OFFICE_SUITE_MEMBERS)
+
+    def test_google_sheets_matches_workspace_members(self):
+        assert _criterion_matches_family_member("google sheets", _GOOGLE_WORKSPACE_MEMBERS)
+
+    def test_google_docs_matches_workspace_members(self):
+        assert _criterion_matches_family_member("google docs", _GOOGLE_WORKSPACE_MEMBERS)
+
+    def test_google_sheets_does_not_match_office_members(self):
+        assert not _criterion_matches_family_member("google sheets", _OFFICE_SUITE_MEMBERS)
+
+    def test_microsoft_excel_does_not_match_workspace_members(self):
+        assert not _criterion_matches_family_member("microsoft excel", _GOOGLE_WORKSPACE_MEMBERS)
+
+    # Strict non-mappings — must return False for both member sets
+    def test_java_not_in_any_family(self):
+        for _, members in _SKILL_FAMILY_RULES:
+            assert not _criterion_matches_family_member("java", members)
+            assert not _criterion_matches_family_member("javascript", members)
+
+    def test_postgresql_not_in_any_family(self):
+        for _, members in _SKILL_FAMILY_RULES:
+            assert not _criterion_matches_family_member("postgresql", members)
+            assert not _criterion_matches_family_member("mysql", members)
+
+    def test_react_not_in_any_family(self):
+        for _, members in _SKILL_FAMILY_RULES:
+            assert not _criterion_matches_family_member("react", members)
+            assert not _criterion_matches_family_member("angular", members)
+
+    def test_aws_not_in_any_family(self):
+        for _, members in _SKILL_FAMILY_RULES:
+            assert not _criterion_matches_family_member("aws", members)
+            assert not _criterion_matches_family_member("azure", members)
+
+
+# ── D-01.8: _apply_skill_family_upgrade ──────────────────────────────────────
+
+def _make_assessment(
+    criterion_text: str,
+    status: str,
+    supporting_evidence: list[str] | None = None,
+    match_type: str = "direct",
+    criterion_class: str = "strict",
+    risk_flags: list[str] | None = None,
+    dimension: str = "skills",
+    required: bool = True,
+    confidence: float = 0.90,
+) -> LLMCriterionAssessment:
+    return LLMCriterionAssessment(
+        criterion_text=criterion_text,
+        dimension=dimension,
+        required=required,
+        status=status,
+        confidence=confidence,
+        supporting_evidence=supporting_evidence or ([] if status == "ABSENT" else ["evidence"]),
+        match_reason="",
+        match_type=match_type if status != "ABSENT" else "missing",
+        criterion_class=criterion_class,
+        risk_flags=risk_flags or (["missing_supporting_evidence"] if status == "ABSENT" else []),
+    )
+
+
+class TestApplySkillFamilyUpgrade:
+
+    # ── Positive cases ────────────────────────────────────────────────────────
+
+    def test_office_evidence_upgrades_excel(self):
+        """microsoft office evidence → Microsoft Excel ABSENT → PARTIAL."""
+        matched = _make_assessment(
+            "computer literacy", "MATCHED",
+            supporting_evidence=["Strong command of Microsoft Office"],
+        )
+        absent = _make_assessment("Microsoft Excel", "ABSENT")
+        assessments = [matched, absent]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 1
+        a = assessments[1]
+        assert a.status == "PARTIAL"
+        assert a.match_type == "equivalent"
+        assert a.confidence == _SKILL_FAMILY_UPGRADE_CONFIDENCE
+        assert "skill_family_mapping" in a.risk_flags
+
+    def test_office_evidence_upgrades_word(self):
+        matched = _make_assessment(
+            "MS Office proficiency", "MATCHED",
+            supporting_evidence=["Proficient in MS Office suite"],
+        )
+        absent = _make_assessment("Microsoft Word", "ABSENT")
+        assessments = [matched, absent]
+        _apply_skill_family_upgrade(assessments)
+        assert assessments[1].status == "PARTIAL"
+
+    def test_office_evidence_upgrades_powerpoint(self):
+        matched = _make_assessment(
+            "Office 365", "MATCHED",
+            supporting_evidence=["Daily use of Office 365 tools"],
+        )
+        absent = _make_assessment("PowerPoint presentations", "ABSENT")
+        assessments = [matched, absent]
+        _apply_skill_family_upgrade(assessments)
+        assert assessments[1].status == "PARTIAL"
+
+    def test_ms_office_umbrella_variant_matches(self):
+        matched = _make_assessment(
+            "computer skills", "MATCHED",
+            supporting_evidence=["Certified in Microsoft 365 applications"],
+        )
+        absent = _make_assessment("MS Excel", "ABSENT")
+        assessments = [matched, absent]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 1
+
+    def test_multiple_criteria_upgraded_from_same_evidence(self):
+        matched = _make_assessment(
+            "computer literacy", "MATCHED",
+            supporting_evidence=["Strong command of Microsoft Office"],
+        )
+        word_absent  = _make_assessment("Microsoft Word", "ABSENT")
+        excel_absent = _make_assessment("Microsoft Excel", "ABSENT")
+        ppt_absent   = _make_assessment("Microsoft PowerPoint", "ABSENT")
+        assessments = [matched, word_absent, excel_absent, ppt_absent]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 3
+        for a in assessments[1:]:
+            assert a.status == "PARTIAL"
+
+    def test_google_workspace_evidence_upgrades_sheets(self):
+        matched = _make_assessment(
+            "digital tools", "MATCHED",
+            supporting_evidence=["Experienced with Google Workspace tools"],
+        )
+        absent = _make_assessment("Google Sheets", "ABSENT")
+        assessments = [matched, absent]
+        _apply_skill_family_upgrade(assessments)
+        assert assessments[1].status == "PARTIAL"
+
+    def test_google_workspace_upgrades_docs_and_slides(self):
+        matched = _make_assessment(
+            "software tools", "MATCHED",
+            supporting_evidence=["Worked with G Suite daily"],
+        )
+        docs   = _make_assessment("Google Docs", "ABSENT")
+        slides = _make_assessment("Google Slides", "ABSENT")
+        assessments = [matched, docs, slides]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 2
+
+    def test_supporting_evidence_populated_from_pool(self):
+        """Upgraded criterion must have evidence taken from the matching pool entry."""
+        ev = "Proficient in Microsoft Office suite"
+        matched = _make_assessment("Office skills", "MATCHED", supporting_evidence=[ev])
+        absent = _make_assessment("Microsoft Excel", "ABSENT")
+        assessments = [matched, absent]
+        _apply_skill_family_upgrade(assessments)
+        assert ev in assessments[1].supporting_evidence
+
+    def test_evidence_capped_at_three_entries(self):
+        """supporting_evidence for upgraded criterion is capped at 3 items."""
+        evs = [f"Microsoft Office evidence {i}" for i in range(5)]
+        matched = _make_assessment("tools", "MATCHED", supporting_evidence=evs)
+        absent  = _make_assessment("Microsoft Word", "ABSENT")
+        assessments = [matched, absent]
+        _apply_skill_family_upgrade(assessments)
+        assert len(assessments[1].supporting_evidence) <= 3
+
+    def test_missing_supporting_evidence_flag_removed_after_upgrade(self):
+        matched = _make_assessment(
+            "computer literacy", "MATCHED",
+            supporting_evidence=["Extensive Microsoft Office experience"],
+        )
+        absent = _make_assessment(
+            "Microsoft Excel", "ABSENT",
+            risk_flags=["missing_supporting_evidence"],
+        )
+        assessments = [matched, absent]
+        _apply_skill_family_upgrade(assessments)
+        assert "missing_supporting_evidence" not in assessments[1].risk_flags
+        assert "skill_family_mapping" in assessments[1].risk_flags
+
+    def test_short_alias_excel_criterion_upgraded(self):
+        matched = _make_assessment(
+            "software", "MATCHED",
+            supporting_evidence=["Proficient in Microsoft Office"],
+        )
+        absent = _make_assessment("excel", "ABSENT")
+        assessments = [matched, absent]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 1
+
+    # ── Negative cases — already matched / partial not touched ────────────────
+
+    def test_matched_assessment_not_downgraded(self):
+        """MATCHED assessments must not be touched."""
+        already = _make_assessment(
+            "Microsoft Excel", "MATCHED",
+            supporting_evidence=["Excel used for monthly reports"],
+        )
+        assessments = [already]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 0
+        assert assessments[0].status == "MATCHED"
+
+    def test_partial_assessment_not_changed(self):
+        already = _make_assessment(
+            "Microsoft Excel", "PARTIAL",
+            supporting_evidence=["Some spreadsheet experience"],
+            match_type="inferred",
+        )
+        assessments = [already]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 0
+
+    # ── Negative cases — strict technical non-mappings ────────────────────────
+
+    def test_java_does_not_upgrade_javascript(self):
+        """Java evidence MUST NOT upgrade JavaScript criterion."""
+        matched = _make_assessment(
+            "Java programming", "MATCHED",
+            supporting_evidence=["5 years Java development"],
+        )
+        absent = _make_assessment("JavaScript", "ABSENT")
+        assessments = [matched, absent]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 0
+        assert assessments[1].status == "ABSENT"
+
+    def test_postgresql_does_not_upgrade_mysql(self):
+        matched = _make_assessment(
+            "PostgreSQL", "MATCHED",
+            supporting_evidence=["Managed PostgreSQL databases"],
+        )
+        absent = _make_assessment("MySQL", "ABSENT")
+        assessments = [matched, absent]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 0
+
+    def test_react_does_not_upgrade_angular(self):
+        matched = _make_assessment(
+            "React", "MATCHED",
+            supporting_evidence=["Built SPA with React"],
+        )
+        absent = _make_assessment("Angular", "ABSENT")
+        assessments = [matched, absent]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 0
+
+    def test_aws_does_not_upgrade_azure(self):
+        matched = _make_assessment(
+            "AWS", "MATCHED",
+            supporting_evidence=["Deployed services on AWS"],
+        )
+        absent = _make_assessment("Azure", "ABSENT")
+        assessments = [matched, absent]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 0
+
+    def test_google_sheets_does_not_upgrade_microsoft_excel(self):
+        """Cross-family mapping must not occur."""
+        matched = _make_assessment(
+            "Google Workspace", "MATCHED",
+            supporting_evidence=["Daily use of Google Workspace"],
+        )
+        absent = _make_assessment("Microsoft Excel", "ABSENT")
+        assessments = [matched, absent]
+        count = _apply_skill_family_upgrade(assessments)
+        # google workspace evidence is not in _OFFICE_SUITE_UMBRELLA → no upgrade
+        assert count == 0
+
+    # ── Edge cases ────────────────────────────────────────────────────────────
+
+    def test_empty_assessments_returns_zero(self):
+        assert _apply_skill_family_upgrade([]) == 0
+
+    def test_no_matched_assessments_no_upgrade(self):
+        """Empty evidence pool → nothing can be upgraded."""
+        absent1 = _make_assessment("Microsoft Excel", "ABSENT")
+        absent2 = _make_assessment("Microsoft Word", "ABSENT")
+        assessments = [absent1, absent2]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 0
+
+    def test_umbrella_absent_no_upgrade(self):
+        """Umbrella criterion ABSENT → no evidence pool entry → no upgrade."""
+        umbrella = _make_assessment("Microsoft Office", "ABSENT")
+        member   = _make_assessment("Microsoft Excel",  "ABSENT")
+        assessments = [umbrella, member]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 0
+
+    def test_partial_source_evidence_also_used(self):
+        """Evidence from PARTIAL (not just MATCHED) assessments should be used."""
+        partial = _make_assessment(
+            "computer tools", "PARTIAL",
+            supporting_evidence=["Some experience with Microsoft Office tools"],
+            match_type="inferred",
+            risk_flags=[],
+        )
+        absent = _make_assessment("Excel", "ABSENT")
+        assessments = [partial, absent]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 1
+
+    def test_only_one_rule_applied_per_criterion(self):
+        """A criterion matching multiple rules should only be upgraded once."""
+        # This is a contrived case — a criterion in both rule sets won't occur
+        # in practice, but the break ensures idempotent behaviour.
+        matched = _make_assessment(
+            "tools", "MATCHED",
+            supporting_evidence=["Uses both Microsoft Office and Google Workspace"],
+        )
+        absent = _make_assessment("Microsoft Excel", "ABSENT")
+        assessments = [matched, absent]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 1  # upgraded exactly once
+
+    def test_return_value_equals_upgraded_count(self):
+        matched = _make_assessment(
+            "Office proficiency", "MATCHED",
+            supporting_evidence=["Strong MS Office skills"],
+        )
+        a1 = _make_assessment("Microsoft Word",        "ABSENT")
+        a2 = _make_assessment("Microsoft Excel",       "ABSENT")
+        a3 = _make_assessment("Python programming",    "ABSENT")  # not a member
+        assessments = [matched, a1, a2, a3]
+        count = _apply_skill_family_upgrade(assessments)
+        assert count == 2
+
+    # ── Integration: _parse_llm_response invokes the upgrade ─────────────────
+
+    def test_parse_llm_response_applies_skill_family_upgrade(self):
+        """End-to-end: family upgrade is baked into _parse_llm_response output."""
+        payload = json.dumps({
+            "assessments": [
+                {
+                    "criterion_text": "computer literacy",
+                    "dimension": "skills",
+                    "required": True,
+                    "status": "MATCHED",
+                    "confidence": 0.80,
+                    "supporting_evidence": ["Excellent knowledge of Microsoft Office"],
+                    "match_reason": "Office mentioned.",
+                    "match_type": "direct",
+                    "criterion_class": "flexible",
+                    "risk_flags": [],
+                },
+                {
+                    "criterion_text": "Microsoft Excel",
+                    "dimension": "skills",
+                    "required": True,
+                    "status": "ABSENT",
+                    "confidence": 0.0,
+                    "supporting_evidence": [],
+                    "match_reason": "Not found.",
+                    "match_type": "missing",
+                    "criterion_class": "strict",
+                    "risk_flags": [],
+                },
+            ]
+        })
+        criteria = [
+            {"text": "computer literacy", "dimension": "skills", "required": True},
+            {"text": "Microsoft Excel",   "dimension": "skills", "required": True},
+        ]
+        results = _parse_llm_response(payload, criteria, "code", "1", "model")
+        excel = next(a for a in results if a.criterion_text == "Microsoft Excel")
+        assert excel.status == "PARTIAL"
+        assert "skill_family_mapping" in excel.risk_flags

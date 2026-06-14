@@ -401,6 +401,131 @@ _ARABIC_SOFT_SKILL_TERMS: frozenset[str] = frozenset({
 })
 
 
+# ── D-01.8 Skill Family Mapping ───────────────────────────────────────────────
+
+# Umbrella terms searched for inside CV evidence strings (lower-cased)
+_OFFICE_SUITE_UMBRELLA: frozenset[str] = frozenset({
+    "microsoft office", "ms office", "office suite",
+    "office 365", "microsoft 365", "ms office suite",
+})
+# Member skills that "Microsoft Office" evidence covers
+_OFFICE_SUITE_MEMBERS: frozenset[str] = frozenset({
+    "microsoft word", "ms word",
+    "microsoft excel", "ms excel",
+    "microsoft powerpoint", "ms powerpoint",
+    "microsoft outlook", "ms outlook",
+    "microsoft access", "ms access",
+    "microsoft teams", "ms teams",
+    "microsoft onenote",
+    # Short-form aliases — matched with word-boundary logic (len < 8)
+    "word", "excel", "powerpoint", "outlook",
+})
+
+_GOOGLE_WORKSPACE_UMBRELLA: frozenset[str] = frozenset({
+    "google workspace", "g suite", "google suite",
+    "google apps", "google apps for work",
+})
+_GOOGLE_WORKSPACE_MEMBERS: frozenset[str] = frozenset({
+    "google docs", "google sheets", "google slides",
+    "google drive", "google meet", "google forms", "gmail",
+})
+
+# Each tuple: (umbrella_terms, member_terms)
+# Only conservative, recruiter-approved families are listed.
+_SKILL_FAMILY_RULES: list[tuple[frozenset[str], frozenset[str]]] = [
+    (_OFFICE_SUITE_UMBRELLA,      _OFFICE_SUITE_MEMBERS),
+    (_GOOGLE_WORKSPACE_UMBRELLA,  _GOOGLE_WORKSPACE_MEMBERS),
+]
+
+# Confidence assigned to family-inferred upgrades (PARTIAL only, never MATCHED)
+_SKILL_FAMILY_UPGRADE_CONFIDENCE: float = 0.55
+
+
+def _criterion_matches_family_member(crit_lower: str, members: frozenset[str]) -> bool:
+    """Return True if criterion_text (lower-cased) names a known skill-family member."""
+    for m in members:
+        if len(m) >= 8:
+            # Long term: simple substring match is safe against false positives
+            if m in crit_lower:
+                return True
+        else:
+            # Short alias: require a word boundary so "excel" ≠ "excellent",
+            # "word" ≠ "password"
+            if re.search(r"\b" + re.escape(m) + r"\b", crit_lower):
+                return True
+    return False
+
+
+def _apply_skill_family_upgrade(assessments: list[LLMCriterionAssessment]) -> int:
+    """D-01.8: promote ABSENT family-member criteria when the umbrella skill is evidenced.
+
+    Algorithm
+    ---------
+    1.  Build an evidence pool from every MATCHED/PARTIAL assessment's
+        supporting_evidence strings — these are CV quotes the LLM already accepted.
+    2.  For each ABSENT assessment whose criterion names a known family member
+        (e.g. "Microsoft Excel") and whose family umbrella term (e.g. "microsoft
+        office") appears in the evidence pool, upgrade:
+          status       → PARTIAL
+          match_type   → "equivalent"
+          confidence   → _SKILL_FAMILY_UPGRADE_CONFIDENCE (0.55)
+          risk_flags   → [...existing, "skill_family_mapping"]
+        supporting_evidence is taken from the matching pool entries (capped at 3).
+
+    Conservative constraints
+    ------------------------
+    - Only ABSENT → PARTIAL.  Never PARTIAL → MATCHED.
+    - Only explicit family rules in _SKILL_FAMILY_RULES — no fuzzy matching.
+    - Strict families (Java, PostgreSQL, React, …) are NOT listed; they can never
+      trigger an upgrade through this function.
+    - At most one rule is applied per criterion (break after first match).
+
+    Returns the number of upgraded assessments.  Mutates list elements in place;
+    the stored llm_match_results_json is never touched.
+    """
+    # Evidence pool: CV quotes confirmed by at least one MATCHED/PARTIAL assessment
+    evidence_pool: list[str] = [
+        ev
+        for a in assessments
+        if a.status in ("MATCHED", "PARTIAL")
+        for ev in a.supporting_evidence
+    ]
+    if not evidence_pool:
+        return 0
+
+    upgraded = 0
+    for assessment in assessments:
+        if assessment.status != "ABSENT":
+            continue
+
+        crit_lower = assessment.criterion_text.lower()
+
+        for umbrella_terms, member_terms in _SKILL_FAMILY_RULES:
+            if not _criterion_matches_family_member(crit_lower, member_terms):
+                continue
+
+            matching_evidence = [
+                ev for ev in evidence_pool
+                if any(umb in ev.lower() for umb in umbrella_terms)
+            ]
+            if not matching_evidence:
+                continue
+
+            # Strip any stale downgrade flag before upgrading
+            flags = [f for f in assessment.risk_flags if f != "missing_supporting_evidence"]
+            flags.append("skill_family_mapping")
+
+            assessment.status              = "PARTIAL"
+            assessment.match_type          = "equivalent"
+            assessment.confidence          = _SKILL_FAMILY_UPGRADE_CONFIDENCE
+            assessment.supporting_evidence = matching_evidence[:3]
+            assessment.risk_flags          = flags
+            upgraded += 1
+            break  # one rule per criterion
+
+    return upgraded
+
+
 def _is_section_boundary(line: str) -> bool:
     """True when a non-blank line marks the start of a CV section."""
     if not line:
@@ -775,6 +900,11 @@ def _parse_llm_response(
             results.append(_parse_one_assessment(item, prompt_code, prompt_version, llm_model))
         except Exception as exc:
             logger.debug("LLM mapper: skipping malformed assessment item: %s", exc)
+
+    # D-01.8: promote ABSENT family-member criteria when the umbrella is evidenced
+    upgraded = _apply_skill_family_upgrade(results)
+    if upgraded:
+        logger.debug("LLM mapper: skill_family_upgrade promoted %d ABSENT → PARTIAL", upgraded)
 
     return results
 
