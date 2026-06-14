@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, KnockoutSuggestionRecord, KnockoutValidationRecord, KnockoutValidationRun, PassingCriteria, WorkflowStatus } from '../types';
+import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, KnockoutSuggestionRecord, KnockoutValidationRecord, KnockoutValidationRun, PassingCriteria, WorkflowStatus, DetCriterionScore, DetDimensionScore, DeterministicScore } from '../types';
 import { apiService } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import {
@@ -124,6 +124,62 @@ const T = {
     notInFinalScore: 'Not included in final score',
     additionalInsights: 'Additional Recruiter Insights',
     scoreOverview: 'Score Overview',
+    explainabilityTitle: 'Recruiter Evidence Analysis',
+    coverageSummary: 'Coverage Summary',
+    requiredRequirements: 'Required Requirements',
+    preferredRequirements: 'Preferred Requirements',
+    xMatched: 'Matched',
+    xPartial: 'Partial',
+    xMissing: 'Missing',
+    xCoverage: 'Coverage',
+    recruiterSignalLabel: 'Recruiter Signal',
+    recruiterSignalLabels: {
+      STRONG_FULL_MATCH:            'Excellent Match',
+      STRONG_REQUIRED_WEAK_PREFERRED:'Strong Match',
+      STRONG_REQUIRED_NO_PREFERRED: 'Strong Core Match',
+      NEAR_MATCH:                   'Near Match',
+      PARTIAL_REQUIRED:             'Significant Gaps',
+      POOR_REQUIRED_COVERAGE:       'Does Not Meet Requirements',
+      NO_REQUIRED_CRITERIA:         'No Required Criteria',
+    } as Record<string, string>,
+    recruiterSignalDescriptions: {
+      STRONG_FULL_MATCH:            'All core and preferred requirements satisfied.',
+      STRONG_REQUIRED_WEAK_PREFERRED:'Core requirements met. Preferred requirements partially met.',
+      STRONG_REQUIRED_NO_PREFERRED: 'All core requirements met. No preferred requirements specified.',
+      NEAR_MATCH:                   'Core requirements mostly satisfied. Some gaps remain.',
+      PARTIAL_REQUIRED:             'Significant gaps in core requirements.',
+      POOR_REQUIRED_COVERAGE:       'Most core requirements are missing.',
+      NO_REQUIRED_CRITERIA:         'No mandatory requirements were defined for this job.',
+    } as Record<string, string>,
+    xDimensionLabels: {
+      skills:           'Technical Skills',
+      experience:       'Experience',
+      education:        'Education',
+      certifications:   'Certifications',
+      soft_skills:      'Soft Skills',
+      domain_knowledge: 'Domain Knowledge',
+      other:            'Other Requirements',
+    } as Record<string, string>,
+    badgeRequired:    'Required',
+    badgePreferred:   'Preferred',
+    statusMatched:    'Matched',
+    statusPartial:    'Partial',
+    statusAbsent:     'Missing',
+    matchTypeLabels: {
+      direct:       'Direct match',
+      equivalent:   'Equivalent',
+      transferable: 'Transferable',
+      inferred:     'Inferred',
+      missing:      'Not found',
+    } as Record<string, string>,
+    xConfidence:       'Confidence',
+    xEffectiveCredit:  'Credit',
+    xEvidence:         'Evidence',
+    xNoEvidence:       'No supporting evidence recorded.',
+    xDimensionScore:   'Dimension Score',
+    xWeight:           'Weight',
+    xNoCriteriaData:   'No criteria data available.',
+    xNoExplainability: 'Detailed evidence analysis is not available for this application.',
     securityBlockedPageTitle: 'Application Security Review',
     securityBlockedBadge: 'Blocked Before AI Scoring',
     securityCandidateRef: 'Candidate Reference',
@@ -383,6 +439,62 @@ const T = {
     notInFinalScore: 'غير محتسب في النتيجة النهائية',
     additionalInsights: 'رؤى إضافية للمسؤول',
     scoreOverview: 'نظرة عامة على النتيجة',
+    explainabilityTitle: 'تحليل أدلة المسؤول',
+    coverageSummary: 'ملخص التغطية',
+    requiredRequirements: 'المتطلبات الإلزامية',
+    preferredRequirements: 'المتطلبات المفضلة',
+    xMatched: 'مطابق',
+    xPartial: 'جزئي',
+    xMissing: 'غائب',
+    xCoverage: 'التغطية',
+    recruiterSignalLabel: 'إشارة المسؤول',
+    recruiterSignalLabels: {
+      STRONG_FULL_MATCH:            'تطابق ممتاز',
+      STRONG_REQUIRED_WEAK_PREFERRED:'تطابق قوي',
+      STRONG_REQUIRED_NO_PREFERRED: 'تطابق أساسي قوي',
+      NEAR_MATCH:                   'تطابق شبه تام',
+      PARTIAL_REQUIRED:             'ثغرات جوهرية',
+      POOR_REQUIRED_COVERAGE:       'لا يلبي المتطلبات',
+      NO_REQUIRED_CRITERIA:         'لا توجد معايير إلزامية',
+    } as Record<string, string>,
+    recruiterSignalDescriptions: {
+      STRONG_FULL_MATCH:            'جميع المتطلبات الأساسية والمفضلة محققة.',
+      STRONG_REQUIRED_WEAK_PREFERRED:'المتطلبات الأساسية محققة. المتطلبات المفضلة محققة جزئياً.',
+      STRONG_REQUIRED_NO_PREFERRED: 'جميع المتطلبات الأساسية محققة. لا توجد متطلبات مفضلة محددة.',
+      NEAR_MATCH:                   'المتطلبات الأساسية محققة في معظمها مع بعض الثغرات.',
+      PARTIAL_REQUIRED:             'ثغرات جوهرية في المتطلبات الأساسية.',
+      POOR_REQUIRED_COVERAGE:       'معظم المتطلبات الأساسية غائبة.',
+      NO_REQUIRED_CRITERIA:         'لم يتم تحديد أي متطلبات إلزامية لهذه الوظيفة.',
+    } as Record<string, string>,
+    xDimensionLabels: {
+      skills:           'المهارات التقنية',
+      experience:       'الخبرة',
+      education:        'التعليم',
+      certifications:   'الشهادات',
+      soft_skills:      'المهارات الشخصية',
+      domain_knowledge: 'المعرفة المتخصصة',
+      other:            'متطلبات أخرى',
+    } as Record<string, string>,
+    badgeRequired:    'إلزامي',
+    badgePreferred:   'مفضل',
+    statusMatched:    'مطابق',
+    statusPartial:    'جزئي',
+    statusAbsent:     'غائب',
+    matchTypeLabels: {
+      direct:       'تطابق مباشر',
+      equivalent:   'مكافئ',
+      transferable: 'قابل للنقل',
+      inferred:     'مستنتج',
+      missing:      'غير موجود',
+    } as Record<string, string>,
+    xConfidence:       'الثقة',
+    xEffectiveCredit:  'الائتمان',
+    xEvidence:         'الأدلة',
+    xNoEvidence:       'لم يُسجَّل أي دليل داعم.',
+    xDimensionScore:   'درجة البُعد',
+    xWeight:           'الوزن',
+    xNoCriteriaData:   'لا تتوفر بيانات معايير.',
+    xNoExplainability: 'تحليل الأدلة التفصيلي غير متاح لهذا الطلب.',
     securityBlockedPageTitle: 'مراجعة أمان الطلب',
     securityBlockedBadge: 'محجوب قبل التقييم بالذكاء الاصطناعي',
     securityCandidateRef: 'مرجع المرشح',
@@ -568,6 +680,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const t = T[lang];
 
   const [showRaw, setShowRaw] = useState(false);
+  const [explainabilityExpanded, setExplainabilityExpanded] = useState(true);
+  const [expandedDimensions, setExpandedDimensions] = useState<Record<string, boolean>>({});
   const [intelligenceExpanded, setIntelligenceExpanded] = useState(
     data.gatekeeper_passed === false
   );
@@ -2130,6 +2244,261 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           </div>
         </div>
       </div>}
+
+      {/* Recruiter Explainability Panel */}
+      {!isSecurityBlocked && data.det_score && (() => {
+        const ds: DeterministicScore = data.det_score!;
+        const req = ds.required_summary;
+        const pref = ds.preferred_summary;
+        const signal = ds.recruiter_signal;
+
+        const signalColors: Record<string, string> = {
+          STRONG_FULL_MATCH:            'bg-emerald-100 text-emerald-800 border-emerald-200',
+          STRONG_REQUIRED_WEAK_PREFERRED:'bg-emerald-100 text-emerald-800 border-emerald-200',
+          STRONG_REQUIRED_NO_PREFERRED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+          NEAR_MATCH:                   'bg-amber-100 text-amber-800 border-amber-200',
+          PARTIAL_REQUIRED:             'bg-orange-100 text-orange-800 border-orange-200',
+          POOR_REQUIRED_COVERAGE:       'bg-red-100 text-red-800 border-red-200',
+          NO_REQUIRED_CRITERIA:         'bg-slate-100 text-slate-700 border-slate-200',
+        };
+
+        const statusIcon = (status: string) => {
+          if (status === 'MATCHED') return <span className="text-emerald-600 font-black text-sm">✓</span>;
+          if (status === 'PARTIAL') return <span className="text-amber-500 font-black text-sm">△</span>;
+          return <span className="text-red-500 font-black text-sm">✗</span>;
+        };
+
+        const statusBg = (status: string) => {
+          if (status === 'MATCHED') return 'border-l-2 border-emerald-400 bg-emerald-50/40';
+          if (status === 'PARTIAL') return 'border-l-2 border-amber-400 bg-amber-50/40';
+          return 'border-l-2 border-red-300 bg-red-50/30';
+        };
+
+        const dimOrder = ['skills','experience','education','certifications','soft_skills','domain_knowledge','other'];
+        const orderedDims = dimOrder
+          .filter(k => ds.dimensions[k])
+          .concat(Object.keys(ds.dimensions).filter(k => !dimOrder.includes(k)));
+
+        return (
+          <div className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
+            <button
+              onClick={() => setExplainabilityExpanded(v => !v)}
+              className="w-full px-8 py-5 flex items-center justify-between hover:bg-slate-50 transition-colors"
+            >
+              <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
+                <span className="w-2 h-4 bg-emerald-500 rounded-full"></span>
+                {t.explainabilityTitle}
+              </h3>
+              <svg className={`w-5 h-5 text-textMuted transform transition-transform ${explainabilityExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {explainabilityExpanded && (
+              <div className="px-8 pb-8 pt-2 border-t border-slate-50 space-y-6 animate-fade-in">
+
+                {/* Coverage Summary + Signal */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Required summary */}
+                  <div className="sm:col-span-1 bg-slate-50 rounded-2xl p-5">
+                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.requiredRequirements}</p>
+                    <div className="flex gap-4 mb-2 flex-wrap">
+                      <span className="flex items-center gap-1 text-sm font-bold text-emerald-700">
+                        <span className="text-base">✓</span> {t.xMatched}: <span className="ml-0.5">{req.matched}</span>
+                      </span>
+                      <span className="flex items-center gap-1 text-sm font-bold text-amber-600">
+                        <span className="text-base">△</span> {t.xPartial}: <span className="ml-0.5">{req.partial}</span>
+                      </span>
+                      <span className="flex items-center gap-1 text-sm font-bold text-red-600">
+                        <span className="text-base">✗</span> {t.xMissing}: <span className="ml-0.5">{req.absent}</span>
+                      </span>
+                    </div>
+                    {req.coverage_pct != null && (
+                      <div className="mt-3">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] text-textMuted font-bold uppercase tracking-wider">{t.xCoverage}</span>
+                          <span className="text-sm font-black text-textMain">{Math.round(req.coverage_pct)}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-1.5">
+                          <div
+                            className={`h-1.5 rounded-full ${req.coverage_pct >= 80 ? 'bg-emerald-500' : req.coverage_pct >= 50 ? 'bg-amber-400' : 'bg-red-400'}`}
+                            style={{ width: `${Math.min(100, req.coverage_pct)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Preferred summary */}
+                  <div className="sm:col-span-1 bg-slate-50 rounded-2xl p-5">
+                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.preferredRequirements}</p>
+                    <div className="flex gap-4 mb-2 flex-wrap">
+                      <span className="flex items-center gap-1 text-sm font-bold text-emerald-700">
+                        <span className="text-base">✓</span> {t.xMatched}: <span className="ml-0.5">{pref.matched}</span>
+                      </span>
+                      <span className="flex items-center gap-1 text-sm font-bold text-amber-600">
+                        <span className="text-base">△</span> {t.xPartial}: <span className="ml-0.5">{pref.partial}</span>
+                      </span>
+                      <span className="flex items-center gap-1 text-sm font-bold text-red-600">
+                        <span className="text-base">✗</span> {t.xMissing}: <span className="ml-0.5">{pref.absent}</span>
+                      </span>
+                    </div>
+                    {pref.coverage_pct != null && (
+                      <div className="mt-3">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] text-textMuted font-bold uppercase tracking-wider">{t.xCoverage}</span>
+                          <span className="text-sm font-black text-textMain">{Math.round(pref.coverage_pct)}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-1.5">
+                          <div
+                            className={`h-1.5 rounded-full ${pref.coverage_pct >= 80 ? 'bg-emerald-500' : pref.coverage_pct >= 50 ? 'bg-amber-400' : 'bg-red-400'}`}
+                            style={{ width: `${Math.min(100, pref.coverage_pct)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Recruiter Signal */}
+                  <div className="sm:col-span-1 flex flex-col justify-center">
+                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.recruiterSignalLabel}</p>
+                    <div className={`rounded-2xl border px-5 py-4 ${signalColors[signal] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                      <p className="text-base font-black mb-1">{t.recruiterSignalLabels[signal] || signal}</p>
+                      <p className="text-xs leading-relaxed opacity-80">{t.recruiterSignalDescriptions[signal] || ''}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Per-dimension breakdown */}
+                <div className="space-y-3">
+                  {orderedDims.map(dimKey => {
+                    const dim: DetDimensionScore = ds.dimensions[dimKey];
+                    const isOpen = expandedDimensions[dimKey] ?? false;
+                    const dimLabel = t.xDimensionLabels[dimKey] || dimKey;
+                    const scorePercent = Math.round(dim.dimension_score * 100);
+                    const requiredCriteria = dim.criteria.filter(c => c.required);
+                    const preferredCriteria = dim.criteria.filter(c => !c.required);
+                    const hasCriteria = dim.criteria.length > 0;
+
+                    return (
+                      <div key={dimKey} className="border border-slate-200 rounded-2xl overflow-hidden">
+                        <button
+                          onClick={() => setExpandedDimensions(prev => ({ ...prev, [dimKey]: !prev[dimKey] }))}
+                          className="w-full px-5 py-4 flex items-center gap-4 hover:bg-slate-50 transition-colors text-left"
+                        >
+                          {/* Dimension name + score */}
+                          <div className="flex-1 flex items-center gap-3 flex-wrap">
+                            <span className="text-sm font-black text-textMain">{dimLabel}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${scorePercent >= 80 ? 'bg-emerald-100 text-emerald-700' : scorePercent >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                              {scorePercent}%
+                            </span>
+                            <span className="text-[10px] text-textMuted bg-slate-100 rounded px-1.5 py-0.5 font-bold">
+                              {Math.round(dim.weight_pct * 100)}% {t.xWeight}
+                            </span>
+                          </div>
+                          {/* Mini required/preferred counts */}
+                          <div className="flex items-center gap-3 text-[10px] font-bold text-textMuted">
+                            {dim.n_required > 0 && (
+                              <span>
+                                <span className="text-emerald-600">{dim.n_required_matched}✓</span>
+                                {dim.n_required_partial > 0 && <span className="text-amber-500"> {dim.n_required_partial}△</span>}
+                                {dim.n_required_absent > 0 && <span className="text-red-500"> {dim.n_required_absent}✗</span>}
+                                <span className="ml-1 text-textMuted">req</span>
+                              </span>
+                            )}
+                            {dim.n_preferred > 0 && (
+                              <span>
+                                <span className="text-emerald-600">{dim.n_preferred_matched}✓</span>
+                                {dim.n_preferred_partial > 0 && <span className="text-amber-500"> {dim.n_preferred_partial}△</span>}
+                                {dim.n_preferred_absent > 0 && <span className="text-red-500"> {dim.n_preferred_absent}✗</span>}
+                                <span className="ml-1 text-textMuted">pref</span>
+                              </span>
+                            )}
+                          </div>
+                          <svg className={`w-4 h-4 text-textMuted transform transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+
+                        {isOpen && (
+                          <div className="px-5 pb-5 pt-1 border-t border-slate-100 space-y-2">
+                            {!hasCriteria && (
+                              <p className="text-sm text-textMuted italic py-3">{t.xNoCriteriaData}</p>
+                            )}
+
+                            {/* Required criteria */}
+                            {requiredCriteria.length > 0 && (
+                              <div className="space-y-2">
+                                {requiredCriteria.map((c: DetCriterionScore, i: number) => (
+                                  <div key={i} className={`rounded-xl p-3 ${statusBg(c.status)}`}>
+                                    <div className="flex items-start gap-2 flex-wrap">
+                                      {statusIcon(c.status)}
+                                      <span className="flex-1 text-sm font-semibold text-textMain leading-snug">{c.criterion_text}</span>
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-700 uppercase tracking-wide flex-shrink-0">{t.badgeRequired}</span>
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-textMuted">
+                                      <span>{t.matchTypeLabels[c.match_type] || c.match_type}</span>
+                                      <span>{t.xConfidence}: {Math.round(c.confidence * 100)}%</span>
+                                      <span>{t.xEffectiveCredit}: {Math.round(c.effective_credit * 100)}%</span>
+                                    </div>
+                                    {c.supporting_evidence.length > 0 && (
+                                      <div className="mt-2 space-y-1">
+                                        <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.xEvidence}</p>
+                                        {c.supporting_evidence.map((ev, ei) => (
+                                          <p key={ei} className="text-xs text-textMain bg-white rounded-lg px-3 py-1.5 border border-slate-100 leading-relaxed">
+                                            {ev}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {c.status !== 'ABSENT' && c.supporting_evidence.length === 0 && (
+                                      <p className="mt-2 text-[10px] text-textMuted italic">{t.xNoEvidence}</p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Preferred criteria */}
+                            {preferredCriteria.length > 0 && (
+                              <div className="space-y-2 pt-1">
+                                {preferredCriteria.map((c: DetCriterionScore, i: number) => (
+                                  <div key={i} className={`rounded-xl p-3 ${statusBg(c.status)}`}>
+                                    <div className="flex items-start gap-2 flex-wrap">
+                                      {statusIcon(c.status)}
+                                      <span className="flex-1 text-sm font-semibold text-textMain leading-snug">{c.criterion_text}</span>
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-100 text-slate-600 uppercase tracking-wide flex-shrink-0">{t.badgePreferred}</span>
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-textMuted">
+                                      <span>{t.matchTypeLabels[c.match_type] || c.match_type}</span>
+                                      <span>{t.xConfidence}: {Math.round(c.confidence * 100)}%</span>
+                                      <span>{t.xEffectiveCredit}: {Math.round(c.effective_credit * 100)}%</span>
+                                    </div>
+                                    {c.supporting_evidence.length > 0 && (
+                                      <div className="mt-2 space-y-1">
+                                        <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.xEvidence}</p>
+                                        {c.supporting_evidence.map((ev, ei) => (
+                                          <p key={ei} className="text-xs text-textMain bg-white rounded-lg px-3 py-1.5 border border-slate-100 leading-relaxed">
+                                            {ev}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Intelligence Analysis Panel */}
       {!isSecurityBlocked && hasIntelligence && (

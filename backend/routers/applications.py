@@ -1196,6 +1196,7 @@ async def get_application_details(
                 s.cv_language, s.gatekeeper_passed AS score_gatekeeper_passed,
                 s.ai_model,
                 s.score_details,
+                s.det_score_json,
                 s.scoring_prompt_code, s.scoring_prompt_version,
                 s.level2_prompt_code,  s.level2_prompt_version,
                 s.scoring_provider
@@ -1408,6 +1409,7 @@ async def get_application_details(
             "other_requirements": build_dim("score_other",          "weight_other"),
         },
         "score_details": app["score_details"] or {},
+        "det_score": app["det_score_json"] or None,
         "analysis": {
             "summary":                       app["evaluation_notes"] or "",
             "strengths":                     app["strengths"] or [],

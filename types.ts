@@ -364,6 +364,70 @@ export interface AIComparison {
   created_at?: string;
 }
 
+export interface DetCriterionScore {
+  criterion_text: string;
+  dimension: string;
+  required: boolean;
+  status: 'MATCHED' | 'PARTIAL' | 'ABSENT';
+  match_type: 'direct' | 'equivalent' | 'transferable' | 'inferred' | 'missing';
+  criterion_class: string;
+  status_credit: number;
+  quality_factor: number;
+  effective_credit: number;
+  confidence: number;
+  supporting_evidence: string[];
+  risk_flags: string[];
+  has_overqualification: boolean;
+}
+
+export interface DetDimensionScore {
+  dimension: string;
+  dimension_score: number;
+  weighted_contribution: number;
+  weight_pct: number;
+  n_required: number;
+  n_required_matched: number;
+  n_required_partial: number;
+  n_required_absent: number;
+  n_preferred: number;
+  n_preferred_matched: number;
+  n_preferred_partial: number;
+  n_preferred_absent: number;
+  required_avg: number;
+  preferred_avg: number;
+  required_absent_floor_triggered: boolean;
+  has_overqualification_risk: boolean;
+  low_confidence_count: number;
+  review_recommended: boolean;
+  criteria: DetCriterionScore[];
+}
+
+export interface DetScoreSummary {
+  total: number;
+  matched: number;
+  partial: number;
+  absent: number;
+  coverage_pct: number | null;
+  partial_or_matched_pct: number | null;
+  blocking_gaps?: number;
+  fully_covered?: boolean;
+  signal: string;
+}
+
+export interface DeterministicScore {
+  _schema: string;
+  final_score: number;
+  scoring_version: string;
+  scored_at: string;
+  mapper_version: string;
+  overqualification_risk_dimensions: string[];
+  required_summary: DetScoreSummary;
+  preferred_summary: DetScoreSummary;
+  recruiter_signal: string;
+  recruiter_label: string;
+  dimensions: Record<string, DetDimensionScore>;
+}
+
 export interface ApplicationDetailedAnalysis {
   application_id: string;
   candidate_name: string;
@@ -399,6 +463,7 @@ export interface ApplicationDetailedAnalysis {
     other_requirements?: ScoreDimension;
   };
   score_details?: Record<string, ScoreDetail>;
+  det_score?: DeterministicScore | null;
   analysis: {
     summary: string;
     cv_skills_matched?: string;
