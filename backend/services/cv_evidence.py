@@ -215,15 +215,6 @@ class CVFacts:
     total_char_count: int
     """Total character count of the normalised CV text."""
 
-    nationality: str = ""
-    """Nationality or citizenship extracted from CV header (raw text)."""
-
-    location_country: str = ""
-    """Location or country extracted from CV header (raw text)."""
-
-    language_section_lines: list[str] = field(default_factory=list)
-    """Lines from the 'Languages' CV section, if present."""
-
     # ── Evidence collections ──────────────────────────────────────────────
     skills: list[SkillEvidence] = field(default_factory=list)
     """All skill evidence items, explicit and inferred, in extraction order."""
@@ -559,17 +550,6 @@ _SECTION_RE: dict[str, re.Pattern] = {
     ),
 }
 
-# Personal info extraction (nationality / location for language inference)
-_NATL_RE = re.compile(
-    r"(?:nationality|citizenship|national|جنسية|الجنسية|مواطنة)\s*[:\-–]\s*([^\n]{2,50})",
-    re.IGNORECASE | re.UNICODE,
-)
-_LOC_RE = re.compile(
-    r"(?:location|address|city|country|residence|residing|based\s+in"
-    r"|عنوان|الموقع|مقيم(?:\s+في)?|مكان\s+الإقامة)\s*[:\-–]?\s*([^\n]{2,80})",
-    re.IGNORECASE | re.UNICODE,
-)
-
 # Date range pattern for experience year extraction.
 # Supports English and Arabic separators; many "present" variants.
 _DATE_RANGE_RE = re.compile(
@@ -702,20 +682,6 @@ def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[Skil
                 break
 
     return list(found.values())
-
-
-def _extract_personal_info(full_text: str) -> tuple[str, str]:
-    """Return (nationality, location_country) extracted from the CV header."""
-    header = full_text[:1500]
-    natl = ""
-    loc = ""
-    m = _NATL_RE.search(header)
-    if m:
-        natl = m.group(1).strip()[:60]
-    m = _LOC_RE.search(header)
-    if m:
-        loc = m.group(1).strip()[:80]
-    return natl, loc
 
 
 def _infer_university_bachelor(full_text: str) -> EducationEvidence | None:
@@ -1021,8 +987,6 @@ class CVFactsExtractor:
         soft_skill_signals = _extract_soft_skills(sections)
         domain_signals = _extract_domain_signals(cv_text)
         experience_blocks, total_years = _extract_experience(sections, cv_text)
-        nationality, location_country = _extract_personal_info(cv_text)
-        language_section_lines = sections.get("languages", [])
 
         if not skills:
             warnings.append("no skills extracted")
@@ -1034,9 +998,6 @@ class CVFactsExtractor:
         return CVFacts(
             language=language,
             total_char_count=char_count,
-            nationality=nationality,
-            location_country=location_country,
-            language_section_lines=language_section_lines,
             skills=skills,
             experience=experience_blocks,
             education=education,

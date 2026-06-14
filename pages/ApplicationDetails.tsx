@@ -158,7 +158,6 @@ const T = {
       certifications:   'Certifications',
       soft_skills:      'Soft Skills',
       domain_knowledge: 'Domain Knowledge',
-      languages:        'Languages',
       other:            'Other Requirements',
     } as Record<string, string>,
     badgeRequired:    'Required',
@@ -474,7 +473,6 @@ const T = {
       certifications:   'الشهادات',
       soft_skills:      'المهارات الشخصية',
       domain_knowledge: 'المعرفة المتخصصة',
-      languages:        'اللغات',
       other:            'متطلبات أخرى',
     } as Record<string, string>,
     badgeRequired:    'إلزامي',
@@ -2276,7 +2274,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           return 'border-l-2 border-red-300 bg-red-50/30';
         };
 
-        const dimOrder = ['skills','experience','education','certifications','soft_skills','domain_knowledge','languages','other'];
+        const dimOrder = ['skills','experience','education','certifications','soft_skills','domain_knowledge','other'];
         const orderedDims = dimOrder
           .filter(k => ds.dimensions[k])
           .concat(Object.keys(ds.dimensions).filter(k => !dimOrder.includes(k)));

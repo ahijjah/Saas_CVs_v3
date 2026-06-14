@@ -327,9 +327,6 @@ def cvfacts_from_dict(data: Any) -> CVFacts:
     return CVFacts(
         language=_s(data, "language", "en"),          # type: ignore[arg-type]
         total_char_count=_i(data, "total_char_count"),
-        nationality=_s(data, "nationality"),
-        location_country=_s(data, "location_country"),
-        language_section_lines=_str_list(data, "language_section_lines"),
         skills=_nested_list(data, "skills", _skill_from_dict),
         experience=_nested_list(data, "experience", _experience_from_dict),
         education=_nested_list(data, "education", _education_from_dict),
