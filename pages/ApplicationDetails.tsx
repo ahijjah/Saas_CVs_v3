@@ -93,6 +93,19 @@ const T = {
     dupSimilarityScore: 'Similarity score',
     dupReason: 'Reason',
     dupCheckedAt: 'Checked at',
+    genderTitle: 'Gender Metadata',
+    genderLabel: 'Gender',
+    genderConfidence: 'Confidence',
+    genderBasis: 'Basis',
+    genderBasisLabels: {
+      title:            'Title (Mr./Ms.)',
+      pronoun:          'Stated pronoun',
+      explicit_cv_text: 'Explicit statement',
+      name:             'Name heuristic',
+      unknown:          'No signal',
+    } as Record<string, string>,
+    genderValues: { male: 'Male', female: 'Female', unknown: 'Unknown' } as Record<string, string>,
+    genderNote: 'Metadata only — not used in scoring or ranking.',
     intakeTitle: 'Application Intake',
     intakeSource: 'Source',
     intakeReceived: 'Received',
@@ -339,6 +352,19 @@ const T = {
     dupSimilarityScore: 'درجة التشابه',
     dupReason: 'السبب',
     dupCheckedAt: 'وقت الفحص',
+    genderTitle: 'بيانات الجنس',
+    genderLabel: 'الجنس',
+    genderConfidence: 'مستوى الثقة',
+    genderBasis: 'الأساس',
+    genderBasisLabels: {
+      title:            'اللقب (السيد/السيدة)',
+      pronoun:          'ضمير مُصرَّح به',
+      explicit_cv_text: 'تصريح صريح',
+      name:             'قرينة الاسم',
+      unknown:          'لا إشارة',
+    } as Record<string, string>,
+    genderValues: { male: 'ذكر', female: 'أنثى', unknown: 'غير محدد' } as Record<string, string>,
+    genderNote: 'بيانات وصفية فقط — لا تُستخدم في التقييم أو الترتيب.',
     intakeTitle: 'مصدر الطلب',
     intakeSource: 'المصدر',
     intakeReceived: 'تاريخ الاستلام',
@@ -1123,6 +1149,51 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Gender Metadata ──────────────────────────────────────────────────── */}
+      {(() => {
+        const gt = t as any;
+        const gv: string = (data as any).gender_value || 'unknown';
+        const gc: number | undefined = (data as any).gender_confidence;
+        const gb: string | undefined = (data as any).gender_basis;
+        const genderLabel = (gt.genderValues as Record<string, string>)[gv] || gv;
+        const basisLabel  = gb ? ((gt.genderBasisLabels as Record<string, string>)[gb] || gb) : null;
+        return (
+          <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+            <div className="px-6 py-3 border-b border-border flex items-center gap-2 bg-slate-50">
+              <svg className="w-3.5 h-3.5 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{gt.genderTitle}</h4>
+            </div>
+            <div className="px-6 py-4 flex flex-wrap gap-x-8 gap-y-3 items-start">
+              <div>
+                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{gt.genderLabel}</p>
+                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                  gv === 'male'   ? 'bg-blue-50 text-blue-700' :
+                  gv === 'female' ? 'bg-pink-50 text-pink-700' :
+                                    'bg-slate-100 text-slate-500'
+                }`}>{genderLabel}</span>
+              </div>
+              {gc != null && gc > 0 && (
+                <div>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{gt.genderConfidence}</p>
+                  <p className="text-sm font-medium text-textMain">{Math.round(gc * 100)}%</p>
+                </div>
+              )}
+              {basisLabel && gb !== 'unknown' && (
+                <div>
+                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{gt.genderBasis}</p>
+                  <p className="text-sm font-medium text-textMain">{basisLabel}</p>
+                </div>
+              )}
+              <div className="w-full">
+                <p className="text-[10px] text-textMuted italic">{gt.genderNote}</p>
+              </div>
             </div>
           </div>
         );

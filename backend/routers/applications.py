@@ -147,6 +147,7 @@ def _build_candidate_filter_clause(
     tag_ids: str | None = None,
     talent_pool_only: bool = False,
     validation_issues: bool | None = None,
+    gender: str | None = None,
 ) -> tuple[str, dict]:
     """
     Build the shared WHERE clause + bind params for tenant-wide candidate
@@ -288,6 +289,11 @@ def _build_candidate_filter_clause(
             )
         """)
 
+    # Gender filter — metadata only, never affects scoring
+    if gender and gender in ("male", "female", "unknown"):
+        where_parts.append("a.gender_value = :gender_value")
+        params["gender_value"] = gender
+
     # Decision CW-1: Exclude stopped-before-AI records from all normal tenant-wide views.
     # These records are only accessible via the explicit 'pre_ai_stopped' processing_status filter
     # (used by the "Stopped Before AI" quick view). The job-scoped backward-compatible mode
@@ -337,6 +343,7 @@ async def list_applications(
     tag_ids: str | None = None,
     talent_pool_only: bool = False,
     validation_issues: bool | None = None,
+    gender: str | None = None,
     sort_by: str = "applied_at",
     sort_order: str = "desc",
     page: int = 1,
@@ -398,6 +405,7 @@ async def list_applications(
         tag_ids=tag_ids,
         talent_pool_only=talent_pool_only,
         validation_issues=validation_issues,
+        gender=gender,
     )
 
     # Map sort_by to actual column
@@ -450,6 +458,7 @@ async def list_applications(
             COALESCE(au.full_name, au.email)    AS assigned_user_name,
             a.preferred_contact_email,
             a.preferred_contact_source,
+            a.gender_value,
             a.security_check_status,
             a.security_risk_level,
             CASE
@@ -530,6 +539,7 @@ async def list_applications(
             "is_talent_pool":           bool(r["is_talent_pool"]) if r["is_talent_pool"] is not None else False,
             "preferred_contact_email":  r["preferred_contact_email"],
             "preferred_contact_source": r["preferred_contact_source"],
+            "gender_value":             r["gender_value"] or "unknown",
             "security_check_status":    r["security_check_status"],
             "security_risk_level":      r["security_risk_level"],
             "validation_summary":       r["validation_summary"],
@@ -1148,6 +1158,7 @@ async def get_application_details(
                 a.email_sender_address,
                 a.preferred_contact_email, a.preferred_contact_source,
                 a.preferred_contact_confidence,
+                a.gender_value, a.gender_confidence, a.gender_basis,
                 a.submitted_by_user_id, a.submitted_by_name, a.submitted_by_email,
                 a.decision, a.submission_source, a.processing_status,
                 a.stopped_reason,
@@ -1367,6 +1378,9 @@ async def get_application_details(
         "preferred_contact_email": app["preferred_contact_email"],
         "preferred_contact_source": app["preferred_contact_source"],
         "preferred_contact_confidence": float(app["preferred_contact_confidence"]) if app["preferred_contact_confidence"] is not None else None,
+        "gender_value":      app["gender_value"] or "unknown",
+        "gender_confidence": float(app["gender_confidence"]) if app["gender_confidence"] is not None else 0.0,
+        "gender_basis":      app["gender_basis"] or "unknown",
         "submitted_by_user_id": str(app["submitted_by_user_id"]) if app["submitted_by_user_id"] else None,
         "submitted_by_name":  app["submitted_by_name"],
         "submitted_by_email": app["submitted_by_email"],

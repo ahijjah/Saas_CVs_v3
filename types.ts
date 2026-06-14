@@ -307,6 +307,9 @@ export interface AssignableUser {
   role: string;
 }
 
+export type GenderValue = 'male' | 'female' | 'unknown';
+export type GenderBasis = 'title' | 'pronoun' | 'explicit_cv_text' | 'name' | 'unknown';
+
 export interface Application {
   id: string;
   application_id: string;
@@ -324,6 +327,7 @@ export interface Application {
   summary: string;
   workflow_status?: WorkflowStatus;
   recruiter_notes?: string | null;
+  gender_value?: GenderValue;
 }
 
 export interface ScoreDimension {
@@ -370,6 +374,9 @@ export interface ApplicationDetailedAnalysis {
   preferred_contact_email?: string | null;
   preferred_contact_source?: string | null;
   preferred_contact_confidence?: number | null;
+  gender_value?: GenderValue;
+  gender_confidence?: number;
+  gender_basis?: GenderBasis;
   submitted_by_user_id?: string | null;
   submitted_by_name?: string | null;
   submitted_by_email?: string | null;

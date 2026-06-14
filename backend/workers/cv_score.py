@@ -834,6 +834,8 @@ async def _score_cv_async(
             _det_final_score_val: int | None = None
             _det_score_json_val: str | None = None
             _coverage_context: str | None = None  # D-03.1 — initialised here, set inside try block
+            from services.gender_extractor import _UNKNOWN as _GENDER_UNKNOWN
+            _gender = _GENDER_UNKNOWN  # fallback if V2 try block fails
             try:
                 from services.cv_evidence import CVFactsExtractor
                 from services.criteria_matcher import CriteriaMatchEngine
@@ -844,6 +846,14 @@ async def _score_cv_async(
                 logger.info(
                     "[%s] V2 evidence extraction complete: %d skills extracted",
                     application_id, len(_cv_facts.skills),
+                )
+
+                # ── Gender metadata extraction (metadata only, never scoring) ─
+                from services.gender_extractor import infer_gender
+                _gender = infer_gender(raw_cv_text)
+                logger.info(
+                    "[%s] gender inference: value=%s confidence=%.2f basis=%s",
+                    application_id, _gender.value, _gender.confidence, _gender.basis,
                 )
                 _match_result = CriteriaMatchEngine().match(
                     _cv_facts, _analysis_json, str(application_id), str(job_id)
@@ -1198,10 +1208,24 @@ async def _score_cv_async(
                         evaluation_stage         = 3,
                         qualified_threshold_used = :qt,
                         partial_threshold_used   = :pt,
-                        scored_at                = now()
+                        scored_at                = now(),
+                        gender_value             = :gender_value,
+                        gender_confidence        = :gender_confidence,
+                        gender_basis             = :gender_basis,
+                        gender_source            = :gender_source,
+                        gender_used_for_scoring  = FALSE
                     WHERE application_id = :aid
                 """),
-                {"decision": decision, "qt": q_thresh, "pt": p_thresh, "aid": application_id},
+                {
+                    "decision":          decision,
+                    "qt":                q_thresh,
+                    "pt":                p_thresh,
+                    "aid":               application_id,
+                    "gender_value":      _gender.value,
+                    "gender_confidence": float(_gender.confidence),
+                    "gender_basis":      _gender.basis,
+                    "gender_source":     _gender.source,
+                },
             )
             await db.commit()
 
