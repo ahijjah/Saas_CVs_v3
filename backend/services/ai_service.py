@@ -178,6 +178,14 @@ REQUIRED vs PREFERRED SKILLS (applies to score_skills only):
 - Skills listed under [PREFERRED] are nice-to-have. Missing preferred skills warrant at most a minor deduction (5–10 points) — do not penalise heavily for their absence.
 - Candidates who meet all mandatory skills and several preferred skills should score 80+.
 
+MANDATORY COVERAGE CALIBRATION (applies when coverage context is provided in the user message):
+- If coverage context is present, use it as a calibration signal for score_skills and overall scoring.
+- A candidate missing >50% of required criteria should score below 50 on score_skills regardless of other strengths.
+- A candidate with 0% required criteria coverage should score 0-29 on score_skills.
+- A candidate meeting 100% of required criteria should score 70+ on score_skills (assuming evidence quality).
+- Preferred criteria coverage boosts the score modestly (up to +15 points) but never overrides required coverage deficits.
+- If no coverage context is provided, rely on REQUIRED vs PREFERRED SKILLS rules above.
+
 REQUIRED FIELD RULES:
 - candidate_name/email/phone: extract from CV contact section, use empty string if not found
 - score_details.positive: specific evidence from the CV that directly matches the job requirements (2-4 items, quote CV specifics)
@@ -465,6 +473,73 @@ def _format_criteria_for_prompt(criteria: dict[str, Any]) -> str:
     return "\n".join(parts).rstrip()
 
 
+def _build_coverage_context(llm_result: Any) -> str:
+    """Build a coverage context string from LLM match results for scoring calibration.
+
+    Never raises — returns empty string on any exception.
+    Uses duck typing only — does NOT import LLMMatchResult.
+    """
+    try:
+        assessments = llm_result.assessments
+
+        req_matched = req_partial = req_absent = 0
+        pref_matched = pref_partial = pref_absent = 0
+        absent_required_texts: list[str] = []
+
+        for a in assessments:
+            status = a.status
+            if a.required:
+                if status == "MATCHED":
+                    req_matched += 1
+                elif status == "PARTIAL":
+                    req_partial += 1
+                else:
+                    req_absent += 1
+                    absent_required_texts.append(a.criterion_text)
+            else:
+                if status == "MATCHED":
+                    pref_matched += 1
+                elif status == "PARTIAL":
+                    pref_partial += 1
+                else:
+                    pref_absent += 1
+
+        req_total = req_matched + req_partial + req_absent
+        pref_total = pref_matched + pref_partial + pref_absent
+
+        lines: list[str] = ["=== MANDATORY CRITERIA COVERAGE (from evidence analysis) ==="]
+
+        if req_total == 0:
+            lines.append("Required criteria: 0 total")
+            lines.append("  No required criteria defined.")
+        else:
+            req_coverage_pct = req_matched / req_total * 100
+            lines.append(f"Required criteria: {req_total} total")
+            lines.append(f"  ✓ Matched:  {req_matched}")
+            lines.append(f"  △ Partial:  {req_partial}")
+            lines.append(f"  ✗ Absent:   {req_absent}")
+            lines.append(f"  Coverage:   {req_coverage_pct:.0f}% (matched criteria only)")
+            if absent_required_texts:
+                capped = absent_required_texts[:8]
+                lines.append(f"  Absent required criteria: {'; '.join(capped)}")
+
+        if pref_total > 0:
+            pref_coverage_pct = pref_matched / pref_total * 100
+            lines.append("")
+            lines.append(f"Preferred criteria: {pref_total} total")
+            lines.append(f"  ✓ Matched:  {pref_matched}")
+            lines.append(f"  △ Partial:  {pref_partial}")
+            lines.append(f"  ✗ Absent:   {pref_absent}")
+            lines.append(f"  Coverage:   {pref_coverage_pct:.0f}%")
+
+        lines.append("")
+        lines.append("Apply MANDATORY COVERAGE CALIBRATION rules above when assigning dimension scores.")
+
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 async def score_cv(
     cv_text: str,
     criteria: dict[str, Any],
@@ -473,6 +548,7 @@ async def score_cv(
     gatekeeper_context: dict | None = None,
     prompt_override: dict | None = None,
     openai_client: Any | None = None,
+    coverage_context: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     Score a CV against extracted criteria.
@@ -489,6 +565,8 @@ async def score_cv(
         gatekeeper_context: Optional pre-filter results to include in prompt for context
         prompt_override:    Active DB prompt dict from load_active_prompt(), or None for hardcoded default.
         openai_client:      Optional pre-built AsyncOpenAI-compatible client (e.g. DeepSeek). Uses default if None.
+        coverage_context:   Optional coverage context string from D-03.1 (_build_coverage_context).
+                            When provided, injected into user prompt for LLM scoring calibration.
     """
     import time as _time
     client = openai_client or _get_client()
@@ -523,6 +601,8 @@ async def score_cv(
             "(Use this as a hint, not a constraint — your analysis takes precedence.)\n"
         )
 
+    coverage_note = f"{coverage_context}\n\n" if coverage_context else ""
+
     user_prompt = (
         f"Output Language: Write ALL recruiter-facing narrative fields "
         f"(evaluation_notes, reasoning, strengths, gaps_identified, red_flags, "
@@ -531,6 +611,7 @@ async def score_cv(
         f"{lang_hint}\n"
         f"{gatekeeper_note}\n"
         f"Scoring Criteria:\n{criteria_text}\n\n"
+        f"{coverage_note}"
         f"CV Text:\n{cv_text}"
     )
 

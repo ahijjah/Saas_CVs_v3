@@ -819,6 +819,7 @@ async def _score_cv_async(
             _llm_match_results_json_val: str | None = None
             _det_final_score_val: int | None = None
             _det_score_json_val: str | None = None
+            _coverage_context: str | None = None  # D-03.1 — initialised here, set inside try block
             try:
                 from services.cv_evidence import CVFactsExtractor
                 from services.criteria_matcher import CriteriaMatchEngine
@@ -906,6 +907,20 @@ async def _score_cv_async(
                         )
                 # ── End F-01 ──────────────────────────────────────────────────
 
+                # ── D-03.1: Build coverage context for scoring LLM ───────────────────────
+                if _llm_result is not None:
+                    try:
+                        from services.ai_service import _build_coverage_context
+                        _coverage_context = _build_coverage_context(_llm_result) or None
+                        if _coverage_context:
+                            logger.debug(
+                                "[%s] D-03.1 coverage context built: %d chars",
+                                application_id, len(_coverage_context),
+                            )
+                    except Exception as _cov_err:
+                        logger.warning("[%s] D-03.1 coverage context failed (non-critical): %s", application_id, _cov_err)
+                # ── End D-03.1 ───────────────────────────────────────────────────────────
+
             except Exception as _v2_err:
                 logger.warning(
                     "[%s] V2 evidence capture failed (scoring continues): %s",
@@ -953,6 +968,7 @@ async def _score_cv_async(
                     gatekeeper_context=gatekeeper_context,
                     prompt_override=_effective_prompt,
                     openai_client=_reg.client if _reg else None,
+                    coverage_context=_coverage_context,
                 )
             except Exception as _primary_exc:
                 _scoring_error = _primary_exc
@@ -971,6 +987,7 @@ async def _score_cv_async(
                     gatekeeper_context=gatekeeper_context,
                     prompt_override=scoring_prompt,
                     openai_client=None,
+                    coverage_context=_coverage_context,
                 )
                 _fallback_used = True
 
