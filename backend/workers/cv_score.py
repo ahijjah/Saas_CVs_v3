@@ -224,6 +224,7 @@ async def _score_cv_async(
     )
     from services.local_processor import run_gatekeeper
     from services.pdf_service import extract_text_from_pdf
+    from services.text_sanitizer import sanitize_text_for_db
     from services.prompt_config import load_prompt_config
     from services.threshold_service import get_thresholds
     from sqlalchemy import text
@@ -269,7 +270,20 @@ async def _score_cv_async(
 
             # ── Step 2: Text extraction ───────────────────────────────────────
             logger.info("[%s] Extracting PDF text", application_id)
-            raw_cv_text = extract_text_from_pdf(file_bytes)
+            raw_cv_text = extract_text_from_pdf(
+                file_bytes,
+                application_id=application_id,
+                filename=Path(file_path).name,
+            )
+
+            # Belt-and-suspenders: sanitize before any DB write, even though
+            # pdf_service already sanitizes per-page.  Catches edge cases from
+            # future extraction paths (e.g. direct DOCX parsing).
+            raw_cv_text = sanitize_text_for_db(
+                raw_cv_text,
+                application_id=application_id,
+                source="pre_db_write",
+            )
 
             # Compute both fingerprints immediately after extraction.
             # normalized_text_hash — order-preserving; catches re-uploads of same file.
