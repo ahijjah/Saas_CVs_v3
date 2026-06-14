@@ -2,13 +2,14 @@
 Conservative gender metadata extraction from CV text.
 
 Rules:
-  - Only infer from explicit CV text signals: titles (Mr/Mrs/Ms), pronouns
-    (he/she), or direct self-statements.
+  - Only infer from explicit CV text signals: labeled gender fields,
+    stated titles (Mr/Mrs/Ms), or stated pronouns (she/her, he/him).
   - Default to unknown when no clear signal exists.
   - Never infer from: photos, images, nationality, religion, or address.
   - Always sets gender_used_for_scoring = False.
 
-Arabic title support: السيد (Mr) → male, السيدة (Mrs/Ms) → female.
+Arabic support: السيد (Mr) → male, السيدة (Mrs/Ms) → female,
+الجنس: ذكر → male, الجنس: أنثى → female.
 """
 from __future__ import annotations
 
@@ -47,81 +48,122 @@ _UNKNOWN = GenderInference(
     used_for_scoring=False,
 )
 
-# ── Title patterns ────────────────────────────────────────────────────────────
-# Match at word boundary or start of string, followed by optional punctuation
-# and whitespace, then a letter (to avoid matching isolated tokens like "Dr").
+# ── Explicit labeled field (searched over FULL cv_text) ───────────────────────
+#
+# Matches all common CV personal-info field formats:
+#   Gender: Male      Gender: Female
+#   Gender : Male     Gender : Female
+#   Gender- Male      Gender - Female
+#   Gender Male       (label + value, no separator)
+#   Sex: Male         Sex: Female
+#   Sex : Female      Sex-Male
+#   الجنس: ذكر        الجنس: أنثى
+#   الجنس ذكر         الجنس أنثى
+#   الجنس : ذكر       الجنس : أنثى
+#
+# Separator pattern: optional whitespace, then optionally one of : – -,
+# then optional whitespace.  The (?<!\w) / (?!\w) guards prevent
+# matching field labels that are part of a larger word.
+#
+# Note: Arabic \w includes Arabic letters, so (?!\w) correctly blocks
+# ذكري (masculine adjective) while allowing ذكر (male).
+
+_SEP = r"[ \t]*[:\-–]?[ \t]*"
+
+_LABELED_MALE = re.compile(
+    r"(?i)(?<!\w)(?:gender|sex|الجنس)" + _SEP + r"(?:male|ذكر)(?!\w)"
+)
+_LABELED_FEMALE = re.compile(
+    r"(?i)(?<!\w)(?:gender|sex|الجنس)" + _SEP + r"(?:female|أنثى)(?!\w)"
+)
+
+# Standalone value on its own line: "Male\n", "Female\n", "ذكر\n", "أنثى\n"
+# Confidence 1.0 — the word is entirely alone, unambiguous context.
+_STANDALONE_MALE = re.compile(r"(?im)^[ \t]*(?:male|ذكر)[ \t]*$")
+_STANDALONE_FEMALE = re.compile(r"(?im)^[ \t]*(?:female|أنثى)[ \t]*$")
+
+# ── Title patterns (first 2000 chars — appear in CV header) ──────────────────
+# "Mr." (with dot) or "Mr " (with space) — NOT "Mrs" / "Mrsomething".
+# السيد uses negative lookahead for ة to avoid matching السيدة.
 _MALE_TITLE = re.compile(
-    # "Mr." (with dot) or "Mr " (with space) — but NOT "Mrs" or "Mrsomething".
-    # Achieved by: mr followed by (dot then optional space) OR (space).
-    # السيد uses negative lookahead for ة.
-    r"(?i)(\bmr(?:\.|(?=\s))\s*[a-zA-Zأ-ي]|\bmister\s+[a-zA-Zأ-ي]|السيد(?!ة)\s*[أ-ي]|\bsir\s+[a-zA-Z])",
+    r"(?i)(\bmr(?:\.|(?=\s))\s*[a-zA-Zأ-ي]|\bmister\s+[a-zA-Zأ-ي]"
+    r"|السيد(?!ة)\s*[أ-ي]|\bsir\s+[a-zA-Z])",
 )
 _FEMALE_TITLE = re.compile(
-    r"(?i)(\bmrs\.?\s*[a-zA-Zأ-ي]|\bms\.?\s*[a-zA-Zأ-ي]|\bmiss\s+[a-zA-Z]|\bmadam[e]?\s*[a-zA-Z]|السيدة\s*[أ-ي]|الآنسة\s*[أ-ي])",
+    r"(?i)(\bmrs\.?\s*[a-zA-Zأ-ي]|\bms\.?\s*[a-zA-Zأ-ي]|\bmiss\s+[a-zA-Z]"
+    r"|\bmadam[e]?\s*[a-zA-Z]|السيدة\s*[أ-ي]|الآنسة\s*[أ-ي])",
 )
 
-# ── Pronoun patterns ──────────────────────────────────────────────────────────
-# First-person self-references using gendered pronouns.
-# "I am he" is rare/unusual; focus on reflexive + possessive constructions
-# that strongly imply the author's gender.
+# ── Pronoun patterns (first 2000 chars — appear in CV header) ────────────────
 _MALE_PRONOUN = re.compile(
-    r"(?i)\b(he/him|he\/his|pronouns?[:\s]+he)\b"
-    r"|I\s+am\s+a?\s*male\s+professional"
+    r"(?i)\b(he/him|he/his|pronouns?[:\s]+he)\b"
     r"|\bpronoun[s]?\s*[:\-–]\s*he\b",
-    re.IGNORECASE,
 )
 _FEMALE_PRONOUN = re.compile(
-    r"(?i)\b(she/her|she\/hers|pronouns?[:\s]+she)\b"
-    r"|I\s+am\s+a?\s*female\s+professional"
+    r"(?i)\b(she/her|she/hers|pronouns?[:\s]+she)\b"
     r"|\bpronoun[s]?\s*[:\-–]\s*she\b",
-    re.IGNORECASE,
-)
-
-# ── Explicit self-statement ───────────────────────────────────────────────────
-_EXPLICIT_MALE = re.compile(
-    r"(?i)\b(I\s+am\s+a\s+male|I\s+identify\s+as\s+male|gender\s*[:\-–]\s*male|sex\s*[:\-–]\s*male|ذكر)\b",
-)
-_EXPLICIT_FEMALE = re.compile(
-    r"(?i)\b(I\s+am\s+a\s+female|I\s+identify\s+as\s+female|gender\s*[:\-–]\s*female|sex\s*[:\-–]\s*female|أنثى|female\s*candidate)\b",
 )
 
 
 def infer_gender(cv_text: str) -> GenderInference:
     """Infer gender from CV text using only explicit textual signals.
 
-    Checks in priority order:
-      1. Explicit self-statement (highest confidence — 0.95)
-      2. Formal title like Mr./Mrs. in front of a name (confidence — 0.90)
-      3. Stated pronouns e.g. "Pronouns: she/her" (confidence — 0.88)
-      4. Default: unknown (confidence — 0.0)
+    Priority order:
+      1. Labeled gender field anywhere in the CV — confidence 1.0
+         "Gender: Male", "الجنس: أنثى", "Sex - Female", …
+      2. Standalone gender value on its own line — confidence 1.0
+         A line containing only "Male" / "Female" / "ذكر" / "أنثى"
+      3. Formal title in CV header — confidence 0.90
+         "Mr.", "Mrs.", "Ms.", "السيد", "السيدة", …
+      4. Stated pronouns in CV header — confidence 0.88
+         "Pronouns: she/her", "he/him", …
+      5. Default: unknown, confidence 0.0
 
     Never raises. Always returns a GenderInference with used_for_scoring=False.
     """
     if not cv_text or not cv_text.strip():
         return _UNKNOWN
 
-    # Limit search to first 2000 chars (header/contact section where signals appear)
-    sample = cv_text[:2000]
-
-    # ── 1. Explicit self-statement ────────────────────────────────────────────
-    if _EXPLICIT_MALE.search(sample):
+    # Explicit labeled field — search full text because gender fields can
+    # appear in personal-info sections anywhere in the document.
+    if _LABELED_MALE.search(cv_text):
         return GenderInference(
             value=GENDER_MALE,
-            confidence=0.95,
+            confidence=1.0,
             basis=BASIS_EXPLICIT,
             source=SOURCE_CV_TEXT,
             used_for_scoring=False,
         )
-    if _EXPLICIT_FEMALE.search(sample):
+    if _LABELED_FEMALE.search(cv_text):
         return GenderInference(
             value=GENDER_FEMALE,
-            confidence=0.95,
+            confidence=1.0,
             basis=BASIS_EXPLICIT,
             source=SOURCE_CV_TEXT,
             used_for_scoring=False,
         )
 
-    # ── 2. Formal title ───────────────────────────────────────────────────────
+    # Standalone gender value on its own line
+    if _STANDALONE_MALE.search(cv_text):
+        return GenderInference(
+            value=GENDER_MALE,
+            confidence=1.0,
+            basis=BASIS_EXPLICIT,
+            source=SOURCE_CV_TEXT,
+            used_for_scoring=False,
+        )
+    if _STANDALONE_FEMALE.search(cv_text):
+        return GenderInference(
+            value=GENDER_FEMALE,
+            confidence=1.0,
+            basis=BASIS_EXPLICIT,
+            source=SOURCE_CV_TEXT,
+            used_for_scoring=False,
+        )
+
+    # Title and pronoun signals are reliably in the header — check first 2000 chars
+    sample = cv_text[:2000]
+
     if _MALE_TITLE.search(sample):
         return GenderInference(
             value=GENDER_MALE,
@@ -139,7 +181,6 @@ def infer_gender(cv_text: str) -> GenderInference:
             used_for_scoring=False,
         )
 
-    # ── 3. Stated pronouns ────────────────────────────────────────────────────
     if _MALE_PRONOUN.search(sample):
         return GenderInference(
             value=GENDER_MALE,

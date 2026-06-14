@@ -1,14 +1,14 @@
-"""Tests for gender metadata extraction from CV text.
+"""Tests for gender metadata extraction from CV text — v1.1.
 
 Coverage:
-  - Explicit title Mr. → male
-  - Explicit title Ms./Mrs. → female
-  - Unknown name/no signal → unknown
-  - Arabic text supported
-  - Gender fields stored correctly (correct types/values)
-  - Gender does not affect final_score (score isolation test)
-  - Gender is not included in scoring prompt payload
-  - API filter validation
+  - Explicit labeled field: Gender/Sex/الجنس with all separator formats
+  - Standalone value on own line: Male / Female / ذكر / أنثى
+  - Formal titles: Mr. / Mrs. / Ms. / السيد / السيدة
+  - Stated pronouns: she/her, he/him
+  - Unknown / no signal → unknown, 0.0
+  - Arabic text and mixed bilingual text
+  - Scoring isolation: gender never reaches score_cv / scoring prompts
+  - API filter value invariants
 """
 from __future__ import annotations
 
@@ -28,140 +28,296 @@ from services.gender_extractor import (
 )
 
 
+# ── Explicit labeled field — English ─────────────────────────────────────────
+
+class TestExplicitLabeledEnglish:
+    """Gender: / Sex: patterns with all separator variants. confidence = 1.0."""
+
+    def test_gender_colon_male(self):
+        r = infer_gender("Gender: Male")
+        assert r.value == GENDER_MALE
+        assert r.basis == BASIS_EXPLICIT
+        assert r.confidence == 1.0
+
+    def test_gender_colon_female(self):
+        r = infer_gender("Gender: Female")
+        assert r.value == GENDER_FEMALE
+        assert r.basis == BASIS_EXPLICIT
+        assert r.confidence == 1.0
+
+    def test_sex_colon_male(self):
+        r = infer_gender("Sex: Male")
+        assert r.value == GENDER_MALE
+        assert r.basis == BASIS_EXPLICIT
+
+    def test_sex_colon_female(self):
+        r = infer_gender("Sex: Female")
+        assert r.value == GENDER_FEMALE
+        assert r.basis == BASIS_EXPLICIT
+
+    def test_gender_space_colon_male(self):
+        r = infer_gender("Gender : Male")
+        assert r.value == GENDER_MALE
+        assert r.basis == BASIS_EXPLICIT
+
+    def test_gender_space_colon_female(self):
+        r = infer_gender("Gender : Female")
+        assert r.value == GENDER_FEMALE
+        assert r.basis == BASIS_EXPLICIT
+
+    def test_gender_dash_male(self):
+        r = infer_gender("Gender- Male")
+        assert r.value == GENDER_MALE
+
+    def test_gender_dash_female(self):
+        r = infer_gender("Gender - Female")
+        assert r.value == GENDER_FEMALE
+
+    def test_sex_space_colon_female(self):
+        r = infer_gender("Sex : Female")
+        assert r.value == GENDER_FEMALE
+
+    def test_gender_no_separator_male(self):
+        r = infer_gender("Gender Male")
+        assert r.value == GENDER_MALE
+
+    def test_gender_no_separator_female(self):
+        r = infer_gender("Gender Female")
+        assert r.value == GENDER_FEMALE
+
+    def test_case_insensitive_upper(self):
+        r = infer_gender("GENDER: MALE")
+        assert r.value == GENDER_MALE
+
+    def test_case_insensitive_mixed(self):
+        r = infer_gender("gender: female")
+        assert r.value == GENDER_FEMALE
+
+    def test_embedded_in_cv_body_at_end(self):
+        cv = "\n".join([
+            "John Smith",
+            "Python Developer | 8 years experience",
+            "Skills: Python, JavaScript, AWS, Docker",
+            "Education: BSc Computer Science",
+            "",
+            "Personal Information",
+            "Date of Birth: 15-03-1990",
+            "Nationality: British",
+            "Gender: Male",
+        ])
+        r = infer_gender(cv)
+        assert r.value == GENDER_MALE
+        assert r.basis == BASIS_EXPLICIT
+
+    def test_embedded_in_cv_body_female_at_end(self):
+        long_cv = "Skills: Python\n" * 200 + "\nGender: Female\n"
+        r = infer_gender(long_cv)
+        assert r.value == GENDER_FEMALE
+
+    def test_gender_field_after_2000_chars(self):
+        padding = "x" * 3000
+        cv = f"{padding}\nGender: Male\n"
+        r = infer_gender(cv)
+        assert r.value == GENDER_MALE
+
+    def test_confidence_is_1_0_for_labeled(self):
+        r = infer_gender("Sex: Female")
+        assert r.confidence == 1.0
+
+
+# ── Explicit labeled field — Arabic ──────────────────────────────────────────
+
+class TestExplicitLabeledArabic:
+    """الجنس: patterns with all separator variants."""
+
+    def test_al_jins_colon_dhakar(self):
+        r = infer_gender("الجنس: ذكر")
+        assert r.value == GENDER_MALE
+        assert r.basis == BASIS_EXPLICIT
+        assert r.confidence == 1.0
+
+    def test_al_jins_colon_ontha(self):
+        r = infer_gender("الجنس: أنثى")
+        assert r.value == GENDER_FEMALE
+        assert r.basis == BASIS_EXPLICIT
+        assert r.confidence == 1.0
+
+    def test_al_jins_space_colon_dhakar(self):
+        r = infer_gender("الجنس : ذكر")
+        assert r.value == GENDER_MALE
+
+    def test_al_jins_space_colon_ontha(self):
+        r = infer_gender("الجنس : أنثى")
+        assert r.value == GENDER_FEMALE
+
+    def test_al_jins_space_dhakar(self):
+        r = infer_gender("الجنس ذكر")
+        assert r.value == GENDER_MALE
+
+    def test_al_jins_space_ontha(self):
+        r = infer_gender("الجنس أنثى")
+        assert r.value == GENDER_FEMALE
+
+    def test_arabic_cv_with_gender_in_personal_section(self):
+        cv = "\n".join([
+            "محمد أحمد",
+            "مهندس برمجيات | خبرة 8 سنوات",
+            "المهارات: بايثون، جافاسكريبت",
+            "التعليم: بكالوريوس هندسة حاسوب",
+            "",
+            "المعلومات الشخصية",
+            "تاريخ الميلاد: 15-03-1990",
+            "الجنسية: سعودي",
+            "الجنس: ذكر",
+        ])
+        r = infer_gender(cv)
+        assert r.value == GENDER_MALE
+
+    def test_arabic_female_cv(self):
+        cv = "نورة العتيبي\nمحاسبة مالية\nالجنس: أنثى\n"
+        r = infer_gender(cv)
+        assert r.value == GENDER_FEMALE
+
+
+# ── Standalone value on own line ──────────────────────────────────────────────
+
+class TestStandaloneOnOwnLine:
+    """Single word on its own line — confidence 1.0."""
+
+    def test_standalone_male_en(self):
+        r = infer_gender("John Smith\nMale\nSoftware Engineer")
+        assert r.value == GENDER_MALE
+        assert r.confidence == 1.0
+        assert r.basis == BASIS_EXPLICIT
+
+    def test_standalone_female_en(self):
+        r = infer_gender("Jane Smith\nFemale\nHR Manager")
+        assert r.value == GENDER_FEMALE
+        assert r.confidence == 1.0
+
+    def test_standalone_male_ar(self):
+        r = infer_gender("محمد علي\nذكر\nمهندس برمجيات")
+        assert r.value == GENDER_MALE
+
+    def test_standalone_female_ar(self):
+        r = infer_gender("فاطمة محمد\nأنثى\nمحاسبة")
+        assert r.value == GENDER_FEMALE
+
+    def test_standalone_with_surrounding_whitespace(self):
+        r = infer_gender("Name: Alex\n  Male  \nAge: 28")
+        assert r.value == GENDER_MALE
+
+    def test_male_in_middle_of_text_not_matched(self):
+        # "male" as part of a sentence should not match standalone pattern
+        r = infer_gender("Seeking a male candidate for this role")
+        # This sentence has 'male' but NOT on its own line
+        # standalone pattern uses ^...$, so it won't match; but labeled also won't
+        # so should be unknown
+        assert r.value == GENDER_UNKNOWN
+
+
 # ── Title detection ───────────────────────────────────────────────────────────
 
 class TestTitleDetection:
     def test_mr_dot_male(self):
-        result = infer_gender("Mr. John Smith\nSoftware Engineer")
-        assert result.value == GENDER_MALE
-        assert result.basis == BASIS_TITLE
-        assert result.confidence >= 0.85
+        r = infer_gender("Mr. John Smith\nSoftware Engineer")
+        assert r.value == GENDER_MALE
+        assert r.basis == BASIS_TITLE
+        assert r.confidence == 0.90
 
     def test_mr_no_dot_male(self):
-        result = infer_gender("Mr John Smith\nDubai, UAE")
-        assert result.value == GENDER_MALE
+        r = infer_gender("Mr John Smith\nDubai, UAE")
+        assert r.value == GENDER_MALE
 
     def test_mister_male(self):
-        result = infer_gender("Mister Ahmed Al-Hassan")
-        assert result.value == GENDER_MALE
+        r = infer_gender("Mister Ahmed Al-Hassan")
+        assert r.value == GENDER_MALE
 
     def test_mrs_dot_female(self):
-        result = infer_gender("Mrs. Sarah Johnson\nHR Manager")
-        assert result.value == GENDER_FEMALE
-        assert result.basis == BASIS_TITLE
-        assert result.confidence >= 0.85
+        r = infer_gender("Mrs. Sarah Johnson\nHR Manager")
+        assert r.value == GENDER_FEMALE
+        assert r.basis == BASIS_TITLE
 
     def test_ms_dot_female(self):
-        result = infer_gender("Ms. Fatima Al-Ali\nMarketer")
-        assert result.value == GENDER_FEMALE
+        r = infer_gender("Ms. Fatima Al-Ali\nMarketer")
+        assert r.value == GENDER_FEMALE
 
     def test_miss_female(self):
-        result = infer_gender("Miss Layla Omar\nData Analyst")
-        assert result.value == GENDER_FEMALE
+        r = infer_gender("Miss Layla Omar\nData Analyst")
+        assert r.value == GENDER_FEMALE
 
     def test_arabic_al_sayid_male(self):
-        result = infer_gender("السيد محمد علي\nمهندس برمجيات")
-        assert result.value == GENDER_MALE
-        assert result.basis == BASIS_TITLE
+        r = infer_gender("السيد محمد علي\nمهندس برمجيات")
+        assert r.value == GENDER_MALE
+        assert r.basis == BASIS_TITLE
 
     def test_arabic_al_sayida_female(self):
-        result = infer_gender("السيدة فاطمة محمد\nمديرة مشاريع")
-        assert result.value == GENDER_FEMALE
-        assert result.basis == BASIS_TITLE
+        r = infer_gender("السيدة فاطمة محمد\nمديرة مشاريع")
+        assert r.value == GENDER_FEMALE
+        assert r.basis == BASIS_TITLE
 
     def test_arabic_al_ansa_female(self):
-        result = infer_gender("الآنسة سارة الأحمد\nمحاسبة")
-        assert result.value == GENDER_FEMALE
+        r = infer_gender("الآنسة سارة الأحمد\nمحاسبة")
+        assert r.value == GENDER_FEMALE
+
+    def test_mrs_not_mr(self):
+        # Ensure "Mrs." does not trigger male pattern
+        r = infer_gender("Mrs. Jane Doe\nDirector")
+        assert r.value == GENDER_FEMALE
 
 
 # ── Pronoun detection ─────────────────────────────────────────────────────────
 
 class TestPronounDetection:
     def test_she_her_female(self):
-        result = infer_gender("Pronouns: she/her\nSoftware Engineer at Acme")
-        assert result.value == GENDER_FEMALE
-        assert result.basis == BASIS_PRONOUN
+        r = infer_gender("Pronouns: she/her\nSoftware Engineer")
+        assert r.value == GENDER_FEMALE
+        assert r.basis == BASIS_PRONOUN
 
     def test_he_him_male(self):
-        result = infer_gender("Pronouns: he/him\nProduct Manager")
-        assert result.value == GENDER_MALE
-        assert result.basis == BASIS_PRONOUN
+        r = infer_gender("Pronouns: he/him\nProduct Manager")
+        assert r.value == GENDER_MALE
+        assert r.basis == BASIS_PRONOUN
 
-    def test_pronoun_label_she_female(self):
-        result = infer_gender("Pronoun: she\nData Scientist")
-        assert result.value == GENDER_FEMALE
+    def test_pronoun_label_she(self):
+        r = infer_gender("Pronoun: she\nData Scientist")
+        assert r.value == GENDER_FEMALE
 
-    def test_pronoun_label_he_male(self):
-        result = infer_gender("Pronoun: he\nDevOps Engineer")
-        assert result.value == GENDER_MALE
+    def test_pronoun_label_he(self):
+        r = infer_gender("Pronoun: he\nDevOps Engineer")
+        assert r.value == GENDER_MALE
 
-    def test_she_her_slash_female(self):
-        result = infer_gender("Contact: john@example.com (she/her)")
-        assert result.value == GENDER_FEMALE
-
-
-# ── Explicit self-statement ───────────────────────────────────────────────────
-
-class TestExplicitStatement:
-    def test_gender_colon_male(self):
-        result = infer_gender("Gender: Male\nAge: 30\nPython Developer")
-        assert result.value == GENDER_MALE
-        assert result.basis == BASIS_EXPLICIT
-
-    def test_gender_colon_female(self):
-        result = infer_gender("Gender: Female\nExperience: 5 years")
-        assert result.value == GENDER_FEMALE
-        assert result.basis == BASIS_EXPLICIT
-
-    def test_sex_colon_male(self):
-        result = infer_gender("Sex: Male\nNationality: Saudi")
-        assert result.value == GENDER_MALE
-
-    def test_sex_colon_female(self):
-        result = infer_gender("Sex: Female\nLocation: Dubai")
-        assert result.value == GENDER_FEMALE
-
-    def test_arabic_male_dhakr(self):
-        result = infer_gender("ذكر\nالموقع: الرياض")
-        assert result.value == GENDER_MALE
-
-    def test_arabic_female_ontha(self):
-        result = infer_gender("أنثى\nالموقع: دبي")
-        assert result.value == GENDER_FEMALE
-
-    def test_explicit_has_highest_confidence(self):
-        result = infer_gender("Gender: Male\nHR Manager")
-        assert result.confidence == 0.95
+    def test_pronoun_bracket_she(self):
+        r = infer_gender("Contact: john@example.com (she/her)")
+        assert r.value == GENDER_FEMALE
 
 
 # ── Unknown / no signal ───────────────────────────────────────────────────────
 
-class TestUnknownCases:
+class TestUnknownNoCases:
     def test_no_signal_returns_unknown(self):
-        result = infer_gender("John Smith\nSoftware Engineer\nPython, JavaScript\n5 years experience")
-        assert result.value == GENDER_UNKNOWN
-        assert result.confidence == 0.0
-        assert result.basis == BASIS_UNKNOWN
+        r = infer_gender("John Smith\nSoftware Engineer\nPython, JavaScript\n5 years")
+        assert r.value == GENDER_UNKNOWN
+        assert r.confidence == 0.0
+        assert r.basis == BASIS_UNKNOWN
 
     def test_empty_string_unknown(self):
-        result = infer_gender("")
-        assert result.value == GENDER_UNKNOWN
+        assert infer_gender("").value == GENDER_UNKNOWN
 
     def test_whitespace_only_unknown(self):
-        result = infer_gender("   \n\t  ")
-        assert result.value == GENDER_UNKNOWN
+        assert infer_gender("   \n\t  ").value == GENDER_UNKNOWN
 
-    def test_gender_neutral_title_unknown(self):
-        result = infer_gender("Dr. Jordan Smith\nProfessor")
-        assert result.value == GENDER_UNKNOWN
+    def test_gender_neutral_title_dr_unknown(self):
+        r = infer_gender("Dr. Jordan Smith\nProfessor")
+        assert r.value == GENDER_UNKNOWN
 
     def test_mx_title_unknown(self):
-        result = infer_gender("Mx. Alex Taylor\nConsultant")
-        assert result.value == GENDER_UNKNOWN
+        r = infer_gender("Mx. Alex Taylor\nConsultant")
+        assert r.value == GENDER_UNKNOWN
 
     def test_name_alone_unknown(self):
-        result = infer_gender("Mohammed Al-Hassan\nEngineer at Acme Corp")
-        assert result.value == GENDER_UNKNOWN
+        r = infer_gender("Mohammed Al-Hassan\nEngineer at Acme Corp")
+        assert r.value == GENDER_UNKNOWN
 
     def test_technical_cv_no_signals(self):
         cv = """
@@ -170,27 +326,61 @@ class TestUnknownCases:
         Python | React | AWS | Docker
         5 years of experience in cloud infrastructure
         """
-        result = infer_gender(cv)
-        assert result.value == GENDER_UNKNOWN
+        assert infer_gender(cv).value == GENDER_UNKNOWN
+
+    def test_word_male_inside_sentence_unknown(self):
+        r = infer_gender("We are looking for a motivated male or female professional")
+        assert r.value == GENDER_UNKNOWN
+
+    def test_word_female_inside_sentence_unknown(self):
+        r = infer_gender("This female-friendly workplace welcomes all applicants")
+        assert r.value == GENDER_UNKNOWN
+
+
+# ── Negative tests: no false positives ───────────────────────────────────────
+
+class TestNoFalsePositives:
+    def test_dhakar_as_adjective_not_matched(self):
+        # ذكري = masculine adjective — must NOT match
+        r = infer_gender("تفكير ذكري")
+        assert r.value == GENDER_UNKNOWN
+
+    def test_excellence_word_not_male(self):
+        # "excellent" contains "male" pattern? No — but let's verify
+        r = infer_gender("Excellent communication skills")
+        assert r.value == GENDER_UNKNOWN
+
+    def test_female_candidates_sentence(self):
+        r = infer_gender("Female candidates are encouraged to apply")
+        # Not on its own line, no labeled field → unknown
+        assert r.value == GENDER_UNKNOWN
+
+    def test_mrs_triggers_female_not_male(self):
+        r = infer_gender("Mrs. Johnson is the hiring manager")
+        assert r.value == GENDER_FEMALE
+        assert r.value != GENDER_MALE
 
 
 # ── Arabic + English mixed text ───────────────────────────────────────────────
 
 class TestBilingualSupport:
     def test_arabic_cv_with_english_title(self):
-        cv = "Mr. محمد Ali\nمهندس برمجيات"
-        result = infer_gender(cv)
-        assert result.value == GENDER_MALE
+        r = infer_gender("Mr. محمد Ali\nمهندس برمجيات")
+        assert r.value == GENDER_MALE
 
     def test_arabic_only_title(self):
-        cv = "السيدة نورة العتيبي\nمحاسبة مالية"
-        result = infer_gender(cv)
-        assert result.value == GENDER_FEMALE
+        r = infer_gender("السيدة نورة العتيبي\nمحاسبة مالية")
+        assert r.value == GENDER_FEMALE
 
     def test_mixed_with_no_signal(self):
-        cv = "أحمد محمد\nمدير مشاريع\nدبي، الإمارات"
-        result = infer_gender(cv)
-        assert result.value == GENDER_UNKNOWN
+        r = infer_gender("أحمد محمد\nمدير مشاريع\nدبي، الإمارات")
+        assert r.value == GENDER_UNKNOWN
+
+    def test_arabic_gender_field_in_mixed_cv(self):
+        cv = "Ahmed Al-Hassan\nSoftware Engineer\n\nالجنس: ذكر\n"
+        r = infer_gender(cv)
+        assert r.value == GENDER_MALE
+        assert r.basis == BASIS_EXPLICIT
 
 
 # ── Field invariants ──────────────────────────────────────────────────────────
@@ -201,83 +391,86 @@ class TestFieldInvariants:
             "Mr. John Smith",
             "Mrs. Jane Doe",
             "Gender: Female",
+            "Sex: Male",
+            "الجنس: ذكر",
             "John Smith Engineer",
         ]:
-            result = infer_gender(cv)
-            assert result.used_for_scoring is False, f"used_for_scoring must be False for: {cv!r}"
+            r = infer_gender(cv)
+            assert r.used_for_scoring is False, f"must be False for {cv!r}"
 
     def test_source_always_cv_text(self):
-        for cv in ["Mr. John", "", "Gender: Male", "she/her"]:
-            result = infer_gender(cv)
-            assert result.source == SOURCE_CV_TEXT
+        for cv in ["Mr. John", "", "Gender: Male", "she/her", "الجنس: أنثى"]:
+            assert infer_gender(cv).source == SOURCE_CV_TEXT
 
     def test_confidence_in_valid_range(self):
         for cv in ["Mr. John Smith", "", "Gender: Female", "she/her"]:
-            result = infer_gender(cv)
-            assert 0.0 <= result.confidence <= 1.0
+            r = infer_gender(cv)
+            assert 0.0 <= r.confidence <= 1.0
 
     def test_value_is_valid_enum(self):
         for cv in ["Mr. John", "Mrs. Jane", "Alex Developer"]:
-            result = infer_gender(cv)
-            assert result.value in (GENDER_MALE, GENDER_FEMALE, GENDER_UNKNOWN)
+            assert infer_gender(cv).value in (GENDER_MALE, GENDER_FEMALE, GENDER_UNKNOWN)
+
+    def test_explicit_confidence_is_exactly_1_0(self):
+        for cv in ["Gender: Male", "Gender: Female", "Sex: Male", "الجنس: ذكر"]:
+            r = infer_gender(cv)
+            assert r.confidence == 1.0, f"explicit confidence must be 1.0 for {cv!r}"
 
     def test_infer_gender_never_raises(self):
-        weird_inputs = [
-            None.__class__.__name__,  # just a string
-            "\x00\x01\x02",
-            "a" * 10000,
-            "السيد " * 100,
-        ]
-        for s in weird_inputs:
+        for s in ["\x00\x01\x02", "a" * 10000, "السيد " * 100, "Gender: " * 50]:
             try:
-                result = infer_gender(s)
-                assert result.value in (GENDER_MALE, GENDER_FEMALE, GENDER_UNKNOWN)
-            except Exception as e:
-                pytest.fail(f"infer_gender raised {e!r} for input {s[:50]!r}")
+                r = infer_gender(s)
+                assert r.value in (GENDER_MALE, GENDER_FEMALE, GENDER_UNKNOWN)
+            except Exception as exc:
+                pytest.fail(f"infer_gender raised {exc!r} for {s[:30]!r}")
 
 
-# ── Scoring isolation: gender must not appear in score_cv payload ─────────────
+# ── Scoring isolation ─────────────────────────────────────────────────────────
 
 class TestScoringIsolation:
-    def test_gender_extractor_produces_no_score_fields(self):
-        result = infer_gender("Mr. John Smith\nPython Developer")
-        result_dict = dataclasses.asdict(result)
-        score_keys = {"final_score", "score_skills", "score_experience", "decision", "qualified"}
-        assert not any(k in result_dict for k in score_keys)
+    def test_gender_result_has_no_score_fields(self):
+        r = infer_gender("Mr. John Smith\nPython Developer")
+        d = dataclasses.asdict(r)
+        assert not any(k in d for k in {"final_score", "score_skills", "decision"})
 
     def test_gender_result_has_no_criteria_fields(self):
-        result = infer_gender("Gender: Female")
-        result_dict = dataclasses.asdict(result)
-        criteria_keys = {"skills", "experience", "education", "criteria"}
-        assert not any(k in result_dict for k in criteria_keys)
+        r = infer_gender("Gender: Female")
+        d = dataclasses.asdict(r)
+        assert not any(k in d for k in {"skills", "experience", "education"})
 
-    def test_different_genders_same_cv_text_concept(self):
-        cv_male   = "Mr. John Smith\nSenior Python Developer with 10 years experience"
-        cv_female = "Ms. Jane Smith\nSenior Python Developer with 10 years experience"
-        cv_unknown = "Alex Smith\nSenior Python Developer with 10 years experience"
-        r_male    = infer_gender(cv_male)
-        r_female  = infer_gender(cv_female)
-        r_unknown = infer_gender(cv_unknown)
-        # Gender values differ
+    def test_used_for_scoring_false_for_all_outcomes(self):
+        cvs = [
+            "Gender: Male",
+            "Gender: Female",
+            "Mr. John",
+            "Ms. Jane",
+            "she/her",
+            "No signal at all",
+        ]
+        for cv in cvs:
+            assert infer_gender(cv).used_for_scoring is False
+
+    def test_different_genders_same_cv_skills(self):
+        base = "Senior Python Developer with 10 years experience\nSkills: Python, AWS"
+        r_male    = infer_gender(f"Gender: Male\n{base}")
+        r_female  = infer_gender(f"Gender: Female\n{base}")
+        r_unknown = infer_gender(f"Alex Smith\n{base}")
         assert r_male.value   == GENDER_MALE
         assert r_female.value == GENDER_FEMALE
         assert r_unknown.value == GENDER_UNKNOWN
-        # But used_for_scoring is always False for all
-        assert r_male.used_for_scoring   is False
-        assert r_female.used_for_scoring is False
-        assert r_unknown.used_for_scoring is False
+        assert all(r.used_for_scoring is False for r in [r_male, r_female, r_unknown])
 
 
-# ── API filter value validation ───────────────────────────────────────────────
+# ── API filter value invariants ───────────────────────────────────────────────
 
 class TestApiFilterValues:
-    def test_valid_gender_filter_values(self):
+    def test_output_is_always_valid_filter_value(self):
         valid = {"male", "female", "unknown"}
-        # Ensure infer_gender only ever returns one of these
         test_cvs = [
-            "Mr. John", "Ms. Jane", "John Smith",
-            "Gender: Male", "أنثى", "السيد أحمد",
+            "Gender: Male", "Gender: Female", "الجنس: ذكر", "الجنس: أنثى",
+            "Mr. John", "Ms. Jane", "she/her", "he/him",
+            "John Smith", "", "   ",
         ]
         for cv in test_cvs:
-            result = infer_gender(cv)
-            assert result.value in valid, f"Unexpected value {result.value!r} for {cv!r}"
+            r = infer_gender(cv)
+            assert r.value in valid, f"Unexpected value {r.value!r} for {cv!r}"
