@@ -266,7 +266,7 @@ class CVFacts:
 
 # ── CVFactsExtractor — Batch 2A-4 ────────────────────────────────────────────
 
-_EXTRACTOR_VERSION = "1.3.0"
+_EXTRACTOR_VERSION = "1.4.0"
 _CURRENT_YEAR: int = datetime.date.today().year
 
 # ---------------------------------------------------------------------------
@@ -396,11 +396,22 @@ _YEAR_RANGE = re.compile(
     r"\b((?:19|20)\d{2})\s*[-–—/]\s*((?:19|20)\d{2})\b"
 )
 
-# EDU-02: field-of-study extraction — matches "in <Field Name>" after a degree keyword
+# EDU-02: field-of-study extraction — matches "in <Field Name>" after a degree keyword.
+# Search is intentionally narrow (within ~100 chars of the degree keyword) to avoid
+# accidentally matching "in <something>" from a later experience or skills section.
+# Colon is in the lookahead so "Finance and Banking:" terminates correctly.
 _FIELD_AFTER_IN_RE = re.compile(
-    r"\bin\s+([A-Za-z؀-ۿ][A-Za-z؀-ۿ\s&'-]{2,55}?)"
-    r"(?=\s*(?:[-–—,\n(]|from\b|at\b|$))",
+    r"\bin\s+([A-Za-z؀-ۿ][A-Za-z؀-ۿ\s&\-']{2,55}?)"
+    r"(?=\s*(?:[-–—,:;\n(]|from\b|at\b|$))",
     re.IGNORECASE | re.UNICODE,
+)
+
+# EDU-02.1: Arabic field extraction — field follows degree keyword directly (no "in").
+# Matches "بكالوريوس إدارة أعمال" → "إدارة أعمال"
+_AR_FIELD_AFTER_DEGREE_RE = re.compile(
+    r"(?:بكالوريوس|ليسانس|ماجستير|دكتوراه|دبلوم)\s+([؀-ۿ][؀-ۿ\s]{2,60}?)"
+    r"(?=\s*(?:\n|,|،|$))",
+    re.UNICODE,
 )
 
 # EDU-02: a line that contains ONLY a year or year-range (used to skip years in field extraction)
@@ -414,6 +425,18 @@ _SECTION_HEADER_RE = re.compile(
     r"|summary|objective|profile|certifications?)\s*:?\s*$",
     re.IGNORECASE,
 )
+
+# EDU-02.1: single graduation year when no full year range is present.
+# Matches "Graduated 2024", "Expected Graduation 2025", or a year alone on its line.
+_GRAD_YEAR_RE = re.compile(
+    r"\b(?:graduated|graduation|expected\s+graduat\w*|class\s+of|تخرج)\s*((?:19|20)\d{2})\b"
+    r"|\b((?:19|20)\d{2})\s*(?:\n|$)",
+    re.IGNORECASE | re.MULTILINE | re.UNICODE,
+)
+
+# EDU-02.1: detects a ", <short suffix>" that is a city/location, not part of the
+# institution name.  Strip only when the suffix contains no university indicator.
+_CITY_SUFFIX_RE = re.compile(r",\s*[A-Za-z؀-ۿ][A-Za-z؀-ۿ\s\-]{0,35}$")
 
 # ---------------------------------------------------------------------------
 # Education level patterns — most specific first
@@ -841,6 +864,56 @@ def _infer_university_bachelor(full_text: str) -> EducationEvidence | None:
     return None
 
 
+def _extract_institution_from_line(line: str, indicator_pos: int) -> str:
+    """Extract institution name from the portion of a line that contains the university indicator.
+
+    Scans backward from `indicator_pos` for a natural delimiter (colon, comma,
+    semicolon, opening parenthesis, or space–dash–space), then forward for
+    the next comma or parenthesis.  Never raises; returns "" on empty input.
+    """
+    if not line or indicator_pos < 0:
+        return ""
+
+    # Scan backward for start boundary
+    start = 0
+    i = min(indicator_pos - 1, len(line) - 1)
+    while i >= 0:
+        ch = line[i]
+        if ch in ":,;(،":  # colon, comma, semicolon, paren, Arabic comma (،)
+            start = i + 1
+            break
+        # Dash with surrounding space: " - " acts as a section separator
+        if ch == "-" and i > 0 and line[i - 1] in " \t":
+            start = i + 1
+            break
+        i -= 1
+
+    # Scan forward for end boundary (comma or opening paren after the indicator)
+    end = len(line)
+    for ch in (",", "("):
+        p = line.find(ch, indicator_pos)
+        if p != -1 and p < end:
+            end = p
+
+    return line[start:end].strip()[:100]
+
+
+def _strip_city_suffix(institution: str) -> str:
+    """Remove a trailing ', <city/location>' from an institution name.
+
+    Only strips when the text after the comma contains no university-indicator
+    word (so "Birzeit University, Ramallah" → "Birzeit University" but
+    "University of Science and Technology, Engineering" is left unchanged).
+    """
+    if "," not in institution:
+        return institution
+    pre, post = institution.split(",", 1)
+    post_clean = post.strip()
+    if not _UNIVERSITY_INDICATORS.search(post_clean):
+        return pre.strip()
+    return institution
+
+
 def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
     """Return (education_entries, highest_level_name)."""
     found: list[EducationEvidence] = []
@@ -853,33 +926,50 @@ def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
             ctx_end = min(len(full_text), m.end() + 120)
             raw = full_text[ctx_start:ctx_end].strip()[:200]
 
-            # EDU-02: extract structured fields from a wider context window
+            # Wide context for institution and year lookups (up to 300 chars after degree)
             wide_start = max(0, m.start() - 30)
             wide_end = min(len(full_text), m.end() + 300)
             wide_ctx = full_text[wide_start:wide_end]
 
-            # Field of study: look for "in <Field>" after the degree keyword
+            # ── Field of study ────────────────────────────────────────────────
+            # EDU-02.1: search a NARROW window (degree keyword → +100 chars) only,
+            # so we never accidentally match "in <something>" from a later section.
             field_of_study = ""
-            fi_m = _FIELD_AFTER_IN_RE.search(wide_ctx)
+            field_ctx = full_text[m.start() : min(len(full_text), m.end() + 100)]
+            fi_m = _FIELD_AFTER_IN_RE.search(field_ctx)
             if fi_m:
                 field_of_study = fi_m.group(1).strip()[:80]
+            # Fallback: Arabic degree keyword followed directly by Arabic field
+            if not field_of_study:
+                ar_m = _AR_FIELD_AFTER_DEGREE_RE.search(field_ctx)
+                if ar_m:
+                    field_of_study = ar_m.group(1).strip()[:80]
 
-            # Institution: look for a university indicator on a DIFFERENT line
+            # ── Institution ───────────────────────────────────────────────────
             institution = ""
             degree_pos_in_wide = m.start() - wide_start
             uni_m = _UNIVERSITY_INDICATORS.search(wide_ctx)
             if uni_m:
                 between = wide_ctx[min(degree_pos_in_wide, uni_m.start()):
                                    max(degree_pos_in_wide, uni_m.end())]
+                # EDU-02.1: handle SAME-LINE institution (e.g. "B.Sc in X: Uni, City")
+                nl_before = wide_ctx.rfind("\n", 0, uni_m.start())
+                nl_after = wide_ctx.find("\n", uni_m.end())
                 if "\n" in between:
-                    nl_before = wide_ctx.rfind("\n", 0, uni_m.start())
-                    nl_after = wide_ctx.find("\n", uni_m.end())
+                    # Multi-line: institution is on a separate line
                     inst_line = wide_ctx[
                         nl_before + 1 : nl_after if nl_after != -1 else len(wide_ctx)
                     ].strip()
-                    institution = inst_line[:100]
+                    institution = _strip_city_suffix(inst_line[:100])
+                else:
+                    # Same-line: extract institution name from around the indicator
+                    same_line = wide_ctx[
+                        nl_before + 1 : nl_after if nl_after != -1 else len(wide_ctx)
+                    ]
+                    indicator_pos_in_line = uni_m.start() - (nl_before + 1)
+                    institution = _extract_institution_from_line(same_line, indicator_pos_in_line)
 
-            # Attendance years: look for a year range in wide context
+            # ── Attendance years ──────────────────────────────────────────────
             attendance_years = ""
             yr_m = _YEAR_RANGE.search(wide_ctx)
             if yr_m:
@@ -887,6 +977,14 @@ def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
                     attendance_years = f"{yr_m.group(1)}–{yr_m.group(2)}"
                 except IndexError:
                     pass
+            # EDU-02.1: fallback to single graduation year if no range found
+            if not attendance_years:
+                narrow_yr_ctx = full_text[m.start() : min(len(full_text), m.end() + 200)]
+                gy_m = _GRAD_YEAR_RE.search(narrow_yr_ctx)
+                if gy_m:
+                    year_val = next((g for g in gy_m.groups() if g), None)
+                    if year_val:
+                        attendance_years = year_val
 
             found.append(EducationEvidence(
                 degree_level=level,
