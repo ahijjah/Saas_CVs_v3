@@ -127,6 +127,15 @@ class EducationEvidence:
     raw_text: str = ""
     """Original text before parsing."""
 
+    inferred: bool = False
+    """True when degree level was inferred from context (university name + duration), not stated explicitly."""
+
+    basis: str = ""
+    """How the degree was determined: 'explicit_degree' or 'university_study_pattern'."""
+
+    confidence: float = 1.0
+    """Confidence: 1.0 for explicit degree keywords, 0.85 for university-pattern inference."""
+
 
 @dataclass
 class CertificationEvidence:
@@ -251,7 +260,7 @@ class CVFacts:
 
 # ── CVFactsExtractor — Batch 2A-4 ────────────────────────────────────────────
 
-_EXTRACTOR_VERSION = "1.1.0"
+_EXTRACTOR_VERSION = "1.2.0"
 _CURRENT_YEAR: int = datetime.date.today().year
 
 # ---------------------------------------------------------------------------
@@ -355,6 +364,30 @@ _SKILL_REGISTRY: tuple[tuple[str, tuple[str, ...]], ...] = (
 _COMPILED_SKILLS: tuple[tuple[str, tuple[re.Pattern, ...]], ...] = tuple(
     (name, tuple(re.compile(p, re.IGNORECASE | re.UNICODE) for p in patterns))
     for name, patterns in _SKILL_REGISTRY
+)
+
+# ---------------------------------------------------------------------------
+# University / higher-education institution indicators
+# ---------------------------------------------------------------------------
+_UNIVERSITY_INDICATORS = re.compile(
+    r"\b(university|universities|université|universidad|universität"
+    r"|college|colleges|institute\s+of\s+technology|polytechnic"
+    r"|academy|académie|school\s+of\s+(?:business|engineering|law|medicine|science)"
+    r"|جامعة|كلية|معهد\s+تقني?|أكاديمية)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+# Excludes training centres, bootcamps, and short courses from university inference
+_TRAINING_EXCLUSIONS = re.compile(
+    r"\b(training|bootcamp|boot\s+camp|online\s+course|mooc|coursera|udemy"
+    r"|edx|udacity|workshop|seminar|certificate\s+course|short\s+course"
+    r"|دورة\s+تدريبية|مركز\s+تدريب)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+# Year range covering a typical 3-6 year study duration
+_YEAR_RANGE = re.compile(
+    r"\b((?:19|20)\d{2})\s*[-–—/]\s*((?:19|20)\d{2})\b"
 )
 
 # ---------------------------------------------------------------------------
@@ -651,6 +684,54 @@ def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[Skil
     return list(found.values())
 
 
+def _infer_university_bachelor(full_text: str) -> EducationEvidence | None:
+    """Infer a Bachelor's degree from university name + study duration (3-6 years).
+
+    Returns an EducationEvidence with inferred=True and confidence=0.85 when:
+      - A university/college/institute indicator is found in a 300-char window
+      - A year range spanning 3-6 years appears nearby
+      - The window does NOT match training/bootcamp exclusions
+
+    Returns None when no qualifying pattern is found.
+    """
+    for m_uni in _UNIVERSITY_INDICATORS.finditer(full_text):
+        # Check 300 chars either side of the university mention
+        win_start = max(0, m_uni.start() - 50)
+        win_end = min(len(full_text), m_uni.end() + 250)
+        window = full_text[win_start:win_end]
+
+        if _TRAINING_EXCLUSIONS.search(window):
+            continue
+
+        yr_m = _YEAR_RANGE.search(window)
+        if not yr_m:
+            continue
+
+        try:
+            year_start = int(yr_m.group(1))
+            year_end = int(yr_m.group(2))
+        except (ValueError, IndexError):
+            continue
+
+        duration = year_end - year_start
+        if not (3 <= duration <= 6):
+            continue
+
+        raw = window.strip()[:200]
+        return EducationEvidence(
+            degree_level="Bachelor's",
+            field_of_study="",
+            institution="",
+            year=year_end,
+            raw_text=raw,
+            inferred=True,
+            basis="university_study_pattern",
+            confidence=0.85,
+        )
+
+    return None
+
+
 def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
     """Return (education_entries, highest_level_name)."""
     found: list[EducationEvidence] = []
@@ -668,10 +749,22 @@ def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
                 institution="",
                 year=None,
                 raw_text=raw,
+                inferred=False,
+                basis="explicit_degree",
+                confidence=1.0,
             ))
             level_idx = list(EDUCATION_LEVELS).index(level)
             if level_idx > highest_idx:
                 highest_idx = level_idx
+
+    # If no explicit Bachelor's or higher was found, try university-pattern inference
+    if highest_idx < list(EDUCATION_LEVELS).index("Bachelor's"):
+        inferred = _infer_university_bachelor(full_text)
+        if inferred is not None:
+            found.append(inferred)
+            bachelor_idx = list(EDUCATION_LEVELS).index("Bachelor's")
+            if bachelor_idx > highest_idx:
+                highest_idx = bachelor_idx
 
     highest = EDUCATION_LEVELS[highest_idx] if found else "None"
     return found, highest

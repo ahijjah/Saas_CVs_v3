@@ -222,6 +222,9 @@ def _education_from_dict(d: dict) -> EducationEvidence:
         institution=_s(d, "institution"),
         year=_i_or_none(d, "year"),
         raw_text=_s(d, "raw_text"),
+        inferred=bool(d.get("inferred", False)),
+        basis=_s(d, "basis", ""),
+        confidence=float(d.get("confidence", 1.0)),
     )
 
 
