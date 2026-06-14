@@ -68,6 +68,7 @@ _DIMENSION_WEIGHT_KEY: dict[str, str] = {
     "certifications":   "weight_certifications",
     "soft_skills":      "weight_soft_skills",
     "domain_knowledge": "weight_domain_knowledge",
+    "languages":        "weight_other",   # shares the "other" weight bucket
     "other":            "weight_other",
 }
 
@@ -210,19 +211,51 @@ class DeterministicScoringEngine:
             crit = self._score_criterion(assessment, cfg)
             by_dimension.setdefault(dim, []).append(crit)
 
+        # ── Resolve effective weight per dimension ────────────────────────────
+        # Dimensions that share a weight key (e.g. "languages" and "other" both
+        # map to "weight_other") split the shared budget among whichever of them
+        # actually has criteria. Dimensions with no criteria get zero weight.
+        # This preserves total weights = 100 regardless of how many language
+        # criteria a job has.
+        _wk_to_dims: dict[str, list[str]] = {}
+        for _d, _wk in _DIMENSION_WEIGHT_KEY.items():
+            _wk_to_dims.setdefault(_wk, []).append(_d)
+
+        _effective_w: dict[str, int] = {}
+        for _wk, _dims in _wk_to_dims.items():
+            _base_w = weights.get(_wk, 0)
+            _active = [d for d in _dims if by_dimension.get(d)]
+            if not _active:
+                # No criteria in shared group — give weight to first dim (backward compat)
+                _effective_w[_dims[0]] = _base_w
+                for _d in _dims[1:]:
+                    _effective_w[_d] = 0
+            elif len(_active) == 1:
+                # Only one dim has criteria — it receives the full shared weight
+                for _d in _dims:
+                    _effective_w[_d] = _base_w if _d == _active[0] else 0
+            else:
+                # Multiple dims have criteria — split the shared weight evenly
+                _per = _base_w // len(_active)
+                _rem = _base_w - _per * len(_active)
+                _rem_given = False
+                for _d in _dims:
+                    if _d in _active:
+                        _effective_w[_d] = _per + (_rem if not _rem_given else 0)
+                        _rem_given = True
+                    else:
+                        _effective_w[_d] = 0
+
         # ── Compute per-dimension scores ──────────────────────────────────────
-        total_weight = sum(
-            weights.get(wk, 0)
-            for wk in _DIMENSION_WEIGHT_KEY.values()
-        )
+        total_weight = sum(_effective_w.values())
         if total_weight <= 0:
             total_weight = 1  # guard against zero-weight jobs
 
         dimension_scores: dict[str, DeterministicDimensionScore] = {}
         weighted_sum: float = 0.0
 
-        for dim, wk in _DIMENSION_WEIGHT_KEY.items():
-            w = weights.get(wk, 0)
+        for dim in _DIMENSION_WEIGHT_KEY:
+            w = _effective_w[dim]
             criteria_list = by_dimension.get(dim, [])
             dim_score_obj = self._score_dimension(dim, criteria_list, w, total_weight, cfg)
             dimension_scores[dim] = dim_score_obj

@@ -30,6 +30,13 @@ if TYPE_CHECKING:
     from openai import AsyncOpenAI
 
 from services.cv_evidence import CVFacts
+from services.language_inference import (
+    is_language_criterion,
+    is_arabic_language_criterion,
+    is_english_language_criterion,
+    infer_arabic_proficiency,
+    infer_english_proficiency,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +51,7 @@ _VALID_CRITERION_CLASS = frozenset({
 })
 _VALID_DIMENSION = frozenset({
     "skills", "experience", "education", "certifications",
-    "soft_skills", "domain_knowledge", "other",
+    "soft_skills", "domain_knowledge", "languages", "other",
 })
 
 # Module-level lazy OpenAI client (one instance per worker process)
@@ -176,6 +183,16 @@ CRITERION CLASS GUIDE — choose the MOST SPECIFIC class that applies:
 - domain_knowledge: Industry or sector knowledge (finance, healthcare, logistics, etc.).
 - other:           Requirements not fitting any category above.
 
+LANGUAGE REQUIREMENTS (dimension: languages):
+- Criteria with dimension=languages assess spoken/written language proficiency.
+- Evidence to look for: explicit proficiency statements ("Arabic: Native"), CV written
+  in the language, education conducted in the language, work history in the language.
+- For Arabic proficiency: Arabic text in CV, Arabic names, Arabic university, Arab region.
+- For English proficiency: English-language CV, English education/work history.
+- "Native" means mother tongue; "Working/Professional" means business-level competency.
+- Return ABSENT only when NO evidence of the language exists in the CV whatsoever.
+- Return PARTIAL when indirect evidence exists (e.g. CV partly in that language).
+
 DISAMBIGUATION RULES (apply strictly — these override any other interpretation):
 R1. Communication / teamwork / leadership / adaptability → soft_skill (never strict or flexible).
 R2. Customer service orientation / customer-facing skills → soft_skill.
@@ -205,7 +222,7 @@ Return EXACTLY this structure (one entry per criterion, same order as input):
   "assessments": [
     {
       "criterion_text": "<exact criterion text as given>",
-      "dimension": "<skills|experience|education|certifications|soft_skills|domain_knowledge|other>",
+      "dimension": "<skills|experience|education|certifications|soft_skills|domain_knowledge|languages|other>",
       "required": true,
       "status": "<MATCHED|PARTIAL|ABSENT>",
       "confidence": 0.0,
@@ -287,7 +304,12 @@ def _flatten_criteria(analysis_json: dict) -> list[dict]:
 
     for other in (analysis_json.get("other_requirements") or []):
         if other:
-            items.append({"text": str(other), "dimension": "other", "required": False})
+            other_str = str(other)
+            if is_language_criterion(other_str):
+                # Route language requirements to the dedicated languages dimension
+                items.append({"text": other_str, "dimension": "languages", "required": True})
+            else:
+                items.append({"text": other_str, "dimension": "other", "required": False})
 
     # C2: Read soft_skills block produced by criteria_extraction v2+
     soft_skills_block = analysis_json.get("soft_skills") or {}
@@ -741,6 +763,21 @@ def _build_user_message(
     if soft_cats:
         lines.append("Soft skill signals: " + ", ".join(soft_cats))
 
+    # D-04: language context for inference
+    lang_ctx: list[str] = []
+    if getattr(cv_facts, "nationality", ""):
+        lang_ctx.append(f"Nationality: {cv_facts.nationality}")
+    if getattr(cv_facts, "location_country", ""):
+        lang_ctx.append(f"Location: {cv_facts.location_country}")
+    lang_lines = getattr(cv_facts, "language_section_lines", [])
+    if lang_lines:
+        lang_ctx.append("Languages section: " + " | ".join(lang_lines[:5]))
+    cv_lang = getattr(cv_facts, "language", "")
+    if cv_lang:
+        lang_ctx.append(f"CV dominant language: {cv_lang}")
+    if lang_ctx:
+        lines.append("Language context: " + "; ".join(lang_ctx))
+
     lines.append("")
 
     # Evidence snippets
@@ -832,6 +869,80 @@ def _parse_one_assessment(
         prompt_version=prompt_version,
         llm_model=llm_model,
     )
+
+
+def _apply_language_inference_upgrade(
+    assessments: list[LLMCriterionAssessment],
+    cv_text: str,
+    cv_facts: CVFacts,
+) -> int:
+    """D-04: post-process ABSENT/weak language assessments with deterministic evidence.
+
+    For assessments with dimension='languages':
+    - Arabic requirement → infer from nationality, location, CV Arabic chars, institution
+    - English requirement → infer from CV language, English education/work history
+    - Confidence ≥ 0.80: upgrade to MATCHED
+    - Confidence ≥ 0.50: upgrade to PARTIAL (if currently ABSENT or lower confidence)
+
+    Mutates assessments in place. Returns the number of upgraded assessments.
+    """
+    upgraded = 0
+
+    _arabic_result = None
+    _arabic_computed = False
+    _english_result = None
+    _english_computed = False
+
+    for assessment in assessments:
+        if assessment.dimension != "languages":
+            continue
+        # Skip criteria that are already well-matched by the LLM
+        if assessment.status == "MATCHED" and assessment.confidence >= 0.80:
+            continue
+
+        crit = assessment.criterion_text
+        inferred = None
+
+        if is_arabic_language_criterion(crit):
+            if not _arabic_computed:
+                _arabic_result = infer_arabic_proficiency(cv_text, cv_facts)
+                _arabic_computed = True
+            inferred = _arabic_result
+        elif is_english_language_criterion(crit):
+            if not _english_computed:
+                _english_result = infer_english_proficiency(cv_text, cv_facts)
+                _english_computed = True
+            inferred = _english_result
+
+        if inferred is None or inferred.confidence < 0.50:
+            continue
+
+        new_status = "MATCHED" if inferred.confidence >= 0.80 else "PARTIAL"
+
+        # Only upgrade (never downgrade) and only when it adds value
+        status_rank = {"ABSENT": 0, "PARTIAL": 1, "MATCHED": 2}
+        current_rank = status_rank.get(assessment.status, 0)
+        new_rank = status_rank.get(new_status, 0)
+        if new_rank <= current_rank and inferred.confidence <= assessment.confidence:
+            continue
+
+        assessment.status = new_status
+        assessment.confidence = inferred.confidence
+        assessment.match_type = "inferred"
+        assessment.supporting_evidence = inferred.supporting_evidence
+        assessment.match_reason = (
+            f"Language inferred from CV evidence: "
+            f"{'; '.join(inferred.supporting_evidence[:2])}"
+        )
+        # Remove any prior failure flag; add inference tag
+        assessment.risk_flags = [
+            f for f in assessment.risk_flags if f != "assessment_failed"
+        ]
+        if "language_inference" not in assessment.risk_flags:
+            assessment.risk_flags.append("language_inference")
+        upgraded += 1
+
+    return upgraded
 
 
 def _absent_fallback_assessments(
@@ -1003,6 +1114,14 @@ class LLMCriteriaMapper:
 
         # Parse response
         assessments = _parse_llm_response(raw_content, criteria_list, p_code, p_ver, model)
+
+        # D-04: deterministic language inference upgrade (post-LLM)
+        lang_upgraded = _apply_language_inference_upgrade(assessments, raw_cv_text, cv_facts)
+        if lang_upgraded:
+            logger.debug(
+                "[%s] LLM mapper: language_inference_upgrade promoted %d criterion(s)",
+                application_id, lang_upgraded,
+            )
 
         processing_ms = int((time.monotonic() - t0) * 1000)
 
