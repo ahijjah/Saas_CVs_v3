@@ -266,7 +266,7 @@ class CVFacts:
 
 # ── CVFactsExtractor — Batch 2A-4 ────────────────────────────────────────────
 
-_EXTRACTOR_VERSION = "1.4.0"
+_EXTRACTOR_VERSION = "1.5.0"
 _CURRENT_YEAR: int = datetime.date.today().year
 
 # ---------------------------------------------------------------------------
@@ -438,12 +438,33 @@ _GRAD_YEAR_RE = re.compile(
 # institution name.  Strip only when the suffix contains no university indicator.
 _CITY_SUFFIX_RE = re.compile(r",\s*[A-Za-z؀-ۿ][A-Za-z؀-ۿ\s\-]{0,35}$")
 
+# EDU-02.2: "Bachelor of Business Administration" → "Business Administration".
+# Applied only to the same line as the degree keyword (not subsequent lines) to
+# prevent "University of Jordan" on the next line from being captured as field.
+_FIELD_AFTER_OF_RE = re.compile(
+    r"\bof\s+([A-Za-z؀-ۿ][A-Za-z؀-ۿ\s&\-']{2,55}?)"
+    r"(?=\s*(?:[-–—,:;\n|(]|from\b|at\b|$))",
+    re.IGNORECASE | re.UNICODE,
+)
+
+# EDU-02.2: degree-line detector used to prevent education entries from leaking
+# into experience role_title / employer fields.
+_EDU_DEGREE_LINE_RE = re.compile(
+    r"\b(bachelor(?:'?s)?|b\.?\s*sc\.?|b\.?\s*a\.?|b\.?\s*eng\."
+    r"|master(?:'?s|\s+(?:of|in|degree))|m\.?\s*sc\.?|mba|m\.?\s*b\.?\s*a\."
+    r"|ph\.?\s*d\.?|doctorate|diploma"
+    r"|بكالوريوس|ليسانس|ماجستير|دكتوراه|دبلوم)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
 # ---------------------------------------------------------------------------
 # Education level patterns — most specific first
 # ---------------------------------------------------------------------------
 _EDU_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
     ("PhD",        re.compile(r"\b(ph\.?\s*d\.?|doctorate|doctoral|دكتوراه)\b",                    re.IGNORECASE | re.UNICODE)),
-    ("Master's",   re.compile(r"\b(master(?:'?s)?|m\.?\s*sc\.?|mba|m\.?\s*b\.?\s*a\.?|m\.?\s*eng\.?|ماجستير)\b", re.IGNORECASE | re.UNICODE)),
+    # EDU-02.2: require possessive/plural OR a degree preposition to prevent
+    # "master the process" / "master sales skills" from matching.
+    ("Master's",   re.compile(r"\b(master(?:'?s|\s+(?:of|in|degree))|m\.?\s*sc\.?|mba|m\.?\s*b\.?\s*a\.?|m\.?\s*a\.?|m\.?\s*eng\.?|ماجستير)\b", re.IGNORECASE | re.UNICODE)),
     ("Bachelor's", re.compile(r"\b(bachelor(?:'?s)?|b\.?\s*sc\.?|b\.?\s*a\.?|b\.?\s*eng\.?|بكالوريوس|ليسانس)\b", re.IGNORECASE | re.UNICODE)),
     ("Diploma",    re.compile(r"\b(diploma|hnd|higher\s+national\s+diploma|دبلوم)\b",              re.IGNORECASE | re.UNICODE)),
     ("Associate",  re.compile(r"\b(associate\s+degree)\b",                                          re.IGNORECASE | re.UNICODE)),
@@ -759,15 +780,31 @@ def _parse_edu_fields_from_window(
     institution = ""
     field_of_study = ""
 
-    # ── Strategy A: slash / pipe separated (e.g. "Uni / Field / 2016–2020") ──
+    # ── Strategy A: slash / pipe separated (e.g. "Degree | Uni" or "Uni / Field") ─
+    # EDU-02.2: prefer the part that contains a university indicator as institution;
+    # extract field from the remaining part using "of/in" patterns.
     if "/" in inst_line or "|" in inst_line:
         parts = [p.strip() for p in re.split(r"[/|]", inst_line)]
         non_year = [p for p in parts if p and not _YEAR_ONLY_LINE_RE.match(p)
                     and not _YEAR_RANGE.fullmatch(p)]
-        if non_year:
+        uni_parts = [p for p in non_year if _UNIVERSITY_INDICATORS.search(p)]
+        non_uni = [p for p in non_year if p not in uni_parts]
+        if uni_parts:
+            institution = uni_parts[0][:100]
+            if non_uni:
+                candidate = non_uni[0]
+                fo_m = _FIELD_AFTER_OF_RE.search(candidate)
+                fi_m = _FIELD_AFTER_IN_RE.search(candidate)
+                if fo_m:
+                    field_of_study = fo_m.group(1).strip()[:80]
+                elif fi_m:
+                    field_of_study = fi_m.group(1).strip()[:80]
+                elif not _EDU_DEGREE_LINE_RE.search(candidate):
+                    field_of_study = candidate[:80]
+        elif non_year:
             institution = non_year[0][:100]
-        if len(non_year) >= 2:
-            field_of_study = non_year[1][:80]
+            if len(non_year) >= 2:
+                field_of_study = non_year[1][:80]
 
     # ── Strategy B: comma-separated with year visible ─────────────────────────
     elif "," in inst_line and _YEAR_RANGE.search(inst_line):
@@ -879,7 +916,7 @@ def _extract_institution_from_line(line: str, indicator_pos: int) -> str:
     i = min(indicator_pos - 1, len(line) - 1)
     while i >= 0:
         ch = line[i]
-        if ch in ":,;(،":  # colon, comma, semicolon, paren, Arabic comma (،)
+        if ch in ":,;(،|":  # colon, comma, semicolon, paren, Arabic comma, pipe
             start = i + 1
             break
         # Dash with surrounding space: " - " acts as a section separator
@@ -944,6 +981,14 @@ def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
                 ar_m = _AR_FIELD_AFTER_DEGREE_RE.search(field_ctx)
                 if ar_m:
                     field_of_study = ar_m.group(1).strip()[:80]
+            # EDU-02.2: "Bachelor of Business Administration" → "Business Administration".
+            # Restricted to the first line of field_ctx to avoid capturing "University of X"
+            # on subsequent lines (which would produce the city/country as field).
+            if not field_of_study:
+                first_line = field_ctx.split("\n")[0]
+                fo_m = _FIELD_AFTER_OF_RE.search(first_line)
+                if fo_m:
+                    field_of_study = fo_m.group(1).strip()[:80]
 
             # ── Institution ───────────────────────────────────────────────────
             institution = ""
@@ -1111,6 +1156,11 @@ def _extract_experience(
         preceding = search_text[ctx_start:m.start()].strip().splitlines()
         role_title = preceding[-1].strip()[:100] if preceding else ""
         employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
+
+        # EDU-02.2: skip blocks where the "role" line is actually an education entry
+        # (e.g. "Bachelor of Business Administration | Al-Quds Open University").
+        if _EDU_DEGREE_LINE_RE.search(role_title) or _EDU_DEGREE_LINE_RE.search(employer):
+            continue
 
         ctx_end = min(len(search_text), m.end() + 50)
         raw = search_text[ctx_start:ctx_end].strip()[:300]
