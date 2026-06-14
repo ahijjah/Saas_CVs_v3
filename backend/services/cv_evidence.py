@@ -136,6 +136,12 @@ class EducationEvidence:
     confidence: float = 1.0
     """Confidence: 1.0 for explicit degree keywords, 0.85 for university-pattern inference."""
 
+    attendance_years: str = ""
+    """Study period as a string, e.g. '2016–2020'.  Empty when not determinable."""
+
+    supporting_evidence: list[str] = field(default_factory=list)
+    """Raw CV text snippets that support this education entry (up to 3)."""
+
 
 @dataclass
 class CertificationEvidence:
@@ -260,7 +266,7 @@ class CVFacts:
 
 # ── CVFactsExtractor — Batch 2A-4 ────────────────────────────────────────────
 
-_EXTRACTOR_VERSION = "1.2.0"
+_EXTRACTOR_VERSION = "1.3.0"
 _CURRENT_YEAR: int = datetime.date.today().year
 
 # ---------------------------------------------------------------------------
@@ -388,6 +394,25 @@ _TRAINING_EXCLUSIONS = re.compile(
 # Year range covering a typical 3-6 year study duration
 _YEAR_RANGE = re.compile(
     r"\b((?:19|20)\d{2})\s*[-–—/]\s*((?:19|20)\d{2})\b"
+)
+
+# EDU-02: field-of-study extraction — matches "in <Field Name>" after a degree keyword
+_FIELD_AFTER_IN_RE = re.compile(
+    r"\bin\s+([A-Za-z؀-ۿ][A-Za-z؀-ۿ\s&'-]{2,55}?)"
+    r"(?=\s*(?:[-–—,\n(]|from\b|at\b|$))",
+    re.IGNORECASE | re.UNICODE,
+)
+
+# EDU-02: a line that contains ONLY a year or year-range (used to skip years in field extraction)
+_YEAR_ONLY_LINE_RE = re.compile(
+    r"^\s*(?:(?:19|20)\d{2})(?:\s*[-–—/]\s*(?:19|20)\d{2})?\s*$"
+)
+
+# EDU-02: common CV section headers to skip during adjacent-line search
+_SECTION_HEADER_RE = re.compile(
+    r"^\s*(?:education|experience|skills|work\s+history|employment"
+    r"|summary|objective|profile|certifications?)\s*:?\s*$",
+    re.IGNORECASE,
 )
 
 # ---------------------------------------------------------------------------
@@ -684,6 +709,84 @@ def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[Skil
     return list(found.values())
 
 
+def _parse_edu_fields_from_window(
+    window: str,
+    indicator_pos_in_window: int,
+) -> tuple[str, str]:
+    """Extract (institution, field_of_study) from a university-indicator window.
+
+    Handles both inline formats (slash/comma-separated) and multi-line blocks.
+    Returns ("", "") when extraction is unreliable.  Never raises.
+    """
+    lines = window.splitlines()
+    if not lines:
+        return "", ""
+
+    # ── Locate the line containing the university indicator ───────────────────
+    pos = 0
+    inst_line_idx = 0
+    for i, ln in enumerate(lines):
+        if pos <= indicator_pos_in_window <= pos + len(ln):
+            inst_line_idx = i
+            break
+        pos += len(ln) + 1  # +1 for the consumed newline
+
+    inst_line = lines[inst_line_idx].strip() if inst_line_idx < len(lines) else ""
+
+    institution = ""
+    field_of_study = ""
+
+    # ── Strategy A: slash / pipe separated (e.g. "Uni / Field / 2016–2020") ──
+    if "/" in inst_line or "|" in inst_line:
+        parts = [p.strip() for p in re.split(r"[/|]", inst_line)]
+        non_year = [p for p in parts if p and not _YEAR_ONLY_LINE_RE.match(p)
+                    and not _YEAR_RANGE.fullmatch(p)]
+        if non_year:
+            institution = non_year[0][:100]
+        if len(non_year) >= 2:
+            field_of_study = non_year[1][:80]
+
+    # ── Strategy B: comma-separated with year visible ─────────────────────────
+    elif "," in inst_line and _YEAR_RANGE.search(inst_line):
+        parts = [p.strip() for p in inst_line.split(",")]
+        non_year = [p for p in parts if p and not _YEAR_ONLY_LINE_RE.match(p)
+                    and not _YEAR_RANGE.search(p)]
+        uni_parts = [p for p in non_year if _UNIVERSITY_INDICATORS.search(p)]
+        other_parts = [p for p in non_year if p not in uni_parts]
+        institution = uni_parts[0][:100] if uni_parts else (non_year[0][:100] if non_year else "")
+        field_of_study = other_parts[0][:80] if other_parts else ""
+
+    # ── Strategy C: institution is the whole line (strip trailing years/punct) ─
+    else:
+        yr_m = _YEAR_RANGE.search(inst_line)
+        institution = (inst_line[:yr_m.start()].strip(" ,–—/") if yr_m else inst_line).strip()[:100]
+
+    # ── Fallback: look at adjacent non-year lines for field of study ──────────
+    if not field_of_study:
+        non_empty = [(i, ln.strip()) for i, ln in enumerate(lines) if ln.strip()]
+        ne_inst = next((ni for ni, (i, _) in enumerate(non_empty) if i == inst_line_idx), -1)
+
+        for ni, (_, ln) in enumerate(non_empty):
+            if ni == ne_inst:
+                continue
+            if abs(ni - ne_inst) > 4:
+                break
+            if _YEAR_ONLY_LINE_RE.match(ln):
+                continue
+            if _SECTION_HEADER_RE.match(ln):
+                continue
+            if _UNIVERSITY_INDICATORS.search(ln):
+                continue
+            if _TRAINING_EXCLUSIONS.search(ln):
+                continue
+            cleaned = _YEAR_RANGE.sub("", ln).strip(" ,–—/").strip()
+            if len(cleaned) > 2:
+                field_of_study = cleaned[:80]
+                break
+
+    return institution, field_of_study
+
+
 def _infer_university_bachelor(full_text: str) -> EducationEvidence | None:
     """Infer a Bachelor's degree from university name + study duration (3-6 years).
 
@@ -717,16 +820,22 @@ def _infer_university_bachelor(full_text: str) -> EducationEvidence | None:
         if not (3 <= duration <= 6):
             continue
 
+        # EDU-02: extract institution, field_of_study, and attendance_years
+        indicator_pos_in_window = m_uni.start() - win_start
+        institution, field_of_study = _parse_edu_fields_from_window(window, indicator_pos_in_window)
         raw = window.strip()[:200]
+
         return EducationEvidence(
             degree_level="Bachelor's",
-            field_of_study="",
-            institution="",
+            field_of_study=field_of_study,
+            institution=institution,
             year=year_end,
             raw_text=raw,
             inferred=True,
             basis="university_study_pattern",
             confidence=0.85,
+            attendance_years=f"{year_start}–{year_end}",
+            supporting_evidence=[raw] if raw else [],
         )
 
     return None
@@ -743,15 +852,53 @@ def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
             ctx_start = max(0, m.start() - 20)
             ctx_end = min(len(full_text), m.end() + 120)
             raw = full_text[ctx_start:ctx_end].strip()[:200]
+
+            # EDU-02: extract structured fields from a wider context window
+            wide_start = max(0, m.start() - 30)
+            wide_end = min(len(full_text), m.end() + 300)
+            wide_ctx = full_text[wide_start:wide_end]
+
+            # Field of study: look for "in <Field>" after the degree keyword
+            field_of_study = ""
+            fi_m = _FIELD_AFTER_IN_RE.search(wide_ctx)
+            if fi_m:
+                field_of_study = fi_m.group(1).strip()[:80]
+
+            # Institution: look for a university indicator on a DIFFERENT line
+            institution = ""
+            degree_pos_in_wide = m.start() - wide_start
+            uni_m = _UNIVERSITY_INDICATORS.search(wide_ctx)
+            if uni_m:
+                between = wide_ctx[min(degree_pos_in_wide, uni_m.start()):
+                                   max(degree_pos_in_wide, uni_m.end())]
+                if "\n" in between:
+                    nl_before = wide_ctx.rfind("\n", 0, uni_m.start())
+                    nl_after = wide_ctx.find("\n", uni_m.end())
+                    inst_line = wide_ctx[
+                        nl_before + 1 : nl_after if nl_after != -1 else len(wide_ctx)
+                    ].strip()
+                    institution = inst_line[:100]
+
+            # Attendance years: look for a year range in wide context
+            attendance_years = ""
+            yr_m = _YEAR_RANGE.search(wide_ctx)
+            if yr_m:
+                try:
+                    attendance_years = f"{yr_m.group(1)}–{yr_m.group(2)}"
+                except IndexError:
+                    pass
+
             found.append(EducationEvidence(
                 degree_level=level,
-                field_of_study="",
-                institution="",
+                field_of_study=field_of_study,
+                institution=institution,
                 year=None,
                 raw_text=raw,
                 inferred=False,
                 basis="explicit_degree",
                 confidence=1.0,
+                attendance_years=attendance_years,
+                supporting_evidence=[raw] if raw else [],
             ))
             level_idx = list(EDUCATION_LEVELS).index(level)
             if level_idx > highest_idx:

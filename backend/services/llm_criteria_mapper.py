@@ -721,8 +721,11 @@ def _build_user_message(
     if cv_facts.education:
         lines.append("Education:")
         for ed in cv_facts.education:
-            lines.append(f"  - {ed.degree_level} in {ed.field_of_study}"
-                         f" ({ed.institution or 'institution not stated'})")
+            field_part = f" in {ed.field_of_study}" if ed.field_of_study else ""
+            inst_part = ed.institution or "institution not stated"
+            yr_part = f", {ed.attendance_years}" if getattr(ed, "attendance_years", "") else ""
+            inf_tag = " [inferred, confidence 0.85]" if ed.inferred else ""
+            lines.append(f"  - {ed.degree_level}{field_part} ({inst_part}{yr_part}){inf_tag}")
     else:
         lines.append("Education: (none)")
 

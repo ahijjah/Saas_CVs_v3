@@ -225,6 +225,8 @@ def _education_from_dict(d: dict) -> EducationEvidence:
         inferred=bool(d.get("inferred", False)),
         basis=_s(d, "basis", ""),
         confidence=float(d.get("confidence", 1.0)),
+        attendance_years=_s(d, "attendance_years", ""),
+        supporting_evidence=_str_list(d, "supporting_evidence"),
     )
 
 

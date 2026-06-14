@@ -545,7 +545,7 @@ class TestCVFactsExtractor:
 
     def test_extractor_version(self):
         facts = self.ex.extract(_EN_CV)
-        assert facts.extractor_version == "1.2.0"
+        assert facts.extractor_version == "1.3.0"
 
     def test_extraction_method(self):
         facts = self.ex.extract(_EN_CV)
@@ -571,7 +571,7 @@ class TestCVFactsExtractor:
         facts = self.ex.extract(_EN_CV)
         payload = json.dumps(dataclasses.asdict(facts))
         data = json.loads(payload)
-        assert data["extractor_version"] == "1.2.0"
+        assert data["extractor_version"] == "1.3.0"
 
     # ── Language detection ─────────────────────────────────────────────────
 
