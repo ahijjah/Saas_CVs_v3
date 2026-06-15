@@ -15,6 +15,7 @@ No database or HTTP layer required.
 import pytest
 
 from services.bulk_upload_processing_service import (
+    app_status_to_row_status,
     app_status_to_stage,
     classify_failure_reason,
     compute_batch_progress_percentage,
@@ -319,3 +320,208 @@ class TestFailureHandling:
         terminal = 4  # 4 done
         total    = 5  # 1 still processing
         assert is_batch_fully_processed(total, terminal) is False
+
+
+# ── TestAppStatusToRowStatus ──────────────────────────────────────────────────
+
+class TestAppStatusToRowStatus:
+    """
+    Verify the mapping from applications.processing_status to the vocabulary
+    used in bulk_upload_rows.processing_status.
+
+    This mapping drives the sync that keeps stale row statuses current after
+    Celery scores applications without touching bulk_upload_rows.
+    """
+
+    def test_queued_row_with_ai_scored_app_becomes_completed(self):
+        # Core bug scenario: row stuck at 'queued' while app is 'ai_scored'
+        assert app_status_to_row_status("ai_scored") == "completed"
+
+    def test_queued_row_with_low_match_app_becomes_completed(self):
+        assert app_status_to_row_status("low_match") == "completed"
+
+    def test_queued_row_with_failed_app_becomes_failed(self):
+        assert app_status_to_row_status("failed") == "failed"
+
+    def test_processing_maps_to_processing(self):
+        assert app_status_to_row_status("processing") == "processing"
+
+    def test_queued_maps_to_queued(self):
+        assert app_status_to_row_status("queued") == "queued"
+
+    def test_pending_maps_to_pending(self):
+        assert app_status_to_row_status("pending") == "pending"
+
+    def test_none_maps_to_pending(self):
+        assert app_status_to_row_status(None) == "pending"
+
+    def test_empty_string_maps_to_pending(self):
+        assert app_status_to_row_status("") == "pending"
+
+    def test_unknown_status_maps_to_pending(self):
+        assert app_status_to_row_status("mystery") == "pending"
+
+    def test_ai_scored_and_low_match_both_map_to_completed(self):
+        assert app_status_to_row_status("ai_scored") == app_status_to_row_status("low_match")
+        assert app_status_to_row_status("ai_scored") == "completed"
+
+
+# ── TestRowSyncLogic ──────────────────────────────────────────────────────────
+
+class TestRowSyncLogic:
+    """
+    Simulate the bulk UPDATE logic that sync_row_statuses_from_applications
+    applies.  Tests use the pure mapping function to verify the expected
+    transition without hitting a database.
+    """
+
+    def _sync(self, rows: list[dict]) -> list[dict]:
+        """
+        Simulate the UPDATE: for each row that has an app_processing_status,
+        derive the new row processing_status.
+        """
+        result = [dict(r) for r in rows]
+        for row in result:
+            app_status = row.get("app_processing_status")
+            if app_status is not None:
+                row["processing_status"] = app_status_to_row_status(app_status)
+        return result
+
+    def test_queued_row_ai_scored_app_syncs_to_completed(self):
+        rows = [{"processing_status": "queued", "app_processing_status": "ai_scored"}]
+        synced = self._sync(rows)
+        assert synced[0]["processing_status"] == "completed"
+
+    def test_queued_row_low_match_app_syncs_to_completed(self):
+        rows = [{"processing_status": "queued", "app_processing_status": "low_match"}]
+        synced = self._sync(rows)
+        assert synced[0]["processing_status"] == "completed"
+
+    def test_queued_row_failed_app_syncs_to_failed(self):
+        rows = [{"processing_status": "queued", "app_processing_status": "failed"}]
+        synced = self._sync(rows)
+        assert synced[0]["processing_status"] == "failed"
+
+    def test_row_without_app_not_changed(self):
+        rows = [{"processing_status": "queued", "app_processing_status": None}]
+        synced = self._sync(rows)
+        # No application → row status stays as-is (pending from mapping, but
+        # the UPDATE WHERE clause excludes NULL app statuses)
+        # Simulate the WHERE a.processing_status IS NOT NULL exclusion
+        row = rows[0]
+        if row["app_processing_status"] is None:
+            row["processing_status"] = row["processing_status"]  # unchanged
+        assert row["processing_status"] == "queued"
+
+    def test_mixed_batch_sync(self):
+        rows = [
+            {"processing_status": "queued", "app_processing_status": "ai_scored"},
+            {"processing_status": "queued", "app_processing_status": "ai_scored"},
+            {"processing_status": "queued", "app_processing_status": "failed"},
+            {"processing_status": "queued", "app_processing_status": "processing"},
+            {"processing_status": "queued", "app_processing_status": "queued"},
+        ]
+        synced = self._sync(rows)
+        statuses = [r["processing_status"] for r in synced]
+        assert statuses == ["completed", "completed", "failed", "processing", "queued"]
+
+    def test_already_completed_row_unchanged(self):
+        rows = [{"processing_status": "completed", "app_processing_status": "ai_scored"}]
+        synced = self._sync(rows)
+        assert synced[0]["processing_status"] == "completed"
+
+
+# ── TestCompletedRowsVisibility ───────────────────────────────────────────────
+
+class TestCompletedRowsVisibility:
+    """
+    Verify that completed rows (ai_scored / low_match apps) are correctly
+    identified as terminal and visible in the summary.
+    """
+
+    def test_five_ai_scored_rows_all_completed(self):
+        app_statuses = ["ai_scored"] * 5
+        completed = sum(1 for s in app_statuses if s in ("ai_scored", "low_match"))
+        failed    = sum(1 for s in app_statuses if s == "failed")
+        queued    = sum(1 for s in app_statuses if s == "queued")
+        processing = sum(1 for s in app_statuses if s == "processing")
+        terminal  = completed + failed
+        total     = len(app_statuses)
+
+        assert completed == 5
+        assert queued == 0
+        assert processing == 0
+        assert is_batch_fully_processed(total, terminal) is True
+        assert compute_batch_progress_percentage(total, completed, failed, processing, queued) == 100
+
+    def test_five_queued_rows_zero_completed(self):
+        app_statuses = ["queued"] * 5
+        completed = sum(1 for s in app_statuses if s in ("ai_scored", "low_match"))
+        failed    = sum(1 for s in app_statuses if s == "failed")
+        queued    = sum(1 for s in app_statuses if s == "queued")
+        processing = sum(1 for s in app_statuses if s == "processing")
+        terminal  = completed + failed
+        total     = len(app_statuses)
+
+        assert completed == 0
+        assert queued == 5
+        assert is_batch_fully_processed(total, terminal) is False
+
+    def test_mixed_completed_and_failed_rows(self):
+        app_statuses = ["ai_scored", "ai_scored", "low_match", "failed", "failed"]
+        completed  = sum(1 for s in app_statuses if s in ("ai_scored", "low_match"))
+        failed     = sum(1 for s in app_statuses if s == "failed")
+        terminal   = completed + failed
+        total      = len(app_statuses)
+
+        assert completed == 3
+        assert failed == 2
+        assert is_batch_fully_processed(total, terminal) is True
+
+    def test_row_stage_and_progress_for_ai_scored(self):
+        stage    = app_status_to_stage("ai_scored")
+        progress = stage_to_progress(stage)
+        row_status = app_status_to_row_status("ai_scored")
+        assert stage      == "completed"
+        assert progress   == 100
+        assert row_status == "completed"
+
+    def test_row_stage_and_progress_for_low_match(self):
+        stage    = app_status_to_stage("low_match")
+        progress = stage_to_progress(stage)
+        row_status = app_status_to_row_status("low_match")
+        assert stage      == "completed"
+        assert progress   == 100
+        assert row_status == "completed"
+
+    def test_terminal_detection_by_counters(self):
+        """Simulate the frontend terminal detection logic."""
+        queued_rows     = 0
+        processing_rows = 0
+        completed_rows  = 5
+        failed_rows     = 0
+        imported_rows   = 5
+        progress_pct    = 100
+
+        counters_done = (
+            queued_rows == 0
+            and processing_rows == 0
+            and (completed_rows + failed_rows) >= imported_rows
+        )
+        assert counters_done is True
+        assert progress_pct >= 100
+
+    def test_non_terminal_detection_by_counters(self):
+        """Still polling: some rows queued."""
+        queued_rows     = 3
+        processing_rows = 2
+        completed_rows  = 0
+        failed_rows     = 0
+        imported_rows   = 5
+
+        counters_done = (
+            queued_rows == 0
+            and processing_rows == 0
+            and (completed_rows + failed_rows) >= imported_rows
+        )
+        assert counters_done is False

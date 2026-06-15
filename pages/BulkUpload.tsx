@@ -364,8 +364,22 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
           countersDone;
 
         if (terminal) {
+          // Final fetch: backend sync has now written completed statuses to
+          // bulk_upload_rows, so this returns accurate scores/decisions.
+          try {
+            const [finalSummary, finalRowsData] = await Promise.all([
+              apiService.get(`${BASE}/batches/${activeBatch.batch_id}/processing`, {}, token),
+              apiService.get(
+                `${BASE}/batches/${activeBatch.batch_id}/processing/rows`,
+                { limit: String(PAGE_SIZE), offset: '0' },
+                token,
+              ),
+            ]);
+            setProcSummary(finalSummary);
+            setProcRows(finalRowsData.rows || []);
+            setProcPage(0);
+          } catch { /* keep last-known procRows */ }
           setPhase('completed');
-          // Refresh history independently — a failure here must not restart polling
           fetchHistory().catch(() => {});
         }
       } catch {

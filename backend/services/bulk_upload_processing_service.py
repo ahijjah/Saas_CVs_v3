@@ -1,5 +1,12 @@
 """
-E-01 Phase 5.1 — Bulk Upload Processing Service (counter synchronization fix).
+E-01 Phase 5.2 — Bulk Upload Processing Service (row status synchronization).
+
+Adds sync_row_statuses_from_applications() which writes live application
+statuses back to bulk_upload_rows.processing_status on every GET
+/processing/rows call.  This keeps the rows table aligned with the scoring
+pipeline without modifying the pipeline itself.
+
+E-01 Phase 5.1 — counter synchronization fix.
 
 Counters derive from the live applications JOIN, not from stale
 bulk_upload_rows.processing_status.  Every GET /processing call persists
@@ -86,6 +93,17 @@ _STAGE_TO_PROGRESS: dict[str, int] = {
 # Terminal application statuses (no further processing expected)
 _TERMINAL_APP_STATUSES = frozenset({"ai_scored", "low_match", "failed"})
 
+# Map applications.processing_status → bulk_upload_rows.processing_status
+# (the row table uses different vocabulary: 'completed' instead of 'ai_scored'/'low_match')
+_APP_STATUS_TO_ROW_STATUS: dict[str, str] = {
+    "pending":    "pending",
+    "queued":     "queued",
+    "processing": "processing",
+    "ai_scored":  "completed",
+    "low_match":  "completed",
+    "failed":     "failed",
+}
+
 # Map applications.stopped_reason → failure_reason label
 _STOPPED_REASON_MAP: dict[str, str] = {
     "extraction_failed":      "extraction_failed",
@@ -110,6 +128,13 @@ def app_status_to_stage(app_processing_status: str | None) -> str:
 def stage_to_progress(stage: str) -> int:
     """Map a processing_stage label to a 0-100 progress percentage."""
     return _STAGE_TO_PROGRESS.get(stage, 0)
+
+
+def app_status_to_row_status(app_processing_status: str | None) -> str:
+    """Map applications.processing_status to bulk_upload_rows.processing_status vocabulary."""
+    if not app_processing_status:
+        return "pending"
+    return _APP_STATUS_TO_ROW_STATUS.get(app_processing_status, "pending")
 
 
 def classify_failure_reason(stopped_reason: str | None) -> str | None:
@@ -184,6 +209,51 @@ async def _persist_live_counts(
             "failed":     failed,
             "imported":   imported,
         },
+    )
+
+
+async def sync_row_statuses_from_applications(
+    db: AsyncSession,
+    batch_id: str,
+) -> None:
+    """
+    Write live applications.processing_status back to bulk_upload_rows.processing_status.
+
+    Celery updates applications but never touches bulk_upload_rows, so the row
+    table becomes stale.  This function corrects that drift in a single bulk
+    UPDATE whenever the rows endpoint is queried.
+
+    Mapping applied:
+      ai_scored  → completed
+      low_match  → completed
+      failed     → failed
+      processing → processing
+      queued     → queued
+
+    Also sets processing_completed_at when a row reaches a terminal state for
+    the first time.
+    """
+    await db.execute(
+        text("""
+            UPDATE bulk_upload_rows bur
+               SET processing_status = CASE
+                       WHEN a.processing_status IN ('ai_scored', 'low_match') THEN 'completed'
+                       WHEN a.processing_status IN ('queued', 'processing', 'failed')
+                           THEN a.processing_status
+                       ELSE bur.processing_status
+                   END,
+                   processing_completed_at = CASE
+                       WHEN a.processing_status IN ('ai_scored', 'low_match', 'failed')
+                            AND bur.processing_completed_at IS NULL THEN now()
+                       ELSE bur.processing_completed_at
+                   END
+              FROM applications a
+             WHERE bur.batch_id    = CAST(:bid AS uuid)
+               AND bur.application_id IS NOT NULL
+               AND bur.application_id = a.application_id
+               AND a.processing_status IS NOT NULL
+        """),
+        {"bid": batch_id},
     )
 
 
@@ -300,9 +370,18 @@ async def list_rows_processing_status(
     """
     Return paginated row-level processing status.
 
-    JOINs bulk_upload_rows with applications to expose live scoring results
-    (final_score, decision, processing_status) without storing duplicates.
+    Synchronises stale bulk_upload_rows.processing_status values from the live
+    applications table first, then JOINs to expose scoring results
+    (final_score, decision, processing_stage) without modifying the pipeline.
+
+    Stage is always derived from applications.processing_status so it is
+    accurate even if the sync UPDATE is rolled back or skipped.
     """
+    # Sync stale row statuses before reading so the returned data reflects
+    # current application state (and so the rows table stays accurate for any
+    # other code that reads bulk_upload_rows.processing_status).
+    await sync_row_statuses_from_applications(db, batch_id)
+
     result = await db.execute(
         text("""
             SELECT
