@@ -156,12 +156,59 @@ async def get_tenant_features(
     return result
 
 
+async def log_feature_audit(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    feature_code: str,
+    old_value: bool | None,
+    new_value: bool,
+    changed_by: str,
+) -> None:
+    """Insert one audit row. Never raises — fire-and-forget."""
+    try:
+        await db.execute(
+            text(
+                "INSERT INTO cv_analyzer.tenant_feature_audit "
+                "    (tenant_id, feature_code, old_value, new_value, changed_by) "
+                "VALUES (CAST(:tid AS uuid), :code, :old, :new, CAST(:by AS uuid))"
+            ),
+            {
+                "tid": tenant_id,
+                "code": feature_code,
+                "old": old_value,
+                "new": new_value,
+                "by": changed_by,
+            },
+        )
+    except Exception as exc:
+        logger.warning("feature_service: audit log failed for %r: %s", feature_code, exc)
+
+
+async def _get_current_value(db: AsyncSession, tenant_id: str, feature_code: str) -> bool | None:
+    """Read current is_enabled for one row. Returns None if no row exists."""
+    try:
+        row = await db.execute(
+            text(
+                "SELECT is_enabled FROM cv_analyzer.tenant_features "
+                "WHERE tenant_id = CAST(:tid AS uuid) AND feature_code = :code LIMIT 1"
+            ),
+            {"tid": tenant_id, "code": feature_code},
+        )
+        return row.scalar_one_or_none()
+    except Exception:
+        return None
+
+
 async def enable_feature(
     db: AsyncSession,
     tenant_id: str,
     feature_code: str,
+    *,
+    changed_by: str | None = None,
 ) -> None:
-    """Enable a single feature for a tenant (upsert)."""
+    """Enable a single feature for a tenant (upsert). Audits if changed_by is supplied."""
+    old = await _get_current_value(db, tenant_id, feature_code)
     await db.execute(
         text(
             "INSERT INTO cv_analyzer.tenant_features "
@@ -172,6 +219,11 @@ async def enable_feature(
         ),
         {"tid": tenant_id, "code": feature_code},
     )
+    if changed_by:
+        await log_feature_audit(
+            db, tenant_id=tenant_id, feature_code=feature_code,
+            old_value=old, new_value=True, changed_by=changed_by,
+        )
     await db.commit()
     _cache_invalidate(tenant_id, feature_code)
 
@@ -180,8 +232,11 @@ async def disable_feature(
     db: AsyncSession,
     tenant_id: str,
     feature_code: str,
+    *,
+    changed_by: str | None = None,
 ) -> None:
-    """Disable a single feature for a tenant (upsert)."""
+    """Disable a single feature for a tenant (upsert). Audits if changed_by is supplied."""
+    old = await _get_current_value(db, tenant_id, feature_code)
     await db.execute(
         text(
             "INSERT INTO cv_analyzer.tenant_features "
@@ -192,6 +247,11 @@ async def disable_feature(
         ),
         {"tid": tenant_id, "code": feature_code},
     )
+    if changed_by:
+        await log_feature_audit(
+            db, tenant_id=tenant_id, feature_code=feature_code,
+            old_value=old, new_value=False, changed_by=changed_by,
+        )
     await db.commit()
     _cache_invalidate(tenant_id, feature_code)
 
@@ -200,10 +260,13 @@ async def bulk_enable_module(
     db: AsyncSession,
     tenant_id: str,
     module_code: str,
+    *,
+    changed_by: str | None = None,
 ) -> None:
     """Enable the module sentinel and all its feature codes for a tenant."""
     codes = [module_code] + list(MODULES.get(module_code, []))
     for code in codes:
+        old = await _get_current_value(db, tenant_id, code)
         await db.execute(
             text(
                 "INSERT INTO cv_analyzer.tenant_features "
@@ -214,6 +277,11 @@ async def bulk_enable_module(
             ),
             {"tid": tenant_id, "code": code},
         )
+        if changed_by:
+            await log_feature_audit(
+                db, tenant_id=tenant_id, feature_code=code,
+                old_value=old, new_value=True, changed_by=changed_by,
+            )
     await db.commit()
     _cache_invalidate(tenant_id)
 
@@ -222,10 +290,13 @@ async def bulk_disable_module(
     db: AsyncSession,
     tenant_id: str,
     module_code: str,
+    *,
+    changed_by: str | None = None,
 ) -> None:
     """Disable the module sentinel and all its feature codes for a tenant."""
     codes = [module_code] + list(MODULES.get(module_code, []))
     for code in codes:
+        old = await _get_current_value(db, tenant_id, code)
         await db.execute(
             text(
                 "INSERT INTO cv_analyzer.tenant_features "
@@ -236,5 +307,10 @@ async def bulk_disable_module(
             ),
             {"tid": tenant_id, "code": code},
         )
+        if changed_by:
+            await log_feature_audit(
+                db, tenant_id=tenant_id, feature_code=code,
+                old_value=old, new_value=False, changed_by=changed_by,
+            )
     await db.commit()
     _cache_invalidate(tenant_id)

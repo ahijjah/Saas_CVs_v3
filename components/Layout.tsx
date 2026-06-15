@@ -23,6 +23,7 @@ const T = {
     tenantSubscriptions: 'Tenant Subscriptions',
     secrets: 'Secrets & Credentials', aiPrompts: 'AI Prompts', auditLogs: 'Audit Logs',
     aiUsage: 'AI Usage & Cost', aiModels: 'AI Models',
+    tenantFeatures: 'Tenant Features',
     organization: 'Organization', langBtn: 'عربي',
     pageTitles: {
       '/jobs':                        'Jobs',
@@ -46,6 +47,7 @@ const T = {
       '/admin/audit-logs':            'Audit Logs',
       '/admin/ai-usage':              'AI Usage & Cost',
       '/admin/ai-models':             'AI Models',
+      '/admin/tenant-features':       'Tenant Features',
     } as Record<string, string>,
   },
   ar: {
@@ -58,6 +60,7 @@ const T = {
     tenantSubscriptions: 'اشتراكات المستأجرين',
     secrets: 'المفاتيح والبيانات السرية', aiPrompts: 'موجهات الذكاء الاصطناعي', auditLogs: 'سجل التدقيق',
     aiUsage: 'استخدام الذكاء الاصطناعي والتكلفة', aiModels: 'نماذج الذكاء الاصطناعي',
+    tenantFeatures: 'ميزات المستأجرين',
     organization: 'المنظمة', langBtn: 'English',
     pageTitles: {
       '/jobs':                        'الوظائف',
@@ -81,6 +84,7 @@ const T = {
       '/admin/audit-logs':            'سجل التدقيق',
       '/admin/ai-usage':              'استخدام الذكاء الاصطناعي والتكلفة',
       '/admin/ai-models':             'نماذج الذكاء الاصطناعي',
+      '/admin/tenant-features':       'ميزات المستأجرين',
     } as Record<string, string>,
   },
 };
@@ -97,6 +101,7 @@ function pathnameToMenuId(pathname: string): string {
   if (pathname.startsWith('/admin/audit-logs'))         return 'admin-audit-logs';
   if (pathname.startsWith('/admin/ai-usage'))           return 'admin-ai-usage';
   if (pathname.startsWith('/admin/ai-models'))          return 'admin-ai-models';
+  if (pathname.startsWith('/admin/tenant-features'))    return 'admin-tenant-features';
   if (pathname === '/plan-usage')          return 'plan-usage';
   if (pathname === '/client-organizations') return 'client-organizations';
   if (pathname === '/dashboard')           return 'dashboard';
@@ -131,6 +136,7 @@ function menuIdToRoute(id: string): string {
     'admin-audit-logs':           '/admin/audit-logs',
     'admin-ai-usage':             '/admin/ai-usage',
     'admin-ai-models':            '/admin/ai-models',
+    'admin-tenant-features':      '/admin/tenant-features',
   };
   return map[id] || '/dashboard';
 }
@@ -151,6 +157,7 @@ function pathnameToTitle(pathname: string, search: string, titles: Record<string
   if (pathname.startsWith('/admin/audit-logs'))           return titles['/admin/audit-logs'] || '';
   if (pathname.startsWith('/admin/ai-usage'))             return titles['/admin/ai-usage'] || '';
   if (pathname.startsWith('/admin/ai-models'))            return titles['/admin/ai-models'] || '';
+  if (pathname.startsWith('/admin/tenant-features'))      return titles['/admin/tenant-features'] || '';
   if (pathname.startsWith('/applications')) {
     // app_id in the query string signals we're viewing a single application's detail
     if (new URLSearchParams(search).has('app_id')) return titles['/applications/details'] || 'Application Details';
@@ -369,6 +376,11 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
     { id: 'admin-ai-models', label: t.aiModels, icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+      </svg>
+    )},
+    { id: 'admin-tenant-features', label: t.tenantFeatures, icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
       </svg>
     )},
   ];

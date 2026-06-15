@@ -320,7 +320,8 @@ class TestFeatureServiceEnableDisable:
 
         await feature_service.enable_feature(mock_db, "tenant-abc", AI_SCORING)
 
-        mock_db.execute.assert_called_once()
+        # _get_current_value (1) + upsert (1) = at least 2 executes
+        assert mock_db.execute.call_count >= 2
         mock_db.commit.assert_called_once()
 
     @pytest.mark.asyncio
@@ -332,7 +333,8 @@ class TestFeatureServiceEnableDisable:
 
         await feature_service.disable_feature(mock_db, "tenant-abc", AI_SCORING)
 
-        mock_db.execute.assert_called_once()
+        # _get_current_value (1) + upsert (1) = at least 2 executes
+        assert mock_db.execute.call_count >= 2
         mock_db.commit.assert_called_once()
 
     @pytest.mark.asyncio
@@ -344,8 +346,9 @@ class TestFeatureServiceEnableDisable:
 
         await feature_service.bulk_enable_module(mock_db, "tenant-abc", AI_RECRUITMENT)
 
-        expected_calls = 1 + len(MODULES[AI_RECRUITMENT])  # sentinel + features
-        assert mock_db.execute.call_count == expected_calls
+        # each code: _get_current_value + upsert = 2 per code
+        total_codes = 1 + len(MODULES[AI_RECRUITMENT])  # sentinel + features
+        assert mock_db.execute.call_count == total_codes * 2
         mock_db.commit.assert_called_once()
 
     @pytest.mark.asyncio
@@ -357,13 +360,13 @@ class TestFeatureServiceEnableDisable:
 
         await feature_service.bulk_disable_module(mock_db, "tenant-abc", ATS_MANAGEMENT)
 
-        expected_calls = 1 + len(MODULES[ATS_MANAGEMENT])
-        assert mock_db.execute.call_count == expected_calls
+        total_codes = 1 + len(MODULES[ATS_MANAGEMENT])
+        assert mock_db.execute.call_count == total_codes * 2
         mock_db.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_bulk_enable_unknown_module_does_not_crash(self):
-        """Unknown module code: only the sentinel upsert runs, no error."""
+        """Unknown module code: only the sentinel is processed, no error."""
         from services import feature_service
 
         mock_db = AsyncMock()
@@ -371,7 +374,8 @@ class TestFeatureServiceEnableDisable:
 
         await feature_service.bulk_enable_module(mock_db, "tenant-abc", "NONEXISTENT_MODULE")
 
-        mock_db.execute.assert_called_once()  # just the sentinel
+        # just the sentinel: _get_current_value + upsert = 2
+        assert mock_db.execute.call_count == 2
         mock_db.commit.assert_called_once()
 
 

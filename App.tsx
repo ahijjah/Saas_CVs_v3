@@ -48,6 +48,7 @@ import { ToastContainer, ToastType } from './components/Toast';
 import { VerifyEmail } from './pages/VerifyEmail';
 import { ForceChangePassword } from './pages/ForceChangePassword';
 import { BulkUploadPage } from './pages/BulkUpload';
+import { TenantFeaturesPage } from './pages/TenantFeatures';
 
 // ── JWT helper ─────────────────────────────────────────────────────────────
 function decodeJwtPayload(token: string) {
@@ -457,6 +458,7 @@ const AppInner: React.FC = () => {
             <Route path="/admin/audit-logs" element={<AuditLogs />} />
             <Route path="/admin/ai-usage" element={<AIUsagePage {...sharedAuth} />} />
             <Route path="/admin/ai-models" element={<AIModelsPage {...sharedAuth} />} />
+            <Route path="/admin/tenant-features" element={<TenantFeaturesPage {...sharedAuth} />} />
           </Route>
 
           {/* 404 inside layout */}
