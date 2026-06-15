@@ -600,6 +600,90 @@ async def get_validation_result(
     }
 
 
+# ── Endpoint: batch processing summary ───────────────────────────────────────
+
+@router.get("/batches/{batch_id}/processing", status_code=status.HTTP_200_OK)
+async def get_batch_processing(
+    batch_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Return real-time batch processing progress.
+
+    Joins bulk_upload_rows with applications to read live scoring status —
+    no separate sync step is needed.  If all imported rows are detected as
+    terminal (ai_scored / low_match / failed), the batch is lazily transitioned
+    to 'completed' or 'failed' so subsequent calls see the final state.
+
+    Suitable for polling from a UI progress bar.
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+    await _require_batch(db, batch_id, current_user.tenant_id)
+
+    from services.bulk_upload_processing_service import (
+        get_batch_processing_summary,
+        sync_batch_completion,
+    )
+
+    summary = await get_batch_processing_summary(db, batch_id)
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found.")
+
+    # Lazily close out the batch when all rows are done
+    if summary["is_fully_processed"] and summary["batch_status"] == "processing":
+        new_status = await sync_batch_completion(db, batch_id, current_user.tenant_id)
+        if new_status:
+            await db.commit()
+            await set_rls_context(db, current_user.tenant_id, current_user.role)
+            summary["batch_status"] = new_status
+
+    return {
+        "batch_id":               summary["batch_id"],
+        "batch_status":           summary["batch_status"],
+        "total_rows":             summary["total_rows"],
+        "imported_rows":          summary["imported_rows"],
+        "queued_rows":            summary["queued_rows"],
+        "processing_rows":        summary["processing_rows"],
+        "completed_rows":         summary["completed_rows"],
+        "failed_rows":            summary["failed_rows"],
+        "progress_percentage":    summary["progress_percentage"],
+        "processing_started_at":  summary["processing_started_at"],
+        "processing_completed_at":summary["processing_completed_at"],
+    }
+
+
+# ── Endpoint: row-level processing status ────────────────────────────────────
+
+@router.get("/batches/{batch_id}/processing/rows", status_code=status.HTTP_200_OK)
+async def get_batch_processing_rows(
+    batch_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit:  int = Query(100, ge=1, le=500),
+    offset: int = Query(0,   ge=0),
+):
+    """
+    Return paginated row-level processing status for a batch.
+
+    Each row includes:
+    - Candidate name and application_id
+    - processing_stage (derived from applications.processing_status)
+    - progress_percentage (0–100)
+    - final_score, decision (from applications when scoring is complete)
+    - failure_reason (when processing failed)
+
+    Suitable for polling from a per-candidate progress table.
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+    await _require_batch(db, batch_id, current_user.tenant_id)
+
+    from services.bulk_upload_processing_service import list_rows_processing_status
+
+    rows = await list_rows_processing_status(db, batch_id=batch_id, limit=limit, offset=offset)
+    return {"batch_id": batch_id, "rows": rows, "count": len(rows)}
+
+
 # ── Endpoint: list batches for a job ─────────────────────────────────────────
 
 @router.get("/jobs/{job_id}/batches", status_code=status.HTTP_200_OK)

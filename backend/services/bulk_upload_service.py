@@ -248,25 +248,29 @@ async def update_bulk_upload_batch_summary(
     await db.execute(
         text("""
             UPDATE bulk_upload_batches b
-               SET row_count          = s.total,
-                   valid_row_count    = s.valid,
-                   warning_row_count  = s.warn,
-                   error_row_count    = s.err,
-                   imported_row_count = s.imported,
-                   skipped_row_count  = s.skipped,
-                   failed_row_count   = s.failed,
-                   completed_row_count= s.completed,
-                   updated_at         = now()
+               SET row_count           = s.total,
+                   valid_row_count     = s.valid,
+                   warning_row_count   = s.warn,
+                   error_row_count     = s.err,
+                   imported_row_count  = s.imported,
+                   skipped_row_count   = s.skipped,
+                   failed_row_count    = s.failed,
+                   queued_row_count    = s.queued,
+                   processing_row_count= s.processing,
+                   completed_row_count = s.completed,
+                   updated_at          = now()
               FROM (
                 SELECT
-                    COUNT(*)                                              AS total,
-                    COUNT(*) FILTER (WHERE validation_status = 'ready')  AS valid,
-                    COUNT(*) FILTER (WHERE validation_status = 'warning') AS warn,
-                    COUNT(*) FILTER (WHERE validation_status = 'error')  AS err,
-                    COUNT(*) FILTER (WHERE import_status = 'imported')   AS imported,
-                    COUNT(*) FILTER (WHERE import_status = 'skipped')    AS skipped,
-                    COUNT(*) FILTER (WHERE import_status = 'failed')     AS failed,
-                    COUNT(*) FILTER (WHERE processing_status = 'completed') AS completed
+                    COUNT(*)                                                   AS total,
+                    COUNT(*) FILTER (WHERE validation_status = 'ready')        AS valid,
+                    COUNT(*) FILTER (WHERE validation_status = 'warning')      AS warn,
+                    COUNT(*) FILTER (WHERE validation_status = 'error')        AS err,
+                    COUNT(*) FILTER (WHERE import_status = 'imported')         AS imported,
+                    COUNT(*) FILTER (WHERE import_status = 'skipped')          AS skipped,
+                    COUNT(*) FILTER (WHERE import_status = 'failed')           AS failed,
+                    COUNT(*) FILTER (WHERE processing_status = 'queued')       AS queued,
+                    COUNT(*) FILTER (WHERE processing_status = 'processing')   AS processing,
+                    COUNT(*) FILTER (WHERE processing_status = 'completed')    AS completed
                 FROM bulk_upload_rows
                WHERE batch_id = CAST(:bid AS uuid)
               ) s
@@ -399,6 +403,7 @@ async def update_bulk_upload_row_status(
     validation_warnings: list[str] | None = None,
     validation_errors: list[str] | None = None,
     error_message: str | None = None,
+    processing_failure_reason: str | None = None,
 ) -> None:
     """
     Partial-update a row's status fields.  Only non-None arguments are
@@ -413,7 +418,7 @@ async def update_bulk_upload_row_status(
     if all(v is None for v in (validation_status, import_status,
                                 processing_status, application_id,
                                 validation_warnings, validation_errors,
-                                error_message)):
+                                error_message, processing_failure_reason)):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="update_bulk_upload_row_status: at least one field must be provided.",
@@ -478,6 +483,10 @@ async def update_bulk_upload_row_status(
     if error_message is not None:
         parts.append("error_message = :err")
         params["err"] = error_message
+
+    if processing_failure_reason is not None:
+        parts.append("processing_failure_reason = :pfr")
+        params["pfr"] = processing_failure_reason
 
     set_clause = ", ".join(parts)
     await db.execute(

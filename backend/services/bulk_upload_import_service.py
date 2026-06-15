@@ -212,13 +212,13 @@ async def _import_single_row(
     user_email: str | None,
     job_questions: list[dict],
     settings,
-) -> tuple[str, str | None]:
+) -> tuple[str, str, str]:
     """
     Import one eligible row.
 
-    Returns (application_id, None) on success.
-    Returns (None, error_message) on failure.
-    Raises on unexpected exceptions — caller must catch and mark as failed.
+    Returns (application_id, abs_file_path, mime_type) on success so the
+    caller can immediately enqueue scoring via enqueue_scoring().
+    Raises on failure — caller must catch and mark row as failed.
     """
     candidate_data   = row.get("candidate_data")   or {}
     knockout_answers = row.get("knockout_answers")  or {}
@@ -312,7 +312,7 @@ async def _import_single_row(
             application_id, exc,
         )
 
-    return application_id, None
+    return application_id, abs_path, mime_type
 
 
 # ── Main import orchestrator ──────────────────────────────────────────────────
@@ -385,10 +385,11 @@ async def run_batch_import(
     all_rows = await list_bulk_upload_rows_for_batch(db, batch_id=batch_id, limit=10000)
 
     # ── Per-row import ────────────────────────────────────────────────────────
-    imported_count       = 0
-    skipped_count        = 0
-    failed_count         = 0
+    imported_count         = 0
+    skipped_count          = 0
+    failed_count           = 0
     already_imported_count = 0
+    scoring_enqueued_count = 0
     row_details: list[dict] = []
 
     zf_ctx = None
@@ -461,7 +462,7 @@ async def run_batch_import(
 
             # ── Import ─────────────────────────────────────────────────────
             try:
-                application_id, _ = await _import_single_row(
+                application_id, abs_file_path, mime_type = await _import_single_row(
                     db,
                     row            = row,
                     zf             = zf_ctx,
@@ -483,11 +484,36 @@ async def run_batch_import(
                 await db.commit()
                 await set_rls_context(db, tenant_id, "recruiter")
 
+                # Phase 4: enqueue Celery scoring task (same mechanism as all other intake methods)
+                try:
+                    from services.application_intake_service import enqueue_scoring
+                    enqueue_scoring(
+                        application_id = application_id,
+                        job_id         = job_id,
+                        tenant_id      = tenant_id,
+                        file_path      = abs_file_path,
+                        mime_type      = mime_type,
+                    )
+                    await update_bulk_upload_row_status(
+                        db,
+                        row_id             = row_id,
+                        processing_status  = "queued",
+                    )
+                    await db.commit()
+                    await set_rls_context(db, tenant_id, "recruiter")
+                    scoring_enqueued_count += 1
+                except Exception as eq_exc:
+                    logger.warning(
+                        "[bulk_import] Failed to enqueue scoring for application %s: %s",
+                        application_id, eq_exc,
+                    )
+
                 imported_count += 1
                 row_details.append({
-                    "row_number":     row_number,
-                    "import_status":  "imported",
-                    "application_id": application_id,
+                    "row_number":      row_number,
+                    "import_status":   "imported",
+                    "application_id":  application_id,
+                    "scoring_queued":  scoring_enqueued_count > (imported_count - 1),
                 })
 
             except Exception as exc:
@@ -529,9 +555,14 @@ async def run_batch_import(
     # ── Update batch summary and terminal status ──────────────────────────────
     try:
         await update_bulk_upload_batch_summary(db, batch_id)
-        terminal_status = determine_final_batch_status(
-            imported_count, skipped_count, failed_count, already_imported_count,
-        )
+        # Phase 4: if any scoring tasks were enqueued, batch enters 'processing';
+        # otherwise fall back to the Phase 3 logic (imported / failed).
+        if scoring_enqueued_count > 0:
+            terminal_status = "processing"
+        else:
+            terminal_status = determine_final_batch_status(
+                imported_count, skipped_count, failed_count, already_imported_count,
+            )
         await update_bulk_upload_batch_status(db, batch_id, terminal_status)
         await db.commit()
         await set_rls_context(db, tenant_id, "recruiter")
@@ -554,5 +585,6 @@ async def run_batch_import(
         "skipped_rows":          skipped_count,
         "failed_rows":           failed_count,
         "already_imported_rows": already_imported_count,
+        "scoring_enqueued":      scoring_enqueued_count,
         "rows": row_details,
     }
