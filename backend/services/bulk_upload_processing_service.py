@@ -396,13 +396,15 @@ async def list_rows_processing_status(
                 bur.processing_started_at,
                 bur.processing_completed_at,
                 a.processing_status       AS app_processing_status,
-                a.final_score,
+                a.candidate_name          AS app_candidate_name,
                 a.decision,
                 a.stopped_reason,
                 a.evaluation_stage,
-                a.scored_at
+                a.scored_at,
+                s.final_score
               FROM bulk_upload_rows bur
               LEFT JOIN applications a ON a.application_id = bur.application_id
+              LEFT JOIN application_scores s ON s.application_id = a.application_id
              WHERE bur.batch_id = CAST(:bid AS uuid)
              ORDER BY bur.row_number
              LIMIT :lim OFFSET :off
@@ -416,6 +418,7 @@ async def list_rows_processing_status(
         candidate_name    = (
             candidate_data.get("name")
             or candidate_data.get("first_name")
+            or r["app_candidate_name"]
             or r["matched_cv_filename"]
             or f"Row {r['row_number']}"
         )
