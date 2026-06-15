@@ -453,7 +453,10 @@ async def create_job(
 
     if body.knockout_questions:
         from services.knockout_questions_service import save_job_knockout_questions
-        await save_job_knockout_questions(db, job_id, current_user.tenant_id, body.knockout_questions)
+        await save_job_knockout_questions(
+            db, job_id, current_user.tenant_id, body.knockout_questions,
+            job_description=body.description,
+        )
         await db.commit()
 
     # Queue async AI extraction — does not block job creation
@@ -1397,7 +1400,10 @@ async def update_job_metadata(
     # Handle knockout_questions separately (None = leave alone, [] = clear all)
     if body.knockout_questions is not None:
         from services.knockout_questions_service import save_job_knockout_questions
-        await save_job_knockout_questions(db, job_id, current_user.tenant_id, body.knockout_questions)
+        await save_job_knockout_questions(
+            db, job_id, current_user.tenant_id, body.knockout_questions,
+            job_description=body.description,
+        )
 
     if not updates and body.knockout_questions is None:
         return {"success": True, "message": "No changes"}
