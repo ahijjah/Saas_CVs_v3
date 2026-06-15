@@ -1,4 +1,15 @@
 """
+E-01 Phase 5.1 — Bulk Upload Processing Service (counter synchronization fix).
+
+Counters derive from the live applications JOIN, not from stale
+bulk_upload_rows.processing_status.  Every GET /processing call persists
+the live counts back to bulk_upload_batches so that the DB always reflects
+the true processing state.
+
+Deleted-duplicate handling: when Celery's exact-duplicate detection removes
+an application from the DB, the LEFT JOIN returns NULL for that row.  Such
+rows are now counted as terminal (they will never be scored).
+
 E-01 Phase 4 — Bulk Upload Processing Service.
 
 Provides monitoring functions that expose real-time processing progress for
@@ -143,6 +154,39 @@ def is_batch_fully_processed(
 
 # ── Async query functions ─────────────────────────────────────────────────────
 
+async def _persist_live_counts(
+    db: AsyncSession,
+    batch_id: str,
+    *,
+    queued: int,
+    processing: int,
+    completed: int,
+    failed: int,
+    imported: int,
+) -> None:
+    """Write live JOIN-derived counts to bulk_upload_batches."""
+    await db.execute(
+        text("""
+            UPDATE bulk_upload_batches
+               SET queued_row_count      = :queued,
+                   processing_row_count  = :processing,
+                   completed_row_count   = :completed,
+                   failed_row_count      = :failed,
+                   imported_row_count    = :imported,
+                   updated_at            = now()
+             WHERE batch_id = CAST(:bid AS uuid)
+        """),
+        {
+            "bid":        batch_id,
+            "queued":     queued,
+            "processing": processing,
+            "completed":  completed,
+            "failed":     failed,
+            "imported":   imported,
+        },
+    )
+
+
 async def get_batch_processing_summary(
     db: AsyncSession,
     batch_id: str,
@@ -151,7 +195,14 @@ async def get_batch_processing_summary(
     Return real-time batch processing summary.
 
     JOINs bulk_upload_rows with applications to get live processing_status
-    without requiring any sync from the Celery pipeline.
+    without requiring any sync from the Celery pipeline.  Also persists the
+    live counts back to bulk_upload_batches on every call so the DB stays
+    accurate.
+
+    Deleted-duplicate handling: when Celery removes an exact-duplicate
+    application from the DB, the LEFT JOIN returns NULL for that row.
+    We treat (bur.application_id IS NOT NULL AND a.application_id IS NULL)
+    as a terminal state so those rows don't block batch completion.
 
     Returns None if the batch does not exist.
     """
@@ -171,18 +222,28 @@ async def get_batch_processing_summary(
     if not batch:
         return None
 
-    # Live counts from applications JOIN
+    # Live counts from applications JOIN.
+    # Rows where bur.application_id is set but the application was deleted
+    # (exact-duplicate detection) count as terminal — they will never be scored.
     counts_row = await db.execute(
         text("""
             SELECT
-                COUNT(bur.row_id)                                                    AS total_imported,
-                COUNT(*) FILTER (WHERE a.processing_status IN ('ai_scored','low_match','failed')) AS terminal_count,
-                COUNT(*) FILTER (WHERE a.processing_status IN ('ai_scored','low_match'))          AS completed_count,
-                COUNT(*) FILTER (WHERE a.processing_status = 'failed')               AS failed_count,
-                COUNT(*) FILTER (WHERE a.processing_status = 'processing')           AS processing_count,
-                COUNT(*) FILTER (WHERE a.processing_status = 'queued')               AS queued_count,
-                COUNT(*) FILTER (WHERE a.processing_status = 'pending'
-                                    OR a.processing_status IS NULL)                   AS pending_count
+                COUNT(bur.row_id)                                                       AS total_imported,
+                COUNT(*) FILTER (
+                    WHERE a.processing_status IN ('ai_scored','low_match','failed')
+                       OR (bur.application_id IS NOT NULL AND a.application_id IS NULL)
+                )                                                                        AS terminal_count,
+                COUNT(*) FILTER (WHERE a.processing_status IN ('ai_scored','low_match')) AS completed_count,
+                COUNT(*) FILTER (
+                    WHERE a.processing_status = 'failed'
+                       OR (bur.application_id IS NOT NULL AND a.application_id IS NULL)
+                )                                                                        AS failed_count,
+                COUNT(*) FILTER (WHERE a.processing_status = 'processing')              AS processing_count,
+                COUNT(*) FILTER (WHERE a.processing_status = 'queued')                 AS queued_count,
+                COUNT(*) FILTER (
+                    WHERE a.processing_status = 'pending'
+                       OR (bur.application_id IS NULL AND a.application_id IS NULL)
+                )                                                                        AS pending_count
               FROM bulk_upload_rows bur
               LEFT JOIN applications a ON a.application_id = bur.application_id
              WHERE bur.batch_id = CAST(:bid AS uuid)
@@ -201,6 +262,16 @@ async def get_batch_processing_summary(
 
     progress_pct = compute_batch_progress_percentage(
         total_imported, completed_count, failed_count, processing_count, queued_count,
+    )
+
+    # Persist live counts so DB stays in sync with actual application state
+    await _persist_live_counts(
+        db, batch_id,
+        queued=queued_count,
+        processing=processing_count,
+        completed=completed_count,
+        failed=failed_count,
+        imported=total_imported,
     )
 
     return {
@@ -310,30 +381,35 @@ async def sync_batch_completion(
 
     Returns the new batch_status if a transition occurred, otherwise None.
     Called by the monitoring endpoint to avoid a separate Celery callback.
+
+    Uses the live summary already computed by get_batch_processing_summary()
+    (which has already persisted the counts) — does NOT call
+    update_bulk_upload_batch_summary() to avoid overwriting live counts with
+    stale bulk_upload_rows.processing_status values.
     """
     from services.bulk_upload_service import (
         get_bulk_upload_batch,
         update_bulk_upload_batch_status,
-        update_bulk_upload_batch_summary,
     )
 
     batch = await get_bulk_upload_batch(db, batch_id)
     if not batch or batch["batch_status"] != "processing":
         return None
 
+    # get_batch_processing_summary persists live counts as a side effect
     summary = await get_batch_processing_summary(db, batch_id)
     if not summary or not summary["is_fully_processed"]:
         return None
 
-    # Determine terminal status: 'completed' if any succeeded, 'failed' if all failed
+    # Determine terminal status: 'failed' only if everything failed
     if summary["completed_rows"] > 0:
         new_status = "completed"
     elif summary["failed_rows"] > 0:
         new_status = "failed"
     else:
-        new_status = "completed"  # all skipped/pending → treat as completed
+        new_status = "completed"  # all deleted duplicates / edge case
 
-    await update_bulk_upload_batch_summary(db, batch_id)
+    # update_bulk_upload_batch_status sets processing_completed_at automatically
     await update_bulk_upload_batch_status(db, batch_id, new_status)
     logger.info(
         "[bulk_processing] Batch %s transitioned to '%s' "

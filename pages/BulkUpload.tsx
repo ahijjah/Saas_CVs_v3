@@ -333,6 +333,7 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
   useEffect(() => {
     if (phase !== 'processing' || !activeBatch) return;
     const timer = setTimeout(async () => {
+      let terminal = false;
       try {
         const summary: ProcessingSummary = await apiService.get(
           `${BASE}/batches/${activeBatch.batch_id}/processing`, {}, token,
@@ -340,21 +341,37 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
         setProcSummary(summary);
 
         setLoadingProcRows(true);
-        const rowsData = await apiService.get(
-          `${BASE}/batches/${activeBatch.batch_id}/processing/rows`,
-          { limit: String(PAGE_SIZE), offset: String(procPage * PAGE_SIZE) },
-          token,
-        );
-        setProcRows(rowsData.rows || []);
-        setLoadingProcRows(false);
+        try {
+          const rowsData = await apiService.get(
+            `${BASE}/batches/${activeBatch.batch_id}/processing/rows`,
+            { limit: String(PAGE_SIZE), offset: String(procPage * PAGE_SIZE) },
+            token,
+          );
+          setProcRows(rowsData.rows || []);
+        } finally {
+          setLoadingProcRows(false);
+        }
 
-        if (summary.batch_status === 'completed' || summary.batch_status === 'failed') {
+        // Terminal when batch_status is done, or counters show no more work
+        const countersDone =
+          summary.queued_rows === 0 &&
+          summary.processing_rows === 0 &&
+          (summary.completed_rows + summary.failed_rows) >= summary.imported_rows;
+        terminal =
+          summary.batch_status === 'completed' ||
+          summary.batch_status === 'failed' ||
+          summary.progress_percentage >= 100 ||
+          countersDone;
+
+        if (terminal) {
           setPhase('completed');
-          await fetchHistory();
-        } else {
-          setPollTick(t => t + 1);
+          // Refresh history independently — a failure here must not restart polling
+          fetchHistory().catch(() => {});
         }
       } catch {
+        // network / auth error — keep polling
+      }
+      if (!terminal) {
         setPollTick(t => t + 1);
       }
     }, 5000);
@@ -881,9 +898,24 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
           <div className="space-y-5">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <Spinner />
-                <p className="text-sm font-bold text-textMain">Processing in progress — auto-refreshing every 5 seconds</p>
-              </div>
+                {(() => {
+                  const s = procSummary;
+                  const done = s && (
+                    s.batch_status === 'completed' ||
+                    s.batch_status === 'failed' ||
+                    s.progress_percentage >= 100 ||
+                    (s.queued_rows === 0 && s.processing_rows === 0 &&
+                      (s.completed_rows + s.failed_rows) >= s.imported_rows)
+                  );
+                  return done ? (
+                    <p className="text-sm font-bold text-emerald-600">Processing complete — finalizing…</p>
+                  ) : (
+                    <>
+                      <Spinner />
+                      <p className="text-sm font-bold text-textMain">Processing in progress — auto-refreshing every 5 seconds</p>
+                    </>
+                  );
+                })()}</div>
               <button
                 onClick={() => setPollTick(t => t + 1)}
                 className="ml-auto text-[11px] font-bold text-indigo-600 hover:underline flex items-center gap-1"
