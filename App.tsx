@@ -47,6 +47,7 @@ import { PaymentSimulationPage } from './pages/PaymentSimulation';
 import { ToastContainer, ToastType } from './components/Toast';
 import { VerifyEmail } from './pages/VerifyEmail';
 import { ForceChangePassword } from './pages/ForceChangePassword';
+import { BulkUploadPage } from './pages/BulkUpload';
 
 // ── JWT helper ─────────────────────────────────────────────────────────────
 function decodeJwtPayload(token: string) {
@@ -58,6 +59,26 @@ function decodeJwtPayload(token: string) {
     return null;
   }
 }
+
+// ── Route wrapper: /jobs/:jobId/bulk-upload ───────────────────────────────
+const BulkUploadRoute: React.FC<{
+  auth: AuthState;
+  addToast: (msg: string, type: ToastType) => void;
+  onOpenApplication: (jobId: string, applicationId: string) => void;
+}> = ({ auth, addToast, onOpenApplication }) => {
+  const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
+  if (!jobId) return <Navigate to="/jobs" replace />;
+  return (
+    <BulkUploadPage
+      jobId={jobId}
+      auth={auth}
+      addToast={addToast}
+      onBack={() => navigate(`/jobs/${jobId}`)}
+      onOpenApplication={onOpenApplication}
+    />
+  );
+};
 
 // ── Route wrapper: /jobs/:jobId ────────────────────────────────────────────
 const JobDetailsRoute: React.FC<{
@@ -388,6 +409,16 @@ const AppInner: React.FC = () => {
                 onViewApplications={handleViewApplications}
                 onOpenApplication={handleOpenApplication}
                 addToast={addToast}
+              />
+            }
+          />
+          <Route
+            path="/jobs/:jobId/bulk-upload"
+            element={
+              <BulkUploadRoute
+                auth={auth}
+                addToast={addToast}
+                onOpenApplication={handleOpenApplication}
               />
             }
           />

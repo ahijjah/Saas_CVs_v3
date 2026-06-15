@@ -576,7 +576,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const originalAiCriteriaRef = useRef<any>(null);
 
   // Intake channel tabs (Public Link default)
-  const [activeIntakeTab, setActiveIntakeTab] = useState<'public-link' | 'email-alias' | 'email-forwarding' | 'manual-upload'>('public-link');
+  const [activeIntakeTab, setActiveIntakeTab] = useState<'public-link' | 'email-alias' | 'email-forwarding' | 'manual-upload' | 'bulk-upload'>('public-link');
 
   // Session-scoped upload tracking — starts empty each page load
   const sessionIdsRef = useRef<Set<string>>(new Set());
@@ -2118,6 +2118,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             { key: 'email-alias'     as const, label: t.tabEmailAlias,    badge: details.receive_cv_via_platform_email   ? t.enabled : t.disabled,          badgeColor: details.receive_cv_via_platform_email   ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' },
             { key: 'email-forwarding'as const, label: t.tabEmailFwd,      badge: details.receive_cv_via_forwarding_email ? t.enabled : t.disabled,          badgeColor: details.receive_cv_via_forwarding_email ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' },
             { key: 'manual-upload'   as const, label: t.tabManualUpload,  badge: t.badgeInternal,                                                          badgeColor: 'bg-indigo-100 text-indigo-700'                                           },
+            { key: 'bulk-upload'     as const, label: isAr ? 'رفع مجمع' : 'Bulk Upload', badge: isAr ? 'ملف إكسل' : 'Excel + ZIP',                        badgeColor: 'bg-teal-100 text-teal-700'                                               },
           ]).map(tab => (
             <button
               key={tab.key}
@@ -2400,6 +2401,41 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               ) : (
                 batchCompleteCount === null && <p className="text-[11px] text-indigo-400 italic">{t.noUploads}</p>
               )}
+            </div>
+          )}
+
+          {/* Bulk Upload tab */}
+          {activeIntakeTab === 'bulk-upload' && (
+            <div>
+              <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 w-7 h-7 bg-teal-100 rounded-lg flex items-center justify-center mt-0.5">
+                    <svg className="w-3.5 h-3.5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-xs font-black text-teal-900">{isAr ? 'الرفع المجمع + ورقة الإجابات' : 'Bulk Upload + Answers Sheet'}</p>
+                      <span className="text-[9px] font-bold bg-teal-100 text-teal-600 px-1.5 py-0.5 rounded-full">{isAr ? 'داخلي' : 'Internal'}</span>
+                    </div>
+                    <p className="text-[10px] text-teal-700/80 mb-3">
+                      {isAr
+                        ? 'ارفع ملف ZIP يحتوي على السيرات الذاتية وملف Excel يحتوي على بيانات المرشحين وإجابات الأسئلة الحاسمة.'
+                        : 'Upload a ZIP of CV files alongside an Excel sheet containing candidate details and knockout question answers. Rows are validated, imported, and submitted to the scoring pipeline automatically.'}
+                    </p>
+                    <button
+                      onClick={() => onViewApplications && window.location.assign(`/jobs/${jobId}/bulk-upload`)}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-[11px] font-black rounded-xl hover:bg-teal-700 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      {isAr ? 'فتح مركز الرفع المجمع' : 'Open Bulk Upload Centre'}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

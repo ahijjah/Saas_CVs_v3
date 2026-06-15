@@ -124,6 +124,8 @@ export const WEBHOOK_CONFIG = {
   // Knockout AI analysis — append /{application_id}/knockout-analysis
   // Knockout suggestion accept/ignore — append /{application_id}/knockout-suggestions/accept|ignore
   KNOCKOUT_ANALYSIS_BASE_URL:         `${API_BASE}/applications`,
+  // Bulk Upload (E-01) — base for all /bulk-upload/* endpoints
+  BULK_UPLOAD_BASE_URL:               `${API_BASE}/bulk-upload`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';
