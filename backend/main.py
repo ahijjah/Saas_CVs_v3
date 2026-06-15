@@ -14,6 +14,7 @@ from routers.bulk_upload import router as bulk_upload_router
 from routers.candidate_tags import app_router as candidate_tags_app, tag_router as candidate_tags_tags
 from routers.communication import automation_router as communication_automation, comm_router as communication_comm, template_router as communication_templates
 from routers.platform_features import router as platform_features_router
+from routers.tenant_modules import router as tenant_modules_router
 
 settings = get_settings()
 
@@ -70,6 +71,7 @@ app.include_router(communication_comm)
 app.include_router(communication_automation)
 app.include_router(bulk_upload_router)
 app.include_router(platform_features_router)
+app.include_router(tenant_modules_router)
 
 
 @app.get("/health")

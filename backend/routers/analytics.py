@@ -8,9 +8,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.module_guards import RequireATSManagement
 from database import get_db, set_rls_context
 
-router = APIRouter(prefix="/analytics", tags=["analytics"])
+router = APIRouter(prefix="/analytics", tags=["analytics"], dependencies=[RequireATSManagement])
 
 
 # ── Pydantic Models ────────────────────────────────────────────────────────

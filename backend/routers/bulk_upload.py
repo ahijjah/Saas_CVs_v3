@@ -29,6 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.module_guards import RequireAIRecruitment
 from config import get_settings
 from database import get_db, set_rls_context
 from services import bulk_upload_service as svc
@@ -47,7 +48,7 @@ from services.bulk_upload_processor import (
 
 logger = logging.getLogger(__name__)
 
-router  = APIRouter(prefix="/bulk-upload", tags=["bulk-upload"])
+router  = APIRouter(prefix="/bulk-upload", tags=["bulk-upload"], dependencies=[RequireAIRecruitment])
 settings = get_settings()
 
 _MAX_EXCEL_BYTES = 10  * 1024 * 1024   # 10 MB

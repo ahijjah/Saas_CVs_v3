@@ -10,12 +10,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep, get_current_user
+from auth.module_guards import RequireAIRecruitment
 from config import get_settings
 from database import get_db, set_rls_context
 from services.job_description_quality import evaluate_description_quality, validate_job_title
 from services.subscription_service import can_create_campaign
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[RequireAIRecruitment])
 settings = get_settings()
 
 

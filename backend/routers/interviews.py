@@ -7,10 +7,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.module_guards import RequireATSManagement
 from database import get_db, set_rls_context
 from services.communication_events import process_communication_event
 
-router = APIRouter(prefix="/applications", tags=["interviews"])
+router = APIRouter(prefix="/applications", tags=["interviews"], dependencies=[RequireATSManagement])
 
 VALID_INTERVIEW_TYPES = {"phone_screen", "technical", "hr", "panel", "final", "other"}
 VALID_INTERVIEW_STATUSES = {"scheduled", "completed", "cancelled", "no_show"}

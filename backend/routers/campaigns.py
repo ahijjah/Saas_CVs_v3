@@ -29,6 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.module_guards import RequireAIRecruitment
 from database import get_db, set_rls_context
 from services.campaign_service import (
     CAMPAIGN_STATUSES,
@@ -37,7 +38,7 @@ from services.campaign_service import (
     validate_status_transition,
 )
 
-router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+router = APIRouter(prefix="/campaigns", tags=["campaigns"], dependencies=[RequireAIRecruitment])
 
 
 # ── Date parsing helpers ──────────────────────────────────────────────────────

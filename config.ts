@@ -128,6 +128,8 @@ export const WEBHOOK_CONFIG = {
   BULK_UPLOAD_BASE_URL:               `${API_BASE}/bulk-upload`,
   // E-02 Platform Feature Management (super_admin only)
   PLATFORM_FEATURES_BASE_URL:         `${API_BASE}/platform`,
+  // E-02 Phase 3 — Tenant module status (all authenticated users)
+  TENANT_MODULES_URL:                 `${API_BASE}/tenant/modules`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';
