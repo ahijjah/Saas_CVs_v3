@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, KnockoutSuggestionRecord, KnockoutValidationRecord, KnockoutValidationRun, PassingCriteria, WorkflowStatus, DetCriterionScore, DetDimensionScore, DeterministicScore } from '../types';
+import { ApplicationDetailedAnalysis, ScoreDimension, ScoreDetail, KnockoutAnswerRecord, KnockoutSuggestionRecord, KnockoutValidationRecord, KnockoutValidationRun, PassingCriteria, WorkflowStatus } from '../types';
 import { apiService } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import {
@@ -124,62 +124,9 @@ const T = {
     notInFinalScore: 'Not included in final score',
     additionalInsights: 'Additional Recruiter Insights',
     scoreOverview: 'Score Overview',
-    explainabilityTitle: 'Recruiter Evidence Analysis',
-    coverageSummary: 'Coverage Summary',
-    requiredRequirements: 'Required Requirements',
-    preferredRequirements: 'Preferred Requirements',
-    xMatched: 'Matched',
-    xPartial: 'Partial',
-    xMissing: 'Missing',
-    xCoverage: 'Coverage',
-    recruiterSignalLabel: 'Recruiter Signal',
-    recruiterSignalLabels: {
-      STRONG_FULL_MATCH:            'Excellent Match',
-      STRONG_REQUIRED_WEAK_PREFERRED:'Strong Match',
-      STRONG_REQUIRED_NO_PREFERRED: 'Strong Core Match',
-      NEAR_MATCH:                   'Near Match',
-      PARTIAL_REQUIRED:             'Significant Gaps',
-      POOR_REQUIRED_COVERAGE:       'Does Not Meet Requirements',
-      NO_REQUIRED_CRITERIA:         'No Required Criteria',
-    } as Record<string, string>,
-    recruiterSignalDescriptions: {
-      STRONG_FULL_MATCH:            'All core and preferred requirements satisfied.',
-      STRONG_REQUIRED_WEAK_PREFERRED:'Core requirements met. Preferred requirements partially met.',
-      STRONG_REQUIRED_NO_PREFERRED: 'All core requirements met. No preferred requirements specified.',
-      NEAR_MATCH:                   'Core requirements mostly satisfied. Some gaps remain.',
-      PARTIAL_REQUIRED:             'Significant gaps in core requirements.',
-      POOR_REQUIRED_COVERAGE:       'Most core requirements are missing.',
-      NO_REQUIRED_CRITERIA:         'No mandatory requirements were defined for this job.',
-    } as Record<string, string>,
-    xDimensionLabels: {
-      skills:           'Technical Skills',
-      experience:       'Experience',
-      education:        'Education',
-      certifications:   'Certifications',
-      soft_skills:      'Soft Skills',
-      domain_knowledge: 'Domain Knowledge',
-      other:            'Other Requirements',
-    } as Record<string, string>,
-    badgeRequired:    'Required',
-    badgePreferred:   'Preferred',
-    statusMatched:    'Matched',
-    statusPartial:    'Partial',
-    statusAbsent:     'Missing',
-    matchTypeLabels: {
-      direct:       'Direct match',
-      equivalent:   'Equivalent',
-      transferable: 'Transferable',
-      inferred:     'Inferred',
-      missing:      'Not found',
-    } as Record<string, string>,
-    xConfidence:       'Confidence',
-    xEffectiveCredit:  'Credit',
-    xEvidence:         'Evidence',
-    xNoEvidence:       'No supporting evidence recorded.',
-    xDimensionScore:   'Dimension Score',
-    xWeight:           'Weight',
-    xNoCriteriaData:   'No criteria data available.',
-    xNoExplainability: 'Detailed evidence analysis is not available for this application.',
+    explainabilityTitle: 'Candidate Assessment',
+    additionalDetailsTitle: 'Additional Details',
+    developerTitle: 'Developer / Diagnostic',
     securityBlockedPageTitle: 'Application Security Review',
     securityBlockedBadge: 'Blocked Before AI Scoring',
     securityCandidateRef: 'Candidate Reference',
@@ -439,62 +386,9 @@ const T = {
     notInFinalScore: 'غير محتسب في النتيجة النهائية',
     additionalInsights: 'رؤى إضافية للمسؤول',
     scoreOverview: 'نظرة عامة على النتيجة',
-    explainabilityTitle: 'تحليل أدلة المسؤول',
-    coverageSummary: 'ملخص التغطية',
-    requiredRequirements: 'المتطلبات الإلزامية',
-    preferredRequirements: 'المتطلبات المفضلة',
-    xMatched: 'مطابق',
-    xPartial: 'جزئي',
-    xMissing: 'غائب',
-    xCoverage: 'التغطية',
-    recruiterSignalLabel: 'إشارة المسؤول',
-    recruiterSignalLabels: {
-      STRONG_FULL_MATCH:            'تطابق ممتاز',
-      STRONG_REQUIRED_WEAK_PREFERRED:'تطابق قوي',
-      STRONG_REQUIRED_NO_PREFERRED: 'تطابق أساسي قوي',
-      NEAR_MATCH:                   'تطابق شبه تام',
-      PARTIAL_REQUIRED:             'ثغرات جوهرية',
-      POOR_REQUIRED_COVERAGE:       'لا يلبي المتطلبات',
-      NO_REQUIRED_CRITERIA:         'لا توجد معايير إلزامية',
-    } as Record<string, string>,
-    recruiterSignalDescriptions: {
-      STRONG_FULL_MATCH:            'جميع المتطلبات الأساسية والمفضلة محققة.',
-      STRONG_REQUIRED_WEAK_PREFERRED:'المتطلبات الأساسية محققة. المتطلبات المفضلة محققة جزئياً.',
-      STRONG_REQUIRED_NO_PREFERRED: 'جميع المتطلبات الأساسية محققة. لا توجد متطلبات مفضلة محددة.',
-      NEAR_MATCH:                   'المتطلبات الأساسية محققة في معظمها مع بعض الثغرات.',
-      PARTIAL_REQUIRED:             'ثغرات جوهرية في المتطلبات الأساسية.',
-      POOR_REQUIRED_COVERAGE:       'معظم المتطلبات الأساسية غائبة.',
-      NO_REQUIRED_CRITERIA:         'لم يتم تحديد أي متطلبات إلزامية لهذه الوظيفة.',
-    } as Record<string, string>,
-    xDimensionLabels: {
-      skills:           'المهارات التقنية',
-      experience:       'الخبرة',
-      education:        'التعليم',
-      certifications:   'الشهادات',
-      soft_skills:      'المهارات الشخصية',
-      domain_knowledge: 'المعرفة المتخصصة',
-      other:            'متطلبات أخرى',
-    } as Record<string, string>,
-    badgeRequired:    'إلزامي',
-    badgePreferred:   'مفضل',
-    statusMatched:    'مطابق',
-    statusPartial:    'جزئي',
-    statusAbsent:     'غائب',
-    matchTypeLabels: {
-      direct:       'تطابق مباشر',
-      equivalent:   'مكافئ',
-      transferable: 'قابل للنقل',
-      inferred:     'مستنتج',
-      missing:      'غير موجود',
-    } as Record<string, string>,
-    xConfidence:       'الثقة',
-    xEffectiveCredit:  'الائتمان',
-    xEvidence:         'الأدلة',
-    xNoEvidence:       'لم يُسجَّل أي دليل داعم.',
-    xDimensionScore:   'درجة البُعد',
-    xWeight:           'الوزن',
-    xNoCriteriaData:   'لا تتوفر بيانات معايير.',
-    xNoExplainability: 'تحليل الأدلة التفصيلي غير متاح لهذا الطلب.',
+    explainabilityTitle: 'تقييم المرشح',
+    additionalDetailsTitle: 'تفاصيل إضافية',
+    developerTitle: 'المطور / التشخيص',
     securityBlockedPageTitle: 'مراجعة أمان الطلب',
     securityBlockedBadge: 'محجوب قبل التقييم بالذكاء الاصطناعي',
     securityCandidateRef: 'مرجع المرشح',
@@ -682,6 +576,9 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const [showRaw, setShowRaw] = useState(false);
   const [explainabilityExpanded, setExplainabilityExpanded] = useState(true);
   const [expandedDimensions, setExpandedDimensions] = useState<Record<string, boolean>>({});
+  const [interviewPrepExpanded, setInterviewPrepExpanded] = useState(false);
+  const [additionalDetailsExpanded, setAdditionalDetailsExpanded] = useState(false);
+  const [developerExpanded, setDeveloperExpanded] = useState(false);
   const [intelligenceExpanded, setIntelligenceExpanded] = useState(
     data.gatekeeper_passed === false
   );
@@ -1268,89 +1165,6 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         );
       })()}
 
-      {/* ── Gender Metadata ──────────────────────────────────────────────────── */}
-      {(() => {
-        const gt = t as any;
-        const gv: string = (data as any).gender_value || 'unknown';
-        const gc: number | undefined = (data as any).gender_confidence;
-        const gb: string | undefined = (data as any).gender_basis;
-        const genderLabel = (gt.genderValues as Record<string, string>)[gv] || gv;
-        const basisLabel  = gb ? ((gt.genderBasisLabels as Record<string, string>)[gb] || gb) : null;
-        return (
-          <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
-            <div className="px-6 py-3 border-b border-border flex items-center gap-2 bg-slate-50">
-              <svg className="w-3.5 h-3.5 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{gt.genderTitle}</h4>
-            </div>
-            <div className="px-6 py-4 flex flex-wrap gap-x-8 gap-y-3 items-start">
-              <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{gt.genderLabel}</p>
-                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                  gv === 'male'   ? 'bg-blue-50 text-blue-700' :
-                  gv === 'female' ? 'bg-pink-50 text-pink-700' :
-                                    'bg-slate-100 text-slate-500'
-                }`}>{genderLabel}</span>
-              </div>
-              {gc != null && gc > 0 && (
-                <div>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{gt.genderConfidence}</p>
-                  <p className="text-sm font-medium text-textMain">{Math.round(gc * 100)}%</p>
-                </div>
-              )}
-              {basisLabel && gb !== 'unknown' && (
-                <div>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{gt.genderBasis}</p>
-                  <p className="text-sm font-medium text-textMain">{basisLabel}</p>
-                </div>
-              )}
-              <div className="w-full">
-                <p className="text-[10px] text-textMuted italic">{gt.genderNote}</p>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Application Intake Metadata ─────────────────────────────────────── */}
-      {(data.submission_source || data.applied_at || data.email_sender_address ||
-        data.submitted_by_name || data.submitted_by_email || data.original_filename) && (() => {
-        const sourceLabel = data.submission_source
-          ? (t.intakeSourceLabels[data.submission_source] || data.submission_source)
-          : null;
-        const senderDisplay = (data.submission_source === 'manual_upload')
-          ? (data.submitted_by_name || data.submitted_by_email)
-          : (data.submission_source === 'public_apply')
-            ? null
-            : (data.email_sender_address || data.submitted_by_email);
-        const rows: [string, string | null | undefined][] = [
-          [t.intakeSource,   sourceLabel],
-          [t.intakeReceived, data.applied_at ? new Date(data.applied_at).toLocaleString() : null],
-          [t.intakeSender,   senderDisplay],
-          [t.intakeFile,     data.original_filename],
-        ].filter(([, v]) => v) as [string, string][];
-        if (rows.length === 0) return null;
-        return (
-          <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
-            <div className="px-6 py-3 border-b border-border flex items-center gap-2 bg-slate-50">
-              <svg className="w-3.5 h-3.5 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.intakeTitle}</h4>
-            </div>
-            <div className="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-3">
-              {rows.map(([label, value]) => (
-                <div key={label}>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{label}</p>
-                  <p className="text-sm font-medium text-textMain break-all">{value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Stopped Before AI — full detail card for non-security-blocked failed applications */}
       {!isSecurityBlocked && data.processing_status === 'failed' && (() => {
         const st = t as any;
@@ -1413,72 +1227,67 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         );
       })()}
 
-      {/* Duplicate Application Details — shown for exact_duplicate and possible_duplicate */}
-      {(data.duplicate_status === 'exact_duplicate' || data.duplicate_status === 'possible_duplicate') && (() => {
-        const dt = t as any;
-        const reasonLabels = dt.dupDetailReasonLabels as Record<string, string>;
-        const reasonLabel = data.duplicate_reason
-          ? (reasonLabels[data.duplicate_reason] || data.duplicate_reason.replace(/_/g, ' '))
-          : '—';
-        const refInfo = data.duplicate_reference;
-        const isExact = data.duplicate_status === 'exact_duplicate';
-        const borderColor = isExact ? 'border-orange-200' : 'border-orange-200';
-        const headerBg   = isExact ? 'bg-orange-50'     : 'bg-orange-50';
-        const headerText = isExact ? 'text-orange-700'  : 'text-orange-700';
-        return (
-          <div className={`bg-white rounded-2xl border ${borderColor} shadow-sm overflow-hidden`}>
-            <div className={`px-6 py-3 border-b ${borderColor} ${headerBg} flex items-center gap-2`}>
-              <svg className={`w-3.5 h-3.5 ${headerText} shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              <h4 className={`text-[10px] font-black ${headerText} uppercase tracking-widest`}>{dt.dupDetailTitle}</h4>
-            </div>
-            <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-              {/* Match Type */}
-              <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{dt.dupDetailReason}</p>
-                <p className="text-sm text-textMain">{reasonLabel}</p>
+      {/* ── Candidate Header Card ─────────────────────────────────────────────── */}
+      {!isSecurityBlocked && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
+            <div className="p-8 bg-slate-50 border-b border-border flex items-center gap-8">
+              <div className={`w-24 h-24 rounded-3xl flex flex-col items-center justify-center font-black text-white shadow-xl rotate-3 transform hover:rotate-0 transition-transform ${
+                isLowMatch ? 'bg-slate-400'
+                  : data.decision === 'qualified' ? 'bg-success'
+                  : data.decision === 'partial'   ? 'bg-warning'
+                  : data.decision === 'rejected'  ? 'bg-error'
+                  : score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning' : 'bg-error'
+              }`}>
+                <span className="text-3xl">{isLowMatch ? '—' : score}</span>
+                <span className="text-[10px] opacity-80 uppercase leading-none tracking-tighter">{t.points}</span>
               </div>
-              {/* Detected At */}
-              {data.duplicate_checked_at && (
-                <div>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{dt.dupDetailCheckedAt}</p>
-                  <p className="text-sm text-textMain">{new Date(data.duplicate_checked_at).toLocaleString()}</p>
+              <div>
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${decisionStyles[data.decision] || 'bg-slate-100 text-slate-600'}`}>
+                    {decisionLabel[data.decision] || data.decision || t.noDecision}
+                  </span>
+                  {data.duplicate_status === 'possible_duplicate' && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-orange-100 text-orange-700">
+                      {t.possibleDuplicate}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-black text-textMuted uppercase tracking-widest">• REF: {data.application_id}</span>
                 </div>
-              )}
-              {/* Similarity Score (for possible_duplicate) */}
-              {data.duplicate_similarity_score != null && (
-                <div>
-                  <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{dt.dupDetailSimilarity}</p>
-                  <p className={`text-sm font-bold ${data.duplicate_similarity_score >= 95 ? 'text-red-600' : data.duplicate_similarity_score >= 80 ? 'text-amber-600' : 'text-textMain'}`}>
-                    {Math.round(data.duplicate_similarity_score)}%
-                  </p>
-                </div>
-              )}
-              {/* Reference Application */}
-              <div className="md:col-span-2">
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{dt.dupDetailOriginalCandidate}</p>
-                {refInfo ? (
-                  <div className="bg-orange-50 rounded-xl border border-orange-100 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
-                    <span className="text-textMuted">{dt.dupDetailOriginalCandidate}</span>
-                    <span className="font-semibold text-textMain">{refInfo.candidate_name || '—'}</span>
-                    {refInfo.applied_at && (
-                      <>
-                        <span className="text-textMuted">{dt.dupDetailOriginalSubmitted}</span>
-                        <span className="font-semibold text-textMain">{new Date(refInfo.applied_at).toLocaleDateString()}</span>
-                      </>
-                    )}
-                    <span className="text-textMuted">{dt.dupDetailOriginalRef}</span>
-                    <span className="font-mono text-[10px] text-textMuted">{refInfo.application_id.slice(0, 8)}…</span>
-                  </div>
-                ) : (
-                  <p className="text-sm text-textMuted italic">{dt.dupDetailUnknownRef}</p>
-                )}
+                <h1 className="text-3xl font-black text-textMain tracking-tight">{candidateName}</h1>
               </div>
             </div>
           </div>
-        );
-      })()}
+
+          <div className="bg-white rounded-3xl border border-border shadow-sm p-6 flex flex-col">
+            <h4 className="text-[10px] font-black text-textMain uppercase tracking-widest flex items-center mb-5">
+              <span className={`w-2 h-4 bg-primary rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span> {t.scoreOverview}
+            </h4>
+            <div className="flex-1 divide-y divide-slate-50">
+              {scoreDims.map(([label, dim]) => {
+                if (!dim || dim.max === 0) return null;
+                const pct = Math.round((dim.achieved / dim.max) * 100);
+                const badge = getScoreBadgeColor(dim.achieved, dim.max);
+                return (
+                  <div key={label} className="flex items-center gap-2 py-2.5">
+                    <span className="flex-1 text-[10px] font-bold text-textMuted uppercase tracking-wide truncate">{label}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${badge}`}>{dim.achieved}<span className="opacity-60">/{dim.max}</span></span>
+                    {dim.weight != null && dim.weight > 0 && (
+                      <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[9px] font-bold w-8 text-center">{dim.weight}%</span>
+                    )}
+                    {dim.weight === 0 && (
+                      <span className="px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded text-[9px] font-bold w-8 text-center">—</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="pt-4 mt-4 border-t border-slate-100">
+              <p className="text-[10px] text-textMuted italic leading-relaxed">{t.scoringNote}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Knockout Questions Section */}
       {(() => {
@@ -2176,76 +1985,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         );
       })()}
 
-      {/* Profile & Scoring — hidden for security-blocked applications */}
-      {!isSecurityBlocked && <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
-          <div className="p-8 bg-slate-50 border-b border-border flex items-center gap-8">
-            <div className={`w-24 h-24 rounded-3xl flex flex-col items-center justify-center font-black text-white shadow-xl rotate-3 transform hover:rotate-0 transition-transform ${
-              isLowMatch ? 'bg-slate-400'
-                : data.decision === 'qualified' ? 'bg-success'
-                : data.decision === 'partial'   ? 'bg-warning'
-                : data.decision === 'rejected'  ? 'bg-error'
-                : score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning' : 'bg-error'
-            }`}>
-              <span className="text-3xl">{isLowMatch ? '—' : score}</span>
-              <span className="text-[10px] opacity-80 uppercase leading-none tracking-tighter">{t.points}</span>
-            </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${decisionStyles[data.decision] || 'bg-slate-100 text-slate-600'}`}>
-                  {decisionLabel[data.decision] || data.decision || t.noDecision}
-                </span>
-                {data.duplicate_status === 'possible_duplicate' && (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-orange-100 text-orange-700">
-                    {t.possibleDuplicate}
-                  </span>
-                )}
-                <span className="text-[10px] font-black text-textMuted uppercase tracking-widest">• REF: {data.application_id}</span>
-              </div>
-              <h1 className="text-3xl font-black text-textMain tracking-tight">{candidateName}</h1>
-            </div>
-          </div>
-
-          {!isLowMatch && (
-            <div className="p-8">
-              <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-4">{t.execSummary}</h4>
-              <p className={`text-base text-textMain leading-relaxed italic ${isAr ? 'border-r-4 pr-6' : 'border-l-4 pl-6'} border-primary/20 py-1`}>
-                {analysis.summary || t.noSummary}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-3xl border border-border shadow-sm p-6 flex flex-col">
-          <h4 className="text-[10px] font-black text-textMain uppercase tracking-widest flex items-center mb-5">
-            <span className={`w-2 h-4 bg-primary rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span> {t.scoreOverview}
-          </h4>
-          <div className="flex-1 divide-y divide-slate-50">
-            {scoreDims.map(([label, dim]) => {
-              if (!dim || dim.max === 0) return null;
-              const pct = Math.round((dim.achieved / dim.max) * 100);
-              const badge = getScoreBadgeColor(dim.achieved, dim.max);
-              return (
-                <div key={label} className="flex items-center gap-2 py-2.5">
-                  <span className="flex-1 text-[10px] font-bold text-textMuted uppercase tracking-wide truncate">{label}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${badge}`}>{dim.achieved}<span className="opacity-60">/{dim.max}</span></span>
-                  {dim.weight != null && dim.weight > 0 && (
-                    <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[9px] font-bold w-8 text-center">{dim.weight}%</span>
-                  )}
-                  {dim.weight === 0 && (
-                    <span className="px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded text-[9px] font-bold w-8 text-center">—</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div className="pt-4 mt-4 border-t border-slate-100">
-            <p className="text-[10px] text-textMuted italic leading-relaxed">{t.scoringNote}</p>
-          </div>
-        </div>
-      </div>}
-
-      {/* Recruiter Explainability Panel */}
+      {/* Candidate Assessment — deterministic evidence panel (primary) */}
       {!isSecurityBlocked && data.det_score && (() => {
         const ds: DeterministicScore = data.det_score!;
         const req = ds.required_summary;
@@ -2287,7 +2027,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             >
               <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
                 <span className="w-2 h-4 bg-emerald-500 rounded-full"></span>
-                {t.explainabilityTitle}
+                {(t as any).explainabilityTitle}
               </h3>
               <svg className={`w-5 h-5 text-textMuted transform transition-transform ${explainabilityExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
@@ -2296,22 +2036,14 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
 
             {explainabilityExpanded && (
               <div className="px-8 pb-8 pt-2 border-t border-slate-50 space-y-6 animate-fade-in">
-
                 {/* Coverage Summary + Signal */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {/* Required summary */}
                   <div className="sm:col-span-1 bg-slate-50 rounded-2xl p-5">
                     <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.requiredRequirements}</p>
                     <div className="flex gap-4 mb-2 flex-wrap">
-                      <span className="flex items-center gap-1 text-sm font-bold text-emerald-700">
-                        <span className="text-base">✓</span> {t.xMatched}: <span className="ml-0.5">{req.matched}</span>
-                      </span>
-                      <span className="flex items-center gap-1 text-sm font-bold text-amber-600">
-                        <span className="text-base">△</span> {t.xPartial}: <span className="ml-0.5">{req.partial}</span>
-                      </span>
-                      <span className="flex items-center gap-1 text-sm font-bold text-red-600">
-                        <span className="text-base">✗</span> {t.xMissing}: <span className="ml-0.5">{req.absent}</span>
-                      </span>
+                      <span className="flex items-center gap-1 text-sm font-bold text-emerald-700"><span className="text-base">✓</span> {t.xMatched}: <span className="ml-0.5">{req.matched}</span></span>
+                      <span className="flex items-center gap-1 text-sm font-bold text-amber-600"><span className="text-base">△</span> {t.xPartial}: <span className="ml-0.5">{req.partial}</span></span>
+                      <span className="flex items-center gap-1 text-sm font-bold text-red-600"><span className="text-base">✗</span> {t.xMissing}: <span className="ml-0.5">{req.absent}</span></span>
                     </div>
                     {req.coverage_pct != null && (
                       <div className="mt-3">
@@ -2320,28 +2052,17 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                           <span className="text-sm font-black text-textMain">{Math.round(req.coverage_pct)}%</span>
                         </div>
                         <div className="w-full bg-slate-200 rounded-full h-1.5">
-                          <div
-                            className={`h-1.5 rounded-full ${req.coverage_pct >= 80 ? 'bg-emerald-500' : req.coverage_pct >= 50 ? 'bg-amber-400' : 'bg-red-400'}`}
-                            style={{ width: `${Math.min(100, req.coverage_pct)}%` }}
-                          />
+                          <div className={`h-1.5 rounded-full ${req.coverage_pct >= 80 ? 'bg-emerald-500' : req.coverage_pct >= 50 ? 'bg-amber-400' : 'bg-red-400'}`} style={{ width: `${Math.min(100, req.coverage_pct)}%` }} />
                         </div>
                       </div>
                     )}
                   </div>
-
-                  {/* Preferred summary */}
                   <div className="sm:col-span-1 bg-slate-50 rounded-2xl p-5">
                     <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.preferredRequirements}</p>
                     <div className="flex gap-4 mb-2 flex-wrap">
-                      <span className="flex items-center gap-1 text-sm font-bold text-emerald-700">
-                        <span className="text-base">✓</span> {t.xMatched}: <span className="ml-0.5">{pref.matched}</span>
-                      </span>
-                      <span className="flex items-center gap-1 text-sm font-bold text-amber-600">
-                        <span className="text-base">△</span> {t.xPartial}: <span className="ml-0.5">{pref.partial}</span>
-                      </span>
-                      <span className="flex items-center gap-1 text-sm font-bold text-red-600">
-                        <span className="text-base">✗</span> {t.xMissing}: <span className="ml-0.5">{pref.absent}</span>
-                      </span>
+                      <span className="flex items-center gap-1 text-sm font-bold text-emerald-700"><span className="text-base">✓</span> {t.xMatched}: <span className="ml-0.5">{pref.matched}</span></span>
+                      <span className="flex items-center gap-1 text-sm font-bold text-amber-600"><span className="text-base">△</span> {t.xPartial}: <span className="ml-0.5">{pref.partial}</span></span>
+                      <span className="flex items-center gap-1 text-sm font-bold text-red-600"><span className="text-base">✗</span> {t.xMissing}: <span className="ml-0.5">{pref.absent}</span></span>
                     </div>
                     {pref.coverage_pct != null && (
                       <div className="mt-3">
@@ -2350,16 +2071,11 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                           <span className="text-sm font-black text-textMain">{Math.round(pref.coverage_pct)}%</span>
                         </div>
                         <div className="w-full bg-slate-200 rounded-full h-1.5">
-                          <div
-                            className={`h-1.5 rounded-full ${pref.coverage_pct >= 80 ? 'bg-emerald-500' : pref.coverage_pct >= 50 ? 'bg-amber-400' : 'bg-red-400'}`}
-                            style={{ width: `${Math.min(100, pref.coverage_pct)}%` }}
-                          />
+                          <div className={`h-1.5 rounded-full ${pref.coverage_pct >= 80 ? 'bg-emerald-500' : pref.coverage_pct >= 50 ? 'bg-amber-400' : 'bg-red-400'}`} style={{ width: `${Math.min(100, pref.coverage_pct)}%` }} />
                         </div>
                       </div>
                     )}
                   </div>
-
-                  {/* Recruiter Signal */}
                   <div className="sm:col-span-1 flex flex-col justify-center">
                     <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.recruiterSignalLabel}</p>
                     <div className={`rounded-2xl border px-5 py-4 ${signalColors[signal] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
@@ -2368,7 +2084,6 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                     </div>
                   </div>
                 </div>
-
                 {/* Per-dimension breakdown */}
                 <div className="space-y-3">
                   {orderedDims.map(dimKey => {
@@ -2379,24 +2094,17 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                     const requiredCriteria = dim.criteria.filter(c => c.required);
                     const preferredCriteria = dim.criteria.filter(c => !c.required);
                     const hasCriteria = dim.criteria.length > 0;
-
                     return (
                       <div key={dimKey} className="border border-slate-200 rounded-2xl overflow-hidden">
                         <button
                           onClick={() => setExpandedDimensions(prev => ({ ...prev, [dimKey]: !prev[dimKey] }))}
                           className="w-full px-5 py-4 flex items-center gap-4 hover:bg-slate-50 transition-colors text-left"
                         >
-                          {/* Dimension name + score */}
                           <div className="flex-1 flex items-center gap-3 flex-wrap">
                             <span className="text-sm font-black text-textMain">{dimLabel}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${scorePercent >= 80 ? 'bg-emerald-100 text-emerald-700' : scorePercent >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                              {scorePercent}%
-                            </span>
-                            <span className="text-[10px] text-textMuted bg-slate-100 rounded px-1.5 py-0.5 font-bold">
-                              {Math.round(dim.weight_pct * 100)}% {t.xWeight}
-                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${scorePercent >= 80 ? 'bg-emerald-100 text-emerald-700' : scorePercent >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{scorePercent}%</span>
+                            <span className="text-[10px] text-textMuted bg-slate-100 rounded px-1.5 py-0.5 font-bold">{Math.round(dim.weight_pct * 100)}% {t.xWeight}</span>
                           </div>
-                          {/* Mini required/preferred counts */}
                           <div className="flex items-center gap-3 text-[10px] font-bold text-textMuted">
                             {dim.n_required > 0 && (
                               <span>
@@ -2419,14 +2127,9 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                           </svg>
                         </button>
-
                         {isOpen && (
                           <div className="px-5 pb-5 pt-1 border-t border-slate-100 space-y-2">
-                            {!hasCriteria && (
-                              <p className="text-sm text-textMuted italic py-3">{t.xNoCriteriaData}</p>
-                            )}
-
-                            {/* Required criteria */}
+                            {!hasCriteria && <p className="text-sm text-textMuted italic py-3">{t.xNoCriteriaData}</p>}
                             {requiredCriteria.length > 0 && (
                               <div className="space-y-2">
                                 {requiredCriteria.map((c: DetCriterionScore, i: number) => (
@@ -2445,9 +2148,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                       <div className="mt-2 space-y-1">
                                         <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.xEvidence}</p>
                                         {c.supporting_evidence.map((ev, ei) => (
-                                          <p key={ei} className="text-xs text-textMain bg-white rounded-lg px-3 py-1.5 border border-slate-100 leading-relaxed">
-                                            {ev}
-                                          </p>
+                                          <p key={ei} className="text-xs text-textMain bg-white rounded-lg px-3 py-1.5 border border-slate-100 leading-relaxed">{ev}</p>
                                         ))}
                                       </div>
                                     )}
@@ -2458,8 +2159,6 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                 ))}
                               </div>
                             )}
-
-                            {/* Preferred criteria */}
                             {preferredCriteria.length > 0 && (
                               <div className="space-y-2 pt-1">
                                 {preferredCriteria.map((c: DetCriterionScore, i: number) => (
@@ -2478,9 +2177,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                       <div className="mt-2 space-y-1">
                                         <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.xEvidence}</p>
                                         {c.supporting_evidence.map((ev, ei) => (
-                                          <p key={ei} className="text-xs text-textMain bg-white rounded-lg px-3 py-1.5 border border-slate-100 leading-relaxed">
-                                            {ev}
-                                          </p>
+                                          <p key={ei} className="text-xs text-textMain bg-white rounded-lg px-3 py-1.5 border border-slate-100 leading-relaxed">{ev}</p>
                                         ))}
                                       </div>
                                     )}
@@ -2500,88 +2197,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         );
       })()}
 
-      {/* Intelligence Analysis Panel */}
-      {!isSecurityBlocked && hasIntelligence && (
-        <div className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
-          <button
-            onClick={() => setIntelligenceExpanded(v => !v)}
-            className="w-full px-8 py-5 flex items-center justify-between hover:bg-slate-50 transition-colors"
-          >
-            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
-              <span className="w-2 h-4 bg-indigo-500 rounded-full"></span>
-              {t.intelligence}
-            </h3>
-            <svg className={`w-5 h-5 text-textMuted transform transition-transform ${intelligenceExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {intelligenceExpanded && (
-            <div className="px-8 pb-8 pt-2 border-t border-slate-50 space-y-6 animate-fade-in">
-              {/* Stats row */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {data.cv_language && (
-                  <div className="bg-slate-50 rounded-2xl p-4 text-center">
-                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.cvLanguage}</p>
-                    <span className="inline-block px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold uppercase">{cvLangLabel}</span>
-                  </div>
-                )}
-                {data.local_similarity_score != null && (
-                  <div className="bg-slate-50 rounded-2xl p-4 text-center">
-                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.semanticSimilarity}</p>
-                    <p className="text-2xl font-black text-textMain">{Math.round(data.local_similarity_score)}%</p>
-                  </div>
-                )}
-                {data.skill_match_ratio != null && (
-                  <div className="bg-slate-50 rounded-2xl p-4 text-center">
-                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.skillMatch}</p>
-                    <p className="text-2xl font-black text-textMain">{Math.round(data.skill_match_ratio)}%</p>
-                  </div>
-                )}
-                {data.gatekeeper_passed != null && (
-                  <div className="bg-slate-50 rounded-2xl p-4 text-center">
-                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.gatekeeperPassed}</p>
-                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase ${data.gatekeeper_passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {data.gatekeeper_passed ? t.passed : t.filtered}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Matched / Missing skills */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {(data.matched_skills?.length ?? 0) > 0 && (
-                  <div>
-                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.matchedSkillsLabel}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {data.matched_skills!.map((skill, i) => (
-                        <span key={i} className="px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full text-xs font-semibold">
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {(data.missing_skills?.length ?? 0) > 0 && (
-                  <div>
-                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.missingSkillsLabel}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {data.missing_skills!.map((skill, i) => (
-                        <span key={i} className="px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-full text-xs font-semibold">
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Evidence-Based Analysis */}
-      {!isSecurityBlocked && hasEvidenceSection && (
+      {/* Evidence-Based Analysis — fallback when no det_score */}
+      {!isSecurityBlocked && !data.det_score && hasEvidenceSection && (
         <section className="space-y-6">
           <div className="flex items-center gap-3">
             <span className="w-2 h-4 bg-primary rounded-full shrink-0"></span>
@@ -2610,15 +2227,18 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         </section>
       )}
 
-      {/* HR Evaluation Grid */}
-      {!isSecurityBlocked && !isLowMatch && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {renderSection(t.sections.matchedSkills, analysis.cv_skills_matched)}
-          {renderSection(t.sections.expFit, analysis.cv_experience_summary)}
-          {renderSection(t.sections.academicFit, analysis.cv_education_summary)}
-          {renderSection(t.sections.certifications, analysis.cv_certifications_found)}
-          {renderSection(t.sections.gaps, analysis.gaps_identified, <svg className="w-3 h-3 text-error" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>)}
-          {renderSection(t.sections.evalNotes, analysis.evaluation_notes)}
+      {/* Candidate Summary */}
+      {!isSecurityBlocked && !isLowMatch && analysis.summary && (
+        <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="px-6 py-3 border-b border-border flex items-center gap-2 bg-slate-50">
+            <span className="w-2 h-4 bg-primary rounded-full shrink-0"></span>
+            <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.execSummary}</h4>
+          </div>
+          <div className="p-6">
+            <p className={`text-base text-textMain leading-relaxed italic ${isAr ? 'border-r-4 pr-6' : 'border-l-4 pl-6'} border-primary/20 py-1`}>
+              {analysis.summary}
+            </p>
+          </div>
         </div>
       )}
 
@@ -2650,154 +2270,436 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         </div>
       )}
 
-      {/* Interview Support */}
+      {/* Interview Preparation — collapsible */}
       {!isSecurityBlocked && !isLowMatch && ((analysis.interview_focus_points?.length ?? 0) > 0 || (analysis.interview_suggested_questions?.length ?? 0) > 0) && (
-        <div className="bg-indigo-900 rounded-3xl p-8 text-white shadow-xl shadow-indigo-200">
-          <h3 className="text-sm font-black uppercase tracking-widest mb-8 flex items-center">
-            <svg className={`w-5 h-5 ${isAr ? 'ml-3' : 'mr-3'} text-indigo-400`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
-            {t.interviewPrep}
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-            <div className="space-y-6">
-              <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">{t.focusAreas}</h4>
-              <ul className="space-y-3">
-                {(analysis.interview_focus_points || []).map((point, i) => (
-                  <li key={i} className="flex items-start text-sm bg-indigo-800/50 p-3 rounded-xl border border-indigo-700/50">
-                    <span className={`text-indigo-400 ${isAr ? 'ml-3' : 'mr-3'} font-bold`}>#</span>
-                    {point}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="space-y-6">
-              <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">{t.suggestedQs}</h4>
-              <div className="space-y-4">
-                {(analysis.interview_suggested_questions || []).map((q, i) => (
-                  <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-xl text-sm leading-relaxed">
-                    <span className="text-indigo-400 font-bold block mb-1">Q{i + 1}:</span>
-                    "{q}"
+        <div className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
+          <button
+            onClick={() => setInterviewPrepExpanded(v => !v)}
+            className="w-full px-8 py-5 flex items-center justify-between hover:bg-slate-50 transition-colors"
+          >
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
+              <span className="w-2 h-4 bg-indigo-500 rounded-full"></span>
+              {t.interviewPrep}
+            </h3>
+            <svg className={`w-5 h-5 text-textMuted transform transition-transform ${interviewPrepExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {interviewPrepExpanded && (
+            <div className="border-t border-slate-100 animate-fade-in">
+              <div className="bg-indigo-900 m-6 rounded-3xl p-8 text-white shadow-xl shadow-indigo-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                  <div className="space-y-6">
+                    <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">{t.focusAreas}</h4>
+                    <ul className="space-y-3">
+                      {(analysis.interview_focus_points || []).map((point, i) => (
+                        <li key={i} className="flex items-start text-sm bg-indigo-800/50 p-3 rounded-xl border border-indigo-700/50">
+                          <span className={`text-indigo-400 ${isAr ? 'ml-3' : 'mr-3'} font-bold`}>#</span>
+                          {point}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                ))}
+                  <div className="space-y-6">
+                    <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">{t.suggestedQs}</h4>
+                    <div className="space-y-4">
+                      {(analysis.interview_suggested_questions || []).map((q, i) => (
+                        <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-xl text-sm leading-relaxed">
+                          <span className="text-indigo-400 font-bold block mb-1">Q{i + 1}:</span>
+                          "{q}"
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* AI Comparison Results */}
-      {!isSecurityBlocked && (data.ai_comparisons?.length ?? 0) > 0 && (
-        <section className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
-          <div className="px-8 py-5 border-b border-slate-100">
-            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
-              <span className="w-2 h-4 bg-violet-500 rounded-full"></span>
-              {t.aiComparison}
-            </h3>
-          </div>
-          <div className="p-8 space-y-6">
-            {data.ai_comparisons!.map((cmp, i) => {
-              const delta = cmp.final_score - score;
-              const deltaLabel = delta > 0 ? `+${delta}` : String(delta);
-              const deltaColor = delta > 5 ? 'text-green-600' : delta < -5 ? 'text-red-600' : 'text-gray-500';
-              return (
-                <div key={i} className="bg-slate-50 rounded-2xl p-5 space-y-3">
-                  <div className="flex flex-wrap gap-4 items-center">
-                    <div>
-                      <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compProvider}</p>
-                      <p className="text-sm font-semibold text-textMain capitalize">{cmp.provider}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compModel}</p>
-                      <p className="text-sm font-mono text-textMain">{cmp.model}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compScore}</p>
-                      <p className="text-2xl font-black text-textMain">{cmp.final_score}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compDelta}</p>
-                      <p className={`text-lg font-black ${deltaColor}`}>{deltaLabel}</p>
-                    </div>
-                  </div>
-                  {/* Per-dimension comparison bars */}
-                  {cmp.score_skills != null && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
-                      {([
-                        [t.scoreBars[0], cmp.score_skills,           data.scores?.skills?.achieved],
-                        [t.scoreBars[1], cmp.score_experience,       data.scores?.experience?.achieved],
-                        [t.scoreBars[2], cmp.score_education,        data.scores?.education?.achieved],
-                        [t.scoreBars[3], cmp.score_certifications,   data.scores?.certifications?.achieved],
-                        [t.scoreBars[4], cmp.score_soft_skills,      data.scores?.soft_skills?.achieved],
-                        [t.scoreBars[5], cmp.score_domain_knowledge, data.scores?.domain_knowledge?.achieved],
-                      ] as [string, number | undefined, number | undefined][]).map(([label, compScore, primScore], idx) => {
-                        if (compScore == null) return null;
-                        const d = primScore != null ? compScore - primScore : null;
-                        return (
-                          <div key={idx} className="bg-white rounded-xl p-2 text-center">
-                            <p className="text-[9px] font-bold text-textMuted uppercase tracking-wider truncate">{label}</p>
-                            <p className="text-lg font-black text-textMain">{compScore}</p>
-                            {d != null && (
-                              <p className={`text-[10px] font-bold ${d > 0 ? 'text-green-600' : d < 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                                {d > 0 ? `+${d}` : String(d)}
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* Scoring Audit — provider, model, prompt versions */}
-      {!isSecurityBlocked && (data.scoring_provider || data.ai_model || data.scoring_prompt_code || data.level2_prompt_code) && (
-        <section className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
-          <div className="px-8 py-5 border-b border-slate-100">
+      {/* Additional Details accordion */}
+      {!isSecurityBlocked && (
+        <div className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
+          <button
+            onClick={() => setAdditionalDetailsExpanded(v => !v)}
+            className="w-full px-8 py-5 flex items-center justify-between hover:bg-slate-50 transition-colors"
+          >
             <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
               <span className="w-2 h-4 bg-slate-400 rounded-full"></span>
-              {t.promptTracking}
+              {(t as any).additionalDetailsTitle}
             </h3>
-          </div>
-          <div className="px-8 py-5 flex flex-wrap gap-6 text-sm">
-            {data.scoring_provider && (
-              <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.primaryProvider}</p>
-                <p className="text-textMain font-semibold capitalize">{data.scoring_provider}</p>
+            <svg className={`w-5 h-5 text-textMuted transform transition-transform ${additionalDetailsExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {additionalDetailsExpanded && (
+            <div className="border-t border-slate-100 px-8 py-6 space-y-6 animate-fade-in">
+
+              {/* Gender Metadata */}
+              {(() => {
+                const gt = t as any;
+                const gv: string = (data as any).gender_value || 'unknown';
+                const gc: number | undefined = (data as any).gender_confidence;
+                const gb: string | undefined = (data as any).gender_basis;
+                const genderLabel = (gt.genderValues as Record<string, string>)[gv] || gv;
+                const basisLabel  = gb ? ((gt.genderBasisLabels as Record<string, string>)[gb] || gb) : null;
+                return (
+                  <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+                    <div className="px-6 py-3 border-b border-border flex items-center gap-2 bg-slate-50">
+                      <svg className="w-3.5 h-3.5 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{gt.genderTitle}</h4>
+                    </div>
+                    <div className="px-6 py-4 flex flex-wrap gap-x-8 gap-y-3 items-start">
+                      <div>
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{gt.genderLabel}</p>
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                          gv === 'male'   ? 'bg-blue-50 text-blue-700' :
+                          gv === 'female' ? 'bg-pink-50 text-pink-700' :
+                                            'bg-slate-100 text-slate-500'
+                        }`}>{genderLabel}</span>
+                      </div>
+                      {gc != null && gc > 0 && (
+                        <div>
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{gt.genderConfidence}</p>
+                          <p className="text-sm font-medium text-textMain">{Math.round(gc * 100)}%</p>
+                        </div>
+                      )}
+                      {basisLabel && gb !== 'unknown' && (
+                        <div>
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{gt.genderBasis}</p>
+                          <p className="text-sm font-medium text-textMain">{basisLabel}</p>
+                        </div>
+                      )}
+                      <div className="w-full">
+                        <p className="text-[10px] text-textMuted italic">{gt.genderNote}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Application Intake Metadata */}
+              {(data.submission_source || data.applied_at || data.email_sender_address ||
+                data.submitted_by_name || data.submitted_by_email || data.original_filename) && (() => {
+                const sourceLabel = data.submission_source
+                  ? (t.intakeSourceLabels[data.submission_source] || data.submission_source)
+                  : null;
+                const senderDisplay = (data.submission_source === 'manual_upload')
+                  ? (data.submitted_by_name || data.submitted_by_email)
+                  : (data.submission_source === 'public_apply')
+                    ? null
+                    : (data.email_sender_address || data.submitted_by_email);
+                const rows: [string, string | null | undefined][] = [
+                  [t.intakeSource,   sourceLabel],
+                  [t.intakeReceived, data.applied_at ? new Date(data.applied_at).toLocaleString() : null],
+                  [t.intakeSender,   senderDisplay],
+                  [t.intakeFile,     data.original_filename],
+                ].filter(([, v]) => v) as [string, string][];
+                if (rows.length === 0) return null;
+                return (
+                  <div className="bg-slate-50 rounded-2xl border border-border overflow-hidden">
+                    <div className="px-6 py-3 border-b border-border flex items-center gap-2">
+                      <svg className="w-3.5 h-3.5 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.intakeTitle}</h4>
+                    </div>
+                    <div className="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-3">
+                      {rows.map(([label, value]) => (
+                        <div key={label}>
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-0.5">{label}</p>
+                          <p className="text-sm font-medium text-textMain break-all">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Duplicate Application Details */}
+              {(data.duplicate_status === 'exact_duplicate' || data.duplicate_status === 'possible_duplicate') && (() => {
+                const dt = t as any;
+                const reasonLabels = dt.dupDetailReasonLabels as Record<string, string>;
+                const reasonLabel = data.duplicate_reason
+                  ? (reasonLabels[data.duplicate_reason] || data.duplicate_reason.replace(/_/g, ' '))
+                  : '—';
+                const refInfo = data.duplicate_reference;
+                const isExact = data.duplicate_status === 'exact_duplicate';
+                const borderColor = isExact ? 'border-orange-200' : 'border-orange-200';
+                const headerBg   = isExact ? 'bg-orange-50'     : 'bg-orange-50';
+                const headerText = isExact ? 'text-orange-700'  : 'text-orange-700';
+                return (
+                  <div className={`bg-white rounded-2xl border ${borderColor} shadow-sm overflow-hidden`}>
+                    <div className={`px-6 py-3 border-b ${borderColor} ${headerBg} flex items-center gap-2`}>
+                      <svg className={`w-3.5 h-3.5 ${headerText} shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      <h4 className={`text-[10px] font-black ${headerText} uppercase tracking-widest`}>{dt.dupDetailTitle}</h4>
+                    </div>
+                    <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                      <div>
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{dt.dupDetailReason}</p>
+                        <p className="text-sm text-textMain">{reasonLabel}</p>
+                      </div>
+                      {data.duplicate_checked_at && (
+                        <div>
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{dt.dupDetailCheckedAt}</p>
+                          <p className="text-sm text-textMain">{new Date(data.duplicate_checked_at).toLocaleString()}</p>
+                        </div>
+                      )}
+                      {data.duplicate_similarity_score != null && (
+                        <div>
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{dt.dupDetailSimilarity}</p>
+                          <p className={`text-sm font-bold ${data.duplicate_similarity_score >= 95 ? 'text-red-600' : data.duplicate_similarity_score >= 80 ? 'text-amber-600' : 'text-textMain'}`}>
+                            {Math.round(data.duplicate_similarity_score)}%
+                          </p>
+                        </div>
+                      )}
+                      <div className="md:col-span-2">
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{dt.dupDetailOriginalCandidate}</p>
+                        {refInfo ? (
+                          <div className="bg-orange-50 rounded-xl border border-orange-100 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                            <span className="text-textMuted">{dt.dupDetailOriginalCandidate}</span>
+                            <span className="font-semibold text-textMain">{refInfo.candidate_name || '—'}</span>
+                            {refInfo.applied_at && (
+                              <>
+                                <span className="text-textMuted">{dt.dupDetailOriginalSubmitted}</span>
+                                <span className="font-semibold text-textMain">{new Date(refInfo.applied_at).toLocaleDateString()}</span>
+                              </>
+                            )}
+                            <span className="text-textMuted">{dt.dupDetailOriginalRef}</span>
+                            <span className="font-mono text-[10px] text-textMuted">{refInfo.application_id.slice(0, 8)}…</span>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-textMuted italic">{dt.dupDetailUnknownRef}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Intelligence Analysis */}
+              {hasIntelligence && (
+                <div className="bg-slate-50 rounded-2xl border border-border overflow-hidden">
+                  <div className="px-6 py-3 border-b border-border flex items-center gap-2">
+                    <span className="w-2 h-4 bg-indigo-500 rounded-full shrink-0"></span>
+                    <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.intelligence}</h4>
+                  </div>
+                  <div className="px-6 py-5 space-y-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      {data.cv_language && (
+                        <div className="bg-white rounded-2xl p-4 text-center">
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.cvLanguage}</p>
+                          <span className="inline-block px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold uppercase">{cvLangLabel}</span>
+                        </div>
+                      )}
+                      {data.local_similarity_score != null && (
+                        <div className="bg-white rounded-2xl p-4 text-center">
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.semanticSimilarity}</p>
+                          <p className="text-2xl font-black text-textMain">{Math.round(data.local_similarity_score)}%</p>
+                        </div>
+                      )}
+                      {data.skill_match_ratio != null && (
+                        <div className="bg-white rounded-2xl p-4 text-center">
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.skillMatch}</p>
+                          <p className="text-2xl font-black text-textMain">{Math.round(data.skill_match_ratio)}%</p>
+                        </div>
+                      )}
+                      {data.gatekeeper_passed != null && (
+                        <div className="bg-white rounded-2xl p-4 text-center">
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-1">{t.gatekeeperPassed}</p>
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase ${data.gatekeeper_passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {data.gatekeeper_passed ? t.passed : t.filtered}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {(data.matched_skills?.length ?? 0) > 0 && (
+                        <div>
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.matchedSkillsLabel}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {data.matched_skills!.map((skill, i) => (
+                              <span key={i} className="px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full text-xs font-semibold">
+                                {skill}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {(data.missing_skills?.length ?? 0) > 0 && (
+                        <div>
+                          <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.missingSkillsLabel}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {data.missing_skills!.map((skill, i) => (
+                              <span key={i} className="px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-full text-xs font-semibold">
+                                {skill}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* AI Comparison Results */}
+              {(data.ai_comparisons?.length ?? 0) > 0 && (
+                <div className="bg-slate-50 rounded-2xl border border-border overflow-hidden">
+                  <div className="px-6 py-3 border-b border-border flex items-center gap-2">
+                    <span className="w-2 h-4 bg-violet-500 rounded-full shrink-0"></span>
+                    <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.aiComparison}</h4>
+                  </div>
+                  <div className="p-6 space-y-6">
+                    {data.ai_comparisons!.map((cmp, i) => {
+                      const delta = cmp.final_score - score;
+                      const deltaLabel = delta > 0 ? `+${delta}` : String(delta);
+                      const deltaColor = delta > 5 ? 'text-green-600' : delta < -5 ? 'text-red-600' : 'text-gray-500';
+                      return (
+                        <div key={i} className="bg-white rounded-2xl p-5 space-y-3">
+                          <div className="flex flex-wrap gap-4 items-center">
+                            <div>
+                              <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compProvider}</p>
+                              <p className="text-sm font-semibold text-textMain capitalize">{cmp.provider}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compModel}</p>
+                              <p className="text-sm font-mono text-textMain">{cmp.model}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compScore}</p>
+                              <p className="text-2xl font-black text-textMain">{cmp.final_score}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.compDelta}</p>
+                              <p className={`text-lg font-black ${deltaColor}`}>{deltaLabel}</p>
+                            </div>
+                          </div>
+                          {cmp.score_skills != null && (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+                              {([
+                                [t.scoreBars[0], cmp.score_skills,           data.scores?.skills?.achieved],
+                                [t.scoreBars[1], cmp.score_experience,       data.scores?.experience?.achieved],
+                                [t.scoreBars[2], cmp.score_education,        data.scores?.education?.achieved],
+                                [t.scoreBars[3], cmp.score_certifications,   data.scores?.certifications?.achieved],
+                                [t.scoreBars[4], cmp.score_soft_skills,      data.scores?.soft_skills?.achieved],
+                                [t.scoreBars[5], cmp.score_domain_knowledge, data.scores?.domain_knowledge?.achieved],
+                              ] as [string, number | undefined, number | undefined][]).map(([label, compScore, primScore], idx) => {
+                                if (compScore == null) return null;
+                                const d = primScore != null ? compScore - primScore : null;
+                                return (
+                                  <div key={idx} className="bg-slate-50 rounded-xl p-2 text-center">
+                                    <p className="text-[9px] font-bold text-textMuted uppercase tracking-wider truncate">{label}</p>
+                                    <p className="text-lg font-black text-textMain">{compScore}</p>
+                                    {d != null && (
+                                      <p className={`text-[10px] font-bold ${d > 0 ? 'text-green-600' : d < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                        {d > 0 ? `+${d}` : String(d)}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Developer / Diagnostic accordion */}
+      {!isSecurityBlocked && (data.scoring_provider || data.ai_model || data.scoring_prompt_code || data.level2_prompt_code || data.raw_ai_response) && (
+        <div className="bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
+          <button
+            onClick={() => setDeveloperExpanded(v => !v)}
+            className="w-full px-8 py-5 flex items-center justify-between hover:bg-slate-50 transition-colors"
+          >
+            <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-3">
+              <span className="w-2 h-4 bg-slate-400 rounded-full"></span>
+              {(t as any).developerTitle}
+            </h3>
+            <svg className={`w-5 h-5 text-textMuted transform transition-transform ${developerExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {developerExpanded && (
+            <div className="border-t border-slate-100 px-8 py-6 space-y-6 animate-fade-in">
+
+              {/* Scoring Audit */}
+              {(data.scoring_provider || data.ai_model || data.scoring_prompt_code || data.level2_prompt_code) && (
+                <div className="bg-slate-50 rounded-2xl border border-border overflow-hidden">
+                  <div className="px-6 py-3 border-b border-border flex items-center gap-2">
+                    <span className="w-2 h-4 bg-slate-400 rounded-full shrink-0"></span>
+                    <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.promptTracking}</h4>
+                  </div>
+                  <div className="px-6 py-5 flex flex-wrap gap-6 text-sm">
+                    {data.scoring_provider && (
+                      <div>
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.primaryProvider}</p>
+                        <p className="text-textMain font-semibold capitalize">{data.scoring_provider}</p>
+                      </div>
+                    )}
+                    {data.ai_model && (
+                      <div>
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.primaryModel}</p>
+                        <p className="text-textMain font-mono">{data.ai_model}</p>
+                      </div>
+                    )}
+                    {data.scoring_prompt_code && (
+                      <div>
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.scoringPrompt}</p>
+                        <p className="text-textMain font-mono">
+                          {data.scoring_prompt_code}
+                          {data.scoring_prompt_version != null && (
+                            <span className="ml-1 text-xs text-textMuted">{t.promptVersion}{data.scoring_prompt_version}</span>
+                          )}
+                        </p>
+                      </div>
+                    )}
+                    {data.level2_prompt_code && (
+                      <div>
+                        <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.level2Prompt}</p>
+                        <p className="text-textMain font-mono">
+                          {data.level2_prompt_code}
+                          {data.level2_prompt_version != null && (
+                            <span className="ml-1 text-xs text-textMuted">{t.promptVersion}{data.level2_prompt_version}</span>
+                          )}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Raw AI Payload */}
+              <div className="bg-slate-50 rounded-2xl border border-border overflow-hidden">
+                <div className="px-6 py-3 border-b border-border flex items-center gap-2">
+                  <span className="w-2 h-4 bg-slate-400 rounded-full shrink-0"></span>
+                  <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.rawPayload}</h4>
+                </div>
+                <div className="p-6">
+                  <div className="bg-slate-900 rounded-2xl p-6 overflow-hidden">
+                    <pre className="text-[10px] text-blue-300 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                      {JSON.stringify(data.raw_ai_response || data, null, 2)}
+                    </pre>
+                  </div>
+                </div>
               </div>
-            )}
-            {data.ai_model && (
-              <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.primaryModel}</p>
-                <p className="text-textMain font-mono">{data.ai_model}</p>
-              </div>
-            )}
-            {data.scoring_prompt_code && (
-              <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.scoringPrompt}</p>
-                <p className="text-textMain font-mono">
-                  {data.scoring_prompt_code}
-                  {data.scoring_prompt_version != null && (
-                    <span className="ml-1 text-xs text-textMuted">{t.promptVersion}{data.scoring_prompt_version}</span>
-                  )}
-                </p>
-              </div>
-            )}
-            {data.level2_prompt_code && (
-              <div>
-                <p className="text-[10px] font-black text-textMuted uppercase tracking-wider mb-0.5">{t.level2Prompt}</p>
-                <p className="text-textMain font-mono">
-                  {data.level2_prompt_code}
-                  {data.level2_prompt_version != null && (
-                    <span className="ml-1 text-xs text-textMuted">{t.promptVersion}{data.level2_prompt_version}</span>
-                  )}
-                </p>
-              </div>
-            )}
-          </div>
-        </section>
+
+            </div>
+          )}
+        </div>
       )}
 
       {/* Recruiter Workflow Panel */}
@@ -2884,29 +2786,6 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         </section>
       )}
 
-      {/* Raw Data */}
-      {!isSecurityBlocked && <section className="bg-white rounded-3xl border border-border overflow-hidden">
-        <button
-          onClick={() => setShowRaw(!showRaw)}
-          className="w-full px-8 py-5 flex items-center justify-between hover:bg-slate-50 transition-colors"
-        >
-          <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
-            <span className={`w-2 h-4 bg-slate-400 rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span> {t.rawPayload}
-          </h3>
-          <svg className={`w-5 h-5 text-textMuted transform transition-transform ${showRaw ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        {showRaw && (
-          <div className="px-8 pb-10 pt-4 animate-fade-in border-t border-slate-50">
-            <div className="bg-slate-900 rounded-2xl p-6 overflow-hidden">
-              <pre className="text-[10px] text-blue-300 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed">
-                {JSON.stringify(data.raw_ai_response || data, null, 2)}
-              </pre>
-            </div>
-          </div>
-        )}
-      </section>}
     </div>
   );
 };
