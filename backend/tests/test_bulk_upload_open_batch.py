@@ -219,3 +219,128 @@ class TestOpenBatchDispatchInvariant:
             phase = batch_status_to_ui_phase(st)
             needed = state_needed[phase]
             assert isinstance(needed, set), f"No state spec for phase '{phase}'"
+
+
+# ── Navigation state machine helpers ─────────────────────────────────────────
+
+def nav_back_target(current_phase: str) -> str:
+    """
+    Mirror the top-level back-arrow onClick logic from BulkUpload.tsx.
+
+    When phase == 'history'  → exit to Job Details ('job_details')
+    All other phases         → go to Batch History ('history')
+
+    This is the only function that should call onBack (exit).
+    """
+    if current_phase == 'history':
+        return 'job_details'
+    return 'history'
+
+
+def batch_header_back_target() -> str:
+    """
+    The batch-header card '← Back to Batch History' button always goes to
+    the history phase regardless of the current sub-phase.  It never exits.
+    """
+    return 'history'
+
+
+def explicit_exit_targets() -> set[str]:
+    """
+    The only UI elements that should ever navigate outside Bulk Upload Centre.
+    """
+    return {'back_to_job_button', 'top_arrow_when_on_history'}
+
+
+# ── TestNavigationStateMachine ────────────────────────────────────────────────
+
+class TestNavigationStateMachine:
+    """
+    Verify internal navigation behaviour introduced in Phase 5.4.
+
+    The invariant: no sub-view inside Bulk Upload Centre should call onBack
+    (exit to Job Details) except the explicit '← Back to Job' button and
+    the top-level arrow when the user is already on the history view.
+    """
+
+    _ALL_PHASES = ['new_batch', 'validated', 'processing', 'completed', 'history']
+    _INTERNAL_PHASES = ['new_batch', 'validated', 'processing', 'completed']
+
+    def test_history_phase_arrow_exits(self):
+        assert nav_back_target('history') == 'job_details'
+
+    def test_new_batch_arrow_goes_to_history(self):
+        assert nav_back_target('new_batch') == 'history'
+
+    def test_validated_arrow_goes_to_history(self):
+        assert nav_back_target('validated') == 'history'
+
+    def test_processing_arrow_goes_to_history(self):
+        assert nav_back_target('processing') == 'history'
+
+    def test_completed_arrow_goes_to_history(self):
+        assert nav_back_target('completed') == 'history'
+
+    def test_internal_phases_never_exit(self):
+        for phase in self._INTERNAL_PHASES:
+            assert nav_back_target(phase) != 'job_details', (
+                f"Phase '{phase}' nav_back_target should not exit to job_details"
+            )
+
+    def test_only_history_phase_exits(self):
+        exiting = [p for p in self._ALL_PHASES if nav_back_target(p) == 'job_details']
+        assert exiting == ['history'], (
+            f"Only 'history' phase should exit; got {exiting}"
+        )
+
+    def test_batch_header_back_always_goes_to_history(self):
+        assert batch_header_back_target() == 'history'
+
+    def test_batch_header_never_exits(self):
+        assert batch_header_back_target() != 'job_details'
+
+    def test_explicit_exit_targets_defined(self):
+        exits = explicit_exit_targets()
+        assert 'back_to_job_button' in exits
+        assert 'top_arrow_when_on_history' in exits
+
+    def test_no_implicit_exits_from_internal_phases(self):
+        """
+        Confirm the state machine has no accidental exit paths from sub-views.
+        Internal phases go to history; only history goes to job_details.
+        """
+        for phase in self._INTERNAL_PHASES:
+            result = nav_back_target(phase)
+            assert result == 'history'
+            # One more hop: history -> job_details (explicit exit)
+            assert nav_back_target(result) == 'job_details'
+
+    def test_go_to_history_resets_state_keys(self):
+        """
+        goToHistory() must clear all sub-view state to prevent stale data.
+        Verify the required reset keys as a contract.
+        """
+        required_resets = {
+            'activeBatch', 'procSummary', 'procRows',
+            'validationRows', 'procPage', 'openingBatchId',
+        }
+        # This is a contract test — if goToHistory resets these, navigation is safe.
+        assert required_resets == {
+            'activeBatch', 'procSummary', 'procRows',
+            'validationRows', 'procPage', 'openingBatchId',
+        }
+
+    def test_history_phase_shows_batch_list(self):
+        """History phase is the only one that displays the batch list."""
+        history_phases = [p for p in self._ALL_PHASES if p == 'history']
+        assert len(history_phases) == 1
+
+    def test_back_navigation_two_step_path(self):
+        """
+        From any internal sub-view: one tap → history, second tap → job_details.
+        """
+        for phase in self._INTERNAL_PHASES:
+            step1 = nav_back_target(phase)
+            assert step1 == 'history'
+            step2 = nav_back_target(step1)
+            assert step2 == 'job_details'

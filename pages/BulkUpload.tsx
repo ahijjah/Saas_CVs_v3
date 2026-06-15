@@ -455,6 +455,20 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
     }
   };
 
+  // ── Internal navigation ───────────────────────────────────────────────────
+  // All "go back" controls inside the Centre call this. onBack() is only
+  // called from the dedicated "Back to Job" exit button.
+  const goToHistory = useCallback(() => {
+    setPhase('history');
+    setActiveBatch(null);
+    setProcSummary(null);
+    setProcRows([]);
+    setValidationRows([]);
+    setProcPage(0);
+    setOpeningBatchId(null);
+    fetchHistory();
+  }, [fetchHistory]);
+
   // ── Filtered validation rows ──────────────────────────────────────────────
   const filteredRows = validationRows.filter(r => {
     if (validationFilter !== 'all' && r.validation_status !== validationFilter) return false;
@@ -494,10 +508,12 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
       {/* ── Header ── */}
       <div className="bg-white border-b border-border sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+          {/* Context-aware ← arrow: goes to Batch History when inside a batch,
+              exits to Job Details only when already on the History screen */}
           <button
-            onClick={onBack}
+            onClick={phase === 'history' ? onBack : goToHistory}
             className="p-2 rounded-lg hover:bg-slate-100 text-textMuted transition-colors"
-            aria-label="Back"
+            aria-label={phase === 'history' ? 'Back to Job' : 'Back to Batch History'}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
@@ -509,25 +525,34 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
           </div>
           {phase !== 'history' && (
             <button
-              onClick={() => { setPhase('history'); setActiveBatch(null); fetchHistory(); }}
+              onClick={goToHistory}
               className="text-[11px] font-bold text-textMuted hover:text-textMain px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
             >
-              ← All Batches
+              ← Batch History
             </button>
           )}
           {phase === 'history' && (
-            <button
-              onClick={handleCreateBatch}
-              disabled={creatingBatch}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-60"
-            >
-              {creatingBatch ? <Spinner small /> : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                </svg>
-              )}
-              New Batch
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Explicit exit — the only control that leaves the Bulk Upload Centre */}
+              <button
+                onClick={onBack}
+                className="text-[11px] font-bold text-textMuted hover:text-textMain px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                ← Back to Job
+              </button>
+              <button
+                onClick={handleCreateBatch}
+                disabled={creatingBatch}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-60"
+              >
+                {creatingBatch ? <Spinner small /> : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                )}
+                New Batch
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -650,15 +675,15 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
                 </p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                {/* ← Back to History */}
+                {/* ← Back to Batch History */}
                 <button
-                  onClick={() => { setPhase('history'); setActiveBatch(null); fetchHistory(); }}
+                  onClick={goToHistory}
                   className="text-[11px] font-bold text-textMuted hover:text-textMain flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                   </svg>
-                  Back to History
+                  ← Back to Batch History
                 </button>
                 {/* Phase breadcrumb */}
                 <div className="hidden sm:flex items-center gap-1 text-[9px] font-black uppercase tracking-wider">
