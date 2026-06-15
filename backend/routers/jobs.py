@@ -458,7 +458,15 @@ async def create_job(
 
     # Queue async AI extraction — does not block job creation
     from workers.criteria_worker import extract_criteria_task
-    extract_criteria_task.delay(job_id, body.description)
+    _job_meta = {
+        "title":            body.title,
+        "department":       body.department,
+        "experience_level": body.experience_level,
+        "location":         body.location,
+        "job_type":         body.job_type,
+        "work_mode":        body.work_mode,
+    }
+    extract_criteria_task.delay(job_id, body.description, _job_meta)
 
     return {
         "success": True,
@@ -1185,7 +1193,8 @@ async def retry_criteria_extraction(
 
     row = await db.execute(
         text("""
-            SELECT j.description,
+            SELECT j.description, j.title, j.department, j.experience_level,
+                   j.location, j.job_type, j.work_mode,
                    jc.criteria_extraction_status,
                    jc.criteria_extraction_retry_count,
                    jc.criteria_last_failed_description_hash
@@ -1265,7 +1274,15 @@ async def retry_criteria_extraction(
     )
     await db.commit()
 
-    extract_criteria_task.delay(job_id, description)
+    _retry_meta = {
+        "title":            job.get("title"),
+        "department":       job.get("department"),
+        "experience_level": job.get("experience_level"),
+        "location":         job.get("location"),
+        "job_type":         job.get("job_type"),
+        "work_mode":        job.get("work_mode"),
+    }
+    extract_criteria_task.delay(job_id, description, _retry_meta)
     return {"success": True, "message": "Criteria extraction re-queued."}
 
 

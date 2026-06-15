@@ -45,6 +45,16 @@ const T = {
     domainKnowledge: 'Domain Knowledge',
     otherRequirements: 'Other Requirements',
     noData: 'No specific data.',
+    reqClassificationTitle: 'Requirement Classification',
+    reqClassScoreable: 'Scoring Criteria',
+    reqClassNonScoreable: 'Screening Conditions',
+    reqClassPostHiring: 'Post-Hiring / Admin Conditions',
+    reqClassInformational: 'Informational',
+    reqClassWarnings: 'Classification Warnings',
+    reqClassScoreableNote: 'Used for CV scoring',
+    reqClassNonScoreableNote: 'Not scored — eligibility screening only',
+    reqClassPostHiringNote: 'Not scored — assessed after selection',
+    reqClassInformationalNote: 'Not scored — context only',
     evalLogic: 'Evaluation Logic',
     evalWeightLabels: ['Skills', 'Experience', 'Education', 'Certifications', 'Soft Skills', 'Domain Knowledge', 'Other'],
     editWeights: 'Edit Weights',
@@ -276,6 +286,16 @@ const T = {
     domainKnowledge: 'المعرفة بالمجال',
     otherRequirements: 'متطلبات أخرى',
     noData: 'لا توجد بيانات محددة.',
+    reqClassificationTitle: 'تصنيف المتطلبات',
+    reqClassScoreable: 'معايير التقييم',
+    reqClassNonScoreable: 'شروط الفرز',
+    reqClassPostHiring: 'شروط ما بعد التعيين',
+    reqClassInformational: 'معلومات عامة',
+    reqClassWarnings: 'تحذيرات التصنيف',
+    reqClassScoreableNote: 'تُستخدم في تقييم السير الذاتية',
+    reqClassNonScoreableNote: 'لا تُقيَّم — فرز أهلية فقط',
+    reqClassPostHiringNote: 'لا تُقيَّم — تُقيَّم بعد الاختيار',
+    reqClassInformationalNote: 'لا تُقيَّم — للسياق فقط',
     evalLogic: 'منطق التقييم',
     evalWeightLabels: ['المهارات', 'الخبرة', 'التعليم', 'الشهادات', 'المهارات الناعمة', 'معرفة المجال', 'أخرى'],
     editWeights: 'تعديل الأوزان',
@@ -2751,6 +2771,57 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             </div>
           )}
         </div>
+
+        {/* ── Requirement Classification (D-02) ─────────────────────────────── */}
+        {analysis && (() => {
+          const nonScoreable: any[] = (analysis as any).non_scoreable_requirements ?? [];
+          const postHiring:   any[] = (analysis as any).post_hiring_conditions ?? [];
+          const informational: any[] = (analysis as any).informational_items ?? [];
+          const warnings: string[]  = (analysis as any).warnings ?? [];
+          if (nonScoreable.length === 0 && postHiring.length === 0 && informational.length === 0 && warnings.length === 0) return null;
+          return (
+            <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden mt-6">
+              <div className="px-6 py-4 border-b border-border bg-slate-50 flex items-center gap-2">
+                <span className="w-2 h-3 bg-amber-400 rounded-full shrink-0"></span>
+                <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.reqClassificationTitle}</h4>
+              </div>
+              <div className="p-6 space-y-4">
+                {warnings.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                    <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2">{t.reqClassWarnings}</p>
+                    {warnings.map((w, i) => (
+                      <p key={i} className="text-xs text-amber-700">⚠ {w}</p>
+                    ))}
+                  </div>
+                )}
+                {[
+                  { items: nonScoreable, label: t.reqClassNonScoreable, note: t.reqClassNonScoreableNote, color: 'bg-blue-50 border-blue-200', textColor: 'text-blue-800' },
+                  { items: postHiring,   label: t.reqClassPostHiring,    note: t.reqClassPostHiringNote,    color: 'bg-orange-50 border-orange-200', textColor: 'text-orange-800' },
+                  { items: informational, label: t.reqClassInformational, note: t.reqClassInformationalNote, color: 'bg-slate-50 border-slate-200', textColor: 'text-slate-700' },
+                ].filter(g => g.items.length > 0).map((group, gi) => (
+                  <div key={gi} className={`rounded-xl border p-4 ${group.color}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${group.textColor}`}>{group.label}</p>
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold ${group.color} ${group.textColor}`}>{group.note}</span>
+                    </div>
+                    <ul className="space-y-1.5">
+                      {group.items.map((item: any, i: number) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className={`text-[10px] font-bold ${group.textColor} mt-0.5 shrink-0`}>✗</span>
+                          <div>
+                            <span className={`text-xs font-semibold ${group.textColor}`}>{typeof item === 'string' ? item : item.text}</span>
+                            {item.reason && <span className="text-[10px] text-textMuted ml-2">— {item.reason}</span>}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
       </section>
 
       </div>

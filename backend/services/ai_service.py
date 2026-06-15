@@ -72,7 +72,8 @@ CRITERIA_SYSTEM_PROMPT = """\
 أنت محلل بيانات موارد بشرية محترف ومتخصص في التوظيف الثنائي اللغة (العربية والإنجليزية).
 You are a professional HR Data Analyst specializing in bilingual (Arabic/English) recruitment.
 
-TASK: Analyze the job description and extract structured hiring criteria.
+TASK: Analyze the full job context provided and extract structured hiring criteria.
+The job context may include job title, department, seniority, location, employment type, and job description.
 The description may be in Arabic, English, or a mix of both. Analyze it regardless of language.
 
 OUTPUT: Valid JSON only — no markdown, no explanation, no code blocks.
@@ -94,7 +95,7 @@ Return EXACTLY this structure (do not add or remove keys):
   },
   "certifications": ["certification 1", "certification 2"],
   "domain_knowledge": ["domain area 1", "domain area 2"],
-  "other_requirements": ["requirement 1", "requirement 2"],
+  "other_requirements": ["SCOREABLE requirement 1", "SCOREABLE requirement 2"],
   "scoring_weights": {
     "skills": <integer>,
     "experience": <integer>,
@@ -103,17 +104,64 @@ Return EXACTLY this structure (do not add or remove keys):
     "soft_skills": <integer>,
     "domain_knowledge": <integer>,
     "other_requirements": <integer>
-  }
+  },
+  "non_scoreable_requirements": [
+    {"text": "...", "category": "work_authorization|location|salary|availability|language_eligibility|travel", "is_scoreable": false, "reason": "...", "source_field": "description"}
+  ],
+  "post_hiring_conditions": [
+    {"text": "...", "category": "background_check|reference_check|medical_check|police_clearance|document_submission", "is_scoreable": false, "reason": "...", "source_field": "description"}
+  ],
+  "informational_items": [
+    {"text": "...", "category": "company_description|benefits|reporting_line|hr_statement", "is_scoreable": false, "reason": "...", "source_field": "description"}
+  ],
+  "warnings": ["warning message if any suspicious or non-scoreable items were found"]
 }
 
-RULES:
-- scoring_weights values are integers and MUST sum to exactly 100.
-- Assign weight 0 only if a dimension is completely irrelevant to the role.
-- minimum_years must be an integer (use 0 if not mentioned).
-- required skills = explicitly mandatory; preferred = stated as advantageous or optional.
-- Extract criteria in the SAME language as the job description.
-- If a section has no data, use [] for arrays and "None" for minimum_level.
-- Be specific and measurable — avoid vague terms like "good communication skills".
+REQUIREMENT CLASSIFICATION RULES:
+
+A. SCOREABLE CRITERIA — include ONLY these in skills/experience/education/certifications/domain_knowledge/other_requirements:
+   - Technical and soft skills
+   - Years of experience, relevant roles, key responsibilities
+   - Education level and field of study
+   - Professional certifications
+   - Domain knowledge and sector expertise
+   - Other measurable professional competencies
+
+B. NON-SCOREABLE / SCREENING CONDITIONS — place in non_scoreable_requirements (NOT in other_requirements):
+   - Work authorization ("must have right to work in X", "work permit required")
+   - Location availability ("must be based in X", "willing to relocate")
+   - Salary expectations ("must accept salary of X")
+   - Availability / start date requirements
+   - Willingness to travel (unless travel experience is a measurable skill)
+   - Language requirement IF it is only an eligibility condition (not a skill)
+
+C. POST-HIRING / ADMIN CONDITIONS — place in post_hiring_conditions (NOT in other_requirements):
+   - Background check ("must pass background check", "subject to criminal record check")
+   - Reference check ("must provide X references", "references required")
+   - Medical / fitness check
+   - Police clearance
+   - Document submission after selection (visa, certificates, etc.)
+
+D. INFORMATIONAL CONTENT — place in informational_items (NOT in other_requirements):
+   - Company description and values
+   - Benefits, compensation, perks
+   - Reporting lines and org structure
+   - Generic HR statements ("equal opportunity employer", "we value diversity")
+
+CRITICAL SCORING SAFETY RULE:
+- other_requirements MUST contain ONLY scoreable criteria
+- NEVER place post-hiring admin conditions or informational content in other_requirements
+- Items like "pass background check" or "provide references" are post-hiring conditions — they cannot be scored from a CV
+
+GENERAL RULES:
+- scoring_weights values are integers and MUST sum to exactly 100
+- Assign weight 0 only if a dimension is completely irrelevant to the role
+- minimum_years must be an integer (use 0 if not mentioned)
+- required skills = explicitly mandatory; preferred = stated as advantageous or optional
+- Extract criteria in the SAME language as the job description
+- If a section has no data, use [] for arrays and "None" for minimum_level
+- Be specific and measurable — avoid vague terms like "good communication skills"
+- Use job title and seniority level (if provided) to infer appropriate criteria weight distribution
 """
 
 # ── Bilingual CV scoring ──────────────────────────────────────────────────────
@@ -313,15 +361,41 @@ async def lightweight_screen_cv(
         return {"decision": "PASS", "reason": "Screening error — proceeding to full evaluation"}
 
 
+def _build_job_context_message(job_description: str, job_metadata: dict[str, Any] | None) -> str:
+    """Build the user message including full job context, not just the description."""
+    lines: list[str] = []
+    if job_metadata:
+        meta_fields = [
+            ("Job Title",       job_metadata.get("title")),
+            ("Department",      job_metadata.get("department")),
+            ("Seniority Level", job_metadata.get("experience_level")),
+            ("Location",        job_metadata.get("location")),
+            ("Employment Type", job_metadata.get("job_type")),
+            ("Work Mode",       job_metadata.get("work_mode")),
+        ]
+        context_parts = [f"{label}: {value}" for label, value in meta_fields if value]
+        if context_parts:
+            lines.append("Job Context:")
+            lines.extend(context_parts)
+            lines.append("")
+    lines.append("Job Description:")
+    lines.append("")
+    lines.append(job_description or "")
+    return "\n".join(lines)
+
+
 async def extract_job_criteria(
     job_description: str,
     prompt_override: dict | None = None,
     openai_client: Any | None = None,
+    job_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Call OpenAI to extract structured hiring criteria from a job description.
     Returns a nested dict matching the frontend AnalysisJson interface.
 
+    job_metadata: optional dict with keys title, department, experience_level,
+                  location, job_type, work_mode — used to build richer context.
     prompt_override: active DB prompt dict from load_active_prompt(), or None for hardcoded default.
     openai_client: optional pre-built AsyncOpenAI client (from registry). Falls back to _get_client().
     """
@@ -331,12 +405,14 @@ async def extract_job_criteria(
     model         = (prompt_override or {}).get("model")         or settings.openai_model
     temperature   = (prompt_override or {}).get("temperature",  0.2)
 
+    user_message = _build_job_context_message(job_description, job_metadata)
+
     try:
         response = await client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Job Description:\n\n{job_description}"},
+                {"role": "user", "content": user_message},
             ],
             temperature=temperature,
             response_format={"type": "json_object"},
@@ -344,10 +420,77 @@ async def extract_job_criteria(
         raw = response.choices[0].message.content
         data = json.loads(raw)
         _validate_criteria(data)
+        _sanitise_classification(data)
         return data
     except Exception as exc:
         logger.error("OpenAI criteria extraction failed: %s", exc)
         raise
+
+
+def _sanitise_classification(data: dict[str, Any]) -> None:
+    """
+    Post-process classification output in-place.
+    Ensures non-scoreable items never leak into other_requirements and
+    guarantees the new classification fields are always present.
+    """
+    # Ensure new fields always exist (backward compat with old prompts that may omit them)
+    data.setdefault("non_scoreable_requirements", [])
+    data.setdefault("post_hiring_conditions", [])
+    data.setdefault("informational_items", [])
+    data.setdefault("warnings", [])
+
+    # Detect and remove known non-scoreable patterns from other_requirements
+    _NON_SCOREABLE_PATTERNS = (
+        "background check", "criminal record", "police clearance",
+        "reference check", "references", "provide reference",
+        "medical check", "medical fitness", "fitness check", "fitness test", "drug test",
+        "right to work", "work permit", "work authorization", "work authorisation",
+        "visa", "security clearance",
+    )
+
+    _POST_HIRING_PATTERNS = (
+        "background check", "criminal record", "police clearance",
+        "reference check", "references", "provide reference",
+        "medical check", "medical fitness", "fitness check", "fitness test", "drug test", "security clearance",
+    )
+
+    other = data.get("other_requirements") or []
+    clean_other: list[str] = []
+    for item in other:
+        item_lower = item.lower()
+        matched_pattern = next(
+            (p for p in _NON_SCOREABLE_PATTERNS if p in item_lower), None
+        )
+        if matched_pattern:
+            # Determine correct bucket
+            if any(p in item_lower for p in _POST_HIRING_PATTERNS):
+                data["post_hiring_conditions"].append({
+                    "text": item,
+                    "category": "background_check" if "background" in item_lower
+                                else "reference_check" if "reference" in item_lower
+                                else "medical_check" if any(x in item_lower for x in ("medical", "fitness", "drug"))
+                                else "police_clearance" if "police" in item_lower
+                                else "security_clearance" if "security clearance" in item_lower
+                                else "admin_condition",
+                    "is_scoreable": False,
+                    "reason": "Post-hiring/admin condition — cannot be assessed from a CV",
+                    "source_field": "other_requirements",
+                })
+            else:
+                data["non_scoreable_requirements"].append({
+                    "text": item,
+                    "category": "work_authorization",
+                    "is_scoreable": False,
+                    "reason": "Eligibility/authorization condition — cannot be scored from CV content",
+                    "source_field": "other_requirements",
+                })
+            warning = f"'{item}' removed from scoreable criteria (non-scoreable condition)"
+            if warning not in data["warnings"]:
+                data["warnings"].append(warning)
+        else:
+            clean_other.append(item)
+
+    data["other_requirements"] = clean_other
 
 
 def flatten_criteria_for_scoring(analysis: dict[str, Any]) -> dict[str, Any]:
