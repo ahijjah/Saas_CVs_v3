@@ -2488,6 +2488,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                       <div className="flex-1 space-y-2">
                         <input
                           type="text"
+                          name={`knockout_question_${idx}`}
+                          autoComplete="off"
                           value={q.question_text || ''}
                           onChange={e => updateKnockoutDraftQuestion(idx, 'question_text', e.target.value)}
                           placeholder={(t as any).knockoutQuestionPlaceholder}
