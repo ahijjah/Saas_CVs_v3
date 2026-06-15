@@ -46,7 +46,7 @@ async def _require_tenant(db: AsyncSession, tenant_id: str) -> dict:
     """Return tenant row or raise 404."""
     row = await db.execute(
         text(
-            "SELECT tenant_id, tenant_name, tenant_code, status "
+            "SELECT tenant_id, name AS tenant_name, email_domain AS tenant_code, status "
             "FROM cv_analyzer.tenants "
             "WHERE tenant_id = CAST(:tid AS uuid)"
         ),
@@ -141,7 +141,7 @@ async def list_tenant_features_overview(
             "FROM cv_analyzer.tenants t "
             "LEFT JOIN cv_analyzer.tenant_features ai  ON ai.tenant_id  = t.tenant_id AND ai.feature_code  = 'AI_RECRUITMENT' "
             "LEFT JOIN cv_analyzer.tenant_features ats ON ats.tenant_id = t.tenant_id AND ats.feature_code = 'ATS_MANAGEMENT' "
-            "WHERE (t.tenant_name ILIKE :search OR t.tenant_code ILIKE :search)"
+            "WHERE (t.name ILIKE :search OR t.email_domain ILIKE :search)"
         ),
         {"search": search_param},
     )
@@ -151,7 +151,7 @@ async def list_tenant_features_overview(
     rows_result = await db.execute(
         text(
             "SELECT "
-            "  t.tenant_id, t.tenant_name, t.tenant_code, t.status, "
+            "  t.tenant_id, t.name AS tenant_name, t.email_domain AS tenant_code, t.status, "
             "  COALESCE(ai.is_enabled,  true) AS ai_recruitment_enabled, "
             "  COALESCE(ats.is_enabled, true) AS ats_management_enabled, "
             "  COALESCE(feat_counts.enabled_count, 0) AS enabled_features_count, "
@@ -166,8 +166,8 @@ async def list_tenant_features_overview(
             "  FROM cv_analyzer.tenant_features "
             "  GROUP BY tenant_id "
             ") feat_counts ON feat_counts.tenant_id = t.tenant_id "
-            "WHERE (t.tenant_name ILIKE :search OR t.tenant_code ILIKE :search) "
-            "ORDER BY t.tenant_name "
+            "WHERE (t.name ILIKE :search OR t.email_domain ILIKE :search) "
+            "ORDER BY t.name "
             "LIMIT :lim OFFSET :off"
         ),
         {"search": search_param, "lim": page_size, "off": offset},
