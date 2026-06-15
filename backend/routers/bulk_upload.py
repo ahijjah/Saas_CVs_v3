@@ -1,19 +1,21 @@
 """
-Router: E-01 Phase 2 — Bulk Upload API.
+Router: E-01 Bulk Upload API (Phase 2 + Phase 3).
 
 Endpoints:
   POST /bulk-upload/batches                       Create a new batch for a job
   POST /bulk-upload/batches/{batch_id}/zip        Upload ZIP of CVs
   POST /bulk-upload/batches/{batch_id}/excel      Upload Excel → validate
+  POST /bulk-upload/batches/{batch_id}/import     Confirm import → create applications
   GET  /bulk-upload/batches/{batch_id}            Batch details + summary
   GET  /bulk-upload/batches/{batch_id}/rows       Paginated row list
   GET  /bulk-upload/batches/{batch_id}/validation Full validation report
   GET  /bulk-upload/jobs/{job_id}/batches         All batches for a job
 
-Phase boundary:  This router STOPS after validation.
-  - No application records are created.
-  - No candidate import is performed.
-  - No AI scoring is triggered.
+Phase 3 boundary:
+  - Creates real application records using the same helpers as all other intake methods.
+  - Saves matched knockout answers to application_knockout_answers.
+  - Does NOT enqueue scoring (Phase 4).
+  - Does NOT trigger processing pipeline.
 """
 
 import json
@@ -420,6 +422,68 @@ async def upload_excel(
         "zip_summary": zip_summary,
         "rows": row_results,
     }
+
+
+# ── Endpoint: confirm import ─────────────────────────────────────────────────
+
+_IMPORTABLE_STATUSES = frozenset({"validated", "importing", "imported"})
+
+
+@router.post("/batches/{batch_id}/import", status_code=status.HTTP_200_OK)
+async def import_batch(
+    batch_id: str,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    include_warning_rows: bool = Query(
+        True,
+        description="Include rows with validation_status=warning in the import",
+    ),
+):
+    """
+    Confirm import of validated rows and create real application records.
+
+    Eligible rows (ready, and optionally warning) get:
+      - An application record (submission_source=bulk_excel_upload)
+      - CV file persisted to disk (same path structure as all other intakes)
+      - Knockout answers saved to application_knockout_answers where column
+        headers match question_text for the job
+      - An application_intake_log entry for auditability
+
+    Error rows are always skipped.
+    Rows that already have an application_id are not duplicated.
+
+    The endpoint is idempotent — calling it again re-processes any rows that
+    were not imported in a previous pass and returns already_imported_rows for
+    those that were.
+
+    Phase 3 boundary: scoring is NOT triggered.  That is Phase 4.
+    """
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+    batch = await _require_batch(db, batch_id, current_user.tenant_id)
+
+    if batch["batch_status"] not in _IMPORTABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Batch cannot be imported in status '{batch['batch_status']}'. "
+                f"Batch must be validated first."
+            ),
+        )
+
+    from services.bulk_upload_import_service import run_batch_import
+
+    summary = await run_batch_import(
+        db               = db,
+        batch_id         = batch_id,
+        tenant_id        = current_user.tenant_id,
+        job_id           = batch["job_id"],
+        user_id          = current_user.user_id,
+        user_name        = getattr(current_user, "full_name", None),
+        user_email       = getattr(current_user, "email", None),
+        include_warnings = include_warning_rows,
+        settings         = settings,
+    )
+    return summary
 
 
 # ── Endpoint: get batch ───────────────────────────────────────────────────────
