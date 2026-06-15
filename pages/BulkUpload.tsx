@@ -227,6 +227,7 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
   const [loadingHistory, setLoadingHistory]   = useState(false);
   const [creatingBatch, setCreatingBatch]     = useState(false);
   const [uploadingZip, setUploadingZip]       = useState(false);
+  const [openingBatchId, setOpeningBatchId]   = useState<string | null>(null);
   const [uploadingExcel, setUploadingExcel]   = useState(false);
   const [importing, setImporting]             = useState(false);
 
@@ -394,7 +395,13 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
 
   // ── Open historical batch ─────────────────────────────────────────────────
   const openBatch = async (batch: BatchSummary) => {
+    setOpeningBatchId(batch.batch_id);
     setActiveBatch(batch);
+    // Clear stale data from any previously viewed batch
+    setProcSummary(null);
+    setProcRows([]);
+    setValidationRows([]);
+    setProcPage(0);
     const st = batch.batch_status;
     try {
       if (st === 'validated') {
@@ -402,23 +409,49 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
         setValidationRows(valData.rows || []);
         setHasZip(!!batch.zip_file_path);
         setPhase('validated');
+
       } else if (st === 'processing' || st === 'importing' || st === 'imported') {
+        // Fetch an initial snapshot so the table isn't blank while polling waits
+        try {
+          const [summary, rowsData] = await Promise.all([
+            apiService.get(`${BASE}/batches/${batch.batch_id}/processing`, {}, token),
+            apiService.get(
+              `${BASE}/batches/${batch.batch_id}/processing/rows`,
+              { limit: String(PAGE_SIZE), offset: '0' },
+              token,
+            ),
+          ]);
+          setProcSummary(summary);
+          setProcRows(rowsData.rows || []);
+        } catch { /* snapshot is optional — polling fills in the data */ }
         setPhase('processing');
         setPollTick(t => t + 1);
+
       } else if (st === 'completed' || st === 'failed') {
         const [summary, rowsData] = await Promise.all([
           apiService.get(`${BASE}/batches/${batch.batch_id}/processing`, {}, token),
-          apiService.get(`${BASE}/batches/${batch.batch_id}/processing/rows`, { limit: '50', offset: '0' }, token),
+          apiService.get(
+            `${BASE}/batches/${batch.batch_id}/processing/rows`,
+            { limit: String(PAGE_SIZE), offset: '0' },
+            token,
+          ),
         ]);
         setProcSummary(summary);
         setProcRows(rowsData.rows || []);
         setPhase('completed');
+
       } else {
+        // 'created' / 'uploaded' / 'validating' — batch needs file uploads
         setHasZip(!!batch.zip_file_path);
         setPhase('new_batch');
       }
-    } catch {
-      setPhase('new_batch');
+    } catch (err: any) {
+      addToast(err?.message || 'Failed to load batch details', 'error');
+      // Stay in history — never silently reset to upload workflow
+      setActiveBatch(null);
+      setPhase('history');
+    } finally {
+      setOpeningBatchId(null);
     }
   };
 
@@ -582,9 +615,12 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
                           <td className="px-4 py-3">
                             <button
                               onClick={() => openBatch(b)}
-                              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+                              disabled={openingBatchId !== null}
+                              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                             >
-                              Open →
+                              {openingBatchId === b.batch_id ? (
+                                <><Spinner small /> Opening…</>
+                              ) : 'Open →'}
                             </button>
                           </td>
                         </tr>
@@ -601,39 +637,54 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
             BATCH HEADER (shown in all non-history phases)
         ══════════════════════════════════════════════════════════════════ */}
         {phase !== 'history' && activeBatch && (
-          <div className="bg-white rounded-2xl shadow-sm border border-border px-5 py-4 flex flex-wrap items-center gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
-                <StatusBadge status={activeBatch.batch_status} />
-                <code className="text-[10px] font-mono text-textMuted">{activeBatch.batch_id}</code>
+          <div className="bg-white rounded-2xl shadow-sm border border-border px-5 py-4 space-y-3">
+            <div className="flex flex-wrap items-start gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-1">Batch Details</p>
+                <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                  <StatusBadge status={activeBatch.batch_status} />
+                  <code className="text-[10px] font-mono text-textMuted break-all">{activeBatch.batch_id}</code>
+                </div>
+                <p className="text-[10px] text-textMuted">
+                  Created {activeBatch.created_at ? new Date(activeBatch.created_at).toLocaleString() : '—'}
+                </p>
               </div>
-              <p className="text-[10px] text-textMuted">
-                Created {activeBatch.created_at ? new Date(activeBatch.created_at).toLocaleString() : '—'}
-              </p>
-            </div>
-            {/* Phase breadcrumb */}
-            <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider">
-              {(['Upload', 'Validate', 'Import', 'Processing', 'Done'] as const).map((step, i) => {
-                const done =
-                  (i === 0 && ['validated', 'processing', 'completed'].includes(activeBatch.batch_status)) ||
-                  (i === 1 && ['processing', 'completed', 'imported'].includes(activeBatch.batch_status)) ||
-                  (i === 2 && ['processing', 'completed', 'importing'].includes(activeBatch.batch_status)) ||
-                  (i === 3 && ['completed', 'failed'].includes(activeBatch.batch_status));
-                const active =
-                  (i === 0 && phase === 'new_batch') ||
-                  (i === 1 && phase === 'validated') ||
-                  (i === 2 && phase === 'validated') ||
-                  (i === 3 && phase === 'processing') ||
-                  (i === 4 && phase === 'completed');
-                return (
-                  <React.Fragment key={step}>
-                    <span className={`px-2 py-0.5 rounded-full ${
-                      active ? 'bg-indigo-600 text-white' : done ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
-                    }`}>{step}</span>
-                    {i < 4 && <span className="text-slate-300">›</span>}
-                  </React.Fragment>
-                );
-              })}
+              <div className="flex items-center gap-3 shrink-0">
+                {/* ← Back to History */}
+                <button
+                  onClick={() => { setPhase('history'); setActiveBatch(null); fetchHistory(); }}
+                  className="text-[11px] font-bold text-textMuted hover:text-textMain flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Back to History
+                </button>
+                {/* Phase breadcrumb */}
+                <div className="hidden sm:flex items-center gap-1 text-[9px] font-black uppercase tracking-wider">
+                  {(['Upload', 'Validate', 'Import', 'Processing', 'Done'] as const).map((step, i) => {
+                    const done =
+                      (i === 0 && ['validated', 'processing', 'completed'].includes(activeBatch.batch_status)) ||
+                      (i === 1 && ['processing', 'completed', 'imported'].includes(activeBatch.batch_status)) ||
+                      (i === 2 && ['processing', 'completed', 'importing'].includes(activeBatch.batch_status)) ||
+                      (i === 3 && ['completed', 'failed'].includes(activeBatch.batch_status));
+                    const active =
+                      (i === 0 && phase === 'new_batch') ||
+                      (i === 1 && phase === 'validated') ||
+                      (i === 2 && phase === 'validated') ||
+                      (i === 3 && phase === 'processing') ||
+                      (i === 4 && phase === 'completed');
+                    return (
+                      <React.Fragment key={step}>
+                        <span className={`px-2 py-0.5 rounded-full ${
+                          active ? 'bg-indigo-600 text-white' : done ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
+                        }`}>{step}</span>
+                        {i < 4 && <span className="text-slate-300">›</span>}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         )}
