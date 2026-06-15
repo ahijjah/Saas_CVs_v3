@@ -127,6 +127,61 @@ const T = {
     explainabilityTitle: 'Candidate Assessment',
     additionalDetailsTitle: 'Additional Details',
     developerTitle: 'Developer / Diagnostic',
+    coverageSummary: 'Coverage Summary',
+    requiredRequirements: 'Required Requirements',
+    preferredRequirements: 'Preferred Requirements',
+    xMatched: 'Matched',
+    xPartial: 'Partial',
+    xMissing: 'Missing',
+    xCoverage: 'Coverage',
+    recruiterSignalLabel: 'Recruiter Signal',
+    recruiterSignalLabels: {
+      STRONG_FULL_MATCH:             'Excellent Match',
+      STRONG_REQUIRED_WEAK_PREFERRED: 'Strong Match',
+      STRONG_REQUIRED_NO_PREFERRED:  'Strong Core Match',
+      NEAR_MATCH:                    'Near Match',
+      PARTIAL_REQUIRED:              'Significant Gaps',
+      POOR_REQUIRED_COVERAGE:        'Does Not Meet Requirements',
+      NO_REQUIRED_CRITERIA:          'No Required Criteria',
+    } as Record<string, string>,
+    recruiterSignalDescriptions: {
+      STRONG_FULL_MATCH:             'All core and preferred requirements satisfied.',
+      STRONG_REQUIRED_WEAK_PREFERRED: 'Core requirements met. Preferred requirements partially met.',
+      STRONG_REQUIRED_NO_PREFERRED:  'All core requirements met. No preferred requirements specified.',
+      NEAR_MATCH:                    'Core requirements mostly satisfied. Some gaps remain.',
+      PARTIAL_REQUIRED:              'Significant gaps in core requirements.',
+      POOR_REQUIRED_COVERAGE:        'Most core requirements are missing.',
+      NO_REQUIRED_CRITERIA:          'No mandatory requirements were defined for this job.',
+    } as Record<string, string>,
+    xDimensionLabels: {
+      skills:           'Technical Skills',
+      experience:       'Experience',
+      education:        'Education',
+      certifications:   'Certifications',
+      soft_skills:      'Soft Skills',
+      domain_knowledge: 'Domain Knowledge',
+      other:            'Other Requirements',
+    } as Record<string, string>,
+    badgeRequired:    'Required',
+    badgePreferred:   'Preferred',
+    statusMatched:    'Matched',
+    statusPartial:    'Partial',
+    statusAbsent:     'Missing',
+    matchTypeLabels: {
+      direct:       'Direct match',
+      equivalent:   'Equivalent',
+      transferable: 'Transferable',
+      inferred:     'Inferred',
+      missing:      'Not found',
+    } as Record<string, string>,
+    xConfidence:       'Confidence',
+    xEffectiveCredit:  'Credit',
+    xEvidence:         'Evidence',
+    xNoEvidence:       'No supporting evidence recorded.',
+    xDimensionScore:   'Dimension Score',
+    xWeight:           'Weight',
+    xNoCriteriaData:   'No criteria data available.',
+    xNoExplainability: 'Detailed evidence analysis is not available for this application.',
     securityBlockedPageTitle: 'Application Security Review',
     securityBlockedBadge: 'Blocked Before AI Scoring',
     securityCandidateRef: 'Candidate Reference',
@@ -389,6 +444,61 @@ const T = {
     explainabilityTitle: 'تقييم المرشح',
     additionalDetailsTitle: 'تفاصيل إضافية',
     developerTitle: 'المطور / التشخيص',
+    coverageSummary: 'ملخص التغطية',
+    requiredRequirements: 'المتطلبات الإلزامية',
+    preferredRequirements: 'المتطلبات المفضلة',
+    xMatched: 'مطابق',
+    xPartial: 'جزئي',
+    xMissing: 'غائب',
+    xCoverage: 'التغطية',
+    recruiterSignalLabel: 'إشارة المسؤول',
+    recruiterSignalLabels: {
+      STRONG_FULL_MATCH:             'تطابق ممتاز',
+      STRONG_REQUIRED_WEAK_PREFERRED: 'تطابق قوي',
+      STRONG_REQUIRED_NO_PREFERRED:  'تطابق أساسي قوي',
+      NEAR_MATCH:                    'تطابق شبه تام',
+      PARTIAL_REQUIRED:              'ثغرات جوهرية',
+      POOR_REQUIRED_COVERAGE:        'لا يلبي المتطلبات',
+      NO_REQUIRED_CRITERIA:          'لا توجد معايير إلزامية',
+    } as Record<string, string>,
+    recruiterSignalDescriptions: {
+      STRONG_FULL_MATCH:             'جميع المتطلبات الأساسية والمفضلة محققة.',
+      STRONG_REQUIRED_WEAK_PREFERRED: 'المتطلبات الأساسية محققة. المتطلبات المفضلة محققة جزئياً.',
+      STRONG_REQUIRED_NO_PREFERRED:  'جميع المتطلبات الأساسية محققة. لا توجد متطلبات مفضلة محددة.',
+      NEAR_MATCH:                    'المتطلبات الأساسية محققة في معظمها مع بعض الثغرات.',
+      PARTIAL_REQUIRED:              'ثغرات جوهرية في المتطلبات الأساسية.',
+      POOR_REQUIRED_COVERAGE:        'معظم المتطلبات الأساسية غائبة.',
+      NO_REQUIRED_CRITERIA:          'لم يتم تحديد أي متطلبات إلزامية لهذه الوظيفة.',
+    } as Record<string, string>,
+    xDimensionLabels: {
+      skills:           'المهارات التقنية',
+      experience:       'الخبرة',
+      education:        'التعليم',
+      certifications:   'الشهادات',
+      soft_skills:      'المهارات الشخصية',
+      domain_knowledge: 'المعرفة المتخصصة',
+      other:            'متطلبات أخرى',
+    } as Record<string, string>,
+    badgeRequired:    'إلزامي',
+    badgePreferred:   'مفضل',
+    statusMatched:    'مطابق',
+    statusPartial:    'جزئي',
+    statusAbsent:     'غائب',
+    matchTypeLabels: {
+      direct:       'تطابق مباشر',
+      equivalent:   'مكافئ',
+      transferable: 'قابل للنقل',
+      inferred:     'مستنتج',
+      missing:      'غير موجود',
+    } as Record<string, string>,
+    xConfidence:       'الثقة',
+    xEffectiveCredit:  'الائتمان',
+    xEvidence:         'الأدلة',
+    xNoEvidence:       'لم يُسجَّل أي دليل داعم.',
+    xDimensionScore:   'درجة البُعد',
+    xWeight:           'الوزن',
+    xNoCriteriaData:   'لا تتوفر بيانات معايير.',
+    xNoExplainability: 'تحليل الأدلة التفصيلي غير متاح لهذا الطلب.',
     securityBlockedPageTitle: 'مراجعة أمان الطلب',
     securityBlockedBadge: 'محجوب قبل التقييم بالذكاء الاصطناعي',
     securityCandidateRef: 'مرجع المرشح',
@@ -2079,8 +2189,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                   <div className="sm:col-span-1 flex flex-col justify-center">
                     <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-3">{t.recruiterSignalLabel}</p>
                     <div className={`rounded-2xl border px-5 py-4 ${signalColors[signal] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                      <p className="text-base font-black mb-1">{t.recruiterSignalLabels[signal] || signal}</p>
-                      <p className="text-xs leading-relaxed opacity-80">{t.recruiterSignalDescriptions[signal] || ''}</p>
+                      <p className="text-base font-black mb-1">{(t.recruiterSignalLabels?.[signal]) || signal.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</p>
+                      <p className="text-xs leading-relaxed opacity-80">{(t.recruiterSignalDescriptions?.[signal]) || ''}</p>
                     </div>
                   </div>
                 </div>
@@ -2089,7 +2199,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                   {orderedDims.map(dimKey => {
                     const dim: DetDimensionScore = ds.dimensions[dimKey];
                     const isOpen = expandedDimensions[dimKey] ?? false;
-                    const dimLabel = t.xDimensionLabels[dimKey] || dimKey;
+                    const dimLabel = (t.xDimensionLabels?.[dimKey]) || dimKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                     const scorePercent = Math.round(dim.dimension_score * 100);
                     const requiredCriteria = dim.criteria.filter(c => c.required);
                     const preferredCriteria = dim.criteria.filter(c => !c.required);
@@ -2140,7 +2250,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                       <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-700 uppercase tracking-wide flex-shrink-0">{t.badgeRequired}</span>
                                     </div>
                                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-textMuted">
-                                      <span>{t.matchTypeLabels[c.match_type] || c.match_type}</span>
+                                      <span>{t.matchTypeLabels?.[c.match_type] || (c.match_type || '').replace(/_/g, ' ')}</span>
                                       <span>{t.xConfidence}: {Math.round(c.confidence * 100)}%</span>
                                       <span>{t.xEffectiveCredit}: {Math.round(c.effective_credit * 100)}%</span>
                                     </div>
@@ -2169,7 +2279,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                       <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-100 text-slate-600 uppercase tracking-wide flex-shrink-0">{t.badgePreferred}</span>
                                     </div>
                                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-textMuted">
-                                      <span>{t.matchTypeLabels[c.match_type] || c.match_type}</span>
+                                      <span>{t.matchTypeLabels?.[c.match_type] || (c.match_type || '').replace(/_/g, ' ')}</span>
                                       <span>{t.xConfidence}: {Math.round(c.confidence * 100)}%</span>
                                       <span>{t.xEffectiveCredit}: {Math.round(c.effective_credit * 100)}%</span>
                                     </div>
