@@ -401,7 +401,7 @@ async def list_rows_processing_status(
                 a.stopped_reason,
                 a.evaluation_stage,
                 a.scored_at,
-                s.final_score
+                COALESCE(s.det_final_score, s.final_score) AS final_score
               FROM bulk_upload_rows bur
               LEFT JOIN applications a ON a.application_id = bur.application_id
               LEFT JOIN application_scores s ON s.application_id = a.application_id

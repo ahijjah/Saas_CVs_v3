@@ -413,7 +413,7 @@ async def list_applications(
     sort_column = {
         "applied_at": "a.applied_at",
         "updated_at": "a.scored_at",
-        "score": "s.final_score",
+        "score": "COALESCE(s.det_final_score, s.final_score)",
         "candidate_name": "a.candidate_name",
     }.get(sort_by, "a.applied_at")
 
@@ -451,7 +451,7 @@ async def list_applications(
             a.applied_at,
             a.scored_at                         AS updated_at,
             a.is_talent_pool,
-            s.final_score                       AS score,
+            COALESCE(s.det_final_score, s.final_score) AS score,
             s.evaluation_notes                  AS summary,
             j.allow_advanced_workflow_move      AS job_allow_advanced_workflow_move,
             a.assigned_user_id,
@@ -1047,7 +1047,7 @@ async def export_applications(
     sort_column = {
         "applied_at": "a.applied_at",
         "updated_at": "a.scored_at",
-        "score": "s.final_score",
+        "score": "COALESCE(s.det_final_score, s.final_score)",
         "candidate_name": "a.candidate_name",
     }.get(sort_by, "a.applied_at")
 
@@ -1060,7 +1060,7 @@ async def export_applications(
             j.job_code,
             jc.name                          AS campaign_name,
             co.organization_name             AS client_org_name,
-            s.final_score                    AS score,
+            COALESCE(s.det_final_score, s.final_score) AS score,
             a.decision                       AS status,
             a.processing_status,
             a.workflow_status,
@@ -1197,6 +1197,7 @@ async def get_application_details(
                 s.cv_language, s.gatekeeper_passed AS score_gatekeeper_passed,
                 s.ai_model,
                 s.score_details,
+                s.det_final_score,
                 s.det_score_json,
                 s.scoring_prompt_code, s.scoring_prompt_version,
                 s.level2_prompt_code,  s.level2_prompt_version,
@@ -1354,10 +1355,15 @@ async def get_application_details(
             c["created_at"] = c["created_at"].isoformat()
 
     weights = app["weights_snapshot"] or {}
+    det_score_json = app["det_score_json"]
+    det_dims = (det_score_json or {}).get("dimensions", {})
 
-    def build_dim(score_key: str, weight_key: str) -> dict:
-        score = app[score_key] or 0
+    def build_dim(score_key: str, weight_key: str, det_dim_key: str = "") -> dict:
         weight = weights.get(weight_key, 0)
+        if det_dims and det_dim_key and det_dim_key in det_dims:
+            score = det_dims[det_dim_key].get("dimension_score", 0)
+        else:
+            score = app[score_key] or 0
         return {"achieved": score, "max": 100, "weight": weight}
 
     reasoning = app["reasoning"] or {}
@@ -1388,7 +1394,7 @@ async def get_application_details(
         "submitted_by_email": app["submitted_by_email"],
         "original_filename":  app["original_filename"],
         "decision": display_decision,
-        "overall_score": int(app["final_score"]) if app["final_score"] is not None else 0,
+        "overall_score": int(app["det_final_score"] if app["det_final_score"] is not None else (app["final_score"] or 0)),
         "submission_source": app["submission_source"],
         "processing_status": app["processing_status"],
         "stopped_reason":    app["stopped_reason"],
@@ -1401,13 +1407,13 @@ async def get_application_details(
         "qualified_threshold_used": app["qualified_threshold_used"],
         "partial_threshold_used": app["partial_threshold_used"],
         "scores": {
-            "skills":           build_dim("score_skills",           "weight_skills"),
-            "experience":       build_dim("score_experience",       "weight_experience"),
-            "education":        build_dim("score_education",        "weight_education"),
-            "certifications":   build_dim("score_certifications",   "weight_certifications"),
-            "soft_skills":      build_dim("score_soft_skills",      "weight_soft_skills"),
-            "domain_knowledge": build_dim("score_domain_knowledge", "weight_domain_knowledge"),
-            "other_requirements": build_dim("score_other",          "weight_other"),
+            "skills":           build_dim("score_skills",           "weight_skills",          "skills"),
+            "experience":       build_dim("score_experience",       "weight_experience",      "experience"),
+            "education":        build_dim("score_education",        "weight_education",       "education"),
+            "certifications":   build_dim("score_certifications",   "weight_certifications",  "certifications"),
+            "soft_skills":      build_dim("score_soft_skills",      "weight_soft_skills",     "soft_skills"),
+            "domain_knowledge": build_dim("score_domain_knowledge", "weight_domain_knowledge","domain_knowledge"),
+            "other_requirements": build_dim("score_other",          "weight_other",           "other"),
         },
         "score_details": app["score_details"] or {},
         "det_score": app["det_score_json"] or None,
@@ -1550,7 +1556,7 @@ async def list_uploaded_cvs(
                 a.decision,
                 a.evaluation_stage,
                 a.evaluation_exit_reason,
-                s.final_score,
+                COALESCE(s.det_final_score, s.final_score) AS final_score,
                 a.applied_at,
                 af.original_name
             FROM applications a

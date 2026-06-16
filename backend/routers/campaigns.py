@@ -743,7 +743,7 @@ async def get_campaign_candidates(
                 a.workflow_status,
                 a.processing_status,
                 a.applied_at,
-                s.final_score AS ai_score,
+                COALESCE(s.det_final_score, s.final_score) AS ai_score,
                 j.title       AS job_title
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
