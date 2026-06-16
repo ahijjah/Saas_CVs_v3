@@ -538,6 +538,32 @@ _NON_ACADEMIC_FIELDS: frozenset[str] = frozenset({
 })
 
 
+# ── Patterns that must never appear in suggested_requirements ─────────────────
+# Combines post-hiring, authorization, and logistical non-scoreable patterns.
+
+_SUGGESTED_FILTER_PATTERNS: tuple[str, ...] = (
+    # Post-hiring / admin conditions
+    "background check", "criminal record", "police clearance",
+    "reference check", "references", "provide reference",
+    "medical check", "medical fitness", "fitness check", "fitness test", "drug test",
+    "security clearance",
+    # Work authorization / eligibility
+    "right to work", "work permit", "work authorization", "work authorisation", "visa",
+    # Logistical / availability conditions
+    "full-time availability", "full time availability",
+    "on-site work", "onsite work", "on site work",
+    "must be on-site", "must be onsite",
+    "willingness to travel", "travel required", "travel will be required",
+    "work schedule", "working schedule", "working hours", "work hours",
+    "shift work", "night shift", "weekend work",
+    "location requirement", "must be based in", "must reside in",
+    "must be located in", "relocation required",
+    "availability date", "start date", "joining date",
+    "immediate availability", "available immediately", "immediately available",
+    "available to start immediately", "immediate start",
+)
+
+
 def _clean_job_analysis(data: dict[str, Any]) -> None:
     """
     Final cleanup pass applied after _validate_criteria() and _sanitise_classification().
@@ -549,11 +575,93 @@ def _clean_job_analysis(data: dict[str, Any]) -> None:
        > domain_knowledge > other_requirements).
     4. Zero out scoring_weights for empty sections, then redistribute freed weight
        proportionally to skills and experience.
+    5. Clean suggested_requirements: remove approved duplicates, non-scoreable
+       conditions, cross-category duplicates, and empty categories.
     """
     _remove_weak_skills(data)
     _clean_education_fields(data)
     _dedup_requirements(data)
     _normalise_weights(data)
+    _clean_suggested_requirements(data)
+
+
+def _clean_suggested_requirements(data: dict[str, Any]) -> None:
+    """
+    Clean the suggested_requirements block in-place.
+
+    Applied AFTER all main criteria are finalized so the approved set is complete.
+
+    Rules:
+    - Remove items already present anywhere in the approved criteria (case-insensitive).
+    - Remove non-scoreable employment conditions (same patterns as sanitise_classification).
+    - Remove cross-category duplicates within suggested_requirements itself.
+    - Remove empty categories from the output.
+    - Never filters responsibility-derived competency phrases — only exact-match
+      or pattern-match removals apply.
+    """
+    suggested = data.get("suggested_requirements")
+    if not isinstance(suggested, dict) or not suggested:
+        return
+
+    # Build approved set from all finalized main criteria
+    approved: set[str] = set()
+
+    def _add_all(items: list) -> None:
+        for item in (items or []):
+            approved.add(str(item).strip().lower())
+
+    skills = data.get("skills") or {}
+    if isinstance(skills, dict):
+        _add_all(skills.get("required") or [])
+        _add_all(skills.get("preferred") or [])
+
+    soft = data.get("soft_skills") or {}
+    if isinstance(soft, dict):
+        _add_all(soft.get("required") or [])
+        _add_all(soft.get("preferred") or [])
+
+    _add_all(data.get("certifications") or [])
+    _add_all(data.get("domain_knowledge") or [])
+    _add_all(data.get("other_requirements") or [])
+
+    exp = data.get("experience") or {}
+    if isinstance(exp, dict):
+        _add_all(exp.get("relevant_roles") or [])
+        _add_all(exp.get("key_responsibilities") or [])
+
+    edu = data.get("education") or {}
+    if isinstance(edu, dict):
+        _add_all(edu.get("fields_of_study") or [])
+
+    # Process each category, tracking seen items across the whole block
+    within_seen: set[str] = set()
+    cleaned: dict[str, list] = {}
+
+    for category, items in suggested.items():
+        if not isinstance(items, list):
+            continue
+
+        kept: list[str] = []
+        for item in items:
+            item_str = str(item).strip()
+            if not item_str:
+                continue
+            item_lower = item_str.lower()
+
+            if item_lower in approved:
+                continue
+            if any(p in item_lower for p in _SUGGESTED_FILTER_PATTERNS):
+                continue
+            if item_lower in within_seen:
+                continue
+
+            within_seen.add(item_lower)
+            kept.append(item_str)
+
+        if kept:
+            cleaned[category] = kept
+
+    data["suggested_requirements"] = cleaned
 
 
 def _remove_weak_skills(data: dict[str, Any]) -> None:
@@ -1000,6 +1108,13 @@ def _validate_criteria(data: dict[str, Any]) -> None:
     data.setdefault("certifications", [])
     data.setdefault("domain_knowledge", [])
     data.setdefault("other_requirements", [])
+    # If the new prompt returned suggested_requirements, ensure each category
+    # value is a list (guard against None or wrong type from the LLM).
+    suggested = data.get("suggested_requirements")
+    if isinstance(suggested, dict):
+        for key in list(suggested.keys()):
+            if not isinstance(suggested.get(key), list):
+                suggested[key] = []
 
 
 # ── Scoring output guards ─────────────────────────────────────────────────────
