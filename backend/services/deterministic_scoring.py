@@ -83,6 +83,10 @@ class DeterministicScoringConfig:
     enable_required_absent_floor:    bool  = False
     required_absent_floor_threshold: float = 0.50
     required_absent_floor_cap:       float = 0.40
+    # When match_type='missing' contradicts status='MATCHED'/'PARTIAL' + evidence,
+    # reclassify to 'inferred' so credit is not silently zeroed out.
+    inferred_normalization_enabled:        bool  = True
+    inferred_normalization_min_confidence: float = 0.35
 
 
 # ── Output dataclasses ────────────────────────────────────────────────────────
@@ -259,11 +263,30 @@ class DeterministicScoringEngine:
         status          = assessment.status or "ABSENT"
         match_type      = assessment.match_type or "missing"
         criterion_class = assessment.criterion_class or "other"
-        sc              = _status_credit(status, cfg)
-        qf              = _match_quality_factor(match_type, criterion_class)
-        effective       = sc * qf
+        confidence      = float(assessment.confidence or 0.0)
+        evidence        = list(assessment.supporting_evidence or [])
+        risk_flags      = list(assessment.risk_flags or [])
 
-        has_oq = "overqualified" in (assessment.risk_flags or [])
+        # Normalize contradictory status/match_type: when the LLM finds evidence
+        # and sets status=MATCHED/PARTIAL but also sets match_type='missing',
+        # the scoring factor would silently zero out effective_credit. Reclassify
+        # to 'inferred' so the evidence earns its appropriate partial credit.
+        if (
+            cfg.inferred_normalization_enabled
+            and match_type == "missing"
+            and status in ("MATCHED", "PARTIAL")
+            and evidence
+            and confidence >= cfg.inferred_normalization_min_confidence
+        ):
+            match_type = "inferred"
+            risk_flags = [f for f in risk_flags if f != "missing_supporting_evidence"]
+            risk_flags.append("inferred_from_evidence")
+
+        sc        = _status_credit(status, cfg)
+        qf        = _match_quality_factor(match_type, criterion_class)
+        effective = sc * qf
+
+        has_oq = "overqualified" in risk_flags
 
         return DeterministicCriterionScore(
             criterion_text=assessment.criterion_text or "",
@@ -275,9 +298,9 @@ class DeterministicScoringEngine:
             status_credit=sc,
             quality_factor=qf,
             effective_credit=effective,
-            confidence=float(assessment.confidence or 0.0),
-            supporting_evidence=list(assessment.supporting_evidence or []),
-            risk_flags=list(assessment.risk_flags or []),
+            confidence=confidence,
+            supporting_evidence=evidence,
+            risk_flags=risk_flags,
             has_overqualification=has_oq,
         )
 
