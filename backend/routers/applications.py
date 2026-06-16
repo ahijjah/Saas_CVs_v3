@@ -1361,7 +1361,8 @@ async def get_application_details(
     def build_dim(score_key: str, weight_key: str, det_dim_key: str = "") -> dict:
         weight = weights.get(weight_key, 0)
         if det_dims and det_dim_key and det_dim_key in det_dims:
-            score = det_dims[det_dim_key].get("dimension_score", 0)
+            # det_score_json dimension_score is 0–1 decimal; convert to 0–100 integer
+            score = round((det_dims[det_dim_key].get("dimension_score", 0) or 0) * 100)
         else:
             score = app[score_key] or 0
         return {"achieved": score, "max": 100, "weight": weight}
