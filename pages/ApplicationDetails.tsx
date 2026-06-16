@@ -2130,6 +2130,15 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           return 'border-l-2 border-red-300 bg-red-50/30';
         };
 
+        // Safety guard: effective_credit=0 must never render a green check.
+        // The scoring engine can set status='MATCHED' while applying quality_factor=0,
+        // producing effective_credit=0. The display should reflect the credit, not
+        // the raw status, to avoid showing contradictory signals to recruiters.
+        const displayStatus = (c: DetCriterionScore): 'MATCHED' | 'PARTIAL' | 'ABSENT' => {
+          if ((c.effective_credit ?? 0) === 0) return 'ABSENT';
+          return c.status;
+        };
+
         const dimOrder = ['skills','experience','education','certifications','soft_skills','domain_knowledge','other'];
         const orderedDims = dimOrder
           .filter(k => ds.dimensions[k])
@@ -2248,10 +2257,12 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                             {!hasCriteria && <p className="text-sm text-textMuted italic py-3">{t.xNoCriteriaData}</p>}
                             {requiredCriteria.length > 0 && (
                               <div className="space-y-2">
-                                {requiredCriteria.map((c: DetCriterionScore, i: number) => (
-                                  <div key={i} className={`rounded-xl p-3 ${statusBg(c.status)}`}>
+                                {requiredCriteria.map((c: DetCriterionScore, i: number) => {
+                                  const ds = displayStatus(c);
+                                  return (
+                                  <div key={i} className={`rounded-xl p-3 ${statusBg(ds)}`}>
                                     <div className="flex items-start gap-2 flex-wrap">
-                                      {statusIcon(c.status)}
+                                      {statusIcon(ds)}
                                       <span className="flex-1 text-sm font-semibold text-textMain leading-snug">{c.criterion_text}</span>
                                       <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-700 uppercase tracking-wide flex-shrink-0">{t.badgeRequired}</span>
                                     </div>
@@ -2268,19 +2279,22 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                         ))}
                                       </div>
                                     )}
-                                    {c.status !== 'ABSENT' && c.supporting_evidence.length === 0 && (
+                                    {ds !== 'ABSENT' && c.supporting_evidence.length === 0 && (
                                       <p className="mt-2 text-[10px] text-textMuted italic">{t.xNoEvidence}</p>
                                     )}
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                             {preferredCriteria.length > 0 && (
                               <div className="space-y-2 pt-1">
-                                {preferredCriteria.map((c: DetCriterionScore, i: number) => (
-                                  <div key={i} className={`rounded-xl p-3 ${statusBg(c.status)}`}>
+                                {preferredCriteria.map((c: DetCriterionScore, i: number) => {
+                                  const ds = displayStatus(c);
+                                  return (
+                                  <div key={i} className={`rounded-xl p-3 ${statusBg(ds)}`}>
                                     <div className="flex items-start gap-2 flex-wrap">
-                                      {statusIcon(c.status)}
+                                      {statusIcon(ds)}
                                       <span className="flex-1 text-sm font-semibold text-textMain leading-snug">{c.criterion_text}</span>
                                       <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-100 text-slate-600 uppercase tracking-wide flex-shrink-0">{t.badgePreferred}</span>
                                     </div>
@@ -2298,7 +2312,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                       </div>
                                     )}
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
