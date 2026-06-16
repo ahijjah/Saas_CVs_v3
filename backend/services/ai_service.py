@@ -421,6 +421,7 @@ async def extract_job_criteria(
         data = json.loads(raw)
         _validate_criteria(data)
         _sanitise_classification(data)
+        _clean_job_analysis(data)
         return data
     except Exception as exc:
         logger.error("OpenAI criteria extraction failed: %s", exc)
@@ -439,30 +440,46 @@ def _sanitise_classification(data: dict[str, Any]) -> None:
     data.setdefault("informational_items", [])
     data.setdefault("warnings", [])
 
-    # Detect and remove known non-scoreable patterns from other_requirements
-    _NON_SCOREABLE_PATTERNS = (
-        "background check", "criminal record", "police clearance",
-        "reference check", "references", "provide reference",
-        "medical check", "medical fitness", "fitness check", "fitness test", "drug test",
-        "right to work", "work permit", "work authorization", "work authorisation",
-        "visa", "security clearance",
-    )
-
+    # Items that belong in post_hiring_conditions (admin/background screening)
     _POST_HIRING_PATTERNS = (
         "background check", "criminal record", "police clearance",
         "reference check", "references", "provide reference",
-        "medical check", "medical fitness", "fitness check", "fitness test", "drug test", "security clearance",
+        "medical check", "medical fitness", "fitness check", "fitness test", "drug test",
+        "security clearance",
     )
+
+    # Items that belong in non_scoreable_requirements: eligibility/authorization
+    _AUTHORIZATION_PATTERNS = (
+        "right to work", "work permit", "work authorization", "work authorisation",
+        "visa",
+    )
+
+    # Items that belong in non_scoreable_requirements: logistical/availability conditions
+    _LOGISTICAL_PATTERNS = (
+        "full-time availability", "full time availability",
+        "on-site work", "onsite work", "on site work",
+        "must be on-site", "must be onsite", "must work on-site",
+        "willingness to travel", "travel required", "travel will be required",
+        "travel may be required", "must be willing to travel",
+        "work schedule", "working schedule", "working hours", "work hours",
+        "shift work", "night shift", "weekend work",
+        "location requirement", "must be based in", "must reside in",
+        "must be located in", "relocation required",
+        "availability date", "start date", "joining date",
+        "immediate availability", "available immediately", "immediately available",
+        "immediate start", "available to start immediately",
+    )
+
+    _ALL_NON_SCOREABLE = _POST_HIRING_PATTERNS + _AUTHORIZATION_PATTERNS + _LOGISTICAL_PATTERNS
 
     other = data.get("other_requirements") or []
     clean_other: list[str] = []
     for item in other:
         item_lower = item.lower()
         matched_pattern = next(
-            (p for p in _NON_SCOREABLE_PATTERNS if p in item_lower), None
+            (p for p in _ALL_NON_SCOREABLE if p in item_lower), None
         )
         if matched_pattern:
-            # Determine correct bucket
             if any(p in item_lower for p in _POST_HIRING_PATTERNS):
                 data["post_hiring_conditions"].append({
                     "text": item,
@@ -477,11 +494,20 @@ def _sanitise_classification(data: dict[str, Any]) -> None:
                     "source_field": "other_requirements",
                 })
             else:
+                category = (
+                    "logistical_requirement" if any(p in item_lower for p in _LOGISTICAL_PATTERNS)
+                    else "work_authorization"
+                )
+                reason = (
+                    "Logistical/availability condition — cannot be scored from CV content"
+                    if category == "logistical_requirement"
+                    else "Eligibility/authorization condition — cannot be scored from CV content"
+                )
                 data["non_scoreable_requirements"].append({
                     "text": item,
-                    "category": "work_authorization",
+                    "category": category,
                     "is_scoreable": False,
-                    "reason": "Eligibility/authorization condition — cannot be scored from CV content",
+                    "reason": reason,
                     "source_field": "other_requirements",
                 })
             warning = f"'{item}' removed from scoreable criteria (non-scoreable condition)"
@@ -491,6 +517,160 @@ def _sanitise_classification(data: dict[str, Any]) -> None:
             clean_other.append(item)
 
     data["other_requirements"] = clean_other
+
+
+# ── Generic standalone skill words that add no scoring value alone ─────────────
+
+_WEAK_STANDALONE_SKILLS: frozenset[str] = frozenset({
+    "support", "assist", "help", "coordinate", "follow up",
+})
+
+# ── Education field values that are not academic disciplines ──────────────────
+
+_NON_ACADEMIC_FIELDS: frozenset[str] = frozenset({
+    "customer service",
+    "communication",
+    "teamwork",
+    "leadership",
+    "problem solving",
+    "technical support",
+    "administrative support",
+})
+
+
+def _clean_job_analysis(data: dict[str, Any]) -> None:
+    """
+    Final cleanup pass applied after _validate_criteria() and _sanitise_classification().
+
+    Steps (in order):
+    1. Remove generic weak standalone skills from all requirement lists.
+    2. Remove non-academic values from education.fields_of_study.
+    3. Cross-list deduplication (case-insensitive, priority: skills > soft_skills
+       > domain_knowledge > other_requirements).
+    4. Zero out scoring_weights for empty sections, then redistribute freed weight
+       proportionally to skills and experience.
+    """
+    _remove_weak_skills(data)
+    _clean_education_fields(data)
+    _dedup_requirements(data)
+    _normalise_weights(data)
+
+
+def _remove_weak_skills(data: dict[str, Any]) -> None:
+    """Remove items whose entire text is a generic weak skill word."""
+    def _filter(items: list) -> list:
+        return [i for i in items if str(i).strip().lower() not in _WEAK_STANDALONE_SKILLS]
+
+    skills = data.get("skills") or {}
+    if isinstance(skills, dict):
+        skills["required"]  = _filter(skills.get("required")  or [])
+        skills["preferred"] = _filter(skills.get("preferred") or [])
+
+    soft = data.get("soft_skills") or {}
+    if isinstance(soft, dict):
+        soft["required"]  = _filter(soft.get("required")  or [])
+        soft["preferred"] = _filter(soft.get("preferred") or [])
+
+    data["domain_knowledge"]    = _filter(data.get("domain_knowledge")    or [])
+    data["other_requirements"]  = _filter(data.get("other_requirements")  or [])
+
+
+def _clean_education_fields(data: dict[str, Any]) -> None:
+    """Remove non-academic values from education.fields_of_study."""
+    edu = data.get("education") or {}
+    if not isinstance(edu, dict):
+        return
+    edu["fields_of_study"] = [
+        f for f in (edu.get("fields_of_study") or [])
+        if str(f).strip().lower() not in _NON_ACADEMIC_FIELDS
+    ]
+
+
+def _dedup_requirements(data: dict[str, Any]) -> None:
+    """
+    Deduplicate within and across all requirement lists (case-insensitive).
+
+    Priority order for cross-list deduplication:
+      skills.required > skills.preferred > soft_skills.required >
+      soft_skills.preferred > domain_knowledge > other_requirements
+    """
+    seen: set[str] = set()
+
+    def _dedup(items: list) -> list:
+        result = []
+        for item in items:
+            key = str(item).strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                result.append(item)
+        return result
+
+    skills = data.get("skills") or {}
+    if isinstance(skills, dict):
+        skills["required"]  = _dedup(skills.get("required")  or [])
+        skills["preferred"] = _dedup(skills.get("preferred") or [])
+
+    soft = data.get("soft_skills") or {}
+    if isinstance(soft, dict):
+        soft["required"]  = _dedup(soft.get("required")  or [])
+        soft["preferred"] = _dedup(soft.get("preferred") or [])
+
+    data["domain_knowledge"]   = _dedup(data.get("domain_knowledge")   or [])
+    data["other_requirements"] = _dedup(data.get("other_requirements") or [])
+
+
+def _normalise_weights(data: dict[str, Any]) -> None:
+    """
+    Zero out scoring_weights for empty sections, then redistribute the freed
+    weight proportionally — skills and experience first, then soft_skills and
+    domain_knowledge, then education as a last resort.
+    """
+    _WEIGHT_KEYS = [
+        "skills", "experience", "education", "certifications",
+        "soft_skills", "domain_knowledge", "other_requirements",
+    ]
+    w = data.setdefault("scoring_weights", {})
+
+    freed = 0
+
+    if not data.get("certifications"):
+        freed += int(w.get("certifications", 0))
+        w["certifications"] = 0
+
+    if not data.get("other_requirements"):
+        freed += int(w.get("other_requirements", 0))
+        w["other_requirements"] = 0
+
+    if freed > 0:
+        _redistribute_freed_weight(w, freed)
+
+    # Final guarantee: total must equal 100
+    total = sum(int(w.get(k, 0)) for k in _WEIGHT_KEYS)
+    if total != 100:
+        w["skills"] = int(w.get("skills", 0)) + (100 - total)
+
+
+def _redistribute_freed_weight(w: dict[str, Any], freed: int) -> None:
+    """Add `freed` weight proportionally to non-zero buckets (priority order)."""
+    for priority_group in (
+        ["skills", "experience"],
+        ["soft_skills", "domain_knowledge"],
+        ["education"],
+        ["skills"],  # absolute last resort
+    ):
+        eligible = [(k, int(w.get(k, 0))) for k in priority_group if int(w.get(k, 0)) > 0]
+        if not eligible:
+            continue
+        group_total = sum(v for _, v in eligible)
+        remaining = freed
+        for idx, (k, current) in enumerate(eligible):
+            if idx == len(eligible) - 1:
+                w[k] = current + remaining
+            else:
+                share = round(freed * current / group_total)
+                w[k] = current + share
+                remaining -= share
+        return
 
 
 def flatten_criteria_for_scoring(analysis: dict[str, Any]) -> dict[str, Any]:
