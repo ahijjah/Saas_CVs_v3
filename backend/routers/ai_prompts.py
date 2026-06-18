@@ -291,11 +291,6 @@ class CreatePromptRequest(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("prompt_code is required")
-        if not _PROMPT_CODE_RE.match(v):
-            raise ValueError(
-                "prompt_code must be lowercase snake_case — only lowercase letters, digits, "
-                "and underscores, starting with a letter (e.g. cv_scoring, criteria_extraction)"
-            )
         return v
 
     @field_validator("prompt_category")
@@ -438,7 +433,18 @@ async def create_prompt(
         text("SELECT COALESCE(MAX(version), 0) AS max_ver FROM ai_prompts WHERE prompt_code = :code"),
         {"code": body.prompt_code},
     )
-    next_version = (ver_row.scalar() or 0) + 1
+    max_ver = ver_row.scalar() or 0
+    next_version = max_ver + 1
+
+    # Enforce snake_case only for genuinely new prompts (not new versions of existing ones).
+    if max_ver == 0 and not _PROMPT_CODE_RE.match(body.prompt_code):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "prompt_code must be lowercase snake_case — only lowercase letters, digits, "
+                "and underscores, starting with a letter (e.g. cv_scoring, criteria_extraction)"
+            ),
+        )
 
     prompt_id = str(uuid.uuid4())
     await db.execute(text("""
