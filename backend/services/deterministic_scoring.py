@@ -35,6 +35,7 @@ Design
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -168,6 +169,37 @@ def _status_credit(status: str, cfg: DeterministicScoringConfig) -> float:
     return 0.0
 
 
+# ── Minimum-years threshold detection ────────────────────────────────────────
+
+_MIN_YEARS_CRITERION_RE = re.compile(
+    r"[Mm]inim(?:um|al)\s+(\d+)\s+years?", re.IGNORECASE
+)
+_EVIDENCE_YEARS_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:\+\s*)?years?", re.IGNORECASE
+)
+
+
+def _check_min_years_threshold(
+    criterion_text: str, evidence: list[str]
+) -> bool | None:
+    """Return True if criterion is a minimum-years requirement and evidence
+    shows the candidate meets or exceeds it.  Return None if the criterion
+    is not a minimum-years requirement or no years value is found in evidence.
+    """
+    crit_match = _MIN_YEARS_CRITERION_RE.search(criterion_text)
+    if not crit_match:
+        return None
+    required_years = float(crit_match.group(1))
+
+    for ev in evidence:
+        ev_match = _EVIDENCE_YEARS_RE.search(ev)
+        if ev_match:
+            candidate_years = float(ev_match.group(1))
+            if candidate_years >= required_years:
+                return True
+    return None
+
+
 # ── Engine ────────────────────────────────────────────────────────────────────
 
 class DeterministicScoringEngine:
@@ -281,6 +313,24 @@ class DeterministicScoringEngine:
             match_type = "inferred"
             risk_flags = [f for f in risk_flags if f != "missing_supporting_evidence"]
             risk_flags.append("inferred_from_evidence")
+
+        # ── Minimum-years threshold rule ─────────────────────────────────
+        # "Minimum N years of experience" is a threshold, not a precision
+        # match.  If the evidence shows candidate_years >= required_years
+        # and status is MATCHED, award full credit (quality_factor=1.0)
+        # regardless of how the LLM classified match_type.
+        if (
+            status == "MATCHED"
+            and match_type in ("inferred", "transferable")
+            and evidence
+        ):
+            years_result = _check_min_years_threshold(
+                assessment.criterion_text or "", evidence
+            )
+            if years_result is not None:
+                match_type = "direct"
+                if "min_years_threshold_met" not in risk_flags:
+                    risk_flags.append("min_years_threshold_met")
 
         sc        = _status_credit(status, cfg)
         qf        = _match_quality_factor(match_type, criterion_class)
