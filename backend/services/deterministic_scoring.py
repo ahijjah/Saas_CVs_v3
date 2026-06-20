@@ -500,19 +500,33 @@ def _recruiter_signal(
     req_total: int,
     req_coverage: float | None,
     pref_coverage: float | None,
+    partial_or_matched_pct: float | None = None,
+    blocking_gaps: int = 0,
 ) -> tuple[str, str]:
     if req_total == 0:
         return ("NO_REQUIRED_CRITERIA", "No mandatory criteria defined")
-    if req_coverage == 100.0:
-        pc = pref_coverage or 0.0
-        if pc >= 70.0:
-            return ("STRONG_FULL_MATCH", "Excellent match")
-        if pc >= 30.0:
-            return ("STRONG_REQUIRED_WEAK_PREFERRED", "Core match, limited extras")
-        return ("STRONG_REQUIRED_NO_PREFERRED", "Minimum viable match")
-    if req_coverage >= 80.0:
+
+    rc = req_coverage or 0.0
+    pm = partial_or_matched_pct or 0.0
+    pc = pref_coverage or 0.0
+
+    if blocking_gaps == 0:
+        if rc == 100.0:
+            if pc >= 70.0:
+                return ("STRONG_FULL_MATCH", "Excellent match")
+            if pc >= 30.0:
+                return ("STRONG_REQUIRED_WEAK_PREFERRED", "Core match, limited extras")
+            return ("STRONG_REQUIRED_NO_PREFERRED", "Minimum viable match")
+        if pm == 100.0:
+            return ("NEAR_MATCH", "Near match")
+        return ("MOSTLY_MET", "Mostly met, minor gaps")
+
+    if blocking_gaps == 1 and pm >= 80.0:
+        return ("MOSTLY_MET", "Mostly met, minor gaps")
+
+    if rc >= 80.0:
         return ("NEAR_MATCH", "Near match")
-    if req_coverage >= 50.0:
+    if rc >= 50.0 or pm >= 60.0:
         return ("PARTIAL_REQUIRED", "Significant gaps")
     return ("POOR_REQUIRED_COVERAGE", "Does not meet requirements")
 
@@ -537,7 +551,11 @@ def deterministic_score_to_dict(score: DeterministicScore) -> dict[str, Any]:
 
     blocking_gaps  = req_absent
     fully_covered  = req_total > 0 and req_absent == 0 and req_partial == 0
-    signal, label  = _recruiter_signal(req_total, req_coverage, pref_coverage)
+    signal, label  = _recruiter_signal(
+        req_total, req_coverage, pref_coverage,
+        partial_or_matched_pct=req_pm_pct,
+        blocking_gaps=blocking_gaps,
+    )
 
     required_summary = {
         "total":         req_total,

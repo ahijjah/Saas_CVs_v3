@@ -759,39 +759,132 @@ class TestRequiredPreferredSummary:
         assert _pref_signal(0.0)  == "poorly_covered"
         assert _pref_signal(29.9) == "poorly_covered"
 
-    # _recruiter_signal
+    # _recruiter_signal — existing tier tests (updated for new signature)
     def test_recruiter_signal_no_required_criteria(self):
         sig, label = _recruiter_signal(0, None, None)
         assert sig == "NO_REQUIRED_CRITERIA"
 
     def test_recruiter_signal_strong_full_match(self):
-        sig, label = _recruiter_signal(3, 100.0, 80.0)
+        sig, label = _recruiter_signal(3, 100.0, 80.0, partial_or_matched_pct=100.0, blocking_gaps=0)
         assert sig == "STRONG_FULL_MATCH"
         assert "Excellent" in label
 
     def test_recruiter_signal_strong_required_weak_preferred(self):
-        sig, label = _recruiter_signal(3, 100.0, 50.0)
+        sig, label = _recruiter_signal(3, 100.0, 50.0, partial_or_matched_pct=100.0, blocking_gaps=0)
         assert sig == "STRONG_REQUIRED_WEAK_PREFERRED"
 
     def test_recruiter_signal_strong_required_no_preferred(self):
-        sig, label = _recruiter_signal(3, 100.0, 10.0)
+        sig, label = _recruiter_signal(3, 100.0, 10.0, partial_or_matched_pct=100.0, blocking_gaps=0)
         assert sig == "STRONG_REQUIRED_NO_PREFERRED"
 
     def test_recruiter_signal_strong_required_pref_none(self):
-        sig, _ = _recruiter_signal(3, 100.0, None)
+        sig, _ = _recruiter_signal(3, 100.0, None, partial_or_matched_pct=100.0, blocking_gaps=0)
         assert sig == "STRONG_REQUIRED_NO_PREFERRED"
 
-    def test_recruiter_signal_near_match(self):
-        sig, _ = _recruiter_signal(5, 80.0, 50.0)
+    def test_recruiter_signal_near_match_80pct_with_gaps(self):
+        """80% req_coverage + 1 blocking gap + pm_pct=80% → MOSTLY_MET (rule 3)."""
+        sig, _ = _recruiter_signal(5, 80.0, 50.0, partial_or_matched_pct=80.0, blocking_gaps=1)
+        assert sig == "MOSTLY_MET"
+
+    def test_recruiter_signal_near_match_80pct_multiple_gaps(self):
+        """80% req_coverage + 2 blocking gaps → NEAR_MATCH (rule 4)."""
+        sig, _ = _recruiter_signal(10, 80.0, 50.0, partial_or_matched_pct=80.0, blocking_gaps=2)
         assert sig == "NEAR_MATCH"
 
     def test_recruiter_signal_partial_required(self):
-        sig, _ = _recruiter_signal(5, 60.0, 50.0)
+        sig, _ = _recruiter_signal(5, 60.0, 50.0, partial_or_matched_pct=60.0, blocking_gaps=2)
         assert sig == "PARTIAL_REQUIRED"
 
     def test_recruiter_signal_poor_required_coverage(self):
-        sig, _ = _recruiter_signal(5, 20.0, 0.0)
+        sig, _ = _recruiter_signal(5, 20.0, 0.0, partial_or_matched_pct=20.0, blocking_gaps=4)
         assert sig == "POOR_REQUIRED_COVERAGE"
+
+    # ── Recruiter signal calibration regression tests ────────────────────────
+
+    def test_zero_absent_several_partials_not_significant_gaps(self):
+        """6 MATCHED + 2 PARTIAL + 0 ABSENT out of 8 required.
+        req_coverage=75%, pm_pct=100%, blocking_gaps=0.
+        OLD: 'Significant gaps'. NEW: must NOT be Significant gaps."""
+        sig, label = _recruiter_signal(8, 75.0, 50.0, partial_or_matched_pct=100.0, blocking_gaps=0)
+        assert sig != "PARTIAL_REQUIRED"
+        assert sig != "POOR_REQUIRED_COVERAGE"
+        assert sig == "NEAR_MATCH"
+
+    def test_zero_absent_all_partial_mostly_met(self):
+        """0 MATCHED + 5 PARTIAL + 0 ABSENT out of 5 required.
+        req_coverage=0%, pm_pct=100%, blocking_gaps=0.
+        Every criterion has evidence but none fully matched."""
+        sig, label = _recruiter_signal(5, 0.0, 0.0, partial_or_matched_pct=100.0, blocking_gaps=0)
+        assert sig == "NEAR_MATCH"
+        assert "Near" in label
+
+    def test_zero_absent_mixed_partial_matched_mostly_met(self):
+        """4 MATCHED + 1 PARTIAL + 0 ABSENT out of 5 required.
+        req_coverage=80%, pm_pct=100%, blocking_gaps=0.
+        Should be better than 'Near match' from before (was 80% edge)."""
+        sig, _ = _recruiter_signal(5, 80.0, 0.0, partial_or_matched_pct=100.0, blocking_gaps=0)
+        assert sig == "NEAR_MATCH"
+
+    def test_zero_absent_low_matched_mostly_met(self):
+        """2 MATCHED + 3 PARTIAL + 0 ABSENT out of 5 required.
+        req_coverage=40%, pm_pct=100%, blocking_gaps=0.
+        Candidate has evidence for everything despite low exact matches."""
+        sig, _ = _recruiter_signal(5, 40.0, 0.0, partial_or_matched_pct=100.0, blocking_gaps=0)
+        assert sig == "NEAR_MATCH"
+        assert sig != "PARTIAL_REQUIRED"
+
+    def test_one_absent_high_pm_pct_mostly_met(self):
+        """6 MATCHED + 1 PARTIAL + 1 ABSENT out of 8 required.
+        req_coverage=75%, pm_pct=87.5%, blocking_gaps=1."""
+        sig, label = _recruiter_signal(8, 75.0, 50.0, partial_or_matched_pct=87.5, blocking_gaps=1)
+        assert sig == "MOSTLY_MET"
+        assert "Mostly met" in label
+
+    def test_one_absent_low_pm_pct_not_mostly_met(self):
+        """3 MATCHED + 0 PARTIAL + 1 ABSENT out of 4 required.
+        req_coverage=75%, pm_pct=75%, blocking_gaps=1.
+        pm_pct < 80 so should NOT be MOSTLY_MET."""
+        sig, _ = _recruiter_signal(4, 75.0, 0.0, partial_or_matched_pct=75.0, blocking_gaps=1)
+        assert sig != "MOSTLY_MET"
+        assert sig == "PARTIAL_REQUIRED"
+
+    def test_low_coverage_low_pm_pct_does_not_meet(self):
+        """1 MATCHED + 1 PARTIAL + 4 ABSENT out of 6 required.
+        req_coverage=16.7%, pm_pct=33.3%, blocking_gaps=4."""
+        sig, label = _recruiter_signal(6, 16.7, 0.0, partial_or_matched_pct=33.3, blocking_gaps=4)
+        assert sig == "POOR_REQUIRED_COVERAGE"
+        assert "Does not meet" in label
+
+    def test_moderate_coverage_high_pm_pct_significant_gaps(self):
+        """2 MATCHED + 2 PARTIAL + 2 ABSENT out of 6 required.
+        req_coverage=33.3%, pm_pct=66.7%, blocking_gaps=2.
+        pm_pct >= 60 triggers PARTIAL_REQUIRED instead of POOR."""
+        sig, _ = _recruiter_signal(6, 33.3, 0.0, partial_or_matched_pct=66.7, blocking_gaps=2)
+        assert sig == "PARTIAL_REQUIRED"
+
+    def test_100pct_matched_preserves_strong_labels(self):
+        """100% matched required — strong labels still depend on preferred coverage."""
+        sig_e, _ = _recruiter_signal(5, 100.0, 80.0, partial_or_matched_pct=100.0, blocking_gaps=0)
+        sig_c, _ = _recruiter_signal(5, 100.0, 50.0, partial_or_matched_pct=100.0, blocking_gaps=0)
+        sig_m, _ = _recruiter_signal(5, 100.0, 10.0, partial_or_matched_pct=100.0, blocking_gaps=0)
+        assert sig_e == "STRONG_FULL_MATCH"
+        assert sig_c == "STRONG_REQUIRED_WEAK_PREFERRED"
+        assert sig_m == "STRONG_REQUIRED_NO_PREFERRED"
+
+    def test_zero_gaps_not_all_pm_gives_mostly_met(self):
+        """3 MATCHED + 1 PARTIAL + 0 ABSENT out of 5 required.
+        req_coverage=60%, pm_pct=80%, blocking_gaps=0.
+        pm_pct < 100 but blocking_gaps=0 → MOSTLY_MET."""
+        sig, label = _recruiter_signal(5, 60.0, 0.0, partial_or_matched_pct=80.0, blocking_gaps=0)
+        assert sig == "MOSTLY_MET"
+        assert "Mostly met" in label
+
+    def test_backward_compat_defaults(self):
+        """Calling without new params uses defaults (blocking_gaps=0, pm_pct=None).
+        With blocking_gaps=0 and pm_pct=None, low req_coverage gives MOSTLY_MET
+        since blocking_gaps==0 takes priority."""
+        sig, _ = _recruiter_signal(5, 60.0, 50.0)
+        assert sig == "MOSTLY_MET"
 
     # Top-level keys present in serialised output
     def test_recruiter_signal_in_dict(self):
