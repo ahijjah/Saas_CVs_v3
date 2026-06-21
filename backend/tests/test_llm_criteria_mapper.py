@@ -33,6 +33,7 @@ from services.llm_criteria_mapper import (
     LLMCriteriaMapper,
     LLMCriterionAssessment,
     LLMMatchResult,
+    QualitativeSummary,
     _MAPPER_VERSION,
     _CRITICAL_SECTION_RE,
     _SOFT_SKILL_EXPANSION,
@@ -415,27 +416,27 @@ class TestParseLlmResponse:
                 "risk_flags": [],
             }]
         })
-        result = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
+        result, _ = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
         assert len(result) == 1
         assert result[0].status == "MATCHED"
         assert result[0].confidence == pytest.approx(0.92)
         assert result[0].match_type == "direct"
 
     def test_invalid_json_returns_absent_fallback(self):
-        result = _parse_llm_response("{not valid json", self._criteria(), **PROMPT_META)
+        result, _ = _parse_llm_response("{not valid json", self._criteria(), **PROMPT_META)
         assert len(result) == 1
         assert result[0].status == "ABSENT"
         assert "assessment_failed" in result[0].risk_flags
 
     def test_missing_assessments_key_returns_fallback(self):
         raw = json.dumps({"result": "something else"})
-        result = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
+        result, _ = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
         assert result[0].status == "ABSENT"
         assert "assessment_failed" in result[0].risk_flags
 
     def test_empty_assessments_array(self):
         raw = json.dumps({"assessments": []})
-        result = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
+        result, _ = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
         assert result == []
 
     def test_malformed_item_skipped(self):
@@ -456,7 +457,7 @@ class TestParseLlmResponse:
                 },
             ]
         })
-        result = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
+        result, _ = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
         assert len(result) == 1
         assert result[0].status == "ABSENT"
 
@@ -469,7 +470,7 @@ class TestParseLlmResponse:
                 "match_type": "direct", "criterion_class": "strict", "risk_flags": [],
             }]
         })
-        result = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
+        result, _ = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
         assert result[0].prompt_code == "recruitment.criteria_mapping"
         assert result[0].prompt_version == "1"
         assert result[0].llm_model == "gpt-4o-mini"
@@ -660,10 +661,10 @@ class TestSerialisationRoundTrip:
 # ── Section H: Feature flag (platform config) ────────────────────────────────
 
 class TestFeatureFlag:
-    def test_prompt_config_default_is_false(self):
-        """PromptConfig.llm_criteria_mapping_enabled must default to False."""
+    def test_prompt_config_default_is_true(self):
+        """PromptConfig.llm_criteria_mapping_enabled must default to True."""
         cfg = PromptConfig()
-        assert cfg.llm_criteria_mapping_enabled is False
+        assert cfg.llm_criteria_mapping_enabled is True
 
     def test_prompt_config_can_be_set_true(self):
         cfg = PromptConfig(llm_criteria_mapping_enabled=True)
@@ -679,11 +680,11 @@ class TestFeatureFlag:
         for falsy in ("false", "False", "0", "1", "", "yes", "on"):
             assert falsy.lower() != "true"
 
-    def test_missing_key_defaults_false(self):
-        """Simulate missing key in sys_map — default must be 'false'."""
+    def test_missing_key_defaults_true(self):
+        """Simulate missing key in sys_map — default must be 'true'."""
         sys_map: dict = {}
-        result = sys_map.get("scoring_v2.llm_criteria_mapping_enabled", "false").lower() == "true"
-        assert result is False
+        result = sys_map.get("scoring_v2.llm_criteria_mapping_enabled", "true").lower() == "true"
+        assert result is True
 
     def test_key_present_and_true(self):
         """Simulate key set to 'true' in sys_map."""
@@ -800,7 +801,7 @@ class TestBroadSkillEquivalence:
                 "risk_flags": [],
             }]
         })
-        result = _parse_llm_response(
+        result, _ = _parse_llm_response(
             raw,
             [{"text": "computer literacy", "dimension": "skills", "required": True}],
             **PROMPT_META,
@@ -824,7 +825,7 @@ class TestBroadSkillEquivalence:
                 "risk_flags": ["single_mention"],
             }]
         })
-        result = _parse_llm_response(
+        result, _ = _parse_llm_response(
             raw,
             [{"text": "MS Office proficiency", "dimension": "skills", "required": True}],
             **PROMPT_META,
@@ -977,7 +978,7 @@ class TestSoftSkillPipelineRepair:
                 "risk_flags": [],
             }]
         })
-        result = _parse_llm_response(
+        result, _ = _parse_llm_response(
             raw,
             [{"text": "communication skills", "dimension": "soft_skills", "required": True}],
             **PROMPT_META,
@@ -1004,7 +1005,7 @@ class TestSoftSkillPipelineRepair:
                 "risk_flags": [],
             }]
         })
-        result = _parse_llm_response(
+        result, _ = _parse_llm_response(
             raw,
             [{"text": "MS Office proficiency", "dimension": "skills", "required": True}],
             **PROMPT_META,
@@ -1028,7 +1029,7 @@ class TestSoftSkillPipelineRepair:
                 "risk_flags": [],
             }]
         })
-        result = _parse_llm_response(raw, [{"text": "Python", "dimension": "skills", "required": True}], **PROMPT_META)
+        result, _ = _parse_llm_response(raw, [{"text": "Python", "dimension": "skills", "required": True}], **PROMPT_META)
         assert result[0].status == "ABSENT"
         assert result[0].match_type == "missing"
         assert result[0].confidence == pytest.approx(0.0)
@@ -1049,7 +1050,7 @@ class TestSoftSkillPipelineRepair:
                 "risk_flags": [],
             }]
         })
-        result = _parse_llm_response(
+        result, _ = _parse_llm_response(
             raw,
             [{"text": "teamwork", "dimension": "soft_skills", "required": False}],
             **PROMPT_META,
@@ -1072,7 +1073,7 @@ class TestSoftSkillPipelineRepair:
                 "risk_flags": [],
             }]
         })
-        result = _parse_llm_response(raw, [{"text": "Python", "dimension": "skills", "required": True}], **PROMPT_META)
+        result, _ = _parse_llm_response(raw, [{"text": "Python", "dimension": "skills", "required": True}], **PROMPT_META)
         assert result[0].status == "MATCHED"
         assert result[0].confidence == pytest.approx(0.90)
         assert "missing_supporting_evidence" not in result[0].risk_flags
@@ -1093,7 +1094,7 @@ class TestSoftSkillPipelineRepair:
                 "risk_flags": [],
             }]
         })
-        result = _parse_llm_response(raw, [{"text": "Docker", "dimension": "skills", "required": False}], **PROMPT_META)
+        result, _ = _parse_llm_response(raw, [{"text": "Docker", "dimension": "skills", "required": False}], **PROMPT_META)
         assert result[0].status == "ABSENT"
         assert "missing_supporting_evidence" not in result[0].risk_flags
 
@@ -1113,7 +1114,7 @@ class TestSoftSkillPipelineRepair:
                 "risk_flags": ["self_assessed_only"],
             }]
         })
-        result = _parse_llm_response(
+        result, _ = _parse_llm_response(
             raw,
             [{"text": "leadership", "dimension": "soft_skills", "required": True}],
             **PROMPT_META,
@@ -1821,7 +1822,83 @@ class TestApplySkillFamilyUpgrade:
             {"text": "computer literacy", "dimension": "skills", "required": True},
             {"text": "Microsoft Excel",   "dimension": "skills", "required": True},
         ]
-        results = _parse_llm_response(payload, criteria, "code", "1", "model")
+        results, _ = _parse_llm_response(payload, criteria, "code", "1", "model")
         excel = next(a for a in results if a.criterion_text == "Microsoft Excel")
         assert excel.status == "PARTIAL"
         assert "skill_family_mapping" in excel.risk_flags
+
+
+# ── Qualitative summary parsing ──────────────────────────────────────────────
+
+class TestQualitativeSummaryParsing:
+    def _criteria(self):
+        return [{"text": "Python", "dimension": "skills", "required": True}]
+
+    def test_qualitative_summary_parsed(self):
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "Python", "dimension": "skills", "required": True,
+                "status": "MATCHED", "confidence": 0.9,
+                "supporting_evidence": ["Python developer"], "match_reason": "ok",
+                "match_type": "direct", "criterion_class": "strict", "risk_flags": [],
+            }],
+            "qualitative_summary": {
+                "candidate_name": "Ahmed Ali",
+                "evaluation_notes": "Strong Python developer.",
+                "strengths": ["Python expert", "Clean code"],
+                "gaps_identified": ["No cloud experience"],
+                "suggested_interview_questions": ["Cloud experience?"],
+            }
+        })
+        _, qs = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
+        assert qs is not None
+        assert qs.candidate_name == "Ahmed Ali"
+        assert qs.evaluation_notes == "Strong Python developer."
+        assert "Python expert" in qs.strengths
+        assert "No cloud experience" in qs.gaps_identified
+        assert len(qs.suggested_interview_questions) == 1
+
+    def test_missing_qualitative_summary_returns_none(self):
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "Python", "dimension": "skills", "required": True,
+                "status": "MATCHED", "confidence": 0.9,
+                "supporting_evidence": ["Python"], "match_reason": "ok",
+                "match_type": "direct", "criterion_class": "strict", "risk_flags": [],
+            }]
+        })
+        _, qs = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
+        assert qs is None
+
+    def test_invalid_qualitative_summary_returns_none(self):
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "Python", "dimension": "skills", "required": True,
+                "status": "MATCHED", "confidence": 0.9,
+                "supporting_evidence": ["Python"], "match_reason": "ok",
+                "match_type": "direct", "criterion_class": "strict", "risk_flags": [],
+            }],
+            "qualitative_summary": "not a dict"
+        })
+        _, qs = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
+        assert qs is None
+
+    def test_partial_qualitative_summary_fields(self):
+        raw = json.dumps({
+            "assessments": [{
+                "criterion_text": "Python", "dimension": "skills", "required": True,
+                "status": "MATCHED", "confidence": 0.9,
+                "supporting_evidence": ["Python"], "match_reason": "ok",
+                "match_type": "direct", "criterion_class": "strict", "risk_flags": [],
+            }],
+            "qualitative_summary": {
+                "candidate_name": "Test",
+                "evaluation_notes": "Notes.",
+            }
+        })
+        _, qs = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
+        assert qs is not None
+        assert qs.candidate_name == "Test"
+        assert qs.strengths == []
+        assert qs.gaps_identified == []
+        assert qs.suggested_interview_questions == []

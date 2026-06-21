@@ -414,6 +414,14 @@ export interface DetScoreSummary {
   signal: string;
 }
 
+export interface QualitativeSummary {
+  candidate_name: string;
+  evaluation_notes: string;
+  strengths: string[];
+  gaps_identified: string[];
+  suggested_interview_questions: string[];
+}
+
 export interface DeterministicScore {
   _schema: string;
   final_score: number;
@@ -425,6 +433,7 @@ export interface DeterministicScore {
   preferred_summary: DetScoreSummary;
   recruiter_signal: string;
   recruiter_label: string;
+  qualitative_summary?: QualitativeSummary | null;
   dimensions: Record<string, DetDimensionScore>;
 }
 

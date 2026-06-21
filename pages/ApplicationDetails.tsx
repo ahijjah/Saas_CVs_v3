@@ -183,6 +183,9 @@ const T = {
     xDimensionScore:   'Dimension Score',
     xWeight:           'Weight',
     xNoCriteriaData:   'No criteria data available.',
+    qualitativeSummaryTitle: 'Evaluation Summary',
+    gapsIdentified: 'Gaps Identified',
+    suggestedInterviewQuestions: 'Suggested Interview Questions',
     xNoExplainability: 'Detailed evidence analysis is not available for this application.',
     securityBlockedPageTitle: 'Application Security Review',
     securityBlockedBadge: 'Blocked Before AI Scoring',
@@ -502,6 +505,9 @@ const T = {
     xDimensionScore:   'درجة البُعد',
     xWeight:           'الوزن',
     xNoCriteriaData:   'لا تتوفر بيانات معايير.',
+    qualitativeSummaryTitle: 'ملخص التقييم',
+    gapsIdentified: 'الفجوات المحددة',
+    suggestedInterviewQuestions: 'أسئلة المقابلة المقترحة',
     xNoExplainability: 'تحليل الأدلة التفصيلي غير متاح لهذا الطلب.',
     securityBlockedPageTitle: 'مراجعة أمان الطلب',
     securityBlockedBadge: 'محجوب قبل التقييم بالذكاء الاصطناعي',
@@ -2214,6 +2220,55 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                     </div>
                   </div>
                 </div>
+                {/* Qualitative Summary */}
+                {ds.qualitative_summary && (
+                  <div className="bg-slate-50 rounded-2xl p-6 space-y-4">
+                    <p className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.qualitativeSummaryTitle || 'Evaluation Summary'}</p>
+                    {ds.qualitative_summary.evaluation_notes && (
+                      <p className="text-sm text-textMain leading-relaxed">{ds.qualitative_summary.evaluation_notes}</p>
+                    )}
+                    {ds.qualitative_summary.strengths && ds.qualitative_summary.strengths.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-black text-emerald-700 uppercase tracking-wider mb-2">{t.sections?.strengths || 'Strengths'}</p>
+                        <ul className="space-y-1">
+                          {ds.qualitative_summary.strengths.map((s: string, i: number) => (
+                            <li key={i} className="text-sm text-textMain flex items-start gap-2">
+                              <span className="text-emerald-500 mt-0.5">•</span>
+                              <span>{s}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {ds.qualitative_summary.gaps_identified && ds.qualitative_summary.gaps_identified.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider mb-2">{t.gapsIdentified || 'Gaps Identified'}</p>
+                        <ul className="space-y-1">
+                          {ds.qualitative_summary.gaps_identified.map((g: string, i: number) => (
+                            <li key={i} className="text-sm text-textMain flex items-start gap-2">
+                              <span className="text-amber-500 mt-0.5">•</span>
+                              <span>{g}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {ds.qualitative_summary.suggested_interview_questions && ds.qualitative_summary.suggested_interview_questions.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-2">{t.suggestedInterviewQuestions || 'Suggested Interview Questions'}</p>
+                        <ul className="space-y-1">
+                          {ds.qualitative_summary.suggested_interview_questions.map((q: string, i: number) => (
+                            <li key={i} className="text-sm text-textMain flex items-start gap-2">
+                              <span className="text-indigo-500 mt-0.5">{i + 1}.</span>
+                              <span>{q}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Per-dimension breakdown */}
                 <div className="space-y-3">
                   {orderedDims.map(dimKey => {

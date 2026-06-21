@@ -931,8 +931,8 @@ async def _score_cv_async(
                         )
                 # ── End F-01 ──────────────────────────────────────────────────
 
-                # ── D-03.1: Build coverage context for scoring LLM ───────────────────────
-                if _llm_result is not None:
+                # ── D-03.1: Build coverage context for legacy scoring LLM (fallback only) ──
+                if _llm_result is not None and _det_final_score_val is None:
                     try:
                         from services.ai_service import _build_coverage_context
                         _coverage_context = _build_coverage_context(_llm_result) or None
@@ -952,254 +952,322 @@ async def _score_cv_async(
                 )
             # ── End Scoring V2 Phase 2A ───────────────────────────────────────
 
-            _skills_block    = _analysis_json.get("skills", {})
-            skills_required  = _skills_block.get("required") or list(criteria.get("skills") or [])
-            skills_preferred = _skills_block.get("preferred") or []
+            # ════════════════════════════════════════════════════════════════
+            # SCORING PATH — Deterministic (D-01) or Legacy
+            # ════════════════════════════════════════════════════════════════
+            _use_deterministic = _det_final_score_val is not None and _det_score_json_val is not None
 
-            criteria_dict = {
-                "skills_required":    skills_required,
-                "skills_preferred":   skills_preferred,
-                "experience":         list(criteria.get("experience") or []),
-                "education":          list(criteria.get("education") or []),
-                "certifications":     list(criteria.get("certifications") or []),
-                "soft_skills":        list(criteria.get("soft_skills") or []),
-                "domain_knowledge":   list(criteria.get("domain_knowledge") or []),
-                "other_requirements": list(criteria.get("other_requirements") or []),
-                **weights,
-            }
-            gatekeeper_context = {
-                "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
-                "matched_skills":          gatekeeper_result.matched_skills,
-                "missing_skills":          gatekeeper_result.missing_skills,
-            }
+            if _use_deterministic:
+                # ── Deterministic path: D-01 + F-01 produced a score ─────
+                from services.deterministic_scoring import decision_from_signal
+                _det_score_dict = json.loads(_det_score_json_val)
+                _det_signal = _det_score_dict.get("recruiter_signal", "")
+                final_score = _det_final_score_val
+                decision = decision_from_signal(_det_signal)
 
-            # Resolve stage model from registry (falls back to prompt/config defaults on None)
-            from services.ai_model_registry_service import resolve_stage_client as _resolve
-            _reg = await _resolve(db, "cv_scoring")
-            _effective_prompt = scoring_prompt
-            if _reg:
-                _effective_prompt = {**(scoring_prompt or {}), "model": _reg.model_name}
+                _qs = _det_score_dict.get("qualitative_summary") or {}
+                extracted_name = str(_qs.get("candidate_name") or "").strip()
+                _eval_notes = str(_qs.get("evaluation_notes") or "")
+                _strengths = _qs.get("strengths") or []
+                _gaps = _qs.get("gaps_identified") or []
+                _questions = _qs.get("suggested_interview_questions") or []
 
-            # Primary attempt; fallback on failure
-            _scoring_error: Exception | None = None
-            _fallback_used = False
-            try:
-                ai_result, _usage = await score_cv(
-                    cv_text=gatekeeper_result.cleaned_cv_text,
-                    criteria=criteria_dict,
-                    job_title=criteria["job_title"],
-                    cv_language=gatekeeper_result.cv_language,
-                    gatekeeper_context=gatekeeper_context,
-                    prompt_override=_effective_prompt,
-                    openai_client=_reg.client if _reg else None,
-                    coverage_context=_coverage_context,
-                )
-            except Exception as _primary_exc:
-                _scoring_error = _primary_exc
-                logger.warning(
-                    "[%s] Primary model failed (%s), trying fallback: %s",
-                    application_id, (_reg.model_name if _reg else "default"), _primary_exc,
-                )
-                if _reg and _reg.is_fallback:
-                    raise  # already using fallback — propagate
-                # Retry with no registry client (uses settings.openai_* as last resort)
-                ai_result, _usage = await score_cv(
-                    cv_text=gatekeeper_result.cleaned_cv_text,
-                    criteria=criteria_dict,
-                    job_title=criteria["job_title"],
-                    cv_language=gatekeeper_result.cv_language,
-                    gatekeeper_context=gatekeeper_context,
-                    prompt_override=scoring_prompt,
-                    openai_client=None,
-                    coverage_context=_coverage_context,
-                )
-                _fallback_used = True
-
-            # Log AI usage — never raises
-            from services.ai_usage_service import log_ai_usage as _log_ai_usage
-            await _log_ai_usage(
-                db=db,
-                stage="cv_scoring",
-                provider=_reg.provider if _reg and not _fallback_used else "openai",
-                model=_usage.get("model", ""),
-                prompt_tokens=_usage.get("prompt_tokens", 0),
-                completion_tokens=_usage.get("completion_tokens", 0),
-                total_tokens=_usage.get("total_tokens", 0),
-                latency_ms=_usage.get("latency_ms"),
-                request_status="success",
-                tenant_id=tenant_id,
-                job_id=job_id,
-                application_id=application_id,
-                prompt_key=(scoring_prompt or {}).get("prompt_code"),
-                prompt_version_id=(scoring_prompt or {}).get("version_id") or (scoring_prompt or {}).get("id"),
-                metadata={
-                    "finish_reason":           _usage.get("finish_reason"),
-                    "cv_language":             gatekeeper_result.cv_language,
-                    "gatekeeper_passed":       True,
-                    "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
-                    "registry_model_id":       _reg.model_id if _reg else None,
-                    "fallback_used":           _fallback_used,
-                    "fallback_reason":         str(_scoring_error) if _fallback_used else None,
-                },
-            )
-
-            # Preserve the exact AI response before any post-processing edits so
-            # raw_ai_response in application_scores always reflects true AI output.
-            _raw_ai_response_str = json.dumps(ai_result, ensure_ascii=False)
-
-            # ── Guard: reject structurally invalid AI output ──────────────────
-            # Raises ValueError when all 7 scores are 0 but narrative is
-            # populated — indicates a truncated / malformed AI response.
-            # The outer except propagates to Celery's retry handler so the
-            # task is retried up to max_retries before _mark_failed is called.
-            # raw_ai_response is logged here so it is preserved in worker logs
-            # even if the row is never written to application_scores.
-            try:
-                validate_scoring_result(ai_result)
-            except ValueError as _val_err:
-                logger.error(
-                    "[%s] INVALID AI scoring output — will not save: %s | "
-                    "raw_response=%.2000s",
-                    application_id,
-                    _val_err,
-                    _raw_ai_response_str,
-                )
-                raise
-
-            # ── Non-blocking soft-skills consistency warning ───────────────────
-            # Logged and stored in reasoning JSONB; never fails scoring.
-            _soft_warn = check_soft_skills_consistency(ai_result)
-            if _soft_warn:
-                logger.warning("[%s] Soft-skills consistency: %s", application_id, _soft_warn)
-                _reasoning = dict(ai_result.get("reasoning") or {})
-                _reasoning["_consistency_warning"] = _soft_warn
-                ai_result = {**ai_result, "reasoning": _reasoning}
-
-            # ── Semantic gap contradiction removal ────────────────────────────
-            # Removes gaps_identified entries that contradict evidence already
-            # cited by the AI in strengths/reasoning (e.g. "no computer literacy"
-            # when Excel/Word are listed as strengths).  Never blocks scoring.
-            ai_result, _gap_suppressions = remove_contradicted_gaps(ai_result)
-            if _gap_suppressions:
-                for _gs in _gap_suppressions:
-                    logger.info("[%s] Gap contradiction removed: %s", application_id, _gs)
-
-            # ── Narrative contradiction cleaner ───────────────────────────────
-            # Scans ALL contradiction rules against the evidence corpus and
-            # removes negative-claim sentences from reasoning.*, evaluation_notes,
-            # and score_details.*.negative.  Runs unconditionally so it also
-            # catches contradictions that appear only in narrative fields even
-            # when no gap was suppressed.  Never blocks scoring.
-            ai_result = clean_narrative_contradictions(ai_result, _gap_suppressions)
-
-            # ── Narrative reconstruction ───────────────────────────────────────
-            # Rebuild any reasoning dim / evaluation_notes field that was left
-            # empty or too short by the cleanup pass.  Uses only evidence already
-            # present in the AI result (score_details positives, strengths list).
-            # Never changes numeric scores.  Always runs so it also catches rare
-            # cases where the AI itself left a field blank.
-            ai_result = reconstruct_narrative_fields(ai_result)
-
-            final_score = compute_final_score(ai_result, weights)
-            q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
-            decision = determine_decision(final_score, q_thresh, p_thresh)
-
-            extracted_name  = (ai_result.get("candidate_name")  or "").strip()
-            extracted_email = (ai_result.get("candidate_email") or "").strip()
-            extracted_phone = (ai_result.get("candidate_phone") or "").strip()
-
-            update_parts: list[str] = []
-            update_params: dict = {"aid": application_id}
-            if extracted_name:
-                update_parts.append("candidate_name = :cname")
-                update_params["cname"] = extracted_name
-            if extracted_email:
-                update_parts.append("candidate_email_from_cv = :cv_email")
-                update_params["cv_email"] = extracted_email
-            if extracted_phone:
-                update_parts.append("candidate_phone_from_cv = :cv_phone")
-                update_params["cv_phone"] = extracted_phone
-            if update_parts:
-                await db.execute(
-                    text(f"UPDATE applications SET {', '.join(update_parts)} WHERE application_id = :aid"),
-                    update_params,
+                logger.info(
+                    "[%s] Deterministic scoring path: final=%d decision=%s signal=%s",
+                    application_id, final_score, decision, _det_signal,
                 )
 
-            score_details = ai_result.get("score_details") or {}
-
-            await db.execute(
-                text("""
-                    INSERT INTO application_scores (
-                        application_id,
-                        score_skills, score_experience, score_education,
-                        score_certifications, score_soft_skills,
-                        score_domain_knowledge, score_other,
-                        final_score, weights_snapshot, ai_model,
-                        strengths, gaps_identified, red_flags,
-                        evaluation_notes, interview_questions,
-                        reasoning, raw_ai_response,
-                        local_similarity_score, skill_match_ratio,
-                        matched_skills, missing_skills,
-                        cv_language, gatekeeper_passed,
-                        score_details,
-                        scoring_prompt_code, scoring_prompt_version,
-                        scoring_provider,
-                        cv_facts_json, match_results_json,
-                        llm_match_results_json,
-                        det_final_score, det_score_json
-                    ) VALUES (
-                        :aid,
-                        :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
-                        :final, :weights, :model,
-                        :strengths, :gaps, :red_flags,
-                        :notes, :questions,
-                        :reasoning, :raw,
-                        :sim, :skill_ratio,
-                        :matched, :missing,
-                        :cv_lang, :gk_passed,
-                        :score_details,
-                        :sc_code, :sc_ver,
-                        'openai',
-                        :cv_facts_json, :match_results_json,
-                        :llm_match_results_json,
-                        :det_final_score, :det_score_json
+                # Update candidate name from qualitative_summary
+                if extracted_name:
+                    await db.execute(
+                        text("UPDATE applications SET candidate_name = :cname WHERE application_id = :aid"),
+                        {"cname": extracted_name, "aid": application_id},
                     )
-                """),
-                {
-                    "aid":        application_id,
-                    "s_skills":   ai_result.get("score_skills", 0),
-                    "s_exp":      ai_result.get("score_experience", 0),
-                    "s_edu":      ai_result.get("score_education", 0),
-                    "s_cert":     ai_result.get("score_certifications", 0),
-                    "s_soft":     ai_result.get("score_soft_skills", 0),
-                    "s_domain":   ai_result.get("score_domain_knowledge", 0),
-                    "s_other":    ai_result.get("score_other", 0),
-                    "final":      final_score,
-                    "weights":    json.dumps(weights),
-                    "model":      (scoring_prompt or {}).get("model") or cfg.openai_model,
-                    "strengths":  ai_result.get("strengths", []),
-                    "gaps":       ai_result.get("gaps_identified", []),
-                    "red_flags":  ai_result.get("red_flags", []),
-                    "notes":      ai_result.get("evaluation_notes"),
-                    "questions":  ai_result.get("interview_questions", []),
-                    "reasoning":  json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
-                    "raw":        _raw_ai_response_str,
-                    "sim":        gatekeeper_result.semantic_similarity_pct,
-                    "skill_ratio": gatekeeper_result.skill_match_ratio,
-                    "matched":    gatekeeper_result.matched_skills,
-                    "missing":    gatekeeper_result.missing_skills,
-                    "cv_lang":    gatekeeper_result.cv_language,
-                    "gk_passed":  gatekeeper_result.gatekeeper_passed,
-                    "score_details": json.dumps(score_details, ensure_ascii=False),
-                    "sc_code":    (scoring_prompt or {}).get("prompt_code"),
-                    "sc_ver":     (scoring_prompt or {}).get("version"),
-                    "cv_facts_json":           _cv_facts_json_val,
-                    "match_results_json":      _match_results_json_val,
-                    "llm_match_results_json":  _llm_match_results_json_val,
-                    "det_final_score":         _det_final_score_val,
-                    "det_score_json":          _det_score_json_val,
-                },
-            )
+
+                await db.execute(
+                    text("""
+                        INSERT INTO application_scores (
+                            application_id,
+                            score_skills, score_experience, score_education,
+                            score_certifications, score_soft_skills,
+                            score_domain_knowledge, score_other,
+                            final_score, weights_snapshot, ai_model,
+                            strengths, gaps_identified, red_flags,
+                            evaluation_notes, interview_questions,
+                            reasoning, raw_ai_response,
+                            local_similarity_score, skill_match_ratio,
+                            matched_skills, missing_skills,
+                            cv_language, gatekeeper_passed,
+                            score_details,
+                            scoring_prompt_code, scoring_prompt_version,
+                            scoring_provider,
+                            cv_facts_json, match_results_json,
+                            llm_match_results_json,
+                            det_final_score, det_score_json
+                        ) VALUES (
+                            :aid,
+                            0, 0, 0, 0, 0, 0, 0,
+                            :final, :weights, :model,
+                            :strengths, :gaps, :red_flags,
+                            :notes, :questions,
+                            :reasoning, :raw,
+                            :sim, :skill_ratio,
+                            :matched, :missing,
+                            :cv_lang, :gk_passed,
+                            :score_details,
+                            :sc_code, :sc_ver,
+                            'deterministic',
+                            :cv_facts_json, :match_results_json,
+                            :llm_match_results_json,
+                            :det_final_score, :det_score_json
+                        )
+                    """),
+                    {
+                        "aid":        application_id,
+                        "final":      final_score,
+                        "weights":    json.dumps(weights),
+                        "model":      "deterministic",
+                        "strengths":  _strengths,
+                        "gaps":       _gaps,
+                        "red_flags":  [],
+                        "notes":      _eval_notes or None,
+                        "questions":  _questions,
+                        "reasoning":  json.dumps({}, ensure_ascii=False),
+                        "raw":        _det_score_json_val,
+                        "sim":        gatekeeper_result.semantic_similarity_pct,
+                        "skill_ratio": gatekeeper_result.skill_match_ratio,
+                        "matched":    gatekeeper_result.matched_skills,
+                        "missing":    gatekeeper_result.missing_skills,
+                        "cv_lang":    gatekeeper_result.cv_language,
+                        "gk_passed":  gatekeeper_result.gatekeeper_passed,
+                        "score_details": json.dumps({}, ensure_ascii=False),
+                        "sc_code":    "recruitment.criteria_mapping",
+                        "sc_ver":     None,
+                        "cv_facts_json":           _cv_facts_json_val,
+                        "match_results_json":      _match_results_json_val,
+                        "llm_match_results_json":  _llm_match_results_json_val,
+                        "det_final_score":         _det_final_score_val,
+                        "det_score_json":          _det_score_json_val,
+                    },
+                )
+            else:
+                # ── Legacy path: LLM scoring (fallback when D-01 not available) ──
+                logger.info("[%s] Legacy scoring path (D-01 not available)", application_id)
+
+                _skills_block    = _analysis_json.get("skills", {})
+                skills_required  = _skills_block.get("required") or list(criteria.get("skills") or [])
+                skills_preferred = _skills_block.get("preferred") or []
+
+                criteria_dict = {
+                    "skills_required":    skills_required,
+                    "skills_preferred":   skills_preferred,
+                    "experience":         list(criteria.get("experience") or []),
+                    "education":          list(criteria.get("education") or []),
+                    "certifications":     list(criteria.get("certifications") or []),
+                    "soft_skills":        list(criteria.get("soft_skills") or []),
+                    "domain_knowledge":   list(criteria.get("domain_knowledge") or []),
+                    "other_requirements": list(criteria.get("other_requirements") or []),
+                    **weights,
+                }
+                gatekeeper_context = {
+                    "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
+                    "matched_skills":          gatekeeper_result.matched_skills,
+                    "missing_skills":          gatekeeper_result.missing_skills,
+                }
+
+                from services.ai_model_registry_service import resolve_stage_client as _resolve
+                _reg = await _resolve(db, "cv_scoring")
+                _effective_prompt = scoring_prompt
+                if _reg:
+                    _effective_prompt = {**(scoring_prompt or {}), "model": _reg.model_name}
+
+                _scoring_error: Exception | None = None
+                _fallback_used = False
+                try:
+                    ai_result, _usage = await score_cv(
+                        cv_text=gatekeeper_result.cleaned_cv_text,
+                        criteria=criteria_dict,
+                        job_title=criteria["job_title"],
+                        cv_language=gatekeeper_result.cv_language,
+                        gatekeeper_context=gatekeeper_context,
+                        prompt_override=_effective_prompt,
+                        openai_client=_reg.client if _reg else None,
+                        coverage_context=_coverage_context,
+                    )
+                except Exception as _primary_exc:
+                    _scoring_error = _primary_exc
+                    logger.warning(
+                        "[%s] Primary model failed (%s), trying fallback: %s",
+                        application_id, (_reg.model_name if _reg else "default"), _primary_exc,
+                    )
+                    if _reg and _reg.is_fallback:
+                        raise
+                    ai_result, _usage = await score_cv(
+                        cv_text=gatekeeper_result.cleaned_cv_text,
+                        criteria=criteria_dict,
+                        job_title=criteria["job_title"],
+                        cv_language=gatekeeper_result.cv_language,
+                        gatekeeper_context=gatekeeper_context,
+                        prompt_override=scoring_prompt,
+                        openai_client=None,
+                        coverage_context=_coverage_context,
+                    )
+                    _fallback_used = True
+
+                from services.ai_usage_service import log_ai_usage as _log_ai_usage
+                await _log_ai_usage(
+                    db=db,
+                    stage="cv_scoring",
+                    provider=_reg.provider if _reg and not _fallback_used else "openai",
+                    model=_usage.get("model", ""),
+                    prompt_tokens=_usage.get("prompt_tokens", 0),
+                    completion_tokens=_usage.get("completion_tokens", 0),
+                    total_tokens=_usage.get("total_tokens", 0),
+                    latency_ms=_usage.get("latency_ms"),
+                    request_status="success",
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    application_id=application_id,
+                    prompt_key=(scoring_prompt or {}).get("prompt_code"),
+                    prompt_version_id=(scoring_prompt or {}).get("version_id") or (scoring_prompt or {}).get("id"),
+                    metadata={
+                        "finish_reason":           _usage.get("finish_reason"),
+                        "cv_language":             gatekeeper_result.cv_language,
+                        "gatekeeper_passed":       True,
+                        "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
+                        "registry_model_id":       _reg.model_id if _reg else None,
+                        "fallback_used":           _fallback_used,
+                        "fallback_reason":         str(_scoring_error) if _fallback_used else None,
+                    },
+                )
+
+                _raw_ai_response_str = json.dumps(ai_result, ensure_ascii=False)
+
+                try:
+                    validate_scoring_result(ai_result)
+                except ValueError as _val_err:
+                    logger.error(
+                        "[%s] INVALID AI scoring output — will not save: %s | "
+                        "raw_response=%.2000s",
+                        application_id, _val_err, _raw_ai_response_str,
+                    )
+                    raise
+
+                _soft_warn = check_soft_skills_consistency(ai_result)
+                if _soft_warn:
+                    logger.warning("[%s] Soft-skills consistency: %s", application_id, _soft_warn)
+                    _reasoning = dict(ai_result.get("reasoning") or {})
+                    _reasoning["_consistency_warning"] = _soft_warn
+                    ai_result = {**ai_result, "reasoning": _reasoning}
+
+                ai_result, _gap_suppressions = remove_contradicted_gaps(ai_result)
+                if _gap_suppressions:
+                    for _gs in _gap_suppressions:
+                        logger.info("[%s] Gap contradiction removed: %s", application_id, _gs)
+
+                ai_result = clean_narrative_contradictions(ai_result, _gap_suppressions)
+                ai_result = reconstruct_narrative_fields(ai_result)
+
+                final_score = compute_final_score(ai_result, weights)
+                q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
+                decision = determine_decision(final_score, q_thresh, p_thresh)
+
+                extracted_name  = (ai_result.get("candidate_name")  or "").strip()
+                extracted_email = (ai_result.get("candidate_email") or "").strip()
+                extracted_phone = (ai_result.get("candidate_phone") or "").strip()
+
+                update_parts: list[str] = []
+                update_params: dict = {"aid": application_id}
+                if extracted_name:
+                    update_parts.append("candidate_name = :cname")
+                    update_params["cname"] = extracted_name
+                if extracted_email:
+                    update_parts.append("candidate_email_from_cv = :cv_email")
+                    update_params["cv_email"] = extracted_email
+                if extracted_phone:
+                    update_parts.append("candidate_phone_from_cv = :cv_phone")
+                    update_params["cv_phone"] = extracted_phone
+                if update_parts:
+                    await db.execute(
+                        text(f"UPDATE applications SET {', '.join(update_parts)} WHERE application_id = :aid"),
+                        update_params,
+                    )
+
+                score_details = ai_result.get("score_details") or {}
+
+                await db.execute(
+                    text("""
+                        INSERT INTO application_scores (
+                            application_id,
+                            score_skills, score_experience, score_education,
+                            score_certifications, score_soft_skills,
+                            score_domain_knowledge, score_other,
+                            final_score, weights_snapshot, ai_model,
+                            strengths, gaps_identified, red_flags,
+                            evaluation_notes, interview_questions,
+                            reasoning, raw_ai_response,
+                            local_similarity_score, skill_match_ratio,
+                            matched_skills, missing_skills,
+                            cv_language, gatekeeper_passed,
+                            score_details,
+                            scoring_prompt_code, scoring_prompt_version,
+                            scoring_provider,
+                            cv_facts_json, match_results_json,
+                            llm_match_results_json,
+                            det_final_score, det_score_json
+                        ) VALUES (
+                            :aid,
+                            :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
+                            :final, :weights, :model,
+                            :strengths, :gaps, :red_flags,
+                            :notes, :questions,
+                            :reasoning, :raw,
+                            :sim, :skill_ratio,
+                            :matched, :missing,
+                            :cv_lang, :gk_passed,
+                            :score_details,
+                            :sc_code, :sc_ver,
+                            'openai',
+                            :cv_facts_json, :match_results_json,
+                            :llm_match_results_json,
+                            :det_final_score, :det_score_json
+                        )
+                    """),
+                    {
+                        "aid":        application_id,
+                        "s_skills":   ai_result.get("score_skills", 0),
+                        "s_exp":      ai_result.get("score_experience", 0),
+                        "s_edu":      ai_result.get("score_education", 0),
+                        "s_cert":     ai_result.get("score_certifications", 0),
+                        "s_soft":     ai_result.get("score_soft_skills", 0),
+                        "s_domain":   ai_result.get("score_domain_knowledge", 0),
+                        "s_other":    ai_result.get("score_other", 0),
+                        "final":      final_score,
+                        "weights":    json.dumps(weights),
+                        "model":      (scoring_prompt or {}).get("model") or cfg.openai_model,
+                        "strengths":  ai_result.get("strengths", []),
+                        "gaps":       ai_result.get("gaps_identified", []),
+                        "red_flags":  ai_result.get("red_flags", []),
+                        "notes":      ai_result.get("evaluation_notes"),
+                        "questions":  ai_result.get("interview_questions", []),
+                        "reasoning":  json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
+                        "raw":        _raw_ai_response_str,
+                        "sim":        gatekeeper_result.semantic_similarity_pct,
+                        "skill_ratio": gatekeeper_result.skill_match_ratio,
+                        "matched":    gatekeeper_result.matched_skills,
+                        "missing":    gatekeeper_result.missing_skills,
+                        "cv_lang":    gatekeeper_result.cv_language,
+                        "gk_passed":  gatekeeper_result.gatekeeper_passed,
+                        "score_details": json.dumps(score_details, ensure_ascii=False),
+                        "sc_code":    (scoring_prompt or {}).get("prompt_code"),
+                        "sc_ver":     (scoring_prompt or {}).get("version"),
+                        "cv_facts_json":           _cv_facts_json_val,
+                        "match_results_json":      _match_results_json_val,
+                        "llm_match_results_json":  _llm_match_results_json_val,
+                        "det_final_score":         _det_final_score_val,
+                        "det_score_json":          _det_score_json_val,
+                    },
+                )
             await db.execute(
                 text("""
                     UPDATE applications SET

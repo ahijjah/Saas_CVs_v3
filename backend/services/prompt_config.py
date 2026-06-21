@@ -102,7 +102,7 @@ class PromptConfig:
     # ── AI comparison default ─────────────────────────────────────────────────
     enable_ai_comparison_default: bool = False
     # ── Scoring V2 — LLM Criteria Mapping (D-01) ─────────────────────────────
-    llm_criteria_mapping_enabled: bool = False
+    llm_criteria_mapping_enabled: bool = True
     # Per-job mandatory skills (if non-empty, missing any = automatic penalty)
     mandatory_skills: list[str] = field(default_factory=list)
     mandatory_skills_weight: float = 0.0
@@ -237,7 +237,7 @@ async def load_prompt_config(
         sys_map.get("enable_ai_comparison_default", "false").lower() == "true"
     )
     llm_criteria_mapping_enabled = (
-        sys_map.get("scoring_v2.llm_criteria_mapping_enabled", "false").lower() == "true"
+        sys_map.get("scoring_v2.llm_criteria_mapping_enabled", "true").lower() == "true"
     )
 
     # ── F-01 deterministic scoring parameters ─────────────────────────────────

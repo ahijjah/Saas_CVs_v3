@@ -36,9 +36,10 @@ from services.deterministic_scoring import (
     _pref_signal,
     _recruiter_signal,
     _req_signal,
+    decision_from_signal,
     deterministic_score_to_dict,
 )
-from services.llm_criteria_mapper import LLMCriterionAssessment, LLMMatchResult
+from services.llm_criteria_mapper import LLMCriterionAssessment, LLMMatchResult, QualitativeSummary
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -914,3 +915,94 @@ class TestRequiredPreferredSummary:
         a = _assessment()
         d = self._score_with([a])
         assert d["_schema"] == "det_score_v2"
+
+
+# ── Qualitative summary pass-through ────────────────────────────────────────
+
+class TestQualitativeSummary:
+    def test_summary_included_in_det_score(self):
+        qs = QualitativeSummary(
+            candidate_name="John Doe",
+            evaluation_notes="Strong candidate.",
+            strengths=["Python expert"],
+            gaps_identified=["No cloud experience"],
+            suggested_interview_questions=["Tell me about cloud projects?"],
+        )
+        a = _assessment("Python", "skills", required=True, status="MATCHED")
+        result = _llm_result([a])
+        result.qualitative_summary = qs
+        scored = _engine().score(result, _DEFAULT_WEIGHTS)
+        assert scored.qualitative_summary is not None
+        assert scored.qualitative_summary.candidate_name == "John Doe"
+
+    def test_summary_in_serialised_dict(self):
+        qs = QualitativeSummary(
+            candidate_name="Jane Smith",
+            evaluation_notes="Good fit overall.",
+            strengths=["React"],
+            gaps_identified=["No testing"],
+            suggested_interview_questions=["Testing approach?"],
+        )
+        a = _assessment("React", "skills", required=True, status="MATCHED")
+        result = _llm_result([a])
+        result.qualitative_summary = qs
+        scored = _engine().score(result, _DEFAULT_WEIGHTS)
+        d = deterministic_score_to_dict(scored)
+        assert d["qualitative_summary"] is not None
+        assert d["qualitative_summary"]["candidate_name"] == "Jane Smith"
+        assert d["qualitative_summary"]["evaluation_notes"] == "Good fit overall."
+        assert "React" in d["qualitative_summary"]["strengths"]
+        assert "No testing" in d["qualitative_summary"]["gaps_identified"]
+        assert len(d["qualitative_summary"]["suggested_interview_questions"]) == 1
+
+    def test_no_summary_serialises_as_none(self):
+        a = _assessment("Python", "skills", required=True, status="MATCHED")
+        scored = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
+        d = deterministic_score_to_dict(scored)
+        assert d["qualitative_summary"] is None
+
+    def test_summary_does_not_affect_score(self):
+        a = _assessment("Python", "skills", required=True, status="MATCHED")
+        result_no_qs = _llm_result([a])
+        result_with_qs = _llm_result([a])
+        result_with_qs.qualitative_summary = QualitativeSummary(
+            candidate_name="Test",
+            evaluation_notes="Notes.",
+            strengths=["s1"],
+            gaps_identified=["g1"],
+            suggested_interview_questions=["q1"],
+        )
+        score_no = _engine().score(result_no_qs, _DEFAULT_WEIGHTS).final_score
+        score_with = _engine().score(result_with_qs, _DEFAULT_WEIGHTS).final_score
+        assert score_no == score_with
+
+
+# ── Decision from signal ─────────────────────────────────────────────────────
+
+class TestDecisionFromSignal:
+    def test_strong_full_match_qualified(self):
+        assert decision_from_signal("STRONG_FULL_MATCH") == "qualified"
+
+    def test_strong_required_weak_preferred_qualified(self):
+        assert decision_from_signal("STRONG_REQUIRED_WEAK_PREFERRED") == "qualified"
+
+    def test_strong_required_no_preferred_qualified(self):
+        assert decision_from_signal("STRONG_REQUIRED_NO_PREFERRED") == "qualified"
+
+    def test_near_match_qualified(self):
+        assert decision_from_signal("NEAR_MATCH") == "qualified"
+
+    def test_mostly_met_partial(self):
+        assert decision_from_signal("MOSTLY_MET") == "partial"
+
+    def test_partial_required_partial(self):
+        assert decision_from_signal("PARTIAL_REQUIRED") == "partial"
+
+    def test_no_required_criteria_partial(self):
+        assert decision_from_signal("NO_REQUIRED_CRITERIA") == "partial"
+
+    def test_poor_required_coverage_rejected(self):
+        assert decision_from_signal("POOR_REQUIRED_COVERAGE") == "rejected"
+
+    def test_unknown_signal_defaults_partial(self):
+        assert decision_from_signal("UNKNOWN_SIGNAL") == "partial"

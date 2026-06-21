@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from services.llm_criteria_mapper import LLMMatchResult
+from services.llm_criteria_mapper import LLMMatchResult, QualitativeSummary
 
 _ENGINE_VERSION = "det_score_v2"
 
@@ -143,6 +143,7 @@ class DeterministicScore:
     mapper_version:                  str
     overqualification_risk_dimensions: list[str]
     dimensions:                      dict[str, DeterministicDimensionScore]
+    qualitative_summary:             QualitativeSummary | None = None
 
 
 # ── Core calculation helpers ──────────────────────────────────────────────────
@@ -283,6 +284,7 @@ class DeterministicScoringEngine:
             mapper_version=llm_match_result.mapper_version,
             overqualification_risk_dimensions=oq_dims,
             dimensions=dimension_scores,
+            qualitative_summary=llm_match_result.qualitative_summary,
         )
 
     # ── Private helpers ───────────────────────────────────────────────────────
@@ -531,6 +533,23 @@ def _recruiter_signal(
     return ("POOR_REQUIRED_COVERAGE", "Does not meet requirements")
 
 
+_SIGNAL_TO_DECISION: dict[str, str] = {
+    "STRONG_FULL_MATCH":              "qualified",
+    "STRONG_REQUIRED_WEAK_PREFERRED": "qualified",
+    "STRONG_REQUIRED_NO_PREFERRED":   "qualified",
+    "NEAR_MATCH":                     "qualified",
+    "MOSTLY_MET":                     "partial",
+    "PARTIAL_REQUIRED":               "partial",
+    "NO_REQUIRED_CRITERIA":           "partial",
+    "POOR_REQUIRED_COVERAGE":         "rejected",
+}
+
+
+def decision_from_signal(signal: str) -> str:
+    """Map recruiter_signal to a hiring decision (qualified/partial/rejected)."""
+    return _SIGNAL_TO_DECISION.get(signal, "partial")
+
+
 def deterministic_score_to_dict(score: DeterministicScore) -> dict[str, Any]:
     """Serialise a DeterministicScore to a JSON-safe dict (det_score_json schema)."""
     dims = score.dimensions
@@ -579,6 +598,17 @@ def deterministic_score_to_dict(score: DeterministicScore) -> dict[str, Any]:
         "signal":        _pref_signal(pref_coverage),
     }
 
+    qs = score.qualitative_summary
+    qs_dict = None
+    if qs is not None:
+        qs_dict = {
+            "candidate_name":                qs.candidate_name,
+            "evaluation_notes":              qs.evaluation_notes,
+            "strengths":                     qs.strengths,
+            "gaps_identified":               qs.gaps_identified,
+            "suggested_interview_questions": qs.suggested_interview_questions,
+        }
+
     return {
         "_schema":                          score.scoring_version,
         "final_score":                      score.final_score,
@@ -590,6 +620,7 @@ def deterministic_score_to_dict(score: DeterministicScore) -> dict[str, Any]:
         "preferred_summary":                preferred_summary,
         "recruiter_signal":                 signal,
         "recruiter_label":                  label,
+        "qualitative_summary":              qs_dict,
         "dimensions": {
             dim: _dimension_to_dict(ds)
             for dim, ds in score.dimensions.items()

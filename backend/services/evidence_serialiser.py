@@ -105,6 +105,24 @@ def _i(d: dict, key: str, default: int = 0) -> int:
         return default
 
 
+def _parse_qs(raw: Any) -> "QualitativeSummary | None":
+    """Parse a qualitative_summary dict into a QualitativeSummary, or None."""
+    if not isinstance(raw, dict):
+        return None
+    from services.llm_criteria_mapper import QualitativeSummary
+    def _str_list(val: Any) -> list[str]:
+        if not isinstance(val, list):
+            return []
+        return [str(s) for s in val if s]
+    return QualitativeSummary(
+        candidate_name=str(raw.get("candidate_name") or ""),
+        evaluation_notes=str(raw.get("evaluation_notes") or ""),
+        strengths=_str_list(raw.get("strengths")),
+        gaps_identified=_str_list(raw.get("gaps_identified")),
+        suggested_interview_questions=_str_list(raw.get("suggested_interview_questions")),
+    )
+
+
 def _i_or_none(d: dict, key: str) -> int | None:
     """Extract an int-or-None field (used for optional year fields)."""
     v = d.get(key)
@@ -443,4 +461,5 @@ def llm_matchresult_from_dict(data: Any) -> LLMMatchResult:
         absent_count=_i(data, "absent_count"),
         high_confidence_count=_i(data, "high_confidence_count"),
         low_confidence_count=_i(data, "low_confidence_count"),
+        qualitative_summary=_parse_qs(data.get("qualitative_summary")),
     )
