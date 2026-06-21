@@ -1006,3 +1006,55 @@ class TestDecisionFromSignal:
 
     def test_unknown_signal_defaults_partial(self):
         assert decision_from_signal("UNKNOWN_SIGNAL") == "partial"
+
+
+# ── Deterministic path integration: no legacy scoring dependency ─────────────
+
+class TestDeterministicPathIndependence:
+    """Regression: the deterministic scoring path must produce final_score,
+    decision, and qualitative_summary fields without calling legacy score_cv()
+    or get_thresholds() inside the branch.  The cv_score worker hoists
+    get_thresholds() before the branch so both paths can reference q_thresh /
+    p_thresh, but decision in the deterministic path comes from
+    decision_from_signal(), not determine_decision().
+    """
+
+    def test_det_score_dict_supplies_all_db_fields(self):
+        qs = QualitativeSummary(
+            candidate_name="Test User",
+            evaluation_notes="Solid candidate.",
+            strengths=["Python"],
+            gaps_identified=["No AWS"],
+            suggested_interview_questions=["Cloud experience?"],
+        )
+        assessments = [
+            _assessment("Python", "skills", required=True, status="MATCHED"),
+            _assessment("AWS", "skills", required=True, status="ABSENT", match_type="missing"),
+        ]
+        result = _llm_result(assessments)
+        result.qualitative_summary = qs
+        scored = _engine().score(result, _DEFAULT_WEIGHTS)
+        d = deterministic_score_to_dict(scored)
+
+        signal = d["recruiter_signal"]
+        decision = decision_from_signal(signal)
+        assert decision in ("qualified", "partial", "rejected")
+
+        det_qs = d.get("qualitative_summary") or {}
+        assert det_qs.get("candidate_name") == "Test User"
+        assert det_qs.get("evaluation_notes") == "Solid candidate."
+        assert isinstance(det_qs.get("strengths"), list)
+        assert isinstance(det_qs.get("gaps_identified"), list)
+        assert isinstance(det_qs.get("suggested_interview_questions"), list)
+
+        assert d["final_score"] == scored.final_score
+        assert isinstance(d["final_score"], int)
+
+    def test_det_path_decision_independent_of_thresholds(self):
+        a = _assessment("Python", "skills", required=True, status="MATCHED")
+        result = _llm_result([a])
+        scored = _engine().score(result, _DEFAULT_WEIGHTS)
+        d = deterministic_score_to_dict(scored)
+
+        decision = decision_from_signal(d["recruiter_signal"])
+        assert decision == "qualified"

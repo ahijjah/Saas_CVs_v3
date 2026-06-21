@@ -957,6 +957,8 @@ async def _score_cv_async(
             # ════════════════════════════════════════════════════════════════
             _use_deterministic = _det_final_score_val is not None and _det_score_json_val is not None
 
+            q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
+
             if _use_deterministic:
                 # ── Deterministic path: D-01 + F-01 produced a score ─────
                 from services.deterministic_scoring import decision_from_signal
@@ -1169,7 +1171,6 @@ async def _score_cv_async(
                 ai_result = reconstruct_narrative_fields(ai_result)
 
                 final_score = compute_final_score(ai_result, weights)
-                q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
                 decision = determine_decision(final_score, q_thresh, p_thresh)
 
                 extracted_name  = (ai_result.get("candidate_name")  or "").strip()
