@@ -262,6 +262,29 @@ class TestFlattenCriteria:
         required_edu = [i for i in edu if i["required"]]
         assert any("Bachelor" in i["text"] for i in required_edu)
 
+    def test_education_fields_single_field_no_or(self):
+        """Single field of study should not add ' or '."""
+        items = _flatten_criteria({
+            "education": {"minimum_level": "None", "fields_of_study": ["Computer Science"]},
+        })
+        edu = [i for i in items if i["dimension"] == "education" and not i["required"]]
+        assert len(edu) == 1
+        assert edu[0]["text"] == "Computer Science"
+
+    def test_education_fields_multiple_or_combined(self):
+        """Multiple fields should be combined as OR alternatives in single criterion."""
+        items = _flatten_criteria({
+            "education": {"minimum_level": "None", "fields_of_study": ["Computer Science", "MIS", "Computer Engineering"]},
+        })
+        edu_fields = [i for i in items if i["dimension"] == "education" and not i["required"]]
+        assert len(edu_fields) == 1
+        text = edu_fields[0]["text"]
+        assert "Field of study:" in text
+        assert "Computer Science" in text
+        assert "MIS" in text
+        assert "Computer Engineering" in text
+        assert " or " in text
+
     def test_education_none_skipped(self):
         items = _flatten_criteria({
             "education": {"minimum_level": "None", "fields_of_study": []},

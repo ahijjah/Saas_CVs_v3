@@ -1058,3 +1058,130 @@ class TestDeterministicPathIndependence:
 
         decision = decision_from_signal(d["recruiter_signal"])
         assert decision == "qualified"
+
+
+# ── Education fields of study: OR logic, not AND ────────────────────────────
+
+class TestEducationFieldOfStudyOr:
+    """Regression: education fields_of_study should be treated as OR alternatives.
+
+    When a job requires a Bachelor's in Computer Science, MIS, or Computer
+    Engineering, a candidate with Bachelor's in MIS should:
+    - education MATCHED (not penalized for not matching all 3 listed fields)
+    - receive full education credit in dimension scoring
+
+    Current broken behavior:
+    - _flatten_criteria creates 3 separate preferred criteria (one per field)
+    - D-01 returns: CS→ABSENT, MIS→MATCHED, CompEng→ABSENT
+    - Dim scoring averages: (0 + 1.0 + 0) / 3 = 0.33 = partial credit
+    - This incorrectly penalizes the candidate
+
+    Fixed behavior (when implemented):
+    - _flatten_criteria creates 1 criterion: "Field of study: CS, MIS, or Computer Engineering"
+    - D-01 returns: MATCHED (because MIS is in the list)
+    - Dim scoring: 1.0 = full credit
+    """
+
+    def test_education_level_required_full_match(self):
+        """Bachelor's in MIS matches Bachelor's requirement + MIS field."""
+        a1 = _assessment(
+            "Minimum education level: Bachelor's",
+            "education",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            criterion_class="education",
+        )
+        a2 = _assessment(
+            "Field of study: Computer Science, MIS, or Computer Engineering",
+            "education",
+            required=False,
+            status="MATCHED",
+            match_type="direct",
+            criterion_class="education",
+        )
+        scored = _engine().score(_llm_result([a1, a2]), _DEFAULT_WEIGHTS)
+        d = deterministic_score_to_dict(scored)
+        dim = d["dimensions"]["education"]
+        assert dim["n_required"] == 1
+        assert dim["n_required_matched"] == 1
+        assert dim["n_preferred"] == 1
+        assert dim["n_preferred_matched"] == 1
+        assert dim["dimension_score"] == pytest.approx(1.0)
+
+    def test_education_level_matches_related_field_partial(self):
+        """Bachelor's in Economics (related) + matching level = PARTIAL credit."""
+        a1 = _assessment(
+            "Minimum education level: Bachelor's",
+            "education",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            criterion_class="education",
+        )
+        a2 = _assessment(
+            "Field of study: Computer Science, MIS, or Computer Engineering",
+            "education",
+            required=False,
+            status="PARTIAL",
+            match_type="transferable",
+            criterion_class="education",
+        )
+        scored = _engine().score(_llm_result([a1, a2]), _DEFAULT_WEIGHTS)
+        d = deterministic_score_to_dict(scored)
+        dim = d["dimensions"]["education"]
+        assert dim["n_preferred_matched"] == 0
+        assert dim["n_preferred_partial"] == 1
+        assert dim["dimension_score"] < 1.0
+        assert dim["dimension_score"] >= 0.4
+
+    def test_education_wrong_level_correct_field_partial(self):
+        """Master's in MIS (higher level) but no Master's required = PARTIAL/MATCHED."""
+        a1 = _assessment(
+            "Minimum education level: Bachelor's",
+            "education",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            criterion_class="education",
+            risk_flags=["overqualified"],
+        )
+        a2 = _assessment(
+            "Field of study: Computer Science, MIS, or Computer Engineering",
+            "education",
+            required=False,
+            status="MATCHED",
+            match_type="direct",
+            criterion_class="education",
+        )
+        scored = _engine().score(_llm_result([a1, a2]), _DEFAULT_WEIGHTS)
+        d = deterministic_score_to_dict(scored)
+        dim = d["dimensions"]["education"]
+        assert dim["n_required_matched"] == 1
+        assert dim["n_preferred_matched"] == 1
+        assert "education" in d["overqualification_risk_dimensions"]
+
+    def test_education_wrong_level_wrong_field_absent(self):
+        """High School in Biology (not in field list) = ABSENT."""
+        a1 = _assessment(
+            "Minimum education level: Bachelor's",
+            "education",
+            required=True,
+            status="ABSENT",
+            match_type="missing",
+            criterion_class="education",
+        )
+        a2 = _assessment(
+            "Field of study: Computer Science, MIS, or Computer Engineering",
+            "education",
+            required=False,
+            status="ABSENT",
+            match_type="missing",
+            criterion_class="education",
+        )
+        scored = _engine().score(_llm_result([a1, a2]), _DEFAULT_WEIGHTS)
+        d = deterministic_score_to_dict(scored)
+        dim = d["dimensions"]["education"]
+        assert dim["n_required_absent"] == 1
+        assert dim["n_preferred_absent"] == 1
+        assert dim["dimension_score"] == pytest.approx(0.0)
