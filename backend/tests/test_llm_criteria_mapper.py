@@ -254,6 +254,47 @@ class TestFlattenCriteria:
         })
         assert not any("years" in i["text"].lower() for i in items)
 
+    def test_experience_requirement_type_preferred(self):
+        """Experience requirement marked as 'preferred' should have required=False."""
+        items = _flatten_criteria({
+            "experience": {
+                "minimum_years": 5,
+                "requirement_type": "preferred",
+                "relevant_roles": [],
+                "key_responsibilities": [],
+            },
+        })
+        exp_items = [i for i in items if "5 years" in i["text"]]
+        assert len(exp_items) == 1
+        assert exp_items[0]["required"] is False
+
+    def test_experience_requirement_type_mandatory(self):
+        """Experience requirement marked as 'mandatory' should have required=True."""
+        items = _flatten_criteria({
+            "experience": {
+                "minimum_years": 5,
+                "requirement_type": "mandatory",
+                "relevant_roles": [],
+                "key_responsibilities": [],
+            },
+        })
+        exp_items = [i for i in items if "5 years" in i["text"]]
+        assert len(exp_items) == 1
+        assert exp_items[0]["required"] is True
+
+    def test_experience_no_requirement_type_defaults_to_required(self):
+        """Experience requirement with no requirement_type field should default to required=True (backward compat)."""
+        items = _flatten_criteria({
+            "experience": {
+                "minimum_years": 5,
+                "relevant_roles": [],
+                "key_responsibilities": [],
+            },
+        })
+        exp_items = [i for i in items if "5 years" in i["text"]]
+        assert len(exp_items) == 1
+        assert exp_items[0]["required"] is True
+
     def test_education_level_required(self):
         items = _flatten_criteria({
             "education": {"minimum_level": "Bachelor's", "fields_of_study": ["Finance"]},

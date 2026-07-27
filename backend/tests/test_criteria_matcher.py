@@ -503,17 +503,22 @@ def _make_criteria(
     domain_knowledge: list[str] | None = None,
     other_requirements: list[str] | None = None,
     key_responsibilities: list[str] | None = None,
+    experience_requirement_type: str | None = None,
 ) -> dict:
+    exp_block = {
+        "minimum_years": min_years,
+        "relevant_roles": [],
+        "key_responsibilities": key_responsibilities or [],
+    }
+    if experience_requirement_type:
+        exp_block["requirement_type"] = experience_requirement_type
+
     return {
         "skills": {
             "required": required_skills or [],
             "preferred": preferred_skills or [],
         },
-        "experience": {
-            "minimum_years": min_years,
-            "relevant_roles": [],
-            "key_responsibilities": key_responsibilities or [],
-        },
+        "experience": exp_block,
         "education": {
             "minimum_level": min_education,
             "fields_of_study": [],
@@ -667,6 +672,33 @@ class TestCriteriaMatchEngine:
         result = self.engine.match(facts, criteria)
         exp_matches = [x for x in result.matches if x.dimension == "experience"]
         assert exp_matches == []
+
+    def test_experience_requirement_type_preferred_insufficient_years(self):
+        """Candidate below minimum years for a 'preferred' requirement should have required=False."""
+        facts = _make_cv_facts(experience_years=2.0)
+        criteria = _make_criteria(min_years=5, experience_requirement_type="preferred")
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "experience")
+        assert m.required is False
+        assert m.status in ("PARTIAL", "ABSENT")
+
+    def test_experience_requirement_type_mandatory_insufficient_years(self):
+        """Candidate below minimum years for a 'mandatory' requirement should have required=True."""
+        facts = _make_cv_facts(experience_years=2.0)
+        criteria = _make_criteria(min_years=5, experience_requirement_type="mandatory")
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "experience")
+        assert m.required is True
+        assert m.status in ("PARTIAL", "ABSENT")
+
+    def test_experience_no_requirement_type_defaults_to_required(self):
+        """Candidate below minimum years with no requirement_type field should default to required=True."""
+        facts = _make_cv_facts(experience_years=2.0)
+        criteria = _make_criteria(min_years=5)
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "experience")
+        assert m.required is True
+        assert m.status in ("PARTIAL", "ABSENT")
 
     # ── Education matching ─────────────────────────────────────────────────
 

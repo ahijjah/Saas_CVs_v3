@@ -294,10 +294,12 @@ def _flatten_criteria(analysis_json: dict) -> list[dict]:
     exp = analysis_json.get("experience") or {}
     min_years = exp.get("minimum_years", 0)
     if min_years:
+        requirement_type = exp.get("requirement_type")
+        is_required = requirement_type != "preferred" if requirement_type else True
         items.append({
             "text": f"Minimum {min_years} years of relevant experience",
             "dimension": "experience",
-            "required": True,
+            "required": is_required,
         })
     for role in (exp.get("relevant_roles") or []):
         if role:

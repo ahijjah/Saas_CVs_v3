@@ -538,6 +538,9 @@ def _match_experience(
     actual = cv_facts.total_experience_years
     criterion_text = f"Minimum {min_years} years experience"
 
+    requirement_type = exp_criteria.get("requirement_type")
+    is_required = requirement_type != "preferred" if requirement_type else True
+
     if actual >= min_years:
         status, confidence, partial_reason = "MATCHED", 0.90, ""
     elif actual >= min_years * 0.6:
@@ -553,7 +556,7 @@ def _match_experience(
     return [CriterionMatch(
         criterion_text=criterion_text,
         dimension="experience",
-        required=True,
+        required=is_required,
         status=status,
         confidence=confidence,
         match_method="inferred",
