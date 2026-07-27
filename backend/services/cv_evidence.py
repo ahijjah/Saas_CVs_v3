@@ -619,14 +619,36 @@ _SECTION_RE: dict[str, re.Pattern] = {
     ),
 }
 
+# Month pattern for handling "Month Year" date formats (e.g. "April 2021", "Feb 2020").
+# Supports English month names (full and abbreviated) and Arabic month names.
+_MONTH_PATTERN = (
+    r"(?:"
+    r"january|february|march|april|may|june|july|august|september|october|november|december"
+    r"|jan\.?|feb\.?|mar\.?|apr\.?|may|jun\.?|jul\.?|aug\.?|sep\.?|oct\.?|nov\.?|dec\.?"
+    r"|يناير|فبراير|مارس|أبريل|مايو|يونيو|يوليو|أغسطس|سبتمبر|أكتوبر|نوفمبر|ديسمبر"
+    r"|كانون\s+الثاني|شباط|آذار|نيسان|أيار|حزيران|تموز|آب|أيلول|تشرين\s+الأول|تشرين\s+الثاني"
+    r")"
+)
+
 # Date range pattern for experience year extraction.
-# Supports English and Arabic separators; many "present" variants.
+# Supports both "Month Year – Month Year" (e.g. "April 2021 – February 2025") and
+# "Year – Year" (e.g. "2021 – 2025") formats. Also supports English and Arabic
+# separators and many "present" variants.
 _DATE_RANGE_RE = re.compile(
     r"(?:من\s+)?"                                       # optional Arabic "from" prefix
-    r"\b(?P<start>(?:19|20)\d{2})\b"                   # start year (4 digits)
+    r"(?:"
+        # Format 1: "Month Year – Month Year" (e.g. "April 2021 – February 2025")
+        r"(?P<start_month>" + _MONTH_PATTERN + r")\s+"
+        r"(?P<start_year>(?:19|20)\d{2})"
+    r"|"
+        # Format 2: "Year – Year" (e.g. "2021 – 2025") - original format
+        r"\b(?P<start_year_bare>(?:19|20)\d{2})\b"
+    r")"
     r"\s*(?:[-–—/]|\bto\b|\bإلى\b|\bحتى\b)\s*"        # separator (English or Arabic)
     r"(?P<end>"                                          # end: year or present variant
-    r"(?:(?:19|20)\d{2})"                               # 4-digit year
+        # Allow optional month before end year
+        r"(?:" + _MONTH_PATTERN + r"\s+)?"
+        r"(?:(?:19|20)\d{2})"                            # 4-digit year
     r"|present|current|now|ongoing"                     # English present
     r"|till\s+date|to\s+date"                           # "till/to date"
     r"|حاليا|حالياً|الآن"                             # Arabic "now"
@@ -1135,15 +1157,19 @@ def _extract_experience(
     blocks: list[ExperienceEvidence] = []
 
     for m in _DATE_RANGE_RE.finditer(search_text):
-        start_year = int(m.group("start"))
+        # Extract start year from either format: "Month Year" or "Year"
+        start_year_str = m.group("start_year") or m.group("start_year_bare")
+        start_year = int(start_year_str)
         end_str = m.group("end").strip()
 
         if _PRESENT_RE.match(end_str):
             end_year = _CURRENT_YEAR
         else:
-            try:
-                end_year = int(end_str)
-            except ValueError:
+            # Extract the 4-digit year from the end group (may have month prefix)
+            year_match = re.search(r"(?:19|20)\d{2}", end_str)
+            if year_match:
+                end_year = int(year_match.group(0))
+            else:
                 continue
 
         if end_year < start_year or (end_year - start_year) > 50:
