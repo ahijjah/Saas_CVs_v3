@@ -866,3 +866,128 @@ Experience in compliance and information security management.
         facts = self.ex.extract(cv)
         domain_terms = [d.domain_term for d in facts.domain_signals]
         assert "confidentiality" in domain_terms
+
+
+# ── Experience Extraction: Month+Year Date Format Regressions ────────────────
+
+class TestExperienceMonthYearExtraction:
+    """Regression tests for month+year experience date format support.
+
+    Validates the fix for the bug where experience entries with dates like
+    'April 2021 – February 2025' were not extracted to the experience array,
+    even though total_experience_years was computed correctly.
+    """
+
+    def setup_method(self):
+        """Initialize extractor before each test."""
+        self.extractor = CVFactsExtractor()
+
+    def test_month_year_date_extraction_focused(self):
+        """Unit test: verify month+year dates are extracted as experience entries.
+
+        Example formats:
+        - January 2018 – March 2021
+        - April 2021 – Present
+        """
+        cv_text = """
+        Experience:
+        Software Engineer
+        TechCorp Inc., January 2018 – March 2021
+        - Built scalable backend systems
+        - Mentored junior developers
+        """
+        facts = self.extractor.extract(cv_text)
+
+        # Verify experience array is populated (not empty)
+        assert len(facts.experience) == 1, \
+            "Month+year dates should populate experience array"
+
+        exp = facts.experience[0]
+        # Verify structured data is returned
+        assert exp.role_title, "Should have job title"
+        assert exp.employer, "Should have employer when available"
+        assert exp.years > 0, "Should compute duration from dates"
+        assert exp.years == pytest.approx(3.17, abs=0.5), \
+            "January 2018 to March 2021 ≈ 3.17 years"
+
+    def test_month_year_with_present_focused(self):
+        """Unit test: verify 'Month Year – Present' format is handled.
+
+        Current roles with 'Present' or 'Now' should be recognized.
+        """
+        cv_text = """
+        Work History:
+        Senior Manager
+        Acme Corp, April 2021 – Present
+        - Leading a team of 10
+        - Strategic planning
+        """
+        facts = self.extractor.extract(cv_text)
+
+        assert len(facts.experience) == 1, \
+            "Current role with 'Present' should extract"
+
+        exp = facts.experience[0]
+        assert exp.years >= 4.75, "Should compute from 2021 to current (2026)"
+
+    def test_sabrine_cv_regression_structured_output(self):
+        """Regression test: Sabrine CV now returns structured experience records.
+
+        Previously: experience: [], total_experience_years: 7.0 (bug)
+        Now: experience: [...], total_experience_years: 7.0 (fixed)
+
+        Verifies that structured records are returned with:
+        - job title
+        - employer when available
+        - start/end date computations
+        - responsibilities/descriptions when available
+        """
+        sabrine_cv = """
+Sabrine N. R. Asi
+Laboratory Coordination and Sales Representative
+Medical Supplies and Services (MSS), April 2021 – February 2025
+- Coordinated daily laboratory operations
+- Managed inventory of laboratory supplies and equipment
+- Supervised lab personnel and maintained compliance
+- Ensured regulatory adherence and audit readiness
+
+Manager Assistance
+Birzeit Medical Co, July 2017 – July 2020
+- Provided high-level administrative support to managers
+- Assisted in project planning and execution
+- Handled confidential information
+- Coordinated internal and external communications
+
+Skills:
+Microsoft Excel, Word, Data Entry, Administrative Support, Customer Service
+
+Education:
+Bachelor's in Business Administration
+Al-Quds Open University, 2018
+        """
+
+        facts = self.extractor.extract(sabrine_cv)
+
+        # THE BUG: experience array was empty despite total_experience_years = 7.0
+        assert len(facts.experience) == 2, \
+            "Bug regression: experience array should NOT be empty"
+
+        # First entry: Laboratory Coordination role (April 2021 – February 2025)
+        exp1 = facts.experience[0]
+        assert exp1.role_title, "Should have job title"
+        assert exp1.employer, "Should have employer"
+        assert exp1.years == pytest.approx(3.75, abs=0.5), \
+            "April 2021 to Feb 2025 ≈ 3.75 years"
+        assert len(exp1.raw_text) > 0, "Should have raw text/description"
+
+        # Second entry: Manager Assistance role (July 2017 – July 2020)
+        exp2 = facts.experience[1]
+        assert exp2.role_title, "Should have job title"
+        assert exp2.employer, "Should have employer"
+        assert exp2.years == pytest.approx(3.0, abs=0.5), \
+            "July 2017 to July 2020 = 3 years"
+        assert len(exp2.raw_text) > 0, "Should have raw text/description"
+
+        # Total computation
+        assert facts.total_experience_years == pytest.approx(7.0, abs=0.5), \
+            "Total years should sum correctly"
