@@ -568,6 +568,21 @@ _COMPILED_SOFT_SKILLS: tuple[tuple[str, tuple[tuple[re.Pattern, float], ...]], .
     for category, patterns in _SOFT_SKILL_PATTERNS
 )
 
+# ── Semantic reference sentences for Mechanism B (similarity-based fallback) ──
+# Used when regex patterns don't match but semantic evidence suggests a skill.
+# One clear description per category; scores >= 0.50 trigger extraction.
+_SOFT_SKILL_SEMANTIC_REFS: dict[str, str] = {
+    "leadership": "supervising, leading, or managing a team or project",
+    "communication": "communicating, presenting, or coordinating with colleagues, clients, or departments",
+    "teamwork": "working collaboratively with others, supporting team efforts, or contributing to group projects",
+    "problem_solving": "identifying issues, troubleshooting, finding solutions, or resolving conflicts",
+    "time_management": "organizing, scheduling, prioritizing multiple tasks, or meeting deadlines",
+    "adaptability": "adapting to change, working in fast-paced environments, or learning quickly",
+    "confidentiality": "handling sensitive or confidential information with discretion and care",
+    "professional_ethics": "maintaining professional standards, integrity, or ethical conduct",
+    "organizational_ability": "organizing documents, systems, or processes for efficiency and accuracy",
+}
+
 # ---------------------------------------------------------------------------
 # Domain signal patterns
 # ---------------------------------------------------------------------------
@@ -1369,6 +1384,69 @@ def _extract_soft_skills(sections: dict[str, list[str]]) -> list[SoftSkillSignal
                     inference_basis="",
                     risk_flag="unregistered_soft_skill",
                 ))
+
+    # ── MECHANISM B: Semantic-similarity fallback (narrative-inferred soft skills) ──
+    # For CVs without explicit soft-skills headers, scan narrative text (experience,
+    # summary) for evidence that doesn't match hardcoded patterns. Use semantic
+    # similarity to infer soft skills with lower confidence (0.35-0.40) and
+    # risk_flag="semantic_inferred".
+    try:
+        from services.local_processor import compute_semantic_similarity
+    except Exception:
+        # If semantic model is not available (import error, network error, etc),
+        # skip Mechanism B and return regex-only and header-based signals
+        return signals
+
+    # Only apply Mechanism B if there's no explicit soft-skills header
+    # (otherwise Mechanism A handles those)
+    if soft_skills_section_lines:
+        return signals
+
+    # Scan narrative text for unmatched evidence
+    narrative_sections = ["experience", "summary"]
+    narrative_lines = []
+    for sec in narrative_sections:
+        for line in sections.get(sec, []):
+            line_stripped = line.strip()
+            if line_stripped and len(line_stripped) > 10 and len(line_stripped) < 200:
+                narrative_lines.append(line_stripped)
+
+    # For each narrative line, test semantic similarity against reference sentences
+    semantic_threshold = 0.50
+    confidence_semantic = 0.38  # Between 0.35-0.40
+
+    for line in narrative_lines:
+        # Skip lines that already matched a regex pattern
+        already_matched = any(
+            sig for sig in signals
+            if sig.evidence_phrase.lower() in line.lower()
+        )
+        if already_matched:
+            continue
+
+        # Compute similarity to each soft-skill reference sentence
+        for category, ref_sentence in _SOFT_SKILL_SEMANTIC_REFS.items():
+            # Skip if this category already found by regex
+            if category in categories_found:
+                continue
+
+            try:
+                # Compute semantic similarity
+                similarity = compute_semantic_similarity(line, ref_sentence)
+            except Exception:
+                # If similarity computation fails (network, model load, etc), skip
+                continue
+
+            if similarity >= semantic_threshold:
+                signals.append(SoftSkillSignal(
+                    soft_skill_category=category,
+                    evidence_phrase=line,
+                    confidence=confidence_semantic,
+                    inference_basis=f"semantic similarity: {similarity:.2f}",
+                    risk_flag="semantic_inferred",
+                ))
+                categories_found.add(category)
+                break  # One signal per category
 
     return signals
 
