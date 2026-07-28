@@ -1096,6 +1096,36 @@ Skills
                 # Should not have leading bullet character
                 assert not skill.skill_name.startswith("•")
 
+    def test_mechanism_a_labeled_category_format_not_captured(self):
+        """Regression: labeled-category lines like "Programming: Python, C++"
+        must NOT be captured as standalone unregistered skills.
+
+        The pattern "Label: item1, item2" is already handled by registry matching
+        on individual items. Capturing the whole line as a skill is a false positive.
+
+        This test ensures that Python and C++ are captured individually (by registry),
+        while the composite line "Programming: Python, C++" is NOT added as a separate
+        unregistered skill entry.
+        """
+        cv_text = """Skills
+Programming: Python, C++
+Tools: Git, Docker"""
+
+        facts = CVFactsExtractor().extract(cv_text)
+        skill_names = {s.skill_name for s in facts.skills}
+
+        # Individual items should be captured by registry
+        assert "Python" in skill_names, "Python should be extracted by registry"
+        assert "C++" in skill_names, "C++ should be extracted by registry"
+        assert "Git" in skill_names, "Git should be extracted by registry"
+        assert "Docker" in skill_names, "Docker should be extracted by registry"
+
+        # The composite line MUST NOT be captured
+        assert "Programming: Python, C++" not in skill_names, \
+            "Labeled-category line should NOT be captured as unregistered skill"
+        assert "Tools: Git, Docker" not in skill_names, \
+            "Labeled-category line should NOT be captured as unregistered skill"
+
 
 # ── Experience Extraction: Month+Year Date Format Regressions ────────────────
 

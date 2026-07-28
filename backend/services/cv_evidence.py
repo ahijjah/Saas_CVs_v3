@@ -801,6 +801,17 @@ def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[Skil
         # Skip if already found by registry
         if any(skill.raw_text == line_stripped for skill in found.values()):
             continue
+        # Skip labeled-category lines like "Programming: Python, C++" or
+        # "Machine Learning: item1, item2" — the pattern "Label: comma-sep items"
+        # is already well-served by registry matching on the individual items.
+        # Detection: line has colon AND contains comma after colon (or is just the label).
+        if ":" in line_stripped:
+            colon_pos = line_stripped.find(":")
+            after_colon = line_stripped[colon_pos + 1:].strip()
+            # If after colon is empty or comma-separated list, skip the whole line
+            if not after_colon or "," in after_colon:
+                continue
+
         # Only capture lines that look like actual skill items:
         # - Are reasonably short (< 100 chars, avoids full sentences/paragraphs)
         # - Start with bullet/dash/number pattern OR are very short (< 40 chars)
