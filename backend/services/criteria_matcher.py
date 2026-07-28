@@ -537,18 +537,134 @@ def _match_experience(
 
     actual = cv_facts.total_experience_years
     criterion_text = f"Minimum {min_years} years experience"
-
     requirement_type = exp_criteria.get("requirement_type")
     is_required = requirement_type != "preferred" if requirement_type else True
 
+    # ── Numeric threshold check ───────────────────────────────────────────
     if actual >= min_years:
-        status, confidence, partial_reason = "MATCHED", 0.90, ""
+        numeric_passed = True
+        numeric_confidence = 0.90
     elif actual >= min_years * 0.6:
+        numeric_passed = False
         ratio = actual / min_years
-        confidence = round(0.30 + ratio * 0.25, 3)
-        status, partial_reason = "PARTIAL", f"{actual:.0f} of {min_years} required years found"
+        numeric_confidence = round(0.30 + ratio * 0.25, 3)
     else:
-        confidence = round(min(0.15, actual / min_years * 0.30), 3) if actual > 0 else 0.0
+        numeric_passed = False
+        numeric_confidence = round(min(0.15, actual / min_years * 0.30), 3) if actual > 0 else 0.0
+
+    # ── Relevance check: UNCONDITIONAL when job specifies relevant_roles or key_responsibilities
+    # Apply whenever there is data to check against, regardless of criterion wording.
+    # Fall back to pure numeric only if both are empty/missing.
+    key_responsibilities = exp_criteria.get("key_responsibilities", []) or []
+    relevant_roles = exp_criteria.get("relevant_roles", []) or []
+    has_relevance_data = bool(key_responsibilities or relevant_roles)
+
+    if has_relevance_data and numeric_passed:
+        # Build candidate's text pool from roles and responsibilities
+        candidate_texts = []
+        for exp_entry in cv_facts.experience:
+            if exp_entry.role_title:
+                candidate_texts.append(_normalize_text(exp_entry.role_title))
+            for resp in exp_entry.responsibilities:
+                candidate_texts.append(_normalize_text(resp))
+
+        # Combine job's relevant_roles and key_responsibilities for comparison
+        job_requirements = list(relevant_roles) + list(key_responsibilities)
+
+        # Check for meaningful overlap: require either:
+        #   A) High fuzzy match (65%+) AND domain-keyword intersection, OR
+        #   B) Direct domain keyword overlap (e.g., both mention "HR", "recruitment", etc.)
+        #
+        # LIMITATION (known, accepted for current scope):
+        # This is a terminology-dependent heuristic, NOT semantic matching.
+        # It correctly filters same-role/different-domain false positives
+        # (e.g., "Laboratory Coordinator" vs "HR Coordinator") when both texts
+        # explicitly share a known keyword. However, it can silently pass through
+        # unrelated candidates via the 85% fuzzy-score fallback for domains/synonyms
+        # outside this keyword list (e.g., "accountant" vs "accounting" don't match
+        # as tokens, but fuzzy score is high enough). If stricter cross-domain
+        # filtering becomes critical, consider extending the compute_semantic_similarity()
+        # approach used for soft skills (Mechanism B) here as a future improvement.
+        has_relevance = False
+        domain_keywords = {
+            "hr", "recruitment", "hiring", "staffing", "payroll",
+            "training", "development", "management", "marketing", "finance",
+            "accounting", "sales", "engineering", "it", "operations",
+            "customer service", "support", "logistics", "supply chain",
+        }
+
+        if candidate_texts and job_requirements:
+            try:
+                from rapidfuzz import fuzz
+                for job_req in job_requirements:
+                    job_norm = _normalize_text(job_req)
+                    job_keywords = set(job_norm.split()) & domain_keywords
+
+                    for cand_text in candidate_texts:
+                        cand_keywords = set(cand_text.split()) & domain_keywords
+
+                        # Check for domain keyword intersection
+                        if job_keywords and cand_keywords and (job_keywords & cand_keywords):
+                            # Both have domain keywords and they overlap
+                            score = fuzz.token_set_ratio(job_norm, cand_text)
+                            if score >= 65:
+                                has_relevance = True
+                                break
+                        # Fallback: very high fuzzy score alone (90%+) suggests domain match
+                        elif not job_keywords and not cand_keywords:
+                            # Neither has domain keyword; use lower threshold for generic terms
+                            score = fuzz.token_set_ratio(job_norm, cand_text)
+                            if score >= 85:  # Higher bar when no domain keywords present
+                                has_relevance = True
+                                break
+
+                    if has_relevance:
+                        break
+            except ImportError:
+                # Fallback: simple token overlap with domain keyword check
+                for job_req in job_requirements:
+                    job_tokens = set(_normalize_text(job_req).split())
+                    job_keywords = job_tokens & domain_keywords
+
+                    for cand_text in candidate_texts:
+                        cand_tokens = set(cand_text.split())
+                        cand_keywords = cand_tokens & domain_keywords
+
+                        if job_keywords and cand_keywords and (job_keywords & cand_keywords):
+                            overlap = len(job_tokens & cand_tokens)
+                            if overlap >= 2:
+                                has_relevance = True
+                                break
+
+                    if has_relevance:
+                        break
+
+        # If no overlap found, downgrade to PARTIAL even though duration is sufficient
+        if not has_relevance:
+            status = "PARTIAL"
+            confidence = 0.45  # Reduced confidence for relevance gap
+            partial_reason = f"{actual:.0f} years total experience, but relevance to role not verified"
+            evidence = [f"{actual:.1f} years total experience extracted from CV"]
+            return [CriterionMatch(
+                criterion_text=criterion_text,
+                dimension="experience",
+                required=is_required,
+                status=status,
+                confidence=confidence,
+                match_method="inferred",
+                supporting_evidence=evidence,
+                evidence_confidence=[confidence],
+                partial_reason=partial_reason,
+            )]
+
+    # ── Fallback: pure numeric comparison (no relevance data available) ───
+    if numeric_passed:
+        status, confidence, partial_reason = "MATCHED", numeric_confidence, ""
+    elif actual >= min_years * 0.6:
+        status, partial_reason = "PARTIAL", f"{actual:.0f} of {min_years} required years found"
+        confidence = numeric_confidence
+    else:
+        confidence = numeric_confidence
         status = "ABSENT"
         partial_reason = f"{actual:.0f} of {min_years} required years found" if actual > 0 else ""
 

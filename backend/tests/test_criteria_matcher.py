@@ -700,6 +700,191 @@ class TestCriteriaMatchEngine:
         assert m.required is True
         assert m.status in ("PARTIAL", "ABSENT")
 
+    def test_relevant_experience_no_role_overlap_returns_partial(self):
+        """Unconditional relevance check: When job specifies relevant_roles or
+        key_responsibilities, always run relevance overlap check.
+
+        Sabrine's case: 8 years total experience, job requires 5 years and specifies
+        HR-focused relevant_roles/key_responsibilities. Her roles (Laboratory Coordinator,
+        Manager Assistant) don't match HR domain → should return PARTIAL, not MATCHED.
+        """
+        # Sabrine's experience: Laboratory Coordination, Manager Assistant
+        exp_entries = [
+            ExperienceEvidence(
+                employer="Lab Company",
+                role_title="Laboratory Coordinator",
+                years=4.5,
+                responsibilities=["Managed lab samples", "Prepared reports"],
+            ),
+            ExperienceEvidence(
+                employer="Office Corp",
+                role_title="Manager Assistant",
+                years=3.5,
+                responsibilities=["Scheduled meetings", "Handled correspondence"],
+            ),
+        ]
+        facts = CVFacts(
+            language="en",
+            total_char_count=1000,
+            skills=[],
+            experience=exp_entries,
+            education=[],
+            certifications=[],
+            soft_skill_signals=[],
+            domain_signals=[],
+            total_experience_years=8.0,
+            highest_education_level="None",
+            skill_names_normalised=[],
+            extractor_version="1.0.0",
+            extraction_method="rule_based_v1",
+        )
+
+        # Job specifies relevant_roles and key_responsibilities → triggers relevance check
+        criteria = {
+            "skills": {"required": [], "preferred": []},
+            "experience": {
+                "minimum_years": 5,
+                "requirement_type": "preferred",
+                "relevant_roles": ["HR officer", "HR administrator", "HR coordinator"],
+                "key_responsibilities": [
+                    "Manage HR operations",
+                    "Recruit candidates",
+                    "Handle payroll",
+                ],
+            },
+            "education": {"minimum_level": "None", "fields_of_study": []},
+            "certifications": [],
+            "domain_knowledge": [],
+            "other_requirements": [],
+        }
+
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "experience")
+
+        # Should be PARTIAL: years >= 5 but domain keywords (HR) don't overlap
+        assert m.status == "PARTIAL", f"Expected PARTIAL, got {m.status}"
+        assert m.confidence < 0.60, f"Expected confidence < 0.60, got {m.confidence}"
+        assert "relevance" in m.partial_reason.lower(), \
+            f"Expected 'relevance' in partial_reason, got: {m.partial_reason}"
+
+    def test_relevant_experience_with_role_overlap_returns_matched(self):
+        """Unconditional relevance check positive case: Candidate has sufficient years
+        AND domain keywords match.
+
+        Candidate with HR Manager role matching HR domain keywords should return MATCHED.
+        """
+        exp_entries = [
+            ExperienceEvidence(
+                employer="HR Corp",
+                role_title="HR Manager",
+                years=6.0,
+                responsibilities=[
+                    "Managed recruitment processes",
+                    "Handled payroll and benefits",
+                    "Conducted performance reviews",
+                ],
+            ),
+        ]
+        facts = CVFacts(
+            language="en",
+            total_char_count=1000,
+            skills=[],
+            experience=exp_entries,
+            education=[],
+            certifications=[],
+            soft_skill_signals=[],
+            domain_signals=[],
+            total_experience_years=6.0,
+            highest_education_level="None",
+            skill_names_normalised=[],
+            extractor_version="1.0.0",
+            extraction_method="rule_based_v1",
+        )
+
+        # Job specifies relevant_roles and key_responsibilities with HR domain keywords
+        criteria = {
+            "skills": {"required": [], "preferred": []},
+            "experience": {
+                "minimum_years": 5,
+                "relevant_roles": ["HR officer", "HR manager", "HR coordinator"],
+                "key_responsibilities": [
+                    "Manage HR operations",
+                    "Recruit candidates",
+                    "Handle payroll",
+                ],
+            },
+            "education": {"minimum_level": "None", "fields_of_study": []},
+            "certifications": [],
+            "domain_knowledge": [],
+            "other_requirements": [],
+        }
+
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "experience")
+
+        # Should be MATCHED because both duration and relevance satisfied
+        assert m.status == "MATCHED", f"Expected MATCHED, got {m.status}"
+        assert m.confidence >= 0.60, f"Expected confidence >= 0.60, got {m.confidence}"
+
+    def test_pure_duration_no_relevance_data_falls_back_to_numeric(self):
+        """Fallback to pure numeric: When relevant_roles and key_responsibilities are
+        both empty/missing, apply only numeric comparison.
+
+        Same experience data as negative case, but job criteria has no relevance data
+        → should match by duration alone (8 >= 5) → MATCHED.
+        """
+        # Same Sabrine case but job has no relevance data
+        exp_entries = [
+            ExperienceEvidence(
+                employer="Lab Company",
+                role_title="Laboratory Coordinator",
+                years=4.5,
+                responsibilities=["Managed lab samples"],
+            ),
+            ExperienceEvidence(
+                employer="Office Corp",
+                role_title="Manager Assistant",
+                years=3.5,
+                responsibilities=["Scheduled meetings"],
+            ),
+        ]
+        facts = CVFacts(
+            language="en",
+            total_char_count=1000,
+            skills=[],
+            experience=exp_entries,
+            education=[],
+            certifications=[],
+            soft_skill_signals=[],
+            domain_signals=[],
+            total_experience_years=8.0,
+            highest_education_level="None",
+            skill_names_normalised=[],
+            extractor_version="1.0.0",
+            extraction_method="rule_based_v1",
+        )
+
+        # Job requires 5 years with NO relevant_roles or key_responsibilities
+        # → no relevance data available, fall back to pure numeric
+        criteria = {
+            "skills": {"required": [], "preferred": []},
+            "experience": {
+                "minimum_years": 5,
+                # NOTE: No relevant_roles or key_responsibilities
+            },
+            "education": {"minimum_level": "None", "fields_of_study": []},
+            "certifications": [],
+            "domain_knowledge": [],
+            "other_requirements": [],
+        }
+
+        result = self.engine.match(facts, criteria)
+        m = next(x for x in result.matches if x.dimension == "experience")
+
+        # Should be MATCHED: no relevance data, pure numeric comparison (8 >= 5)
+        assert m.status == "MATCHED", f"Expected MATCHED, got {m.status}"
+        assert m.confidence >= 0.85, f"Expected high confidence, got {m.confidence}"
+
     # ── Education matching ─────────────────────────────────────────────────
 
     def test_education_matched(self):
