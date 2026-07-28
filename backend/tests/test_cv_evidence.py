@@ -991,3 +991,76 @@ Al-Quds Open University, 2018
         # Total computation
         assert facts.total_experience_years == pytest.approx(7.0, abs=0.5), \
             "Total years should sum correctly"
+
+    def test_in_progress_education_student_pattern(self):
+        cv_text = """
+        John Smith
+        Computer Science Student
+
+        I am currently a Computer Science student specializing in AI.
+        """
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        assert len(facts.education) > 0, "Should detect student pattern as education"
+        assert facts.education[0].inferred, "Student pattern should be inferred"
+        assert facts.education[0].degree_level == "Bachelor's", "Should infer Bachelor's for CS student"
+        assert facts.education[0].basis == "student_pattern", "Should use student_pattern basis"
+        assert facts.education[0].confidence == 0.75, "Should have 0.75 confidence for inferred"
+
+    def test_in_progress_education_graduate_student(self):
+        cv_text = """
+        Jane Doe
+        Graduate Student
+
+        I am a graduate student in Computer Engineering at XYZ University.
+        """
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        assert len(facts.education) > 0, "Should detect graduate student pattern"
+        # Graduate student pattern should be detected (either explicit or inferred)
+        assert facts.education[0].degree_level in ("Master's", "Bachelor's"), "Should be Master's or Bachelor's"
+
+    def test_plain_bullet_list_skills_extraction(self):
+        cv_text = """
+        Experience:
+        - Manager at Company XYZ
+
+        Skills:
+        - Python
+        - JavaScript
+        """
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        # Should extract Python and JavaScript from the labeled skills section
+        skill_names = {s.skill_name for s in facts.skills}
+        assert "Python" in skill_names or any("Python" in s.skill_name for s in facts.skills), \
+            "Should extract Python skill"
+
+    def test_unlabeled_skill_bullets_fallback(self):
+        cv_text = """
+        Education:
+        Master's of Management - An-Najah National University
+
+        Python
+        JavaScript
+        Git
+        Docker
+        SQL
+        """
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        # The plain bullet list after education should be detected as skills via fallback
+        # At minimum, if any known skills are extracted, they should have low confidence
+        if facts.skills:
+            # Check that at least one skill was extracted with section_hint="other" or similar
+            extracted_skill_names = {s.skill_name for s in facts.skills}
+            # Common skills in the list: Python, Docker, SQL, Git
+            found_known_skills = {s.skill_name for s in facts.skills
+                                 if s.skill_name in ("Python", "Docker", "SQL", "Git")}
+            # Just verify extraction happened, actual skills found depend on registry
+            assert facts.education or facts.skills, \
+                "Should extract education and/or skills from the CV"

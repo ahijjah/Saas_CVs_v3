@@ -471,6 +471,12 @@ _EDU_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
     ("High School",re.compile(r"\b(high\s+school|secondary\s+school|gcse|baccalaureate|a-levels?|o-levels?|ثانوية\s+عامة|شهادة\s+ثانوية)\b", re.IGNORECASE | re.UNICODE)),
 )
 
+# In-progress education patterns: "X student specializing in Y" or "Computer Science student"
+_IN_PROGRESS_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
+    ("Bachelor's", re.compile(r"\b(bachelor\s+|undergrad\w+\s+|computer\s+science|engineering|business|information\s+technology)\s+student\b", re.IGNORECASE | re.UNICODE)),
+    ("Master's",   re.compile(r"\b(master\s+|graduate|postgrad\w+)\s+student\b", re.IGNORECASE | re.UNICODE)),
+)
+
 # ---------------------------------------------------------------------------
 # Certification patterns
 # ---------------------------------------------------------------------------
@@ -732,7 +738,11 @@ def _is_arabic_match(raw: str) -> bool:
 
 
 def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[SkillEvidence]:
-    """Extract skills with priority: skills section > experience > other."""
+    """Extract skills with priority: skills section > experience > other.
+
+    Fallback: if no skills found but there's a block of short lines after education
+    (likely an unlabeled skill list), extract known skills from those lines.
+    """
     skills_text = "\n".join(sections.get("skills", []))
     exp_text = "\n".join(sections.get("experience", []))
     other_text = "\n".join(
@@ -771,6 +781,40 @@ def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[Skil
                     break
             if skill_name in found:
                 break
+
+    # Fallback: if no skills found but "other" section has short lines after education,
+    # treat them as unlabeled skills. Common pattern: education line followed by bullets.
+    if not found and sections.get("other"):
+        other_lines = sections.get("other", [])
+        # Look for sequences of short lines (< 50 chars) that don't contain typical
+        # job verbs (managed, designed, led, etc.) - these are likely skills.
+        job_verbs = r"\b(managed|designed|led|developed|implemented|coordinated|led|supervised|oversaw|founded|resolved|handled|organized)\b"
+        short_bullet_lines = [
+            line for line in other_lines
+            if 3 <= len(line) < 50 and not re.search(job_verbs, line, re.IGNORECASE)
+        ]
+
+        if short_bullet_lines:
+            # Reconstruct as potential skills section
+            potential_skills_text = "\n".join(short_bullet_lines)
+            for skill_name, compiled_patterns in _COMPILED_SKILLS:
+                if skill_name in found:
+                    continue
+                for pat in compiled_patterns:
+                    m = pat.search(potential_skills_text)
+                    if m:
+                        raw = m.group(0)
+                        found[skill_name] = SkillEvidence(
+                            skill_name=skill_name,
+                            raw_text=raw,
+                            explicit=True,
+                            confidence=0.70,
+                            context_snippet=_get_context_snippet(potential_skills_text, m),
+                            language="ar" if _is_arabic_match(raw) else "en",
+                            section_hint="other",
+                            inference_basis="",
+                        )
+                        break
 
     return list(found.values())
 
@@ -973,6 +1017,42 @@ def _strip_city_suffix(institution: str) -> str:
     return institution
 
 
+def _infer_in_progress_education(full_text: str) -> EducationEvidence | None:
+    """Infer education from "X student" patterns (e.g. "Computer Science student").
+
+    Returns an EducationEvidence with inferred=True and confidence=0.75 when a
+    student pattern is found. Returns None otherwise.
+    """
+    for level, pat in _IN_PROGRESS_PATTERNS:
+        m = pat.search(full_text)
+        if m:
+            ctx_start = max(0, m.start() - 50)
+            ctx_end = min(len(full_text), m.end() + 100)
+            raw = full_text[ctx_start:ctx_end].strip()[:200]
+
+            # Try to extract field of study from context
+            field_match = re.search(
+                r"(?:specializ\w+\s+in|studying|major\s+(?:in|of))\s+([^,.\n]+)",
+                raw,
+                re.IGNORECASE
+            )
+            field_of_study = field_match.group(1).strip()[:80] if field_match else ""
+
+            return EducationEvidence(
+                degree_level=level,
+                field_of_study=field_of_study,
+                institution="",
+                year=None,
+                raw_text=raw,
+                inferred=True,
+                basis="student_pattern",
+                confidence=0.75,
+                attendance_years="",
+                supporting_evidence=[raw] if raw else [],
+            )
+    return None
+
+
 def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
     """Return (education_entries, highest_level_name)."""
     found: list[EducationEvidence] = []
@@ -1077,6 +1157,15 @@ def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
             bachelor_idx = list(EDUCATION_LEVELS).index("Bachelor's")
             if bachelor_idx > highest_idx:
                 highest_idx = bachelor_idx
+
+    # If still no education found, check for in-progress education patterns
+    if not found:
+        in_progress = _infer_in_progress_education(full_text)
+        if in_progress is not None:
+            found.append(in_progress)
+            level_idx = list(EDUCATION_LEVELS).index(in_progress.degree_level)
+            if level_idx > highest_idx:
+                highest_idx = level_idx
 
     highest = EDUCATION_LEVELS[highest_idx] if found else "None"
     return found, highest
