@@ -867,6 +867,86 @@ Experience in compliance and information security management.
         domain_terms = [d.domain_term for d in facts.domain_signals]
         assert "confidentiality" in domain_terms
 
+    def test_ahmad_cv_exact_pymupdf_output_regression(self):
+        """Regression test: Ahmad's CV with EXACT PyMuPDF extraction output.
+
+        This tests the exact raw text that production extracted from Ahmad's PDF.
+        Three characteristics are present:
+        1. Bullets appear on their own line: "• \n" + "text"
+        2. Blank line between sections: "University \n \nSkills"
+        3. Regular apostrophe in "Master's"
+
+        Production claimed "no education section found" but our tests showed
+        education extraction actually works. This test captures the real data
+        to prevent regression if handling of these edge cases breaks in future.
+        """
+        # EXACT raw string from PyMuPDF extract on Ahmad's uploaded PDF
+        ahmad_cv_raw = ('Ahmad Nasser - Administrative Officer \n'
+                       'Nablus, Palestine | ahmad.nasser@email.com | +970 598647365 \n'
+                       ' \n'
+                       'Bio \n'
+                       'Administrative professional with over 5 years of experience supporting office operations, \n'
+                       'maintaining employee records, coordinating administrative activities, and assisting with \n'
+                       'recruitment and HR administration. \n'
+                       'Professional Experience \n'
+                       'Administrative Officer – Save the Children \n'
+                       'March 2021 – Present \n'
+                       '• \n'
+                       'Maintained employee files and administrative records. \n'
+                       '• \n'
+                       'Assisted with preparing employment contracts and HR documents. \n'
+                       '• \n'
+                       'Coordinated interview scheduling and onboarding logistics. \n'
+                       '• \n'
+                       'Recorded employee attendance and leave. \n'
+                       '• \n'
+                       'Prepared monthly administrative reports. \n'
+                       '• \n'
+                       'Assisted HR department with day-to-day administrative activities. \n'
+                       'Office Administrator - Bright Solutions \n'
+                       'August 2018 – February 2021 \n'
+                       '• \n'
+                       'Maintained office documentation. \n'
+                       '• \n'
+                       'Supported recruitment by scheduling interviews. \n'
+                       '• \n'
+                       'Prepared reports and maintained filing systems. \n'
+                       '• \n'
+                       'Assisted with employee onboarding documentation. \n'
+                       'Education \n'
+                       'Master\'s of Management - An-Najah National University \n'
+                       ' \n'
+                       'Skills \n'
+                       '• \n'
+                       'HR Administration \n'
+                       '• \n'
+                       'Employee Records Management \n'
+                       '• \n'
+                       'Recruitment Support \n'
+                       '• \n'
+                       'Interview Coordination \n'
+                       '• \n'
+                       'Attendance Management \n'
+                       '• \n'
+                       'Leave Administration \n')
+
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(ahmad_cv_raw)
+
+        # Education extraction should work despite the edge cases
+        assert len(facts.education) >= 1, "Should extract education entry"
+        assert facts.education[0].degree_level == "Master's", "Should extract Master's degree"
+        assert 'Management' in facts.education[0].field_of_study, "Should extract field of study"
+        assert 'An-Najah' in facts.education[0].institution, "Should extract institution"
+
+        # Skills extraction: Ahmad's skills are administrative (HR Administration, etc.)
+        # which are NOT in the technical skills registry. This is expected behavior.
+        # No regression test needed here since registry misses are by design.
+
+        # Experience extraction should work
+        assert len(facts.experience) >= 2, "Should extract at least 2 job entries"
+        assert facts.total_experience_years >= 8.0, "Should calculate ~8 years of experience"
+
 
 # ── Experience Extraction: Month+Year Date Format Regressions ────────────────
 
@@ -1064,83 +1144,3 @@ Al-Quds Open University, 2018
             # Just verify extraction happened, actual skills found depend on registry
             assert facts.education or facts.skills, \
                 "Should extract education and/or skills from the CV"
-
-    def test_ahmad_cv_exact_pymupdf_output_regression(self):
-        """Regression test: Ahmad's CV with EXACT PyMuPDF extraction output.
-
-        This tests the exact raw text that production extracted from Ahmad's PDF.
-        Three characteristics are present:
-        1. Bullets appear on their own line: "• \n" + "text"
-        2. Blank line between sections: "University \n \nSkills"
-        3. Regular apostrophe in "Master's"
-
-        Production claimed "no education section found" but our tests showed
-        education extraction actually works. This test captures the real data
-        to prevent regression if handling of these edge cases breaks in future.
-        """
-        # EXACT raw string from PyMuPDF extract on Ahmad's uploaded PDF
-        ahmad_cv_raw = ('Ahmad Nasser - Administrative Officer \n'
-                       'Nablus, Palestine | ahmad.nasser@email.com | +970 598647365 \n'
-                       ' \n'
-                       'Bio \n'
-                       'Administrative professional with over 5 years of experience supporting office operations, \n'
-                       'maintaining employee records, coordinating administrative activities, and assisting with \n'
-                       'recruitment and HR administration. \n'
-                       'Professional Experience \n'
-                       'Administrative Officer – Save the Children \n'
-                       'March 2021 – Present \n'
-                       '• \n'
-                       'Maintained employee files and administrative records. \n'
-                       '• \n'
-                       'Assisted with preparing employment contracts and HR documents. \n'
-                       '• \n'
-                       'Coordinated interview scheduling and onboarding logistics. \n'
-                       '• \n'
-                       'Recorded employee attendance and leave. \n'
-                       '• \n'
-                       'Prepared monthly administrative reports. \n'
-                       '• \n'
-                       'Assisted HR department with day-to-day administrative activities. \n'
-                       'Office Administrator - Bright Solutions \n'
-                       'August 2018 – February 2021 \n'
-                       '• \n'
-                       'Maintained office documentation. \n'
-                       '• \n'
-                       'Supported recruitment by scheduling interviews. \n'
-                       '• \n'
-                       'Prepared reports and maintained filing systems. \n'
-                       '• \n'
-                       'Assisted with employee onboarding documentation. \n'
-                       'Education \n'
-                       'Master\'s of Management - An-Najah National University \n'
-                       ' \n'
-                       'Skills \n'
-                       '• \n'
-                       'HR Administration \n'
-                       '• \n'
-                       'Employee Records Management \n'
-                       '• \n'
-                       'Recruitment Support \n'
-                       '• \n'
-                       'Interview Coordination \n'
-                       '• \n'
-                       'Attendance Management \n'
-                       '• \n'
-                       'Leave Administration \n')
-
-        extractor = CVFactsExtractor()
-        facts = extractor.extract(ahmad_cv_raw)
-
-        # Education extraction should work despite the edge cases
-        assert len(facts.education) >= 1, "Should extract education entry"
-        assert facts.education[0].degree_level == "Master's", "Should extract Master's degree"
-        assert 'Management' in facts.education[0].field_of_study, "Should extract field of study"
-        assert 'An-Najah' in facts.education[0].institution, "Should extract institution"
-
-        # Skills extraction: Ahmad's skills are administrative (HR Administration, etc.)
-        # which are NOT in the technical skills registry. This is expected behavior.
-        # No regression test needed here since registry misses are by design.
-
-        # Experience extraction should work
-        assert len(facts.experience) >= 2, "Should extract at least 2 job entries"
-        assert facts.total_experience_years >= 8.0, "Should calculate ~8 years of experience"

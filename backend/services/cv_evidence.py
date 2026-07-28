@@ -464,8 +464,10 @@ _EDU_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
     ("PhD",        re.compile(r"\b(ph\.?\s*d\.?|doctorate|doctoral|دكتوراه)\b",                    re.IGNORECASE | re.UNICODE)),
     # EDU-02.2: require possessive/plural OR a degree preposition to prevent
     # "master the process" / "master sales skills" from matching.
-    ("Master's",   re.compile(r"\b(master(?:'?s|\s+(?:of|in|degree))|m\.?\s*sc\.?|mba|m\.?\s*b\.?\s*a\.?|m\.?\s*a\.?|m\.?\s*eng\.?|ماجستير)\b", re.IGNORECASE | re.UNICODE)),
-    ("Bachelor's", re.compile(r"\b(bachelor(?:'?s)?|b\.?\s*sc\.?|b\.?\s*a\.?|b\.?\s*eng\.?|بكالوريوس|ليسانس)\b", re.IGNORECASE | re.UNICODE)),
+    # Match ASCII apostrophe (U+0027) and curly/right single quote (U+2019) for degree names.
+    # Use character class with both apostrophe characters via Unicode escapes.
+    ("Master\x27s",   re.compile("\\b(master(?:[\x27\u2019]?s|\\s+(?:of|in|degree))|m\\.?\\s*sc\\.?|mba|m\\.?\\s*b\\.?\\s*a\\.?|m\\.?\\s*a\\.?|m\\.?\\s*eng\\.?|ماجستير)\\b", re.IGNORECASE | re.UNICODE)),
+    ("Bachelor\x27s", re.compile("\\b(bachelor(?:[\x27\u2019]?s)?|b\\.?\\s*sc\\.?|b\\.?\\s*a\\.?|b\\.?\\s*eng\\.?|بكالوريوس|ليسانس)\\b", re.IGNORECASE | re.UNICODE)),
     ("Diploma",    re.compile(r"\b(diploma|hnd|higher\s+national\s+diploma|دبلوم)\b",              re.IGNORECASE | re.UNICODE)),
     ("Associate",  re.compile(r"\b(associate\s+degree)\b",                                          re.IGNORECASE | re.UNICODE)),
     ("High School",re.compile(r"\b(high\s+school|secondary\s+school|gcse|baccalaureate|a-levels?|o-levels?|ثانوية\s+عامة|شهادة\s+ثانوية)\b", re.IGNORECASE | re.UNICODE)),
