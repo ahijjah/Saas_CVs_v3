@@ -947,6 +947,155 @@ Experience in compliance and information security management.
         assert len(facts.experience) >= 2, "Should extract at least 2 job entries"
         assert facts.total_experience_years >= 8.0, "Should calculate ~8 years of experience"
 
+    def test_mechanism_a_unregistered_skills_from_explicit_header(self):
+        """Test Mechanism A: capture unregistered skills under explicit Skills header.
+
+        Ahmad's CV has skills like 'HR Administration', 'Employee Records Management',
+        etc. under a Skills section. These are NOT in the technical skills registry
+        but should be extracted by Mechanism A with confidence 0.55 and
+        risk_flag='unregistered_skill'.
+        """
+        # EXACT raw string from Ahmad's uploaded PDF (same as apostrophe regression test)
+        ahmad_cv_raw = ('Ahmad Nasser - Administrative Officer \n'
+                       'Nablus, Palestine | ahmad.nasser@email.com | +970 598647365 \n'
+                       ' \n'
+                       'Bio \n'
+                       'Administrative professional with over 5 years of experience supporting office operations, \n'
+                       'maintaining employee records, coordinating administrative activities, and assisting with \n'
+                       'recruitment and HR administration. \n'
+                       'Professional Experience \n'
+                       'Administrative Officer – Save the Children \n'
+                       'March 2021 – Present \n'
+                       '• \n'
+                       'Maintained employee files and administrative records. \n'
+                       '• \n'
+                       'Assisted with preparing employment contracts and HR documents. \n'
+                       '• \n'
+                       'Coordinated interview scheduling and onboarding logistics. \n'
+                       '• \n'
+                       'Recorded employee attendance and leave. \n'
+                       '• \n'
+                       'Prepared monthly administrative reports. \n'
+                       '• \n'
+                       'Assisted HR department with day-to-day administrative activities. \n'
+                       'Office Administrator - Bright Solutions \n'
+                       'August 2018 – February 2021 \n'
+                       '• \n'
+                       'Maintained office documentation. \n'
+                       '• \n'
+                       'Supported recruitment by scheduling interviews. \n'
+                       '• \n'
+                       'Prepared reports and maintained filing systems. \n'
+                       '• \n'
+                       'Assisted with employee onboarding documentation. \n'
+                       'Education \n'
+                       'Master\'s of Management - An-Najah National University \n'
+                       ' \n'
+                       'Skills \n'
+                       '• \n'
+                       'HR Administration \n'
+                       '• \n'
+                       'Employee Records Management \n'
+                       '• \n'
+                       'Recruitment Support \n'
+                       '• \n'
+                       'Interview Coordination \n'
+                       '• \n'
+                       'Attendance Management \n'
+                       '• \n'
+                       'Leave Administration \n')
+
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(ahmad_cv_raw)
+
+        # Mechanism A should capture all 6 administrative skills under Skills header
+        assert len(facts.skills) >= 6, f"Should extract at least 6 skills, got {len(facts.skills)}"
+
+        skill_names = {s.skill_name for s in facts.skills}
+        expected_skills = {
+            'HR Administration',
+            'Employee Records Management',
+            'Recruitment Support',
+            'Interview Coordination',
+            'Attendance Management',
+            'Leave Administration'
+        }
+
+        for expected in expected_skills:
+            assert expected in skill_names, f"Should extract '{expected}'"
+
+        # All mechanism A skills should have:
+        # - confidence = 0.55
+        # - risk_flag = "unregistered_skill"
+        # - section_hint = "skills"
+        for skill in facts.skills:
+            if skill.skill_name in expected_skills:
+                assert skill.confidence == 0.55, \
+                    f"Unregistered skill '{skill.skill_name}' should have confidence 0.55, got {skill.confidence}"
+                assert skill.risk_flag == "unregistered_skill", \
+                    f"Unregistered skill '{skill.skill_name}' should have risk_flag='unregistered_skill', got '{skill.risk_flag}'"
+                assert skill.section_hint == "skills", \
+                    f"Unregistered skill '{skill.skill_name}' should have section_hint='skills', got '{skill.section_hint}'"
+
+    def test_mechanism_a_prose_under_skills_header_negative_control(self):
+        """Test Mechanism A doesn't wrongly capture prose/sentences as skills.
+
+        When 'Skills' section contains prose/narrative instead of skill bullets,
+        Mechanism A should either skip it or extract only reasonably-short segments,
+        not capture entire sentences as single skills.
+        """
+        cv_text = """
+Skills
+I am skilled in various administrative tasks and enjoy learning new things
+in a fast-paced environment. My expertise includes managing documents and
+coordinating with team members on important projects.
+"""
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        # Success criterion: either no skills extracted, or only short fragments
+        # (NOT the entire sentences captured as single skills)
+        if facts.skills:
+            for skill in facts.skills:
+                # If anything was extracted, it should be a short fragment
+                # (not a full sentence which would be >100 chars)
+                assert len(skill.skill_name) < 100, \
+                    f"Prose should not be captured as skill name: '{skill.skill_name}'"
+                # Prose fragments shouldn't have the unregistered_skill flag
+                # (that flag is only for actual bullet/header-extracted items)
+                if skill.risk_flag == "unregistered_skill":
+                    # If it's flagged as unregistered, it should be short and bullet-like
+                    assert len(skill.skill_name) < 50, \
+                        f"Prose-derived unregistered skill too long: '{skill.skill_name}'"
+
+    def test_mechanism_a_actual_bullet_skills_extracted(self):
+        """Test Mechanism A correctly extracts skills when properly formatted as bullets."""
+        cv_text = """
+Skills
+• Python Programming
+• Data Analysis
+• Project Management
+• Communication
+"""
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        # All four skills should be extracted
+        # (Python/Data Analysis/Project Management may be in registry or not)
+        skill_names = {s.skill_name for s in facts.skills}
+
+        # At minimum, unregistered ones should be there
+        assert len(facts.skills) >= 2, "Should extract multiple skills from bullets"
+
+        # Check that extracted skills have proper structure
+        for skill in facts.skills:
+            if skill.risk_flag == "unregistered_skill":
+                # These were captured via Mechanism A
+                assert skill.confidence == 0.55
+                assert skill.section_hint == "skills"
+                # Should not have leading bullet character
+                assert not skill.skill_name.startswith("•")
+
 
 # ── Experience Extraction: Month+Year Date Format Regressions ────────────────
 

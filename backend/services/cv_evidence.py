@@ -72,6 +72,11 @@ class SkillEvidence:
     """Non-empty only for inferred evidence.
     E.g. 'prepared spreadsheets → Microsoft Excel'."""
 
+    risk_flag: str = ""
+    """Non-empty for extracted evidence with special risk profiles.
+    E.g. 'unregistered_skill' for skills captured by header-trust fallback,
+    not by registry match. Allows downstream scoring to weight appropriately."""
+
 
 @dataclass
 class ExperienceEvidence:
@@ -783,6 +788,43 @@ def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[Skil
                     break
             if skill_name in found:
                 break
+
+    # ── MECHANISM A: Explicit-header trust (unregistered skills) ───────────────────
+    # After closed-set registry pass, capture skills under explicit "Skills" header
+    # that weren't matched by the registry. These get lower confidence (0.55) and are
+    # flagged "unregistered_skill" so downstream can distinguish them from known terms.
+    skills_section_lines = sections.get("skills", [])
+    for line in skills_section_lines:
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+        # Skip if already found by registry
+        if any(skill.raw_text == line_stripped for skill in found.values()):
+            continue
+        # Only capture lines that look like actual skill items:
+        # - Are reasonably short (< 100 chars, avoids full sentences/paragraphs)
+        # - Start with bullet/dash/number pattern OR are very short (< 40 chars)
+        # This prevents capturing prose paragraphs as skill names
+        bullet_pattern = r"^[\s•\-*#\d\.]+\s*"
+        is_bullet = bool(re.match(bullet_pattern, line))
+        is_short = len(line_stripped) < 40
+        is_reasonable_length = len(line_stripped) < 100
+
+        if (is_bullet or is_short) and is_reasonable_length:
+            # Clean up the skill name by removing leading bullets/whitespace
+            skill_name = re.sub(bullet_pattern, "", line_stripped)
+            if skill_name:  # Only add if something remains after cleanup
+                found[skill_name] = SkillEvidence(
+                    skill_name=skill_name,
+                    raw_text=line_stripped,
+                    explicit=True,
+                    confidence=0.55,
+                    context_snippet=line_stripped[:200],
+                    language="ar" if _is_arabic_match(skill_name) else "en",
+                    section_hint="skills",
+                    inference_basis="",
+                    risk_flag="unregistered_skill",
+                )
 
     # Fallback: if no skills found but "other" section has short lines after education,
     # treat them as unlabeled skills. Common pattern: education line followed by bullets.
