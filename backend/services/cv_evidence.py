@@ -186,6 +186,11 @@ class SoftSkillSignal:
     inference_basis: str = ""
     """Explanation of the inference, e.g. 'led a team of 5 → leadership'."""
 
+    risk_flag: str = ""
+    """Non-empty for inferred evidence with special risk profiles.
+    E.g. 'unregistered_soft_skill' for header-extracted items,
+    'semantic_inferred' for semantic-similarity fallback matches."""
+
 
 @dataclass
 class DomainSignal:
@@ -607,6 +612,11 @@ _SECTION_RE: dict[str, re.Pattern] = {
         r"|المهارات|مهارات|القدرات|قدرات)",
         re.IGNORECASE | re.UNICODE,
     ),
+    "soft_skills": re.compile(
+        r"^(?:soft\s+)?(?:skills?|interpersonal|behavioral|personal\s+qualities|attributes"
+        r"|المهارات\s+الناعمة|مهارات\s+ناعمة)",
+        re.IGNORECASE | re.UNICODE,
+    ),
     "experience": re.compile(
         r"^(?:(?:work\s+)?experience|employment|career\s+history|professional\s+(?:background|experience)"
         r"|الخبرة|خبرة|الخبرات|تجربة|تجربة\s+العمل)",
@@ -720,7 +730,7 @@ def _detect_section_header(line: str) -> Optional[str]:
 
 def _split_into_sections(text: str) -> dict[str, list[str]]:
     sections: dict[str, list[str]] = {
-        "skills": [], "experience": [], "education": [],
+        "skills": [], "soft_skills": [], "experience": [], "education": [],
         "certifications": [], "summary": [], "languages": [], "other": [],
     }
     current = "other"
@@ -1245,7 +1255,12 @@ def _extract_soft_skills(sections: dict[str, list[str]]) -> list[SoftSkillSignal
         for line in sections.get(sec, [])
     )
     signals: list[SoftSkillSignal] = []
+    categories_found: set[str] = set()
+
+    # ── STEP 1: Regex-based extraction (existing behavior) ─────────────────────
     for category, compiled_patterns in _COMPILED_SOFT_SKILLS:
+        if category in categories_found:
+            continue
         for pat, confidence in compiled_patterns:
             m = pat.search(search_text)
             if m:
@@ -1256,7 +1271,105 @@ def _extract_soft_skills(sections: dict[str, list[str]]) -> list[SoftSkillSignal
                     confidence=confidence,
                     inference_basis=f"{phrase} → {category}",
                 ))
+                categories_found.add(category)
                 break  # one signal per category
+
+    # ── MECHANISM A: Explicit-header trust (unregistered soft skills) ──────────
+    # After closed-set pattern pass, capture skills under explicit "Soft Skills"
+    # header that weren't matched by the patterns. These get lower confidence
+    # (0.55) and are flagged "unregistered_soft_skill" for downstream handling.
+    soft_skills_section_lines = sections.get("soft_skills", [])
+    for line in soft_skills_section_lines:
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+
+        # Skip labeled-category lines like "Soft Skills: item1, item2"
+        # or unlabeled comma-separated lists like "item1, item2, item3"
+        # These should be split on commas, with each item treated separately.
+        if ":" in line_stripped:
+            colon_pos = line_stripped.find(":")
+            after_colon = line_stripped[colon_pos + 1:].strip()
+            # If after colon is empty or comma-separated list, split and process
+            if not after_colon:
+                continue  # Empty after colon, skip
+            if "," in after_colon:
+                # Split comma-separated items and process each
+                items = [item.strip() for item in after_colon.split(",")]
+                for item in items:
+                    if item:
+                        inferred_category = "other"
+                        for category, compiled_patterns in _COMPILED_SOFT_SKILLS:
+                            for pat, _ in compiled_patterns:
+                                if pat.search(item):
+                                    inferred_category = category
+                                    break
+                            if inferred_category != "other":
+                                break
+                        signals.append(SoftSkillSignal(
+                            soft_skill_category=inferred_category,
+                            evidence_phrase=item,
+                            confidence=0.55,
+                            inference_basis="",
+                            risk_flag="unregistered_soft_skill",
+                        ))
+                continue  # Move to next line after processing comma-separated items
+
+        # Handle comma-separated lists without a colon (e.g. "Skill1, Skill2, Skill3")
+        if "," in line_stripped:
+            # Split on commas and process each item individually
+            bullet_pattern = r"^[\s•\-*#\d\.]+\s*"
+            line_no_bullet = re.sub(bullet_pattern, "", line_stripped)
+            items = [item.strip() for item in line_no_bullet.split(",")]
+            for item in items:
+                if item and len(item) < 100:
+                    inferred_category = "other"
+                    for category, compiled_patterns in _COMPILED_SOFT_SKILLS:
+                        for pat, _ in compiled_patterns:
+                            if pat.search(item):
+                                inferred_category = category
+                                break
+                        if inferred_category != "other":
+                            break
+                    signals.append(SoftSkillSignal(
+                        soft_skill_category=inferred_category,
+                        evidence_phrase=item,
+                        confidence=0.55,
+                        inference_basis="",
+                        risk_flag="unregistered_soft_skill",
+                    ))
+            continue  # Move to next line after processing comma-separated items
+
+        # Only capture non-comma-separated lines that look like actual skill items:
+        # - Are reasonably short (< 100 chars, avoids full sentences/paragraphs)
+        # - Start with bullet/dash/number pattern OR are very short (< 40 chars)
+        bullet_pattern = r"^[\s•\-*#\d\.]+\s*"
+        is_bullet = bool(re.match(bullet_pattern, line))
+        is_short = len(line_stripped) < 40
+        is_reasonable_length = len(line_stripped) < 100
+
+        if (is_bullet or is_short) and is_reasonable_length:
+            # Clean up the skill name by removing leading bullets/whitespace
+            skill_name = re.sub(bullet_pattern, "", line_stripped)
+            if skill_name:
+                # Try to infer category from the skill name using existing patterns
+                inferred_category = "other"
+                for category, compiled_patterns in _COMPILED_SOFT_SKILLS:
+                    for pat, _ in compiled_patterns:
+                        if pat.search(skill_name):
+                            inferred_category = category
+                            break
+                    if inferred_category != "other":
+                        break
+
+                signals.append(SoftSkillSignal(
+                    soft_skill_category=inferred_category,
+                    evidence_phrase=skill_name,
+                    confidence=0.55,
+                    inference_basis="",
+                    risk_flag="unregistered_soft_skill",
+                ))
+
     return signals
 
 

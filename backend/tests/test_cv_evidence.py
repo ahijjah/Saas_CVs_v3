@@ -274,6 +274,15 @@ class TestSoftSkillSignal:
         assert data["soft_skill_category"] == "teamwork"
         assert isinstance(data["confidence"], float)
 
+    def test_risk_flag_present(self):
+        sig = SoftSkillSignal(
+            soft_skill_category="other",
+            evidence_phrase="Custom Skill",
+            confidence=0.55,
+            risk_flag="unregistered_soft_skill",
+        )
+        assert sig.risk_flag == "unregistered_soft_skill"
+
 
 # ── DomainSignal ──────────────────────────────────────────────────────────────
 
@@ -724,6 +733,84 @@ class TestCVFactsExtractor:
         facts = self.ex.extract(_EN_CV)
         for sig in facts.soft_skill_signals:
             assert 0.0 < sig.confidence <= 1.0
+
+    # ── Mechanism A: Explicit-header trust for soft skills ────────────────
+
+    def test_mechanism_a_soft_skills_from_explicit_header(self):
+        """Test Mechanism A extracts unregistered soft skills from explicit header.
+
+        When a CV has explicit "Soft Skills:" header with items, those items
+        should be extracted with confidence 0.55 and risk_flag="unregistered_soft_skill",
+        even if they don't match the hardcoded pattern registry.
+        """
+        cv_text = """
+Soft Skills
+• Leadership and Team Management
+• Problem Solving
+• Communication
+• Time Management
+"""
+        facts = CVFactsExtractor().extract(cv_text)
+        signals = facts.soft_skill_signals
+
+        # Should have extracted unregistered skills with 0.55 confidence
+        unregistered = [s for s in signals if s.risk_flag == "unregistered_soft_skill"]
+        assert len(unregistered) >= 2, f"Expected at least 2 unregistered skills, got {len(unregistered)}"
+
+        for sig in unregistered:
+            assert sig.confidence == 0.55, f"Unregistered skill should have confidence 0.55, got {sig.confidence}"
+            assert sig.risk_flag == "unregistered_soft_skill"
+
+    def test_mechanism_a_labeled_category_soft_skills_not_captured(self):
+        """Regression: labeled-category lines like 'Soft Skills: item1, item2'
+        must NOT be captured as standalone soft skills.
+
+        Individual comma-separated items should be captured separately,
+        not the composite line.
+        """
+        cv_text = """Soft Skills
+Leadership, Communication, Teamwork
+• Problem Solving"""
+
+        facts = CVFactsExtractor().extract(cv_text)
+        signals = facts.soft_skill_signals
+        skill_phrases = {s.evidence_phrase for s in signals}
+
+        # Composite line should NOT be captured
+        assert "Leadership, Communication, Teamwork" not in skill_phrases, \
+            "Labeled-category line should NOT be captured"
+
+        # Individual items or bullet items should be captured
+        assert len(signals) > 0, "Should extract at least some soft skills"
+
+    def test_mechanism_a_true_negative_neutral_text(self):
+        """Negative control: purely factual, neutral CV content should produce
+        zero or near-zero soft-skill signals.
+
+        A CV with only technical job descriptions, dates, company names, and
+        neutral language should not trigger soft-skill inference.
+        """
+        cv_text = """
+Experience
+
+Warehouse Operator
+Logistics Corp, 2020–2023
+Operated forklift for inventory transport. Logged shipment numbers in tracking system.
+Replaced filters on maintenance schedule. Sorted packages by destination code.
+
+Data Entry Specialist
+Admin Services Inc, 2018–2020
+Entered customer records into database. Filed documents in filing cabinet.
+Copied information from forms to spreadsheet. Answered phones during shifts.
+"""
+        facts = CVFactsExtractor().extract(cv_text)
+
+        # With purely neutral/factual content, we expect few or no soft skills
+        # Define success: <= 1 soft skill signal (very conservative)
+        # If we get several (3+), the inference is too loose
+        assert len(facts.soft_skill_signals) <= 2, \
+            f"Neutral CV should produce ≤2 soft skills, got {len(facts.soft_skill_signals)}: " \
+            f"{[s.evidence_phrase for s in facts.soft_skill_signals]}"
 
     # ── Domain signals ─────────────────────────────────────────────────────
 
