@@ -21,6 +21,8 @@ async def main():
     # Connect to database
     # Connection details from environment or hardcoded defaults
     db_url = os.environ.get('DATABASE_URL', 'postgresql://cv_app:CHANGE_ME_IN_ENV@localhost/cv_analyzer')
+    # Normalize: asyncpg expects postgresql://, not postgresql+asyncpg:// (SQLAlchemy async scheme)
+    db_url = db_url.replace('postgresql+asyncpg://', 'postgresql://')
 
     try:
         conn = await asyncpg.connect(db_url)
