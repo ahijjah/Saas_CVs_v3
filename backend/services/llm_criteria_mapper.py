@@ -1159,11 +1159,19 @@ class LLMCriteriaMapper:
         )
         raw_content = response.choices[0].message.content or ""
 
-        # DEBUG: Log raw LLM response for Issue #10 investigation
-        logger.info(
-            "[%s] D-01 RAW LLM RESPONSE (for qualitative_summary verification): %s",
-            application_id, raw_content
-        )
+        # DEBUG: Write full raw LLM response to file for Issue #10 investigation
+        # (avoids truncation and interleaving in docker logs)
+        try:
+            debug_file = f"/tmp/d01_raw_response_{application_id}.json"
+            with open(debug_file, "w") as f:
+                f.write(raw_content)
+            has_qs = "qualitative_summary" in raw_content
+            logger.info(
+                "[%s] D-01 RAW RESPONSE saved: %s, length=%d chars, contains qualitative_summary=%s",
+                application_id, debug_file, len(raw_content), has_qs
+            )
+        except Exception as exc:
+            logger.warning("[%s] Failed to write debug file: %s", application_id, exc)
 
         # Parse response
         assessments, qual_summary = _parse_llm_response(raw_content, criteria_list, p_code, p_ver, model, application_id)
