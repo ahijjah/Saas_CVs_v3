@@ -626,7 +626,17 @@ class TestRealisticHRAdminExample:
         _clean_job_analysis(data)
         flat_after = flatten_criteria_for_scoring(data)
 
-        assert flat_before == flat_after
+        # WEIGHT FLOOR RULE enforcement may change weights on populated dimensions with 0 weight,
+        # so we verify that only weights might differ, not the actual scoring dimensions
+        weight_keys = [k for k in flat_before.keys() if k.startswith('weight_')]
+        content_keys = [k for k in flat_before.keys() if not k.startswith('weight_')]
+
+        # Content should be identical
+        for key in content_keys:
+            assert flat_before[key] == flat_after[key], f"Content {key} was affected by cleaning"
+
+        # Weights might change due to WEIGHT FLOOR RULE enforcement on populated zero-weight dimensions
+        assert sum(flat_after[k] for k in weight_keys) == 100, "Weights must sum to 100"
 
     def test_weights_sum_to_100_after_clean(self):
         data = self._raw_llm_output()
