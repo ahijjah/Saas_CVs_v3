@@ -221,20 +221,59 @@ def _is_relevance_qualified_experience_criterion(criterion_text: str) -> bool:
     return "year" in text_lower and "relevant" in text_lower
 
 
+def _extract_years_from_criterion(criterion_text: str) -> float | None:
+    """Extract minimum years value from criterion_text like 'Minimum X years...'
+
+    Examples:
+      "Minimum 5 years experience" → 5.0
+      "Minimum 7 years of relevant experience" → 7.0
+      "Bachelor's degree" → None
+    """
+    match = _MIN_YEARS_CRITERION_RE.search(criterion_text or "")
+    if match:
+        return float(match.group(1))
+    return None
+
+
 def _find_matching_local_criterion(
     llm_criterion_text: str,
     local_matches: list[Any],
+    llm_assessment: Any = None,
 ) -> Any | None:
-    """Find the corresponding criterion in local matcher results by criterion_text.
+    """Find the corresponding criterion in local matcher results.
+
+    Robust matching: When local and LLM paths construct criterion_text differently
+    (e.g. local: "Minimum 5 years experience" vs LLM: "Minimum 5 years of relevant experience"),
+    we match semantically on the years value + required flag instead of exact text.
 
     Returns the matching CriterionMatch from local_matches, or None if not found.
-    Uses exact text matching as the primary key across systems.
     """
     if not local_matches:
         return None
+
+    # First try exact-text match (for cases where both use identical phrasing)
     for local_match in local_matches:
         if (local_match.get("criterion_text") or "").strip() == (llm_criterion_text or "").strip():
             return local_match
+
+    # Fall back to semantic match: years-value + required flag
+    # This handles real-world case where local/LLM construct text differently
+    llm_years = _extract_years_from_criterion(llm_criterion_text)
+    llm_required = llm_assessment.required if llm_assessment else None
+
+    if llm_years is not None:
+        for local_match in local_matches:
+            local_years = _extract_years_from_criterion(local_match.get("criterion_text") or "")
+            local_required = local_match.get("required")
+
+            # Match if both are experience criteria with same years requirement and required status
+            if (
+                local_years == llm_years
+                and local_required == llm_required
+                and local_match.get("dimension") == "experience"
+            ):
+                return local_match
+
     return None
 
 
@@ -430,7 +469,7 @@ class DeterministicScoringEngine:
             and _is_relevance_qualified_experience_criterion(criterion_text)
             and (assessment.dimension or "other") == "experience"
         ):
-            local_match = _find_matching_local_criterion(criterion_text, local_matches)
+            local_match = _find_matching_local_criterion(criterion_text, local_matches, assessment)
             risk_flag, new_confidence = _apply_local_relevance_bound(assessment, local_match)
             if risk_flag is not None:
                 # Bound the LLM's result to the local matcher's status

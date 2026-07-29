@@ -1429,3 +1429,51 @@ class TestPhase3LocalRelevanceBounds:
 
         # Final score should be lower after bounding
         assert d_after["final_score"] < d_before["final_score"]
+
+    def test_robust_matching_real_string_mismatch_application_405476f2(self):
+        """Regression test: Real application 405476f2 has mismatched criterion_text.
+
+        Local matcher constructs: "Minimum 5 years experience"
+        LLM mapper constructs:    "Minimum 5 years of relevant experience"
+
+        Exact-text match would FAIL (return None, silent no-op).
+        Robust semantic matching on (years, required) should SUCCEED.
+
+        This ensures Phase 3 doesn't silently skip due to text formatting differences.
+        """
+        # REAL criterion_text values from application 405476f2
+        llm_assessment = _assessment(
+            "Minimum 5 years of relevant experience",  # LLM's phrasing
+            dimension="experience",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            confidence=0.85,
+            supporting_evidence=["Total Experience: 5.0 years"],
+        )
+        local_matches = [
+            {
+                "criterion_text": "Minimum 5 years experience",  # Local's phrasing (no "of relevant")
+                "status": "PARTIAL",
+                "confidence": 0.45,
+                "partial_reason": "5 years total experience, but relevance to role not verified",
+                "dimension": "experience",
+                "required": True,
+            }
+        ]
+
+        # Verify exact-text match would fail (old approach)
+        exact_text_match = (
+            local_matches[0]["criterion_text"] == llm_assessment.criterion_text
+        )
+        assert exact_text_match is False, "Strings are intentionally different (confirms real-world case)"
+
+        # Phase 3 should still work despite text mismatch (robust matching)
+        scored = _engine().score(_llm_result([llm_assessment]), _DEFAULT_WEIGHTS, local_matches)
+        d = deterministic_score_to_dict(scored)
+        exp_crit = d["dimensions"]["experience"]["criteria"][0]
+
+        # Robust matching should find the local criterion and apply bounding
+        assert exp_crit["status"] == "PARTIAL", "Should be bounded to local's PARTIAL despite text mismatch"
+        assert exp_crit["confidence"] == pytest.approx(0.45)
+        assert "llm_local_relevance_disagreement" in exp_crit["risk_flags"]
