@@ -1005,6 +1005,7 @@ def _parse_llm_response(
     prompt_code: str,
     prompt_version: str,
     llm_model: str,
+    application_id: str = "",
 ) -> tuple[list[LLMCriterionAssessment], QualitativeSummary | None]:
     """Parse LLM JSON response into LLMCriterionAssessment list + optional summary.
 
@@ -1044,7 +1045,24 @@ def _parse_llm_response(
         logger.debug("LLM mapper: skill_family_upgrade promoted %d ABSENT → PARTIAL", upgraded)
 
     # Parse qualitative_summary if present
-    qs = _parse_qualitative_summary(data.get("qualitative_summary"))
+    qs_raw = data.get("qualitative_summary")
+    logger.info(
+        "[%s] D-01 qualitative_summary KEY CHECK: present=%s, raw=%s",
+        application_id,
+        "qualitative_summary" in data,
+        str(qs_raw)[:500] if qs_raw else "NONE"
+    )
+
+    qs = _parse_qualitative_summary(qs_raw)
+    logger.info(
+        "[%s] D-01 qualitative_summary PARSED: result=%s, has_notes=%s, strengths_count=%d, gaps_count=%d, questions_count=%d",
+        application_id,
+        "QualitativeSummary" if qs else "None",
+        bool(qs and qs.evaluation_notes) if qs else False,
+        len(qs.strengths) if qs and qs.strengths else 0,
+        len(qs.gaps_identified) if qs and qs.gaps_identified else 0,
+        len(qs.suggested_interview_questions) if qs and qs.suggested_interview_questions else 0,
+    )
 
     return results, qs
 
@@ -1148,7 +1166,7 @@ class LLMCriteriaMapper:
         )
 
         # Parse response
-        assessments, qual_summary = _parse_llm_response(raw_content, criteria_list, p_code, p_ver, model)
+        assessments, qual_summary = _parse_llm_response(raw_content, criteria_list, p_code, p_ver, model, application_id)
 
         processing_ms = int((time.monotonic() - t0) * 1000)
 

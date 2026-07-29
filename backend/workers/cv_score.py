@@ -976,6 +976,15 @@ async def _score_cv_async(
                 _questions = _qs.get("suggested_interview_questions") or []
 
                 logger.info(
+                    "[%s] cv_score QUALITATIVE_SUMMARY EXTRACTED: notes_len=%d, strengths=%s, gaps=%s, questions=%s",
+                    application_id,
+                    len(_eval_notes),
+                    _strengths,
+                    _gaps,
+                    _questions,
+                )
+
+                logger.info(
                     "[%s] Deterministic scoring path: final=%d decision=%s signal=%s",
                     application_id, final_score, decision, _det_signal,
                 )
@@ -989,6 +998,15 @@ async def _score_cv_async(
 
                 # Extract flat summary columns from det_score_json (source of truth)
                 _flat_cols = extract_flat_columns_from_det_score_json(_det_score_json_val)
+
+                logger.info(
+                    "[%s] cv_score BEFORE INSERT: writing strengths=%s gaps=%s notes='%s' questions=%s",
+                    application_id,
+                    _strengths,
+                    _gaps,
+                    _eval_notes[:100] if _eval_notes else "(empty)",
+                    _questions,
+                )
 
                 await db.execute(
                     text("""
@@ -1224,6 +1242,15 @@ async def _score_cv_async(
                 skill_ratio_val = _flat_cols_legacy["skill_match_ratio"] if _flat_cols_legacy["skill_match_ratio"] > 0 else gatekeeper_result.skill_match_ratio
                 matched_val = _flat_cols_legacy["matched_skills"] if _flat_cols_legacy["matched_skills"] else gatekeeper_result.matched_skills
                 missing_val = _flat_cols_legacy["missing_skills"] if _flat_cols_legacy["missing_skills"] else gatekeeper_result.missing_skills
+
+                logger.info(
+                    "[%s] cv_score LEGACY PATH BEFORE INSERT: strengths=%s gaps=%s notes=%s questions=%s",
+                    application_id,
+                    ai_result.get("strengths", []),
+                    ai_result.get("gaps_identified", []),
+                    ai_result.get("evaluation_notes"),
+                    ai_result.get("interview_questions", []),
+                )
 
                 await db.execute(
                     text("""
