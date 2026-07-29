@@ -874,6 +874,14 @@ async def _score_cv_async(
                 # ── D-01: LLM criteria mapping (gated by platform config, default OFF) ──
                 _llm_result = None
                 if prompt_cfg.llm_criteria_mapping_enabled:
+                    # Fetch candidate name for qualitative_summary generation (Issue #10)
+                    _app_row = await db.execute(
+                        text("SELECT candidate_name FROM applications WHERE application_id = :aid"),
+                        {"aid": application_id},
+                    )
+                    _app_data = _app_row.scalar_one_or_none()
+                    _candidate_name = _app_data or "" if _app_data else ""
+
                     from services.llm_criteria_mapper import LLMCriteriaMapper
                     _llm_result = await LLMCriteriaMapper().assess(
                         cv_facts=_cv_facts,
@@ -882,6 +890,7 @@ async def _score_cv_async(
                         application_id=str(application_id),
                         job_id=str(job_id),
                         db=db,
+                        candidate_name=_candidate_name,
                     )
                     logger.info(
                         "[%s] V2 LLM mapping complete: total=%d matched=%d partial=%d absent=%d ms=%d",

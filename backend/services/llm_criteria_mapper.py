@@ -1203,6 +1203,7 @@ class LLMCriteriaMapper:
         application_id: str,
         job_id: str,
         db: Any,
+        candidate_name: str = "",
     ) -> LLMMatchResult:
         """Run one LLM call per application to map all criteria against CV facts.
 
@@ -1298,7 +1299,7 @@ class LLMCriteriaMapper:
             logger.info("[%s] D-01: qualitative_summary missing from main call, attempting second call", application_id)
             qual_summary = await _generate_qualitative_summary(
                 assessments,
-                candidate_name="",  # Don't have this from assessments, LLM will use "Unknown"
+                candidate_name=candidate_name,
                 job_title=job_title,
                 application_id=application_id,
             )
