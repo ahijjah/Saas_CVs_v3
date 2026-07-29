@@ -475,6 +475,78 @@ class TestWeightNormalization:
         assert data["scoring_weights"]["certifications"] == 0
         assert _weights_sum(data) == 100
 
+    def test_weight_floor_rule_enforcement_populated_zero_weight_dimension(self):
+        """
+        WEIGHT FLOOR RULE: Non-empty dimensions must have ≥5% weight.
+
+        Regression test for JOB-2026-0091 case:
+        domain_knowledge has content but weight=0. After normalization,
+        domain_knowledge should be assigned 5% and other weights adjusted.
+        """
+        data = _make_analysis(
+            domain_knowledge=["Palestinian labor laws", "HR best practices"],
+            scoring_weights={
+                "skills": 30, "experience": 30, "education": 20,
+                "certifications": 0, "soft_skills": 20, "domain_knowledge": 0,
+                "other_requirements": 0,
+            },
+        )
+        _normalise_weights(data)
+
+        w = data["scoring_weights"]
+        # domain_knowledge was non-empty with 0 weight → should be assigned 5%
+        assert w["domain_knowledge"] >= 5, f"domain_knowledge should have ≥5%, got {w['domain_knowledge']}"
+        # Weights should sum to exactly 100
+        assert _weights_sum(data) == 100, f"Weights sum to {_weights_sum(data)}, expected 100"
+        # Other populated dimensions should not fall below 5%
+        assert w["skills"] >= 5
+        assert w["experience"] >= 5
+        assert w["education"] >= 5
+        assert w["soft_skills"] >= 5
+
+    def test_weight_floor_rule_multiple_violations(self):
+        """
+        Multiple dimensions with content but 0 weight should all get floor.
+        """
+        data = _make_analysis(
+            domain_knowledge=["finance"],
+            soft_skills={"required": ["communication"], "preferred": []},
+            scoring_weights={
+                "skills": 50, "experience": 30, "education": 10,
+                "certifications": 0, "soft_skills": 0, "domain_knowledge": 0,
+                "other_requirements": 0,
+            },
+        )
+        _normalise_weights(data)
+
+        w = data["scoring_weights"]
+        # Both soft_skills and domain_knowledge were populated with 0 → assign 5% each
+        assert w["soft_skills"] >= 5
+        assert w["domain_knowledge"] >= 5
+        assert _weights_sum(data) == 100
+
+    def test_weight_floor_rule_empty_dimension_stays_zero(self):
+        """
+        Empty dimensions should stay 0 even when other dimensions get floor.
+        """
+        data = _make_analysis(
+            certifications=[],  # Empty
+            domain_knowledge=["finance"],  # Populated but 0 weight
+            scoring_weights={
+                "skills": 50, "experience": 30, "education": 10,
+                "certifications": 0, "soft_skills": 5, "domain_knowledge": 0,
+                "other_requirements": 5,
+            },
+        )
+        _normalise_weights(data)
+
+        w = data["scoring_weights"]
+        # certifications is empty → should stay 0
+        assert w["certifications"] == 0
+        # domain_knowledge is populated but was 0 → should get floor
+        assert w["domain_knowledge"] >= 5
+        assert _weights_sum(data) == 100
+
 
 # ── TestCleanJobAnalysisIntegration ──────────────────────────────────────────
 

@@ -744,11 +744,60 @@ def _dedup_requirements(data: dict[str, Any]) -> None:
     data["other_requirements"] = _dedup(data.get("other_requirements") or [])
 
 
+def _is_dimension_populated(data: dict[str, Any], dimension: str) -> bool:
+    """Check if a dimension has non-empty content."""
+    if dimension == "skills":
+        s = data.get("skills", {})
+        return bool((s.get("required") or []) + (s.get("preferred") or []))
+    elif dimension == "soft_skills":
+        ss = data.get("soft_skills", {})
+        return bool((ss.get("required") or []) + (ss.get("preferred") or []))
+    elif dimension == "experience":
+        exp = data.get("experience", {})
+        return bool((exp.get("relevant_roles") or []) + (exp.get("key_responsibilities") or []))
+    elif dimension in ["education", "domain_knowledge", "certifications", "other_requirements"]:
+        return bool(data.get(dimension))
+    return False
+
+
+def _reduce_weights_proportionally(w: dict[str, Any], excess: int, keys: list[str]) -> None:
+    """
+    Reduce weights from all dimensions proportionally to bring total back to target.
+    Only reduces from dimensions with weight > 5% (never violates WEIGHT FLOOR RULE).
+    """
+    reducible = [(k, int(w.get(k, 0))) for k in keys if int(w.get(k, 0)) > 5]
+    if not reducible:
+        return  # Cannot reduce further without violating floor
+
+    total_reducible = sum(v for _, v in reducible)
+    if total_reducible == 0:
+        return
+
+    remaining = excess
+    for idx, (k, current) in enumerate(reducible):
+        if remaining <= 0:
+            break
+        if idx == len(reducible) - 1:
+            # Last one takes remaining to avoid rounding errors
+            w[k] = current - remaining
+        else:
+            share = round(excess * current / total_reducible)
+            w[k] = current - share
+            remaining -= share
+
+
 def _normalise_weights(data: dict[str, Any]) -> None:
     """
-    Zero out scoring_weights for empty sections, then redistribute the freed
-    weight proportionally — skills and experience first, then soft_skills and
-    domain_knowledge, then education as a last resort.
+    Normalize scoring_weights to ensure:
+    1. Empty dimensions get 0 weight
+    2. Non-empty dimensions get minimum 5% weight (WEIGHT FLOOR RULE enforcement)
+    3. Total weight equals 100
+
+    Order of operations:
+    - Step 1: Zero empty dimensions (certifications, other_requirements), redistribute freed weight
+    - Step 2: Enforce WEIGHT FLOOR RULE — assign 5% to non-empty dimensions with 0 weight
+    - Step 3: Reduce other weights proportionally if total exceeds 100
+    - Step 4: Final guarantee — total must equal exactly 100
     """
     _WEIGHT_KEYS = [
         "skills", "experience", "education", "certifications",
@@ -756,12 +805,11 @@ def _normalise_weights(data: dict[str, Any]) -> None:
     ]
     w = data.setdefault("scoring_weights", {})
 
+    # Step 1: Zero empty dimensions and redistribute freed weight
     freed = 0
-
     if not data.get("certifications"):
         freed += int(w.get("certifications", 0))
         w["certifications"] = 0
-
     if not data.get("other_requirements"):
         freed += int(w.get("other_requirements", 0))
         w["other_requirements"] = 0
@@ -769,7 +817,21 @@ def _normalise_weights(data: dict[str, Any]) -> None:
     if freed > 0:
         _redistribute_freed_weight(w, freed)
 
-    # Final guarantee: total must equal 100
+    # Step 2: Enforce WEIGHT FLOOR RULE — assign 5% minimum to non-empty dimensions with 0 weight
+    floor_cost = 0
+    for dim in _WEIGHT_KEYS:
+        if _is_dimension_populated(data, dim) and int(w.get(dim, 0)) == 0:
+            w[dim] = 5
+            floor_cost += 5
+
+    # Step 3: If floor assignments exceed 100, reduce weights proportionally
+    if floor_cost > 0:
+        total = sum(int(w.get(k, 0)) for k in _WEIGHT_KEYS)
+        if total > 100:
+            excess = total - 100
+            _reduce_weights_proportionally(w, excess, _WEIGHT_KEYS)
+
+    # Step 4: Final guarantee: total must equal 100
     total = sum(int(w.get(k, 0)) for k in _WEIGHT_KEYS)
     if total != 100:
         w["skills"] = int(w.get("skills", 0)) + (100 - total)
