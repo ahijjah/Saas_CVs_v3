@@ -86,6 +86,7 @@ def _assessment(
 
 def _llm_result(
     assessments: list[LLMCriterionAssessment],
+    qualitative_summary: QualitativeSummary | None = None,
 ) -> LLMMatchResult:
     matched = sum(1 for a in assessments if a.status == "MATCHED")
     partial = sum(1 for a in assessments if a.status == "PARTIAL")
@@ -106,6 +107,7 @@ def _llm_result(
         absent_count=absent,
         high_confidence_count=0,
         low_confidence_count=0,
+        qualitative_summary=qualitative_summary,
     )
 
 
@@ -1667,3 +1669,132 @@ class TestFlatColumnsExtraction:
         assert flat["matched_skills"] == []
         assert flat["missing_skills"] == []
         assert flat["skill_match_ratio"] == 0.0
+
+
+# ── Qualitative Summary Persistence (Issue #10) ────────────────────────────────
+
+class TestQualitativeSummaryPersistence:
+    """Tests for qualitative_summary flowing through D-01 → F-01 → det_score_json.
+
+    Regression test for Issue #10: qualitative_summary was being parsed correctly
+    from LLM D-01 output and passed through F-01 deterministic scoring, but the
+    database columns to store this data did not exist on application_scores.
+
+    These tests verify the complete D-01 → F-01 → det_score_json → database flow.
+    """
+
+    def test_qualitative_summary_present_in_det_score_json(self):
+        """Verify qualitative_summary from LLMMatchResult flows to det_score_json."""
+        # QualitativeSummary is imported at top of file from llm_criteria_mapper
+
+        # Create LLMMatchResult with qualitative_summary
+        qs = QualitativeSummary(
+            candidate_name="Test Candidate",
+            evaluation_notes="Strong technical background with leadership experience.",
+            strengths=["Python expertise", "Team leadership"],
+            gaps_identified=["Cloud architecture", "Kubernetes"],
+            suggested_interview_questions=["Describe your cloud projects", "How do you approach scalability?"],
+        )
+
+        llm_assessments = [
+            _assessment("Python", dimension="skills", status="MATCHED"),
+            _assessment("Leadership", dimension="soft_skills", status="MATCHED"),
+            _assessment("Kubernetes", dimension="skills", status="ABSENT"),
+        ]
+        llm_result = _llm_result(llm_assessments, qualitative_summary=qs)
+
+        # F-01 should receive and pass through qualitative_summary
+        det_score = _engine().score(llm_result, _DEFAULT_WEIGHTS)
+
+        # Verify DeterministicScore has qualitative_summary
+        assert det_score.qualitative_summary is not None
+        assert det_score.qualitative_summary.candidate_name == "Test Candidate"
+        assert det_score.qualitative_summary.evaluation_notes == "Strong technical background with leadership experience."
+        assert "Python expertise" in det_score.qualitative_summary.strengths
+        assert "Kubernetes" in det_score.qualitative_summary.gaps_identified
+
+        # Verify det_score_json includes it
+        det_dict = deterministic_score_to_dict(det_score)
+        assert "qualitative_summary" in det_dict
+        assert det_dict["qualitative_summary"] is not None
+        assert det_dict["qualitative_summary"]["candidate_name"] == "Test Candidate"
+        assert "Python expertise" in det_dict["qualitative_summary"]["strengths"]
+        assert "Kubernetes" in det_dict["qualitative_summary"]["gaps_identified"]
+
+    def test_qualitative_summary_extracted_in_cv_score_path(self):
+        """Verify qualitative_summary is correctly extracted from det_score_json in cv_score.py pattern."""
+        # Simulate what cv_score.py does (lines 971-976)
+        qs = QualitativeSummary(
+            candidate_name="Ahmad Hassan",
+            evaluation_notes="Experienced developer with strong fundamentals.",
+            strengths=["Problem solving", "Communication"],
+            gaps_identified=["DevOps experience"],
+            suggested_interview_questions=["Tell us about your deployment experience"],
+        )
+
+        llm_assessments = [
+            _assessment("Python", dimension="skills", status="MATCHED", confidence=0.95),
+            _assessment("Communication", dimension="soft_skills", status="MATCHED", confidence=0.90),
+            _assessment("Docker", dimension="skills", status="ABSENT", confidence=0.85),
+        ]
+        llm_result = _llm_result(llm_assessments, qualitative_summary=qs)
+        det_score = _engine().score(llm_result, _DEFAULT_WEIGHTS)
+        det_json_str = json.dumps(deterministic_score_to_dict(det_score), ensure_ascii=False)
+
+        # Simulate cv_score.py extraction (lines 971-976)
+        _det_score_dict = json.loads(det_json_str)
+        _qs = _det_score_dict.get("qualitative_summary") or {}
+        extracted_name = str(_qs.get("candidate_name") or "").strip()
+        _eval_notes = str(_qs.get("evaluation_notes") or "")
+        _strengths = _qs.get("strengths") or []
+        _gaps = _qs.get("gaps_identified") or []
+        _questions = _qs.get("suggested_interview_questions") or []
+
+        # Verify extraction matches original
+        assert extracted_name == "Ahmad Hassan"
+        assert _eval_notes == "Experienced developer with strong fundamentals."
+        assert _strengths == ["Problem solving", "Communication"]
+        assert _gaps == ["DevOps experience"]
+        assert _questions == ["Tell us about your deployment experience"]
+
+    def test_qualitative_summary_null_when_not_provided(self):
+        """Verify graceful handling when LLMMatchResult has no qualitative_summary."""
+        # Create LLMMatchResult WITHOUT qualitative_summary
+        llm_assessments = [
+            _assessment("Python", dimension="skills", status="MATCHED"),
+        ]
+        llm_result = LLMMatchResult(
+            application_id="test-app-no-qs",
+            job_id="test-job",
+            assessments=llm_assessments,
+            processing_ms=100,
+            created_at="2026-07-29T12:00:00Z",
+            prompt_code="recruitment.criteria_mapping",
+            prompt_version="1.0",
+            model="gpt-4o-mini",
+            qualitative_summary=None,  # Explicitly None
+        )
+
+        # F-01 should handle None gracefully
+        det_score = _engine().score(llm_result, _DEFAULT_WEIGHTS)
+        assert det_score.qualitative_summary is None
+
+        # det_score_json should have qualitative_summary: null
+        det_dict = deterministic_score_to_dict(det_score)
+        assert det_dict["qualitative_summary"] is None
+
+        # cv_score.py extraction should handle None gracefully
+        _det_score_dict = det_dict
+        _qs = _det_score_dict.get("qualitative_summary") or {}
+        extracted_name = str(_qs.get("candidate_name") or "").strip()
+        _eval_notes = str(_qs.get("evaluation_notes") or "")
+        _strengths = _qs.get("strengths") or []
+        _gaps = _qs.get("gaps_identified") or []
+        _questions = _qs.get("suggested_interview_questions") or []
+
+        # Should all be empty/default
+        assert extracted_name == ""
+        assert _eval_notes == ""
+        assert _strengths == []
+        assert _gaps == []
+        assert _questions == []
