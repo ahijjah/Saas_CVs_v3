@@ -45,10 +45,11 @@ async def main():
 
         # Get all jobs (later filter by ID pattern or candidate names)
         all_jobs = await conn.fetch("""
-            SELECT job_id, title, analysis_json
-            FROM cv_analyzer.job_criteria
-            WHERE analysis_json IS NOT NULL
-            ORDER BY created_at DESC
+            SELECT jc.job_id, j.title, jc.analysis_json
+            FROM cv_analyzer.job_criteria jc
+            JOIN cv_analyzer.jobs j ON jc.job_id = j.job_id
+            WHERE jc.analysis_json IS NOT NULL
+            ORDER BY jc.created_at DESC
             LIMIT 100
         """)
 
