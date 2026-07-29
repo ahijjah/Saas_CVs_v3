@@ -40,6 +40,7 @@ from services.deterministic_scoring import (
     deterministic_score_to_dict,
 )
 from services.llm_criteria_mapper import LLMCriterionAssessment, LLMMatchResult, QualitativeSummary
+from services.criteria_matcher import CriterionMatch
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1475,5 +1476,53 @@ class TestPhase3LocalRelevanceBounds:
 
         # Robust matching should find the local criterion and apply bounding
         assert exp_crit["status"] == "PARTIAL", "Should be bounded to local's PARTIAL despite text mismatch"
+        assert exp_crit["confidence"] == pytest.approx(0.45)
+        assert "llm_local_relevance_disagreement" in exp_crit["risk_flags"]
+
+    def test_phase3_matches_criterionmatch_dataclass_not_dict(self):
+        """Regression test: Phase 3 must handle CriterionMatch dataclass instances.
+
+        In production, match_result.matches contains CriterionMatch dataclass instances
+        (from CriteriaMatchEngine), not dicts from JSON. The Phase 3 code must safely
+        access fields via dataclass getattr() not dict .get().
+
+        This test ensures the bug from production regression (AttributeError on
+        'CriterionMatch' object has no attribute 'get') cannot resurface.
+
+        Real case: application 405476f2, CriteriaMatchEngine used CriterionMatch dataclass.
+        """
+        # LLM assessment from mapper
+        llm_assessment = _assessment(
+            "Minimum 5 years of relevant experience",
+            dimension="experience",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            confidence=0.85,
+            supporting_evidence=["Total Experience: 5.0 years"],
+        )
+
+        # Local match as CriterionMatch DATACLASS (not dict) — this is what
+        # CriteriaMatchEngine produces in production
+        local_criterion_dataclass = CriterionMatch(
+            criterion_text="Minimum 5 years experience",
+            dimension="experience",
+            required=True,
+            status="PARTIAL",
+            confidence=0.45,
+            match_method="relevance_check",
+            supporting_evidence=["Total Experience: 5.0 years"],
+            partial_reason="5 years total experience, but relevance to role not verified",
+        )
+        local_matches = [local_criterion_dataclass]
+
+        # Should not raise AttributeError: 'CriterionMatch' object has no attribute 'get'
+        # Instead, it should safely access fields via _get_field() helper
+        scored = _engine().score(_llm_result([llm_assessment]), _DEFAULT_WEIGHTS, local_matches)
+        d = deterministic_score_to_dict(scored)
+        exp_crit = d["dimensions"]["experience"]["criteria"][0]
+
+        # Should be bounded despite dataclass format
+        assert exp_crit["status"] == "PARTIAL", "Should be bounded to dataclass's PARTIAL"
         assert exp_crit["confidence"] == pytest.approx(0.45)
         assert "llm_local_relevance_disagreement" in exp_crit["risk_flags"]

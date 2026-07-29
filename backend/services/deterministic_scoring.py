@@ -235,6 +235,14 @@ def _extract_years_from_criterion(criterion_text: str) -> float | None:
     return None
 
 
+def _get_field(obj: Any, field: str, default: Any = None) -> Any:
+    """Safely get a field from either a dict or dataclass object."""
+    if isinstance(obj, dict):
+        return obj.get(field, default)
+    else:
+        return getattr(obj, field, default)
+
+
 def _find_matching_local_criterion(
     llm_criterion_text: str,
     local_matches: list[Any],
@@ -246,6 +254,8 @@ def _find_matching_local_criterion(
     (e.g. local: "Minimum 5 years experience" vs LLM: "Minimum 5 years of relevant experience"),
     we match semantically on the years value + required flag instead of exact text.
 
+    Handles both dict (from JSON) and dataclass (from CriteriaMatchEngine) formats.
+
     Returns the matching CriterionMatch from local_matches, or None if not found.
     """
     if not local_matches:
@@ -253,24 +263,27 @@ def _find_matching_local_criterion(
 
     # First try exact-text match (for cases where both use identical phrasing)
     for local_match in local_matches:
-        if (local_match.get("criterion_text") or "").strip() == (llm_criterion_text or "").strip():
+        local_crit_text = _get_field(local_match, "criterion_text", "")
+        if (local_crit_text or "").strip() == (llm_criterion_text or "").strip():
             return local_match
 
     # Fall back to semantic match: years-value + required flag
     # This handles real-world case where local/LLM construct text differently
     llm_years = _extract_years_from_criterion(llm_criterion_text)
-    llm_required = llm_assessment.required if llm_assessment else None
+    llm_required = _get_field(llm_assessment, "required") if llm_assessment else None
 
     if llm_years is not None:
         for local_match in local_matches:
-            local_years = _extract_years_from_criterion(local_match.get("criterion_text") or "")
-            local_required = local_match.get("required")
+            local_crit_text = _get_field(local_match, "criterion_text", "")
+            local_years = _extract_years_from_criterion(local_crit_text or "")
+            local_required = _get_field(local_match, "required")
+            local_dimension = _get_field(local_match, "dimension", "")
 
             # Match if both are experience criteria with same years requirement and required status
             if (
                 local_years == llm_years
                 and local_required == llm_required
-                and local_match.get("dimension") == "experience"
+                and local_dimension == "experience"
             ):
                 return local_match
 
@@ -298,15 +311,15 @@ def _apply_local_relevance_bound(
         return None, None
 
     llm_status = llm_assessment.status or "ABSENT"
-    local_status = local_criterion.get("status") or "ABSENT"
-    local_partial_reason = local_criterion.get("partial_reason") or ""
+    local_status = _get_field(local_criterion, "status") or "ABSENT"
+    local_partial_reason = _get_field(local_criterion, "partial_reason") or ""
 
     # Only bound if LLM says MATCHED and local says something lower
     if llm_status == "MATCHED" and local_status in ("PARTIAL", "ABSENT"):
         # Only apply bounding if local's reason is relevance-related
         reason_lower = local_partial_reason.lower()
         if "relevance" in reason_lower or "relevant" in reason_lower:
-            return "llm_local_relevance_disagreement", float(local_criterion.get("confidence", 0.45))
+            return "llm_local_relevance_disagreement", float(_get_field(local_criterion, "confidence", 0.45))
 
     return None, None
 
@@ -473,7 +486,7 @@ class DeterministicScoringEngine:
             risk_flag, new_confidence = _apply_local_relevance_bound(assessment, local_match)
             if risk_flag is not None:
                 # Bound the LLM's result to the local matcher's status
-                status = local_match.get("status", "ABSENT")
+                status = _get_field(local_match, "status", "ABSENT")
                 if new_confidence is not None:
                     confidence = new_confidence
                 if risk_flag not in risk_flags:
