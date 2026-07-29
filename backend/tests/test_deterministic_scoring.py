@@ -1185,3 +1185,247 @@ class TestEducationFieldOfStudyOr:
         assert dim["n_required_absent"] == 1
         assert dim["n_preferred_absent"] == 1
         assert dim["dimension_score"] == pytest.approx(0.0)
+
+
+# ── Phase 3 Reconciliation: Local matcher relevance bounds ─────────────────────
+
+class TestPhase3LocalRelevanceBounds:
+    """Tests for Phase 3 reconciliation: local matcher relevance-qualified
+    experience bounding on LLM results.
+
+    When LLM says MATCHED for "Minimum X years of relevant experience" but
+    local matcher independently found PARTIAL/ABSENT due to unverified
+    relevance, the LLM result is bounded to the local matcher's conservative
+    assessment and marked with 'llm_local_relevance_disagreement' risk flag.
+    """
+
+    def _local_match(
+        self,
+        criterion_text: str,
+        status: str = "PARTIAL",
+        confidence: float = 0.45,
+        partial_reason: str = "7 years total experience, but relevance to role not verified",
+    ) -> dict:
+        """Helper to create a local matcher criterion match dict."""
+        return {
+            "criterion_text": criterion_text,
+            "status": status,
+            "confidence": confidence,
+            "partial_reason": partial_reason,
+            "dimension": "experience",
+            "required": True,
+            "match_method": "relevance_check",
+            "supporting_evidence": ["Total Experience: 7.0 years"],
+        }
+
+    def test_relevance_qualified_llm_matched_local_partial_bounds_to_partial(self):
+        """LLM: MATCHED "Minimum 7 years of relevant experience", 
+        Local: PARTIAL due to relevance gap → cap to PARTIAL + risk flag."""
+        llm_assessment = _assessment(
+            "Minimum 7 years of relevant experience",
+            dimension="experience",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            confidence=0.85,
+            supporting_evidence=["Total Experience: 7.0 years"],
+        )
+        local_matches = [
+            self._local_match(
+                "Minimum 7 years of relevant experience",
+                status="PARTIAL",
+                confidence=0.45,
+                partial_reason="7 years total experience, but relevance to role not verified",
+            )
+        ]
+
+        scored = _engine().score(_llm_result([llm_assessment]), _DEFAULT_WEIGHTS, local_matches)
+        d = deterministic_score_to_dict(scored)
+        exp_crit = d["dimensions"]["experience"]["criteria"][0]
+
+        # Should be capped to PARTIAL
+        assert exp_crit["status"] == "PARTIAL"
+        assert exp_crit["confidence"] == pytest.approx(0.45)  # From local matcher
+        assert "llm_local_relevance_disagreement" in exp_crit["risk_flags"]
+
+    def test_relevance_qualified_both_matched_no_bounding(self):
+        """LLM: MATCHED "Minimum 7 years of relevant experience",
+        Local: MATCHED → no bounding, use LLM's result."""
+        llm_assessment = _assessment(
+            "Minimum 7 years of relevant experience",
+            dimension="experience",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            confidence=0.90,
+            supporting_evidence=["Total Experience: 7.0 years", "Led teams in HR"],
+        )
+        local_matches = [
+            self._local_match(
+                "Minimum 7 years of relevant experience",
+                status="MATCHED",
+                confidence=0.90,
+                partial_reason=None,
+            )
+        ]
+
+        scored = _engine().score(_llm_result([llm_assessment]), _DEFAULT_WEIGHTS, local_matches)
+        d = deterministic_score_to_dict(scored)
+        exp_crit = d["dimensions"]["experience"]["criteria"][0]
+
+        # Should remain MATCHED (no bounding)
+        assert exp_crit["status"] == "MATCHED"
+        assert exp_crit["confidence"] == pytest.approx(0.90)  # Original LLM confidence
+        assert "llm_local_relevance_disagreement" not in exp_crit["risk_flags"]
+
+    def test_non_relevance_experience_no_bounding(self):
+        """LLM: MATCHED "Minimum 7 years of experience" (no 'relevant'),
+        Local: PARTIAL → no bounding (not a relevance-qualified criterion)."""
+        llm_assessment = _assessment(
+            "Minimum 7 years of experience",  # No "relevant" qualifier
+            dimension="experience",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            confidence=0.85,
+            supporting_evidence=["Total Experience: 7.0 years"],
+        )
+        local_matches = [
+            self._local_match(
+                "Minimum 7 years of experience",
+                status="PARTIAL",
+                confidence=0.45,
+                partial_reason="Something about this criterion",
+            )
+        ]
+
+        scored = _engine().score(_llm_result([llm_assessment]), _DEFAULT_WEIGHTS, local_matches)
+        d = deterministic_score_to_dict(scored)
+        exp_crit = d["dimensions"]["experience"]["criteria"][0]
+
+        # Should remain MATCHED (not relevance-qualified, so no bounding)
+        assert exp_crit["status"] == "MATCHED"
+        assert exp_crit["confidence"] == pytest.approx(0.85)
+        assert "llm_local_relevance_disagreement" not in exp_crit["risk_flags"]
+
+    def test_relevance_qualified_llm_matched_local_absent_bounds_to_absent(self):
+        """LLM: MATCHED "Minimum 10 years of relevant experience",
+        Local: ABSENT due to relevance → cap to ABSENT + risk flag."""
+        llm_assessment = _assessment(
+            "Minimum 10 years of relevant experience",
+            dimension="experience",
+            required=True,
+            status="MATCHED",
+            match_type="inferred",
+            confidence=0.70,
+            supporting_evidence=["Total Experience: 10.0 years"],
+        )
+        local_matches = [
+            self._local_match(
+                "Minimum 10 years of relevant experience",
+                status="ABSENT",
+                confidence=0.0,
+                partial_reason="10 years total experience found, but zero years in relevant roles",
+            )
+        ]
+
+        scored = _engine().score(_llm_result([llm_assessment]), _DEFAULT_WEIGHTS, local_matches)
+        d = deterministic_score_to_dict(scored)
+        exp_crit = d["dimensions"]["experience"]["criteria"][0]
+
+        # Should be capped to ABSENT
+        assert exp_crit["status"] == "ABSENT"
+        assert exp_crit["confidence"] == pytest.approx(0.0)
+        assert "llm_local_relevance_disagreement" in exp_crit["risk_flags"]
+
+    def test_no_local_matches_uses_llm_result(self):
+        """When no local_matches provided or no match found, use LLM result unchanged."""
+        llm_assessment = _assessment(
+            "Minimum 7 years of relevant experience",
+            dimension="experience",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            confidence=0.85,
+        )
+
+        # No local_matches provided
+        scored = _engine().score(_llm_result([llm_assessment]), _DEFAULT_WEIGHTS, None)
+        d = deterministic_score_to_dict(scored)
+        exp_crit = d["dimensions"]["experience"]["criteria"][0]
+
+        # Should remain MATCHED
+        assert exp_crit["status"] == "MATCHED"
+        assert exp_crit["confidence"] == pytest.approx(0.85)
+        assert "llm_local_relevance_disagreement" not in exp_crit["risk_flags"]
+
+    def test_no_matching_criterion_in_local_uses_llm(self):
+        """When local_matches provided but doesn't include this criterion, use LLM unchanged."""
+        llm_assessment = _assessment(
+            "Minimum 7 years of relevant experience",
+            dimension="experience",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            confidence=0.85,
+        )
+        local_matches = [
+            self._local_match(
+                "Some other criterion",  # Different text, won't match
+                status="PARTIAL",
+            )
+        ]
+
+        scored = _engine().score(_llm_result([llm_assessment]), _DEFAULT_WEIGHTS, local_matches)
+        d = deterministic_score_to_dict(scored)
+        exp_crit = d["dimensions"]["experience"]["criteria"][0]
+
+        # Should remain MATCHED (no match found)
+        assert exp_crit["status"] == "MATCHED"
+        assert exp_crit["confidence"] == pytest.approx(0.85)
+        assert "llm_local_relevance_disagreement" not in exp_crit["risk_flags"]
+
+    def test_electronics_engineer_case_application_405476f2(self):
+        """Real case: Electronics Engineer with pre-sales background.
+        LLM: MATCHED "Minimum 7 years of relevant experience" (false positive)
+        Local: PARTIAL (7 years total, but relevance not verified)
+        Expected: Bounded to PARTIAL with risk_flag."""
+        llm_assessment = _assessment(
+            "Minimum 7 years of relevant experience",
+            dimension="experience",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            confidence=0.85,
+            supporting_evidence=["Total Experience: 7.0 years"],
+        )
+        local_matches = [
+            self._local_match(
+                "Minimum 7 years of relevant experience",
+                status="PARTIAL",
+                confidence=0.45,
+                partial_reason="7 years total experience, but relevance to role not verified",
+            )
+        ]
+
+        # Before Phase 3
+        scored_before = _engine().score(_llm_result([llm_assessment]), _DEFAULT_WEIGHTS, None)
+        d_before = deterministic_score_to_dict(scored_before)
+        exp_crit_before = d_before["dimensions"]["experience"]["criteria"][0]
+
+        # After Phase 3
+        scored_after = _engine().score(_llm_result([llm_assessment]), _DEFAULT_WEIGHTS, local_matches)
+        d_after = deterministic_score_to_dict(scored_after)
+        exp_crit_after = d_after["dimensions"]["experience"]["criteria"][0]
+
+        # Before: uses LLM's MATCHED
+        assert exp_crit_before["status"] == "MATCHED"
+        assert exp_crit_before["confidence"] == pytest.approx(0.85)
+
+        # After: bounded to local's PARTIAL
+        assert exp_crit_after["status"] == "PARTIAL"
+        assert exp_crit_after["confidence"] == pytest.approx(0.45)
+        assert "llm_local_relevance_disagreement" in exp_crit_after["risk_flags"]
+
+        # Final score should be lower after bounding
+        assert d_after["final_score"] < d_before["final_score"]

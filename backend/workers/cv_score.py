@@ -913,7 +913,7 @@ async def _score_cv_async(
                             required_absent_floor_cap=prompt_cfg.det_required_absent_floor_cap,
                         )
                         _det_result = DeterministicScoringEngine(_det_cfg).score(
-                            _llm_result, weights
+                            _llm_result, weights, _match_result
                         )
                         _det_final_score_val = _det_result.final_score
                         _det_score_json_val = json.dumps(

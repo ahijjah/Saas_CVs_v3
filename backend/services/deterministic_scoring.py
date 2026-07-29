@@ -42,6 +42,11 @@ from typing import Any
 
 from services.llm_criteria_mapper import LLMMatchResult, QualitativeSummary
 
+try:
+    from services.criteria_matcher import MatchResult
+except ImportError:
+    MatchResult = None  # Optional import for Phase 3 reconciliation
+
 _ENGINE_VERSION = "det_score_v2"
 
 # ── Match-type factors ────────────────────────────────────────────────────────
@@ -201,6 +206,72 @@ def _check_min_years_threshold(
     return None
 
 
+# ── Phase 3 Reconciliation: Local matcher relevance bounds on LLM results ─────
+
+def _is_relevance_qualified_experience_criterion(criterion_text: str) -> bool:
+    """Check if this is a relevance-qualified experience criterion.
+
+    Returns True for criteria like "Minimum X years of relevant experience"
+    but False for pure "Minimum X years of experience" without relevance qualifier.
+    """
+    if not criterion_text:
+        return False
+    text_lower = criterion_text.lower()
+    # Must have both "years" and "relevant" to be a relevance-qualified criterion
+    return "year" in text_lower and "relevant" in text_lower
+
+
+def _find_matching_local_criterion(
+    llm_criterion_text: str,
+    local_matches: list[Any],
+) -> Any | None:
+    """Find the corresponding criterion in local matcher results by criterion_text.
+
+    Returns the matching CriterionMatch from local_matches, or None if not found.
+    Uses exact text matching as the primary key across systems.
+    """
+    if not local_matches:
+        return None
+    for local_match in local_matches:
+        if (local_match.get("criterion_text") or "").strip() == (llm_criterion_text or "").strip():
+            return local_match
+    return None
+
+
+def _apply_local_relevance_bound(
+    llm_assessment: Any,
+    local_criterion: Any | None,
+) -> tuple[str | None, float | None]:
+    """
+    Phase 3 reconciliation: if local matcher found relevance issues but LLM
+    didn't, bound the LLM's result to the local matcher's lower status.
+
+    Returns (risk_flag_to_add, new_confidence) if bounding should be applied,
+    or (None, None) if no change needed.
+
+    Bounding rule:
+    - LLM: MATCHED, Local: PARTIAL due to relevance → cap to PARTIAL
+    - LLM: MATCHED, Local: ABSENT due to relevance → cap to ABSENT
+    - LLM: MATCHED, Local: MATCHED/PARTIAL/ABSENT non-relevance → no change
+    - Any other case → no change (LLM not lower, or local not lower)
+    """
+    if not local_criterion:
+        return None, None
+
+    llm_status = llm_assessment.status or "ABSENT"
+    local_status = local_criterion.get("status") or "ABSENT"
+    local_partial_reason = local_criterion.get("partial_reason") or ""
+
+    # Only bound if LLM says MATCHED and local says something lower
+    if llm_status == "MATCHED" and local_status in ("PARTIAL", "ABSENT"):
+        # Only apply bounding if local's reason is relevance-related
+        reason_lower = local_partial_reason.lower()
+        if "relevance" in reason_lower or "relevant" in reason_lower:
+            return "llm_local_relevance_disagreement", float(local_criterion.get("confidence", 0.45))
+
+    return None, None
+
+
 # ── Engine ────────────────────────────────────────────────────────────────────
 
 class DeterministicScoringEngine:
@@ -221,6 +292,7 @@ class DeterministicScoringEngine:
         self,
         llm_match_result: LLMMatchResult,
         weights: dict[str, int],
+        match_result: Any = None,
     ) -> DeterministicScore:
         """
         Score a candidate against criteria using the deterministic engine.
@@ -233,18 +305,29 @@ class DeterministicScoringEngine:
             Job-level dimension weights, e.g.
             {"weight_skills": 30, "weight_experience": 25, ...}.
             All 7 keys should be present; missing keys default to 0.
+        match_result:
+            Optional output of CriteriaMatchEngine.compare() for Phase 3
+            reconciliation. When provided, local matcher results will bound
+            LLM results for relevance-qualified experience criteria.
 
         Returns
         -------
         DeterministicScore with per-dimension breakdown and final_score.
         """
         cfg = self._cfg
+        # Handle both MatchResult object (from production) and list (for testing)
+        if match_result is None:
+            local_matches = None
+        elif isinstance(match_result, list):
+            local_matches = match_result
+        else:
+            local_matches = getattr(match_result, "matches", None)
 
         # ── Group assessments by dimension ────────────────────────────────────
         by_dimension: dict[str, list[DeterministicCriterionScore]] = {}
         for assessment in llm_match_result.assessments:
             dim = assessment.dimension or "other"
-            crit = self._score_criterion(assessment, cfg)
+            crit = self._score_criterion(assessment, cfg, local_matches)
             by_dimension.setdefault(dim, []).append(crit)
 
         # ── Compute per-dimension scores ──────────────────────────────────────
@@ -293,6 +376,7 @@ class DeterministicScoringEngine:
     def _score_criterion(
         assessment: Any,
         cfg: DeterministicScoringConfig,
+        local_matches: list[Any] | None = None,
     ) -> DeterministicCriterionScore:
         status          = assessment.status or "ABSENT"
         match_type      = assessment.match_type or "missing"
@@ -333,6 +417,28 @@ class DeterministicScoringEngine:
                 match_type = "direct"
                 if "min_years_threshold_met" not in risk_flags:
                     risk_flags.append("min_years_threshold_met")
+
+        # ── Phase 3 Reconciliation: Relevance-qualified experience bounding ──
+        # For "Minimum X years of relevant experience" criteria, if the local
+        # matcher independently found relevance issues (PARTIAL/ABSENT) but the
+        # LLM found MATCHED, bound the LLM's result to the local matcher's
+        # conservative assessment. This prevents false positives where the LLM
+        # missed relevance qualification evidence the keyword-based matcher caught.
+        criterion_text = assessment.criterion_text or ""
+        if (
+            local_matches
+            and _is_relevance_qualified_experience_criterion(criterion_text)
+            and (assessment.dimension or "other") == "experience"
+        ):
+            local_match = _find_matching_local_criterion(criterion_text, local_matches)
+            risk_flag, new_confidence = _apply_local_relevance_bound(assessment, local_match)
+            if risk_flag is not None:
+                # Bound the LLM's result to the local matcher's status
+                status = local_match.get("status", "ABSENT")
+                if new_confidence is not None:
+                    confidence = new_confidence
+                if risk_flag not in risk_flags:
+                    risk_flags.append(risk_flag)
 
         sc        = _status_credit(status, cfg)
         qf        = _match_quality_factor(match_type, criterion_class)
