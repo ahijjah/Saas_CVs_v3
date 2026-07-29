@@ -84,6 +84,10 @@ Return EXACTLY this structure (do not add or remove keys):
     "required": ["mandatory skill 1", "mandatory skill 2"],
     "preferred": ["nice-to-have 1", "nice-to-have 2"]
   },
+  "soft_skills": {
+    "required": ["mandatory soft skill 1", "mandatory soft skill 2"],
+    "preferred": ["nice-to-have soft skill 1"]
+  },
   "experience": {
     "minimum_years": <integer, 0 if not specified>,
     "relevant_roles": ["role title 1", "role title 2"],
@@ -127,6 +131,15 @@ A. SCOREABLE CRITERIA — include ONLY these in skills/experience/education/cert
    - Domain knowledge and sector expertise
    - Other measurable professional competencies
 
+SOFT SKILL EXTRACTION GUIDE:
+- soft_skills.required: behavioural/interpersonal traits explicitly
+  required or strongly implied (communication, teamwork, leadership,
+  adaptability, attention to detail, problem solving, time management,
+  confidentiality, professional ethics, organisational ability, etc).
+- soft_skills.preferred: soft skills stated as advantageous.
+- A soft skill must appear in EITHER soft_skills OR skills, never both.
+- skills.required/preferred are for technical/functional competencies only.
+
 B. NON-SCOREABLE / SCREENING CONDITIONS — place in non_scoreable_requirements (NOT in other_requirements):
    - Work authorization ("must have right to work in X", "work permit required")
    - Location availability ("must be based in X", "willing to relocate")
@@ -155,7 +168,11 @@ CRITICAL SCORING SAFETY RULE:
 
 GENERAL RULES:
 - scoring_weights values are integers and MUST sum to exactly 100
-- Assign weight 0 only if a dimension is completely irrelevant to the role
+- WEIGHT FLOOR RULE: a dimension may be assigned 0% ONLY if its
+  corresponding array(s) are completely empty (no items extracted for it).
+  If a dimension has one or more extracted items, it MUST receive a
+  non-zero weight (minimum 5%) — a populated dimension can never be
+  weighted at 0%.
 - minimum_years must be an integer (use 0 if not mentioned)
 - required skills = explicitly mandatory; preferred = stated as advantageous or optional
 - Extract criteria in the SAME language as the job description

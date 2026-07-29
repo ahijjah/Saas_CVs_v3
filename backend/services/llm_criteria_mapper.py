@@ -124,6 +124,25 @@ CRITICAL: You are mapping evidence only. Do NOT calculate or output any numeric 
 scores (score_skills, score_experience, final_score, or any other number). \
 Scoring is performed separately by a deterministic engine.
 
+INPUT & EVIDENCE-SCANNING RULES:
+- Evidence relevant to a criterion is NOT limited to the array or field
+  pre-labeled for that dimension. A soft skill, for example, may be
+  evidenced by a phrase sitting inside an experience entry or domain
+  signal, not only in a dedicated soft-skill field. Before marking
+  anything ABSENT, scan every text field you were given for relevant
+  evidence, not just fields tagged for that specific dimension.
+
+SPARSE-EXTRACTION SAFETY NET:
+- If the candidate data for a section looks implausibly empty relative to
+  the candidate's stated background (e.g. total years of experience is
+  greater than zero but the itemized experience/responsibilities data is
+  empty or near-empty), do NOT treat that emptiness as proof the candidate
+  lacks the underlying competency — it may be an upstream data-extraction
+  gap, not evidence of absence. In this situation, mark status=ABSENT only
+  when you have genuinely no supporting text anywhere in the provided
+  data, and add risk_flag "possible_extraction_gap" to signal the ABSENT
+  call is based on missing input, not confirmed non-evidence.
+
 CROSS-LINGUAL MATCHING:
 - Arabic CV evidence may satisfy English criteria, and vice versa.
 - Assess the underlying competency — language of expression is irrelevant.
@@ -151,11 +170,38 @@ EDUCATION FIELDS OF STUDY (OR logic — any one field satisfies):
 - Never penalize a candidate for not matching ALL listed fields.
 - Fields of study are alternatives, not cumulative requirements.
 
+EDUCATION — SECONDARY QUALIFICATIONS:
+- If a candidate holds a secondary/supplementary qualification (e.g. a
+  diploma or certificate) in a field the primary degree doesn't cover, but
+  that secondary qualification does match an accepted field, treat this
+  as PARTIAL rather than ABSENT — it is real, relevant evidence even
+  though it isn't the highest-level credential.
+
 OVERQUALIFICATION RULE (important):
 - A candidate with MORE experience or higher education than required MEETS the criterion.
 - Do NOT return ABSENT or PARTIAL when a candidate clearly exceeds a requirement.
 - Overqualification risk (e.g. possible retention concern) may be noted in risk_flags only.
 - Example: 10 years experience against a 3-year requirement → status: MATCHED.
+
+RELEVANCE-QUALIFIED EXPERIENCE CRITERIA (read before applying the
+Overqualification Rule above to any years-based criterion):
+Experience-duration criteria come in two types:
+- TYPE A — Pure duration ("Minimum X years of experience"), no domain/role
+  qualifier. Numeric comparison alone is sufficient; meeting the threshold
+  → MATCHED, match_type="direct", confidence 0.85+.
+- TYPE B — Relevance-qualified ("X years of RELEVANT experience," "X years
+  in [domain/role]"). This requires BOTH the years AND that those years
+  were spent doing something relevant to the named domain/function.
+  Meeting the number alone is NOT sufficient.
+For TYPE B criteria: do NOT assign MATCHED/direct/confidence≥0.85 based on
+total years alone. If years are met AND you have title/responsibility/
+domain evidence confirming relevance → MATCHED is appropriate. If years
+are met but you have NO title/responsibility/domain evidence to confirm
+relevance (e.g. you were only given a total-years figure with no itemized
+roles) → assign PARTIAL, match_type="inferred", confidence 0.35-0.59, state
+in match_reason that years are met but relevance is unconfirmed, and add
+risk_flag "relevance_unverified". Never fabricate a years figure that
+isn't present in the provided data.
 
 REQUIRED vs PREFERRED:
 - required=true criteria are hard requirements. Missing evidence → ABSENT.
@@ -204,6 +250,24 @@ R5. "MS Office" / "computer literacy" / "digital skills" → flexible (not soft_
 R6. Named technology (Java, Python, SAP, React, PostgreSQL) → strict.
 R7. Sector or industry knowledge → domain_knowledge (not soft_skill).
 
+SOFT SKILL INFERENCE PRINCIPLE:
+Behavioural competencies may be demonstrated through responsibilities,
+achievements, or work outputs even when the exact soft-skill wording
+doesn't appear anywhere in the data, and even in fields not specifically
+labeled as soft-skill evidence. Look across ALL provided text:
+- handling confidential/sensitive information, discretion → confidentiality
+- adherence to ethical/regulatory/professional standards, audit readiness
+  → professional ethics/integrity
+- quality assurance, auditing, verification, inspection → attention to detail
+- managing multiple responsibilities, competing priorities → time
+  management / organisational skills
+- presenting, training, mentoring, stakeholder engagement, liaising
+  between departments → communication skills
+- leading initiatives, supervising staff, mentoring others → leadership
+- troubleshooting, root-cause analysis → problem solving / analytical thinking
+Use inferred evidence only when it clearly demonstrates the competency —
+do not fabricate.
+
 CONFIDENCE GUIDE:
 - 0.85–1.00: Direct, unambiguous evidence stated clearly in CV.
 - 0.60–0.84: Strong implication or near-certain inference.
@@ -217,6 +281,8 @@ RISK FLAGS (add only when genuinely applicable):
 - duration_unverified:    Experience duration not confirmable from CV dates.
 - single_mention:         Criterion appears only once with no context.
 - transferable_only:      Only transferable evidence found, no direct evidence.
+- possible_extraction_gap: ABSENT assigned because the relevant input section was empty/sparse relative to stated background, not confirmed non-evidence.
+- relevance_unverified:   A relevance-qualified experience criterion's years threshold was met, but domain/functional relevance could not be confirmed from available data.
 
 OUTPUT: Valid JSON only — no markdown, no explanation, no code blocks.
 Return EXACTLY this structure (one entry per criterion, same order as input):
