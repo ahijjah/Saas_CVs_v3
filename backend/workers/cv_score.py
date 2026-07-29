@@ -841,6 +841,7 @@ async def _score_cv_async(
                 from services.criteria_matcher import CriteriaMatchEngine
                 from services.evidence_serialiser import (
                     cvfacts_to_dict, matchresult_to_dict, llm_matchresult_to_dict,
+                    extract_flat_columns_from_det_score_json,
                 )
                 _cv_facts = CVFactsExtractor().extract(raw_cv_text)
                 logger.info(
@@ -986,6 +987,9 @@ async def _score_cv_async(
                         {"cname": extracted_name, "aid": application_id},
                     )
 
+                # Extract flat summary columns from det_score_json (source of truth)
+                _flat_cols = extract_flat_columns_from_det_score_json(_det_score_json_val)
+
                 await db.execute(
                     text("""
                         INSERT INTO application_scores (
@@ -1008,7 +1012,7 @@ async def _score_cv_async(
                             det_final_score, det_score_json
                         ) VALUES (
                             :aid,
-                            0, 0, 0, 0, 0, 0, 0,
+                            :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
                             :final, :weights, :model,
                             :strengths, :gaps, :red_flags,
                             :notes, :questions,
@@ -1026,6 +1030,13 @@ async def _score_cv_async(
                     """),
                     {
                         "aid":        application_id,
+                        "s_skills":   _flat_cols["score_skills"],
+                        "s_exp":      _flat_cols["score_experience"],
+                        "s_edu":      _flat_cols["score_education"],
+                        "s_cert":     _flat_cols["score_certifications"],
+                        "s_soft":     _flat_cols["score_soft_skills"],
+                        "s_domain":   _flat_cols["score_domain_knowledge"],
+                        "s_other":    _flat_cols["score_other"],
                         "final":      final_score,
                         "weights":    json.dumps(weights),
                         "model":      "deterministic",
@@ -1037,9 +1048,9 @@ async def _score_cv_async(
                         "reasoning":  json.dumps({}, ensure_ascii=False),
                         "raw":        _det_score_json_val,
                         "sim":        gatekeeper_result.semantic_similarity_pct,
-                        "skill_ratio": gatekeeper_result.skill_match_ratio,
-                        "matched":    gatekeeper_result.matched_skills,
-                        "missing":    gatekeeper_result.missing_skills,
+                        "skill_ratio": _flat_cols["skill_match_ratio"],
+                        "matched":    _flat_cols["matched_skills"],
+                        "missing":    _flat_cols["missing_skills"],
                         "cv_lang":    gatekeeper_result.cv_language,
                         "gk_passed":  gatekeeper_result.gatekeeper_passed,
                         "score_details": json.dumps({}, ensure_ascii=False),
@@ -1196,6 +1207,24 @@ async def _score_cv_async(
 
                 score_details = ai_result.get("score_details") or {}
 
+                # For legacy path: prefer det_score_json when available (D-01 produced results),
+                # otherwise fall back to ai_result/gatekeeper_result
+                _flat_cols_legacy = extract_flat_columns_from_det_score_json(_det_score_json_val)
+
+                # Use det_score dimensions if available, otherwise use ai_result
+                s_skills_val = _flat_cols_legacy["score_skills"] or ai_result.get("score_skills", 0)
+                s_exp_val = _flat_cols_legacy["score_experience"] or ai_result.get("score_experience", 0)
+                s_edu_val = _flat_cols_legacy["score_education"] or ai_result.get("score_education", 0)
+                s_cert_val = _flat_cols_legacy["score_certifications"] or ai_result.get("score_certifications", 0)
+                s_soft_val = _flat_cols_legacy["score_soft_skills"] or ai_result.get("score_soft_skills", 0)
+                s_domain_val = _flat_cols_legacy["score_domain_knowledge"] or ai_result.get("score_domain_knowledge", 0)
+                s_other_val = _flat_cols_legacy["score_other"] or ai_result.get("score_other", 0)
+
+                # Use det_score skills summary if available, otherwise gatekeeper
+                skill_ratio_val = _flat_cols_legacy["skill_match_ratio"] if _flat_cols_legacy["skill_match_ratio"] > 0 else gatekeeper_result.skill_match_ratio
+                matched_val = _flat_cols_legacy["matched_skills"] if _flat_cols_legacy["matched_skills"] else gatekeeper_result.matched_skills
+                missing_val = _flat_cols_legacy["missing_skills"] if _flat_cols_legacy["missing_skills"] else gatekeeper_result.missing_skills
+
                 await db.execute(
                     text("""
                         INSERT INTO application_scores (
@@ -1236,13 +1265,13 @@ async def _score_cv_async(
                     """),
                     {
                         "aid":        application_id,
-                        "s_skills":   ai_result.get("score_skills", 0),
-                        "s_exp":      ai_result.get("score_experience", 0),
-                        "s_edu":      ai_result.get("score_education", 0),
-                        "s_cert":     ai_result.get("score_certifications", 0),
-                        "s_soft":     ai_result.get("score_soft_skills", 0),
-                        "s_domain":   ai_result.get("score_domain_knowledge", 0),
-                        "s_other":    ai_result.get("score_other", 0),
+                        "s_skills":   s_skills_val,
+                        "s_exp":      s_exp_val,
+                        "s_edu":      s_edu_val,
+                        "s_cert":     s_cert_val,
+                        "s_soft":     s_soft_val,
+                        "s_domain":   s_domain_val,
+                        "s_other":    s_other_val,
                         "final":      final_score,
                         "weights":    json.dumps(weights),
                         "model":      (scoring_prompt or {}).get("model") or cfg.openai_model,
@@ -1254,9 +1283,9 @@ async def _score_cv_async(
                         "reasoning":  json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
                         "raw":        _raw_ai_response_str,
                         "sim":        gatekeeper_result.semantic_similarity_pct,
-                        "skill_ratio": gatekeeper_result.skill_match_ratio,
-                        "matched":    gatekeeper_result.matched_skills,
-                        "missing":    gatekeeper_result.missing_skills,
+                        "skill_ratio": skill_ratio_val,
+                        "matched":    matched_val,
+                        "missing":    missing_val,
                         "cv_lang":    gatekeeper_result.cv_language,
                         "gk_passed":  gatekeeper_result.gatekeeper_passed,
                         "score_details": json.dumps(score_details, ensure_ascii=False),

@@ -463,3 +463,78 @@ def llm_matchresult_from_dict(data: Any) -> LLMMatchResult:
         low_confidence_count=_i(data, "low_confidence_count"),
         qualitative_summary=_parse_qs(data.get("qualitative_summary")),
     )
+
+
+def extract_flat_columns_from_det_score_json(det_score_json_str: str | None) -> dict:
+    """Extract flat summary columns from det_score_json (the source of truth).
+
+    Returns dict with keys:
+      - score_skills, score_experience, score_education, score_certifications,
+        score_soft_skills, score_domain_knowledge, score_other (dimension scores)
+      - matched_skills (list of criterion texts with status=MATCHED in skills)
+      - missing_skills (list of criterion texts with status=ABSENT in skills)
+      - skill_match_ratio (matched / total * 100 for skills, or 0 if no skills)
+    """
+    import json
+
+    result = {
+        "score_skills": 0,
+        "score_experience": 0,
+        "score_education": 0,
+        "score_certifications": 0,
+        "score_soft_skills": 0,
+        "score_domain_knowledge": 0,
+        "score_other": 0,
+        "matched_skills": [],
+        "missing_skills": [],
+        "skill_match_ratio": 0.0,
+    }
+
+    if not det_score_json_str:
+        return result
+
+    try:
+        det_score = json.loads(det_score_json_str)
+    except (json.JSONDecodeError, TypeError):
+        return result
+
+    dimensions = det_score.get("dimensions", {})
+
+    # Extract dimension scores
+    dimension_map = {
+        "skills": "score_skills",
+        "experience": "score_experience",
+        "education": "score_education",
+        "certifications": "score_certifications",
+        "soft_skills": "score_soft_skills",
+        "domain_knowledge": "score_domain_knowledge",
+        "other": "score_other",
+    }
+
+    for dim_key, col_key in dimension_map.items():
+        if dim_key in dimensions:
+            result[col_key] = dimensions[dim_key].get("dimension_score", 0)
+
+    # Extract matched/missing skills from skills dimension
+    skills_dim = dimensions.get("skills", {})
+    criteria_list = skills_dim.get("criteria", [])
+
+    matched = []
+    missing = []
+    for criterion in criteria_list:
+        status = criterion.get("status")
+        criterion_text = criterion.get("criterion_text", "")
+        if status == "MATCHED":
+            matched.append(criterion_text)
+        elif status == "ABSENT":
+            missing.append(criterion_text)
+
+    result["matched_skills"] = matched
+    result["missing_skills"] = missing
+
+    # Compute skill match ratio
+    total_skills = len(criteria_list)
+    if total_skills > 0:
+        result["skill_match_ratio"] = round(len(matched) / total_skills * 100, 1)
+
+    return result

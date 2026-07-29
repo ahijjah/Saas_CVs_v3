@@ -21,6 +21,7 @@ Coverage:
 """
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
 from typing import Any
@@ -1526,3 +1527,143 @@ class TestPhase3LocalRelevanceBounds:
         assert exp_crit["status"] == "PARTIAL", "Should be bounded to dataclass's PARTIAL"
         assert exp_crit["confidence"] == pytest.approx(0.45)
         assert "llm_local_relevance_disagreement" in exp_crit["risk_flags"]
+
+
+# ── Flat Columns Extraction (for application_scores) ────────────────────────────
+
+class TestFlatColumnsExtraction:
+    """Tests for extracting flat summary columns from det_score_json.
+
+    Regression test for Issue #8/#9: flat summary columns in application_scores
+    were hardcoded to 0 or pulled from Gatekeeper instead of det_score_json
+    (the source of truth). This caused divergence from actual dimension scores.
+    """
+
+    def test_extract_dimension_scores_from_det_score_json(self):
+        """Verify score_skills, score_experience, etc. are correctly extracted."""
+        from services.evidence_serialiser import extract_flat_columns_from_det_score_json
+
+        # Create a scored result with known dimension scores
+        llm_assessments = [
+            _assessment("Python", dimension="skills", status="MATCHED"),
+            _assessment("5 years experience", dimension="experience", status="MATCHED"),
+            _assessment("Bachelor's degree", dimension="education", status="PARTIAL"),
+        ]
+        scored = _engine().score(_llm_result(llm_assessments), _DEFAULT_WEIGHTS)
+        det_json_dict = deterministic_score_to_dict(scored)
+        det_json_str = json.dumps(det_json_dict, ensure_ascii=False)
+
+        # Extract flat columns
+        flat = extract_flat_columns_from_det_score_json(det_json_str)
+
+        # Verify dimension scores are extracted (not 0)
+        assert flat["score_skills"] > 0, "score_skills should be > 0, not hardcoded 0"
+        assert flat["score_experience"] > 0, "score_experience should be > 0"
+        # Education should be lower than skills/experience due to PARTIAL status
+        assert flat["score_education"] >= 0
+
+        # Verify all dimensions are present in result
+        assert "score_certifications" in flat
+        assert "score_soft_skills" in flat
+        assert "score_domain_knowledge" in flat
+        assert "score_other" in flat
+
+    def test_extract_matched_skills_from_det_score_json(self):
+        """Verify matched_skills are extracted from skills criteria with status=MATCHED."""
+        from services.evidence_serialiser import extract_flat_columns_from_det_score_json
+
+        llm_assessments = [
+            _assessment("Python", dimension="skills", required=True, status="MATCHED"),
+            _assessment("Java", dimension="skills", required=False, status="MATCHED"),
+            _assessment("Go", dimension="skills", required=False, status="ABSENT"),
+            _assessment("5 years experience", dimension="experience", status="MATCHED"),
+        ]
+        scored = _engine().score(_llm_result(llm_assessments), _DEFAULT_WEIGHTS)
+        det_json_str = json.dumps(deterministic_score_to_dict(scored), ensure_ascii=False)
+
+        flat = extract_flat_columns_from_det_score_json(det_json_str)
+
+        # Verify matched_skills contains only MATCHED criteria from skills dimension
+        assert len(flat["matched_skills"]) == 2, "Should have 2 matched skills"
+        assert "Python" in flat["matched_skills"]
+        assert "Java" in flat["matched_skills"]
+        assert "Go" not in flat["matched_skills"], "ABSENT skill should not be in matched"
+        assert "5 years experience" not in flat["matched_skills"], "Experience not a skill"
+
+    def test_extract_missing_skills_from_det_score_json(self):
+        """Verify missing_skills are extracted from skills criteria with status=ABSENT."""
+        from services.evidence_serialiser import extract_flat_columns_from_det_score_json
+
+        llm_assessments = [
+            _assessment("Python", dimension="skills", status="MATCHED"),
+            _assessment("Kubernetes", dimension="skills", status="ABSENT"),
+            _assessment("Docker", dimension="skills", status="ABSENT"),
+            _assessment("5 years experience", dimension="experience", status="ABSENT"),
+        ]
+        scored = _engine().score(_llm_result(llm_assessments), _DEFAULT_WEIGHTS)
+        det_json_str = json.dumps(deterministic_score_to_dict(scored), ensure_ascii=False)
+
+        flat = extract_flat_columns_from_det_score_json(det_json_str)
+
+        # Verify missing_skills contains only ABSENT criteria from skills dimension
+        assert len(flat["missing_skills"]) == 2, "Should have 2 missing skills"
+        assert "Kubernetes" in flat["missing_skills"]
+        assert "Docker" in flat["missing_skills"]
+        assert "Python" not in flat["missing_skills"], "MATCHED skill should not be missing"
+        assert "5 years experience" not in flat["missing_skills"], "Experience not a skill"
+
+    def test_extract_skill_match_ratio_from_det_score_json(self):
+        """Verify skill_match_ratio = matched / total * 100 for skills dimension."""
+        from services.evidence_serialiser import extract_flat_columns_from_det_score_json
+
+        llm_assessments = [
+            _assessment("Python", dimension="skills", status="MATCHED"),
+            _assessment("Java", dimension="skills", status="MATCHED"),
+            _assessment("Go", dimension="skills", status="ABSENT"),
+            _assessment("Rust", dimension="skills", status="ABSENT"),
+        ]
+        scored = _engine().score(_llm_result(llm_assessments), _DEFAULT_WEIGHTS)
+        det_json_str = json.dumps(deterministic_score_to_dict(scored), ensure_ascii=False)
+
+        flat = extract_flat_columns_from_det_score_json(det_json_str)
+
+        # 2 matched out of 4 total = 50%
+        assert flat["skill_match_ratio"] == pytest.approx(50.0), "Should be 50% match ratio"
+
+    def test_extract_handles_null_det_score_json(self):
+        """Verify extraction returns safe defaults when det_score_json is None/empty."""
+        from services.evidence_serialiser import extract_flat_columns_from_det_score_json
+
+        # Test with None
+        flat = extract_flat_columns_from_det_score_json(None)
+        assert flat["score_skills"] == 0
+        assert flat["matched_skills"] == []
+        assert flat["missing_skills"] == []
+        assert flat["skill_match_ratio"] == 0.0
+
+        # Test with empty string
+        flat = extract_flat_columns_from_det_score_json("")
+        assert flat["score_skills"] == 0
+
+        # Test with invalid JSON
+        flat = extract_flat_columns_from_det_score_json("not valid json")
+        assert flat["score_skills"] == 0
+
+    def test_extract_no_skills_dimension(self):
+        """Verify extraction handles missing skills dimension gracefully."""
+        from services.evidence_serialiser import extract_flat_columns_from_det_score_json
+
+        llm_assessments = [
+            _assessment("5 years experience", dimension="experience", status="MATCHED"),
+        ]
+        scored = _engine().score(_llm_result(llm_assessments), _DEFAULT_WEIGHTS)
+        det_json_str = json.dumps(deterministic_score_to_dict(scored), ensure_ascii=False)
+
+        flat = extract_flat_columns_from_det_score_json(det_json_str)
+
+        # Should have dimension scores from experience, but no skills
+        assert flat["score_experience"] > 0
+        assert flat["score_skills"] == 0  # No skills assessed
+        assert flat["matched_skills"] == []
+        assert flat["missing_skills"] == []
+        assert flat["skill_match_ratio"] == 0.0
