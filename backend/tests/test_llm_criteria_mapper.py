@@ -352,6 +352,37 @@ class TestFlattenCriteria:
         assert len([i for i in items if i["dimension"] == "skills"]) == 1
         assert items[0]["text"] == "Python"
 
+    def test_key_responsibilities_not_converted_to_criteria(self):
+        """Issue #12: key_responsibilities should NOT be converted to individual scoring criteria.
+        They are kept in analysis_json for context but not scored item-by-item."""
+        items = _flatten_criteria({
+            "experience": {
+                "minimum_years": 5,
+                "requirement_type": "required",
+                "relevant_roles": ["Senior Engineer"],
+                "key_responsibilities": [
+                    "Design and implement systems",
+                    "Code review",
+                    "Mentor junior engineers",
+                ],
+            },
+        })
+
+        # Verify minimum years criterion exists
+        assert any("5 years" in i["text"] for i in items), "Minimum years criterion should exist"
+
+        # Verify relevant_roles criterion exists
+        assert any("Senior Engineer" in i["text"] for i in items), "Relevant roles criterion should exist"
+
+        # Verify key_responsibilities are NOT in criteria
+        texts = [i["text"] for i in items]
+        assert not any("Design and implement systems" in t for t in texts), "Design responsibility should not be in criteria"
+        assert not any("Code review" in t for t in texts), "Code review responsibility should not be in criteria"
+        assert not any("Mentor junior engineers" in t for t in texts), "Mentoring responsibility should not be in criteria"
+
+        # Total criteria should be 2 (minimum years + 1 role), not 5 (2 + 3 responsibilities)
+        assert len(items) == 2, f"Expected 2 experience criteria, got {len(items)}"
+
 
 # ── Section C: _select_evidence_snippets ─────────────────────────────────────
 

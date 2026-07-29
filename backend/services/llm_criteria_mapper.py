@@ -395,9 +395,9 @@ def _flatten_criteria(analysis_json: dict) -> list[dict]:
     for role in (exp.get("relevant_roles") or []):
         if role:
             items.append({"text": str(role), "dimension": "experience", "required": False})
-    for resp in (exp.get("key_responsibilities") or []):
-        if resp:
-            items.append({"text": str(resp), "dimension": "experience", "required": False})
+    # NOTE: key_responsibilities are kept in analysis_json for context but NOT converted to individual criteria.
+    # They were causing structural scoring issues (exact-phrase matching almost never succeeds on CV text).
+    # See Issue #12 for details on the impact of this change.
 
     edu = analysis_json.get("education") or {}
     min_level = str(edu.get("minimum_level", "None")).strip()
