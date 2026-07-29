@@ -1107,6 +1107,13 @@ async def _generate_qualitative_summary(
 
     Returns None on any error (API failure, parse failure, etc.) - this is
     additive/optional, not a dependency. The main scoring run succeeds either way.
+
+    ⚠️  WARNING: This function's real-world output has NOT been verified against
+    a live OpenAI API call. Unit tests only exercise the code path with
+    mocked/synthetic responses. Requires production verification before this
+    can be trusted - deploy to production server and verify output against
+    real application assessments in logs (search for "D-01 QualitativeSummary
+    (second call)" log messages). Track verification status in Issue #10.
     """
     try:
         client = _get_mapper_client()
