@@ -1141,6 +1141,12 @@ class LLMCriteriaMapper:
         )
         raw_content = response.choices[0].message.content or ""
 
+        # DEBUG: Log raw LLM response for Issue #10 investigation
+        logger.info(
+            "[%s] D-01 RAW LLM RESPONSE (for qualitative_summary verification): %s",
+            application_id, raw_content
+        )
+
         # Parse response
         assessments, qual_summary = _parse_llm_response(raw_content, criteria_list, p_code, p_ver, model)
 
