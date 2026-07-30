@@ -681,11 +681,15 @@ _DATE_RANGE_RE = re.compile(
     r"|"
         # Format 2: "Year – Year" (e.g. "2021 – 2025") - original format
         r"\b(?P<start_year_bare>(?:19|20)\d{2})\b"
+    r"|"
+        # Format 3: "MM/YYYY – MM/YYYY" or "MM.YYYY – MM.YYYY" (e.g. "11/2023 - 11/2025")
+        r"(?P<start_month_numeric>\d{1,2})(?:[/.])"
+        r"(?P<start_year_numeric>(?:19|20)\d{2})"
     r")"
     r"\s*(?:[-–—/]|\bto\b|\bإلى\b|\bحتى\b)\s*"        # separator (English or Arabic)
     r"(?P<end>"                                          # end: year or present variant
-        # Allow optional month before end year
-        r"(?:" + _MONTH_PATTERN + r"\s+)?"
+        # Allow optional month before end year (for both word and numeric formats)
+        r"(?:(?:\d{1,2})[/.])?(?:(?:" + _MONTH_PATTERN + r")\s+)?"
         r"(?:(?:19|20)\d{2})"                            # 4-digit year
     r"|present|current|now|ongoing"                     # English present
     r"|till\s+date|to\s+date"                           # "till/to date"
@@ -1564,8 +1568,12 @@ def _extract_experience(
     blocks: list[ExperienceEvidence] = []
 
     for m in _DATE_RANGE_RE.finditer(search_text):
-        # Extract start year from either format: "Month Year" or "Year"
-        start_year_str = m.group("start_year") or m.group("start_year_bare")
+        # Extract start year from any format: "Month Year" or "Year" or "MM/YYYY"
+        start_year_str = (
+            m.group("start_year")
+            or m.group("start_year_bare")
+            or m.group("start_year_numeric")
+        )
         start_year = int(start_year_str)
         end_str = m.group("end").strip()
 
@@ -1584,29 +1592,60 @@ def _extract_experience(
 
         years = float(end_year - start_year)
 
-        # Attempt to extract role/employer from the lines preceding the date
+        # Attempt to extract role/employer from the lines preceding and around the date
         ctx_start = max(0, m.start() - 200)
-        preceding = search_text[ctx_start:m.start()].strip().splitlines()
+        ctx_end = min(len(search_text), m.end() + 100)
+        context_text = search_text[ctx_start:ctx_end]
+        all_lines = context_text.splitlines()
 
-        # Handle the Title / Company / Location format (e.g., Rami's CV):
-        # When a line looks like a pure location (only city/country, no company info),
-        # it's the 3-line format and we should skip it.
         role_title = ""
         employer = ""
 
-        if preceding:
-            last_line = preceding[-1].strip()
-            # Check if the last line is a pure location line (skip it if so)
-            if len(preceding) >= 3 and _is_likely_location_line(last_line):
-                # Format: Title / Company / Location, each on separate line
-                # preceding[-3] = Title, preceding[-2] = Company, preceding[-1] = Location
-                role_title = preceding[-3].strip()[:100]
-                employer = preceding[-2].strip()[:100]
+        # Find which line contains the date match to detect pipe-delimited format
+        date_line_idx = -1
+        for i, line in enumerate(all_lines):
+            if m.group() in line:
+                date_line_idx = i
+                break
+
+        if date_line_idx >= 0:
+            date_line = all_lines[date_line_idx].strip()
+            # ONLY apply special pipe handling if the line contains BOTH date and pipes
+            # This handles "Company | Dates | Location" format
+            if " | " in date_line:
+                # Pipe-delimited format: extract company before first pipe
+                parts = date_line.split(" | ")
+                if parts:
+                    employer = parts[0].strip()[:100]
+                # Role title is from the preceding line
+                if date_line_idx >= 1:
+                    role_title = all_lines[date_line_idx - 1].strip()[:100]
+            # ELSE: use standard logic (date on separate line from role/company)
             else:
-                # Original format: single line or Title / Company without location on own line
-                # Use the original logic unchanged to avoid regressions
-                role_title = preceding[-1].strip()[:100]
-                employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
+                # Standard multi-line format: get preceding lines as if date wasn't there
+                preceding = all_lines[:date_line_idx]
+                if preceding:
+                    last_line = preceding[-1].strip()
+                    # Handle the Title / Company / Location format (e.g., Rami's CV)
+                    if len(preceding) >= 3 and _is_likely_location_line(last_line):
+                        # Format: Title / Company / Location, each on separate line
+                        role_title = preceding[-3].strip()[:100]
+                        employer = preceding[-2].strip()[:100]
+                    else:
+                        # Original format: single line or Title / Company without location on own line
+                        role_title = preceding[-1].strip()[:100]
+                        employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
+        else:
+            # Fallback if date not found in lines (shouldn't happen with wider context)
+            preceding = all_lines
+            if preceding:
+                last_line = preceding[-1].strip()
+                if len(preceding) >= 3 and _is_likely_location_line(last_line):
+                    role_title = preceding[-3].strip()[:100]
+                    employer = preceding[-2].strip()[:100]
+                else:
+                    role_title = preceding[-1].strip()[:100]
+                    employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
 
         # EDU-02.2: skip blocks where the "role" line is actually an education entry
         # (e.g. "Bachelor of Business Administration | Al-Quds Open University").
