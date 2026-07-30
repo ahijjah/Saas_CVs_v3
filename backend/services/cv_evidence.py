@@ -1620,6 +1620,29 @@ def _extract_experience(
                 # Role title is from the preceding line
                 if date_line_idx >= 1:
                     role_title = all_lines[date_line_idx - 1].strip()[:100]
+            # Check if date is embedded in a line with company/location (e.g., "Company, Date")
+            elif date_line_idx >= 0 and m.start() > 0:
+                # Date is embedded in this line; extract company from before the date
+                date_start_in_line = date_line.find(m.group())
+                if date_start_in_line > 0:
+                    # Extract everything before the date as potential company/location
+                    before_date = date_line[:date_start_in_line].strip()
+                    # Remove trailing comma/separator if present
+                    employer = before_date.rstrip(", -–").strip()[:100]
+                    # Role title is from the preceding line
+                    if date_line_idx >= 1:
+                        role_title = all_lines[date_line_idx - 1].strip()[:100]
+                else:
+                    # Date is at the start of the line; use standard logic
+                    preceding = all_lines[:date_line_idx]
+                    if preceding:
+                        last_line = preceding[-1].strip()
+                        if len(preceding) >= 3 and _is_likely_location_line(last_line):
+                            role_title = preceding[-3].strip()[:100]
+                            employer = preceding[-2].strip()[:100]
+                        else:
+                            role_title = preceding[-1].strip()[:100]
+                            employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
             # ELSE: use standard logic (date on separate line from role/company)
             else:
                 # Standard multi-line format: get preceding lines as if date wasn't there
