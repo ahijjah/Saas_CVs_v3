@@ -139,14 +139,27 @@ SOFT SKILL EXTRACTION GUIDE:
 - soft_skills.preferred: soft skills stated as advantageous.
 - A soft skill must appear in EITHER soft_skills OR skills, never both.
 - skills.required/preferred are for technical/functional competencies only.
+- DEDUPLICATION: Do not generate multiple criteria from a single JD phrase describing one underlying capability.
+  Example: "plan, prioritize, and manage multiple tasks effectively" should produce ONE criterion
+  (e.g. "organizational skills / ability to prioritize tasks"), not two separate required/preferred entries.
+  Group related competencies under a single descriptor to avoid scoring the same skill multiple times.
 
 B. NON-SCOREABLE / SCREENING CONDITIONS — place in non_scoreable_requirements (NOT in other_requirements):
    - Work authorization ("must have right to work in X", "work permit required")
-   - Location availability ("must be based in X", "willing to relocate")
+   - Location availability ("must be based in X", "willing to relocate", "work at X office", "willing to work at multiple offices/sites")
    - Salary expectations ("must accept salary of X")
    - Availability / start date requirements
+   - Work schedule, shift requirements, time-based constraints
    - Willingness to travel (unless travel experience is a measurable skill)
    - Language requirement IF it is only an eligibility condition (not a skill)
+
+   NON-SCOREABLE CONDITIONS (Do NOT route to other_requirements):
+   - Physical presence requirements not tied to a specific skill (e.g. "must work on-site", "work at the MoNE office in Ramallah")
+   - Work location flexibility (e.g. "willing to work at different offices in the West Bank")
+   - Background check, reference check, work permit/visa requirements (post-hiring conditions)
+   Only route an item to other_requirements (scoreable) if it represents a genuine qualification or capability,
+   not an employment condition or logistics constraint. When in doubt, prefer non_scoreable_requirements —
+   these conditions should not contribute to a candidate's fit score.
 
 C. POST-HIRING / ADMIN CONDITIONS — place in post_hiring_conditions (NOT in other_requirements):
    - Background check ("must pass background check", "subject to criminal record check")
@@ -175,6 +188,11 @@ GENERAL RULES:
   weighted at 0%.
 - minimum_years must be an integer (use 0 if not mentioned)
 - required skills = explicitly mandatory; preferred = stated as advantageous or optional
+- FLAT LISTS WITHOUT EXPLICIT QUALIFIERS: When a skills section presents competencies as a flat bulleted list
+  with NO item-level language indicating required vs preferred (no "must," "preferred," "advantage," "nice to have,"
+  etc. on individual items), do NOT guess which subset is "nice to have." Default ALL items in such a list to
+  required, UNLESS the section itself is headed "Preferred," "Desirable," "Nice to have," or similar. This
+  produces a traceable, consistent rule rather than an arbitrary per-item judgment call.
 - Extract criteria in the SAME language as the job description
 - If a section has no data, use [] for arrays and "None" for minimum_level
 - Be specific and measurable — avoid vague terms like "good communication skills"
