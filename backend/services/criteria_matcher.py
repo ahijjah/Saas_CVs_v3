@@ -589,7 +589,7 @@ def _match_experience(
         domain_keywords = {
             "hr", "recruitment", "hiring", "staffing", "payroll",
             "training", "development", "management", "marketing", "finance",
-            "accounting", "sales", "engineering", "it", "operations",
+            "accounting", "sales", "engineering", "it", "ict", "operations",
             "customer service", "support", "logistics", "supply chain",
         }
 
@@ -605,7 +605,7 @@ def _match_experience(
 
                         # Check for domain keyword intersection
                         if job_keywords and cand_keywords and (job_keywords & cand_keywords):
-                            # Both have domain keywords and they overlap
+                            # Both have domain keywords and they overlap — strong signal
                             score = fuzz.token_set_ratio(job_norm, cand_text)
                             if score >= 65:
                                 has_relevance = True
