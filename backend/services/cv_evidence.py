@@ -1097,6 +1097,78 @@ def _strip_city_suffix(institution: str) -> str:
     return institution
 
 
+def _is_likely_location_line(line: str) -> bool:
+    """Detect if a line is primarily ONLY a location/geography (city, country, city-country).
+
+    Used to handle CV formats where experience entries are split across multiple lines:
+      Title / Company / Location / Date
+
+    Returns True only if line is SHORT (2-3 words) and contains ONLY geographic info,
+    not if it contains company/job info like "ABC Company, Cairo".
+    """
+    line = line.strip().lower()
+    if not line:
+        return False
+
+    word_count = len(line.split())
+
+    # A pure location line is typically VERY short: just city, or "city, country"
+    # Should have <= 3 words to exclude lines like "ABC Company, Cairo" (4 words)
+    if word_count > 3:
+        return False
+
+    # Common geographic indicators
+    location_keywords = {
+        "palestine", "israel", "egypt", "jordan", "lebanon", "syria", "iraq",
+        "saudi arabia", "uae", "united arab emirates", "qatar", "bahrain", "kuwait",
+        "oman", "yemen", "tunisia", "algeria", "morocco", "sudan", "libya",
+        "cairo", "alexandria", "giza", "ramallah", "jericho", "bethlehem", "nablus",
+        "amman", "beirut", "damascus", "baghdad", "riyadh", "dubai", "abu dhabi",
+        "doha", "manama", "muscat", "sanaa", "tunis", "algiers", "casablanca",
+        "khartoum", "tripoli", "london", "paris", "berlin", "new york", "los angeles",
+        "usa", "uk", "us", "france", "germany", "canada", "australia", "singapore",
+    }
+
+    # Check if line contains ANY geographic keywords
+    has_location_keyword = any(keyword in line for keyword in location_keywords)
+
+    if not has_location_keyword:
+        return False
+
+    # Check for patterns like "City, Country" or just "Country" or just "City"
+    if ", " in line:
+        parts = line.split(",")
+        # If two parts and BOTH contain location keywords or are very short
+        if len(parts) == 2:
+            left = parts[0].strip().lower()
+            right = parts[1].strip().lower()
+            # Both parts should be short (location names) and neither should be a company
+            left_has_location = any(kw in left for kw in location_keywords)
+            right_has_location = any(kw in right for kw in location_keywords)
+            # Reject if it contains company/job indicators
+            company_indicators = {"company", "corp", "ltd", "inc", "group", "agency",
+                                 "consulting", "services", "solutions"}
+            has_company_words = any(ind in line for ind in company_indicators)
+            if has_company_words:
+                return False
+            if left_has_location or right_has_location:
+                return True  # Likely "City, Country" or "City, City" format
+        return False
+
+    # Standalone location like "Ramallah" or "Cairo"
+    # Check that the line doesn't contain company/job words
+    job_keywords = {"engineer", "developer", "analyst", "manager", "specialist",
+                   "coordinator", "officer", "director", "consultant", "lead",
+                   "associate", "supervisor", "representative", "support", "company",
+                   "corp", "ltd", "inc"}
+    has_job_words = any(keyword in line for keyword in job_keywords)
+    if has_job_words:
+        return False
+
+    # Short line with only a location keyword
+    return has_location_keyword
+
+
 def _infer_in_progress_education(full_text: str) -> EducationEvidence | None:
     """Infer education from "X student" patterns (e.g. "Computer Science student").
 
@@ -1515,8 +1587,26 @@ def _extract_experience(
         # Attempt to extract role/employer from the lines preceding the date
         ctx_start = max(0, m.start() - 200)
         preceding = search_text[ctx_start:m.start()].strip().splitlines()
-        role_title = preceding[-1].strip()[:100] if preceding else ""
-        employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
+
+        # Handle the Title / Company / Location format (e.g., Rami's CV):
+        # When a line looks like a pure location (only city/country, no company info),
+        # it's the 3-line format and we should skip it.
+        role_title = ""
+        employer = ""
+
+        if preceding:
+            last_line = preceding[-1].strip()
+            # Check if the last line is a pure location line (skip it if so)
+            if len(preceding) >= 3 and _is_likely_location_line(last_line):
+                # Format: Title / Company / Location, each on separate line
+                # preceding[-3] = Title, preceding[-2] = Company, preceding[-1] = Location
+                role_title = preceding[-3].strip()[:100]
+                employer = preceding[-2].strip()[:100]
+            else:
+                # Original format: single line or Title / Company without location on own line
+                # Use the original logic unchanged to avoid regressions
+                role_title = preceding[-1].strip()[:100]
+                employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
 
         # EDU-02.2: skip blocks where the "role" line is actually an education entry
         # (e.g. "Bachelor of Business Administration | Al-Quds Open University").
