@@ -849,6 +849,31 @@ async def _score_cv_async(
                     application_id, len(_cv_facts.skills),
                 )
 
+                # ── Issue F: Write back extracted candidate name from CV text ──
+                # Only when current value is a filename fallback (has file extension).
+                # Do NOT overwrite names from recruiter form (Path 1) or Excel columns.
+                if _cv_facts.candidate_name:
+                    _app_name_row = await db.execute(
+                        text("SELECT candidate_name FROM applications WHERE application_id = :aid"),
+                        {"aid": application_id},
+                    )
+                    _current_name = _app_name_row.scalar_one_or_none() or ""
+                    # Detect filename fallback: contains file extension (.pdf, .docx, .doc)
+                    _has_file_ext = any(
+                        _current_name.lower().endswith(ext)
+                        for ext in [".pdf", ".docx", ".doc"]
+                    )
+                    if _has_file_ext:
+                        await db.execute(
+                            text("UPDATE applications SET candidate_name = :cname WHERE application_id = :aid"),
+                            {"cname": _cv_facts.candidate_name, "aid": application_id},
+                        )
+                        await db.commit()
+                        logger.info(
+                            "[%s] Updated candidate_name from CV extraction (was filename fallback: %s)",
+                            application_id, _current_name,
+                        )
+
                 # ── Gender metadata extraction (metadata only, never scoring) ─
                 from services.gender_extractor import infer_gender
                 _gender = infer_gender(raw_cv_text)
