@@ -608,16 +608,96 @@ def _clean_job_analysis(data: dict[str, Any]) -> None:
     2. Remove non-academic values from education.fields_of_study.
     3. Cross-list deduplication (case-insensitive, priority: skills > soft_skills
        > domain_knowledge > other_requirements).
-    4. Zero out scoring_weights for empty sections, then redistribute freed weight
+    4. Reclassify non-scoreable items that the LLM misclassified into other_requirements.
+    5. Zero out scoring_weights for empty sections, then redistribute freed weight
        proportionally to skills and experience.
-    5. Clean suggested_requirements: remove approved duplicates, non-scoreable
+    6. Clean suggested_requirements: remove approved duplicates, non-scoreable
        conditions, cross-category duplicates, and empty categories.
     """
     _remove_weak_skills(data)
     _clean_education_fields(data)
     _dedup_requirements(data)
+    _reclassify_non_scoreable_from_other_requirements(data)
     _normalise_weights(data)
     _clean_suggested_requirements(data)
+
+
+def _reclassify_non_scoreable_from_other_requirements(data: dict[str, Any]) -> None:
+    """
+    Deterministic backstop: reclassify non-scoreable items misclassified into other_requirements.
+
+    If the LLM places employment conditions (location, schedule, work authorization) into
+    other_requirements (scoreable), this function moves them to non_scoreable_requirements.
+
+    Patterns checked:
+    - Location/travel: "willing to work at", "willing to travel", "based in", "relocate",
+                       "on-site", "multiple offices", "multiple locations"
+    - Availability/schedule: "available to start", "full-time availability", "shift", "on-call"
+    - Work authorization: "work permit", "right to work", "visa"
+    """
+    other_reqs = data.get("other_requirements") or []
+    if not isinstance(other_reqs, list):
+        return
+
+    # Pattern groups for non-scoreable conditions
+    location_patterns = [
+        "willing to work at", "willing to travel", "based in", "relocate",
+        "on-site", "multiple offices", "multiple locations", "work at",
+        "work at different", "work at the",
+    ]
+    availability_patterns = [
+        "available to start", "full-time availability", "shift", "on-call",
+        "work schedule", "work hours", "availability", "part-time",
+    ]
+    auth_patterns = [
+        "work permit", "right to work", "visa", "work authorization",
+        "work authorisation",  # British spelling
+    ]
+
+    all_patterns = location_patterns + availability_patterns + auth_patterns
+    category_map = {}
+    for p in location_patterns:
+        category_map[p] = "location"
+    for p in availability_patterns:
+        category_map[p] = "availability"
+    for p in auth_patterns:
+        category_map[p] = "work_authorization"
+
+    non_scoreable = data.get("non_scoreable_requirements") or []
+    if not isinstance(non_scoreable, list):
+        non_scoreable = []
+
+    reclassified = []
+    remaining = []
+
+    for item in other_reqs:
+        item_str = str(item).strip()
+        if not item_str:
+            remaining.append(item)
+            continue
+
+        item_lower = item_str.lower()
+        matched_pattern = None
+        for pattern in all_patterns:
+            if pattern in item_lower:
+                matched_pattern = pattern
+                break
+
+        if matched_pattern:
+            category = category_map.get(matched_pattern, "location")
+            non_scoreable_obj = {
+                "text": item_str,
+                "category": category,
+                "is_scoreable": False,
+                "reason": "reclassified by deterministic backstop - matches non-scoreable pattern",
+                "source_field": "other_requirements",
+            }
+            reclassified.append(non_scoreable_obj)
+        else:
+            remaining.append(item)
+
+    data["other_requirements"] = remaining
+    data["non_scoreable_requirements"] = non_scoreable + reclassified
 
 
 def _clean_suggested_requirements(data: dict[str, Any]) -> None:
