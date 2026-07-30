@@ -984,13 +984,13 @@ async def _score_cv_async(
                 _gaps = _qs.get("gaps_identified") or []
                 _questions = _qs.get("suggested_interview_questions") or []
 
-                logger.info(
-                    "[%s] cv_score QUALITATIVE_SUMMARY EXTRACTED: notes_len=%d, strengths=%s, gaps=%s, questions=%s",
+                logger.debug(
+                    "[%s] qualitative_summary extracted: notes_len=%d, strengths=%d, gaps=%d, questions=%d",
                     application_id,
                     len(_eval_notes),
-                    _strengths,
-                    _gaps,
-                    _questions,
+                    len(_strengths),
+                    len(_gaps),
+                    len(_questions),
                 )
 
                 logger.info(
@@ -1008,13 +1008,13 @@ async def _score_cv_async(
                 # Extract flat summary columns from det_score_json (source of truth)
                 _flat_cols = extract_flat_columns_from_det_score_json(_det_score_json_val)
 
-                logger.info(
-                    "[%s] cv_score BEFORE INSERT: writing strengths=%s gaps=%s notes='%s' questions=%s",
+                logger.debug(
+                    "[%s] Before INSERT: strengths=%d gaps=%d notes_len=%d questions=%d",
                     application_id,
-                    _strengths,
-                    _gaps,
-                    _eval_notes[:100] if _eval_notes else "(empty)",
-                    _questions,
+                    len(_strengths),
+                    len(_gaps),
+                    len(_eval_notes) if _eval_notes else 0,
+                    len(_questions),
                 )
 
                 await db.execute(
@@ -1252,13 +1252,13 @@ async def _score_cv_async(
                 matched_val = _flat_cols_legacy["matched_skills"] if _flat_cols_legacy["matched_skills"] else gatekeeper_result.matched_skills
                 missing_val = _flat_cols_legacy["missing_skills"] if _flat_cols_legacy["missing_skills"] else gatekeeper_result.missing_skills
 
-                logger.info(
-                    "[%s] cv_score LEGACY PATH BEFORE INSERT: strengths=%s gaps=%s notes=%s questions=%s",
+                logger.debug(
+                    "[%s] Legacy path: strengths=%d gaps=%d notes_len=%d questions=%d",
                     application_id,
-                    ai_result.get("strengths", []),
-                    ai_result.get("gaps_identified", []),
-                    ai_result.get("evaluation_notes"),
-                    ai_result.get("interview_questions", []),
+                    len(ai_result.get("strengths", [])),
+                    len(ai_result.get("gaps_identified", [])),
+                    len(str(ai_result.get("evaluation_notes", "") or "")),
+                    len(ai_result.get("interview_questions", [])),
                 )
 
                 await db.execute(

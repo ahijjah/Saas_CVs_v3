@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -1071,16 +1072,16 @@ def _parse_llm_response(
 
     # Parse qualitative_summary if present
     qs_raw = data.get("qualitative_summary")
-    logger.info(
-        "[%s] D-01 qualitative_summary KEY CHECK: present=%s, raw=%s",
+    logger.debug(
+        "[%s] D-01 qualitative_summary: present=%s, raw_len=%d",
         application_id,
         "qualitative_summary" in data,
-        str(qs_raw)[:500] if qs_raw else "NONE"
+        len(str(qs_raw)) if qs_raw else 0
     )
 
     qs = _parse_qualitative_summary(qs_raw)
-    logger.info(
-        "[%s] D-01 qualitative_summary PARSED: result=%s, has_notes=%s, strengths_count=%d, gaps_count=%d, questions_count=%d",
+    logger.debug(
+        "[%s] D-01 qualitative_summary parsed: result=%s, has_notes=%s, strengths=%d, gaps=%d, questions=%d",
         application_id,
         "QualitativeSummary" if qs else "None",
         bool(qs and qs.evaluation_notes) if qs else False,
@@ -1157,16 +1158,15 @@ Generate a qualitative summary object with the schema from the system prompt.
         qs = _parse_qualitative_summary(data)
 
         if qs:
-            logger.info(
-                "[%s] D-01 QualitativeSummary (second call): generated successfully, "
-                "strengths=%d, gaps=%d, questions=%d",
+            logger.debug(
+                "[%s] D-01 QualitativeSummary (second call): strengths=%d, gaps=%d, questions=%d",
                 application_id,
                 len(qs.strengths) if qs.strengths else 0,
                 len(qs.gaps_identified) if qs.gaps_identified else 0,
                 len(qs.suggested_interview_questions) if qs.suggested_interview_questions else 0,
             )
         else:
-            logger.warning("[%s] D-01 QualitativeSummary (second call): parsed to None", application_id)
+            logger.debug("[%s] D-01 QualitativeSummary (second call): parsed to None", application_id)
 
         return qs
 
@@ -1277,19 +1277,26 @@ class LLMCriteriaMapper:
         )
         raw_content = response.choices[0].message.content or ""
 
-        # DEBUG: Write full raw LLM response to file for Issue #10 investigation
-        # (avoids truncation and interleaving in docker logs)
-        try:
-            debug_file = f"/tmp/d01_raw_response_{application_id}.json"
-            with open(debug_file, "w") as f:
-                f.write(raw_content)
-            has_qs = "qualitative_summary" in raw_content
+        # Debug: Write full raw LLM response to file if DEBUG_SAVE_RAW_RESPONSES enabled
+        # (useful for diagnosing response truncation issues like #10)
+        has_qs = "qualitative_summary" in raw_content
+        if os.environ.get("DEBUG_SAVE_RAW_RESPONSES", "").lower() == "true":
+            try:
+                debug_file = f"/tmp/d01_raw_response_{application_id}.json"
+                with open(debug_file, "w") as f:
+                    f.write(raw_content)
+                logger.info(
+                    "[%s] D-01 raw response saved: %s, length=%d chars",
+                    application_id, debug_file, len(raw_content)
+                )
+            except Exception as exc:
+                logger.warning("[%s] Failed to write debug file: %s", application_id, exc)
+        else:
+            # Always log the summary line for production monitoring
             logger.info(
-                "[%s] D-01 RAW RESPONSE saved: %s, length=%d chars, contains qualitative_summary=%s",
-                application_id, debug_file, len(raw_content), has_qs
+                "[%s] D-01 response: length=%d chars, qualitative_summary=%s",
+                application_id, len(raw_content), has_qs
             )
-        except Exception as exc:
-            logger.warning("[%s] Failed to write debug file: %s", application_id, exc)
 
         # Parse response
         assessments, qual_summary = _parse_llm_response(raw_content, criteria_list, p_code, p_ver, model, application_id)
