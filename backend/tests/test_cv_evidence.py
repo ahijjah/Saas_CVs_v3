@@ -1260,6 +1260,109 @@ Tools: Git, Docker"""
         assert "Tools: Git, Docker" not in skill_names, \
             "Labeled-category line should NOT be captured as unregistered skill"
 
+    def test_testing_tools_skill_extraction_aws_aqhash(self):
+        """Regression test: Testing tools (Jest, xUnit, Postman, Swagger) should be extracted.
+
+        Real case: Aws Aqhash's CV with "Testing: Jest, xUnit, Postman, Swagger"
+        Issue: These tools were missing from the skill registry and got silently skipped.
+        Fix: Added 17 testing tools to _SKILL_REGISTRY.
+        """
+        cv_text = """
+        Aws Aqhash
+
+        Skills:
+        Testing: Jest, xUnit, Postman, Swagger
+        Development: React, Node.js, JavaScript
+
+        Work Experience:
+        QA Engineer - TechCorp (2019 - 2023)
+        Tested web applications and APIs.
+
+        Education:
+        Bachelor's in Computer Science, 2018
+        """
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        skill_names = {s.skill_name for s in facts.skills}
+        # All four testing tools should be extracted
+        assert "Jest" in skill_names, "Jest should be extracted"
+        assert "xUnit" in skill_names, "xUnit should be extracted"
+        assert "Postman" in skill_names, "Postman should be extracted"
+        assert "Swagger" in skill_names, "Swagger should be extracted"
+        # Also verify core skills still work
+        assert "React" in skill_names, "React should be extracted"
+        assert "Node.js" in skill_names, "Node.js should be extracted"
+
+    def test_testing_tools_skill_extraction_abdalrhman(self):
+        """Regression test: Testing tools (Postman, Selenium, JMeter) should be extracted.
+
+        Real case: Abdalrhman Abuyaqoub's CV with "Tools: Postman, selenium, Jmeter"
+        Issue: These tools were missing from the skill registry and got silently skipped.
+        Fix: Added testing tools to _SKILL_REGISTRY.
+        """
+        cv_text = """
+        Abdalrhman Abuyaqoub
+
+        Skills:
+        Tools: Git, Github, linux, Postman, selenium, Jira, Jmeter, Trello, Notion
+
+        Work Experience:
+        Test Automation Engineer - StartupXYZ (2018 - Present)
+        Automated tests using Selenium and JMeter.
+
+        Education:
+        Bachelor's in Software Engineering, 2016
+        """
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        skill_names = {s.skill_name for s in facts.skills}
+        # All three key testing tools should be extracted
+        assert "Postman" in skill_names, "Postman should be extracted"
+        assert "Selenium" in skill_names, "Selenium should be extracted (case-insensitive)"
+        assert "JMeter" in skill_names, "JMeter should be extracted"
+
+    def test_rami_yousef_role_employer_assignment_regression(self):
+        """Regression test: Rami Yousef's multi-line work experience format.
+
+        Issue: In multi-entry CVs where dates are on their own line,
+        role_title and employer were being swapped for the second entry.
+        Fix: Applied entry boundary detection to the date-at-start-of-line branch.
+        """
+        cv_text = """
+        RAMI YOUSEF
+
+        WORK EXPERIENCE
+
+        Senior Network Administrator
+        Star Company, Amman
+        March 2020 - Present
+
+        Junior IT Support
+        StartUp Inc, Ramallah
+        June 2018 - February 2020
+        """
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        # Should extract exactly 2 work experiences
+        assert len(facts.experience) == 2, f"Expected 2 work experiences, got {len(facts.experience)}"
+
+        # First entry should be correct
+        exp1 = facts.experience[0]
+        assert exp1.role_title == "Senior Network Administrator", \
+            f"Entry 1 role should be 'Senior Network Administrator', got '{exp1.role_title}'"
+        assert exp1.employer == "Star Company, Amman", \
+            f"Entry 1 employer should be 'Star Company, Amman', got '{exp1.employer}'"
+
+        # Second entry should ALSO be correct (this is where the regression occurred)
+        exp2 = facts.experience[1]
+        assert exp2.role_title == "Junior IT Support", \
+            f"Entry 2 role should be 'Junior IT Support', got '{exp2.role_title}'"
+        assert exp2.employer == "StartUp Inc, Ramallah", \
+            f"Entry 2 employer should be 'StartUp Inc, Ramallah', got '{exp2.employer}'"
+
 
 # ── Experience Extraction: Month+Year Date Format Regressions ────────────────
 

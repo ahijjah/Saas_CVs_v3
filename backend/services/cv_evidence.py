@@ -374,6 +374,24 @@ _SKILL_REGISTRY: tuple[tuple[str, tuple[str, ...]], ...] = (
     # ── Methodology ───────────────────────────────────────────────────────
     ("Scrum",                (r"\bscrum\b",)),
     ("Agile",                (r"\bagile\b",)),
+    # ── Testing & QA frameworks ────────────────────────────────────────────
+    ("Jest",                 (r"\bjest\b",)),
+    ("xUnit",                (r"\bxunit\b",)),
+    ("JUnit",                (r"\bjunit\b",)),
+    ("PyTest",               (r"\bpytest\b",)),
+    ("Mocha",                (r"\bmocha\b",)),
+    ("Chai",                 (r"\bchai\b",)),
+    ("Cypress",              (r"\bcypress\b",)),
+    ("Selenium",             (r"\bselenium\b",)),
+    ("Postman",              (r"\bpostman\b",)),
+    ("Swagger",              (r"\bswagger\b",)),
+    ("JMeter",               (r"\bjmeter\b",)),
+    ("TestNG",               (r"\btestng\b",)),
+    ("Playwright",           (r"\bplaywright\b",)),
+    ("Cucumber",             (r"\bcucumber\b",)),
+    ("Karma",                (r"\bkarma\b",)),
+    ("Jasmine",              (r"\bjasmine\b",)),
+    ("Robot Framework",      (r"\brobot\s+framework\b",)),
 )
 
 # Compile skill patterns once at module load
@@ -1621,10 +1639,10 @@ def _extract_experience(
                 if date_line_idx >= 1:
                     role_title = all_lines[date_line_idx - 1].strip()[:100]
             # Check if date is embedded in a line with company/location (e.g., "Company, Date")
-            elif date_line_idx >= 0 and m.start() > 0:
-                # Date is embedded in this line; extract company from before the date
+            elif date_line_idx >= 0:
+                # Check if date is embedded in this line or on its own
                 date_start_in_line = date_line.find(m.group())
-                if date_start_in_line > 0:
+                if date_start_in_line > 0 and date_line[:date_start_in_line].strip():
                     # Extract everything before the date as potential company/location
                     before_date = date_line[:date_start_in_line].strip()
                     # Remove trailing comma/separator if present
@@ -1633,30 +1651,79 @@ def _extract_experience(
                     if date_line_idx >= 1:
                         role_title = all_lines[date_line_idx - 1].strip()[:100]
                 else:
-                    # Date is at the start of the line; use standard logic
+                    # Date is at the start of the line; use standard logic with entry boundary detection
                     preceding = all_lines[:date_line_idx]
                     if preceding:
-                        last_line = preceding[-1].strip()
-                        if len(preceding) >= 3 and _is_likely_location_line(last_line):
-                            role_title = preceding[-3].strip()[:100]
-                            employer = preceding[-2].strip()[:100]
+                        # For multi-entry CVs, find where THIS entry starts (after empty line or previous date)
+                        entry_start_idx = 0
+                        for i in range(len(preceding) - 1, -1, -1):
+                            line = preceding[i].strip()
+                            if not line:  # empty line marks entry boundary
+                                entry_start_idx = i + 1
+                                break
+                            if _DATE_RANGE_RE.search(line) and i < len(preceding) - 1:
+                                # found a previous date; this entry starts after it
+                                entry_start_idx = i + 1
+                                break
+
+                        # Use only lines from THIS entry
+                        entry_lines = preceding[entry_start_idx:] if entry_start_idx < len(preceding) else preceding
+
+                        if entry_lines:
+                            last_line = entry_lines[-1].strip()
+                            if len(entry_lines) >= 3 and _is_likely_location_line(last_line):
+                                role_title = entry_lines[-3].strip()[:100]
+                                employer = entry_lines[-2].strip()[:100]
+                            elif len(entry_lines) == 2:
+                                # Two-line format: role on first line, company on second line
+                                role_title = entry_lines[0].strip()[:100]
+                                employer = entry_lines[1].strip()[:100]
+                            else:
+                                role_title = entry_lines[-1].strip()[:100]
+                                employer = entry_lines[-2].strip()[:100] if len(entry_lines) >= 2 else ""
                         else:
-                            role_title = preceding[-1].strip()[:100]
+                            # Fallback if no entry_lines found
+                            role_title = preceding[-1].strip()[:100] if preceding else ""
                             employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
             # ELSE: use standard logic (date on separate line from role/company)
             else:
                 # Standard multi-line format: get preceding lines as if date wasn't there
                 preceding = all_lines[:date_line_idx]
                 if preceding:
-                    last_line = preceding[-1].strip()
-                    # Handle the Title / Company / Location format (e.g., Rami's CV)
-                    if len(preceding) >= 3 and _is_likely_location_line(last_line):
-                        # Format: Title / Company / Location, each on separate line
-                        role_title = preceding[-3].strip()[:100]
-                        employer = preceding[-2].strip()[:100]
+                    # For multi-entry CVs, find where THIS entry starts (after empty line or previous date)
+                    # by looking for empty lines or lines that contain dates
+                    entry_start_idx = 0
+                    for i in range(len(preceding) - 1, -1, -1):
+                        line = preceding[i].strip()
+                        if not line:  # empty line marks entry boundary
+                            entry_start_idx = i + 1
+                            break
+                        if _DATE_RANGE_RE.search(line) and i < len(preceding) - 1:
+                            # found a previous date; this entry starts after it
+                            entry_start_idx = i + 1
+                            break
+
+                    # Use only lines from THIS entry
+                    entry_lines = preceding[entry_start_idx:] if entry_start_idx < len(preceding) else preceding
+
+                    if entry_lines:
+                        last_line = entry_lines[-1].strip()
+                        # Handle the Title / Company / Location format (e.g., Rami's CV)
+                        if len(entry_lines) >= 3 and _is_likely_location_line(last_line):
+                            # Format: Title / Company / Location, each on separate line
+                            role_title = entry_lines[-3].strip()[:100]
+                            employer = entry_lines[-2].strip()[:100]
+                        elif len(entry_lines) == 2:
+                            # Two-line format: role on first line, company on second line
+                            role_title = entry_lines[0].strip()[:100]
+                            employer = entry_lines[1].strip()[:100]
+                        else:
+                            # Original format: single line or Title / Company without location on own line
+                            role_title = entry_lines[-1].strip()[:100]
+                            employer = entry_lines[-2].strip()[:100] if len(entry_lines) >= 2 else ""
                     else:
-                        # Original format: single line or Title / Company without location on own line
-                        role_title = preceding[-1].strip()[:100]
+                        # Fallback if no entry_lines found
+                        role_title = preceding[-1].strip()[:100] if preceding else ""
                         employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
         else:
             # Fallback if date not found in lines (shouldn't happen with wider context)
@@ -1666,6 +1733,10 @@ def _extract_experience(
                 if len(preceding) >= 3 and _is_likely_location_line(last_line):
                     role_title = preceding[-3].strip()[:100]
                     employer = preceding[-2].strip()[:100]
+                elif len(preceding) == 2:
+                    # Two-line format: role on first line, company on second line
+                    role_title = preceding[0].strip()[:100]
+                    employer = preceding[1].strip()[:100]
                 else:
                     role_title = preceding[-1].strip()[:100]
                     employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
