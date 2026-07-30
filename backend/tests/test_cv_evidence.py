@@ -1363,6 +1363,82 @@ Tools: Git, Docker"""
         assert exp2.employer == "StartUp Inc, Ramallah", \
             f"Entry 2 employer should be 'StartUp Inc, Ramallah', got '{exp2.employer}'"
 
+    def test_candidate_name_extraction_aws_aqhash(self):
+        """Regression test: Candidate name extraction from CV text (Name | Title format).
+
+        Issue F: Candidate name was falling back to filename when Excel had no name column.
+        Real case: Aws Aqhash's CV with "Aws Aqhash | Software Engineer" as first line.
+        Fix: Added _extract_candidate_name() function to extract name from CV text.
+        """
+        cv_text = """Aws Aqhash | Software Engineer
+
+Professional Summary:
+With 5 years of experience in full-stack development.
+
+Skills:
+JavaScript, React, Node.js, Python, Docker, AWS
+
+Work Experience:
+Senior Developer - TechCorp (2019 - 2023)
+
+Education:
+Bachelor's in Computer Science, 2018
+"""
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        assert facts.candidate_name == "Aws Aqhash", \
+            f"Expected candidate_name='Aws Aqhash', got '{facts.candidate_name}'"
+
+    def test_candidate_name_extraction_mojahed(self):
+        """Regression test: Candidate name extraction when age follows name line.
+
+        Issue F: Name extraction needed to handle format where age/DOB immediately follows name.
+        Real case: Mojahed Jamal Sarhan's CV with "Mojahed Jamal Sarhan" on line 1,
+        "24 years old" on line 2.
+        Fix: Name extractor correctly stops at age/metadata line.
+        """
+        cv_text = """Mojahed Jamal Sarhan
+24 years old
+
+Professional Summary:
+Talented software engineer with expertise in full-stack development.
+
+Skills:
+Python, Django, PostgreSQL, Docker
+
+Work Experience:
+Junior Developer - StartupXYZ (2021 - Present)
+
+Education:
+Bachelor's in Software Engineering, 2020
+"""
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        assert facts.candidate_name == "Mojahed Jamal Sarhan", \
+            f"Expected candidate_name='Mojahed Jamal Sarhan', got '{facts.candidate_name}'"
+
+    def test_candidate_name_extraction_standard_format(self):
+        """Regression test: Standard name-only first line format.
+
+        Verify that simple "FirstName LastName" on its own line is extracted correctly.
+        """
+        cv_text = """Ahmad Ibrahim
+
+Experienced Software Developer
+
+Skills: Python, JavaScript, Docker
+
+Work Experience:
+Senior Developer - TechCorp (2018 - Present)
+"""
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        assert facts.candidate_name == "Ahmad Ibrahim", \
+            f"Expected candidate_name='Ahmad Ibrahim', got '{facts.candidate_name}'"
+
 
 # ── Experience Extraction: Month+Year Date Format Regressions ────────────────
 

@@ -231,6 +231,11 @@ class CVFacts:
     total_char_count: int
     """Total character count of the normalised CV text."""
 
+    # ── Metadata ──────────────────────────────────────────────────────────
+    candidate_name: str = ""
+    """Candidate name extracted from CV text (first line or name-like line).
+    Used as fallback when Excel doesn't provide an explicit name column."""
+
     # ── Evidence collections ──────────────────────────────────────────────
     skills: list[SkillEvidence] = field(default_factory=list)
     """All skill evidence items, explicit and inferred, in extraction order."""
@@ -1780,6 +1785,80 @@ def _extract_experience(
     return blocks, total_years
 
 
+def _extract_candidate_name(full_text: str) -> str | None:
+    """Extract candidate name from the first few lines of CV text.
+
+    Handles formats:
+    - "Name | Title" (e.g. "Aws Aqhash | Software Engineer")
+    - "Name" on its own line (e.g. "Mojahed Jamal Sarhan")
+    - "Name, Title" (e.g. "John Smith, Senior Developer")
+
+    Returns the extracted name, or None if no valid name found.
+    """
+    if not full_text or not full_text.strip():
+        return None
+
+    lines = full_text.strip().split('\n')
+
+    # Scan first 5 lines for a name candidate
+    for i, line in enumerate(lines[:5]):
+        line = line.strip()
+        if not line:
+            continue
+
+        # Skip lines that are clearly section headers or metadata
+        if any(keyword in line.lower() for keyword in [
+            "summary", "experience", "education", "skills", "phone",
+            "email", "address", "linkedin", "github", "years old",
+            "date of birth", "dob", "age:"
+        ]):
+            continue
+
+        # Handle "Name | Title" format
+        if " | " in line:
+            parts = line.split(" | ")
+            name = parts[0].strip()
+            # Validate: name should be 2-4 words (1-4 parts separated by spaces)
+            name_words = name.split()
+            if 1 <= len(name_words) <= 4 and len(name) < 100:
+                # Additional check: name shouldn't contain typical non-name words
+                if not any(skip in name.lower() for skip in ["cv", "pdf", "document", "resume"]):
+                    return name
+            continue
+
+        # Handle "Name, Title" format
+        if "," in line:
+            parts = line.split(",")
+            name = parts[0].strip()
+            name_words = name.split()
+            # Only accept if looks like a name (2-4 words)
+            if 1 <= len(name_words) <= 4 and len(name) < 100:
+                if not any(skip in name.lower() for skip in ["cv", "pdf", "document", "resume"]):
+                    # Avoid if next line is clearly age/metadata and this looks too short
+                    if i + 1 < len(lines):
+                        next_line = lines[i + 1].strip().lower()
+                        if any(x in next_line for x in ["years old", "age ", "date of birth", "dob"]):
+                            # This line + age metadata = likely a name line
+                            return name
+                    return name
+            continue
+
+        # Handle standalone name line (just a name, nothing else)
+        name_words = line.split()
+        # Heuristic: if line has 1-4 words, all capitalized or title-cased, likely a name
+        if 1 <= len(name_words) <= 4 and len(line) < 100:
+            # Check if it looks like a name (no numbers, no special chars except hyphens/apostrophes)
+            if re.match(r"^[A-Za-z\s\-']+$", line):
+                # Additional check: avoid abbreviations and common non-names
+                if not any(skip in line.lower() for skip in ["cv", "pdf", "document", "resume", "confidential"]):
+                    # Most capitalized words in the line suggests a name
+                    capitalized = sum(1 for word in name_words if word and word[0].isupper())
+                    if capitalized >= len(name_words) - 1:  # Allow 1 lowercase word (like "van", "de")
+                        return line
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Public extractor class
 # ---------------------------------------------------------------------------
@@ -1860,6 +1939,9 @@ class CVFactsExtractor:
         # Use original cv_text (newlines intact) so section headers are preserved.
         sections = _split_into_sections(cv_text)
 
+        # Extract candidate name from CV text
+        candidate_name = _extract_candidate_name(cv_text) or ""
+
         skills = _extract_skills(sections, cv_text)
         education, highest_edu = _extract_education(cv_text)
         certifications = _extract_certifications(cv_text)
@@ -1875,6 +1957,7 @@ class CVFactsExtractor:
         skill_names = list(dict.fromkeys(s.skill_name for s in skills))
 
         return CVFacts(
+            candidate_name=candidate_name,
             language=language,
             total_char_count=char_count,
             skills=skills,

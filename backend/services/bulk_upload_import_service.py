@@ -30,6 +30,7 @@ field and are preserved for potential future use.
 """
 
 import logging
+import re
 import zipfile
 from pathlib import Path
 
@@ -147,6 +148,64 @@ def determine_final_batch_status(
 
 # ── CV extraction from ZIP ────────────────────────────────────────────────────
 
+def _extract_name_from_filename(cv_filename: str) -> str | None:
+    """Try to extract a candidate name from CV filename.
+
+    Handles patterns like:
+    - "f-27-549-16725482_wDYL8a2T_Aws_Aqhash_CV.pdf" → "Aws Aqhash"
+    - "CV_FirstName_LastName.pdf" → "FirstName LastName"
+    - "candidate_name_resume.pdf" → "candidate name"
+
+    Returns extracted name, or None if extraction fails.
+    """
+    # Remove file extension
+    name_part = cv_filename.rsplit(".", 1)[0] if "." in cv_filename else cv_filename
+
+    # Remove common prefixes like "CV_", "resume_", "CV"
+    name_part = re.sub(r"^(CV|resume|application)[\s_-]*", "", name_part, flags=re.IGNORECASE)
+
+    # Remove common suffixes like "_CV", "_resume", etc.
+    name_part = re.sub(r"[\s_-]+(CV|resume|application|EN|AR|AR_SA|ar|en)$", "", name_part, flags=re.IGNORECASE)
+
+    # Split by underscores or hyphens to find name-like segments
+    segments = re.split(r"[_\-]+", name_part)
+
+    # Filter out UUID-like and ID-like segments (all digits, hex patterns, etc.)
+    candidate_segments = []
+    for seg in segments:
+        seg = seg.strip()
+        # Skip if looks like UUID, ID, or hash (all digits, all alphanumeric of certain length)
+        if not seg:
+            continue
+        if re.match(r"^\d+$", seg):  # all digits
+            continue
+        if len(seg) > 20 and re.match(r"^[a-zA-Z0-9]+$", seg):  # long hash-like string
+            continue
+        # Keep segments that look like names (start with letter, mostly letters)
+        if re.match(r"^[A-Z][a-zA-Z\-']*$", seg):
+            candidate_segments.append(seg)
+
+    # Filter: prefer longer segments, skip pure uppercase abbreviations if we have other options
+    name_segments = []
+    for seg in candidate_segments:
+        # Skip very short pure-uppercase segments (language codes, etc.) only if we have longer alternatives
+        if len(seg) <= 2 or (len(seg) == 3 and seg.isupper()):
+            # Check if this looks like a name part (has lowercase) or if it's the only option
+            if len(candidate_segments) == 1 or any(c.islower() for c in seg):
+                name_segments.append(seg)
+        else:
+            name_segments.append(seg)
+
+    # Join back with spaces if we found 1-4 name-like segments
+    if 1 <= len(name_segments) <= 4:
+        extracted_name = " ".join(name_segments)
+        # Additional validation: name should be reasonable length
+        if 3 < len(extracted_name) < 100:
+            return extracted_name
+
+    return None
+
+
 def load_cv_from_zip(
     zf: "zipfile.ZipFile",
     zip_meta_lookup: dict,
@@ -231,7 +290,26 @@ async def _import_single_row(
     cv_content, mime_type = load_cv_from_zip(zf, zip_meta_lookup, cv_filename)
 
     # Candidate fields (name is required by applications table)
-    candidate_name  = str(candidate_data.get("name") or "").strip() or cv_filename
+    # Priority: Excel column → extract from filename → raw filename
+    candidate_name = str(candidate_data.get("name") or "").strip()
+    if not candidate_name:
+        # Try to extract a sensible name from the filename
+        extracted_from_filename = _extract_name_from_filename(cv_filename)
+        if extracted_from_filename:
+            candidate_name = extracted_from_filename
+            logger.info(
+                "[bulk_import] Extracted name '%s' from filename '%s'",
+                candidate_name, cv_filename
+            )
+        else:
+            # Fall back to raw filename (minus extension)
+            candidate_name = cv_filename.rsplit(".", 1)[0] if "." in cv_filename else cv_filename
+            logger.warning(
+                "[bulk_import] No name in Excel and could not extract from filename; "
+                "using raw filename '%s' as candidate_name (application_id will be set later)",
+                candidate_name
+            )
+
     candidate_email = str(candidate_data.get("email") or "").strip() or None
     candidate_phone = str(candidate_data.get("phone") or "").strip() or None
 
