@@ -422,43 +422,4 @@ CREATE TRIGGER trg_jobs_updated_at      BEFORE UPDATE ON jobs           FOR EACH
 CREATE TRIGGER trg_criteria_updated_at  BEFORE UPDATE ON job_criteria   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_apps_updated_at      BEFORE UPDATE ON applications   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- ── AI Prompts ────────────────────────────────────────────────────────────────
--- Stores versioned AI prompts used throughout the CV scoring pipeline.
--- Multiple versions per prompt_code are kept; only one version can be active.
--- Workers load the active prompt at task execution time, falling back to the
--- hardcoded defaults in ai_service.py if no active DB prompt is found.
-CREATE TABLE IF NOT EXISTS ai_prompts (
-    prompt_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    prompt_code          VARCHAR(100) NOT NULL,
-    prompt_name          VARCHAR(255) NOT NULL,
-    prompt_category      VARCHAR(50)  NOT NULL CHECK (prompt_category IN ('criteria','scoring','screening','summary','interview','knockout','mapping')),
-    system_prompt        TEXT         NOT NULL,
-    user_prompt_template TEXT,
-    model                VARCHAR(100) NOT NULL DEFAULT 'gpt-4o-mini',
-    temperature          DECIMAL(3,2) NOT NULL DEFAULT 0.20 CHECK (temperature >= 0 AND temperature <= 2),
-    max_tokens           INTEGER      NOT NULL DEFAULT 2000,
-    output_language      VARCHAR(10)  NOT NULL DEFAULT 'ar',
-    is_active            BOOLEAN      NOT NULL DEFAULT FALSE,
-    version              INTEGER      NOT NULL DEFAULT 1,
-    notes                TEXT,
-    created_at           TIMESTAMPTZ  DEFAULT NOW(),
-    updated_at           TIMESTAMPTZ  DEFAULT NOW(),
-    updated_by           VARCHAR(255),
-    updated_by_email     VARCHAR(255),
-    UNIQUE (prompt_code, version)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ai_prompts_code   ON ai_prompts (prompt_code);
-CREATE INDEX IF NOT EXISTS idx_ai_prompts_active ON ai_prompts (prompt_code, is_active) WHERE is_active = TRUE;
-
-CREATE OR REPLACE FUNCTION update_ai_prompts_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER trg_ai_prompts_updated_at BEFORE UPDATE ON ai_prompts FOR EACH ROW EXECUTE FUNCTION update_ai_prompts_updated_at();
-
 COMMIT;
