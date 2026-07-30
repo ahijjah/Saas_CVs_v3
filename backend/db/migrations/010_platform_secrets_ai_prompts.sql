@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS ai_prompts (
     user_prompt_template TEXT,
     model                VARCHAR(100) NOT NULL DEFAULT 'gpt-4o-mini',
     temperature          DECIMAL(3,2) NOT NULL DEFAULT 0.20 CHECK (temperature >= 0 AND temperature <= 2),
-    max_tokens           INTEGER,
+    max_tokens           INTEGER      NOT NULL DEFAULT 2000,
     output_language      VARCHAR(10)  NOT NULL DEFAULT 'ar',
     is_active            BOOLEAN      NOT NULL DEFAULT FALSE,
     version              INTEGER      NOT NULL DEFAULT 1,
