@@ -1682,9 +1682,12 @@ def _extract_experience_dateless_fallback(
             if not re.search(r'[–—/|].*:\s*[A-Z]', line):
                 # Filter out if we're inside a bullet context (likely a sub-role)
                 if not in_bullet_context:
-                    # Accept if short (< 100 chars)
-                    if len(line.strip()) < 100:
-                        is_title = True
+                    # Filter out lines starting with lowercase (wrapped continuations, not titles)
+                    # Titles start with uppercase (company names, roles)
+                    if line[0].isupper():
+                        # Accept if short (< 100 chars)
+                        if len(line.strip()) < 100:
+                            is_title = True
 
         if is_title:
             # Save previous entry
