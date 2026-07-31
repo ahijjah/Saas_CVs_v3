@@ -900,7 +900,8 @@ def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[Skil
     # After closed-set registry pass, capture skills under explicit "Skills" header
     # that weren't matched by the registry. These get lower confidence (0.55) and are
     # flagged "unregistered_skill" so downstream can distinguish them from known terms.
-    skills_section_lines = sections.get("skills", [])
+    # Include both "skills" and "soft_skills" sections if present
+    skills_section_lines = sections.get("skills", []) + sections.get("soft_skills", [])
     # Merge skills that were split by PDF line wraps (e.g., "Problem-Solving Mindset /" + "to Detail")
     skills_section_lines = _merge_split_skills(skills_section_lines)
     for line in skills_section_lines:
