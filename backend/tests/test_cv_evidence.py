@@ -1670,3 +1670,49 @@ Al-Quds Open University, 2018
         exp = facts.experience[0]
         assert exp.employer == "Acme Corp", \
             f"Should extract employer correctly, got {repr(exp.employer)}"
+
+    def test_bs_degree_recognition_hassan_albow(self):
+        """Regression test for B.S. degree recognition (US abbreviation).
+
+        Hassan Albow's CV uses 'B.S.' (Bachelor of Science) which is common in
+        US-style CVs. Previously, only B.Sc., B.A., B.Eng. were recognized.
+        This test confirms B.S. is now correctly identified as a Bachelor's degree.
+        """
+        cv_text = """Education
+• B.S. in Computer Engineering
+Al-Quds University
+Sep 2017 - sep 2024
+Experience
+• Network Administrator/ Office Supervisor
+Fast Link
+Jan 2024"""
+
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        assert len(facts.education) >= 1, "Should extract B.S. degree"
+        edu = facts.education[0]
+        assert edu.degree_level == "Bachelor's", \
+            f"Expected Bachelor's, got {edu.degree_level}"
+        assert edu.field_of_study == "Computer Engineering", \
+            f"Expected Computer Engineering, got {edu.field_of_study}"
+        assert edu.institution == "Al-Quds University", \
+            f"Expected Al-Quds University, got {edu.institution}"
+
+    def test_ms_degree_recognition(self):
+        """Regression test for M.S. degree recognition (US abbreviation).
+
+        Similar to B.S., M.S. (Master of Science) is common in US CVs.
+        Previously, only M.Sc., M.A., M.Eng. were recognized.
+        """
+        cv_text = "Education\nM.S. in Computer Science\nStanford University\n2022"
+
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        assert len(facts.education) >= 1, "Should extract M.S. degree"
+        edu = facts.education[0]
+        assert edu.degree_level == "Master's", \
+            f"Expected Master's, got {edu.degree_level}"
+        assert "Computer Science" in edu.field_of_study, \
+            f"Expected Computer Science in field, got {edu.field_of_study}"

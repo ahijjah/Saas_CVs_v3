@@ -483,8 +483,8 @@ _FIELD_AFTER_OF_RE = re.compile(
 # EDU-02.2: degree-line detector used to prevent education entries from leaking
 # into experience role_title / employer fields.
 _EDU_DEGREE_LINE_RE = re.compile(
-    r"\b(bachelor(?:'?s)?|b\.?\s*sc\.?|b\.?\s*a\.?|b\.?\s*eng\."
-    r"|master(?:'?s|\s+(?:of|in|degree))|m\.?\s*sc\.?|mba|m\.?\s*b\.?\s*a\."
+    r"\b(bachelor(?:'?s)?|b\.?\s*sc\.?|b\.?\s*s\.?|b\.?\s*a\.?|b\.?\s*eng\."
+    r"|master(?:'?s|\s+(?:of|in|degree))|m\.?\s*sc\.?|m\.?\s*s\.?|mba|m\.?\s*b\.?\s*a\."
     r"|ph\.?\s*d\.?|doctorate|diploma"
     r"|بكالوريوس|ليسانس|ماجستير|دكتوراه|دبلوم)\b",
     re.IGNORECASE | re.UNICODE,
@@ -499,8 +499,8 @@ _EDU_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
     # "master the process" / "master sales skills" from matching.
     # Match ASCII apostrophe (U+0027) and curly/right single quote (U+2019) for degree names.
     # Use character class with both apostrophe characters via Unicode escapes.
-    ("Master\x27s",   re.compile("\\b(master(?:[\x27\u2019]?s|\\s+(?:of|in|degree))|m\\.?\\s*sc\\.?|mba|m\\.?\\s*b\\.?\\s*a\\.?|m\\.?\\s*a\\.?|m\\.?\\s*eng\\.?|ماجستير)\\b", re.IGNORECASE | re.UNICODE)),
-    ("Bachelor\x27s", re.compile("\\b(bachelor(?:[\x27\u2019]?s)?|b\\.?\\s*sc\\.?|b\\.?\\s*a\\.?|b\\.?\\s*eng\\.?|بكالوريوس|ليسانس)\\b", re.IGNORECASE | re.UNICODE)),
+    ("Master\x27s",   re.compile("\\b(master(?:[\x27\u2019]?s|\\s+(?:of|in|degree))|m\\.?\\s*sc\\.?|m\\.?\\s*s\\.?|mba|m\\.?\\s*b\\.?\\s*a\\.?|m\\.?\\s*a\\.?|m\\.?\\s*eng\\.?|ماجستير)\\b", re.IGNORECASE | re.UNICODE)),
+    ("Bachelor\x27s", re.compile("\\b(bachelor(?:[\x27\u2019]?s)?|b\\.?\\s*sc\\.?|b\\.?\\s*s\\.?|b\\.?\\s*a\\.?|b\\.?\\s*eng\\.?|بكالوريوس|ليسانس)\\b", re.IGNORECASE | re.UNICODE)),
     ("Diploma",    re.compile(r"\b(diploma|hnd|higher\s+national\s+diploma|دبلوم)\b",              re.IGNORECASE | re.UNICODE)),
     ("Associate",  re.compile(r"\b(associate\s+degree)\b",                                          re.IGNORECASE | re.UNICODE)),
     ("High School",re.compile(r"\b(high\s+school|secondary\s+school|gcse|baccalaureate|a-levels?|o-levels?|ثانوية\s+عامة|شهادة\s+ثانوية)\b", re.IGNORECASE | re.UNICODE)),
