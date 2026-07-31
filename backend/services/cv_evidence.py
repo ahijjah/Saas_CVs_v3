@@ -1692,6 +1692,27 @@ def _extract_experience(
                             # Fallback if no entry_lines found
                             role_title = preceding[-1].strip()[:100] if preceding else ""
                             employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
+
+                    # If employer is still empty, check lines AFTER the date line
+                    # This handles formats like: "Role\nDate\nEmployer · Location"
+                    if not employer and date_line_idx + 1 < len(all_lines):
+                        next_line = all_lines[date_line_idx + 1].strip()
+                        if next_line:
+                            # Check if this line has a delimiter (pipe or middle-dot) indicating employer + location
+                            if " | " in next_line or " · " in next_line:
+                                # Extract employer (before first delimiter)
+                                delim = " | " if " | " in next_line else " · "
+                                parts = next_line.split(delim)
+                                if parts:
+                                    employer = parts[0].strip()[:100]
+                            elif " , " in next_line or "," in next_line:
+                                # Comma-separated format: "Employer, Location"
+                                parts = next_line.split(",")
+                                if parts:
+                                    employer = parts[0].strip()[:100]
+                            else:
+                                # Single value line after date, assume it's employer
+                                employer = next_line[:100]
             # ELSE: use standard logic (date on separate line from role/company)
             else:
                 # Standard multi-line format: get preceding lines as if date wasn't there
