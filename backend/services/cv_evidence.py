@@ -743,6 +743,17 @@ _EXPLICIT_EXP_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 
+# Date patterns used to detect if a CV has any dates at all (for two-pass extraction).
+# If no dates are detected, the fallback (date-less) extraction is used.
+_DATE_PATTERN_STRINGS = [
+    r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2},? \d{4}\b',
+    r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{4}\b',
+    r'\b\d{1,2}/\d{1,2}/\d{4}\b',
+    r'\b(?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}\b',
+    r'\bPresent\b|\bCurrent\b|\bNow\b|\bOngoing\b',
+]
+_HAS_DATES_RE = re.compile('|'.join(_DATE_PATTERN_STRINGS), re.IGNORECASE)
+
 
 # ---------------------------------------------------------------------------
 # Private helper functions
@@ -796,6 +807,50 @@ def _is_arabic_match(raw: str) -> bool:
     return any("؀" <= c <= "ۿ" for c in raw)
 
 
+def _merge_split_skills(skill_lines: list[str]) -> list[str]:
+    """Merge skills that were split by PDF line wraps or column boundaries.
+
+    Merges adjacent lines where:
+    - Current line doesn't end with terminal punctuation (., !, ?, :)
+    - Next line starts with lowercase, (, or continuation chars (&, |, /)
+    - Next line is not a category header
+    """
+    merged = []
+    i = 0
+    while i < len(skill_lines):
+        current = skill_lines[i].strip()
+
+        # Check if we should merge with next line
+        if i + 1 < len(skill_lines):
+            next_line = skill_lines[i + 1].strip()
+
+            # Merge if all conditions met
+            should_merge = (
+                # Current doesn't end with terminal punctuation
+                current and not current[-1] in '.!?:' and
+                # Next line starts with lowercase, parenthesis, or continuation chars
+                next_line and (
+                    next_line[0].islower() or
+                    next_line.startswith('(') or
+                    next_line[0] in '&|/'
+                ) and
+                # Next is not a category header (ALL-CAPS with colon)
+                not (next_line.isupper() and ':' in next_line)
+            )
+
+            if should_merge:
+                merged_item = f"{current} {next_line}"
+                merged.append(merged_item)
+                i += 2
+                continue
+
+        if current:
+            merged.append(current)
+        i += 1
+
+    return merged
+
+
 def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[SkillEvidence]:
     """Extract skills with priority: skills section > experience > other.
 
@@ -846,6 +901,8 @@ def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[Skil
     # that weren't matched by the registry. These get lower confidence (0.55) and are
     # flagged "unregistered_skill" so downstream can distinguish them from known terms.
     skills_section_lines = sections.get("skills", [])
+    # Merge skills that were split by PDF line wraps (e.g., "Problem-Solving Mindset /" + "to Detail")
+    skills_section_lines = _merge_split_skills(skills_section_lines)
     for line in skills_section_lines:
         line_stripped = line.strip()
         if not line_stripped:
@@ -866,14 +923,17 @@ def _extract_skills(sections: dict[str, list[str]], full_text: str) -> list[Skil
 
         # Only capture lines that look like actual skill items:
         # - Are reasonably short (< 100 chars, avoids full sentences/paragraphs)
-        # - Start with bullet/dash/number pattern OR are very short (< 40 chars)
+        # - Start with bullet/dash/number pattern OR are short (< 40 chars)
+        # - OR contain technical skill markers (parentheses, slashes, multiple separators)
         # This prevents capturing prose paragraphs as skill names
         bullet_pattern = r"^[\s•\-*#\d\.]+\s*"
         is_bullet = bool(re.match(bullet_pattern, line))
         is_short = len(line_stripped) < 40
         is_reasonable_length = len(line_stripped) < 100
+        # Merged technical skills often have parens (for tech annotations) or slashes (for multiple skills)
+        is_technical_skill = bool(re.search(r'[\(/]', line_stripped))
 
-        if (is_bullet or is_short) and is_reasonable_length:
+        if (is_bullet or is_short or is_technical_skill) and is_reasonable_length:
             # Clean up the skill name by removing leading bullets/whitespace
             skill_name = re.sub(bullet_pattern, "", line_stripped)
             if skill_name:  # Only add if something remains after cleanup
@@ -1571,6 +1631,135 @@ def _extract_domain_signals(full_text: str) -> list[DomainSignal]:
     return signals
 
 
+def _has_date_patterns(text: str) -> bool:
+    """Check if text contains any date patterns."""
+    return bool(_HAS_DATES_RE.search(text))
+
+
+def _extract_experience_dateless_fallback(
+    sections: dict[str, list[str]],
+    full_text: str,
+) -> tuple[list[ExperienceEvidence], float]:
+    """Fallback experience extraction for CVs without dates.
+
+    Strategy: Detect entry titles (company/role patterns) and group descriptive
+    text until the next title. Returns (blocks, 0.0) since no date-based years
+    can be calculated for date-less entries.
+    """
+    exp_section = "\n".join(sections.get("experience", []))
+    if not exp_section.strip():
+        return [], 0.0
+
+    lines = exp_section.split('\n')
+    lines = [l for l in lines if l.strip()]
+
+    blocks: list[ExperienceEvidence] = []
+    current_title = None
+    current_description: list[str] = []
+    in_bullet_context = False
+
+    for line in lines:
+        # Track if we're inside a bullet-point/responsibility list
+        if 'key responsibilities' in line.lower() or 'responsibilities:' in line.lower():
+            in_bullet_context = True
+
+        # Detect if this line is an entry title
+        is_title = False
+
+        # Pattern 1: Starts with "I currently work in" or "I work in"
+        if re.match(r'^i\s+(?:currently\s+)?work\s+in', line, re.IGNORECASE):
+            is_title = True
+            in_bullet_context = False
+
+        # Pattern 2: "Leadership & Volunteering" (and similar category titles)
+        if re.match(r'^leadership\s+&\s+volunteering', line, re.IGNORECASE):
+            is_title = True
+
+        # Pattern 3: Has separator (–, —, /, |) but is NOT a sub-entry or bullet item
+        if not is_title and re.search(r'[–—/|]', line):
+            # Filter out sub-entries: lines with ": description" after separator
+            if not re.search(r'[–—/|].*:\s*[A-Z]', line):
+                # Filter out if we're inside a bullet context (likely a sub-role)
+                if not in_bullet_context:
+                    # Accept if short (< 100 chars)
+                    if len(line.strip()) < 100:
+                        is_title = True
+
+        if is_title:
+            # Save previous entry
+            if current_title:
+                employer, role = _extract_employer_role_from_title(current_title)
+                raw = f"{current_title} {' '.join(current_description[:100])}"
+                blocks.append(ExperienceEvidence(
+                    employer=employer,
+                    role_title=role,
+                    years=0.0,
+                    raw_text=raw[:300],
+                ))
+
+            current_title = line.strip()
+            current_description = []
+        elif current_title and line.strip():
+            # Accumulate description text
+            current_description.append(line.strip())
+
+    # Save the last entry
+    if current_title:
+        employer, role = _extract_employer_role_from_title(current_title)
+        raw = f"{current_title} {' '.join(current_description[:100])}"
+        blocks.append(ExperienceEvidence(
+            employer=employer,
+            role_title=role,
+            years=0.0,
+            raw_text=raw[:300],
+        ))
+
+    return blocks, 0.0
+
+
+def _extract_employer_role_from_title(title_line: str) -> tuple[str, str]:
+    """Extract employer and role from an experience title line.
+
+    Handles multiple formats:
+    - "Company – Role" → employer, role
+    - "Role | Company" → employer, role
+    - "I currently work in Company" → employer, "Employee"
+    - "Category" → category, ""
+    """
+    title = title_line.strip()
+
+    # Try to split on separators
+    for sep in ['–', '—', '/', '|']:
+        if sep in title:
+            parts = title.split(sep)
+            if len(parts) >= 2:
+                left = parts[0].strip()
+                right = parts[1].strip()
+
+                # "Role | Company" pattern detection: left looks like a role
+                if sep == '|' and any(
+                    kw in left.lower() for kw in
+                    ['sales', 'marketing', 'engineer', 'developer', 'frontend', 'backend']
+                ):
+                    return right, left
+
+                # Default: left is employer, right is role
+                return left, right
+
+    # "I currently work in Company" pattern
+    if title.lower().startswith('i '):
+        company_part = re.sub(r'\s*\([^)]*\)', '', title).strip()
+        company_part = re.sub(r'^i\s+(?:currently\s+)?work\s+in\s+', '', company_part, flags=re.IGNORECASE)
+        return company_part, "Employee"
+
+    # Category titles (no separator)
+    if any(kw in title.lower() for kw in ['leadership', 'volunteering']):
+        return title, ""
+
+    # Fallback
+    return title, ""
+
+
 def _extract_experience(
     sections: dict[str, list[str]],
     full_text: str,
@@ -1805,6 +1994,13 @@ def _extract_experience(
     # unsupported date formats while never inflating a correctly-parsed sum.
     total_years = max(total_years, explicit_max)
     total_years = min(total_years, 50.0)
+
+    # PASS 3 (Fallback) — If no entries found and no dates detected, try date-less extraction
+    if not blocks and not _has_date_patterns(search_text):
+        fallback_blocks, fallback_years = _extract_experience_dateless_fallback(sections, full_text)
+        blocks = fallback_blocks
+        # Don't overwrite total_years (preserve explicit statement value from Pass 2)
+
     return blocks, total_years
 
 
@@ -1976,6 +2172,8 @@ class CVFactsExtractor:
             warnings.append("no skills extracted")
         if not education:
             warnings.append("no education section found")
+        if not experience_blocks and sections.get("experience"):
+            warnings.append("experience section found but no entries extracted")
 
         skill_names = list(dict.fromkeys(s.skill_name for s in skills))
 
