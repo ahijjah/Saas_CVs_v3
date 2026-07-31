@@ -1636,3 +1636,37 @@ Al-Quds Open University, 2018
             # Just verify extraction happened, actual skills found depend on registry
             assert facts.education or facts.skills, \
                 "Should extract education and/or skills from the CV"
+
+    def test_middle_dot_separator_employer_location_extraction(self):
+        """Regression test for Issue G: Middle-dot (·) separator handling.
+
+        Ahmad Jamal's CV uses middle-dot (U+00B7) to separate employer and location.
+        The extraction should not crash when encountering this separator format.
+        """
+        # Test that middle-dot separator doesn't crash extraction
+        cv_text = "Computer Science Teacher\nOct 2024 – Jun 2025\nUNRWA School · Tulkarm, Palestine"
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        # Should extract experience without errors
+        assert len(facts.experience) >= 1, "Should extract experience entry"
+        assert facts.experience[0].role_title == "Computer Science Teacher"
+
+    def test_pipe_separator_employer_location_extraction(self):
+        """Regression test: Pipe separator format "Company | Location | Dates" should work.
+
+        Similar to middle-dot, but using pipe (|) as delimiter.
+        """
+        cv_text = (
+            "Senior Developer\n"
+            "Acme Corp | San Francisco | March 2020 – Present\n"
+            "Led development of core platform features."
+        )
+
+        extractor = CVFactsExtractor()
+        facts = extractor.extract(cv_text)
+
+        assert len(facts.experience) >= 1, "Should extract experience"
+        exp = facts.experience[0]
+        assert exp.employer == "Acme Corp", \
+            f"Should extract employer correctly, got {repr(exp.employer)}"

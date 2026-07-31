@@ -1633,11 +1633,13 @@ def _extract_experience(
 
         if date_line_idx >= 0:
             date_line = all_lines[date_line_idx].strip()
-            # ONLY apply special pipe handling if the line contains BOTH date and pipes
-            # This handles "Company | Dates | Location" format
-            if " | " in date_line:
-                # Pipe-delimited format: extract company before first pipe
-                parts = date_line.split(" | ")
+            # ONLY apply special pipe/middle-dot delimiter handling if line has these delimiters
+            # This handles "Company | Dates | Location", "Company · Dates · Location" formats
+            # Do NOT treat other separators here as they conflict with date ranges
+            if " | " in date_line or " · " in date_line:
+                # Pipe or middle-dot delimited format: extract company before first delimiter
+                first_delim = " | " if " | " in date_line else " · "
+                parts = date_line.split(first_delim)
                 if parts:
                     employer = parts[0].strip()[:100]
                 # Role title is from the preceding line
@@ -1650,8 +1652,8 @@ def _extract_experience(
                 if date_start_in_line > 0 and date_line[:date_start_in_line].strip():
                     # Extract everything before the date as potential company/location
                     before_date = date_line[:date_start_in_line].strip()
-                    # Remove trailing comma/separator if present
-                    employer = before_date.rstrip(", -–").strip()[:100]
+                    # Remove trailing comma/separators (comma, hyphen, en-dash, middle-dot, pipe)
+                    employer = before_date.rstrip(", -–·|").strip()[:100]
                     # Role title is from the preceding line
                     if date_line_idx >= 1:
                         role_title = all_lines[date_line_idx - 1].strip()[:100]
