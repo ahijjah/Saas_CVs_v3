@@ -175,6 +175,102 @@ def _status_credit(status: str, cfg: DeterministicScoringConfig) -> float:
     return 0.0
 
 
+def _check_evidence_criterion_overlap(
+    criterion_text: str, evidence_list: list[str]
+) -> float:
+    """
+    Check textual overlap between criterion and evidence.
+    Returns a score 0.0-1.0 indicating how closely the evidence matches the criterion.
+
+    ⚠️  KNOWN LIMITATION (Terminology-Dependent Heuristic):
+    This function relies primarily on a hardcoded list of semantic phrases
+    ("manual and automated", "automated testing", "test cases", etc.) to detect
+    evidence that substantively addresses a criterion. It does NOT provide
+    general semantic understanding of experience.
+
+    The phrase list will correctly catch evidence phrased similarly to tracked
+    patterns, but will NOT generalize to every possible way a candidate could
+    phrase equivalent experience. For example:
+    - ✓ Evidence "manual and automated testing" → matches criterion "system testing"
+    - ✗ Evidence "end-to-end test automation in Python" → may not match (phrase not tracked)
+    - ✗ Evidence "verification and validation procedures" → may not match (synonym, not tracked)
+
+    This is an accepted design tradeoff: hardcoded phrases provide predictable,
+    deterministic behavior without LLM-like non-determinism, while sacrificing
+    coverage for novel phrasing. If evidence uses different terminology, it stays
+    at the strict-class cap (0.40 for inferred matches). This is conservative by
+    design - false negatives (not boosting when we could) are preferable to false
+    positives (boosting when we shouldn't).
+
+    See Issue #6 (domain_keywords limitation) for similar terminology-dependency
+    tradeoff in security signal detection.
+
+    Threshold: 0.65+ indicates substantial overlap.
+    """
+    if not criterion_text or not evidence_list:
+        return 0.0
+
+    combined_evidence = " ".join(evidence_list).lower()
+    criterion_lower = criterion_text.lower()
+
+    try:
+        from rapidfuzz import fuzz
+
+        # Check for semantic phrases: e.g., "manual and automated" is a strong signal
+        # for testing-related criteria
+        semantic_phrases = {
+            "manual and automated": 0.80,
+            "automated testing": 0.75,
+            "manual testing": 0.70,
+            "test cases": 0.75,
+            "qa testing": 0.70,
+            "quality assurance": 0.75,
+        }
+
+        for phrase, score in semantic_phrases.items():
+            if phrase in combined_evidence:
+                # Found a strong semantic phrase, check if it relates to criterion
+                if any(word in criterion_lower for word in phrase.split()):
+                    return score
+
+        # Fallback: use partial_ratio for substring matching as a secondary signal
+        # Check each evidence snippet individually for better accuracy
+        for evid in evidence_list:
+            evid_lower = evid.lower()
+            # Use partial_ratio but require minimum high score
+            partial_score = fuzz.partial_ratio(criterion_lower, evid_lower) / 100.0
+            if partial_score >= 0.70:
+                return partial_score
+
+        # Final fallback: keyword overlap
+        criterion_words = set(criterion_lower.split())
+        evidence_words = set(combined_evidence.split())
+        overlap = criterion_words & evidence_words
+        if criterion_words:
+            return len(overlap) / len(criterion_words)
+        return 0.0
+
+    except ImportError:
+        # Fallback without RapidFuzz: basic phrase detection
+        semantic_phrases = {
+            "manual and automated": 0.80,
+            "automated testing": 0.75,
+            "manual testing": 0.70,
+            "test cases": 0.75,
+        }
+        for phrase, score in semantic_phrases.items():
+            if phrase in combined_evidence and any(word in criterion_lower for word in phrase.split()):
+                return score
+
+        # Keyword overlap fallback
+        criterion_words = set(criterion_lower.split())
+        evidence_words = set(combined_evidence.split())
+        overlap = criterion_words & evidence_words
+        if not criterion_words:
+            return 0.0
+        return len(overlap) / len(criterion_words)
+
+
 # ── Minimum-years threshold detection ────────────────────────────────────────
 
 _MIN_YEARS_CRITERION_RE = re.compile(
@@ -494,6 +590,23 @@ class DeterministicScoringEngine:
 
         sc        = _status_credit(status, cfg)
         qf        = _match_quality_factor(match_type, criterion_class)
+
+        # Post-processing: when match_type="inferred" but evidence has high textual
+        # overlap with criterion, upgrade quality_factor to 0.95 (equivalent tier).
+        # This prevents LLM inconsistency from unfairly penalizing candidates whose
+        # evidence is substantively correct but classified as "inferred" by the LLM.
+        criterion_text = assessment.criterion_text or ""
+        if (
+            match_type == "inferred"
+            and evidence
+            and criterion_text
+        ):
+            overlap_score = _check_evidence_criterion_overlap(criterion_text, evidence)
+            if overlap_score >= 0.65:  # 65%+ textual overlap threshold
+                qf = max(qf, 0.95)  # Upgrade to equivalent tier
+                if "inferred_with_strong_evidence_overlap" not in risk_flags:
+                    risk_flags.append("inferred_with_strong_evidence_overlap")
+
         effective = sc * qf
 
         has_oq = "overqualified" in risk_flags

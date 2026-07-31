@@ -203,11 +203,30 @@ class TestEffectiveCredit:
         # transferable strict cap = 0.50
         assert c.effective_credit == pytest.approx(1.0 * 0.50)
 
-    def test_matched_inferred_strict_capped(self):
+    def test_matched_inferred_strict_capped_with_strong_overlap(self):
+        # With Issue H fix: inferred with strong textual overlap gets boosted to 0.95
         a = _assessment(status="MATCHED", match_type="inferred", criterion_class="strict")
+        # Default evidence is "Python used in role." which has perfect overlap with criterion "Python"
         result = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
         c = result.dimensions["skills"].criteria[0]
+        # Should be boosted from 0.40 (strict inferred cap) to 0.95 (equivalent tier)
+        # because evidence contains the criterion text
+        assert c.effective_credit == pytest.approx(1.0 * 0.95)
+        assert "inferred_with_strong_evidence_overlap" in c.risk_flags
+
+    def test_matched_inferred_strict_stays_capped_with_weak_overlap(self):
+        # Inferred with weak overlap should still be capped at 0.40 (strict class)
+        a = _assessment(
+            status="MATCHED",
+            match_type="inferred",
+            criterion_class="strict",
+            supporting_evidence=["Used generic development tools in projects"],
+        )
+        result = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
+        c = result.dimensions["skills"].criteria[0]
+        # Weak overlap, should stay at 0.40
         assert c.effective_credit == pytest.approx(1.0 * 0.40)
+        assert "inferred_with_strong_evidence_overlap" not in c.risk_flags
 
     def test_partial_direct_soft_skill(self):
         cfg = DeterministicScoringConfig(partial_credit=0.50)
@@ -1935,3 +1954,130 @@ class TestQualitativeSummarySecondCall:
         assert llm_result.qualitative_summary is not None
         assert llm_result.qualitative_summary.candidate_name == "Mahmoud Qasem"
         assert llm_result.qualitative_summary.candidate_name != "Unknown"
+
+
+# ── Issue H: LLM inconsistency in match_type/quality_factor ──────────────────
+
+class TestInferredMatchWithStrongEvidenceOverlap:
+    """
+    Regression tests for Issue H: LLM inconsistency in match_type/quality_factor.
+
+    When match_type="inferred" but evidence has high textual overlap with the criterion,
+    quality_factor should be upgraded to at least 0.95 (equivalent tier) instead of
+    being penalized by the strict-class cap (0.40 for inferred).
+    """
+
+    def test_rami_case_already_correct_unaffected(self):
+        """Rami Majadbeh case: already direct match, should remain 1.0."""
+        a = _assessment(
+            "system testing",
+            "skills",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            criterion_class="strict",
+            confidence=0.85,
+            supporting_evidence=[
+                "Created and executed detailed manual and automated test cases to ensure quality across a SaaS platform"
+            ],
+        )
+        result = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
+        c = result.dimensions["skills"].criteria[0]
+
+        # Should remain at direct match (1.0)
+        assert c.quality_factor == pytest.approx(1.0)
+        assert c.effective_credit == pytest.approx(1.0 * 1.0)
+        assert c.match_type == "direct"
+
+    def test_abdalrhman_case_inferred_with_strong_overlap_gets_boosted(self):
+        """Abdalrhman Abuyaqoub case: inferred but with 'manual and automated testing' overlap."""
+        a = _assessment(
+            "system testing",
+            "skills",
+            required=True,
+            status="PARTIAL",
+            match_type="inferred",
+            criterion_class="strict",
+            confidence=0.6,
+            supporting_evidence=[
+                "Gained hands-on experience in manual and automated testing, worked with tools like Postman, JMeter"
+            ],
+        )
+        result = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
+        c = result.dimensions["skills"].criteria[0]
+
+        # Should be boosted from 0.40 (strict inferred cap) to 0.95 (equivalent tier)
+        # because evidence contains "manual and automated testing" which relates to criterion
+        assert c.quality_factor == pytest.approx(0.95)
+        # effective_credit = PARTIAL (0.5) * 0.95 = 0.475
+        assert c.effective_credit == pytest.approx(0.5 * 0.95)
+        assert c.match_type == "inferred"
+        # Risk flag should be added to track when this upgrade happens
+        assert "inferred_with_strong_evidence_overlap" in c.risk_flags
+
+    def test_weak_evidence_inferred_stays_at_strict_cap(self):
+        """Negative control: inferred with weak evidence should stay at 0.40."""
+        a = _assessment(
+            "system testing",
+            "skills",
+            required=True,
+            status="PARTIAL",
+            match_type="inferred",
+            criterion_class="strict",
+            confidence=0.35,
+            supporting_evidence=[
+                "Used various testing frameworks in backend development"
+            ],
+        )
+        result = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
+        c = result.dimensions["skills"].criteria[0]
+
+        # Should stay at 0.40 (strict inferred cap) because evidence has low overlap
+        # ("testing frameworks" alone does not match "manual and automated testing" quality)
+        assert c.quality_factor == pytest.approx(0.40)
+        assert c.effective_credit == pytest.approx(0.5 * 0.40)
+        # No risk flag for this case (not strong enough)
+        assert "inferred_with_strong_evidence_overlap" not in c.risk_flags
+
+    def test_inferred_without_strong_evidence_unchanged_flexible_class(self):
+        """Inferred match on non-strict class: no boost needed (already 0.65)."""
+        a = _assessment(
+            "system testing",
+            "skills",
+            required=False,  # Preferred, not required
+            status="PARTIAL",
+            match_type="inferred",
+            criterion_class="flexible",
+            confidence=0.5,
+            supporting_evidence=[
+                "Some general testing experience"
+            ],
+        )
+        result = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
+        c = result.dimensions["skills"].criteria[0]
+
+        # For flexible class, inferred = 0.65 (no strict cap), so no boost needed
+        assert c.quality_factor == pytest.approx(0.65)
+        assert c.effective_credit == pytest.approx(0.5 * 0.65)
+        assert "inferred_with_strong_evidence_overlap" not in c.risk_flags
+
+    def test_direct_match_not_affected_even_with_semantic_phrases(self):
+        """Direct match should never be downgraded or modified by overlap detection."""
+        a = _assessment(
+            "system testing",
+            "skills",
+            required=True,
+            status="MATCHED",
+            match_type="direct",
+            criterion_class="strict",
+            confidence=0.95,
+            supporting_evidence=[
+                "Expert in manual and automated testing across SaaS and enterprise systems"
+            ],
+        )
+        result = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
+        c = result.dimensions["skills"].criteria[0]
+
+        # Direct should always be 1.0
+        assert c.quality_factor == pytest.approx(1.0)
+        assert c.effective_credit == pytest.approx(1.0)
