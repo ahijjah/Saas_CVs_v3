@@ -1157,13 +1157,30 @@ def _extract_experience(
     blocks: list[ExperienceEvidence] = []
 
     for m in _DATE_RANGE_RE.finditer(search_text):
-        # Extract start year from either format: "Month Year" or "Year"
+        # Extract start year and month from: "Month Year" (Format 1) or "Year" (Format 2)
         start_year_str = m.group("start_year") or m.group("start_year_bare")
+        if not start_year_str:
+            continue
         start_year = int(start_year_str)
+
+        # Extract start month (for fractional year calculation)
+        start_month = 1  # Default to January if no month specified
+        if m.group("start_month"):  # Format 1: "Month Year"
+            month_str = m.group("start_month").lower()
+            month_map = {
+                'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5,
+                'june': 6, 'july': 7, 'august': 8, 'september': 9, 'october': 10,
+                'november': 11, 'december': 12,
+                'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6, 'jul': 7,
+                'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+            }
+            start_month = month_map.get(month_str.rstrip('.'), 1)
+
         end_str = m.group("end").strip()
 
         if _PRESENT_RE.match(end_str):
             end_year = _CURRENT_YEAR
+            end_month = 12  # Assume December for "Present"
         else:
             # Extract the 4-digit year from the end group (may have month prefix)
             year_match = re.search(r"(?:19|20)\d{2}", end_str)
@@ -1172,16 +1189,67 @@ def _extract_experience(
             else:
                 continue
 
+            # Extract end month (if present in end_str)
+            end_month = 12  # Default to December if no month specified
+            # Try to find month word in end_str (e.g., "February 2025")
+            for month_name, month_num in [('january', 1), ('february', 2), ('march', 3), ('april', 4),
+                                          ('may', 5), ('june', 6), ('july', 7), ('august', 8),
+                                          ('september', 9), ('october', 10), ('november', 11), ('december', 12),
+                                          ('jan', 1), ('feb', 2), ('mar', 3), ('apr', 4), ('jun', 6),
+                                          ('jul', 7), ('aug', 8), ('sep', 9), ('oct', 10), ('nov', 11), ('dec', 12)]:
+                if month_name in end_str.lower():
+                    end_month = month_num
+                    break
+
         if end_year < start_year or (end_year - start_year) > 50:
             continue
 
-        years = float(end_year - start_year)
+        # Calculate years with month precision
+        year_diff = end_year - start_year
+        month_diff = end_month - start_month
+        years = float(year_diff) + (month_diff / 12.0)
 
-        # Attempt to extract role/employer from the lines preceding the date
-        ctx_start = max(0, m.start() - 200)
+        # Determine context start boundary: find the actual entry start
+        # Look backward for blank lines (entry separators) or section headers
+        lookback_start = max(0, m.start() - 400)
+        ctx_start = lookback_start
+        pos = m.start() - 1
+        found_boundary = False
+
+        while pos > lookback_start:
+            if search_text[pos] == '\n':
+                # Check if this is a blank line (preceded by '\n')
+                if pos > 0 and search_text[pos - 1] == '\n':
+                    ctx_start = pos + 1
+                    found_boundary = True
+                    break
+                # Check if the next line is a section header (all caps, no lowercase)
+                next_newline = search_text.find('\n', pos + 1)
+                if next_newline == -1:
+                    next_newline = len(search_text)
+                next_line = search_text[pos + 1:next_newline].strip()
+                if next_line and next_line.isupper() and len(next_line) > 5:
+                    # Likely section header - start after this line
+                    ctx_start = next_newline + 1
+                    found_boundary = True
+                    break
+            pos -= 1
+
+        # Ensure ctx_start is at the start of a line
+        if ctx_start > 0:
+            if search_text[ctx_start - 1] != '\n':
+                nl_pos = search_text.find('\n', ctx_start)
+                if nl_pos > 0 and nl_pos < m.start():
+                    ctx_start = nl_pos + 1
+
         preceding = search_text[ctx_start:m.start()].strip().splitlines()
         role_title = preceding[-1].strip()[:100] if preceding else ""
         employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
+
+        # Special case: if "employer" looks like metadata (Repository, Technologies, etc.),
+        # it's actually a project entry with metadata, not a real employer field
+        if employer and (employer.startswith('Repository:') or employer.startswith('Technologies:') or '|' in employer):
+            employer = ""
 
         # EDU-02.2: skip blocks where the "role" line is actually an education entry
         # (e.g. "Bachelor of Business Administration | Al-Quds Open University").
