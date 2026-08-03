@@ -559,7 +559,18 @@ def _match_experience(
     relevant_roles = exp_criteria.get("relevant_roles", []) or []
     has_relevance_data = bool(key_responsibilities or relevant_roles)
 
-    if has_relevance_data and numeric_passed:
+    # Bug A: previously gated on `numeric_passed` alone, so a date-less CV
+    # (actual == 0.0, e.g. extracted via the dateless fallback) never even
+    # reached the relevance check — it fell straight to the numeric-only
+    # fallback below and landed on a flat ABSENT/0.0, regardless of how
+    # relevant the candidate's actual role/responsibility text was. Opening
+    # this to `actual == 0.0` as well lets a genuinely relevant date-less
+    # candidate earn partial credit instead of being zeroed out solely for
+    # lacking a parseable date range. Scoped to exactly `actual == 0.0` (not
+    # "insufficient years") — that's the case this was root-caused against;
+    # the insufficient-but-nonzero-years case is unchanged, existing behavior.
+    is_dateless = actual == 0.0
+    if has_relevance_data and (numeric_passed or is_dateless):
         # Build candidate's text pool from roles and responsibilities
         candidate_texts = []
         for exp_entry in cv_facts.experience:
@@ -639,12 +650,43 @@ def _match_experience(
                     if has_relevance:
                         break
 
-        # If no overlap found, downgrade to PARTIAL even though duration is sufficient
         if not has_relevance:
+            if numeric_passed:
+                # Sufficient years, but role/responsibility text doesn't look
+                # relevant — downgrade to PARTIAL even though duration passed.
+                status = "PARTIAL"
+                confidence = 0.45
+                partial_reason = f"{actual:.0f} years total experience, but relevance to role not verified"
+                evidence = [f"{actual:.1f} years total experience extracted from CV"]
+            else:
+                # Date-less AND no relevance found either — no positive signal
+                # in either dimension, stay at the existing numeric floor
+                # (0.0 when actual == 0.0) rather than inventing one.
+                status = "ABSENT"
+                confidence = numeric_confidence
+                partial_reason = "No verifiable years and no clear role relevance found in CV"
+                evidence = []
+            return [CriterionMatch(
+                criterion_text=criterion_text,
+                dimension="experience",
+                required=is_required,
+                status=status,
+                confidence=confidence,
+                match_method="inferred",
+                supporting_evidence=evidence,
+                evidence_confidence=[confidence] if evidence else [],
+                partial_reason=partial_reason,
+            )]
+
+        if is_dateless:
+            # has_relevance is True here: role/responsibility text genuinely
+            # overlaps the job's requirements, but duration couldn't be
+            # verified from the CV — partial credit, not a full MATCHED
+            # (which requires an actually-verified numeric threshold).
             status = "PARTIAL"
-            confidence = 0.45  # Reduced confidence for relevance gap
-            partial_reason = f"{actual:.0f} years total experience, but relevance to role not verified"
-            evidence = [f"{actual:.1f} years total experience extracted from CV"]
+            confidence = 0.55
+            partial_reason = "Experience duration not extractable from CV, but role/responsibilities are relevant to this position"
+            evidence = ["Relevant experience found (duration not specified in CV)"]
             return [CriterionMatch(
                 criterion_text=criterion_text,
                 dimension="experience",
@@ -656,6 +698,8 @@ def _match_experience(
                 evidence_confidence=[confidence],
                 partial_reason=partial_reason,
             )]
+        # else: numeric_passed and has_relevance -> fall through to the
+        # existing numeric MATCHED path below, unchanged.
 
     # ── Fallback: pure numeric comparison (no relevance data available) ───
     if numeric_passed:

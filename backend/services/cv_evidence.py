@@ -1823,12 +1823,16 @@ def _extract_experience_dateless_fallback(
             # Save previous entry
             if current_title:
                 employer, role = _extract_employer_role_from_title(current_title)
-                raw = f"{current_title} {' '.join(current_description[:100])}"
+                # Bug C: join with newline (not space) so bullet/line boundaries
+                # survive into raw_text — _split_responsibilities relies on them.
+                raw = f"{current_title}\n{chr(10).join(current_description[:100])}"
+                raw = raw[:300]
                 blocks.append(ExperienceEvidence(
                     employer=employer,
                     role_title=role,
                     years=0.0,
-                    raw_text=raw[:300],
+                    raw_text=raw,
+                    responsibilities=_split_responsibilities(raw, role, employer),
                 ))
 
             current_title = line.strip()
@@ -1840,12 +1844,14 @@ def _extract_experience_dateless_fallback(
     # Save the last entry
     if current_title:
         employer, role = _extract_employer_role_from_title(current_title)
-        raw = f"{current_title} {' '.join(current_description[:100])}"
+        raw = f"{current_title}\n{chr(10).join(current_description[:100])}"
+        raw = raw[:300]
         blocks.append(ExperienceEvidence(
             employer=employer,
             role_title=role,
             years=0.0,
-            raw_text=raw[:300],
+            raw_text=raw,
+            responsibilities=_split_responsibilities(raw, role, employer),
         ))
 
     return blocks, 0.0
@@ -1892,6 +1898,69 @@ def _extract_employer_role_from_title(title_line: str) -> tuple[str, str]:
 
     # Fallback
     return title, ""
+
+
+# Bug C: split an entry's raw_text into discrete responsibility phrases,
+# excluding the leading title/employer/date/location header block. Splits
+# on sentence-ending punctuation and newlines; strips a leading bullet
+# marker if present.
+_RESPONSIBILITY_SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+|\n+')
+_RESPONSIBILITY_BULLET_PREFIX_RE = re.compile(r'^[-•*]\s*')
+
+
+def _looks_like_metadata_line(line: str) -> bool:
+    """True for a tech-stack-style line ("Flutter · Supabase · PostgreSQL"):
+    3+ short segments separated by a middle-dot or pipe. Not a responsibility
+    sentence — a label list sitting in the header block."""
+    for delim in (' · ', ' | '):
+        if delim in line and len(line.split(delim)) >= 3:
+            return True
+    return False
+
+
+def _split_responsibilities(raw_text: str, role_title: str, employer: str) -> list[str]:
+    """Split raw_text into responsibility phrases, excluding the header.
+
+    The header isn't just title+employer — the dated-CV path's raw_text also
+    carries date-range and location lines (and sometimes a tech-stack line)
+    between the title/employer and the actual description, in formats that
+    don't bundle everything onto one line the way the dateless path's title
+    line does. Skip a *leading, contiguous* run of lines that look like
+    header content (containing role_title/employer text, a location line, a
+    date-range match, or tech-stack metadata) — stopping at the first line
+    that doesn't, so nothing past the header is ever mistakenly skipped.
+    """
+    if not raw_text:
+        return []
+
+    lines = raw_text.split('\n')
+    header_line_count = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            header_line_count += 1
+            continue
+        is_header_line = (
+            (role_title and role_title in stripped)
+            or (employer and employer in stripped)
+            or _is_likely_location_line(stripped)
+            or bool(_DATE_RANGE_RE.search(stripped))
+            or _looks_like_metadata_line(stripped)
+        )
+        if not is_header_line:
+            break
+        header_line_count += 1
+
+    description = '\n'.join(lines[header_line_count:]).strip()
+    if not description:
+        return []
+
+    phrases: list[str] = []
+    for chunk in _RESPONSIBILITY_SENTENCE_SPLIT_RE.split(description):
+        phrase = _RESPONSIBILITY_BULLET_PREFIX_RE.sub('', chunk).strip()
+        if len(phrase) >= 8:
+            phrases.append(phrase[:200])
+    return phrases[:20]
 
 
 def _extract_experience(
@@ -2070,6 +2139,7 @@ def _extract_experience(
             role_title=entry["role_title"],
             years=entry["years"],
             raw_text=raw,
+            responsibilities=_split_responsibilities(raw, entry["role_title"], entry["employer"]),
         ))
         total_years += entry["years"]
 
