@@ -59,7 +59,10 @@ Managed software projects."""
 
         assert len(cv_facts.experience) == 1
         exp = cv_facts.experience[0]
-        assert exp.years == 3.0, f"Expected 3 years (Jan 2020 to June 2023), got {exp.years}"
+        # Jan 2020 to June 2023 is 3 years + 5 months = 3.42 years (month-aware
+        # fractional calc). The old assertion (3.0) encoded the pre-Bug-D bug
+        # of integer year-only subtraction, not the correct duration.
+        assert exp.years == 3.42, f"Expected 3.42 years (Jan 2020 to June 2023), got {exp.years}"
         assert cv_facts.total_experience_years > 0
 
     def test_mixed_date_formats_in_same_cv(self):

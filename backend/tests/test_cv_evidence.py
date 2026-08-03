@@ -14,6 +14,7 @@ import dataclasses
 import json
 import sys
 import os
+from datetime import date
 
 # Allow importing from services/ without a full package install
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -1079,7 +1080,21 @@ Experience in compliance and information security management.
 
         # Experience extraction should work
         assert len(facts.experience) >= 2, "Should extract at least 2 job entries"
-        assert facts.total_experience_years >= 8.0, "Should calculate ~8 years of experience"
+        # Month-aware fractional calc. Job 2 (Aug 2018 -> Feb 2021) is a fixed
+        # 2.5 years. Job 1 (Mar 2021 -> Present) grows every month, so its
+        # expected value is computed the same way production does rather than
+        # hardcoded — a static number (even "exact today") would silently go
+        # stale and eventually fail for a reason that has nothing to do with
+        # a real regression. This keeps the assertion exact forever instead
+        # of needing periodic manual bumps.
+        today = date.today()
+        expected_job1_years = round((today.year - 2021) + (today.month - 3) / 12.0, 2)
+        expected_total = round(expected_job1_years + 2.5, 2)
+        assert facts.total_experience_years == pytest.approx(expected_total, abs=0.005), (
+            f"Expected {expected_total} years (Mar 2021 -> Present computed as of "
+            f"{today.isoformat()}, plus a fixed 2.5 years for Aug 2018 -> Feb 2021), "
+            f"got {facts.total_experience_years}"
+        )
 
     def test_mechanism_a_unregistered_skills_from_explicit_header(self):
         """Test Mechanism A: capture unregistered skills under explicit Skills header.

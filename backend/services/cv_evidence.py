@@ -283,6 +283,7 @@ class CVFacts:
 
 _EXTRACTOR_VERSION = "1.5.0"
 _CURRENT_YEAR: int = datetime.date.today().year
+_CURRENT_MONTH: int = datetime.date.today().month
 
 # ---------------------------------------------------------------------------
 # Skill registry
@@ -687,7 +688,7 @@ _MONTH_PATTERN = (
     r"january|february|march|april|may|june|july|august|september|october|november|december"
     r"|jan\.?|feb\.?|mar\.?|apr\.?|may|jun\.?|jul\.?|aug\.?|sep\.?|oct\.?|nov\.?|dec\.?"
     r"|يناير|فبراير|مارس|أبريل|مايو|يونيو|يوليو|أغسطس|سبتمبر|أكتوبر|نوفمبر|ديسمبر"
-    r"|كانون\s+الثاني|شباط|آذار|نيسان|أيار|حزيران|تموز|آب|أيلول|تشرين\s+الأول|تشرين\s+الثاني"
+    r"|كانون\s+الثاني|شباط|آذار|نيسان|أيار|حزيران|تموز|آب|أيلول|تشرين\s+الأول|تشرين\s+الثاني|كانون\s+الأول"
     r")"
 )
 
@@ -730,6 +731,135 @@ _PRESENT_RE = re.compile(
     r"الوقت\s+الحاضر|الحالي)$",
     re.IGNORECASE | re.UNICODE,
 )
+
+# Month name -> number, covering the full _MONTH_PATTERN vocabulary (English
+# + Arabic, standard and Levantine variants). Used to turn a matched month
+# name into an actual number for fractional-year arithmetic — the regex
+# above only needed to *match* month names; computing years needs the value.
+_MONTH_NAME_TO_NUM: dict[str, int] = {
+    "january": 1, "jan": 1,
+    "february": 2, "feb": 2,
+    "march": 3, "mar": 3,
+    "april": 4, "apr": 4,
+    "may": 5,
+    "june": 6, "jun": 6,
+    "july": 7, "jul": 7,
+    "august": 8, "aug": 8,
+    "september": 9, "sep": 9,
+    "october": 10, "oct": 10,
+    "november": 11, "nov": 11,
+    "december": 12, "dec": 12,
+    "يناير": 1, "فبراير": 2, "مارس": 3, "أبريل": 4, "مايو": 5, "يونيو": 6,
+    "يوليو": 7, "أغسطس": 8, "سبتمبر": 9, "أكتوبر": 10, "نوفمبر": 11, "ديسمبر": 12,
+    "كانون الثاني": 1, "شباط": 2, "آذار": 3, "نيسان": 4, "أيار": 5, "حزيران": 6,
+    "تموز": 7, "آب": 8, "أيلول": 9, "تشرين الأول": 10, "تشرين الثاني": 11,
+    "كانون الأول": 12,
+}
+
+
+def _month_name_to_num(word: str) -> int | None:
+    """Resolve a matched month name (any variant in _MONTH_PATTERN) to 1-12."""
+    key = re.sub(r"\.$", "", word.strip().lower())
+    key = re.sub(r"\s+", " ", key)
+    return _MONTH_NAME_TO_NUM.get(key)
+
+
+_END_MONTH_NUMERIC_RE = re.compile(r"^(\d{1,2})[/.]")
+_END_MONTH_WORD_RE = re.compile(r"^(" + _MONTH_PATTERN + r")\s+", re.IGNORECASE | re.UNICODE)
+
+
+def _resolve_end_month(end_str: str) -> int | None:
+    """Best-effort month number (1-12) for a date range's end string.
+
+    Returns None when the end carries no month information at all (a bare
+    year like "2025"). Does not re-derive end_year — that extraction is
+    unchanged and happens separately before this is called.
+    """
+    if _PRESENT_RE.match(end_str):
+        return _CURRENT_MONTH
+    numeric_m = _END_MONTH_NUMERIC_RE.match(end_str)
+    if numeric_m:
+        month = int(numeric_m.group(1))
+        return month if 1 <= month <= 12 else None
+    word_m = _END_MONTH_WORD_RE.match(end_str)
+    if word_m:
+        return _month_name_to_num(word_m.group(1))
+    return None
+
+
+def _looks_like_subheader(line: str) -> bool:
+    """True for a bare subsection header (e.g. "SOFTWARE PROJECTS") sitting
+    inside an experience section with no blank line separating it from the
+    entries around it. Used as an entry-boundary signal alongside blank
+    lines and previous date matches, neither of which fire in this case.
+    """
+    s = line.strip()
+    if not s or len(s) > 45:
+        return False
+    if s.startswith(("-", "•", "*")):
+        return False
+    if _DATE_RANGE_RE.search(s):
+        return False
+    return s == s.upper() and s != s.lower()
+
+
+def _looks_like_wrapped_continuation(line: str) -> bool:
+    """True for a line that is very likely the word-wrapped tail of the
+    PREVIOUS entry's bullet, not a new title/employer/location candidate.
+
+    Titles, employers, and locations all start with an uppercase letter
+    (they're names); a wrapped continuation starts wherever the original
+    sentence happened to break, which is essentially never on a capital.
+    """
+    s = line.strip()
+    return bool(s) and s[0].islower()
+
+
+def _resolve_entry_start(all_lines: list[str], date_line_idx: int) -> int:
+    """Walk backward from just above date_line_idx to find where the current
+    entry's title/employer/location preamble begins.
+
+    Stops at the first line that clearly belongs to a different entry: a
+    blank line, a bullet line, another date-range match, a subheader, or a
+    wrapped bullet continuation. Replaces a fixed ~200-char lookback window,
+    which silently ran out of room whenever a preceding entry's bullets were
+    long enough to push the true boundary past the window — confirmed via
+    hand-trace to be the cause of several real employer-extraction bugs.
+    """
+    start = date_line_idx
+    for i in range(date_line_idx - 1, -1, -1):
+        line = all_lines[i].strip()
+        if (
+            not line
+            or line.startswith(("-", "•", "*"))
+            or _DATE_RANGE_RE.search(line)
+            or _looks_like_subheader(line)
+            or _looks_like_wrapped_continuation(line)
+        ):
+            break
+        start = i
+    return start
+
+
+def _resolve_entry_end(all_lines: list[str], from_idx: int) -> int:
+    """Walk forward from from_idx to find where the current entry's own text
+    plausibly ends: the next date-range match, the next subheader, a blank
+    line, or the end of the text — whichever comes first.
+
+    This alone is not sufficient to stop at the next entry's title line
+    (a title isn't blank, isn't a date match, and usually isn't all-caps),
+    so callers additionally cap the result at the next entry's own resolved
+    start index, once that is known.
+    """
+    end = from_idx
+    for i in range(from_idx, len(all_lines)):
+        line = all_lines[i].strip()
+        if not line:
+            break
+        if i > from_idx and (_DATE_RANGE_RE.search(line) or _looks_like_subheader(line)):
+            break
+        end = i + 1
+    return end
 
 # Explicit total-experience statements, e.g. "10 years experience" / "over 10 years" /
 # "10+ years of relevant experience" / "10 سنوات خبرة" / "أكثر من 10 سنوات خبرة".
@@ -1770,27 +1900,42 @@ def _extract_experience(
 ) -> tuple[list[ExperienceEvidence], float]:
     """Return (experience_blocks, total_years).
 
-    Three-pass strategy:
-      1. Extract date ranges from experience section (or full text as fallback).
-      2. Detect explicit statements like "10 years experience" in summary +
+    Four-pass strategy:
+      1. Extract date ranges + role/employer/boundaries from the experience
+         section (or full text as fallback).
+      2. Attach raw_text to each entry, bounded by neighboring entries.
+      3. Detect explicit statements like "10 years experience" in summary +
          experience sections — used as a lower-bound override when date
          arithmetic under-counts (e.g. dates in unsupported formats).
-      3. Clamp total to 50 years.
+      4. Clamp total to 50 years; fall back to date-less extraction if no
+         dated entries were found at all.
     """
     exp_section = "\n".join(sections.get("experience", []))
     search_text = exp_section if exp_section.strip() else full_text
+    all_lines = search_text.splitlines()
 
     total_years = 0.0
     blocks: list[ExperienceEvidence] = []
 
+    # Pass 1: resolve role/employer/years/boundaries for every date match.
+    # raw_text is attached in Pass 2 once each entry's start boundary is
+    # known, so entry N's text can be capped at entry N+1's start instead of
+    # a fixed character window (which is what let long bullet lists bleed
+    # across entries — see _resolve_entry_start's docstring).
+    parsed: list[dict] = []
+
     for m in _DATE_RANGE_RE.finditer(search_text):
-        # Extract start year from any format: "Month Year" or "Year" or "MM/YYYY"
-        start_year_str = (
-            m.group("start_year")
-            or m.group("start_year_bare")
-            or m.group("start_year_numeric")
-        )
-        start_year = int(start_year_str)
+        # Extract start year AND month from whichever format matched.
+        if m.group("start_month"):
+            start_month = _month_name_to_num(m.group("start_month"))
+            start_year = int(m.group("start_year"))
+        elif m.group("start_month_numeric"):
+            start_month = int(m.group("start_month_numeric"))
+            start_year = int(m.group("start_year_numeric"))
+        else:
+            start_month = None
+            start_year = int(m.group("start_year_bare"))
+
         end_str = m.group("end").strip()
 
         if _PRESENT_RE.match(end_str):
@@ -1806,179 +1951,129 @@ def _extract_experience(
         if end_year < start_year or (end_year - start_year) > 50:
             continue
 
-        years = float(end_year - start_year)
+        # Month-aware fractional years when both sides resolve to a month;
+        # otherwise fall back to whole-year math exactly as before — never
+        # fabricate a month the source text didn't give us.
+        end_month = _resolve_end_month(end_str)
+        if start_month is not None and end_month is not None:
+            years = round((end_year - start_year) + (end_month - start_month) / 12.0, 2)
+            if years < 0:
+                continue
+        else:
+            years = float(end_year - start_year)
 
-        # Attempt to extract role/employer from the lines preceding and around the date
-        ctx_start = max(0, m.start() - 200)
-        ctx_end = min(len(search_text), m.end() + 100)
-        context_text = search_text[ctx_start:ctx_end]
-        all_lines = context_text.splitlines()
+        # Locate the line containing this match by position, not by
+        # substring search — a substring search can match an earlier line
+        # that happens to contain the same date text.
+        date_line_idx = search_text.count("\n", 0, m.start())
+        date_line = all_lines[date_line_idx].strip()
 
         role_title = ""
         employer = ""
+        raw_start_idx = date_line_idx
 
-        # Find which line contains the date match to detect pipe-delimited format
-        date_line_idx = -1
-        for i, line in enumerate(all_lines):
-            if m.group() in line:
-                date_line_idx = i
-                break
-
-        if date_line_idx >= 0:
-            date_line = all_lines[date_line_idx].strip()
-            # ONLY apply special pipe/middle-dot delimiter handling if line has these delimiters
-            # This handles "Company | Dates | Location", "Company · Dates · Location" formats
-            # Do NOT treat other separators here as they conflict with date ranges
-            if " | " in date_line or " · " in date_line:
-                # Pipe or middle-dot delimited format: extract company before first delimiter
-                first_delim = " | " if " | " in date_line else " · "
-                parts = date_line.split(first_delim)
-                if parts:
-                    employer = parts[0].strip()[:100]
+        # ONLY apply special pipe/middle-dot delimiter handling if line has these delimiters
+        # This handles "Company | Dates | Location", "Company · Dates · Location" formats
+        # Do NOT treat other separators here as they conflict with date ranges
+        if " | " in date_line or " · " in date_line:
+            # Pipe or middle-dot delimited format: extract company before first delimiter
+            first_delim = " | " if " | " in date_line else " · "
+            parts = date_line.split(first_delim)
+            if parts:
+                employer = parts[0].strip()[:100]
+            # Role title is from the preceding line
+            if date_line_idx >= 1:
+                role_title = all_lines[date_line_idx - 1].strip()[:100]
+                raw_start_idx = date_line_idx - 1
+        else:
+            # Check if date is embedded in a line with company/location (e.g., "Company, Date")
+            date_start_in_line = date_line.find(m.group())
+            if date_start_in_line > 0 and date_line[:date_start_in_line].strip():
+                # Extract everything before the date as potential company/location
+                before_date = date_line[:date_start_in_line].strip()
+                # Remove trailing comma/separators (comma, hyphen, en-dash, middle-dot, pipe)
+                employer = before_date.rstrip(", -–·|").strip()[:100]
                 # Role title is from the preceding line
                 if date_line_idx >= 1:
                     role_title = all_lines[date_line_idx - 1].strip()[:100]
-            # Check if date is embedded in a line with company/location (e.g., "Company, Date")
-            elif date_line_idx >= 0:
-                # Check if date is embedded in this line or on its own
-                date_start_in_line = date_line.find(m.group())
-                if date_start_in_line > 0 and date_line[:date_start_in_line].strip():
-                    # Extract everything before the date as potential company/location
-                    before_date = date_line[:date_start_in_line].strip()
-                    # Remove trailing comma/separators (comma, hyphen, en-dash, middle-dot, pipe)
-                    employer = before_date.rstrip(", -–·|").strip()[:100]
-                    # Role title is from the preceding line
-                    if date_line_idx >= 1:
-                        role_title = all_lines[date_line_idx - 1].strip()[:100]
-                else:
-                    # Date is at the start of the line; use standard logic with entry boundary detection
-                    preceding = all_lines[:date_line_idx]
-                    if preceding:
-                        # For multi-entry CVs, find where THIS entry starts (after empty line or previous date)
-                        entry_start_idx = 0
-                        for i in range(len(preceding) - 1, -1, -1):
-                            line = preceding[i].strip()
-                            if not line:  # empty line marks entry boundary
-                                entry_start_idx = i + 1
-                                break
-                            if _DATE_RANGE_RE.search(line) and i < len(preceding) - 1:
-                                # found a previous date; this entry starts after it
-                                entry_start_idx = i + 1
-                                break
-
-                        # Use only lines from THIS entry
-                        entry_lines = preceding[entry_start_idx:] if entry_start_idx < len(preceding) else preceding
-
-                        if entry_lines:
-                            last_line = entry_lines[-1].strip()
-                            if len(entry_lines) >= 3 and _is_likely_location_line(last_line):
-                                role_title = entry_lines[-3].strip()[:100]
-                                employer = entry_lines[-2].strip()[:100]
-                            elif len(entry_lines) == 2:
-                                # Two-line format: role on first line, company on second line
-                                role_title = entry_lines[0].strip()[:100]
-                                employer = entry_lines[1].strip()[:100]
-                            else:
-                                role_title = entry_lines[-1].strip()[:100]
-                                employer = entry_lines[-2].strip()[:100] if len(entry_lines) >= 2 else ""
-                        else:
-                            # Fallback if no entry_lines found
-                            role_title = preceding[-1].strip()[:100] if preceding else ""
-                            employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
-
-                    # If employer is still empty, check lines AFTER the date line
-                    # This handles formats like: "Role\nDate\nEmployer · Location"
-                    if not employer and date_line_idx + 1 < len(all_lines):
-                        next_line = all_lines[date_line_idx + 1].strip()
-                        if next_line:
-                            # Check if this line has a delimiter (pipe or middle-dot) indicating employer + location
-                            if " | " in next_line or " · " in next_line:
-                                # Extract employer (before first delimiter)
-                                delim = " | " if " | " in next_line else " · "
-                                parts = next_line.split(delim)
-                                if parts:
-                                    employer = parts[0].strip()[:100]
-                            elif " , " in next_line or "," in next_line:
-                                # Comma-separated format: "Employer, Location"
-                                parts = next_line.split(",")
-                                if parts:
-                                    employer = parts[0].strip()[:100]
-                            else:
-                                # Single value line after date, assume it's employer
-                                employer = next_line[:100]
-            # ELSE: use standard logic (date on separate line from role/company)
+                    raw_start_idx = date_line_idx - 1
             else:
-                # Standard multi-line format: get preceding lines as if date wasn't there
-                preceding = all_lines[:date_line_idx]
-                if preceding:
-                    # For multi-entry CVs, find where THIS entry starts (after empty line or previous date)
-                    # by looking for empty lines or lines that contain dates
-                    entry_start_idx = 0
-                    for i in range(len(preceding) - 1, -1, -1):
-                        line = preceding[i].strip()
-                        if not line:  # empty line marks entry boundary
-                            entry_start_idx = i + 1
-                            break
-                        if _DATE_RANGE_RE.search(line) and i < len(preceding) - 1:
-                            # found a previous date; this entry starts after it
-                            entry_start_idx = i + 1
-                            break
+                # Date is at the start of its own line; find this entry's true
+                # boundary (blank line, bullet, previous date, subheader, or a
+                # wrapped bullet continuation) rather than assuming a window.
+                entry_start_idx = _resolve_entry_start(all_lines, date_line_idx)
+                entry_lines = all_lines[entry_start_idx:date_line_idx]
 
-                    # Use only lines from THIS entry
-                    entry_lines = preceding[entry_start_idx:] if entry_start_idx < len(preceding) else preceding
-
-                    if entry_lines:
-                        last_line = entry_lines[-1].strip()
-                        # Handle the Title / Company / Location format (e.g., Rami's CV)
-                        if len(entry_lines) >= 3 and _is_likely_location_line(last_line):
-                            # Format: Title / Company / Location, each on separate line
-                            role_title = entry_lines[-3].strip()[:100]
-                            employer = entry_lines[-2].strip()[:100]
-                        elif len(entry_lines) == 2:
-                            # Two-line format: role on first line, company on second line
-                            role_title = entry_lines[0].strip()[:100]
-                            employer = entry_lines[1].strip()[:100]
-                        else:
-                            # Original format: single line or Title / Company without location on own line
-                            role_title = entry_lines[-1].strip()[:100]
-                            employer = entry_lines[-2].strip()[:100] if len(entry_lines) >= 2 else ""
+                if entry_lines:
+                    raw_start_idx = entry_start_idx
+                    last_line = entry_lines[-1].strip()
+                    # Handle the Title / Company / Location format (e.g., Rami's CV)
+                    if len(entry_lines) >= 3 and _is_likely_location_line(last_line):
+                        role_title = entry_lines[-3].strip()[:100]
+                        employer = entry_lines[-2].strip()[:100]
+                    elif len(entry_lines) == 2:
+                        # Two-line format: role on first line, company on second line
+                        role_title = entry_lines[0].strip()[:100]
+                        employer = entry_lines[1].strip()[:100]
                     else:
-                        # Fallback if no entry_lines found
-                        role_title = preceding[-1].strip()[:100] if preceding else ""
-                        employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
-        else:
-            # Fallback if date not found in lines (shouldn't happen with wider context)
-            preceding = all_lines
-            if preceding:
-                last_line = preceding[-1].strip()
-                if len(preceding) >= 3 and _is_likely_location_line(last_line):
-                    role_title = preceding[-3].strip()[:100]
-                    employer = preceding[-2].strip()[:100]
-                elif len(preceding) == 2:
-                    # Two-line format: role on first line, company on second line
-                    role_title = preceding[0].strip()[:100]
-                    employer = preceding[1].strip()[:100]
-                else:
-                    role_title = preceding[-1].strip()[:100]
-                    employer = preceding[-2].strip()[:100] if len(preceding) >= 2 else ""
+                        role_title = entry_lines[-1].strip()[:100]
+                        employer = entry_lines[-2].strip()[:100] if len(entry_lines) >= 2 else ""
+
+                # If employer is still empty, check the line AFTER the date.
+                # Only treat a delimited next line as "Employer · Location"
+                # when it splits into exactly two parts — a tech-stack list
+                # like "Flutter · Supabase · PostgreSQL" splits into 3+ and
+                # must not be misread as an employer (confirmed via Ahmad
+                # Jamal's project entries, which have no real employer at all).
+                if not employer and date_line_idx + 1 < len(all_lines):
+                    next_line = all_lines[date_line_idx + 1].strip()
+                    if next_line:
+                        if " | " in next_line or " · " in next_line:
+                            delim = " | " if " | " in next_line else " · "
+                            parts = next_line.split(delim)
+                            if len(parts) == 2:
+                                employer = parts[0].strip()[:100]
+                        elif "," in next_line:
+                            parts = next_line.split(",")
+                            if parts:
+                                employer = parts[0].strip()[:100]
+                        else:
+                            # Single value line after date, assume it's employer
+                            employer = next_line[:100]
 
         # EDU-02.2: skip blocks where the "role" line is actually an education entry
         # (e.g. "Bachelor of Business Administration | Al-Quds Open University").
         if _EDU_DEGREE_LINE_RE.search(role_title) or _EDU_DEGREE_LINE_RE.search(employer):
             continue
 
-        ctx_end = min(len(search_text), m.end() + 50)
-        raw = search_text[ctx_start:ctx_end].strip()[:300]
+        parsed.append({
+            "role_title": role_title,
+            "employer": employer,
+            "years": years,
+            "date_line_idx": date_line_idx,
+            "raw_start_idx": raw_start_idx,
+        })
+
+    # Pass 2: attach raw_text, capping each entry at whichever comes first —
+    # its own natural end (next date/subheader/blank line) or the next
+    # entry's already-resolved start — so bullet-heavy entries never bleed
+    # into the next one even when nothing subheader-like separates them.
+    for idx, entry in enumerate(parsed):
+        natural_end = _resolve_entry_end(all_lines, entry["date_line_idx"] + 1)
+        next_start = parsed[idx + 1]["raw_start_idx"] if idx + 1 < len(parsed) else len(all_lines)
+        raw_end_idx = min(natural_end, next_start)
+        raw_end_idx = max(raw_end_idx, entry["raw_start_idx"] + 1)
+        raw = "\n".join(all_lines[entry["raw_start_idx"]:raw_end_idx]).strip()[:300]
 
         blocks.append(ExperienceEvidence(
-            employer=employer,
-            role_title=role_title,
-            years=years,
+            employer=entry["employer"],
+            role_title=entry["role_title"],
+            years=entry["years"],
             raw_text=raw,
         ))
-        total_years += years
+        total_years += entry["years"]
 
-    # Pass 2 — explicit statements ("10 years experience", "over 10 years", etc.)
+    # Pass 3 — explicit statements ("10 years experience", "over 10 years", etc.)
     # Search experience section + summary + other to catch e.g. "10+ years in banking".
     explicit_search = "\n".join([
         search_text,
@@ -1999,7 +2094,7 @@ def _extract_experience(
     total_years = max(total_years, explicit_max)
     total_years = min(total_years, 50.0)
 
-    # PASS 3 (Fallback) — If no entries found and no dates detected, try date-less extraction
+    # PASS 4 (Fallback) — If no entries found and no dates detected, try date-less extraction
     if not blocks and not _has_date_patterns(search_text):
         fallback_blocks, fallback_years = _extract_experience_dateless_fallback(sections, full_text)
         blocks = fallback_blocks
