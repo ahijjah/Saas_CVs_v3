@@ -1079,7 +1079,13 @@ Experience in compliance and information security management.
 
         # Experience extraction should work
         assert len(facts.experience) >= 2, "Should extract at least 2 job entries"
-        assert facts.total_experience_years >= 8.0, "Should calculate ~8 years of experience"
+        # Month-aware fractional calc: (Mar 2021 -> Present) + (Aug 2018 -> Feb
+        # 2021) is genuinely ~7.9 years, not a flat 8 — Aug->Feb is 6 months
+        # short of a 3rd year. The old ">= 8.0" only held because integer-year
+        # subtraction rounded both jobs up. This grows over time (one job runs
+        # to "Present"), so use a lower bound with headroom rather than a
+        # value that will drift stale.
+        assert facts.total_experience_years >= 7.5, "Should calculate ~8 years of experience"
 
     def test_mechanism_a_unregistered_skills_from_explicit_header(self):
         """Test Mechanism A: capture unregistered skills under explicit Skills header.
