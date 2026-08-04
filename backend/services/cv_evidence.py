@@ -481,6 +481,21 @@ _FIELD_AFTER_OF_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 
+# Bug I: field directly follows an abbreviated degree with no preposition at
+# all, e.g. "B.Sc. Computer Science" (as opposed to "B.Sc. in Computer
+# Science" or "Bachelor of Computer Science", both handled above). Scoped to
+# abbreviated forms only — spelled-out "Bachelor's FIELD" with no preposition
+# isn't a pattern we have evidence for. The word-separator inside the
+# repeated-word group is horizontal whitespace only ([ \t]+, not \s+) so the
+# capture can never cross a newline into the next line (e.g. an institution
+# name starting with a capital letter, like "PTUK").
+_FIELD_DIRECT_AFTER_ABBREV_RE = re.compile(
+    r"\b(?i:b\.?\s*sc\.?|b\.?\s*s\.?|b\.?\s*a\.?|b\.?\s*eng\.?"
+    r"|m\.?\s*sc\.?|m\.?\s*s\.?|m\.?\s*a\.?|m\.?\s*eng\.?)[ \t]+"
+    r"([A-Z][A-Za-z&\-']{2,55}(?:[ \t]+[A-Z][A-Za-z&\-']{1,55}){0,4})"
+    r"(?=\s*(?:[-–—,:;\n(]|from\b|at\b|$))"
+)
+
 # EDU-02.2: degree-line detector used to prevent education entries from leaking
 # into experience role_title / employer fields.
 _EDU_DEGREE_LINE_RE = re.compile(
@@ -1423,28 +1438,53 @@ def _infer_in_progress_education(full_text: str) -> EducationEvidence | None:
     return None
 
 
-def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
-    """Return (education_entries, highest_level_name)."""
+def _extract_education(
+    full_text: str,
+    sections: dict[str, list[str]] | None = None,
+) -> tuple[list[EducationEvidence], str]:
+    """Return (education_entries, highest_level_name).
+
+    Bug J: previously searched full_text unconditionally, with no section
+    scoping at all — unlike _extract_experience, which already prefers
+    sections["experience"]. That let a degree-level keyword appearing
+    anywhere in the CV (e.g. "secondary school students" inside a WORK
+    EXPERIENCE bullet about teaching) produce a spurious education entry.
+    Mirrors _extract_experience's exact fallback pattern: prefer the
+    education section when one was detected, fall back to full_text only
+    when no "Education" header exists at all (preserving prior behavior for
+    CVs without one).
+
+    sections is optional (default None -> full_text search, the prior
+    behavior) rather than positioned first like _extract_experience's
+    equivalent parameter: ~86 existing unit tests call this with a single
+    positional full_text argument, testing the pattern-matching logic in
+    isolation without going through the full section-split pipeline.
+    Reordering would mean rewriting all of them for no benefit — the real
+    production call site passes sections explicitly.
+    """
     found: list[EducationEvidence] = []
     highest_idx = 0
 
+    edu_section = "\n".join((sections or {}).get("education", []))
+    search_text = edu_section if edu_section.strip() else full_text
+
     for level, pat in _EDU_PATTERNS:
-        m = pat.search(full_text)
+        m = pat.search(search_text)
         if m:
             ctx_start = max(0, m.start() - 20)
-            ctx_end = min(len(full_text), m.end() + 120)
-            raw = full_text[ctx_start:ctx_end].strip()[:200]
+            ctx_end = min(len(search_text), m.end() + 120)
+            raw = search_text[ctx_start:ctx_end].strip()[:200]
 
             # Wide context for institution and year lookups (up to 300 chars after degree)
             wide_start = max(0, m.start() - 30)
-            wide_end = min(len(full_text), m.end() + 300)
-            wide_ctx = full_text[wide_start:wide_end]
+            wide_end = min(len(search_text), m.end() + 300)
+            wide_ctx = search_text[wide_start:wide_end]
 
             # ── Field of study ────────────────────────────────────────────────
             # EDU-02.1: search a NARROW window (degree keyword → +100 chars) only,
             # so we never accidentally match "in <something>" from a later section.
             field_of_study = ""
-            field_ctx = full_text[m.start() : min(len(full_text), m.end() + 100)]
+            field_ctx = search_text[m.start() : min(len(search_text), m.end() + 100)]
             fi_m = _FIELD_AFTER_IN_RE.search(field_ctx)
             if fi_m:
                 field_of_study = fi_m.group(1).strip()[:80]
@@ -1461,6 +1501,12 @@ def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
                 fo_m = _FIELD_AFTER_OF_RE.search(first_line)
                 if fo_m:
                     field_of_study = fo_m.group(1).strip()[:80]
+            # Bug I: "B.Sc. Computer Science" — abbreviated degree directly
+            # followed by the field, no preposition at all.
+            if not field_of_study:
+                da_m = _FIELD_DIRECT_AFTER_ABBREV_RE.search(field_ctx)
+                if da_m:
+                    field_of_study = da_m.group(1).strip()[:80]
 
             # ── Institution ───────────────────────────────────────────────────
             institution = ""
@@ -1496,7 +1542,7 @@ def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
                     pass
             # EDU-02.1: fallback to single graduation year if no range found
             if not attendance_years:
-                narrow_yr_ctx = full_text[m.start() : min(len(full_text), m.end() + 200)]
+                narrow_yr_ctx = search_text[m.start() : min(len(search_text), m.end() + 200)]
                 gy_m = _GRAD_YEAR_RE.search(narrow_yr_ctx)
                 if gy_m:
                     year_val = next((g for g in gy_m.groups() if g), None)
@@ -2331,7 +2377,7 @@ class CVFactsExtractor:
         candidate_name = _extract_candidate_name(cv_text) or ""
 
         skills = _extract_skills(sections, cv_text)
-        education, highest_edu = _extract_education(cv_text)
+        education, highest_edu = _extract_education(cv_text, sections)
         certifications = _extract_certifications(cv_text)
         soft_skill_signals = _extract_soft_skills(sections)
         domain_signals = _extract_domain_signals(cv_text)
