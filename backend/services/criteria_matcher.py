@@ -16,6 +16,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Literal, Optional
 
+from snowballstemmer import EnglishStemmer
+
 from services.cv_evidence import (
     CVFacts,
     EDUCATION_LEVELS,
@@ -338,6 +340,19 @@ def _normalize_text(text: str) -> str:
     return _WS_RE.sub(" ", text.lower().strip())
 
 
+_STEMMER = EnglishStemmer()
+
+
+def _stem_word(word: str) -> str:
+    """Apply Porter stemming to a single word. Used for domain-keyword matching.
+
+    Handles word-form variants (e.g., support/supported/supporting) so that
+    keyword intersection works across different tenses and aspects.
+    Only used for the domain-keyword intersection check, not for fuzzy matching.
+    """
+    return _STEMMER.stemWord(word)
+
+
 def _canonicalize(text: str) -> str:
     """Normalize then apply synonym expansion."""
     norm = _normalize_text(text)
@@ -596,6 +611,11 @@ def _match_experience(
         # as tokens, but fuzzy score is high enough). If stricter cross-domain
         # filtering becomes critical, consider extending the compute_semantic_similarity()
         # approach used for soft skills (Mechanism B) here as a future improvement.
+        #
+        # FIX (Bug H): Domain keywords now use Porter stemming for token matching
+        # to handle word-form variants (e.g., "support" matches "supported", "supporting").
+        # Stemming is applied ONLY to the keyword intersection check; full text passed
+        # to fuzzy matching is unchanged.
         has_relevance = False
         domain_keywords = {
             "hr", "recruitment", "hiring", "staffing", "payroll",
@@ -603,16 +623,30 @@ def _match_experience(
             "accounting", "sales", "engineering", "it", "ict", "operations",
             "customer service", "support", "logistics", "supply chain",
         }
+        # Pre-stem domain keywords: convert each keyword (or its tokens for multi-word)
+        # into stemmed form for consistent intersection checks
+        stemmed_keywords = set()
+        for kw in domain_keywords:
+            # Multi-word phrases: stem each word and rejoin
+            if " " in kw:
+                stemmed_kw = " ".join(_stem_word(w) for w in kw.split())
+            else:
+                stemmed_kw = _stem_word(kw)
+            stemmed_keywords.add(stemmed_kw)
 
         if candidate_texts and job_requirements:
             try:
                 from rapidfuzz import fuzz
                 for job_req in job_requirements:
                     job_norm = _normalize_text(job_req)
-                    job_keywords = set(job_norm.split()) & domain_keywords
+                    # Stem tokens before keyword intersection check
+                    job_tokens_stemmed = {_stem_word(t) for t in job_norm.split()}
+                    job_keywords = job_tokens_stemmed & stemmed_keywords
 
                     for cand_text in candidate_texts:
-                        cand_keywords = set(cand_text.split()) & domain_keywords
+                        # Stem tokens before keyword intersection check
+                        cand_tokens_stemmed = {_stem_word(t) for t in cand_text.split()}
+                        cand_keywords = cand_tokens_stemmed & stemmed_keywords
 
                         # Check for domain keyword intersection
                         if job_keywords and cand_keywords and (job_keywords & cand_keywords):
@@ -635,11 +669,15 @@ def _match_experience(
                 # Fallback: simple token overlap with domain keyword check
                 for job_req in job_requirements:
                     job_tokens = set(_normalize_text(job_req).split())
-                    job_keywords = job_tokens & domain_keywords
+                    # Stem tokens before keyword intersection check
+                    job_tokens_stemmed = {_stem_word(t) for t in job_tokens}
+                    job_keywords = job_tokens_stemmed & stemmed_keywords
 
                     for cand_text in candidate_texts:
                         cand_tokens = set(cand_text.split())
-                        cand_keywords = cand_tokens & domain_keywords
+                        # Stem tokens before keyword intersection check
+                        cand_tokens_stemmed = {_stem_word(t) for t in cand_tokens}
+                        cand_keywords = cand_tokens_stemmed & stemmed_keywords
 
                         if job_keywords and cand_keywords and (job_keywords & cand_keywords):
                             overlap = len(job_tokens & cand_tokens)
