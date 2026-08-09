@@ -1263,7 +1263,7 @@ class LLMCriteriaMapper:
         # Build user message
         user_msg = _build_user_message(job_title, criteria_list, cv_facts, cv_snippets)
 
-        # Single LLM call
+        # Single LLM call with retry on JSON parse failure
         client = _get_mapper_client()
         response = await client.chat.completions.create(
             model=model,
@@ -1298,8 +1298,66 @@ class LLMCriteriaMapper:
                 application_id, len(raw_content), has_qs
             )
 
-        # Parse response
+        # Task 2: Detect JSON parse failures and retry with higher token limit
+        parse_failed = False
+        try:
+            json.loads(raw_content)
+        except (json.JSONDecodeError, ValueError) as e:
+            parse_failed = True
+            logger.warning(
+                "[%s] D-01 initial JSON parse failed: %s. Retrying with 8000 tokens.",
+                application_id, str(e)[:100]
+            )
+
+            # Retry with higher token limit
+            try:
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    temperature=temp,
+                    max_tokens=8000,
+                    response_format={"type": "json_object"},
+                )
+                raw_content_retry = response.choices[0].message.content or ""
+
+                # Try to parse retry response
+                try:
+                    json.loads(raw_content_retry)
+                    raw_content = raw_content_retry
+                    parse_failed = False
+                    logger.info(
+                        "[%s] D-01 retry succeeded with 8000 tokens (length=%d chars)",
+                        application_id, len(raw_content_retry)
+                    )
+                except (json.JSONDecodeError, ValueError) as retry_e:
+                    logger.error(
+                        "[%s] D-01 JSON parse failed on retry (8000 tokens): %s",
+                        application_id, str(retry_e)[:100]
+                    )
+                    # raw_content stays as original, parse_failed stays True
+            except Exception as retry_call_exc:
+                logger.error(
+                    "[%s] D-01 retry LLM call failed: %s",
+                    application_id, str(retry_call_exc)[:100]
+                )
+                # raw_content stays as original, parse_failed stays True
+
+        # Parse response (may use retried content)
         assessments, qual_summary = _parse_llm_response(raw_content, criteria_list, p_code, p_ver, model, application_id)
+
+        # Flag all assessments if parse failed after retry (for manual review)
+        if parse_failed and assessments:
+            logger.error(
+                "[%s] D-01 Flagging all %d assessments for manual review due to JSON parse failure after retry",
+                application_id, len(assessments)
+            )
+            for assessment in assessments:
+                if not assessment.risk_flags:
+                    assessment.risk_flags = []
+                assessment.risk_flags.append("json_parse_failure_after_retry")
 
         # Issue #10 fix: if main call didn't produce qualitative_summary, call dedicated second LLM
         if qual_summary is None and assessments:
