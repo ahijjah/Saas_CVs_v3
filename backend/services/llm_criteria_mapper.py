@@ -1227,7 +1227,7 @@ class LLMCriteriaMapper:
                 "system_prompt": _HARDCODED_SYSTEM_PROMPT,
                 "model": "gpt-4o-mini",
                 "temperature": 0.10,
-                "max_tokens": 5000,
+                "max_tokens": 6000,
                 "output_language": "en",
             }
         else:
@@ -1237,7 +1237,7 @@ class LLMCriteriaMapper:
         p_ver    = str(prompt_config.get("version", "fallback"))
         model    = str(prompt_config.get("model", "gpt-4o-mini"))
         temp     = float(prompt_config.get("temperature", 0.10))
-        max_tok  = int(prompt_config.get("max_tokens", 4000))
+        max_tok  = int(prompt_config.get("max_tokens", 6000))
         sys_prompt = str(prompt_config.get("system_prompt") or _HARDCODED_SYSTEM_PROMPT)
 
         # Flatten criteria
