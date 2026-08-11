@@ -106,15 +106,30 @@ async def _check_application_access(
     application_id: str,
     current_user,
     db: AsyncSession,
+    is_super_admin: bool = False,
 ):
-    """Verify current user can access this application (tenant + client org check)."""
+    """Verify current user can access this application (tenant + client org check).
+
+    Super admin bypasses tenant isolation to access applications from any tenant.
+    """
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    tenant_filter = "" if is_super_admin else "AND a.tenant_id = CAST(:tid AS uuid)"
+
+    params = {
+        "aid":      application_id,
+        "uid":      current_user.user_id,
+        "is_admin": is_admin,
+    }
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
+
     row = await db.execute(
-        text("""
+        text(f"""
             SELECT a.application_id, a.job_id
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             WHERE a.application_id = CAST(:aid AS uuid)
-              AND a.tenant_id = CAST(:tid AS uuid)
+              {tenant_filter}
               AND (
                 :is_admin = TRUE
                 OR j.client_organization_id IS NULL
@@ -126,12 +141,7 @@ async def _check_application_access(
                 )
               )
         """),
-        {
-            "aid":      application_id,
-            "tid":      current_user.tenant_id,
-            "uid":      current_user.user_id,
-            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
-        },
+        params,
     )
     rec = row.mappings().first()
     if not rec:
@@ -146,10 +156,17 @@ async def list_interviews(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
-    await _check_application_access(application_id, current_user, db)
+
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    await _check_application_access(application_id, current_user, db, is_super_admin=is_super_admin)
+
+    tenant_filter = "" if is_super_admin else " AND i.tenant_id = CAST(:tid AS uuid)"
+    params: dict = {"aid": application_id}
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
 
     rows = await db.execute(
-        text("""
+        text(f"""
             SELECT i.interview_id, i.application_id, i.interview_type, i.scheduled_at,
                    i.duration_min, i.location, i.interviewers, i.status, i.notes,
                    i.created_by, i.created_at, i.updated_at,
@@ -159,13 +176,13 @@ async def list_interviews(
             LEFT JOIN users u ON u.user_id = i.created_by
             LEFT JOIN candidate_interview_feedback f ON f.interview_id = i.interview_id
             WHERE i.application_id = CAST(:aid AS uuid)
-              AND i.tenant_id = CAST(:tid AS uuid)
+              {tenant_filter}
             GROUP BY i.interview_id, i.application_id, i.interview_type, i.scheduled_at,
                      i.duration_min, i.location, i.interviewers, i.status, i.notes,
                      i.created_by, i.created_at, i.updated_at, u.full_name, u.email
             ORDER BY i.scheduled_at ASC NULLS LAST, i.created_at ASC
         """),
-        {"aid": application_id, "tid": current_user.tenant_id},
+        params,
     )
     return {"interviews": [_serialize_interview(dict(r)) for r in rows.mappings()]}
 
@@ -183,7 +200,9 @@ async def create_interview(
         raise HTTPException(status_code=422, detail=f"Invalid status '{body.status}'.")
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
-    app_rec = await _check_application_access(application_id, current_user, db)
+
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    app_rec = await _check_application_access(application_id, current_user, db, is_super_admin=is_super_admin)
 
     # asyncpg requires Python datetime for TIMESTAMPTZ parameters — not raw strings.
     scheduled_at = _parse_scheduled_at(body.scheduled_at)
@@ -246,16 +265,23 @@ async def update_interview(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
-    await _check_application_access(application_id, current_user, db)
+
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    await _check_application_access(application_id, current_user, db, is_super_admin=is_super_admin)
+
+    tenant_filter = "" if is_super_admin else " AND tenant_id = CAST(:tid AS uuid)"
+    select_params: dict = {"iid": interview_id, "aid": application_id}
+    if not is_super_admin:
+        select_params["tid"] = current_user.tenant_id
 
     row = await db.execute(
-        text("""
+        text(f"""
             SELECT interview_id, created_by FROM candidate_interviews
             WHERE interview_id = CAST(:iid AS uuid)
               AND application_id = CAST(:aid AS uuid)
-              AND tenant_id = CAST(:tid AS uuid)
+              {tenant_filter}
         """),
-        {"iid": interview_id, "aid": application_id, "tid": current_user.tenant_id},
+        select_params,
     )
     rec = row.mappings().first()
     if not rec:
@@ -266,7 +292,9 @@ async def update_interview(
         raise HTTPException(status_code=403, detail="Only the creator or admin can edit this interview.")
 
     sets: list[str] = ["updated_at = now()"]
-    params: dict = {"iid": interview_id, "tid": current_user.tenant_id}
+    params: dict = {"iid": interview_id}
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
 
     if body.interview_type is not None:
         if body.interview_type not in VALID_INTERVIEW_TYPES:
@@ -327,16 +355,23 @@ async def delete_interview(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
-    await _check_application_access(application_id, current_user, db)
+
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    await _check_application_access(application_id, current_user, db, is_super_admin=is_super_admin)
+
+    tenant_filter = "" if is_super_admin else " AND tenant_id = CAST(:tid AS uuid)"
+    select_params: dict = {"iid": interview_id, "aid": application_id}
+    if not is_super_admin:
+        select_params["tid"] = current_user.tenant_id
 
     row = await db.execute(
-        text("""
+        text(f"""
             SELECT interview_id, created_by FROM candidate_interviews
             WHERE interview_id = CAST(:iid AS uuid)
               AND application_id = CAST(:aid AS uuid)
-              AND tenant_id = CAST(:tid AS uuid)
+              {tenant_filter}
         """),
-        {"iid": interview_id, "aid": application_id, "tid": current_user.tenant_id},
+        select_params,
     )
     rec = row.mappings().first()
     if not rec:
@@ -346,12 +381,17 @@ async def delete_interview(
     if not is_admin and str(rec["created_by"]) != current_user.user_id:
         raise HTTPException(status_code=403, detail="Only the creator or admin can delete this interview.")
 
+    delete_params: dict = {"iid": interview_id}
+    if not is_super_admin:
+        delete_params["tid"] = current_user.tenant_id
+
     await db.execute(
-        text("""
+        text(f"""
             DELETE FROM candidate_interviews
-            WHERE interview_id = CAST(:iid AS uuid) AND tenant_id = CAST(:tid AS uuid)
+            WHERE interview_id = CAST(:iid AS uuid)
+              {tenant_filter}
         """),
-        {"iid": interview_id, "tid": current_user.tenant_id},
+        delete_params,
     )
     await db.commit()
 
@@ -366,10 +406,17 @@ async def list_feedback(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
-    await _check_application_access(application_id, current_user, db)
+
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    await _check_application_access(application_id, current_user, db, is_super_admin=is_super_admin)
+
+    tenant_filter = "" if is_super_admin else " AND f.tenant_id = CAST(:tid AS uuid)"
+    params: dict = {"iid": interview_id}
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
 
     rows = await db.execute(
-        text("""
+        text(f"""
             SELECT f.feedback_id, f.interview_id, f.application_id, f.tenant_id,
                    f.reviewer_id, f.overall_rating, f.recommendation, f.scorecard,
                    f.notes, f.created_at, f.updated_at,
@@ -377,10 +424,10 @@ async def list_feedback(
             FROM candidate_interview_feedback f
             LEFT JOIN users u ON u.user_id = f.reviewer_id
             WHERE f.interview_id = CAST(:iid AS uuid)
-              AND f.tenant_id = CAST(:tid AS uuid)
+              {tenant_filter}
             ORDER BY f.created_at ASC
         """),
-        {"iid": interview_id, "tid": current_user.tenant_id},
+        params,
     )
     uid = current_user.user_id
     items = []
@@ -400,7 +447,9 @@ async def submit_feedback(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
-    await _check_application_access(application_id, current_user, db)
+
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    await _check_application_access(application_id, current_user, db, is_super_admin=is_super_admin)
 
     if body.recommendation and body.recommendation not in VALID_RECOMMENDATIONS:
         raise HTTPException(status_code=422, detail=f"Invalid recommendation '{body.recommendation}'.")
@@ -453,16 +502,23 @@ async def update_feedback(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
-    await _check_application_access(application_id, current_user, db)
+
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    await _check_application_access(application_id, current_user, db, is_super_admin=is_super_admin)
+
+    tenant_filter = "" if is_super_admin else " AND tenant_id = CAST(:tid AS uuid)"
+    select_params: dict = {"fid": feedback_id, "iid": interview_id}
+    if not is_super_admin:
+        select_params["tid"] = current_user.tenant_id
 
     row = await db.execute(
-        text("""
+        text(f"""
             SELECT feedback_id, reviewer_id FROM candidate_interview_feedback
             WHERE feedback_id = CAST(:fid AS uuid)
               AND interview_id = CAST(:iid AS uuid)
-              AND tenant_id = CAST(:tid AS uuid)
+              {tenant_filter}
         """),
-        {"fid": feedback_id, "iid": interview_id, "tid": current_user.tenant_id},
+        select_params,
     )
     rec = row.mappings().first()
     if not rec:
@@ -476,27 +532,31 @@ async def update_feedback(
         raise HTTPException(status_code=422, detail=f"Invalid recommendation '{body.recommendation}'.")
 
     import json
+    update_params: dict = {
+        "fid":            feedback_id,
+        "rating":         body.overall_rating,
+        "recommendation": body.recommendation,
+        "scorecard":      json.dumps(body.scorecard),
+        "notes":          body.notes,
+    }
+    if not is_super_admin:
+        update_params["tid"] = current_user.tenant_id
+
     updated = await db.execute(
-        text("""
+        text(f"""
             UPDATE candidate_interview_feedback
             SET overall_rating = :rating,
                 recommendation = :recommendation,
                 scorecard      = CAST(:scorecard AS jsonb),
                 notes          = :notes,
                 updated_at     = now()
-            WHERE feedback_id = CAST(:fid AS uuid) AND tenant_id = CAST(:tid AS uuid)
+            WHERE feedback_id = CAST(:fid AS uuid)
+              {tenant_filter}
             RETURNING
                 feedback_id, interview_id, application_id, tenant_id, reviewer_id,
                 overall_rating, recommendation, scorecard, notes, created_at, updated_at
         """),
-        {
-            "fid":            feedback_id,
-            "tid":            current_user.tenant_id,
-            "rating":         body.overall_rating,
-            "recommendation": body.recommendation,
-            "scorecard":      json.dumps(body.scorecard),
-            "notes":          body.notes,
-        },
+        update_params,
     )
     await db.commit()
     result = dict(updated.mappings().first())
