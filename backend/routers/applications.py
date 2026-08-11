@@ -133,6 +133,7 @@ async def get_assignable_users(
 def _build_candidate_filter_clause(
     current_user,
     is_admin: bool,
+    is_super_admin: bool = False,
     job_id: str | None = None,
     workflow_status: str | None = None,
     processing_status: str | None = None,
@@ -156,16 +157,22 @@ def _build_candidate_filter_clause(
     export endpoint apply identical filtering and access-control rules —
     "do not duplicate filtering logic".
 
+    Super admin can see applications from ALL tenants (cross-tenant access).
+    Regular users see only their own tenant's applications.
+
     Returns (where_clause, params).
     """
-    where_parts = [
-        "a.tenant_id = CAST(:tid AS uuid)",
-    ]
+    where_parts = []
     params: dict = {
-        "tid": current_user.tenant_id,
         "uid": current_user.user_id,
         "is_admin": is_admin,
     }
+
+    # E-02 Phase 3: Super admin cross-tenant access
+    # super_admin sees all applications; others see only their tenant's
+    if not is_super_admin:
+        where_parts.append("a.tenant_id = CAST(:tid AS uuid)")
+        params["tid"] = current_user.tenant_id
 
     # Mode 1: Job-scoped (backward compatible) - job_id required
     if job_id:
@@ -377,6 +384,7 @@ async def list_applications(
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
 
     # Validate pagination
     page = max(1, page)
@@ -391,6 +399,7 @@ async def list_applications(
     where_clause, params = _build_candidate_filter_clause(
         current_user,
         is_admin,
+        is_super_admin=is_super_admin,
         job_id=job_id,
         workflow_status=workflow_status,
         processing_status=processing_status,
@@ -1019,6 +1028,7 @@ async def export_applications(
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
 
     valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
     sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
@@ -1027,6 +1037,7 @@ async def export_applications(
     where_clause, params = _build_candidate_filter_clause(
         current_user,
         is_admin,
+        is_super_admin=is_super_admin,
         job_id=job_id,
         workflow_status=workflow_status,
         processing_status=processing_status,
