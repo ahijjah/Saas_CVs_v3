@@ -315,19 +315,22 @@ def _build_candidate_filter_clause(
             f"a.processing_status NOT IN ({_pre_ai_stopped_statuses})"
         )
 
-    # Always enforce access control: admin OR no client OR assigned via agency_user_clients
-    where_parts.append("""
-        (
-            :is_admin = TRUE
-            OR j.client_organization_id IS NULL
-            OR EXISTS (
-                SELECT 1 FROM agency_user_clients auc
-                WHERE auc.user_id = CAST(:uid AS uuid)
-                  AND auc.client_organization_id = j.client_organization_id
-                  AND auc.tenant_id = CAST(:tid AS uuid)
+    # Always enforce access control (unless super_admin who sees all)
+    # super_admin: full access without agency_user_clients check
+    # others: must be admin OR no client OR assigned via agency_user_clients
+    if not is_super_admin:
+        where_parts.append("""
+            (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
             )
-        )
-    """)
+        """)
 
     return " AND ".join(where_parts), params
 
