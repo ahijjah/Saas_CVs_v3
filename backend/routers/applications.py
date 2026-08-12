@@ -1162,8 +1162,35 @@ async def get_application_details(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+
+    # Build WHERE clause conditionally for tenant isolation
+    # super_admin can see applications from ALL tenants; others only from their tenant
+    tenant_filter = "" if is_super_admin else "AND a.tenant_id = CAST(:tid AS uuid)"
+    access_control = "" if is_super_admin else """
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
+            """
+
+    params = {
+        "aid": application_id,
+        "uid": current_user.user_id,
+        "is_admin": is_admin,
+    }
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
+
     row = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 a.application_id, a.candidate_name, a.candidate_email,
                 a.candidate_email_from_cv, a.candidate_phone_from_cv,
@@ -1216,24 +1243,10 @@ async def get_application_details(
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             LEFT JOIN application_scores s ON s.application_id = a.application_id
-            WHERE a.application_id = :aid AND a.tenant_id = :tid
-              AND (
-                :is_admin = TRUE
-                OR j.client_organization_id IS NULL
-                OR EXISTS (
-                    SELECT 1 FROM agency_user_clients auc
-                    WHERE auc.user_id = CAST(:uid AS uuid)
-                      AND auc.client_organization_id = j.client_organization_id
-                      AND auc.tenant_id = CAST(:tid AS uuid)
-                )
-              )
+            WHERE a.application_id = :aid {tenant_filter}
+              {access_control}
         """),
-        {
-            "aid":      application_id,
-            "tid":      current_user.tenant_id,
-            "uid":      current_user.user_id,
-            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
-        },
+        params,
     )
     app = row.mappings().first()
     if not app:
@@ -1243,13 +1256,18 @@ async def get_application_details(
     dup_ref_info = None
     dup_ref_id = app["duplicate_reference_application_id"]
     if dup_ref_id:
+        dup_params = {"rid": str(dup_ref_id)}
+        dup_tenant_filter = "" if is_super_admin else "AND tenant_id = CAST(:tid AS uuid)"
+        if not is_super_admin:
+            dup_params["tid"] = current_user.tenant_id
+
         ref_row = await db.execute(
-            text("""
+            text(f"""
                 SELECT candidate_name, applied_at
                 FROM applications
-                WHERE application_id = :rid AND tenant_id = :tid
+                WHERE application_id = :rid {dup_tenant_filter}
             """),
-            {"rid": str(dup_ref_id), "tid": current_user.tenant_id},
+            dup_params,
         )
         ref = ref_row.mappings().first()
         if ref:
