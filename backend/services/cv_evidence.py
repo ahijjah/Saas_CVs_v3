@@ -481,6 +481,21 @@ _FIELD_AFTER_OF_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 
+# Bug I: field directly follows an abbreviated degree with no preposition at
+# all, e.g. "B.Sc. Computer Science" (as opposed to "B.Sc. in Computer
+# Science" or "Bachelor of Computer Science", both handled above). Scoped to
+# abbreviated forms only — spelled-out "Bachelor's FIELD" with no preposition
+# isn't a pattern we have evidence for. The word-separator inside the
+# repeated-word group is horizontal whitespace only ([ \t]+, not \s+) so the
+# capture can never cross a newline into the next line (e.g. an institution
+# name starting with a capital letter, like "PTUK").
+_FIELD_DIRECT_AFTER_ABBREV_RE = re.compile(
+    r"\b(?i:b\.?\s*sc\.?|b\.?\s*s\.?|b\.?\s*a\.?|b\.?\s*eng\.?"
+    r"|m\.?\s*sc\.?|m\.?\s*s\.?|m\.?\s*a\.?|m\.?\s*eng\.?)[ \t]+"
+    r"([A-Z][A-Za-z&\-']{2,55}(?:[ \t]+[A-Z][A-Za-z&\-']{1,55}){0,4})"
+    r"(?=\s*(?:[-–—,:;\n(]|from\b|at\b|$))"
+)
+
 # EDU-02.2: degree-line detector used to prevent education entries from leaking
 # into experience role_title / employer fields.
 _EDU_DEGREE_LINE_RE = re.compile(
@@ -1423,28 +1438,53 @@ def _infer_in_progress_education(full_text: str) -> EducationEvidence | None:
     return None
 
 
-def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
-    """Return (education_entries, highest_level_name)."""
+def _extract_education(
+    full_text: str,
+    sections: dict[str, list[str]] | None = None,
+) -> tuple[list[EducationEvidence], str]:
+    """Return (education_entries, highest_level_name).
+
+    Bug J: previously searched full_text unconditionally, with no section
+    scoping at all — unlike _extract_experience, which already prefers
+    sections["experience"]. That let a degree-level keyword appearing
+    anywhere in the CV (e.g. "secondary school students" inside a WORK
+    EXPERIENCE bullet about teaching) produce a spurious education entry.
+    Mirrors _extract_experience's exact fallback pattern: prefer the
+    education section when one was detected, fall back to full_text only
+    when no "Education" header exists at all (preserving prior behavior for
+    CVs without one).
+
+    sections is optional (default None -> full_text search, the prior
+    behavior) rather than positioned first like _extract_experience's
+    equivalent parameter: ~86 existing unit tests call this with a single
+    positional full_text argument, testing the pattern-matching logic in
+    isolation without going through the full section-split pipeline.
+    Reordering would mean rewriting all of them for no benefit — the real
+    production call site passes sections explicitly.
+    """
     found: list[EducationEvidence] = []
     highest_idx = 0
 
+    edu_section = "\n".join((sections or {}).get("education", []))
+    search_text = edu_section if edu_section.strip() else full_text
+
     for level, pat in _EDU_PATTERNS:
-        m = pat.search(full_text)
+        m = pat.search(search_text)
         if m:
             ctx_start = max(0, m.start() - 20)
-            ctx_end = min(len(full_text), m.end() + 120)
-            raw = full_text[ctx_start:ctx_end].strip()[:200]
+            ctx_end = min(len(search_text), m.end() + 120)
+            raw = search_text[ctx_start:ctx_end].strip()[:200]
 
             # Wide context for institution and year lookups (up to 300 chars after degree)
             wide_start = max(0, m.start() - 30)
-            wide_end = min(len(full_text), m.end() + 300)
-            wide_ctx = full_text[wide_start:wide_end]
+            wide_end = min(len(search_text), m.end() + 300)
+            wide_ctx = search_text[wide_start:wide_end]
 
             # ── Field of study ────────────────────────────────────────────────
             # EDU-02.1: search a NARROW window (degree keyword → +100 chars) only,
             # so we never accidentally match "in <something>" from a later section.
             field_of_study = ""
-            field_ctx = full_text[m.start() : min(len(full_text), m.end() + 100)]
+            field_ctx = search_text[m.start() : min(len(search_text), m.end() + 100)]
             fi_m = _FIELD_AFTER_IN_RE.search(field_ctx)
             if fi_m:
                 field_of_study = fi_m.group(1).strip()[:80]
@@ -1461,6 +1501,12 @@ def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
                 fo_m = _FIELD_AFTER_OF_RE.search(first_line)
                 if fo_m:
                     field_of_study = fo_m.group(1).strip()[:80]
+            # Bug I: "B.Sc. Computer Science" — abbreviated degree directly
+            # followed by the field, no preposition at all.
+            if not field_of_study:
+                da_m = _FIELD_DIRECT_AFTER_ABBREV_RE.search(field_ctx)
+                if da_m:
+                    field_of_study = da_m.group(1).strip()[:80]
 
             # ── Institution ───────────────────────────────────────────────────
             institution = ""
@@ -1496,7 +1542,7 @@ def _extract_education(full_text: str) -> tuple[list[EducationEvidence], str]:
                     pass
             # EDU-02.1: fallback to single graduation year if no range found
             if not attendance_years:
-                narrow_yr_ctx = full_text[m.start() : min(len(full_text), m.end() + 200)]
+                narrow_yr_ctx = search_text[m.start() : min(len(search_text), m.end() + 200)]
                 gy_m = _GRAD_YEAR_RE.search(narrow_yr_ctx)
                 if gy_m:
                     year_val = next((g for g in gy_m.groups() if g), None)
@@ -1823,12 +1869,16 @@ def _extract_experience_dateless_fallback(
             # Save previous entry
             if current_title:
                 employer, role = _extract_employer_role_from_title(current_title)
-                raw = f"{current_title} {' '.join(current_description[:100])}"
+                # Bug C: join with newline (not space) so bullet/line boundaries
+                # survive into raw_text — _split_responsibilities relies on them.
+                raw = f"{current_title}\n{chr(10).join(current_description[:100])}"
+                raw = raw[:300]
                 blocks.append(ExperienceEvidence(
                     employer=employer,
                     role_title=role,
                     years=0.0,
-                    raw_text=raw[:300],
+                    raw_text=raw,
+                    responsibilities=_split_responsibilities(raw, role, employer),
                 ))
 
             current_title = line.strip()
@@ -1840,12 +1890,14 @@ def _extract_experience_dateless_fallback(
     # Save the last entry
     if current_title:
         employer, role = _extract_employer_role_from_title(current_title)
-        raw = f"{current_title} {' '.join(current_description[:100])}"
+        raw = f"{current_title}\n{chr(10).join(current_description[:100])}"
+        raw = raw[:300]
         blocks.append(ExperienceEvidence(
             employer=employer,
             role_title=role,
             years=0.0,
-            raw_text=raw[:300],
+            raw_text=raw,
+            responsibilities=_split_responsibilities(raw, role, employer),
         ))
 
     return blocks, 0.0
@@ -1892,6 +1944,69 @@ def _extract_employer_role_from_title(title_line: str) -> tuple[str, str]:
 
     # Fallback
     return title, ""
+
+
+# Bug C: split an entry's raw_text into discrete responsibility phrases,
+# excluding the leading title/employer/date/location header block. Splits
+# on sentence-ending punctuation and newlines; strips a leading bullet
+# marker if present.
+_RESPONSIBILITY_SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+|\n+')
+_RESPONSIBILITY_BULLET_PREFIX_RE = re.compile(r'^[-•*]\s*')
+
+
+def _looks_like_metadata_line(line: str) -> bool:
+    """True for a tech-stack-style line ("Flutter · Supabase · PostgreSQL"):
+    3+ short segments separated by a middle-dot or pipe. Not a responsibility
+    sentence — a label list sitting in the header block."""
+    for delim in (' · ', ' | '):
+        if delim in line and len(line.split(delim)) >= 3:
+            return True
+    return False
+
+
+def _split_responsibilities(raw_text: str, role_title: str, employer: str) -> list[str]:
+    """Split raw_text into responsibility phrases, excluding the header.
+
+    The header isn't just title+employer — the dated-CV path's raw_text also
+    carries date-range and location lines (and sometimes a tech-stack line)
+    between the title/employer and the actual description, in formats that
+    don't bundle everything onto one line the way the dateless path's title
+    line does. Skip a *leading, contiguous* run of lines that look like
+    header content (containing role_title/employer text, a location line, a
+    date-range match, or tech-stack metadata) — stopping at the first line
+    that doesn't, so nothing past the header is ever mistakenly skipped.
+    """
+    if not raw_text:
+        return []
+
+    lines = raw_text.split('\n')
+    header_line_count = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            header_line_count += 1
+            continue
+        is_header_line = (
+            (role_title and role_title in stripped)
+            or (employer and employer in stripped)
+            or _is_likely_location_line(stripped)
+            or bool(_DATE_RANGE_RE.search(stripped))
+            or _looks_like_metadata_line(stripped)
+        )
+        if not is_header_line:
+            break
+        header_line_count += 1
+
+    description = '\n'.join(lines[header_line_count:]).strip()
+    if not description:
+        return []
+
+    phrases: list[str] = []
+    for chunk in _RESPONSIBILITY_SENTENCE_SPLIT_RE.split(description):
+        phrase = _RESPONSIBILITY_BULLET_PREFIX_RE.sub('', chunk).strip()
+        if len(phrase) >= 8:
+            phrases.append(phrase[:200])
+    return phrases[:20]
 
 
 def _extract_experience(
@@ -2070,6 +2185,7 @@ def _extract_experience(
             role_title=entry["role_title"],
             years=entry["years"],
             raw_text=raw,
+            responsibilities=_split_responsibilities(raw, entry["role_title"], entry["employer"]),
         ))
         total_years += entry["years"]
 
@@ -2261,7 +2377,7 @@ class CVFactsExtractor:
         candidate_name = _extract_candidate_name(cv_text) or ""
 
         skills = _extract_skills(sections, cv_text)
-        education, highest_edu = _extract_education(cv_text)
+        education, highest_edu = _extract_education(cv_text, sections)
         certifications = _extract_certifications(cv_text)
         soft_skill_signals = _extract_soft_skills(sections)
         domain_signals = _extract_domain_signals(cv_text)
