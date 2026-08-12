@@ -172,6 +172,8 @@ async def get_funnel_metrics(
     """Get recruitment funnel metrics with conversion rates and time-per-stage."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+
     try:
         df = datetime.fromisoformat(date_from) if date_from else datetime.now().replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         dt = datetime.fromisoformat(date_to) if date_to else datetime.now()
@@ -180,12 +182,15 @@ async def get_funnel_metrics(
 
     # Build optional WHERE fragments — only when values are provided to avoid
     # asyncpg AmbiguousParameterError on nullable params used in IS NULL checks.
+    # E-02 Phase 3: Super admin sees all tenants' analytics; others see only their own
+    tenant_filter = "" if is_super_admin else " AND j.tenant_id = CAST(:tid AS uuid)"
     extra_where = ""
     params: dict = {
-        "tid":       current_user.tenant_id,
         "date_from": df,
         "date_to":   dt,
     }
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
     if job_id:
         extra_where += " AND a.job_id = CAST(:job_id AS uuid)"
         params["job_id"] = job_id
@@ -207,10 +212,10 @@ async def get_funnel_metrics(
                 ) as median_days_in_stage
               FROM applications a
               JOIN jobs j ON j.job_id = a.job_id
-              WHERE j.tenant_id = CAST(:tid AS uuid)
-                AND a.workflow_status IS NOT NULL
+              WHERE a.workflow_status IS NOT NULL
                 AND a.created_at >= :date_from
                 AND a.created_at <= :date_to
+                {tenant_filter}
                 {extra_where}
               GROUP BY a.workflow_status
             )
@@ -279,18 +284,23 @@ async def get_recruiter_productivity(
     """Get recruiter productivity metrics (reviews, moves, feedback, approvals)."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+
     try:
         df = datetime.fromisoformat(date_from) if date_from else (datetime.now() - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
         dt = datetime.fromisoformat(date_to) if date_to else datetime.now()
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid date format. Use ISO 8601.")
 
+    # E-02 Phase 3: Super admin sees metrics from all tenants
+    tenant_filter = "" if is_super_admin else " AND u.tenant_id = CAST(:tid AS uuid)"
     extra_where = ""
     params: dict = {
-        "tid":       current_user.tenant_id,
         "date_from": df,
         "date_to":   dt,
     }
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
     if recruiter_id:
         extra_where = " AND u.user_id = CAST(:recruiter_id AS uuid)"
         params["recruiter_id"] = recruiter_id
@@ -322,7 +332,8 @@ async def get_recruiter_productivity(
             LEFT JOIN candidate_interviews ci ON ci.application_id = a.application_id
             LEFT JOIN candidate_interview_feedback cif ON cif.interview_id = ci.interview_id
             LEFT JOIN candidate_approvals ca ON ca.application_id = a.application_id
-            WHERE u.tenant_id = CAST(:tid AS uuid)
+            WHERE a.workflow_status IS NOT NULL
+              {tenant_filter}
               AND a.workflow_status IS NOT NULL
               AND a.created_at >= :date_from
               AND a.created_at <= :date_to
@@ -364,7 +375,10 @@ async def get_aging_metrics(
     """Get SLA aging metrics with breach status (green/amber/red)."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Fetch SLA thresholds
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+
+    # Fetch SLA thresholds (E-02 Phase 3: use current tenant unless super_admin sees aggregate)
+    # For super_admin, use current tenant's SLA as default; could aggregate across tenants in future
     pol_row = await db.execute(
         text("SELECT policies FROM tenant_workflow_policies WHERE tenant_id = CAST(:tid AS uuid)"),
         {"tid": current_user.tenant_id},
@@ -379,12 +393,14 @@ async def get_aging_metrics(
 
     review_days = sla_thresholds.get("review_days", 14)
 
+    tenant_filter = "" if is_super_admin else " AND j.tenant_id = CAST(:tid AS uuid)"
     extra_where = ""
     params: dict = {
-        "tid":            current_user.tenant_id,
         "days_threshold": days_threshold,
         "review_days":    review_days,
     }
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
     if workflow_status:
         extra_where = " AND a.workflow_status = :workflow_status"
         params["workflow_status"] = workflow_status
@@ -410,7 +426,9 @@ async def get_aging_metrics(
               JOIN jobs j ON j.job_id = a.job_id
               LEFT JOIN users u ON u.user_id = a.assigned_user_id
               LEFT JOIN candidate_approvals ca ON ca.application_id = a.application_id
-              WHERE j.tenant_id = CAST(:tid AS uuid)
+              WHERE a.workflow_status IS NOT NULL
+                AND a.workflow_status NOT IN ('hired', 'rejected', 'withdrawn')
+                {tenant_filter}
                 AND a.workflow_status IS NOT NULL
                 AND a.workflow_status NOT IN ('hired', 'rejected', 'withdrawn')
                 {extra_where}
@@ -485,7 +503,10 @@ async def get_insights(
     """Return rule-based operational recruitment insights derived from SQL aggregations."""
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+
     # Load SLA thresholds from tenant policy (fallback to defaults)
+    # For super_admin, use current tenant's SLA as default
     pol_row = await db.execute(
         text("SELECT policies FROM tenant_workflow_policies WHERE tenant_id = CAST(:tid AS uuid)"),
         {"tid": current_user.tenant_id},
@@ -502,8 +523,10 @@ async def get_insights(
     interview_days = sla["interview_feedback_days"]
 
     # ── Single aggregation query for all rule inputs ────────────────────────
+    # E-02 Phase 3: Super admin sees insights from all tenants
+    tenant_filter = "" if is_super_admin else " AND j.tenant_id = CAST(:tid AS uuid)"
     agg = await db.execute(
-        text("""
+        text(f"""
             SELECT
               COUNT(*) FILTER (WHERE a.workflow_status NOT IN ('hired','rejected','withdrawn'))
                 AS active_total,
@@ -527,10 +550,10 @@ async def get_insights(
               ) AS interview_aging
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
-            WHERE j.tenant_id = CAST(:tid AS uuid)
-              AND a.workflow_status IS NOT NULL
+            WHERE a.workflow_status IS NOT NULL
+              {tenant_filter}
         """),
-        {"tid": current_user.tenant_id, "review_days": review_days, "interview_days": interview_days},
+        {"tid": current_user.tenant_id if not is_super_admin else "", "review_days": review_days, "interview_days": interview_days},
     )
     row = dict(agg.mappings().first() or {})
 
@@ -687,18 +710,23 @@ async def get_recruitment_efficiency(
     """
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+
     try:
         df = datetime.fromisoformat(date_from) if date_from else datetime.now().replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         dt = datetime.fromisoformat(date_to) if date_to else datetime.now()
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid date format. Use ISO 8601.")
 
+    # E-02 Phase 3: Super admin sees efficiency metrics from all tenants
+    tenant_filter = "" if is_super_admin else " AND j.tenant_id = CAST(:tid AS uuid)"
     extra_where = ""
     params: dict = {
-        "tid":       current_user.tenant_id,
         "date_from": df,
         "date_to":   dt,
     }
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
     if job_id:
         extra_where += " AND a.job_id = CAST(:job_id AS uuid)"
         params["job_id"] = job_id
@@ -721,9 +749,9 @@ async def get_recruitment_efficiency(
               JOIN jobs j ON j.job_id = a.job_id
               JOIN application_workflow_history awh
                 ON awh.application_id = a.application_id AND awh.to_status = 'hired'
-              WHERE j.tenant_id = CAST(:tid AS uuid)
-                AND a.created_at >= :date_from
+              WHERE a.created_at >= :date_from
                 AND a.created_at <= :date_to
+                {tenant_filter}
                 {extra_where}
               GROUP BY a.application_id, a.created_at
             ),
@@ -752,7 +780,9 @@ async def get_recruitment_efficiency(
 
     # ── 2. Time to Fill: job created_at (open) → first hire for that job ──────
     job_extra_where = ""
-    fill_params: dict = {"tid": current_user.tenant_id}
+    fill_params: dict = {}
+    if not is_super_admin:
+        fill_params["tid"] = current_user.tenant_id
     if job_id:
         job_extra_where += " AND j.job_id = CAST(:job_id AS uuid)"
         fill_params["job_id"] = job_id
@@ -768,7 +798,8 @@ async def get_recruitment_efficiency(
               JOIN jobs j ON j.job_id = a.job_id
               JOIN application_workflow_history awh
                 ON awh.application_id = a.application_id AND awh.to_status = 'hired'
-              WHERE j.tenant_id = CAST(:tid AS uuid)
+              WHERE 1=1
+                {tenant_filter}
                 {job_extra_where}
               GROUP BY a.job_id
             )
@@ -830,9 +861,9 @@ async def get_recruitment_efficiency(
               FROM application_workflow_history awh
               JOIN applications a ON a.application_id = awh.application_id
               JOIN jobs j ON j.job_id = a.job_id
-              WHERE j.tenant_id = CAST(:tid AS uuid)
-                AND a.created_at >= :date_from
+              WHERE a.created_at >= :date_from
                 AND a.created_at <= :date_to
+                {tenant_filter}
                 {extra_where}
             )
             SELECT
@@ -857,7 +888,9 @@ async def get_recruitment_efficiency(
 
     # ── 4. Longest Open Jobs: currently-active jobs ranked by days open ───────
     longest_extra_where = ""
-    longest_params: dict = {"tid": current_user.tenant_id}
+    longest_params: dict = {}
+    if not is_super_admin:
+        longest_params["tid"] = current_user.tenant_id
     if job_id:
         longest_extra_where += " AND j.job_id = CAST(:job_id AS uuid)"
         longest_params["job_id"] = job_id
@@ -878,8 +911,8 @@ async def get_recruitment_efficiency(
               COUNT(*) FILTER (WHERE a.workflow_status = 'hired')        AS hired
             FROM jobs j
             LEFT JOIN applications a ON a.job_id = j.job_id
-            WHERE j.tenant_id = CAST(:tid AS uuid)
-              AND j.status = 'active'
+            WHERE j.status = 'active'
+              {tenant_filter}
               {longest_extra_where}
             GROUP BY j.job_id, j.title, j.job_code, j.created_at
             ORDER BY days_open DESC
@@ -903,6 +936,8 @@ async def get_recruitment_efficiency(
     ]
 
     # ── 5. Recruiter Efficiency: avg time-to-hire, hires, candidates managed ──
+    recruiter_user_filter = "" if is_super_admin else " AND u.tenant_id = CAST(:tid AS uuid)"
+
     recruiter_rows = await db.execute(
         text(f"""
             WITH hire_durations AS (
@@ -913,6 +948,7 @@ async def get_recruitment_efficiency(
               FROM applications a2
               JOIN application_workflow_history awh
                 ON awh.application_id = a2.application_id AND awh.to_status = 'hired'
+              WHERE 1=1{tenant_filter}
               GROUP BY a2.application_id, a2.assigned_user_id
             )
             SELECT
@@ -925,10 +961,8 @@ async def get_recruitment_efficiency(
             JOIN applications a ON a.assigned_user_id = u.user_id
             JOIN jobs j ON j.job_id = a.job_id
             LEFT JOIN hire_durations hd ON hd.application_id = a.application_id
-            WHERE u.tenant_id = CAST(:tid AS uuid)
-              AND a.created_at >= :date_from
-              AND a.created_at <= :date_to
-              {extra_where}
+            WHERE a.created_at >= :date_from
+              AND a.created_at <= :date_to{recruiter_user_filter}{tenant_filter}{extra_where}
             GROUP BY u.user_id, u.full_name, u.email
             ORDER BY hires_completed DESC, avg_time_to_hire_days ASC NULLS LAST
         """),

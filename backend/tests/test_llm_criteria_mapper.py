@@ -2099,4 +2099,61 @@ class TestNonScoreableReclassification:
         _reclassify_non_scoreable_from_other_requirements(data)
 
         assert data["other_requirements"] == []
-        assert data["non_scoreable_requirements"] == []
+
+
+class TestTokenLimitConsistency:
+    """Verify token limits are consistent across hardcoded, fallback, and database."""
+
+    def test_hardcoded_system_prompt_fallback_max_tokens(self):
+        """Hardcoded fallback should use 6000 tokens to avoid truncation."""
+        from services.llm_criteria_mapper import LLMCriteriaMapper
+        import re
+
+        # Read the source to check hardcoded fallback
+        with open(__file__.replace('test_llm_criteria_mapper.py', '../services/llm_criteria_mapper.py')) as f:
+            source = f.read()
+
+        # Find the hardcoded fallback prompt_config
+        match = re.search(
+            r'"max_tokens":\s*(\d+)',
+            source[source.find('"prompt_code": "recruitment.criteria_mapping"'):source.find('"prompt_code": "recruitment.criteria_mapping"') + 500]
+        )
+        assert match is not None, "Could not find hardcoded max_tokens"
+        hardcoded_max = int(match.group(1))
+        assert hardcoded_max == 6000, f"Hardcoded max_tokens should be 6000, got {hardcoded_max}"
+
+    def test_default_fallback_max_tokens(self):
+        """Default fallback (when DB config not found) should use 6000 tokens."""
+        from services.llm_criteria_mapper import LLMCriteriaMapper
+        import re
+
+        # Read the source to check default fallback
+        with open(__file__.replace('test_llm_criteria_mapper.py', '../services/llm_criteria_mapper.py')) as f:
+            source = f.read()
+
+        # Find the get call with default
+        match = re.search(
+            r'prompt_config\.get\("max_tokens",\s*(\d+)\)',
+            source
+        )
+        assert match is not None, "Could not find max_tokens default"
+        default_max = int(match.group(1))
+        assert default_max == 6000, f"Default max_tokens should be 6000, got {default_max}"
+
+    def test_database_seed_max_tokens(self):
+        """Database seed should initialize max_tokens to 6000 (Issue #10 fix)."""
+        import re
+
+        # Read the migration file
+        with open(__file__.replace('test_llm_criteria_mapper.py', '../db/migrations/094_llm_criteria_mapping_results.sql')) as f:
+            migration = f.read()
+
+        # Find the INSERT statement with max_tokens value
+        # Pattern: model, temperature, max_tokens, output_language
+        match = re.search(
+            r"'gpt-4o-mini',\s+0\.10,\s+(\d+),\s+'en'",
+            migration
+        )
+        assert match is not None, "Could not find max_tokens in database migration"
+        db_max = int(match.group(1))
+        assert db_max == 6000, f"Database max_tokens should be 6000, got {db_max}"

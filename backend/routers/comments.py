@@ -52,8 +52,15 @@ async def list_comments(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    tenant_filter = "" if is_super_admin else " AND cc.tenant_id = CAST(:tid AS uuid)"
+
+    params: dict = {"aid": application_id}
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
+
     rows = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 cc.comment_id,
                 cc.application_id,
@@ -66,10 +73,10 @@ async def list_comments(
             FROM candidate_comments cc
             JOIN users u ON u.user_id = cc.user_id
             WHERE cc.application_id = CAST(:aid AS uuid)
-              AND cc.tenant_id      = CAST(:tid AS uuid)
+              {tenant_filter}
             ORDER BY cc.created_at ASC
         """),
-        {"aid": application_id, "tid": current_user.tenant_id},
+        params,
     )
 
     comments = []
@@ -90,14 +97,21 @@ async def create_comment(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    tenant_filter = "" if is_super_admin else " AND tenant_id = CAST(:tid AS uuid)"
+
+    verify_params: dict = {"aid": application_id}
+    if not is_super_admin:
+        verify_params["tid"] = current_user.tenant_id
+
     # Verify the application belongs to this tenant
     exists = await db.execute(
-        text("""
+        text(f"""
             SELECT 1 FROM applications
             WHERE application_id = CAST(:aid AS uuid)
-              AND tenant_id      = CAST(:tid AS uuid)
+              {tenant_filter}
         """),
-        {"aid": application_id, "tid": current_user.tenant_id},
+        verify_params,
     )
     if not exists.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found.")
@@ -139,34 +153,51 @@ async def update_comment(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+
+    # Build conditional WHERE clause for SELECT
+    select_where_parts = ["comment_id = CAST(:cid AS uuid)", "application_id = CAST(:aid AS uuid)"]
+    select_params: dict = {"cid": comment_id, "aid": application_id}
+
+    # Only enforce tenant_id filter if not super_admin
+    if not is_super_admin:
+        select_where_parts.append("tenant_id = CAST(:tid AS uuid)")
+        select_params["tid"] = current_user.tenant_id
+
+    # Only enforce user_id filter if not admin
+    if not is_admin:
+        select_where_parts.append("user_id = CAST(:uid AS uuid)")
+        select_params["uid"] = current_user.user_id
+
+    select_where = " AND ".join(select_where_parts)
+
     existing = await db.execute(
-        text("""
+        text(f"""
             SELECT comment_id FROM candidate_comments
-            WHERE comment_id      = CAST(:cid AS uuid)
-              AND application_id  = CAST(:aid AS uuid)
-              AND user_id         = CAST(:uid AS uuid)
-              AND tenant_id       = CAST(:tid AS uuid)
+            WHERE {select_where}
         """),
-        {
-            "cid": comment_id,
-            "aid": application_id,
-            "uid": current_user.user_id,
-            "tid": current_user.tenant_id,
-        },
+        select_params,
     )
     if not existing.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found or not yours.")
 
+    # Build UPDATE query
+    tenant_filter = "" if is_super_admin else " AND tenant_id = CAST(:tid AS uuid)"
+    update_params: dict = {"cid": comment_id, "text": body.comment_text.strip()}
+    if not is_super_admin:
+        update_params["tid"] = current_user.tenant_id
+
     row = await db.execute(
-        text("""
+        text(f"""
             UPDATE candidate_comments
                SET comment_text = :text,
                    updated_at   = now()
              WHERE comment_id = CAST(:cid AS uuid)
-               AND tenant_id  = CAST(:tid AS uuid)
+               {tenant_filter}
             RETURNING comment_id, application_id, user_id, comment_text, created_at, updated_at
         """),
-        {"cid": comment_id, "tid": current_user.tenant_id, "text": body.comment_text.strip()},
+        update_params,
     )
     await db.commit()
 
@@ -189,35 +220,41 @@ async def delete_comment(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
     is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
 
+    tenant_filter = "" if is_super_admin else " AND tenant_id = CAST(:tid AS uuid)"
+
     if is_admin:
-        # Admins can delete any comment in their tenant
+        # Admins can delete any comment in their tenant (or all tenants if super_admin)
+        delete_params: dict = {"cid": comment_id, "aid": application_id}
+        if not is_super_admin:
+            delete_params["tid"] = current_user.tenant_id
+
         result = await db.execute(
-            text("""
+            text(f"""
                 DELETE FROM candidate_comments
                 WHERE comment_id     = CAST(:cid AS uuid)
                   AND application_id = CAST(:aid AS uuid)
-                  AND tenant_id      = CAST(:tid AS uuid)
+                  {tenant_filter}
             """),
-            {"cid": comment_id, "aid": application_id, "tid": current_user.tenant_id},
+            delete_params,
         )
     else:
         # Others can only delete their own comments
+        delete_params: dict = {"cid": comment_id, "aid": application_id, "uid": current_user.user_id}
+        if not is_super_admin:
+            delete_params["tid"] = current_user.tenant_id
+
         result = await db.execute(
-            text("""
+            text(f"""
                 DELETE FROM candidate_comments
                 WHERE comment_id     = CAST(:cid AS uuid)
                   AND application_id = CAST(:aid AS uuid)
                   AND user_id        = CAST(:uid AS uuid)
-                  AND tenant_id      = CAST(:tid AS uuid)
+                  {tenant_filter}
             """),
-            {
-                "cid": comment_id,
-                "aid": application_id,
-                "uid": current_user.user_id,
-                "tid": current_user.tenant_id,
-            },
+            delete_params,
         )
 
     if result.rowcount == 0:

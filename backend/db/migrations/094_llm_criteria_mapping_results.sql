@@ -57,7 +57,8 @@ ALTER TABLE ai_prompts ADD CONSTRAINT ai_prompts_prompt_category_check
 
 -- ── Part 3: Seed recruitment.criteria_mapping prompt ─────────────────────────
 -- is_active = TRUE so load_active_prompt(db, "recruitment.criteria_mapping") works immediately.
--- max_tokens = 4000 — sufficient for 25+ criteria, one assessment each, with headroom.
+-- max_tokens = 6000 — sufficient for 30+ criteria, full assessments + qualitative_summary.
+-- Increased from 4000 to avoid truncation at response boundaries (Issue #10).
 -- system_prompt intentionally mirrors _HARDCODED_SYSTEM_PROMPT in llm_criteria_mapper.py.
 -- Update BOTH if you revise the mapping rules.
 
@@ -75,7 +76,7 @@ INSERT INTO ai_prompts (
     'User message is constructed dynamically by LLMCriteriaMapper._build_user_message() in llm_criteria_mapper.py. This template field is for documentation only — it is not rendered as a format string.',
     'gpt-4o-mini',
     0.10,
-    4000,
+    6000,
     'en',
     TRUE,
     1,
