@@ -597,11 +597,45 @@ def _match_experience(
         # filtering becomes critical, consider extending the compute_semantic_similarity()
         # approach used for soft skills (Mechanism B) here as a future improvement.
         has_relevance = False
+        # Domain keywords: used to disambiguate roles with same generic titles
+        # (e.g., "Manager" in HR vs Accounting; "Coordinator" in logistics vs HR).
+        # Supports ~25 major business domains. When a job requirement and candidate
+        # role share a domain keyword, fuzzy matching uses a lower threshold (65%)
+        # because context is clear. When neither has keywords, threshold is 85%
+        # (higher bar to avoid false positives like "Laboratory Coordinator" vs "HR Coordinator").
         domain_keywords = {
-            "hr", "recruitment", "hiring", "staffing", "payroll",
-            "training", "development", "management", "marketing", "finance",
-            "accounting", "sales", "engineering", "it", "ict", "operations",
-            "customer service", "support", "logistics", "supply chain",
+            # People/Organization
+            "hr", "recruitment", "hiring", "staffing", "payroll", "employee",
+            "training", "development", "organizational", "culture", "talent",
+            # Finance/Accounting
+            "finance", "accounting", "audit", "tax", "budget", "investment",
+            "banking", "treasury", "credit", "loan", "mortgage", "forecasting",
+            # Sales/Marketing
+            "sales", "marketing", "advertising", "brand", "campaign", "customer acquisition",
+            "lead generation", "account management", "business development",
+            # Operations/Logistics
+            "operations", "logistics", "supply chain", "procurement", "inventory",
+            "warehouse", "distribution", "manufacturing", "production", "quality",
+            # IT/Technology
+            "it", "ict", "developer", "developer", "engineering", "infrastructure",
+            "database", "network", "security", "software", "devops", "cloud",
+            # Customer-facing
+            "customer service", "support", "customer success", "call center",
+            "helpdesk", "technical support", "onboarding",
+            # Legal/Compliance
+            "legal", "compliance", "risk", "audit", "governance", "regulatory",
+            "contract", "litigation", "attorney",
+            # Healthcare
+            "healthcare", "medical", "clinical", "nursing", "pharmacy", "dentistry",
+            "therapy", "patient", "hospital", "physician",
+            # Education
+            "education", "teaching", "training", "academic", "curriculum", "instructor",
+            # Construction/Real Estate
+            "construction", "real estate", "architecture", "engineering", "property",
+            "real estate", "property management",
+            # Data/Analytics
+            "data", "analytics", "business intelligence", "reporting", "statistical",
+            "data science", "machine learning",
         }
 
         if candidate_texts and job_requirements:

@@ -826,6 +826,51 @@ class TestCriteriaMatchEngine:
         assert m.status == "MATCHED", f"Expected MATCHED, got {m.status}"
         assert m.confidence >= 0.60, f"Expected confidence >= 0.60, got {m.confidence}"
 
+    def test_experience_domain_keywords_distinguish_accounting_vs_hr(self):
+        """Domain keywords should prevent 'Accounting Manager' from matching 'HR Manager' requirement."""
+        facts = CVFacts(
+            language="en",
+            total_char_count=500,
+            experience=[
+                ExperienceEvidence(
+                    employer="Acme Corp",
+                    role_title="Manager",  # Generic title
+                    years=5.0,
+                    responsibilities=[
+                        "Managed financial records and budgets",  # Accounting domain
+                        "Performed audits",
+                        "Led accounting team"
+                    ],
+                    raw_text="Manager - Accounting (2019-2024): Managed financial records..."
+                )
+            ],
+            total_experience_years=5.0,
+            education=[],
+            highest_education_level="None",
+            certifications=[],
+        )
+        criteria = {
+            "skills": {"required": [], "preferred": []},
+            "experience": {
+                "minimum_years": 3,
+                "relevant_roles": ["HR Manager", "Recruiter"],  # HR domain
+                "key_responsibilities": ["recruitment", "hiring", "employee relations"]
+            },
+            "education": {"minimum_level": "None"},
+            "certifications": [],
+            "domain_knowledge": [],
+            "other_requirements": [],
+        }
+        engine = CriteriaMatchEngine()
+        result = engine.match(facts, criteria)
+
+        exp_matches = [x for x in result.matches if x.dimension == "experience"]
+        assert len(exp_matches) == 1
+        m = exp_matches[0]
+        # Should be PARTIAL because years match but domain is wrong (accounting vs HR)
+        assert m.status == "PARTIAL", f"Expected PARTIAL, got {m.status}"
+        assert "relevance to role not verified" in m.partial_reason
+
     def test_pure_duration_no_relevance_data_falls_back_to_numeric(self):
         """Fallback to pure numeric: When relevant_roles and key_responsibilities are
         both empty/missing, apply only numeric comparison.
