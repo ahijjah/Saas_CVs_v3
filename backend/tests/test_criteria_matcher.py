@@ -922,6 +922,162 @@ class TestCriteriaMatchEngine:
         edu_matches = [x for x in result.matches if x.dimension == "education"]
         assert edu_matches == []
 
+    # ── Field of study matching (NEW) ──────────────────────────────────────
+
+    def test_education_field_of_study_exact_match(self):
+        """Field of study: Computer Science matches Computer Science in CV."""
+        facts = CVFacts(
+            language="en",
+            total_char_count=500,
+            education=[
+                EducationEvidence(
+                    degree_level="Bachelor's",
+                    field_of_study="Computer Science",
+                    institution="MIT",
+                    year=2020,
+                    raw_text="BS Computer Science, MIT (2020)"
+                )
+            ],
+            highest_education_level="Bachelor's",
+        )
+        criteria = {
+            "skills": {"required": [], "preferred": []},
+            "experience": {"minimum_years": 0, "relevant_roles": [], "key_responsibilities": []},
+            "education": {
+                "minimum_level": "Bachelor's",
+                "fields_of_study": ["Computer Science"],
+            },
+            "certifications": [],
+            "domain_knowledge": [],
+            "other_requirements": [],
+        }
+        engine = CriteriaMatchEngine()
+        result = engine.match(facts, criteria)
+
+        # Should have 2 education matches: degree level + field of study
+        edu_matches = [x for x in result.matches if x.dimension == "education"]
+        assert len(edu_matches) == 2
+
+        # Degree level should be MATCHED
+        level_match = next(x for x in edu_matches if "Minimum education" in x.criterion_text)
+        assert level_match.status == "MATCHED"
+
+        # Field of study should be MATCHED
+        field_match = next(x for x in edu_matches if "Field of study" in x.criterion_text)
+        assert field_match.status == "MATCHED"
+
+    def test_education_field_of_study_mismatch(self):
+        """Field mismatch: Bachelor's in Business Admin should NOT match Computer Science requirement."""
+        facts = CVFacts(
+            language="en",
+            total_char_count=500,
+            education=[
+                EducationEvidence(
+                    degree_level="Bachelor's",
+                    field_of_study="Business Administration",
+                    institution="State University",
+                    year=2015,
+                    raw_text="BA Business Administration, State University (2015)"
+                )
+            ],
+            highest_education_level="Bachelor's",
+        )
+        criteria = {
+            "skills": {"required": [], "preferred": []},
+            "experience": {"minimum_years": 0, "relevant_roles": [], "key_responsibilities": []},
+            "education": {
+                "minimum_level": "Bachelor's",
+                "fields_of_study": ["Computer Science"],
+            },
+            "certifications": [],
+            "domain_knowledge": [],
+            "other_requirements": [],
+        }
+        engine = CriteriaMatchEngine()
+        result = engine.match(facts, criteria)
+
+        edu_matches = [x for x in result.matches if x.dimension == "education"]
+        assert len(edu_matches) == 2
+
+        # Degree level should be MATCHED
+        level_match = next(x for x in edu_matches if "Minimum education" in x.criterion_text)
+        assert level_match.status == "MATCHED"
+
+        # Field of study should be ABSENT (different field)
+        field_match = next(x for x in edu_matches if "Field of study" in x.criterion_text)
+        assert field_match.status == "ABSENT"
+        assert field_match.confidence == 0.0
+
+    def test_education_field_of_study_partial_match(self):
+        """Fuzzy match: 'Computer Science' should partially match 'CS' or similar variants."""
+        facts = CVFacts(
+            language="en",
+            total_char_count=500,
+            education=[
+                EducationEvidence(
+                    degree_level="Bachelor's",
+                    field_of_study="BS Computer Science and Engineering",
+                    institution="Stanford",
+                    year=2018,
+                    raw_text="BS Computer Science and Engineering, Stanford (2018)"
+                )
+            ],
+            highest_education_level="Bachelor's",
+        )
+        criteria = {
+            "skills": {"required": [], "preferred": []},
+            "experience": {"minimum_years": 0, "relevant_roles": [], "key_responsibilities": []},
+            "education": {
+                "minimum_level": "Bachelor's",
+                "fields_of_study": ["Computer Science"],
+            },
+            "certifications": [],
+            "domain_knowledge": [],
+            "other_requirements": [],
+        }
+        engine = CriteriaMatchEngine()
+        result = engine.match(facts, criteria)
+
+        edu_matches = [x for x in result.matches if x.dimension == "education"]
+        field_match = next(x for x in edu_matches if "Field of study" in x.criterion_text)
+        # Should be MATCHED because "Computer Science" is core to the field
+        assert field_match.status in ("MATCHED", "PARTIAL")
+
+    def test_education_field_of_study_missing_in_cv(self):
+        """When CV has no field of study but job requires it, should be ABSENT."""
+        facts = CVFacts(
+            language="en",
+            total_char_count=500,
+            education=[
+                EducationEvidence(
+                    degree_level="Bachelor's",
+                    field_of_study="",  # Missing field
+                    institution="Some University",
+                    year=2010,
+                    raw_text="Bachelor Degree, Some University (2010)"
+                )
+            ],
+            highest_education_level="Bachelor's",
+        )
+        criteria = {
+            "skills": {"required": [], "preferred": []},
+            "experience": {"minimum_years": 0, "relevant_roles": [], "key_responsibilities": []},
+            "education": {
+                "minimum_level": "Bachelor's",
+                "fields_of_study": ["Computer Science"],
+            },
+            "certifications": [],
+            "domain_knowledge": [],
+            "other_requirements": [],
+        }
+        engine = CriteriaMatchEngine()
+        result = engine.match(facts, criteria)
+
+        edu_matches = [x for x in result.matches if x.dimension == "education"]
+        field_match = next(x for x in edu_matches if "Field of study" in x.criterion_text)
+        assert field_match.status == "ABSENT"
+        assert "No field of study information" in field_match.partial_reason
+
     # ── Certification matching ─────────────────────────────────────────────
 
     def test_certification_exact_match(self):

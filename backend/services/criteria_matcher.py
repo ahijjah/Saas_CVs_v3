@@ -768,13 +768,32 @@ def _match_education(
     cv_facts: CVFacts,
     criteria: dict,
 ) -> list["CriterionMatch"]:
+    """
+    Match education criteria against CV facts.
+
+    Checks BOTH degree level AND field of study (if specified).
+    Returns separate CriterionMatch results for each requirement.
+
+    Degree level matching:
+    - MATCHED if actual >= required
+    - PARTIAL if within 2 levels below
+    - ABSENT otherwise
+
+    Field of study matching:
+    - MATCHED if any CV education field fuzzy-matches a required field
+    - PARTIAL if semantic similarity exists but not exact
+    - ABSENT if no match found
+    """
     edu_criteria = criteria.get("education", {})
     if not isinstance(edu_criteria, dict):
         return []
     min_level = edu_criteria.get("minimum_level", "None")
+    required_fields = edu_criteria.get("fields_of_study", []) or []
+
     if not min_level or min_level == "None":
         return []
 
+    matches: list[CriterionMatch] = []
     levels = list(EDUCATION_LEVELS)
     try:
         required_idx = levels.index(min_level)
@@ -787,32 +806,106 @@ def _match_education(
     except ValueError:
         actual_idx = 0
 
+    # ── Part A: Degree level matching (existing logic) ─────────────────────
     if actual_idx >= required_idx:
-        status, confidence, partial_reason = "MATCHED", 0.90, ""
-        method = "exact"
+        level_status, level_confidence, level_reason = "MATCHED", 0.90, ""
+        level_method = "exact"
     elif actual_idx >= required_idx - 2 and actual_idx > 0:
-        # Within two levels of the requirement (e.g. Diploma vs Bachelor's)
-        status, confidence = "PARTIAL", 0.55
-        partial_reason = f"CV shows {highest}; {min_level} required"
-        method = "inferred"
+        level_status, level_confidence = "PARTIAL", 0.55
+        level_reason = f"CV shows {highest}; {min_level} required"
+        level_method = "inferred"
     else:
-        confidence = 0.10 if actual_idx > 0 else 0.0
-        status = "ABSENT"
-        partial_reason = f"CV shows {highest}; {min_level} required"
-        method = "absent" if confidence < 0.20 else "inferred"
+        level_confidence = 0.10 if actual_idx > 0 else 0.0
+        level_status = "ABSENT"
+        level_reason = f"CV shows {highest}; {min_level} required"
+        level_method = "absent" if level_confidence < 0.20 else "inferred"
 
     evidence = [e.raw_text[:150] for e in cv_facts.education[:2] if e.raw_text]
-    return [CriterionMatch(
+    matches.append(CriterionMatch(
         criterion_text=f"Minimum education: {min_level}",
         dimension="education",
         required=True,
-        status=status,
-        confidence=confidence,
-        match_method=method,
+        status=level_status,
+        confidence=level_confidence,
+        match_method=level_method,
         supporting_evidence=evidence,
-        evidence_confidence=[confidence] * len(evidence),
-        partial_reason=partial_reason,
-    )]
+        evidence_confidence=[level_confidence] * len(evidence),
+        partial_reason=level_reason,
+    ))
+
+    # ── Part B: Field of study matching (NEW) ────────────────────────────
+    if required_fields:
+        cv_fields = [_normalize_text(e.field_of_study) for e in cv_facts.education if e.field_of_study]
+
+        if not cv_fields:
+            # No field of study in CV, can't match requirement
+            matches.append(CriterionMatch(
+                criterion_text=f"Field of study: {', '.join(required_fields)}",
+                dimension="education",
+                required=False,
+                status="ABSENT",
+                confidence=0.0,
+                match_method="absent",
+                supporting_evidence=[],
+                partial_reason="No field of study information found in CV",
+            ))
+        else:
+            # Check for matches between required and CV fields
+            best_score = 0
+            best_match = None
+            matched_cv_field = None
+
+            try:
+                from rapidfuzz import fuzz
+                for req_field in required_fields:
+                    req_norm = _normalize_text(req_field)
+                    for cv_field in cv_fields:
+                        # Use token_set_ratio for flexible matching (e.g., "Computer Science" vs "CS")
+                        score = fuzz.token_set_ratio(req_norm, cv_field)
+                        if score > best_score:
+                            best_score = score
+                            best_match = req_field
+                            matched_cv_field = cv_field
+            except ImportError:
+                # Fallback: simple token overlap
+                for req_field in required_fields:
+                    req_tokens = set(_normalize_text(req_field).split())
+                    for cv_field in cv_fields:
+                        cv_tokens = set(cv_field.split())
+                        overlap = len(req_tokens & cv_tokens)
+                        if overlap > best_score:
+                            best_score = overlap
+                            best_match = req_field
+                            matched_cv_field = cv_field
+                best_score = min(100, best_score * 20)  # Normalize to 0-100 scale
+
+            # Determine field-of-study match status
+            if best_score >= 90:
+                field_status, field_confidence, field_reason = "MATCHED", 0.90, ""
+                field_method = "exact"
+            elif best_score >= 70:
+                field_status, field_confidence = "PARTIAL", 0.60
+                field_reason = f"CV shows {matched_cv_field}; {best_match} preferred"
+                field_method = "fuzzy"
+            else:
+                field_status, field_confidence = "ABSENT", 0.0
+                field_reason = f"CV shows {', '.join(cv_fields)}; {', '.join(required_fields)} required"
+                field_method = "absent"
+
+            field_evidence = [e.raw_text[:150] for e in cv_facts.education if e.field_of_study][:1]
+            matches.append(CriterionMatch(
+                criterion_text=f"Field of study: {', '.join(required_fields)}",
+                dimension="education",
+                required=False,
+                status=field_status,
+                confidence=field_confidence,
+                match_method=field_method,
+                supporting_evidence=field_evidence,
+                evidence_confidence=[field_confidence] * len(field_evidence),
+                partial_reason=field_reason,
+            ))
+
+    return matches
 
 
 def _match_certifications(
