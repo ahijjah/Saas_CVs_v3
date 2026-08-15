@@ -611,6 +611,18 @@ class DeterministicScoringEngine:
         is_years_criterion = bool(_MIN_YEARS_CRITERION_RE.search(criterion_text))
         years_threshold_met = _check_min_years_threshold(criterion_text, evidence) if is_years_criterion else True
 
+        # DEBUG: Log all values for "Minimum 1 years of relevant experience" criterion
+        if "Minimum 1 years of relevant experience" in criterion_text:
+            import sys
+            debug_msg = (
+                f"DEBUG_YEARS_GUARD: criterion='{criterion_text}' | "
+                f"match_type={match_type} | status={status} | "
+                f"is_years_criterion={is_years_criterion} | years_threshold_met={years_threshold_met} | "
+                f"evidence={evidence}"
+            )
+            print(debug_msg, file=sys.stderr)
+            sys.stderr.flush()
+
         # Allow overlap upgrade only if:
         # - Not a minimum-years criterion, OR
         # - Is a minimum-years criterion AND threshold is met AND status is MATCHED
@@ -620,6 +632,17 @@ class DeterministicScoringEngine:
             and criterion_text
             and (not is_years_criterion or (years_threshold_met is True and status == "MATCHED"))
         )
+
+        # DEBUG: Log the final decision
+        if "Minimum 1 years of relevant experience" in criterion_text:
+            import sys
+            debug_msg2 = (
+                f"DEBUG_ALLOW_DECISION: allow_overlap_upgrade={allow_overlap_upgrade} | "
+                f"(not is_years_criterion)={not is_years_criterion} | "
+                f"(years_threshold_met is True and status == 'MATCHED')={years_threshold_met is True and status == 'MATCHED'}"
+            )
+            print(debug_msg2, file=sys.stderr)
+            sys.stderr.flush()
 
         if allow_overlap_upgrade:
             overlap_score = _check_evidence_criterion_overlap(criterion_text, evidence)
