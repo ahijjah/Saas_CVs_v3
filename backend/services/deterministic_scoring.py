@@ -601,12 +601,27 @@ class DeterministicScoringEngine:
         # overlap with criterion, upgrade quality_factor to 0.95 (equivalent tier).
         # This prevents LLM inconsistency from unfairly penalizing candidates whose
         # evidence is substantively correct but classified as "inferred" by the LLM.
+        # EXCEPTION: Do NOT upgrade if this is a minimum-years criterion and either:
+        # 1. The threshold is NOT met, OR
+        # 2. The status is not MATCHED (threshold rule requires both)
+        # Numeric thresholds take precedence over text similarity.
         criterion_text = assessment.criterion_text or ""
-        if (
+
+        # Check if this is a minimum-years criterion and whether threshold is met
+        is_years_criterion = bool(_MIN_YEARS_CRITERION_RE.search(criterion_text))
+        years_threshold_met = _check_min_years_threshold(criterion_text, evidence) if is_years_criterion else True
+
+        # Allow overlap upgrade only if:
+        # - Not a minimum-years criterion, OR
+        # - Is a minimum-years criterion AND threshold is met AND status is MATCHED
+        allow_overlap_upgrade = (
             match_type == "inferred"
             and evidence
             and criterion_text
-        ):
+            and (not is_years_criterion or (years_threshold_met is True and status == "MATCHED"))
+        )
+
+        if allow_overlap_upgrade:
             overlap_score = _check_evidence_criterion_overlap(criterion_text, evidence)
             if overlap_score >= 0.65:  # 65%+ textual overlap threshold
                 qf = max(qf, 0.95)  # Upgrade to equivalent tier
