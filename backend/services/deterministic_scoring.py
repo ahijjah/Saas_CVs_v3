@@ -479,6 +479,15 @@ class DeterministicScoringEngine:
 
         # ── Group assessments by dimension ────────────────────────────────────
         by_dimension: dict[str, list[DeterministicCriterionScore]] = {}
+
+        # DEBUG: Check what assessments are in the list
+        import sys
+        for check_assess in llm_match_result.assessments:
+            if "Minimum 1 years of relevant experience" in (check_assess.criterion_text or ""):
+                print(f"DEBUG_ASSESS_LIST: Found 'Minimum 1 years of relevant experience' in assessment list (status={check_assess.status})", file=sys.stderr)
+                sys.stderr.flush()
+                break
+
         for assessment in llm_match_result.assessments:
             dim = assessment.dimension or "other"
             crit = self._score_criterion(assessment, cfg, local_matches)
