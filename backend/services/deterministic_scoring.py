@@ -213,38 +213,68 @@ def _check_evidence_criterion_overlap(
     criterion_text: str, evidence_list: list[str]
 ) -> float:
     """
-    Check semantic relevance between criterion and evidence using embeddings.
+    Check semantic relevance between criterion and evidence using HYBRID approach.
     Returns a quality_factor score 0.0-1.0 indicating how closely evidence addresses criterion.
 
-    DESIGN: Replaces hardcoded semantic phrases with embedding-based semantic similarity.
-    - Uses paraphrase-multilingual-MiniLM-L12-v2 (same model as gatekeeper)
-    - Similarity score maps directly to quality_factor with NO artificial floor:
-      qf = semantic_similarity * 0.95
-    - Irrelevant evidence (similarity ≈ 0.0) → qf ≈ 0.0 (minimal credit)
-    - Strong evidence (similarity ≈ 1.0) → qf ≈ 0.95 (equivalent tier)
-    - Credit scales proportionally with actual evidence quality
+    HYBRID DESIGN (Option B):
+    Combines semantic embeddings + fuzzy matching to balance robustness:
+    - Primary: paraphrase-multilingual-MiniLM-L12-v2 (document-level semantics)
+    - Fallback: RapidFuzz token matching (phrase-level precision)
+    - Final: max(embedding_score, fuzzy_score * 0.9) * 0.95
 
-    TRADE-OFF vs OLD DESIGN:
-    OLD: Hardcoded phrase list (only 6 testing-specific phrases) → binary boost or stay at cap
-    NEW: Semantic embeddings → continuous scoring based on actual relevance
+    RATIONALE:
+    - Embeddings (trained on long docs) return conservative scores for short phrases
+    - Fuzzy matching catches obvious phrase relationships embeddings might underscore
+    - max() ensures we don't lose valid matches due to either signal's limitations
+    - No artificial floor: irrelevant evidence (low on both signals) → low qf
+    - Scales fairness: semantically related evidence gets credit regardless of hardcoded phrase list
 
-    DETERMINISM: Embeddings are deterministic (not LLM sampling). Same inputs always produce
-    same similarity scores. Gracefully falls back to keyword/fuzzy matching if model unavailable.
+    DETERMINISM: Both embeddings and fuzzy matching are deterministic (no LLM sampling).
+    Same inputs always produce same quality_factors.
     """
     if not criterion_text or not evidence_list:
         return 0.0
 
     combined_evidence = " ".join(evidence_list)
 
-    # Compute semantic similarity using embedding model (or fallback)
-    semantic_score = _compute_semantic_similarity(criterion_text, combined_evidence)
+    try:
+        from rapidfuzz import fuzz
 
-    # Map similarity [0, 1] to quality_factor with no artificial floor
-    # At similarity=0 (irrelevant), qf=0
-    # At similarity=1 (perfect match), qf=0.95 (equivalent tier ceiling)
-    qf = semantic_score * 0.95
+        # Compute semantic similarity using embedding model
+        semantic_score = _compute_semantic_similarity(criterion_text, combined_evidence)
 
-    return max(0.0, min(1.0, qf))
+        # Compute fuzzy similarity as secondary signal (phrase-level precision)
+        # Check each evidence snippet and use the best match
+        # Using partial_ratio which is better for substring/phrase matching than token_set_ratio
+        fuzzy_scores = []
+        for evid in evidence_list:
+            if evid.strip():
+                # partial_ratio is better for phrase-in-text matching
+                partial_score = fuzz.partial_ratio(criterion_text.lower(), evid.lower()) / 100.0
+                # token_set_ratio for order-independent token matching
+                token_score = fuzz.token_set_ratio(criterion_text.lower(), evid.lower()) / 100.0
+                # Use best of both fuzzy approaches
+                fuzzy_scores.append(max(partial_score, token_score))
+
+        fuzzy_score = max(fuzzy_scores) if fuzzy_scores else 0.0
+
+        # HYBRID: Weighted max favoring strong fuzzy matches
+        # - If fuzzy_score is high (0.7+), it indicates clear phrase-level match → weight it heavily
+        # - Otherwise use semantic score or a blend
+        # Formula: max(semantic_score, fuzzy_score * 1.1) ensures fuzzy matches aren't bottlenecked
+        # The 1.1 weighting acknowledges that high fuzzy scores indicate strong relevance
+        combined_score = max(semantic_score, fuzzy_score * 1.1)
+
+        # Map to quality_factor with no artificial floor, capped at 1.0
+        qf = combined_score * 0.95
+
+        return max(0.0, min(1.0, qf))
+
+    except ImportError:
+        # Fallback without RapidFuzz: embedding only
+        semantic_score = _compute_semantic_similarity(criterion_text, combined_evidence)
+        qf = semantic_score * 0.95
+        return max(0.0, min(1.0, qf))
 
 
 # ── Minimum-years threshold detection ────────────────────────────────────────
