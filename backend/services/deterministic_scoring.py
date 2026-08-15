@@ -644,6 +644,14 @@ class DeterministicScoringEngine:
             print(debug_msg2, file=sys.stderr)
             sys.stderr.flush()
 
+        if "Minimum 1 years of relevant experience" in criterion_text:
+            import sys
+            if allow_overlap_upgrade:
+                print(f"DEBUG_INSIDE_BLOCK: Executing overlap upgrade for years criterion (THIS SHOULD NOT HAPPEN)", file=sys.stderr)
+            else:
+                print(f"DEBUG_BLOCK_SKIPPED: Guard correctly blocked overlap upgrade (qf={qf}, will stay unchanged)", file=sys.stderr)
+            sys.stderr.flush()
+
         if allow_overlap_upgrade:
             overlap_score = _check_evidence_criterion_overlap(criterion_text, evidence)
             if overlap_score >= 0.65:  # 65%+ textual overlap threshold
