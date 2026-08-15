@@ -532,6 +532,14 @@ class DeterministicScoringEngine:
         cfg: DeterministicScoringConfig,
         local_matches: list[Any] | None = None,
     ) -> DeterministicCriterionScore:
+        criterion_text_input = assessment.criterion_text or ""
+
+        # DEBUG: Check if this is the problematic criterion - entry point
+        if "Minimum 1 years of relevant experience" in criterion_text_input:
+            import sys
+            print(f"DEBUG_ENTRY: _score_criterion called for '{criterion_text_input}'", file=sys.stderr)
+            sys.stderr.flush()
+
         status          = assessment.status or "ABSENT"
         match_type      = assessment.match_type or "missing"
         criterion_class = assessment.criterion_class or "other"
