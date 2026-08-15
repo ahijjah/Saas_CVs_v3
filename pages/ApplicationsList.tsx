@@ -31,6 +31,8 @@ type StopReasonFilter =
 
 type AiResultFilter = 'all' | 'qualified' | 'partial' | 'rejected_low_match' | 'not_scored';
 
+type GenderFilter = 'all' | 'male' | 'female' | 'unknown';
+
 type WorkflowFilter =
   | 'all'
   | 'awaiting_review'
@@ -50,6 +52,7 @@ interface AppFilters {
   stopReason: StopReasonFilter;
   aiResult:   AiResultFilter;
   workflow:   WorkflowFilter;
+  gender:     GenderFilter;
   flags:      Set<FlagKey>;
 }
 
@@ -58,6 +61,7 @@ const DEFAULT_FILTERS: AppFilters = {
   stopReason: 'all',
   aiResult:   'all',
   workflow:   'all',
+  gender:     'all',
   flags:      new Set(),
 };
 
@@ -89,7 +93,7 @@ function fromLegacyFilter(f: ApplicationFilter): AppFilters {
 }
 
 function isFiltersDefault(f: AppFilters): boolean {
-  return f.processing === 'all' && f.stopReason === 'all' && f.aiResult === 'all' && f.workflow === 'all' && f.flags.size === 0;
+  return f.processing === 'all' && f.stopReason === 'all' && f.aiResult === 'all' && f.workflow === 'all' && f.gender === 'all' && f.flags.size === 0;
 }
 
 // ── Props & interfaces ────────────────────────────────────────────────────────
@@ -128,7 +132,13 @@ const T = {
     dimStopReason: 'Stop Reason',
     dimAiResult:   'AI Result',
     dimWorkflow:   'Recruitment Workflow',
+    dimGender:     'Gender',
     dimFlags:      'Flags',
+    // Gender filter options
+    genderAll:     'All',
+    genderMale:    'Male',
+    genderFemale:  'Female',
+    genderUnknown: 'Unknown',
     // Processing options (simplified, recruiter-facing)
     procAll:          'All',
     procPending:      'Pending',
@@ -184,7 +194,12 @@ const T = {
     dimStopReason: 'سبب الوقف',
     dimAiResult:   'نتيجة الذكاء الاصطناعي',
     dimWorkflow:   'سير التوظيف',
+    dimGender:     'الجنس',
     dimFlags:      'العلامات',
+    genderAll:     'الكل',
+    genderMale:    'ذكر',
+    genderFemale:  'أنثى',
+    genderUnknown: 'غير محدد',
     procAll:          'الكل',
     procPending:      'معلق',
     procInProgress:   'قيد المعالجة',
@@ -417,6 +432,30 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         workflow_status:  detailsObj?.workflow_status || 'awaiting_review',
         recruiter_notes:  detailsObj?.recruiter_notes ?? null,
         workflow_history: detailsObj?.workflow_history || [],
+        det_score:        detailsObj?.det_score ?? null,
+        score_details:    detailsObj?.score_details ?? null,
+        gender_value:     detailsObj?.gender_value,
+        gender_confidence: detailsObj?.gender_confidence,
+        gender_basis:     detailsObj?.gender_basis,
+        scored_at:        detailsObj?.scored_at,
+        job_id:           detailsObj?.job_id,
+        job_title:        detailsObj?.job_title,
+        ai_model:         detailsObj?.ai_model,
+        scoring_provider: detailsObj?.scoring_provider,
+        scoring_prompt_code:    detailsObj?.scoring_prompt_code,
+        scoring_prompt_version: detailsObj?.scoring_prompt_version,
+        level2_prompt_code:     detailsObj?.level2_prompt_code,
+        level2_prompt_version:  detailsObj?.level2_prompt_version,
+        ai_comparisons:         detailsObj?.ai_comparisons || [],
+        preferred_contact_email:    detailsObj?.preferred_contact_email,
+        preferred_contact_source:   detailsObj?.preferred_contact_source,
+        preferred_contact_confidence: detailsObj?.preferred_contact_confidence,
+        candidate_email_from_cv:    detailsObj?.candidate_email_from_cv,
+        candidate_phone_from_cv:    detailsObj?.candidate_phone_from_cv,
+        candidate_email:            detailsObj?.candidate_email,
+        qualified_threshold_used:   detailsObj?.qualified_threshold_used,
+        partial_threshold_used:     detailsObj?.partial_threshold_used,
+        duplicate_reference_application_id: detailsObj?.duplicate_reference_application_id,
       });
       enterDetailView(appId);
     } catch (err: any) {
@@ -534,7 +573,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     // Dimension 3: Workflow (recruiter pipeline state, independent of processing)
     if (filters.workflow !== 'all' && a.workflow_status !== filters.workflow) return false;
 
-    // Dimension 4: Flags (all selected flags must match — AND logic)
+    // Dimension 4: Gender metadata filter (never affects scores)
+    if (filters.gender !== 'all') {
+      const gv = a.gender_value || 'unknown';
+      if (gv !== filters.gender) return false;
+    }
+
+    // Dimension 5: Flags (all selected flags must match — AND logic)
     if (filters.flags.has('possible_duplicate') && a.duplicate_status !== 'possible_duplicate') return false;
     if (filters.flags.has('has_notes') && !a.recruiter_notes) return false;
 
@@ -633,6 +678,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     { value: 'on_hold',         label: wfLabels.on_hold             },
   ];
 
+  const genderOptions = [
+    { value: 'all',     label: t.genderAll     },
+    { value: 'male',    label: t.genderMale    },
+    { value: 'female',  label: t.genderFemale  },
+    { value: 'unknown', label: t.genderUnknown },
+  ];
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -704,6 +756,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
             active={filters.workflow !== 'all'}
             onChange={v => updateFilters({ workflow: v as WorkflowFilter })}
             options={workflowOptions}
+          />
+          <FilterSelect
+            label={t.dimGender}
+            value={filters.gender}
+            active={filters.gender !== 'all'}
+            onChange={v => updateFilters({ gender: v as GenderFilter })}
+            options={genderOptions}
           />
         </div>
 
@@ -785,7 +844,14 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                     {app.score != null && isTerminal && <span className="text-[10px] opacity-80 uppercase leading-none mt-0.5">{t.pts}</span>}
                   </div>
                   <div>
-                    <h4 className="text-lg font-bold text-textMain">{app.candidate_name}</h4>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-lg font-bold text-textMain">{app.candidate_name}</h4>
+                      {app.gender_value && app.gender_value !== 'unknown' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500 uppercase tracking-wide">
+                          {app.gender_value === 'male' ? t.genderMale : t.genderFemale}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-textMuted">{t.appliedOn} {app.applied_date}</p>
                     {app.summary && <p className="text-sm text-textMain mt-2 max-w-xl italic">"{app.summary}"</p>}
                     {app.evaluation_exit_reason && (

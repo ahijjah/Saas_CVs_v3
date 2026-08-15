@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep, get_current_user
+from auth.module_guards import RequireAIRecruitment, RequireATSManagement
 from config import get_settings
 from database import get_db, set_rls_context
 from services.application_intake_service import (
@@ -132,6 +133,7 @@ async def get_assignable_users(
 def _build_candidate_filter_clause(
     current_user,
     is_admin: bool,
+    is_super_admin: bool = False,
     job_id: str | None = None,
     workflow_status: str | None = None,
     processing_status: str | None = None,
@@ -147,6 +149,7 @@ def _build_candidate_filter_clause(
     tag_ids: str | None = None,
     talent_pool_only: bool = False,
     validation_issues: bool | None = None,
+    gender: str | None = None,
 ) -> tuple[str, dict]:
     """
     Build the shared WHERE clause + bind params for tenant-wide candidate
@@ -154,16 +157,22 @@ def _build_candidate_filter_clause(
     export endpoint apply identical filtering and access-control rules —
     "do not duplicate filtering logic".
 
+    Super admin can see applications from ALL tenants (cross-tenant access).
+    Regular users see only their own tenant's applications.
+
     Returns (where_clause, params).
     """
-    where_parts = [
-        "a.tenant_id = CAST(:tid AS uuid)",
-    ]
+    where_parts = []
     params: dict = {
-        "tid": current_user.tenant_id,
         "uid": current_user.user_id,
         "is_admin": is_admin,
     }
+
+    # E-02 Phase 3: Super admin cross-tenant access
+    # super_admin sees all applications; others see only their tenant's
+    if not is_super_admin:
+        where_parts.append("a.tenant_id = CAST(:tid AS uuid)")
+        params["tid"] = current_user.tenant_id
 
     # Mode 1: Job-scoped (backward compatible) - job_id required
     if job_id:
@@ -288,6 +297,11 @@ def _build_candidate_filter_clause(
             )
         """)
 
+    # Gender filter — metadata only, never affects scoring
+    if gender and gender in ("male", "female", "unknown"):
+        where_parts.append("a.gender_value = :gender_value")
+        params["gender_value"] = gender
+
     # Decision CW-1: Exclude stopped-before-AI records from all normal tenant-wide views.
     # These records are only accessible via the explicit 'pre_ai_stopped' processing_status filter
     # (used by the "Stopped Before AI" quick view). The job-scoped backward-compatible mode
@@ -301,19 +315,22 @@ def _build_candidate_filter_clause(
             f"a.processing_status NOT IN ({_pre_ai_stopped_statuses})"
         )
 
-    # Always enforce access control: admin OR no client OR assigned via agency_user_clients
-    where_parts.append("""
-        (
-            :is_admin = TRUE
-            OR j.client_organization_id IS NULL
-            OR EXISTS (
-                SELECT 1 FROM agency_user_clients auc
-                WHERE auc.user_id = CAST(:uid AS uuid)
-                  AND auc.client_organization_id = j.client_organization_id
-                  AND auc.tenant_id = CAST(:tid AS uuid)
+    # Always enforce access control (unless super_admin who sees all)
+    # super_admin: full access without agency_user_clients check
+    # others: must be admin OR no client OR assigned via agency_user_clients
+    if not is_super_admin:
+        where_parts.append("""
+            (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
             )
-        )
-    """)
+        """)
 
     return " AND ".join(where_parts), params
 
@@ -337,6 +354,7 @@ async def list_applications(
     tag_ids: str | None = None,
     talent_pool_only: bool = False,
     validation_issues: bool | None = None,
+    gender: str | None = None,
     sort_by: str = "applied_at",
     sort_order: str = "desc",
     page: int = 1,
@@ -369,6 +387,7 @@ async def list_applications(
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
 
     # Validate pagination
     page = max(1, page)
@@ -383,6 +402,7 @@ async def list_applications(
     where_clause, params = _build_candidate_filter_clause(
         current_user,
         is_admin,
+        is_super_admin=is_super_admin,
         job_id=job_id,
         workflow_status=workflow_status,
         processing_status=processing_status,
@@ -398,13 +418,14 @@ async def list_applications(
         tag_ids=tag_ids,
         talent_pool_only=talent_pool_only,
         validation_issues=validation_issues,
+        gender=gender,
     )
 
     # Map sort_by to actual column
     sort_column = {
         "applied_at": "a.applied_at",
         "updated_at": "a.scored_at",
-        "score": "s.final_score",
+        "score": "COALESCE(s.det_final_score, s.final_score)",
         "candidate_name": "a.candidate_name",
     }.get(sort_by, "a.applied_at")
 
@@ -442,7 +463,7 @@ async def list_applications(
             a.applied_at,
             a.scored_at                         AS updated_at,
             a.is_talent_pool,
-            s.final_score                       AS score,
+            COALESCE(s.det_final_score, s.final_score) AS score,
             s.evaluation_notes                  AS summary,
             j.allow_advanced_workflow_move      AS job_allow_advanced_workflow_move,
             a.assigned_user_id,
@@ -450,6 +471,7 @@ async def list_applications(
             COALESCE(au.full_name, au.email)    AS assigned_user_name,
             a.preferred_contact_email,
             a.preferred_contact_source,
+            a.gender_value,
             a.security_check_status,
             a.security_risk_level,
             CASE
@@ -530,6 +552,7 @@ async def list_applications(
             "is_talent_pool":           bool(r["is_talent_pool"]) if r["is_talent_pool"] is not None else False,
             "preferred_contact_email":  r["preferred_contact_email"],
             "preferred_contact_source": r["preferred_contact_source"],
+            "gender_value":             r["gender_value"] or "unknown",
             "security_check_status":    r["security_check_status"],
             "security_risk_level":      r["security_risk_level"],
             "validation_summary":       r["validation_summary"],
@@ -1008,6 +1031,7 @@ async def export_applications(
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
 
     valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
     sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
@@ -1016,6 +1040,7 @@ async def export_applications(
     where_clause, params = _build_candidate_filter_clause(
         current_user,
         is_admin,
+        is_super_admin=is_super_admin,
         job_id=job_id,
         workflow_status=workflow_status,
         processing_status=processing_status,
@@ -1036,7 +1061,7 @@ async def export_applications(
     sort_column = {
         "applied_at": "a.applied_at",
         "updated_at": "a.scored_at",
-        "score": "s.final_score",
+        "score": "COALESCE(s.det_final_score, s.final_score)",
         "candidate_name": "a.candidate_name",
     }.get(sort_by, "a.applied_at")
 
@@ -1049,7 +1074,7 @@ async def export_applications(
             j.job_code,
             jc.name                          AS campaign_name,
             co.organization_name             AS client_org_name,
-            s.final_score                    AS score,
+            COALESCE(s.det_final_score, s.final_score) AS score,
             a.decision                       AS status,
             a.processing_status,
             a.workflow_status,
@@ -1140,14 +1165,42 @@ async def get_application_details(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+
+    # Build WHERE clause conditionally for tenant isolation
+    # super_admin can see applications from ALL tenants; others only from their tenant
+    tenant_filter = "" if is_super_admin else "AND a.tenant_id = CAST(:tid AS uuid)"
+    access_control = "" if is_super_admin else """
+              AND (
+                :is_admin = TRUE
+                OR j.client_organization_id IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM agency_user_clients auc
+                    WHERE auc.user_id = CAST(:uid AS uuid)
+                      AND auc.client_organization_id = j.client_organization_id
+                      AND auc.tenant_id = CAST(:tid AS uuid)
+                )
+              )
+            """
+
+    params = {
+        "aid": application_id,
+        "uid": current_user.user_id,
+        "is_admin": is_admin,
+    }
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
+
     row = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 a.application_id, a.candidate_name, a.candidate_email,
                 a.candidate_email_from_cv, a.candidate_phone_from_cv,
                 a.email_sender_address,
                 a.preferred_contact_email, a.preferred_contact_source,
                 a.preferred_contact_confidence,
+                a.gender_value, a.gender_confidence, a.gender_basis,
                 a.submitted_by_user_id, a.submitted_by_name, a.submitted_by_email,
                 a.decision, a.submission_source, a.processing_status,
                 a.stopped_reason,
@@ -1185,30 +1238,18 @@ async def get_application_details(
                 s.cv_language, s.gatekeeper_passed AS score_gatekeeper_passed,
                 s.ai_model,
                 s.score_details,
+                s.det_final_score,
+                s.det_score_json,
                 s.scoring_prompt_code, s.scoring_prompt_version,
                 s.level2_prompt_code,  s.level2_prompt_version,
                 s.scoring_provider
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             LEFT JOIN application_scores s ON s.application_id = a.application_id
-            WHERE a.application_id = :aid AND a.tenant_id = :tid
-              AND (
-                :is_admin = TRUE
-                OR j.client_organization_id IS NULL
-                OR EXISTS (
-                    SELECT 1 FROM agency_user_clients auc
-                    WHERE auc.user_id = CAST(:uid AS uuid)
-                      AND auc.client_organization_id = j.client_organization_id
-                      AND auc.tenant_id = CAST(:tid AS uuid)
-                )
-              )
+            WHERE a.application_id = :aid {tenant_filter}
+              {access_control}
         """),
-        {
-            "aid":      application_id,
-            "tid":      current_user.tenant_id,
-            "uid":      current_user.user_id,
-            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
-        },
+        params,
     )
     app = row.mappings().first()
     if not app:
@@ -1218,13 +1259,18 @@ async def get_application_details(
     dup_ref_info = None
     dup_ref_id = app["duplicate_reference_application_id"]
     if dup_ref_id:
+        dup_params = {"rid": str(dup_ref_id)}
+        dup_tenant_filter = "" if is_super_admin else "AND tenant_id = CAST(:tid AS uuid)"
+        if not is_super_admin:
+            dup_params["tid"] = current_user.tenant_id
+
         ref_row = await db.execute(
-            text("""
+            text(f"""
                 SELECT candidate_name, applied_at
                 FROM applications
-                WHERE application_id = :rid AND tenant_id = :tid
+                WHERE application_id = :rid {dup_tenant_filter}
             """),
-            {"rid": str(dup_ref_id), "tid": current_user.tenant_id},
+            dup_params,
         )
         ref = ref_row.mappings().first()
         if ref:
@@ -1341,10 +1387,16 @@ async def get_application_details(
             c["created_at"] = c["created_at"].isoformat()
 
     weights = app["weights_snapshot"] or {}
+    det_score_json = app["det_score_json"]
+    det_dims = (det_score_json or {}).get("dimensions", {})
 
-    def build_dim(score_key: str, weight_key: str) -> dict:
-        score = app[score_key] or 0
+    def build_dim(score_key: str, weight_key: str, det_dim_key: str = "") -> dict:
         weight = weights.get(weight_key, 0)
+        if det_dims and det_dim_key and det_dim_key in det_dims:
+            # det_score_json dimension_score is 0–1 decimal; convert to 0–100 integer
+            score = round((det_dims[det_dim_key].get("dimension_score", 0) or 0) * 100)
+        else:
+            score = app[score_key] or 0
         return {"achieved": score, "max": 100, "weight": weight}
 
     reasoning = app["reasoning"] or {}
@@ -1367,12 +1419,15 @@ async def get_application_details(
         "preferred_contact_email": app["preferred_contact_email"],
         "preferred_contact_source": app["preferred_contact_source"],
         "preferred_contact_confidence": float(app["preferred_contact_confidence"]) if app["preferred_contact_confidence"] is not None else None,
+        "gender_value":      app["gender_value"] or "unknown",
+        "gender_confidence": float(app["gender_confidence"]) if app["gender_confidence"] is not None else 0.0,
+        "gender_basis":      app["gender_basis"] or "unknown",
         "submitted_by_user_id": str(app["submitted_by_user_id"]) if app["submitted_by_user_id"] else None,
         "submitted_by_name":  app["submitted_by_name"],
         "submitted_by_email": app["submitted_by_email"],
         "original_filename":  app["original_filename"],
         "decision": display_decision,
-        "overall_score": int(app["final_score"]) if app["final_score"] is not None else 0,
+        "overall_score": int(app["det_final_score"] if app["det_final_score"] is not None else (app["final_score"] or 0)),
         "submission_source": app["submission_source"],
         "processing_status": app["processing_status"],
         "stopped_reason":    app["stopped_reason"],
@@ -1385,15 +1440,16 @@ async def get_application_details(
         "qualified_threshold_used": app["qualified_threshold_used"],
         "partial_threshold_used": app["partial_threshold_used"],
         "scores": {
-            "skills":           build_dim("score_skills",           "weight_skills"),
-            "experience":       build_dim("score_experience",       "weight_experience"),
-            "education":        build_dim("score_education",        "weight_education"),
-            "certifications":   build_dim("score_certifications",   "weight_certifications"),
-            "soft_skills":      build_dim("score_soft_skills",      "weight_soft_skills"),
-            "domain_knowledge": build_dim("score_domain_knowledge", "weight_domain_knowledge"),
-            "other_requirements": build_dim("score_other",          "weight_other"),
+            "skills":           build_dim("score_skills",           "weight_skills",          "skills"),
+            "experience":       build_dim("score_experience",       "weight_experience",      "experience"),
+            "education":        build_dim("score_education",        "weight_education",       "education"),
+            "certifications":   build_dim("score_certifications",   "weight_certifications",  "certifications"),
+            "soft_skills":      build_dim("score_soft_skills",      "weight_soft_skills",     "soft_skills"),
+            "domain_knowledge": build_dim("score_domain_knowledge", "weight_domain_knowledge","domain_knowledge"),
+            "other_requirements": build_dim("score_other",          "weight_other",           "other"),
         },
         "score_details": app["score_details"] or {},
+        "det_score": app["det_score_json"] or None,
         "analysis": {
             "summary":                       app["evaluation_notes"] or "",
             "strengths":                     app["strengths"] or [],
@@ -1450,7 +1506,7 @@ async def get_application_details(
     }
 
 
-@router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/upload", status_code=status.HTTP_202_ACCEPTED, dependencies=[RequireAIRecruitment])
 async def upload_cv(
     job_id: Annotated[str, Form()],
     candidate_name: Annotated[str, Form()],
@@ -1533,7 +1589,7 @@ async def list_uploaded_cvs(
                 a.decision,
                 a.evaluation_stage,
                 a.evaluation_exit_reason,
-                s.final_score,
+                COALESCE(s.det_final_score, s.final_score) AS final_score,
                 a.applied_at,
                 af.original_name
             FROM applications a
@@ -1587,7 +1643,7 @@ async def list_uploaded_cvs(
     return uploads
 
 
-@router.post("/score-pending", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/score-pending", status_code=status.HTTP_202_ACCEPTED, dependencies=[RequireAIRecruitment])
 async def score_pending_uploads(
     body: ScorePendingRequest,
     current_user: CurrentUserDep,
@@ -1780,7 +1836,7 @@ async def reset_stuck_cvs(
     }
 
 
-@router.patch("/{application_id}/workflow-status")
+@router.patch("/{application_id}/workflow-status", dependencies=[RequireATSManagement])
 async def update_workflow_status(
     application_id: str,
     body: WorkflowStatusRequest,
@@ -2015,7 +2071,7 @@ async def update_workflow_status(
     return {"workflow_status": new_status}
 
 
-@router.patch("/{application_id}/recruiter-notes")
+@router.patch("/{application_id}/recruiter-notes", dependencies=[RequireATSManagement])
 async def update_recruiter_notes(
     application_id: str,
     body: RecruiterNotesRequest,
@@ -2064,7 +2120,7 @@ async def update_recruiter_notes(
     return {"recruiter_notes": body.recruiter_notes}
 
 
-@router.patch("/{application_id}/knockout-answers", status_code=status.HTTP_200_OK)
+@router.patch("/{application_id}/knockout-answers", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment])
 async def update_knockout_answer(
     application_id: str,
     body: KnockoutAnswerRequest,
@@ -2099,7 +2155,7 @@ async def update_knockout_answer(
     return {"status": "ok"}
 
 
-@router.post("/{application_id}/knockout-analysis", status_code=status.HTTP_200_OK)
+@router.post("/{application_id}/knockout-analysis", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment])
 async def trigger_knockout_analysis(
     application_id: str,
     current_user: CurrentUserDep,
@@ -2162,7 +2218,7 @@ async def trigger_knockout_analysis(
     }
 
 
-@router.post("/{application_id}/screening-validation", status_code=status.HTTP_200_OK)
+@router.post("/{application_id}/screening-validation", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment])
 async def trigger_screening_validation(
     application_id: str,
     current_user: CurrentUserDep,
@@ -2244,7 +2300,7 @@ async def trigger_screening_validation(
     }
 
 
-@router.patch("/{application_id}/knockout-suggestions/accept", status_code=status.HTTP_200_OK)
+@router.patch("/{application_id}/knockout-suggestions/accept", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment])
 async def accept_knockout_suggestion_endpoint(
     application_id: str,
     body: KnockoutAcceptRequest,
@@ -2281,7 +2337,7 @@ async def accept_knockout_suggestion_endpoint(
     return {"status": "ok"}
 
 
-@router.patch("/{application_id}/knockout-suggestions/ignore", status_code=status.HTTP_200_OK)
+@router.patch("/{application_id}/knockout-suggestions/ignore", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment])
 async def ignore_knockout_suggestion_endpoint(
     application_id: str,
     body: KnockoutAnswerRequest,   # reuse: only question_id matters, answer_value ignored
@@ -2411,7 +2467,7 @@ async def download_cv(
     )
 
 
-@router.patch("/bulk-assignment")
+@router.patch("/bulk-assignment", dependencies=[RequireATSManagement])
 async def bulk_update_assignment(
     body: BulkAssignmentRequest,
     current_user: CurrentUserDep,
@@ -2472,7 +2528,7 @@ async def bulk_update_assignment(
     return {"success": True, "updated_count": len(body.application_ids)}
 
 
-@router.patch("/{application_id}/assignment")
+@router.patch("/{application_id}/assignment", dependencies=[RequireATSManagement])
 async def update_assignment(
     application_id: str,
     body: AssignmentRequest,
@@ -2548,7 +2604,7 @@ async def update_assignment(
     }
 
 
-@router.patch("/bulk-workflow-status")
+@router.patch("/bulk-workflow-status", dependencies=[RequireATSManagement])
 async def bulk_update_workflow_status(
     body: WorkflowStatusRequest,
     current_user: CurrentUserDep,

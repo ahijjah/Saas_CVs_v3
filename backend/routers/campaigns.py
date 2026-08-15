@@ -29,6 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.module_guards import RequireAIRecruitment
 from database import get_db, set_rls_context
 from services.campaign_service import (
     CAMPAIGN_STATUSES,
@@ -37,7 +38,7 @@ from services.campaign_service import (
     validate_status_transition,
 )
 
-router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+router = APIRouter(prefix="/campaigns", tags=["campaigns"], dependencies=[RequireAIRecruitment])
 
 
 # ── Date parsing helpers ──────────────────────────────────────────────────────
@@ -742,7 +743,7 @@ async def get_campaign_candidates(
                 a.workflow_status,
                 a.processing_status,
                 a.applied_at,
-                s.final_score AS ai_score,
+                COALESCE(s.det_final_score, s.final_score) AS ai_score,
                 j.title       AS job_title
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id

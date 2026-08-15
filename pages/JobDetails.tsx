@@ -45,6 +45,16 @@ const T = {
     domainKnowledge: 'Domain Knowledge',
     otherRequirements: 'Other Requirements',
     noData: 'No specific data.',
+    reqClassificationTitle: 'Requirement Classification',
+    reqClassScoreable: 'Scoring Criteria',
+    reqClassNonScoreable: 'Screening Conditions',
+    reqClassPostHiring: 'Post-Hiring / Admin Conditions',
+    reqClassInformational: 'Informational',
+    reqClassWarnings: 'Classification Warnings',
+    reqClassScoreableNote: 'Used for CV scoring',
+    reqClassNonScoreableNote: 'Not scored — eligibility screening only',
+    reqClassPostHiringNote: 'Not scored — assessed after selection',
+    reqClassInformationalNote: 'Not scored — context only',
     evalLogic: 'Evaluation Logic',
     evalWeightLabels: ['Skills', 'Experience', 'Education', 'Certifications', 'Soft Skills', 'Domain Knowledge', 'Other'],
     editWeights: 'Edit Weights',
@@ -276,6 +286,16 @@ const T = {
     domainKnowledge: 'المعرفة بالمجال',
     otherRequirements: 'متطلبات أخرى',
     noData: 'لا توجد بيانات محددة.',
+    reqClassificationTitle: 'تصنيف المتطلبات',
+    reqClassScoreable: 'معايير التقييم',
+    reqClassNonScoreable: 'شروط الفرز',
+    reqClassPostHiring: 'شروط ما بعد التعيين',
+    reqClassInformational: 'معلومات عامة',
+    reqClassWarnings: 'تحذيرات التصنيف',
+    reqClassScoreableNote: 'تُستخدم في تقييم السير الذاتية',
+    reqClassNonScoreableNote: 'لا تُقيَّم — فرز أهلية فقط',
+    reqClassPostHiringNote: 'لا تُقيَّم — تُقيَّم بعد الاختيار',
+    reqClassInformationalNote: 'لا تُقيَّم — للسياق فقط',
     evalLogic: 'منطق التقييم',
     evalWeightLabels: ['المهارات', 'الخبرة', 'التعليم', 'الشهادات', 'المهارات الناعمة', 'معرفة المجال', 'أخرى'],
     editWeights: 'تعديل الأوزان',
@@ -556,7 +576,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const originalAiCriteriaRef = useRef<any>(null);
 
   // Intake channel tabs (Public Link default)
-  const [activeIntakeTab, setActiveIntakeTab] = useState<'public-link' | 'email-alias' | 'email-forwarding' | 'manual-upload'>('public-link');
+  const [activeIntakeTab, setActiveIntakeTab] = useState<'public-link' | 'email-alias' | 'email-forwarding' | 'manual-upload' | 'bulk-upload'>('public-link');
 
   // Session-scoped upload tracking — starts empty each page load
   const sessionIdsRef = useRef<Set<string>>(new Set());
@@ -2098,6 +2118,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             { key: 'email-alias'     as const, label: t.tabEmailAlias,    badge: details.receive_cv_via_platform_email   ? t.enabled : t.disabled,          badgeColor: details.receive_cv_via_platform_email   ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' },
             { key: 'email-forwarding'as const, label: t.tabEmailFwd,      badge: details.receive_cv_via_forwarding_email ? t.enabled : t.disabled,          badgeColor: details.receive_cv_via_forwarding_email ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' },
             { key: 'manual-upload'   as const, label: t.tabManualUpload,  badge: t.badgeInternal,                                                          badgeColor: 'bg-indigo-100 text-indigo-700'                                           },
+            { key: 'bulk-upload'     as const, label: isAr ? 'رفع مجمع' : 'Bulk Upload', badge: isAr ? 'ملف إكسل' : 'Excel + ZIP',                        badgeColor: 'bg-teal-100 text-teal-700'                                               },
           ]).map(tab => (
             <button
               key={tab.key}
@@ -2383,6 +2404,41 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             </div>
           )}
 
+          {/* Bulk Upload tab */}
+          {activeIntakeTab === 'bulk-upload' && (
+            <div>
+              <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 w-7 h-7 bg-teal-100 rounded-lg flex items-center justify-center mt-0.5">
+                    <svg className="w-3.5 h-3.5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-xs font-black text-teal-900">{isAr ? 'الرفع المجمع + ورقة الإجابات' : 'Bulk Upload + Answers Sheet'}</p>
+                      <span className="text-[9px] font-bold bg-teal-100 text-teal-600 px-1.5 py-0.5 rounded-full">{isAr ? 'داخلي' : 'Internal'}</span>
+                    </div>
+                    <p className="text-[10px] text-teal-700/80 mb-3">
+                      {isAr
+                        ? 'ارفع ملف ZIP يحتوي على السيرات الذاتية وملف Excel يحتوي على بيانات المرشحين وإجابات الأسئلة الحاسمة.'
+                        : 'Upload a ZIP of CV files alongside an Excel sheet containing candidate details and knockout question answers. Rows are validated, imported, and submitted to the scoring pipeline automatically.'}
+                    </p>
+                    <button
+                      onClick={() => onViewApplications && window.location.assign(`/jobs/${jobId}/bulk-upload`)}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-[11px] font-black rounded-xl hover:bg-teal-700 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      {isAr ? 'فتح مركز الرفع المجمع' : 'Open Bulk Upload Centre'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </section>
 
@@ -2468,6 +2524,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                       <div className="flex-1 space-y-2">
                         <input
                           type="text"
+                          name={`knockout_question_${idx}`}
+                          autoComplete="off"
                           value={q.question_text || ''}
                           onChange={e => updateKnockoutDraftQuestion(idx, 'question_text', e.target.value)}
                           placeholder={(t as any).knockoutQuestionPlaceholder}
@@ -2751,6 +2809,57 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             </div>
           )}
         </div>
+
+        {/* ── Requirement Classification (D-02) ─────────────────────────────── */}
+        {analysis && (() => {
+          const nonScoreable: any[] = (analysis as any).non_scoreable_requirements ?? [];
+          const postHiring:   any[] = (analysis as any).post_hiring_conditions ?? [];
+          const informational: any[] = (analysis as any).informational_items ?? [];
+          const warnings: string[]  = (analysis as any).warnings ?? [];
+          if (nonScoreable.length === 0 && postHiring.length === 0 && informational.length === 0 && warnings.length === 0) return null;
+          return (
+            <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden mt-6">
+              <div className="px-6 py-4 border-b border-border bg-slate-50 flex items-center gap-2">
+                <span className="w-2 h-3 bg-amber-400 rounded-full shrink-0"></span>
+                <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.reqClassificationTitle}</h4>
+              </div>
+              <div className="p-6 space-y-4">
+                {warnings.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                    <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2">{t.reqClassWarnings}</p>
+                    {warnings.map((w, i) => (
+                      <p key={i} className="text-xs text-amber-700">⚠ {w}</p>
+                    ))}
+                  </div>
+                )}
+                {[
+                  { items: nonScoreable, label: t.reqClassNonScoreable, note: t.reqClassNonScoreableNote, color: 'bg-blue-50 border-blue-200', textColor: 'text-blue-800' },
+                  { items: postHiring,   label: t.reqClassPostHiring,    note: t.reqClassPostHiringNote,    color: 'bg-orange-50 border-orange-200', textColor: 'text-orange-800' },
+                  { items: informational, label: t.reqClassInformational, note: t.reqClassInformationalNote, color: 'bg-slate-50 border-slate-200', textColor: 'text-slate-700' },
+                ].filter(g => g.items.length > 0).map((group, gi) => (
+                  <div key={gi} className={`rounded-xl border p-4 ${group.color}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${group.textColor}`}>{group.label}</p>
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold ${group.color} ${group.textColor}`}>{group.note}</span>
+                    </div>
+                    <ul className="space-y-1.5">
+                      {group.items.map((item: any, i: number) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className={`text-[10px] font-bold ${group.textColor} mt-0.5 shrink-0`}>✗</span>
+                          <div>
+                            <span className={`text-xs font-semibold ${group.textColor}`}>{typeof item === 'string' ? item : item.text}</span>
+                            {item.reason && <span className="text-[10px] text-textMuted ml-2">— {item.reason}</span>}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
       </section>
 
       </div>
