@@ -42,6 +42,8 @@ from typing import Any
 
 from services.llm_criteria_mapper import LLMMatchResult, QualitativeSummary
 
+logger = None  # Lazy init
+
 try:
     from services.criteria_matcher import MatchResult
 except ImportError:
@@ -153,6 +155,38 @@ class DeterministicScore:
 
 # ── Core calculation helpers ──────────────────────────────────────────────────
 
+def _compute_semantic_similarity(criterion_text: str, evidence: str) -> float:
+    """
+    Compute semantic similarity between criterion and evidence using embeddings.
+    Reuses paraphrase-multilingual-MiniLM-L12-v2 from gatekeeper pipeline.
+    Returns [0, 1] representing evidence relevance to criterion.
+    Gracefully falls back to keyword overlap if embedding model unavailable.
+    """
+    if not criterion_text or not evidence:
+        return 0.0
+
+    try:
+        from services.local_processor import compute_semantic_similarity
+        # compute_semantic_similarity handles text cleaning, truncation, normalization
+        similarity = compute_semantic_similarity(criterion_text, evidence)
+        return max(0.0, min(1.0, similarity))
+    except (ImportError, Exception):
+        # Fallback: keyword overlap if embedding unavailable
+        from rapidfuzz import fuzz
+        try:
+            # Simple fallback: partial_ratio of criterion in evidence
+            score = fuzz.partial_ratio(criterion_text.lower(), evidence.lower()) / 100.0
+            return max(0.0, min(1.0, score))
+        except ImportError:
+            # Ultimate fallback: word overlap
+            criterion_words = set(criterion_text.lower().split())
+            evidence_words = set(evidence.lower().split())
+            overlap = criterion_words & evidence_words
+            if not criterion_words:
+                return 0.0
+            return len(overlap) / len(criterion_words)
+
+
 def _match_quality_factor(match_type: str, criterion_class: str) -> float:
     """
     Return the match-quality factor for a given match_type and criterion_class.
@@ -179,96 +213,38 @@ def _check_evidence_criterion_overlap(
     criterion_text: str, evidence_list: list[str]
 ) -> float:
     """
-    Check textual overlap between criterion and evidence.
-    Returns a score 0.0-1.0 indicating how closely the evidence matches the criterion.
+    Check semantic relevance between criterion and evidence using embeddings.
+    Returns a quality_factor score 0.0-1.0 indicating how closely evidence addresses criterion.
 
-    ⚠️  KNOWN LIMITATION (Terminology-Dependent Heuristic):
-    This function relies primarily on a hardcoded list of semantic phrases
-    ("manual and automated", "automated testing", "test cases", etc.) to detect
-    evidence that substantively addresses a criterion. It does NOT provide
-    general semantic understanding of experience.
+    DESIGN: Replaces hardcoded semantic phrases with embedding-based semantic similarity.
+    - Uses paraphrase-multilingual-MiniLM-L12-v2 (same model as gatekeeper)
+    - Similarity score maps directly to quality_factor with NO artificial floor:
+      qf = semantic_similarity * 0.95
+    - Irrelevant evidence (similarity ≈ 0.0) → qf ≈ 0.0 (minimal credit)
+    - Strong evidence (similarity ≈ 1.0) → qf ≈ 0.95 (equivalent tier)
+    - Credit scales proportionally with actual evidence quality
 
-    The phrase list will correctly catch evidence phrased similarly to tracked
-    patterns, but will NOT generalize to every possible way a candidate could
-    phrase equivalent experience. For example:
-    - ✓ Evidence "manual and automated testing" → matches criterion "system testing"
-    - ✗ Evidence "end-to-end test automation in Python" → may not match (phrase not tracked)
-    - ✗ Evidence "verification and validation procedures" → may not match (synonym, not tracked)
+    TRADE-OFF vs OLD DESIGN:
+    OLD: Hardcoded phrase list (only 6 testing-specific phrases) → binary boost or stay at cap
+    NEW: Semantic embeddings → continuous scoring based on actual relevance
 
-    This is an accepted design tradeoff: hardcoded phrases provide predictable,
-    deterministic behavior without LLM-like non-determinism, while sacrificing
-    coverage for novel phrasing. If evidence uses different terminology, it stays
-    at the strict-class cap (0.40 for inferred matches). This is conservative by
-    design - false negatives (not boosting when we could) are preferable to false
-    positives (boosting when we shouldn't).
-
-    See Issue #6 (domain_keywords limitation) for similar terminology-dependency
-    tradeoff in security signal detection.
-
-    Threshold: 0.65+ indicates substantial overlap.
+    DETERMINISM: Embeddings are deterministic (not LLM sampling). Same inputs always produce
+    same similarity scores. Gracefully falls back to keyword/fuzzy matching if model unavailable.
     """
     if not criterion_text or not evidence_list:
         return 0.0
 
-    combined_evidence = " ".join(evidence_list).lower()
-    criterion_lower = criterion_text.lower()
+    combined_evidence = " ".join(evidence_list)
 
-    try:
-        from rapidfuzz import fuzz
+    # Compute semantic similarity using embedding model (or fallback)
+    semantic_score = _compute_semantic_similarity(criterion_text, combined_evidence)
 
-        # Check for semantic phrases: e.g., "manual and automated" is a strong signal
-        # for testing-related criteria
-        semantic_phrases = {
-            "manual and automated": 0.80,
-            "automated testing": 0.75,
-            "manual testing": 0.70,
-            "test cases": 0.75,
-            "qa testing": 0.70,
-            "quality assurance": 0.75,
-        }
+    # Map similarity [0, 1] to quality_factor with no artificial floor
+    # At similarity=0 (irrelevant), qf=0
+    # At similarity=1 (perfect match), qf=0.95 (equivalent tier ceiling)
+    qf = semantic_score * 0.95
 
-        for phrase, score in semantic_phrases.items():
-            if phrase in combined_evidence:
-                # Found a strong semantic phrase, check if it relates to criterion
-                if any(word in criterion_lower for word in phrase.split()):
-                    return score
-
-        # Fallback: use partial_ratio for substring matching as a secondary signal
-        # Check each evidence snippet individually for better accuracy
-        for evid in evidence_list:
-            evid_lower = evid.lower()
-            # Use partial_ratio but require minimum high score
-            partial_score = fuzz.partial_ratio(criterion_lower, evid_lower) / 100.0
-            if partial_score >= 0.70:
-                return partial_score
-
-        # Final fallback: keyword overlap
-        criterion_words = set(criterion_lower.split())
-        evidence_words = set(combined_evidence.split())
-        overlap = criterion_words & evidence_words
-        if criterion_words:
-            return len(overlap) / len(criterion_words)
-        return 0.0
-
-    except ImportError:
-        # Fallback without RapidFuzz: basic phrase detection
-        semantic_phrases = {
-            "manual and automated": 0.80,
-            "automated testing": 0.75,
-            "manual testing": 0.70,
-            "test cases": 0.75,
-        }
-        for phrase, score in semantic_phrases.items():
-            if phrase in combined_evidence and any(word in criterion_lower for word in phrase.split()):
-                return score
-
-        # Keyword overlap fallback
-        criterion_words = set(criterion_lower.split())
-        evidence_words = set(combined_evidence.split())
-        overlap = criterion_words & evidence_words
-        if not criterion_words:
-            return 0.0
-        return len(overlap) / len(criterion_words)
+    return max(0.0, min(1.0, qf))
 
 
 # ── Minimum-years threshold detection ────────────────────────────────────────
