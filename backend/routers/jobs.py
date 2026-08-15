@@ -490,8 +490,23 @@ async def get_job_details(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    tenant_filter = "" if is_super_admin else "AND j.tenant_id = :tid"
+
+    # For super_admin, allow all tenants. For regular users, check client_organization_id access
+    client_org_filter = "" if is_super_admin else """AND auc.tenant_id = CAST(:tid AS uuid)"""
+
+    params: dict = {
+        "jid": job_id,
+        "uid": current_user.user_id,
+        "is_admin": is_admin,
+    }
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
+
     job_row = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 j.job_id, j.job_code, j.title, j.department, j.description,
                 j.location, j.job_type, j.duration,
@@ -568,7 +583,7 @@ async def get_job_details(
             LEFT JOIN job_campaigns camp ON camp.campaign_id = j.campaign_id
             LEFT JOIN users cu ON cu.user_id = j.created_by
             LEFT JOIN users uu ON uu.user_id = j.updated_by
-            WHERE j.job_id = :jid AND j.tenant_id = :tid
+            WHERE j.job_id = :jid {tenant_filter}
               AND (
                 :is_admin = TRUE
                 OR j.client_organization_id IS NULL
@@ -576,17 +591,12 @@ async def get_job_details(
                     SELECT 1 FROM agency_user_clients auc
                     WHERE auc.user_id = CAST(:uid AS uuid)
                       AND auc.client_organization_id = j.client_organization_id
-                      AND auc.tenant_id = CAST(:tid AS uuid)
+                      {client_org_filter}
                 )
               )
             GROUP BY j.job_id, t.tenant_id, co.organization_name, camp.name, cu.full_name, uu.full_name
         """),
-        {
-            "jid":      job_id,
-            "tid":      current_user.tenant_id,
-            "uid":      current_user.user_id,
-            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
-        },
+        params,
     )
     job = job_row.mappings().first()
     if not job:
