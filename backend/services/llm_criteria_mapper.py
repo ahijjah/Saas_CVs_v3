@@ -402,32 +402,53 @@ def _flatten_criteria(analysis_json: dict) -> list[dict]:
 
     edu = analysis_json.get("education") or {}
     min_level = str(edu.get("minimum_level", "None")).strip()
-    if min_level and min_level.lower() not in ("none", ""):
+    has_level = min_level and min_level.lower() not in ("none", "")
+
+    if has_level:
         items.append({
             "text": f"Minimum education level: {min_level}",
             "dimension": "education",
             "required": True,
         })
-    # ── Unified education criterion when fields_of_study present ──────────
-    # Single criterion combining level + field, e.g. "Bachelor's degree in Islamic Studies"
+
+    # ── Handle fields_of_study ──────────────────────────────────────────────
+    # Two cases:
+    # 1. BOTH level and field present: unified criterion "Bachelor's degree in Computer Science"
+    # 2. ONLY field present (no level): field-only criterion "Field of study: Computer Science" (required=False)
     fos_list = [str(f) for f in (edu.get("fields_of_study") or []) if f]
     if fos_list:
-        # Unified: replace separate "Minimum education level" + "Field of study" with one
-        # Remove the level-only criterion we just added, replace with unified
-        if items and items[-1].get("text", "").startswith("Minimum education level:"):
-            items.pop()  # Remove the level-only criterion
+        if has_level:
+            # ── Unified criterion (level + field) ────────────────────────────
+            # Remove the level-only criterion we just added, replace with unified
+            if items and items[-1].get("text", "").startswith("Minimum education level:"):
+                items.pop()
 
-        if len(fos_list) == 1:
-            fields_str = fos_list[0]
+            if len(fos_list) == 1:
+                fields_str = fos_list[0]
+            else:
+                fields_str = f"{', '.join(fos_list[:-1])} or {fos_list[-1]}"
+
+            unified_text = f"{min_level} degree in {fields_str}"
+            items.append({
+                "text": unified_text,
+                "dimension": "education",
+                "required": True,
+            })
         else:
-            fields_str = f"{', '.join(fos_list[:-1])} or {fos_list[-1]}"
+            # ── Field-only criterion (no level requirement) ────────────────
+            # Edge case: field requirement without level requirement
+            # Preserve old behavior: single field -> just name, multiple -> "Field of study: X, Y, or Z"
+            if len(fos_list) == 1:
+                field_only_text = fos_list[0]
+            else:
+                fields_str = f"{', '.join(fos_list[:-1])} or {fos_list[-1]}"
+                field_only_text = f"Field of study: {fields_str}"
 
-        unified_text = f"{min_level} degree in {fields_str}"
-        items.append({
-            "text": unified_text,
-            "dimension": "education",
-            "required": True,  # Degree in specific field is required if level is required
-        })
+            items.append({
+                "text": field_only_text,
+                "dimension": "education",
+                "required": False,
+            })
 
     for cert in (analysis_json.get("certifications") or []):
         if cert:
