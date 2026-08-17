@@ -34,6 +34,7 @@ Design
 """
 from __future__ import annotations
 
+import logging
 import math
 import re
 from dataclasses import dataclass, field
@@ -42,7 +43,7 @@ from typing import Any
 
 from services.llm_criteria_mapper import LLMMatchResult, QualitativeSummary
 
-logger = None  # Lazy init
+logger = logging.getLogger(__name__)
 
 try:
     from services.criteria_matcher import MatchResult
@@ -426,6 +427,57 @@ def _apply_local_relevance_bound(
     return None, None
 
 
+def _is_field_gated_education_criterion(criterion_text: str) -> bool:
+    """Check if this is an education criterion with field-of-study gating.
+
+    Returns True for criteria like "Minimum education: Bachelor's" when the job
+    also requires specific fields_of_study (which get gated by field matching).
+    The local matcher will mark such criteria as PARTIAL if field doesn't match,
+    even if degree level is satisfied.
+    """
+    if not criterion_text:
+        return False
+    text_lower = criterion_text.lower()
+    # Check for minimum education level criterion patterns
+    return ("minimum education" in text_lower or "minimum degree" in text_lower) \
+           and ("bachelor" in text_lower or "master" in text_lower
+                or "phd" in text_lower or "associate" in text_lower or "high school" in text_lower)
+
+
+def _apply_local_field_bound(
+    llm_assessment: Any,
+    local_criterion: Any | None,
+) -> tuple[str | None, float | None]:
+    """
+    Phase 3 reconciliation: if local matcher found field-of-study mismatch
+    (PARTIAL/ABSENT) but LLM found MATCHED, bound the LLM's result to the
+    local matcher's conservative assessment.
+
+    Returns (risk_flag_to_add, new_confidence) if bounding should be applied,
+    or (None, None) if no change needed.
+
+    Bounding rule:
+    - LLM: MATCHED, Local: PARTIAL due to field mismatch → cap to PARTIAL
+    - LLM: MATCHED, Local: ABSENT due to field mismatch → cap to ABSENT
+    - Any other case → no change
+    """
+    if not local_criterion:
+        return None, None
+
+    llm_status = llm_assessment.status or "ABSENT"
+    local_status = _get_field(local_criterion, "status") or "ABSENT"
+    local_partial_reason = _get_field(local_criterion, "partial_reason") or ""
+
+    # Only bound if LLM says MATCHED and local says something lower
+    if llm_status == "MATCHED" and local_status in ("PARTIAL", "ABSENT"):
+        # Only apply bounding if local's reason is field-mismatch-related
+        reason_lower = local_partial_reason.lower()
+        if "field" in reason_lower or "aligned" in reason_lower or "unrelated" in reason_lower:
+            return "llm_local_field_disagreement", float(_get_field(local_criterion, "confidence", 0.45))
+
+    return None, None
+
+
 # ── Engine ────────────────────────────────────────────────────────────────────
 
 class DeterministicScoringEngine:
@@ -593,6 +645,55 @@ class DeterministicScoringEngine:
                     confidence = new_confidence
                 if risk_flag not in risk_flags:
                     risk_flags.append(risk_flag)
+
+        # ── Phase 3 Reconciliation: Field-gated education bounding ──────────
+        # For "Minimum education: X" criteria where the job also requires
+        # specific fields_of_study, the local matcher gates level credit by
+        # field match (PARTIAL if field doesn't match, even if degree is held).
+        # If LLM found MATCHED but local matcher found PARTIAL/ABSENT due to
+        # field mismatch, bound the LLM's result to preserve the local matcher's
+        # field-gating signal. This prevents false positives where the LLM
+        # missed field-of-study mismatches the keyword-based matcher caught.
+        dimension = assessment.dimension or "other"
+        if (
+            local_matches
+            and _is_field_gated_education_criterion(criterion_text)
+            and dimension == "education"
+        ):
+            logger.warning("Phase 3 Education bounding check: criterion=%s, LLM status=%s", criterion_text, status)
+            # Find matching local criterion (try exact text first, then semantic match on education dimension)
+            local_match = None
+            for lm in local_matches:
+                lm_crit = _get_field(lm, "criterion_text", "")
+                lm_dim = _get_field(lm, "dimension", "")
+                if (lm_crit or "").strip() == (criterion_text or "").strip():
+                    local_match = lm
+                    break
+            # Fallback: find first education criterion with same required status
+            if not local_match:
+                llm_required = _get_field(assessment, "required", True)
+                for lm in local_matches:
+                    lm_dim = _get_field(lm, "dimension", "")
+                    lm_crit = _get_field(lm, "criterion_text", "")
+                    lm_required = _get_field(lm, "required", True)
+                    if lm_dim == "education" and lm_required == llm_required and "Minimum education" in (lm_crit or ""):
+                        local_match = lm
+                        break
+
+            if local_match:
+                logger.warning("Found local match: status=%s, partial_reason=%s",
+                              _get_field(local_match, "status"), _get_field(local_match, "partial_reason"))
+                risk_flag, new_confidence = _apply_local_field_bound(assessment, local_match)
+                if risk_flag is not None:
+                    # Bound the LLM's result to the local matcher's status
+                    status = _get_field(local_match, "status", "ABSENT")
+                    if new_confidence is not None:
+                        confidence = new_confidence
+                    if risk_flag not in risk_flags:
+                        risk_flags.append(risk_flag)
+                    logger.warning("Applied field bounding: new status=%s, confidence=%s", status, confidence)
+            else:
+                logger.warning("No matching local education criterion found for bounding check")
 
         sc        = _status_credit(status, cfg)
         qf        = _match_quality_factor(match_type, criterion_class)
