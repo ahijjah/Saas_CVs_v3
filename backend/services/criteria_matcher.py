@@ -939,6 +939,39 @@ def _match_education(
                 partial_reason=field_reason,
             ))
 
+    # ── Gate level match by field mismatch severity ──────────────────────
+    # When field-of-study requirement exists: distinguish data gap from real mismatch
+    if required_fields and cv_fields and best_score < 70:
+        # Scenario B: Real mismatch — CV has field data but it doesn't match requirement
+        # (best_score < 70 means field_status="ABSENT" from above)
+        # Gate the level match with severity-scaled downgrade
+        level_match = matches[0]  # Level match is always first
+
+        if level_status != "ABSENT":
+            # Severity-scaled downgrade: confidence scales with how different the field is
+            # Tunable constant: floor=0.15 (minimum credibility floor)
+            confidence_multiplier = max(0.15, best_score / 100.0)
+            downgraded_confidence = level_confidence * confidence_multiplier
+
+            # Always downgrade to PARTIAL (never ABSENT) to preserve semantic reality:
+            # a candidate holding a Bachelor's degree truly has a Bachelor's degree
+            level_match.status = "PARTIAL"
+            level_match.confidence = downgraded_confidence
+
+            # Nuanced reason based on mismatch severity
+            if best_score >= 40:
+                # Moderate mismatch: fields have some adjacency
+                level_match.partial_reason = (
+                    f"Degree level satisfied ({min_level}) but field only partially aligned: "
+                    f"CV shows {matched_cv_field}; {best_match} preferred"
+                )
+            else:
+                # Severe mismatch: fields are unrelated
+                level_match.partial_reason = (
+                    f"Degree level satisfied ({min_level}) but in an unrelated field: "
+                    f"CV shows {matched_cv_field}; {best_match} required"
+                )
+
     return matches
 
 
