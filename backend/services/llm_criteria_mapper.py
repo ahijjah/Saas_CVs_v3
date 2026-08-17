@@ -408,16 +408,25 @@ def _flatten_criteria(analysis_json: dict) -> list[dict]:
             "dimension": "education",
             "required": True,
         })
+    # ── Unified education criterion when fields_of_study present ──────────
+    # Single criterion combining level + field, e.g. "Bachelor's degree in Islamic Studies"
     fos_list = [str(f) for f in (edu.get("fields_of_study") or []) if f]
     if fos_list:
+        # Unified: replace separate "Minimum education level" + "Field of study" with one
+        # Remove the level-only criterion we just added, replace with unified
+        if items and items[-1].get("text", "").startswith("Minimum education level:"):
+            items.pop()  # Remove the level-only criterion
+
         if len(fos_list) == 1:
-            fos_text = fos_list[0]
+            fields_str = fos_list[0]
         else:
-            fos_text = f"Field of study: {', '.join(fos_list[:-1])} or {fos_list[-1]}"
+            fields_str = f"{', '.join(fos_list[:-1])} or {fos_list[-1]}"
+
+        unified_text = f"{min_level} degree in {fields_str}"
         items.append({
-            "text": fos_text,
+            "text": unified_text,
             "dimension": "education",
-            "required": False,
+            "required": True,  # Degree in specific field is required if level is required
         })
 
     for cert in (analysis_json.get("certifications") or []):

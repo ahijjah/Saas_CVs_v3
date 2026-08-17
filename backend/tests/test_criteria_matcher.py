@@ -970,7 +970,7 @@ class TestCriteriaMatchEngine:
     # ── Field of study matching (NEW) ──────────────────────────────────────
 
     def test_education_field_of_study_exact_match(self):
-        """Field of study: Computer Science matches Computer Science in CV."""
+        """Unified criterion: Bachelor's degree in Computer Science matches requirement."""
         facts = CVFacts(
             language="en",
             total_char_count=500,
@@ -999,17 +999,15 @@ class TestCriteriaMatchEngine:
         engine = CriteriaMatchEngine()
         result = engine.match(facts, criteria)
 
-        # Should have 2 education matches: degree level + field of study
+        # Unified criterion: one education match combining level + field
         edu_matches = [x for x in result.matches if x.dimension == "education"]
-        assert len(edu_matches) == 2
+        assert len(edu_matches) == 1
 
-        # Degree level should be MATCHED
-        level_match = next(x for x in edu_matches if "Minimum education" in x.criterion_text)
-        assert level_match.status == "MATCHED"
-
-        # Field of study should be MATCHED
-        field_match = next(x for x in edu_matches if "Field of study" in x.criterion_text)
-        assert field_match.status == "MATCHED"
+        # Unified criterion should be MATCHED (perfect field match)
+        unified_match = edu_matches[0]
+        assert unified_match.criterion_text == "Bachelor's degree in Computer Science"
+        assert unified_match.status == "MATCHED"
+        assert unified_match.confidence == 0.9
 
     def test_education_field_of_study_mismatch(self):
         """Field mismatch: Bachelor's in Business Admin should NOT match Computer Science requirement."""
@@ -1041,25 +1039,22 @@ class TestCriteriaMatchEngine:
         engine = CriteriaMatchEngine()
         result = engine.match(facts, criteria)
 
+        # Unified criterion: one education match combining level + field
         edu_matches = [x for x in result.matches if x.dimension == "education"]
-        assert len(edu_matches) == 2
+        assert len(edu_matches) == 1
 
-        # Degree level should be PARTIAL (gated by field mismatch severity)
-        # Business Admin vs Computer Science is a moderate mismatch (best_score ≈ 41)
-        level_match = next(x for x in edu_matches if "Minimum education" in x.criterion_text)
-        assert level_match.status == "PARTIAL"
-        # Confidence should scale with mismatch severity: 0.90 * 0.41 ≈ 0.369
-        # (lower than the 0.90 it would have without gating)
-        assert 0.30 < level_match.confidence < 0.45, f"Expected gated confidence for moderate mismatch, got {level_match.confidence}"
-        assert "partially aligned" in level_match.partial_reason.lower()
-
-        # Field of study should be ABSENT (different field)
-        field_match = next(x for x in edu_matches if "Field of study" in x.criterion_text)
-        assert field_match.status == "ABSENT"
-        assert field_match.confidence == 0.0
+        # Unified criterion should be PARTIAL (degree held but field mismatch)
+        # Business Admin vs Computer Science is a fuzzy match of ≈ 41 (below 70 threshold)
+        unified_match = edu_matches[0]
+        assert unified_match.criterion_text == "Bachelor's degree in Computer Science"
+        assert unified_match.status == "PARTIAL"
+        # Confidence should scale continuously with fuzzy score: 0.90 * 0.41 ≈ 0.369
+        assert 0.30 < unified_match.confidence < 0.45, f"Expected continuous severity-scaled confidence, got {unified_match.confidence}"
+        # Fuzzy score 41 is below 70 threshold, so categorized as "unrelated field"
+        assert "unrelated" in unified_match.partial_reason.lower()
 
     def test_education_field_of_study_partial_match(self):
-        """Fuzzy match: 'Computer Science' should partially match 'CS' or similar variants."""
+        """Fuzzy match: 'BS Computer Science and Engineering' should match 'Computer Science' requirement."""
         facts = CVFacts(
             language="en",
             total_char_count=500,
@@ -1088,13 +1083,16 @@ class TestCriteriaMatchEngine:
         engine = CriteriaMatchEngine()
         result = engine.match(facts, criteria)
 
+        # Unified criterion: should match well (Computer Science is core to field)
         edu_matches = [x for x in result.matches if x.dimension == "education"]
-        field_match = next(x for x in edu_matches if "Field of study" in x.criterion_text)
-        # Should be MATCHED because "Computer Science" is core to the field
-        assert field_match.status in ("MATCHED", "PARTIAL")
+        assert len(edu_matches) == 1
+        unified_match = edu_matches[0]
+        # Fuzzy score should be high (includes "Computer Science" exactly)
+        assert unified_match.status in ("MATCHED", "PARTIAL")
+        assert unified_match.criterion_text == "Bachelor's degree in Computer Science"
 
     def test_education_field_of_study_missing_in_cv(self):
-        """When CV has no field of study but job requires it, should be ABSENT."""
+        """When CV has no field of study but degree is present, it's unpenalized (data gap, not mismatch)."""
         facts = CVFacts(
             language="en",
             total_char_count=500,
@@ -1123,10 +1121,13 @@ class TestCriteriaMatchEngine:
         engine = CriteriaMatchEngine()
         result = engine.match(facts, criteria)
 
+        # Unified criterion: unpenalized MATCHED when degree level is met but field data missing
         edu_matches = [x for x in result.matches if x.dimension == "education"]
-        field_match = next(x for x in edu_matches if "Field of study" in x.criterion_text)
-        assert field_match.status == "ABSENT"
-        assert "No field of study information" in field_match.partial_reason
+        assert len(edu_matches) == 1
+        unified_match = edu_matches[0]
+        assert unified_match.status == "MATCHED"
+        assert unified_match.confidence == 0.9
+        assert unified_match.criterion_text == "Bachelor's degree in Computer Science"
 
     # ── Certification matching ─────────────────────────────────────────────
 

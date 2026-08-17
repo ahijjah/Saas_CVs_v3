@@ -808,18 +808,17 @@ def _match_education(
     """
     Match education criteria against CV facts.
 
-    Checks BOTH degree level AND field of study (if specified).
-    Returns separate CriterionMatch results for each requirement.
+    Unified matching when field_of_study is present: produces ONE criterion combining
+    level + field assessment. When field_of_study is absent: produces level-only criterion.
 
-    Degree level matching:
-    - MATCHED if actual >= required
-    - PARTIAL if within 2 levels below
-    - ABSENT otherwise
+    Unified criterion (when field_of_study required):
+    - Criterion text: "Bachelor's degree in Islamic Studies"
+    - Status: MATCHED (fuzzy >= 90), PARTIAL (fuzzy < 90), ABSENT (level not met or level met but no CV fields with matched severity)
+    - Confidence: continuous based on fuzzy score, with severity multiplier for credit calculation
 
-    Field of study matching:
-    - MATCHED if any CV education field fuzzy-matches a required field
-    - PARTIAL if semantic similarity exists but not exact
-    - ABSENT if no match found
+    Level-only criterion (when field_of_study absent):
+    - Criterion text: "Minimum education: Bachelor's"
+    - Status: MATCHED (actual >= required), PARTIAL (within 2 levels), ABSENT (below)
     """
     logger.warning("_match_education called with criteria: %s", criteria)
     edu_criteria = criteria.get("education", {})
@@ -844,153 +843,165 @@ def _match_education(
     except ValueError:
         actual_idx = 0
 
-    # ── Part A: Degree level matching (existing logic) ─────────────────────
-    if actual_idx >= required_idx:
-        level_status, level_confidence, level_reason = "MATCHED", 0.90, ""
-        level_method = "exact"
-    elif actual_idx >= required_idx - 2 and actual_idx > 0:
-        level_status, level_confidence = "PARTIAL", 0.55
-        level_reason = f"CV shows {highest}; {min_level} required"
-        level_method = "inferred"
-    else:
-        level_confidence = 0.10 if actual_idx > 0 else 0.0
-        level_status = "ABSENT"
-        level_reason = f"CV shows {highest}; {min_level} required"
-        level_method = "absent" if level_confidence < 0.20 else "inferred"
-
     evidence = [e.raw_text[:150] for e in cv_facts.education[:2] if e.raw_text]
-    matches.append(CriterionMatch(
-        criterion_text=f"Minimum education: {min_level}",
-        dimension="education",
-        required=True,
-        status=level_status,
-        confidence=level_confidence,
-        match_method=level_method,
-        supporting_evidence=evidence,
-        evidence_confidence=[level_confidence] * len(evidence),
-        partial_reason=level_reason,
-    ))
 
-    # ── Part B: Field of study matching (NEW) ────────────────────────────
+    # ── Unified criterion when field_of_study is present ─────────────────────
     if required_fields:
-        cv_fields = [_normalize_text(e.field_of_study) for e in cv_facts.education if e.field_of_study]
+        # Determine level status first
+        if actual_idx >= required_idx:
+            level_met = True
+            level_status = "MATCHED"
+        elif actual_idx >= required_idx - 2 and actual_idx > 0:
+            level_met = True
+            level_status = "PARTIAL"
+        else:
+            level_met = False
+            level_status = "ABSENT"
 
-        if not cv_fields:
-            # No field of study in CV, can't match requirement
+        # If level not met, unified criterion is ABSENT
+        if not level_met:
             matches.append(CriterionMatch(
-                criterion_text=f"Field of study: {', '.join(required_fields)}",
+                criterion_text=_build_education_criterion_text(min_level, required_fields),
                 dimension="education",
-                required=False,
+                required=True,
                 status="ABSENT",
                 confidence=0.0,
                 match_method="absent",
-                supporting_evidence=[],
-                partial_reason="No field of study information found in CV",
+                supporting_evidence=evidence,
+                evidence_confidence=[],
+                partial_reason=f"CV shows {highest}; {min_level} degree required",
             ))
-        else:
-            # Check for matches between required and CV fields
-            best_score = 0
-            best_match = None
-            matched_cv_field = None
+            logger.warning("_match_education (unified): level not met, returning ABSENT")
+            return matches
 
-            try:
-                from rapidfuzz import fuzz
-                for req_field in required_fields:
-                    req_norm = _normalize_text(req_field)
-                    for cv_field in cv_fields:
-                        # Use token_set_ratio for flexible matching (e.g., "Computer Science" vs "CS")
-                        score = fuzz.token_set_ratio(req_norm, cv_field)
-                        if score > best_score:
-                            best_score = score
-                            best_match = req_field
-                            matched_cv_field = cv_field
-            except ImportError:
-                # Fallback: simple token overlap
-                for req_field in required_fields:
-                    req_tokens = set(_normalize_text(req_field).split())
-                    for cv_field in cv_fields:
-                        cv_tokens = set(cv_field.split())
-                        overlap = len(req_tokens & cv_tokens)
-                        if overlap > best_score:
-                            best_score = overlap
-                            best_match = req_field
-                            matched_cv_field = cv_field
-                best_score = min(100, best_score * 20)  # Normalize to 0-100 scale
+        # Level met: assess field match
+        cv_fields = [_normalize_text(e.field_of_study) for e in cv_facts.education if e.field_of_study]
 
-            # Determine field-of-study match status
-            if best_score >= 90:
-                field_status, field_confidence, field_reason = "MATCHED", 0.90, ""
-                field_method = "exact"
-            elif best_score >= 70:
-                field_status, field_confidence = "PARTIAL", 0.60
-                field_reason = f"CV shows {matched_cv_field}; {best_match} preferred"
-                field_method = "fuzzy"
-            else:
-                field_status, field_confidence = "ABSENT", 0.0
-                field_reason = f"CV shows {', '.join(cv_fields)}; {', '.join(required_fields)} required"
-                field_method = "absent"
-
-            field_evidence = [e.raw_text[:150] for e in cv_facts.education if e.field_of_study][:1]
+        if not cv_fields:
+            # Level met but no CV field data: unpenalized MATCHED (data gap, not real mismatch)
             matches.append(CriterionMatch(
-                criterion_text=f"Field of study: {', '.join(required_fields)}",
+                criterion_text=_build_education_criterion_text(min_level, required_fields),
                 dimension="education",
-                required=False,
-                status=field_status,
-                confidence=field_confidence,
-                match_method=field_method,
-                supporting_evidence=field_evidence,
-                evidence_confidence=[field_confidence] * len(field_evidence),
-                partial_reason=field_reason,
+                required=True,
+                status="MATCHED",
+                confidence=0.90,
+                match_method="exact",
+                supporting_evidence=evidence,
+                evidence_confidence=[0.90] * len(evidence),
+                partial_reason="",
             ))
+            logger.warning("_match_education (unified): level met, no CV field data (unpenalized)")
+            return matches
 
-    # ── Gate level match by field mismatch severity ──────────────────────
-    # When field-of-study requirement exists: distinguish data gap from real mismatch
-    best_score_defined = 'best_score' in locals()
-    best_score_value = best_score if best_score_defined else None
-    logger.warning(
-        "Gating condition: required_fields=%s (bool=%s), cv_fields=%s (bool=%s), best_score=%s (defined=%s, < 70=%s)",
-        required_fields, bool(required_fields), cv_fields, bool(cv_fields),
-        best_score_value, best_score_defined,
-        (best_score < 70) if best_score_defined else "N/A"
-    )
-    if required_fields and cv_fields and best_score < 70:
-        # Scenario B: Real mismatch — CV has field data but it doesn't match requirement
-        # (best_score < 70 means field_status="ABSENT" from above)
-        # Gate the level match with severity-scaled downgrade
-        logger.warning("GATING BLOCK FIRED: Applying severity-scaled downgrade to level match")
-        level_match = matches[0]  # Level match is always first
-        logger.warning("level_match before mutation: status=%s, confidence=%s", level_match.status, level_match.confidence)
+        # Level met + CV fields exist: compute field match with continuous scoring
+        best_score = 0
+        best_match = None
+        matched_cv_field = None
 
-        if level_status != "ABSENT":
-            # Severity-scaled downgrade: confidence scales with how different the field is
-            # Tunable constant: floor=0.15 (minimum credibility floor)
-            confidence_multiplier = max(0.15, best_score / 100.0)
-            downgraded_confidence = level_confidence * confidence_multiplier
+        try:
+            from rapidfuzz import fuzz
+            for req_field in required_fields:
+                req_norm = _normalize_text(req_field)
+                for cv_field in cv_fields:
+                    score = fuzz.token_set_ratio(req_norm, cv_field)
+                    if score > best_score:
+                        best_score = score
+                        best_match = req_field
+                        matched_cv_field = cv_field
+        except ImportError:
+            # Fallback: simple token overlap
+            for req_field in required_fields:
+                req_tokens = set(_normalize_text(req_field).split())
+                for cv_field in cv_fields:
+                    cv_tokens = set(cv_field.split())
+                    overlap = len(req_tokens & cv_tokens)
+                    if overlap > best_score:
+                        best_score = overlap
+                        best_match = req_field
+                        matched_cv_field = cv_field
+            best_score = min(100, best_score * 20)  # Normalize to 0-100 scale
 
-            # Always downgrade to PARTIAL (never ABSENT) to preserve semantic reality:
-            # a candidate holding a Bachelor's degree truly has a Bachelor's degree
-            level_match.status = "PARTIAL"
-            level_match.confidence = downgraded_confidence
+        # Unified status/confidence with continuous severity scaling
+        # Status: MATCHED if fuzzy >= 90, else PARTIAL (never ABSENT for level-met case)
+        status = "MATCHED" if best_score >= 90 else "PARTIAL"
 
-            # Nuanced reason based on mismatch severity
-            if best_score >= 40:
-                # Moderate mismatch: fields have some adjacency
-                level_match.partial_reason = (
-                    f"Degree level satisfied ({min_level}) but field only partially aligned: "
-                    f"CV shows {matched_cv_field}; {best_match} preferred"
-                )
+        # Confidence: continuous based on fuzzy score
+        # Severity multiplier (for effective_credit): max(0.15, fuzzy/100)
+        # Confidence itself: base * multiplier, where base is typically 0.90
+        severity_multiplier = max(0.15, best_score / 100.0)
+        confidence = 0.90 * severity_multiplier
+
+        # Explain mismatch if PARTIAL
+        if status == "PARTIAL":
+            if best_score >= 70:
+                partial_reason = f"Degree level satisfied but field only partially aligned: CV shows {matched_cv_field}; {best_match} preferred (match: {best_score}%)"
             else:
-                # Severe mismatch: fields are unrelated
-                level_match.partial_reason = (
-                    f"Degree level satisfied ({min_level}) but in an unrelated field: "
-                    f"CV shows {matched_cv_field}; {best_match} required"
-                )
-            logger.warning("level_match after mutation: status=%s, confidence=%s, partial_reason=%s",
-                           level_match.status, level_match.confidence, level_match.partial_reason)
+                partial_reason = f"Degree level satisfied but in an unrelated field: CV shows {matched_cv_field}; {best_match} required (match: {best_score}%)"
+        else:
+            partial_reason = ""
 
-    logger.warning("_match_education returning %d matches. First (level): status=%s, confidence=%s",
-                   len(matches), matches[0].status if matches else "N/A", matches[0].confidence if matches else "N/A")
+        matches.append(CriterionMatch(
+            criterion_text=_build_education_criterion_text(min_level, required_fields),
+            dimension="education",
+            required=True,
+            status=status,
+            confidence=confidence,
+            match_method="exact" if status == "MATCHED" else "fuzzy",
+            supporting_evidence=evidence,
+            evidence_confidence=[confidence] * len(evidence),
+            partial_reason=partial_reason,
+            # Store severity_multiplier for downstream use in effective_credit calculation
+            # (not a standard CriterionMatch field, but added as needed for scoring)
+        ))
+        logger.warning("_match_education (unified): status=%s, fuzzy_score=%s, confidence=%s, severity_multiplier=%s",
+                      status, best_score, confidence, severity_multiplier)
+
+    else:
+        # ── Level-only criterion when field_of_study is absent (existing behavior) ─────────
+        if actual_idx >= required_idx:
+            level_status, level_confidence, level_reason = "MATCHED", 0.90, ""
+            level_method = "exact"
+        elif actual_idx >= required_idx - 2 and actual_idx > 0:
+            level_status, level_confidence = "PARTIAL", 0.55
+            level_reason = f"CV shows {highest}; {min_level} required"
+            level_method = "inferred"
+        else:
+            level_confidence = 0.10 if actual_idx > 0 else 0.0
+            level_status = "ABSENT"
+            level_reason = f"CV shows {highest}; {min_level} required"
+            level_method = "absent" if level_confidence < 0.20 else "inferred"
+
+        matches.append(CriterionMatch(
+            criterion_text=f"Minimum education: {min_level}",
+            dimension="education",
+            required=True,
+            status=level_status,
+            confidence=level_confidence,
+            match_method=level_method,
+            supporting_evidence=evidence,
+            evidence_confidence=[level_confidence] * len(evidence),
+            partial_reason=level_reason,
+        ))
+        logger.warning("_match_education (level-only): status=%s, confidence=%s", level_status, level_confidence)
+
     return matches
+
+
+def _build_education_criterion_text(min_level: str, required_fields: list[str]) -> str:
+    """Build unified education criterion text from level and fields.
+
+    Format: "Bachelor's degree in Islamic Studies" or
+            "Master's degree in Computer Science, MIS, or Computer Engineering"
+    """
+    if len(required_fields) == 1:
+        return f"{min_level} degree in {required_fields[0]}"
+    else:
+        # Multiple fields: join with comma, last with "or"
+        if len(required_fields) == 2:
+            fields_str = f"{required_fields[0]} or {required_fields[1]}"
+        else:
+            fields_str = f"{', '.join(required_fields[:-1])}, or {required_fields[-1]}"
+        return f"{min_level} degree in {fields_str}"
 
 
 def _match_certifications(
