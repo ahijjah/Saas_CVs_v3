@@ -821,7 +821,7 @@ def _match_education(
     - PARTIAL if semantic similarity exists but not exact
     - ABSENT if no match found
     """
-    logger.debug("_match_education called with criteria: %s", criteria)
+    logger.warning("_match_education called with criteria: %s", criteria)
     edu_criteria = criteria.get("education", {})
     if not isinstance(edu_criteria, dict):
         return []
@@ -947,7 +947,7 @@ def _match_education(
     # When field-of-study requirement exists: distinguish data gap from real mismatch
     best_score_defined = 'best_score' in locals()
     best_score_value = best_score if best_score_defined else None
-    logger.debug(
+    logger.warning(
         "Gating condition: required_fields=%s (bool=%s), cv_fields=%s (bool=%s), best_score=%s (defined=%s, < 70=%s)",
         required_fields, bool(required_fields), cv_fields, bool(cv_fields),
         best_score_value, best_score_defined,
@@ -957,9 +957,9 @@ def _match_education(
         # Scenario B: Real mismatch — CV has field data but it doesn't match requirement
         # (best_score < 70 means field_status="ABSENT" from above)
         # Gate the level match with severity-scaled downgrade
-        logger.debug("GATING BLOCK FIRED: Applying severity-scaled downgrade to level match")
+        logger.warning("GATING BLOCK FIRED: Applying severity-scaled downgrade to level match")
         level_match = matches[0]  # Level match is always first
-        logger.debug("level_match before mutation: status=%s, confidence=%s", level_match.status, level_match.confidence)
+        logger.warning("level_match before mutation: status=%s, confidence=%s", level_match.status, level_match.confidence)
 
         if level_status != "ABSENT":
             # Severity-scaled downgrade: confidence scales with how different the field is
@@ -985,11 +985,11 @@ def _match_education(
                     f"Degree level satisfied ({min_level}) but in an unrelated field: "
                     f"CV shows {matched_cv_field}; {best_match} required"
                 )
-            logger.debug("level_match after mutation: status=%s, confidence=%s, partial_reason=%s",
-                         level_match.status, level_match.confidence, level_match.partial_reason)
+            logger.warning("level_match after mutation: status=%s, confidence=%s, partial_reason=%s",
+                           level_match.status, level_match.confidence, level_match.partial_reason)
 
-    logger.debug("_match_education returning %d matches. First (level): status=%s, confidence=%s",
-                 len(matches), matches[0].status if matches else "N/A", matches[0].confidence if matches else "N/A")
+    logger.warning("_match_education returning %d matches. First (level): status=%s, confidence=%s",
+                   len(matches), matches[0].status if matches else "N/A", matches[0].confidence if matches else "N/A")
     return matches
 
 
