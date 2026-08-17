@@ -1044,9 +1044,13 @@ class TestCriteriaMatchEngine:
         edu_matches = [x for x in result.matches if x.dimension == "education"]
         assert len(edu_matches) == 2
 
-        # Degree level should be MATCHED
+        # Degree level should be PARTIAL (gated by field mismatch severity)
+        # Business Admin vs Computer Science is a severe mismatch (best_score ≈ 0)
         level_match = next(x for x in edu_matches if "Minimum education" in x.criterion_text)
-        assert level_match.status == "MATCHED"
+        assert level_match.status == "PARTIAL"
+        # Confidence should scale with mismatch severity: 0.90 * max(0.15, 0/100) ≈ 0.135
+        assert level_match.confidence < 0.20, f"Expected low confidence for severe mismatch, got {level_match.confidence}"
+        assert "unrelated field" in level_match.partial_reason.lower()
 
         # Field of study should be ABSENT (different field)
         field_match = next(x for x in edu_matches if "Field of study" in x.criterion_text)
