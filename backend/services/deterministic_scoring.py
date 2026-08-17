@@ -447,35 +447,44 @@ def _is_field_gated_education_criterion(criterion_text: str) -> bool:
 def _apply_local_field_bound(
     llm_assessment: Any,
     local_criterion: Any | None,
-) -> tuple[str | None, float | None]:
+) -> tuple[str | None, float | None, float | None]:
     """
     Phase 3 reconciliation: if local matcher found field-of-study mismatch
     (PARTIAL/ABSENT) but LLM found MATCHED, bound the LLM's result to the
     local matcher's conservative assessment.
 
-    Returns (risk_flag_to_add, new_confidence) if bounding should be applied,
-    or (None, None) if no change needed.
+    Returns (risk_flag_to_add, new_confidence, severity_multiplier) if bounding should be applied,
+    or (None, None, None) if no change needed.
+
+    Severity multiplier scales effective_credit based on field mismatch severity:
+    - Extracted from local match confidence: multiplier = max(0.15, confidence / 0.90)
+    - Used to scale status_credit: effective_credit = status_credit × severity_multiplier × quality_factor
 
     Bounding rule:
-    - LLM: MATCHED, Local: PARTIAL due to field mismatch → cap to PARTIAL
-    - LLM: MATCHED, Local: ABSENT due to field mismatch → cap to ABSENT
+    - LLM: MATCHED, Local: PARTIAL due to field mismatch → cap to PARTIAL with severity scaling
+    - LLM: MATCHED, Local: ABSENT due to field mismatch → cap to ABSENT with severity scaling
     - Any other case → no change
     """
     if not local_criterion:
-        return None, None
+        return None, None, None
 
     llm_status = llm_assessment.status or "ABSENT"
     local_status = _get_field(local_criterion, "status") or "ABSENT"
     local_partial_reason = _get_field(local_criterion, "partial_reason") or ""
+    local_confidence = float(_get_field(local_criterion, "confidence", 0.45))
 
     # Only bound if LLM says MATCHED and local says something lower
     if llm_status == "MATCHED" and local_status in ("PARTIAL", "ABSENT"):
         # Only apply bounding if local's reason is field-mismatch-related
         reason_lower = local_partial_reason.lower()
         if "field" in reason_lower or "aligned" in reason_lower or "unrelated" in reason_lower:
-            return "llm_local_field_disagreement", float(_get_field(local_criterion, "confidence", 0.45))
+            # Severity multiplier: extract from local confidence with 0.15 floor
+            # local_confidence = base_confidence × multiplier (e.g., 0.90 × 0.20 = 0.18)
+            # So multiplier = confidence / base_confidence, floored at 0.15
+            severity_multiplier = max(0.15, local_confidence / 0.90)
+            return "llm_local_field_disagreement", local_confidence, severity_multiplier
 
-    return None, None
+    return None, None, None
 
 
 # ── Engine ────────────────────────────────────────────────────────────────────
@@ -655,6 +664,7 @@ class DeterministicScoringEngine:
         # field-gating signal. This prevents false positives where the LLM
         # missed field-of-study mismatches the keyword-based matcher caught.
         dimension = assessment.dimension or "other"
+        field_severity_multiplier = None  # Track if field-gating severity applies
         if (
             local_matches
             and _is_field_gated_education_criterion(criterion_text)
@@ -683,15 +693,18 @@ class DeterministicScoringEngine:
             if local_match:
                 logger.warning("Found local match: status=%s, partial_reason=%s",
                               _get_field(local_match, "status"), _get_field(local_match, "partial_reason"))
-                risk_flag, new_confidence = _apply_local_field_bound(assessment, local_match)
+                risk_flag, new_confidence, severity_multiplier = _apply_local_field_bound(assessment, local_match)
                 if risk_flag is not None:
                     # Bound the LLM's result to the local matcher's status
                     status = _get_field(local_match, "status", "ABSENT")
                     if new_confidence is not None:
                         confidence = new_confidence
+                    if severity_multiplier is not None:
+                        field_severity_multiplier = severity_multiplier
                     if risk_flag not in risk_flags:
                         risk_flags.append(risk_flag)
-                    logger.warning("Applied field bounding: new status=%s, confidence=%s", status, confidence)
+                    logger.warning("Applied field bounding: new status=%s, confidence=%s, severity_multiplier=%s",
+                                 status, confidence, field_severity_multiplier)
             else:
                 logger.warning("No matching local education criterion found for bounding check")
 
@@ -730,6 +743,18 @@ class DeterministicScoringEngine:
                     risk_flags.append("inferred_with_strong_evidence_overlap")
 
         effective = sc * qf
+
+        # ── Severity-driven credit for field-gated education ────────────────────
+        # If field-of-study mismatch severity was bounded, scale effective_credit
+        # by the severity multiplier. This makes severe mismatches score lower than
+        # moderate mismatches, while keeping a non-zero floor (0.15 × qf) to
+        # preserve semantic difference from ABSENT (0.0).
+        if field_severity_multiplier is not None:
+            effective = sc * qf * field_severity_multiplier
+            # Floor: don't collapse to ABSENT-level credit, keep 0.15 × qf minimum
+            effective = max(0.15 * qf, effective)
+            logger.warning("Applied severity-driven credit: base=%s, multiplier=%s, final effective_credit=%s",
+                         sc * qf, field_severity_multiplier, effective)
 
         has_oq = "overqualified" in risk_flags
 
