@@ -110,6 +110,12 @@ class CriterionMatch:
     """The raw CV term that produced the match, before normalisation.
     E.g. 'إكسل' matched to 'Microsoft Excel'."""
 
+    role_relevance_score: float = 0.0
+    """(Experience criteria only) Best fuzzy match score (0-100) found when checking
+    CV role titles against required roles. Used to scale quality_factor when there's
+    a confirmed role-relevance mismatch (not just unverified). Default 0.0 for all
+    non-experience criteria and when no fuzzy matching occurs."""
+
 
 @dataclass
 class GapCandidate:
@@ -671,6 +677,7 @@ def _match_experience(
                 stemmed_kw = _stem_word(kw)
             stemmed_keywords.add(stemmed_kw)
 
+        best_fuzzy_score = 0.0  # Track best score even when no match found
         if candidate_texts and job_requirements:
             try:
                 from rapidfuzz import fuzz
@@ -689,6 +696,7 @@ def _match_experience(
                         if job_keywords and cand_keywords and (job_keywords & cand_keywords):
                             # Both have domain keywords and they overlap — strong signal
                             score = fuzz.token_set_ratio(job_norm, cand_text)
+                            best_fuzzy_score = max(best_fuzzy_score, score)
                             if score >= 65:
                                 has_relevance = True
                                 break
@@ -696,6 +704,7 @@ def _match_experience(
                         elif not job_keywords and not cand_keywords:
                             # Neither has domain keyword; use lower threshold for generic terms
                             score = fuzz.token_set_ratio(job_norm, cand_text)
+                            best_fuzzy_score = max(best_fuzzy_score, score)
                             if score >= 85:  # Higher bar when no domain keywords present
                                 has_relevance = True
                                 break
@@ -718,6 +727,9 @@ def _match_experience(
 
                         if job_keywords and cand_keywords and (job_keywords & cand_keywords):
                             overlap = len(job_tokens & cand_tokens)
+                            # Normalize overlap count to 0-100 scale for consistency
+                            normalized_score = min(100, overlap * 20)
+                            best_fuzzy_score = max(best_fuzzy_score, normalized_score)
                             if overlap >= 2:
                                 has_relevance = True
                                 break
@@ -733,6 +745,10 @@ def _match_experience(
                 confidence = 0.45
                 partial_reason = f"{actual:.0f} years total experience, but relevance to role not verified"
                 evidence = [f"{actual:.1f} years total experience extracted from CV"]
+                # Distinguish data gap vs confirmed mismatch:
+                # - If candidate_texts empty: data gap (no work history in CV) → role_relevance_score=0
+                # - If candidate_texts non-empty: confirmed mismatch → pass best_fuzzy_score for severity scaling
+                role_score = best_fuzzy_score if candidate_texts else 0.0
             else:
                 # Date-less AND no relevance found either — no positive signal
                 # in either dimension, stay at the existing numeric floor
@@ -741,6 +757,7 @@ def _match_experience(
                 confidence = numeric_confidence
                 partial_reason = "No verifiable years and no clear role relevance found in CV"
                 evidence = []
+                role_score = best_fuzzy_score if candidate_texts else 0.0
             return [CriterionMatch(
                 criterion_text=criterion_text,
                 dimension="experience",
@@ -751,6 +768,7 @@ def _match_experience(
                 supporting_evidence=evidence,
                 evidence_confidence=[confidence] if evidence else [],
                 partial_reason=partial_reason,
+                role_relevance_score=role_score,
             )]
 
         if is_dateless:

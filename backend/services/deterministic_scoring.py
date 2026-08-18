@@ -631,6 +631,25 @@ class DeterministicScoringEngine:
                 if "inferred_with_strong_evidence_overlap" not in risk_flags:
                     risk_flags.append("inferred_with_strong_evidence_overlap")
 
+        # ── Experience role-relevance severity scaling (scoped to this case only) ───
+        # When experience criterion is PARTIAL+inferred due to role-relevance mismatch
+        # (not just data gap), scale quality_factor based on how close the match was.
+        # SCOPE: Only for experience criteria with confirmed mismatch (role_relevance_score > 0)
+        # Do NOT apply this to other "inferred" matches or other dimensions.
+        if (assessment.dimension == "experience"
+            and status == "PARTIAL"
+            and match_type == "inferred"
+            and hasattr(assessment, 'role_relevance_score')
+            and assessment.role_relevance_score > 0):
+            # Confirmed mismatch: scale quality_factor by how bad the mismatch is
+            # severity_multiplier = max(0.15, fuzzy_score / 100.0)
+            # This preserves "some experience exists" signal without rewarding irrelevant experience
+            severity_multiplier = max(0.15, assessment.role_relevance_score / 100.0)
+            qf_before = qf
+            qf = qf * severity_multiplier
+            if "experience_role_mismatch_severity_scaled" not in risk_flags:
+                risk_flags.append("experience_role_mismatch_severity_scaled")
+
         effective = sc * qf
 
         has_oq = "overqualified" in risk_flags
