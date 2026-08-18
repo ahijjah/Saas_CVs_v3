@@ -385,16 +385,39 @@ def _flatten_criteria(analysis_json: dict) -> list[dict]:
 
     exp = analysis_json.get("experience") or {}
     min_years = exp.get("minimum_years", 0)
-    if min_years:
+    relevant_roles = [str(r) for r in (exp.get("relevant_roles") or []) if r]
+    has_years = min_years and min_years > 0
+    has_roles = bool(relevant_roles)
+
+    if has_years:
         requirement_type = exp.get("requirement_type")
         is_required = requirement_type != "preferred" if requirement_type else True
-        items.append({
-            "text": f"Minimum {min_years} years of relevant experience",
-            "dimension": "experience",
-            "required": is_required,
-        })
-    for role in (exp.get("relevant_roles") or []):
-        if role:
+
+        if has_roles:
+            # ── Unified criterion: years + relevant roles combined ────────────────
+            # Single criterion: "Minimum X years of experience in a relevant role (Role1, Role2, or Role3)"
+            if len(relevant_roles) == 1:
+                roles_str = relevant_roles[0]
+            else:
+                roles_str = f"{', '.join(relevant_roles[:-1])} or {relevant_roles[-1]}"
+
+            unified_text = f"Minimum {min_years} years of experience in a relevant role ({roles_str})"
+            items.append({
+                "text": unified_text,
+                "dimension": "experience",
+                "required": is_required,
+            })
+        else:
+            # ── Years-only criterion: no role specification ────────────────────
+            items.append({
+                "text": f"Minimum {min_years} years of relevant experience",
+                "dimension": "experience",
+                "required": is_required,
+            })
+    elif has_roles:
+        # ── Edge case: role specification without years requirement ─────────────
+        # Rare, but preserve the behavior: create separate role criteria
+        for role in relevant_roles:
             items.append({"text": str(role), "dimension": "experience", "required": False})
     # NOTE: key_responsibilities are kept in analysis_json for context but NOT converted to individual criteria.
     # They were causing structural scoring issues (exact-phrase matching almost never succeeds on CV text).

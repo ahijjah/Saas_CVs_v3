@@ -354,7 +354,9 @@ class TestFlattenCriteria:
 
     def test_key_responsibilities_not_converted_to_criteria(self):
         """Issue #12: key_responsibilities should NOT be converted to individual scoring criteria.
-        They are kept in analysis_json for context but not scored item-by-item."""
+        They are kept in analysis_json for context but not scored item-by-item.
+
+        Also tests unified experience criterion: years + relevant_roles combined into ONE criterion."""
         items = _flatten_criteria({
             "experience": {
                 "minimum_years": 5,
@@ -368,11 +370,14 @@ class TestFlattenCriteria:
             },
         })
 
-        # Verify minimum years criterion exists
-        assert any("5 years" in i["text"] for i in items), "Minimum years criterion should exist"
+        # Verify unified criterion exists: years + role combined
+        exp_items = [i for i in items if i["dimension"] == "experience"]
+        assert len(exp_items) == 1, f"Expected 1 unified experience criterion, got {len(exp_items)}"
 
-        # Verify relevant_roles criterion exists
-        assert any("Senior Engineer" in i["text"] for i in items), "Relevant roles criterion should exist"
+        exp_text = exp_items[0]["text"]
+        assert "5 years" in exp_text, "Unified criterion should contain years"
+        assert "Senior Engineer" in exp_text, "Unified criterion should contain role"
+        assert "relevant role" in exp_text, "Unified criterion should indicate role relevance"
 
         # Verify key_responsibilities are NOT in criteria
         texts = [i["text"] for i in items]
@@ -380,8 +385,8 @@ class TestFlattenCriteria:
         assert not any("Code review" in t for t in texts), "Code review responsibility should not be in criteria"
         assert not any("Mentor junior engineers" in t for t in texts), "Mentoring responsibility should not be in criteria"
 
-        # Total criteria should be 2 (minimum years + 1 role), not 5 (2 + 3 responsibilities)
-        assert len(items) == 2, f"Expected 2 experience criteria, got {len(items)}"
+        # Total criteria should be 1 (unified years + role), not 5 (2 + 3 responsibilities)
+        assert len(items) == 1, f"Expected 1 total criterion, got {len(items)}"
 
 
 # ── Section C: _select_evidence_snippets ─────────────────────────────────────
