@@ -582,6 +582,7 @@ class DeterministicScoringEngine:
         # conservative assessment. This prevents false positives where the LLM
         # missed relevance qualification evidence the keyword-based matcher caught.
         criterion_text = assessment.criterion_text or ""
+        local_role_relevance_score = 0.0  # Capture for use in severity scaling
         if (
             local_matches
             and _is_relevance_qualified_experience_criterion(criterion_text)
@@ -596,6 +597,9 @@ class DeterministicScoringEngine:
                     confidence = new_confidence
                 if risk_flag not in risk_flags:
                     risk_flags.append(risk_flag)
+                # Capture local matcher's role_relevance_score for severity scaling
+                # (used when LLM+local disagreement on relevance)
+                local_role_relevance_score = _get_field(local_match, "role_relevance_score", 0.0) or 0.0
 
         sc        = _status_credit(status, cfg)
         qf        = _match_quality_factor(match_type, criterion_class)
@@ -632,20 +636,42 @@ class DeterministicScoringEngine:
                     risk_flags.append("inferred_with_strong_evidence_overlap")
 
         # ── Experience role-relevance severity scaling (scoped to this case only) ───
-        # When experience criterion is PARTIAL+inferred due to role-relevance mismatch
-        # (not just data gap), scale quality_factor based on how close the match was.
-        # SCOPE: Only for experience criteria with confirmed mismatch (role_relevance_score > 0)
-        # Do NOT apply this to other "inferred" matches or other dimensions.
-        if (assessment.dimension == "experience"
+        # Apply severity scaling for role-relevance mismatches via TWO paths:
+        # PATH 1: match_type="inferred" (LLM uncertain) + status=PARTIAL (local found mismatch)
+        # PATH 2: match_type="direct" (LLM confident) but "llm_local_relevance_disagreement"
+        #         (Phase 3 bounding: local matcher's evidence-based role check caught mismatch)
+        # Both paths have fuzzy-score evidence via role_relevance_score from local matcher.
+        # SCOPE: Only experience criteria with confirmed mismatch (role_relevance_score > 0)
+        # Do NOT apply to other dimensions or mismatches without role data.
+
+        # Determine which fuzzy score to use (from assessment or local_match)
+        relevance_score_for_severity = 0.0
+        is_confirmed_mismatch = False
+
+        # PATH 1: inferred match with local role_relevance_score
+        if (match_type == "inferred"
             and status == "PARTIAL"
-            and match_type == "inferred"
             and hasattr(assessment, 'role_relevance_score')
             and assessment.role_relevance_score > 0):
+            relevance_score_for_severity = assessment.role_relevance_score
+            is_confirmed_mismatch = True
+
+        # PATH 2: direct match but LLM/local disagreement on relevance
+        elif (match_type == "direct"
+              and status == "PARTIAL"
+              and "llm_local_relevance_disagreement" in risk_flags
+              and local_role_relevance_score > 0):
+            relevance_score_for_severity = local_role_relevance_score
+            is_confirmed_mismatch = True
+
+        # Apply severity scaling if confirmed mismatch found
+        if (assessment.dimension == "experience"
+            and is_confirmed_mismatch
+            and relevance_score_for_severity > 0):
             # Confirmed mismatch: scale quality_factor by how bad the mismatch is
             # severity_multiplier = max(0.15, fuzzy_score / 100.0)
             # This preserves "some experience exists" signal without rewarding irrelevant experience
-            severity_multiplier = max(0.15, assessment.role_relevance_score / 100.0)
-            qf_before = qf
+            severity_multiplier = max(0.15, relevance_score_for_severity / 100.0)
             qf = qf * severity_multiplier
             if "experience_role_mismatch_severity_scaled" not in risk_flags:
                 risk_flags.append("experience_role_mismatch_severity_scaled")
