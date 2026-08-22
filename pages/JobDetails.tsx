@@ -34,6 +34,8 @@ const T = {
     skillsAnalysis: 'Skills Analysis',
     requiredSkills: 'Required Skills',
     preferredSkills: 'Preferred Skills',
+    requiredSoftSkills: 'Required Soft Skills',
+    preferredSoftSkills: 'Preferred Soft Skills',
     experience: 'Experience',
     minYears: 'Minimum Years',
     years: '+ Years',
@@ -275,6 +277,8 @@ const T = {
     skillsAnalysis: 'تحليل المهارات',
     requiredSkills: 'المهارات المطلوبة',
     preferredSkills: 'المهارات المفضلة',
+    requiredSoftSkills: 'المهارات الشخصية المطلوبة',
+    preferredSoftSkills: 'المهارات الشخصية المفضلة',
     experience: 'الخبرة',
     minYears: 'الحد الأدنى للسنوات',
     years: '+ سنوات',
@@ -1151,15 +1155,17 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     if (!details) return;
     const a = details.analysis_json ?? {};
     setDraftCriteria({
-      required_skills:    (a.skills?.required    || []).join('\n'),
-      preferred_skills:   (a.skills?.preferred   || []).join('\n'),
-      minimum_years:      String(a.experience?.minimum_years ?? ''),
-      relevant_roles:     (a.experience?.relevant_roles || []).join('\n'),
-      minimum_education:  a.education?.minimum_level || '',
-      fields_of_study:    (a.education?.fields_of_study || []).join('\n'),
-      certifications:     (a.certifications      || []).join('\n'),
-      domain_knowledge:   (a.domain_knowledge    || []).join('\n'),
-      other_requirements: (a.other_requirements  || []).join('\n'),
+      required_skills:      (a.skills?.required    || []).join('\n'),
+      preferred_skills:     (a.skills?.preferred   || []).join('\n'),
+      required_soft_skills: (a.soft_skills?.required || []).join('\n'),
+      preferred_soft_skills: (a.soft_skills?.preferred || []).join('\n'),
+      minimum_years:        String(a.experience?.minimum_years ?? ''),
+      relevant_roles:       (a.experience?.relevant_roles || []).join('\n'),
+      minimum_education:    a.education?.minimum_level || '',
+      fields_of_study:      (a.education?.fields_of_study || []).join('\n'),
+      certifications:       (a.certifications      || []).join('\n'),
+      domain_knowledge:     (a.domain_knowledge    || []).join('\n'),
+      other_requirements:   (a.other_requirements  || []).join('\n'),
     });
     setEditingCriteria(true);
     setShowCriteriaWarning(false);
@@ -1174,15 +1180,17 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       await apiService.put(
         `${WEBHOOK_CONFIG.UPDATE_CRITERIA_CONTENT_URL}/${(details as any).job_id}/criteria/content`,
         {
-          required_skills:    splitLines(draftCriteria.required_skills),
-          preferred_skills:   splitLines(draftCriteria.preferred_skills),
-          minimum_years:      parseInt(draftCriteria.minimum_years) || 0,
-          relevant_roles:     splitLines(draftCriteria.relevant_roles),
-          minimum_education:  draftCriteria.minimum_education.trim(),
-          fields_of_study:    splitLines(draftCriteria.fields_of_study),
-          certifications:     splitLines(draftCriteria.certifications),
-          domain_knowledge:   splitLines(draftCriteria.domain_knowledge),
-          other_requirements: splitLines(draftCriteria.other_requirements),
+          required_skills:      splitLines(draftCriteria.required_skills),
+          preferred_skills:     splitLines(draftCriteria.preferred_skills),
+          required_soft_skills: splitLines(draftCriteria.required_soft_skills),
+          preferred_soft_skills: splitLines(draftCriteria.preferred_soft_skills),
+          minimum_years:        parseInt(draftCriteria.minimum_years) || 0,
+          relevant_roles:       splitLines(draftCriteria.relevant_roles),
+          minimum_education:    draftCriteria.minimum_education.trim(),
+          fields_of_study:      splitLines(draftCriteria.fields_of_study),
+          certifications:       splitLines(draftCriteria.certifications),
+          domain_knowledge:     splitLines(draftCriteria.domain_knowledge),
+          other_requirements:   splitLines(draftCriteria.other_requirements),
         },
         auth.token!
       );
@@ -2715,6 +2723,14 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.preferredSkills} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
                   <textarea rows={4} value={draftCriteria.preferred_skills} onChange={e => setDraftCriteria(p => ({ ...p, preferred_skills: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.requiredSoftSkills} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
+                  <textarea rows={4} value={draftCriteria.required_soft_skills} onChange={e => setDraftCriteria(p => ({ ...p, required_soft_skills: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.preferredSoftSkills} <span className="normal-case font-normal opacity-60">{t.criteriaListHint}</span></label>
+                  <textarea rows={4} value={draftCriteria.preferred_soft_skills} onChange={e => setDraftCriteria(p => ({ ...p, preferred_soft_skills: e.target.value }))} className="w-full px-3 py-2 border border-border rounded-xl text-xs font-mono resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-textMuted uppercase tracking-widest">{t.minYears}</label>

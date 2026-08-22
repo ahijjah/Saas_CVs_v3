@@ -76,15 +76,17 @@ class UpdateJobSettingsRequest(BaseModel):
 
 
 class UpdateCriteriaContentRequest(BaseModel):
-    required_skills:    list[str] | None = None
-    preferred_skills:   list[str] | None = None
-    minimum_years:      int | None = None
-    relevant_roles:     list[str] | None = None
-    minimum_education:  str | None = None
-    fields_of_study:    list[str] | None = None
-    certifications:     list[str] | None = None
-    domain_knowledge:   list[str] | None = None
-    other_requirements: list[str] | None = None
+    required_skills:      list[str] | None = None
+    preferred_skills:     list[str] | None = None
+    required_soft_skills: list[str] | None = None
+    preferred_soft_skills: list[str] | None = None
+    minimum_years:        int | None = None
+    relevant_roles:       list[str] | None = None
+    minimum_education:    str | None = None
+    fields_of_study:      list[str] | None = None
+    certifications:       list[str] | None = None
+    domain_knowledge:     list[str] | None = None
+    other_requirements:   list[str] | None = None
 
 
 class UpdateJobMetadataRequest(BaseModel):
@@ -1134,6 +1136,14 @@ async def update_criteria_content(
         if body.preferred_skills is not None:
             skills["preferred"] = [s.strip() for s in body.preferred_skills if s.strip()]
         current["skills"] = skills
+
+    if body.required_soft_skills is not None or body.preferred_soft_skills is not None:
+        soft_skills = dict(current.get("soft_skills", {}))
+        if body.required_soft_skills is not None:
+            soft_skills["required"] = [s.strip() for s in body.required_soft_skills if s.strip()]
+        if body.preferred_soft_skills is not None:
+            soft_skills["preferred"] = [s.strip() for s in body.preferred_soft_skills if s.strip()]
+        current["soft_skills"] = soft_skills
 
     if body.minimum_years is not None or body.relevant_roles is not None:
         exp = dict(current.get("experience", {}))
