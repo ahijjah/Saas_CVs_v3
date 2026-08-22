@@ -627,19 +627,21 @@ class TestParseOneAssessment:
         a = _parse_one_assessment(self._base(risk_flags=None), **PROMPT_META)
         assert a.risk_flags == []
 
-    # ── F-01.4: soft_skill dimension routing ─────────────────────────────────
+    # ── Dimension preservation: criterion_class and dimension are independent ─
 
-    def test_soft_skill_class_with_skills_dimension_is_rerouted(self):
-        """criterion_class=soft_skill + dimension=skills → dimension corrected to soft_skills."""
+    def test_soft_skill_class_with_skills_dimension_preserved(self):
+        """criterion_class and dimension are independent; both preserved from input.
+        E.g. "analytical skills" from analysis_json.skills: dimension=skills,
+        criterion_class=soft_skill (behavioural competency). Both are correct."""
         a = _parse_one_assessment(
             self._base(criterion_class="soft_skill", dimension="skills"),
             **PROMPT_META,
         )
-        assert a.dimension == "soft_skills"
+        assert a.dimension == "skills"
         assert a.criterion_class == "soft_skill"
 
-    def test_soft_skill_class_already_correct_dimension_unchanged(self):
-        """criterion_class=soft_skill + dimension=soft_skills → no change."""
+    def test_soft_skill_class_with_soft_skills_dimension_preserved(self):
+        """criterion_class=soft_skill + dimension=soft_skills → both preserved."""
         a = _parse_one_assessment(
             self._base(criterion_class="soft_skill", dimension="soft_skills"),
             **PROMPT_META,
@@ -647,20 +649,22 @@ class TestParseOneAssessment:
         assert a.dimension == "soft_skills"
 
     def test_soft_skill_class_with_other_dimension_preserved(self):
-        """criterion_class=soft_skill + dimension=other → other is preserved (explicit unknown)."""
+        """criterion_class=soft_skill + dimension=other → both preserved (explicit unknown)."""
         a = _parse_one_assessment(
             self._base(criterion_class="soft_skill", dimension="other"),
             **PROMPT_META,
         )
         assert a.dimension == "other"
 
-    def test_soft_skill_class_rerouted_from_experience_dimension(self):
-        """criterion_class=soft_skill + dimension=experience → corrected to soft_skills."""
+    def test_soft_skill_class_with_experience_dimension_preserved(self):
+        """criterion_class=soft_skill + dimension=experience → both preserved.
+        Dimension is authoritative from job_criteria structure; criterion_class
+        describes nature of the requirement (soft_skill = behavioural)."""
         a = _parse_one_assessment(
             self._base(criterion_class="soft_skill", dimension="experience"),
             **PROMPT_META,
         )
-        assert a.dimension == "soft_skills"
+        assert a.dimension == "experience"
 
     def test_non_soft_skill_class_dimension_unchanged(self):
         """criterion_class=certification + dimension=skills → no rerouting applied."""

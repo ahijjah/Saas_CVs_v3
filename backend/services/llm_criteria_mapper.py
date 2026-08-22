@@ -285,13 +285,25 @@ RISK FLAGS (add only when genuinely applicable):
 - possible_extraction_gap: ABSENT assigned because the relevant input section was empty/sparse relative to stated background, not confirmed non-evidence.
 - relevance_unverified:   A relevance-qualified experience criterion's years threshold was met, but domain/functional relevance could not be confirmed from available data.
 
+DIMENSION vs CRITERION_CLASS CRITICAL DISTINCTION:
+- dimension: The scoring category for this criterion (skills, experience, education,
+  certifications, soft_skills, domain_knowledge, other). This is FIXED from the job
+  requirements structure and MUST be preserved as given in the input criteria list.
+  Example: If input shows "[SKILLS / REQUIRED] Analytical skills", dimension="skills"
+  must be returned in output (even though criterion_class="soft_skill" for analytical
+  thinking). Do NOT re-determine dimension based on criterion_class.
+- criterion_class: The nature/type of the criterion (strict, flexible, soft_skill,
+  certification, education, experience, domain_knowledge, other). This is independent
+  of dimension. Example: A skill from the skills dimension may have criterion_class
+  ="soft_skill" (behavioural) — both fields are correct and should be preserved.
+
 OUTPUT: Valid JSON only — no markdown, no explanation, no code blocks.
 Return EXACTLY this structure (one entry per criterion, same order as input):
 {
   "assessments": [
     {
       "criterion_text": "<exact criterion text as given>",
-      "dimension": "<skills|experience|education|certifications|soft_skills|domain_knowledge|other>",
+      "dimension": "<preserve dimension as given in input criteria list>",
       "required": true,
       "status": "<MATCHED|PARTIAL|ABSENT>",
       "confidence": 0.0,
@@ -981,15 +993,6 @@ def _parse_one_assessment(
     dimension = str(d.get("dimension", "other"))
     if dimension not in _VALID_DIMENSION:
         dimension = "other"
-
-    # F-01.4: anchor soft_skill criteria to the soft_skills dimension.
-    # criteria_extraction v1 placed soft skills inside analysis_json.skills,
-    # so D-01 returns dimension="skills" for these criteria even though
-    # criterion_class="soft_skill".  Without this correction the det engine
-    # counts them in the skills bucket and soft_skills collapses to 0.
-    # "other" is intentionally preserved (explicit unknown classification).
-    if criterion_class == "soft_skill" and dimension not in ("soft_skills", "other"):
-        dimension = "soft_skills"
 
     confidence = 0.0
     try:
