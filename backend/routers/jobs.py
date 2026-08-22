@@ -10,12 +10,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep, get_current_user
+from auth.module_guards import RequireAIRecruitment
 from config import get_settings
 from database import get_db, set_rls_context
 from services.job_description_quality import evaluate_description_quality, validate_job_title
 from services.subscription_service import can_create_campaign
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[RequireAIRecruitment])
 settings = get_settings()
 
 
@@ -75,15 +76,17 @@ class UpdateJobSettingsRequest(BaseModel):
 
 
 class UpdateCriteriaContentRequest(BaseModel):
-    required_skills:    list[str] | None = None
-    preferred_skills:   list[str] | None = None
-    minimum_years:      int | None = None
-    relevant_roles:     list[str] | None = None
-    minimum_education:  str | None = None
-    fields_of_study:    list[str] | None = None
-    certifications:     list[str] | None = None
-    domain_knowledge:   list[str] | None = None
-    other_requirements: list[str] | None = None
+    required_skills:      list[str] | None = None
+    preferred_skills:     list[str] | None = None
+    required_soft_skills: list[str] | None = None
+    preferred_soft_skills: list[str] | None = None
+    minimum_years:        int | None = None
+    relevant_roles:       list[str] | None = None
+    minimum_education:    str | None = None
+    fields_of_study:      list[str] | None = None
+    certifications:       list[str] | None = None
+    domain_knowledge:     list[str] | None = None
+    other_requirements:   list[str] | None = None
 
 
 class UpdateJobMetadataRequest(BaseModel):
@@ -453,12 +456,23 @@ async def create_job(
 
     if body.knockout_questions:
         from services.knockout_questions_service import save_job_knockout_questions
-        await save_job_knockout_questions(db, job_id, current_user.tenant_id, body.knockout_questions)
+        await save_job_knockout_questions(
+            db, job_id, current_user.tenant_id, body.knockout_questions,
+            job_description=body.description,
+        )
         await db.commit()
 
     # Queue async AI extraction — does not block job creation
     from workers.criteria_worker import extract_criteria_task
-    extract_criteria_task.delay(job_id, body.description)
+    _job_meta = {
+        "title":            body.title,
+        "department":       body.department,
+        "experience_level": body.experience_level,
+        "location":         body.location,
+        "job_type":         body.job_type,
+        "work_mode":        body.work_mode,
+    }
+    extract_criteria_task.delay(job_id, body.description, _job_meta)
 
     return {
         "success": True,
@@ -478,8 +492,23 @@ async def get_job_details(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    tenant_filter = "" if is_super_admin else "AND j.tenant_id = :tid"
+
+    # For super_admin, allow all tenants. For regular users, check client_organization_id access
+    client_org_filter = "" if is_super_admin else """AND auc.tenant_id = CAST(:tid AS uuid)"""
+
+    params: dict = {
+        "jid": job_id,
+        "uid": current_user.user_id,
+        "is_admin": is_admin,
+    }
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
+
     job_row = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 j.job_id, j.job_code, j.title, j.department, j.description,
                 j.location, j.job_type, j.duration,
@@ -556,7 +585,7 @@ async def get_job_details(
             LEFT JOIN job_campaigns camp ON camp.campaign_id = j.campaign_id
             LEFT JOIN users cu ON cu.user_id = j.created_by
             LEFT JOIN users uu ON uu.user_id = j.updated_by
-            WHERE j.job_id = :jid AND j.tenant_id = :tid
+            WHERE j.job_id = :jid {tenant_filter}
               AND (
                 :is_admin = TRUE
                 OR j.client_organization_id IS NULL
@@ -564,17 +593,12 @@ async def get_job_details(
                     SELECT 1 FROM agency_user_clients auc
                     WHERE auc.user_id = CAST(:uid AS uuid)
                       AND auc.client_organization_id = j.client_organization_id
-                      AND auc.tenant_id = CAST(:tid AS uuid)
+                      {client_org_filter}
                 )
               )
             GROUP BY j.job_id, t.tenant_id, co.organization_name, camp.name, cu.full_name, uu.full_name
         """),
-        {
-            "jid":      job_id,
-            "tid":      current_user.tenant_id,
-            "uid":      current_user.user_id,
-            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
-        },
+        params,
     )
     job = job_row.mappings().first()
     if not job:
@@ -1113,6 +1137,14 @@ async def update_criteria_content(
             skills["preferred"] = [s.strip() for s in body.preferred_skills if s.strip()]
         current["skills"] = skills
 
+    if body.required_soft_skills is not None or body.preferred_soft_skills is not None:
+        soft_skills = dict(current.get("soft_skills", {}))
+        if body.required_soft_skills is not None:
+            soft_skills["required"] = [s.strip() for s in body.required_soft_skills if s.strip()]
+        if body.preferred_soft_skills is not None:
+            soft_skills["preferred"] = [s.strip() for s in body.preferred_soft_skills if s.strip()]
+        current["soft_skills"] = soft_skills
+
     if body.minimum_years is not None or body.relevant_roles is not None:
         exp = dict(current.get("experience", {}))
         if body.minimum_years is not None:
@@ -1185,7 +1217,8 @@ async def retry_criteria_extraction(
 
     row = await db.execute(
         text("""
-            SELECT j.description,
+            SELECT j.description, j.title, j.department, j.experience_level,
+                   j.location, j.job_type, j.work_mode,
                    jc.criteria_extraction_status,
                    jc.criteria_extraction_retry_count,
                    jc.criteria_last_failed_description_hash
@@ -1265,7 +1298,15 @@ async def retry_criteria_extraction(
     )
     await db.commit()
 
-    extract_criteria_task.delay(job_id, description)
+    _retry_meta = {
+        "title":            job.get("title"),
+        "department":       job.get("department"),
+        "experience_level": job.get("experience_level"),
+        "location":         job.get("location"),
+        "job_type":         job.get("job_type"),
+        "work_mode":        job.get("work_mode"),
+    }
+    extract_criteria_task.delay(job_id, description, _retry_meta)
     return {"success": True, "message": "Criteria extraction re-queued."}
 
 
@@ -1380,7 +1421,10 @@ async def update_job_metadata(
     # Handle knockout_questions separately (None = leave alone, [] = clear all)
     if body.knockout_questions is not None:
         from services.knockout_questions_service import save_job_knockout_questions
-        await save_job_knockout_questions(db, job_id, current_user.tenant_id, body.knockout_questions)
+        await save_job_knockout_questions(
+            db, job_id, current_user.tenant_id, body.knockout_questions,
+            job_description=body.description,
+        )
 
     if not updates and body.knockout_questions is None:
         return {"success": True, "message": "No changes"}

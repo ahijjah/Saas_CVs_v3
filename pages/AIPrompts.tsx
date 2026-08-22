@@ -119,7 +119,7 @@ export const AIPromptsPage: React.FC<Props> = ({ auth, addToast }) => {
     const code = form.prompt_code.trim();
     if (!code) {
       errors.prompt_code = 'Prompt code is required';
-    } else if (!PROMPT_CODE_RE.test(code)) {
+    } else if (modalMode === 'new_prompt' && !PROMPT_CODE_RE.test(code)) {
       errors.prompt_code = 'Use lowercase letters, digits, and underscores only — no spaces or capitals (e.g. cv_scoring)';
     }
     if (!form.prompt_name.trim()) errors.prompt_name = 'Display name is required';
