@@ -125,6 +125,13 @@ const T = {
     additionalInsights: 'Additional Recruiter Insights',
     scoreOverview: 'Score Overview',
     explainabilityTitle: 'Candidate Assessment',
+    scoringMethodLabel: 'Scoring method',
+    scoringMethodNames: {
+      deterministic_v1:           'Deterministic (criteria mapping + rule-based score) v1',
+      legacy_llm_v1:              'Legacy single-step AI score v1',
+      gatekeeper_local_v1:        'Local pre-screening (no AI score) v1',
+      legacy_llm_det_backfill_v1: 'Legacy AI score with retrospective deterministic score',
+    } as Record<string, string>,
     additionalDetailsTitle: 'Additional Details',
     developerTitle: 'Developer / Diagnostic',
     coverageSummary: 'Coverage Summary',
@@ -219,6 +226,7 @@ const T = {
       security_blocked:  'The CV was blocked because it contains suspicious content that may try to manipulate the automated evaluation.',
       extraction_failed: 'The CV could not be read reliably. The extracted text was missing, corrupted, or too short for scoring.',
       processing_error:  'The application could not be processed due to a system or scoring error. It may require technical review.',
+      scoring_failed:    'Scoring could not be completed because the evaluation service failed technically after automatic retries. No score was assigned and no fallback method was used. It requires technical review.',
       duplicate_blocked: 'This CV was detected as an exact duplicate of a previously submitted application. It was blocked automatically and was not scored.',
       other:             'The application stopped before AI scoring and requires review.',
     } as Record<string, string>,
@@ -226,6 +234,7 @@ const T = {
       security_blocked:  'Security Blocked',
       extraction_failed: 'Extraction Failed',
       processing_error:  'Processing Error',
+      scoring_failed:    'Scoring Failed',
       duplicate_blocked: 'Duplicate Blocked',
       other:             'Failed',
     } as Record<string, string>,
@@ -447,6 +456,13 @@ const T = {
     additionalInsights: 'رؤى إضافية للمسؤول',
     scoreOverview: 'نظرة عامة على النتيجة',
     explainabilityTitle: 'تقييم المرشح',
+    scoringMethodLabel: 'طريقة التقييم',
+    scoringMethodNames: {
+      deterministic_v1:           'تقييم حتمي (مطابقة المعايير + احتساب قائم على القواعد) v1',
+      legacy_llm_v1:              'تقييم ذكاء اصطناعي قديم بخطوة واحدة v1',
+      gatekeeper_local_v1:        'فرز محلي أولي (بدون تقييم ذكاء اصطناعي) v1',
+      legacy_llm_det_backfill_v1: 'تقييم ذكاء اصطناعي قديم مع درجة حتمية محتسبة لاحقاً',
+    } as Record<string, string>,
     additionalDetailsTitle: 'تفاصيل إضافية',
     developerTitle: 'المطور / التشخيص',
     coverageSummary: 'ملخص التغطية',
@@ -541,6 +557,7 @@ const T = {
       security_blocked:  'تم حجب السيرة الذاتية لاحتوائها على محتوى مشبوه قد يُحاول التلاعب بعملية التقييم الآلي.',
       extraction_failed: 'تعذّر قراءة السيرة الذاتية بشكل موثوق. النص المستخرج مفقود أو تالف أو قصير جداً للتقييم.',
       processing_error:  'تعذّرت معالجة الطلب بسبب خطأ في النظام أو في عملية التقييم. قد يتطلب مراجعة تقنية.',
+      scoring_failed:    'تعذّر إكمال التقييم بسبب عطل تقني في خدمة التقييم بعد المحاولات التلقائية. لم تُمنح أي درجة ولم تُستخدم أي طريقة بديلة. يتطلب مراجعة تقنية.',
       duplicate_blocked: 'تم اكتشاف أن هذه السيرة الذاتية مكررة بشكل مطابق لطلب تقديم سابق. تم حجبها تلقائياً ولم تُقيَّم.',
       other:             'توقّف الطلب قبل التقييم بالذكاء الاصطناعي ويتطلب مراجعة.',
     } as Record<string, string>,
@@ -548,6 +565,7 @@ const T = {
       security_blocked:  'محجوب أمنياً',
       extraction_failed: 'فشل الاستخراج',
       processing_error:  'خطأ في المعالجة',
+      scoring_failed:    'فشل التقييم',
       duplicate_blocked: 'مكرر موقوف',
       other:             'فشل',
     } as Record<string, string>,
@@ -2110,6 +2128,15 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           </div>
         );
       })()}
+
+      {/* P0-01: scoring methodology (technical/audit information) */}
+      {!isSecurityBlocked && data.scoring_method && (
+        <p className="text-[10px] text-textMuted px-2">
+          <span className="font-black uppercase tracking-widest">{(t as any).scoringMethodLabel}:</span>{' '}
+          {((t as any).scoringMethodNames as Record<string, string>)[data.scoring_method] || data.scoring_method}
+          <span className="ml-1 font-mono opacity-70">({data.scoring_method})</span>
+        </p>
+      )}
 
       {/* Candidate Assessment — deterministic evidence panel (primary) */}
       {!isSecurityBlocked && data.det_score && (() => {

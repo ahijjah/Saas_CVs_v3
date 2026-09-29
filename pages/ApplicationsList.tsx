@@ -27,6 +27,7 @@ type StopReasonFilter =
   | 'security_blocked'
   | 'duplicate_blocked'
   | 'extraction_failed'
+  | 'scoring_failed'
   | 'processing_error';
 
 type AiResultFilter = 'all' | 'qualified' | 'partial' | 'rejected_low_match' | 'not_scored';
@@ -150,6 +151,7 @@ const T = {
     stopReasonSecurity:         'Security Blocked',
     stopReasonDuplicate:        'Duplicate Blocked',
     stopReasonExtraction:       'Extraction Failed',
+    stopReasonScoringFailed:    'Scoring Failed',
     stopReasonProcessingError:  'System Processing Error',
     // AI Result options
     aiAll:               'All AI Results',
@@ -209,6 +211,7 @@ const T = {
     stopReasonSecurity:         'محظور أمنياً',
     stopReasonDuplicate:        'مكرر موقوف',
     stopReasonExtraction:       'فشل الاستخراج',
+    stopReasonScoringFailed:    'فشل التقييم',
     stopReasonProcessingError:  'خطأ في المعالجة',
     aiAll:               'جميع نتائج الذكاء',
     aiQualified:         'مؤهل',
@@ -433,6 +436,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         recruiter_notes:  detailsObj?.recruiter_notes ?? null,
         workflow_history: detailsObj?.workflow_history || [],
         det_score:        detailsObj?.det_score ?? null,
+        scoring_method:   detailsObj?.scoring_method ?? null,
         score_details:    detailsObj?.score_details ?? null,
         gender_value:     detailsObj?.gender_value,
         gender_confidence: detailsObj?.gender_confidence,
@@ -530,11 +534,13 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     );
   const isDuplicateBlocked   = (a: Application) => a.processing_status === 'failed' && a.stopped_reason === 'duplicate_blocked';
   const isExtractionFailed   = (a: Application) => a.processing_status === 'failed' && a.stopped_reason === 'extraction_failed';
+  const isScoringFailed      = (a: Application) => a.processing_status === 'failed' && a.stopped_reason === 'scoring_failed';
   const isProcessingError    = (a: Application) =>
     a.processing_status === 'failed' &&
     !isSecurityBlocked(a) &&
     !isDuplicateBlocked(a) &&
-    !isExtractionFailed(a);
+    !isExtractionFailed(a) &&
+    !isScoringFailed(a);
 
   // ── Combined filter predicate ──────────────────────────────────────────────
 
@@ -554,6 +560,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         case 'security_blocked':   if (!isSecurityBlocked(a))  return false; break;
         case 'duplicate_blocked':  if (!isDuplicateBlocked(a)) return false; break;
         case 'extraction_failed':  if (!isExtractionFailed(a)) return false; break;
+        case 'scoring_failed':     if (!isScoringFailed(a))    return false; break;
         case 'processing_error':   if (!isProcessingError(a))  return false; break;
       }
     }
@@ -653,6 +660,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     { value: 'security_blocked',  label: t.stopReasonSecurity        },
     { value: 'duplicate_blocked', label: t.stopReasonDuplicate       },
     { value: 'extraction_failed', label: t.stopReasonExtraction      },
+    { value: 'scoring_failed',    label: t.stopReasonScoringFailed   },
     { value: 'processing_error',  label: t.stopReasonProcessingError },
   ];
 

@@ -17,6 +17,7 @@ from services.job_description_quality import evaluate_description_quality, valid
 from services.subscription_service import can_create_campaign
 
 router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[RequireAIRecruitment])
+
 settings = get_settings()
 
 
@@ -657,6 +658,20 @@ async def get_job_details(
     from services.knockout_questions_service import get_job_knockout_questions
     knockout_questions = await get_job_knockout_questions(db, job_id)
 
+    # P0-01: which scoring methodologies produced this job's scores.
+    from services.scoring_method import has_mixed_scoring_methods
+    method_rows = await db.execute(
+        text("""
+            SELECT COALESCE(s.scoring_method, 'unknown') AS method, COUNT(*) AS n
+            FROM application_scores s
+            JOIN applications a ON a.application_id = s.application_id
+            WHERE a.job_id = :jid
+            GROUP BY 1
+        """),
+        {"jid": job_id},
+    )
+    scoring_methods = {r["method"]: int(r["n"]) for r in method_rows.mappings()}
+
     return {
         "details": {
             "job_id":             str(job["job_id"]),
@@ -697,6 +712,8 @@ async def get_job_details(
             "applications_duplicate_blocked":   int(job["applications_duplicate_blocked"]),
             "applications_possible_duplicate":  int(job["applications_possible_duplicate"]),
             "applications_failed_needs_review": int(job["applications_failed_needs_review"]),
+            "scoring_methods":    scoring_methods,
+            "mixed_scoring_methods": has_mixed_scoring_methods(scoring_methods),
             "applications_awaiting_review":     int(job["applications_awaiting_review"]),
             "applications_under_review":        int(job["applications_under_review"]),
             "applications_shortlisted":         int(job["applications_shortlisted"]),

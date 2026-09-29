@@ -208,6 +208,10 @@ export interface Job {
   applications_duplicate_blocked?: number;
   applications_possible_duplicate?: number;
   applications_failed_needs_review?: number;
+  /** P0-01: count of scored applications per scoring_method ('unknown' = unclassified history). */
+  scoring_methods?: Record<string, number>;
+  /** P0-01: true when scored candidates in this job came from more than one ranking methodology. */
+  mixed_scoring_methods?: boolean;
 }
 
 export interface AnalysisJson {
@@ -310,6 +314,14 @@ export interface AssignableUser {
 export type GenderValue = 'male' | 'female' | 'unknown';
 export type GenderBasis = 'title' | 'pronoun' | 'explicit_cv_text' | 'name' | 'unknown';
 
+/** P0-01: values of application_scores.scoring_method (open for future versions). */
+export type ScoringMethod =
+  | 'deterministic_v1'
+  | 'legacy_llm_v1'
+  | 'gatekeeper_local_v1'
+  | 'legacy_llm_det_backfill_v1'
+  | (string & {});
+
 export interface Application {
   id: string;
   application_id: string;
@@ -317,7 +329,7 @@ export interface Application {
   score: number | null;
   status: ApplicationDecision | null;
   processing_status?: string;
-  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'other' | null;
+  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'scoring_failed' | 'other' | null;
   duplicate_status?: 'not_duplicate' | 'possible_duplicate' | 'exact_duplicate';
   duplicate_reason?: string | null;
   duplicate_reference_application_id?: string | null;
@@ -459,7 +471,7 @@ export interface ApplicationDetailedAnalysis {
   overall_score: number;
   submission_source?: 'manual_upload' | 'email_forwarding' | 'platform_email';
   processing_status?: string;
-  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'other' | null;
+  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'scoring_failed' | 'other' | null;
   evaluation_stage?: 1 | 2 | 3 | null;
   evaluation_exit_reason?: string | null;
   scores: {
@@ -496,6 +508,8 @@ export interface ApplicationDetailedAnalysis {
   reasoning?: Record<string, string>;
   raw_ai_response?: any;
   ai_model?: string;
+  /** P0-01: methodology that produced the stored score (application_scores.scoring_method). */
+  scoring_method?: ScoringMethod | null;
   scoring_provider?: string;
   scoring_prompt_code?: string;
   scoring_prompt_version?: number;

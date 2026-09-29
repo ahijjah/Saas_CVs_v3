@@ -6,8 +6,12 @@ Pipeline:
   2. PDF text extraction (PyMuPDF)
   3. Level 1 — Local Gatekeeper (semantic similarity + bilingual skill matching)
      → Below threshold: mark scored/rejected, evaluation_stage=1, skip LLM (cost saving)
-  4. Level 3 — Full LLM scoring (GPT-4o bilingual)
-     → Produces final score (ceiling integer), decision, score_details, candidate contacts
+  4. Level 3 — scoring path chosen by configuration (P0-01):
+     scoring_v2.llm_criteria_mapping_enabled ON  → D-01 criteria mapping + F-01
+       deterministic score only. A technical failure raises ScoringPathError →
+       Celery retry → failed/stopped_reason='scoring_failed'. Never legacy.
+     OFF → explicit legacy mode: single-call LLM score (cv_scoring prompt).
+     Every score row records application_scores.scoring_method.
   5. Optional — AI comparison run (secondary scorer, if job toggle enabled)
   6. Write application_scores + update applications table
   7. Send confirmation email per job toggle settings
@@ -46,6 +50,27 @@ from pathlib import Path
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+# ── Scoring methods (application_scores.scoring_method, migration 104) ───────
+from services.scoring_method import (  # noqa: E402
+    DETERMINISTIC as SCORING_METHOD_DETERMINISTIC,
+    GATEKEEPER_LOCAL as SCORING_METHOD_GATEKEEPER,
+    LEGACY_LLM as SCORING_METHOD_LEGACY_LLM,
+)
+
+
+class ScoringPathError(RuntimeError):
+    """Deterministic scoring (D-01 + F-01) is enabled but failed technically.
+
+    P0-01: never falls back to legacy scoring. Propagates to the Celery retry
+    mechanism; once retries are exhausted the application is marked
+    failed / stopped_reason='scoring_failed'.
+    """
+
+
+def _stop_reason_for(exc: BaseException) -> str:
+    return "scoring_failed" if isinstance(exc, ScoringPathError) else "processing_error"
 
 
 # ── Event-loop helpers ────────────────────────────────────────────────────────
@@ -133,6 +158,7 @@ def score_cv_task(
                     application_id,
                     f"Max retries exceeded after {self.max_retries + 1} attempts. "
                     f"Last error: {exc}",
+                    stopped_reason=_stop_reason_for(exc),
                 )
             )
     finally:
@@ -244,11 +270,21 @@ async def _score_cv_async(
 
             # ── Mark processing ───────────────────────────────────────────────
             logger.info("[%s] status → processing", application_id)
+            # A new attempt (e.g. a Celery retry) clears the failure marker left
+            # by the previous attempt's _mark_failed, so a successful retry is
+            # not left carrying a stale scoring_failed / processing_error.
             await db.execute(
-                text(
-                    "UPDATE applications SET processing_status = 'processing' "
-                    "WHERE application_id = :aid"
-                ),
+                text("""
+                    UPDATE applications SET
+                        processing_status      = 'processing',
+                        evaluation_exit_reason = CASE
+                            WHEN stopped_reason IN ('processing_error', 'scoring_failed')
+                            THEN NULL ELSE evaluation_exit_reason END,
+                        stopped_reason         = CASE
+                            WHEN stopped_reason IN ('processing_error', 'scoring_failed')
+                            THEN NULL ELSE stopped_reason END
+                    WHERE application_id = :aid
+                """),
                 {"aid": application_id},
             )
             await db.commit()
@@ -758,7 +794,7 @@ async def _score_cv_async(
                             matched_skills, missing_skills,
                             cv_language, gatekeeper_passed,
                             evaluation_notes, reasoning,
-                            scoring_provider
+                            scoring_provider, scoring_method
                         ) VALUES (
                             :aid,
                             0, 0, 0, 0, 0, 0, 0,
@@ -767,7 +803,7 @@ async def _score_cv_async(
                             :matched, :missing,
                             :cv_lang, false,
                             :notes, :reasoning,
-                            'local'
+                            'local', :scoring_method
                         )
                     """),
                     {
@@ -780,6 +816,7 @@ async def _score_cv_async(
                         "cv_lang":    gatekeeper_result.cv_language,
                         "notes":      _exit_reason,
                         "reasoning":  json.dumps(_reasoning_payload, ensure_ascii=False),
+                        "scoring_method": SCORING_METHOD_GATEKEEPER,
                     },
                 )
                 await db.commit()
@@ -833,7 +870,7 @@ async def _score_cv_async(
             _llm_match_results_json_val: str | None = None
             _det_final_score_val: int | None = None
             _det_score_json_val: str | None = None
-            _coverage_context: str | None = None  # D-03.1 — initialised here, set inside try block
+            _coverage_context: str | None = None  # D-03.1 fallback context removed by P0-01; legacy mode runs without D-01
             from services.gender_extractor import _UNKNOWN as _GENDER_UNKNOWN
             _gender = _GENDER_UNKNOWN  # fallback if V2 try block fails
             try:
@@ -896,7 +933,7 @@ async def _score_cv_async(
                     matchresult_to_dict(_match_result), ensure_ascii=False
                 )
 
-                # ── D-01: LLM criteria mapping (gated by platform config, default OFF) ──
+                # ── D-01: LLM criteria mapping (scoring_v2.llm_criteria_mapping_enabled) ──
                 _llm_result = None
                 if prompt_cfg.llm_criteria_mapping_enabled:
                     # Fetch candidate name for qualitative_summary generation (Issue #10)
@@ -931,7 +968,7 @@ async def _score_cv_async(
                     )
                 # ── End D-01 ──────────────────────────────────────────────────
 
-                # ── F-01: Deterministic scoring (silent, gated on D-01 output) ─
+                # ── F-01: Deterministic scoring (runs whenever D-01 produced output) ─
                 if _llm_result is not None:
                     try:
                         from services.deterministic_scoring import (
@@ -960,37 +997,46 @@ async def _score_cv_async(
                             _det_final_score_val,
                         )
                     except Exception as _det_err:
-                        logger.warning(
-                            "[%s] F-01 deterministic scoring failed (non-critical): %s",
-                            application_id, _det_err,
+                        # P0-01: never fall back to legacy (29 Jul 2026 incident:
+                        # an F-01 AttributeError silently produced legacy scores).
+                        logger.error(
+                            "[%s] F-01 deterministic scoring failed: %s: %s",
+                            application_id, type(_det_err).__name__, _det_err,
                         )
+                        raise ScoringPathError(
+                            f"F-01 deterministic scoring failed: "
+                            f"{type(_det_err).__name__}: {_det_err}"
+                        ) from _det_err
                 # ── End F-01 ──────────────────────────────────────────────────
 
-                # ── D-03.1: Build coverage context for legacy scoring LLM (fallback only) ──
-                if _llm_result is not None and _det_final_score_val is None:
-                    try:
-                        from services.ai_service import _build_coverage_context
-                        _coverage_context = _build_coverage_context(_llm_result) or None
-                        if _coverage_context:
-                            logger.debug(
-                                "[%s] D-03.1 coverage context built: %d chars",
-                                application_id, len(_coverage_context),
-                            )
-                    except Exception as _cov_err:
-                        logger.warning("[%s] D-03.1 coverage context failed (non-critical): %s", application_id, _cov_err)
-                # ── End D-03.1 ───────────────────────────────────────────────────────────
-
+            except ScoringPathError:
+                raise
             except Exception as _v2_err:
+                if prompt_cfg.llm_criteria_mapping_enabled:
+                    # P0-01: deterministic scoring cannot run without this block
+                    # (CV evidence → D-01 → F-01). Fail explicitly; no legacy fallback.
+                    logger.error(
+                        "[%s] D-01 deterministic scoring path failed: %s: %s",
+                        application_id, type(_v2_err).__name__, _v2_err,
+                    )
+                    raise ScoringPathError(
+                        f"D-01 criteria mapping failed: {type(_v2_err).__name__}: {_v2_err}"
+                    ) from _v2_err
+                # Explicit legacy mode: V2 evidence is audit-only, legacy scores.
                 logger.warning(
-                    "[%s] V2 evidence capture failed (scoring continues): %s",
+                    "[%s] V2 evidence capture failed (legacy mode, scoring continues): %s",
                     application_id, _v2_err,
                 )
             # ── End Scoring V2 Phase 2A ───────────────────────────────────────
 
             # ════════════════════════════════════════════════════════════════
-            # SCORING PATH — Deterministic (D-01) or Legacy
+            # SCORING PATH — chosen by configuration, never by failure (P0-01)
+            #   D-01 enabled  → deterministic only (failure raised above)
+            #   D-01 disabled → explicit legacy mode
             # ════════════════════════════════════════════════════════════════
-            _use_deterministic = _det_final_score_val is not None and _det_score_json_val is not None
+            _use_deterministic = prompt_cfg.llm_criteria_mapping_enabled
+            if _use_deterministic and (_det_final_score_val is None or _det_score_json_val is None):
+                raise ScoringPathError("deterministic scoring enabled but produced no result")
 
             q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
 
@@ -1061,7 +1107,8 @@ async def _score_cv_async(
                             scoring_provider,
                             cv_facts_json, match_results_json,
                             llm_match_results_json,
-                            det_final_score, det_score_json
+                            det_final_score, det_score_json,
+                            scoring_method
                         ) VALUES (
                             :aid,
                             :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
@@ -1077,7 +1124,8 @@ async def _score_cv_async(
                             'deterministic',
                             :cv_facts_json, :match_results_json,
                             :llm_match_results_json,
-                            :det_final_score, :det_score_json
+                            :det_final_score, :det_score_json,
+                            :scoring_method
                         )
                     """),
                     {
@@ -1113,11 +1161,12 @@ async def _score_cv_async(
                         "llm_match_results_json":  _llm_match_results_json_val,
                         "det_final_score":         _det_final_score_val,
                         "det_score_json":          _det_score_json_val,
+                        "scoring_method":          SCORING_METHOD_DETERMINISTIC,
                     },
                 )
             else:
-                # ── Legacy path: LLM scoring (fallback when D-01 not available) ──
-                logger.info("[%s] Legacy scoring path (D-01 not available)", application_id)
+                # ── Legacy path: explicit legacy mode (D-01 disabled by configuration) ──
+                logger.info("[%s] Legacy scoring path (D-01 disabled by configuration)", application_id)
 
                 _skills_block    = _analysis_json.get("skills", {})
                 skills_required  = _skills_block.get("required") or list(criteria.get("skills") or [])
@@ -1305,7 +1354,8 @@ async def _score_cv_async(
                             scoring_provider,
                             cv_facts_json, match_results_json,
                             llm_match_results_json,
-                            det_final_score, det_score_json
+                            det_final_score, det_score_json,
+                            scoring_method
                         ) VALUES (
                             :aid,
                             :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
@@ -1321,7 +1371,8 @@ async def _score_cv_async(
                             'openai',
                             :cv_facts_json, :match_results_json,
                             :llm_match_results_json,
-                            :det_final_score, :det_score_json
+                            :det_final_score, :det_score_json,
+                            :scoring_method
                         )
                     """),
                     {
@@ -1357,6 +1408,7 @@ async def _score_cv_async(
                         "llm_match_results_json":  _llm_match_results_json_val,
                         "det_final_score":         _det_final_score_val,
                         "det_score_json":          _det_score_json_val,
+                        "scoring_method":          SCORING_METHOD_LEGACY_LLM,
                     },
                 )
             await db.execute(
@@ -1597,7 +1649,7 @@ async def _score_cv_async(
             exc_info=True,
         )
         if not _scoring_committed:
-            await _mark_failed(application_id, str(exc))
+            await _mark_failed(application_id, str(exc), stopped_reason=_stop_reason_for(exc))
         raise
 
 
@@ -1730,7 +1782,11 @@ async def _write_exact_dup_to_log(
 
 # ── Failure marker ────────────────────────────────────────────────────────────
 
-async def _mark_failed(application_id: str, error: str) -> None:
+async def _mark_failed(
+    application_id: str,
+    error: str,
+    stopped_reason: str = "processing_error",
+) -> None:
     """
     Mark an application as failed using an *isolated* NullPool engine.
 
@@ -1769,13 +1825,13 @@ async def _mark_failed(application_id: str, error: str) -> None:
                 text("""
                     UPDATE applications SET
                         processing_status      = 'failed',
-                        stopped_reason         = 'processing_error',
+                        stopped_reason         = :reason,
                         evaluation_exit_reason = :err,
                         scored_at              = now()
                     WHERE application_id = :aid
                     AND   processing_status IN ('queued', 'processing')
                 """),
-                {"err": error[:1000], "aid": application_id},
+                {"err": error[:1000], "aid": application_id, "reason": stopped_reason},
             )
             await db.execute(
                 text("""
@@ -1788,8 +1844,8 @@ async def _mark_failed(application_id: str, error: str) -> None:
             await db.commit()
         rows_updated = result.rowcount if result else 0
         logger.info(
-            "[%s] _mark_failed: rows_updated=%d reason=%.200s",
-            application_id, rows_updated, error,
+            "[%s] _mark_failed: rows_updated=%d stopped_reason=%s reason=%.200s",
+            application_id, rows_updated, stopped_reason, error,
         )
     except Exception as mark_exc:
         logger.error(

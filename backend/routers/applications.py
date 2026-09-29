@@ -591,6 +591,7 @@ _EXPORT_COLUMNS: list[str] = [
     "Duplicate Status",
     "Talent Pool",
     "Recruiter Notes",
+    "Scoring Method",
 ]
 
 # Maps raw `decision`/`status` DB values (and the UI's 'rejected_low_match' alias)
@@ -638,6 +639,7 @@ def _export_row(r) -> list:
         r["duplicate_status"] or "not_duplicate",
         "Yes" if r["is_talent_pool"] else "No",
         r["recruiter_notes"] or "",
+        r["scoring_method"] or "",
     ]
 
 
@@ -1075,6 +1077,7 @@ async def export_applications(
             jc.name                          AS campaign_name,
             co.organization_name             AS client_org_name,
             COALESCE(s.det_final_score, s.final_score) AS score,
+            s.scoring_method                    AS scoring_method,
             a.decision                       AS status,
             a.processing_status,
             a.workflow_status,
@@ -1240,6 +1243,7 @@ async def get_application_details(
                 s.score_details,
                 s.det_final_score,
                 s.det_score_json,
+                s.scoring_method,
                 s.scoring_prompt_code, s.scoring_prompt_version,
                 s.level2_prompt_code,  s.level2_prompt_version,
                 s.scoring_provider
@@ -1468,6 +1472,7 @@ async def get_application_details(
         "missing_skills":         app["missing_skills"] or [],
         "gatekeeper_passed":      app["gatekeeper_passed"],
         "ai_model":               app["ai_model"],
+        "scoring_method":         app["scoring_method"],
         "scoring_provider":       app["scoring_provider"],
         "scoring_prompt_code":    app["scoring_prompt_code"],
         "scoring_prompt_version": app["scoring_prompt_version"],

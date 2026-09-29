@@ -13,8 +13,10 @@ Key design decisions:
 - Prompt loaded via load_active_prompt(db, "recruitment.criteria_mapping");
   hardcoded fallback if not found in DB.
 - Security hardening applied to every prompt via _apply_security_hardening().
-- All errors are non-fatal: exceptions are re-raised so cv_score.py silent
-  try/except can log a warning and continue without affecting LLM scoring.
+- Errors are re-raised to cv_score.py. When deterministic scoring is enabled
+  they fail the scoring attempt explicitly (P0-01: no legacy fallback).
+  A response with no usable assessment structure raises
+  CriteriaMappingResponseError instead of producing all-ABSENT placeholders.
 """
 from __future__ import annotations
 
@@ -35,6 +37,11 @@ from services.cv_evidence import CVFacts
 logger = logging.getLogger(__name__)
 
 _MAPPER_VERSION = "1.0.0"
+
+
+class CriteriaMappingResponseError(RuntimeError):
+    """D-01 returned no usable assessment structure (a technical failure, not a
+    candidate result). Raised by LLMCriteriaMapper.assess()."""
 
 # Valid enumeration sets (used for response validation)
 _VALID_STATUS = frozenset({"MATCHED", "PARTIAL", "ABSENT"})
@@ -1081,6 +1088,26 @@ def _parse_qualitative_summary(raw: Any) -> QualitativeSummary | None:
     )
 
 
+def _response_structure_error(raw_json: str) -> str | None:
+    """Return why a D-01 response has no usable assessment structure, or None.
+
+    Only structural problems count. A well-formed response whose assessments
+    are all ABSENT is a valid candidate result and returns None.
+    """
+    try:
+        data = json.loads(raw_json)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return "invalid JSON"
+    if not isinstance(data, dict):
+        return "response is not a JSON object"
+    raw_assessments = data.get("assessments")
+    if not isinstance(raw_assessments, list):
+        return "missing 'assessments' array"
+    if not raw_assessments:
+        return "empty 'assessments' array"
+    return None
+
+
 def _parse_llm_response(
     raw_json: str,
     criteria_list: list[dict],
@@ -1263,8 +1290,9 @@ class LLMCriteriaMapper:
     ) -> LLMMatchResult:
         """Run one LLM call per application to map all criteria against CV facts.
 
-        Returns LLMMatchResult. Raises on LLM/network failure so the caller's
-        silent try/except can log and continue.
+        Returns LLMMatchResult. Raises on LLM/network failure, and raises
+        CriteriaMappingResponseError when the response has no usable
+        assessment structure (P0-01: never an all-ABSENT placeholder).
         """
         t0 = time.monotonic()
 
@@ -1401,19 +1429,26 @@ class LLMCriteriaMapper:
                 )
                 # raw_content stays as original, parse_failed stays True
 
+        # P0-01: a response with no usable assessment structure is a technical
+        # failure, not a candidate who met no criteria. Raise instead of letting
+        # _parse_llm_response manufacture all-ABSENT placeholders (score 0).
+        structure_error = (
+            "invalid JSON after 8000-token retry" if parse_failed
+            else _response_structure_error(raw_content)
+        )
+        if structure_error:
+            raise CriteriaMappingResponseError(
+                f"D-01 response unusable for {len(criteria_list)} criteria: {structure_error}"
+            )
+
         # Parse response (may use retried content)
         assessments, qual_summary = _parse_llm_response(raw_content, criteria_list, p_code, p_ver, model, application_id)
 
-        # Flag all assessments if parse failed after retry (for manual review)
-        if parse_failed and assessments:
-            logger.error(
-                "[%s] D-01 Flagging all %d assessments for manual review due to JSON parse failure after retry",
-                application_id, len(assessments)
+        if not assessments:
+            raise CriteriaMappingResponseError(
+                f"D-01 response unusable for {len(criteria_list)} criteria: "
+                f"no valid assessment items"
             )
-            for assessment in assessments:
-                if not assessment.risk_flags:
-                    assessment.risk_flags = []
-                assessment.risk_flags.append("json_parse_failure_after_retry")
 
         # Issue #10 fix: if main call didn't produce qualitative_summary, call dedicated second LLM
         if qual_summary is None and assessments:
