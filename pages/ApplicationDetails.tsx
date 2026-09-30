@@ -131,6 +131,24 @@ const T = {
       legacy_llm_v1:              'Legacy single-step AI score v1',
       gatekeeper_local_v1:        'Local pre-screening (no AI score) v1',
       legacy_llm_det_backfill_v1: 'Legacy AI score with retrospective deterministic score',
+      deterministic_v2:           'Deterministic (criteria mapping + rule-based score, with verification) v2',
+    } as Record<string, string>,
+    verifiedScoreLabel: 'Verified score',
+    pendingVerificationLabel: 'Pending verification',
+    pointsWord: 'points',
+    scoreRangeLabel: 'Score range',
+    scoreRangeTooltip: 'Upper value = the maximum score if every unresolved criterion is later verified as fully met. It is not a prediction.',
+    requiredToVerifyOne: '1 required criterion needs verification',
+    requiredToVerifyMany: '{n} required criteria need verification',
+    xToVerify: 'To verify',
+    upToPoints: 'Up to {n} points',
+    verifyPrefix: 'Verify',
+    needsVerification: 'Needs verification',
+    cdReasonLabels: {
+      relevance_unverified: 'Relevance not established',
+      detail_missing:       'Detail missing',
+      ambiguous:            'Ambiguous',
+      conflicting:          'Conflicting',
     } as Record<string, string>,
     additionalDetailsTitle: 'Additional Details',
     developerTitle: 'Developer / Diagnostic',
@@ -139,7 +157,7 @@ const T = {
     preferredRequirements: 'Preferred Requirements',
     xMatched: 'Matched',
     xPartial: 'Partial',
-    xMissing: 'Missing',
+    xMissing: 'Not evidenced',
     xCoverage: 'Coverage',
     recruiterSignalLabel: 'Recruiter Signal',
     recruiterSignalLabels: {
@@ -462,6 +480,24 @@ const T = {
       legacy_llm_v1:              'تقييم ذكاء اصطناعي قديم بخطوة واحدة v1',
       gatekeeper_local_v1:        'فرز محلي أولي (بدون تقييم ذكاء اصطناعي) v1',
       legacy_llm_det_backfill_v1: 'تقييم ذكاء اصطناعي قديم مع درجة حتمية محتسبة لاحقاً',
+      deterministic_v2:           'تقييم حتمي (مطابقة المعايير + احتساب قائم على القواعد، مع التحقق) v2',
+    } as Record<string, string>,
+    verifiedScoreLabel: 'الدرجة المُتحقَّق منها',
+    pendingVerificationLabel: 'بانتظار التحقق',
+    pointsWord: 'نقطة',
+    scoreRangeLabel: 'نطاق الدرجة',
+    scoreRangeTooltip: 'القيمة العليا = أعلى درجة ممكنة إذا تم التحقق لاحقاً من استيفاء كل معيار غير محسوم بالكامل. وهي ليست تنبؤاً.',
+    requiredToVerifyOne: 'معيار إلزامي واحد بحاجة إلى تحقق',
+    requiredToVerifyMany: '{n} معايير إلزامية بحاجة إلى تحقق',
+    xToVerify: 'بحاجة إلى تحقق',
+    upToPoints: 'حتى {n} نقطة',
+    verifyPrefix: 'تحقّق من',
+    needsVerification: 'بحاجة إلى تحقق',
+    cdReasonLabels: {
+      relevance_unverified: 'الصلة غير مثبتة',
+      detail_missing:       'تفاصيل ناقصة',
+      ambiguous:            'غامض',
+      conflicting:          'متعارض',
     } as Record<string, string>,
     additionalDetailsTitle: 'تفاصيل إضافية',
     developerTitle: 'المطور / التشخيص',
@@ -470,7 +506,7 @@ const T = {
     preferredRequirements: 'المتطلبات المفضلة',
     xMatched: 'مطابق',
     xPartial: 'جزئي',
-    xMissing: 'غائب',
+    xMissing: 'غير مثبت',
     xCoverage: 'التغطية',
     recruiterSignalLabel: 'إشارة المسؤول',
     recruiterSignalLabels: {
@@ -922,12 +958,14 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   const decisionStyles: Record<string, string> = {
     qualified: 'bg-green-100 text-green-800',
     partial:   'bg-amber-100 text-amber-800',
+    needs_verification: 'bg-amber-50 text-amber-700 border border-amber-300',
     rejected:  'bg-red-100 text-red-800',
     low_match: 'bg-slate-100 text-slate-600',
   };
   const decisionLabel: Record<string, string> = {
     qualified: lang === 'ar' ? 'مؤهل' : 'Qualified',
     partial:   lang === 'ar' ? 'جزئي' : 'Partial',
+    needs_verification: (t as any).needsVerification,
     rejected:  lang === 'ar' ? 'مرفوض' : 'Rejected',
     low_match: t.lowMatch,
   };
@@ -1372,6 +1410,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 isLowMatch ? 'bg-slate-400'
                   : data.decision === 'qualified' ? 'bg-success'
                   : data.decision === 'partial'   ? 'bg-warning'
+                  : data.decision === 'needs_verification' ? 'bg-warning'
                   : data.decision === 'rejected'  ? 'bg-error'
                   : score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning' : 'bg-error'
               }`}>
@@ -1391,6 +1430,36 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                   <span className="text-[10px] font-black text-textMuted uppercase tracking-widest">• REF: {data.application_id}</span>
                 </div>
                 <h1 className="text-3xl font-black text-textMain tracking-tight">{candidateName}</h1>
+                {/* P0-02a: verified score / pending verification / score range */}
+                {!isLowMatch && (data.scoring_method === 'deterministic_v2' || (data.pending_points ?? 0) > 0) && (() => {
+                  const tx = t as any;
+                  const verified = data.verified_score ?? score;
+                  const pending = data.pending_points ?? 0;
+                  const upper = data.score_upper ?? verified;
+                  const reqToVerify = data.required_to_verify ?? 0;
+                  return (
+                    <div className="mt-3 space-y-1 text-xs text-textMain">
+                      <p><span className="font-black">{tx.verifiedScoreLabel}:</span> {verified}%</p>
+                      {pending > 0 && (
+                        <>
+                          <p><span className="font-black">{tx.pendingVerificationLabel}:</span> {pending} {tx.pointsWord}</p>
+                          <div className="flex items-center gap-2" title={tx.scoreRangeTooltip}>
+                            <span><span className="font-black">{tx.scoreRangeLabel}:</span> {verified}–{upper}%</span>
+                            <div className="relative w-32 h-1.5 rounded-full bg-slate-200 overflow-hidden" aria-hidden="true">
+                              <div className="absolute inset-y-0 left-0 bg-amber-200" style={{ width: `${Math.min(100, upper)}%` }} />
+                              <div className="absolute inset-y-0 left-0 bg-emerald-500" style={{ width: `${Math.min(100, verified)}%` }} />
+                            </div>
+                          </div>
+                          {reqToVerify > 0 && (
+                            <p className="text-amber-700 font-bold">
+                              {reqToVerify === 1 ? tx.requiredToVerifyOne : String(tx.requiredToVerifyMany).replace('{n}', String(reqToVerify))}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
             {!isLowMatch && analysis.summary && (
@@ -2159,12 +2228,14 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         const statusIcon = (status: string) => {
           if (status === 'MATCHED') return <span className="text-emerald-600 font-black text-sm">✓</span>;
           if (status === 'PARTIAL') return <span className="text-amber-500 font-black text-sm">△</span>;
+          if (status === 'CANNOT_DETERMINE') return <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wide">{(t as any).xToVerify}</span>;
           return <span className="text-red-500 font-black text-sm">✗</span>;
         };
 
         const statusBg = (status: string) => {
           if (status === 'MATCHED') return 'border-l-2 border-emerald-400 bg-emerald-50/40';
           if (status === 'PARTIAL') return 'border-l-2 border-amber-400 bg-amber-50/40';
+          if (status === 'CANNOT_DETERMINE') return 'border-l-2 border-dashed border-amber-400 bg-amber-50/20';
           return 'border-l-2 border-red-300 bg-red-50/30';
         };
 
@@ -2172,10 +2243,33 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         // The scoring engine can set status='MATCHED' while applying quality_factor=0,
         // producing effective_credit=0. The display should reflect the credit, not
         // the raw status, to avoid showing contradictory signals to recruiters.
-        const displayStatus = (c: DetCriterionScore): 'MATCHED' | 'PARTIAL' | 'ABSENT' => {
+        // P0-02a: CANNOT_DETERMINE has zero verified credit by design and is
+        // never shown as ✗ — it is "To verify".
+        const displayStatus = (c: DetCriterionScore): DetCriterionScore['status'] => {
+          if (c.status === 'CANNOT_DETERMINE') return 'CANNOT_DETERMINE';
           if ((c.effective_credit ?? 0) === 0) return 'ABSENT';
           return c.status;
         };
+
+        // P0-02a: extra detail for a To-verify row
+        const cdDetails = (c: DetCriterionScore) => {
+          if (c.status !== 'CANNOT_DETERMINE') return null;
+          const tx = t as any;
+          return (
+            <div className="mt-2 space-y-1 text-[11px]">
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                {c.cd_reason && (
+                  <span className="font-bold text-amber-800">{tx.cdReasonLabels?.[c.cd_reason] || c.cd_reason}</span>
+                )}
+                {(c.pending_worth ?? 0) > 0 && (
+                  <span className="text-amber-700">{String(tx.upToPoints).replace('{n}', String(c.pending_worth))}</span>
+                )}
+              </div>
+              {c.match_reason && <p className="text-textMain leading-snug">{c.match_reason}</p>}
+            </div>
+          );
+        };
+        const cdCount = (n?: number) => (n ?? 0) > 0 ? n! : 0;
 
         const dimOrder = ['skills','experience','education','certifications','soft_skills','domain_knowledge','other'];
         const orderedDims = dimOrder
@@ -2207,6 +2301,9 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                       <span className="flex items-center gap-1 text-sm font-bold text-emerald-700"><span className="text-base">✓</span> {t.xMatched}: <span className="ml-0.5">{req.matched}</span></span>
                       <span className="flex items-center gap-1 text-sm font-bold text-amber-600"><span className="text-base">△</span> {t.xPartial}: <span className="ml-0.5">{req.partial}</span></span>
                       <span className="flex items-center gap-1 text-sm font-bold text-red-600"><span className="text-base">✗</span> {t.xMissing}: <span className="ml-0.5">{req.absent}</span></span>
+                      {cdCount(req.cannot_determine) > 0 && (
+                        <span className="flex items-center gap-1 text-sm font-bold text-amber-700"><span className="text-base">?</span> {(t as any).xToVerify}: <span className="ml-0.5">{req.cannot_determine}</span></span>
+                      )}
                     </div>
                     {req.coverage_pct != null && (
                       <div className="mt-3">
@@ -2226,6 +2323,9 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                       <span className="flex items-center gap-1 text-sm font-bold text-emerald-700"><span className="text-base">✓</span> {t.xMatched}: <span className="ml-0.5">{pref.matched}</span></span>
                       <span className="flex items-center gap-1 text-sm font-bold text-amber-600"><span className="text-base">△</span> {t.xPartial}: <span className="ml-0.5">{pref.partial}</span></span>
                       <span className="flex items-center gap-1 text-sm font-bold text-red-600"><span className="text-base">✗</span> {t.xMissing}: <span className="ml-0.5">{pref.absent}</span></span>
+                      {cdCount(pref.cannot_determine) > 0 && (
+                        <span className="flex items-center gap-1 text-sm font-bold text-amber-700"><span className="text-base">?</span> {(t as any).xToVerify}: <span className="ml-0.5">{pref.cannot_determine}</span></span>
+                      )}
                     </div>
                     {pref.coverage_pct != null && (
                       <div className="mt-3">
@@ -2280,6 +2380,19 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                         </ul>
                       </div>
                     )}
+                    {(ds.verification_items?.length ?? 0) > 0 && (
+                      <div>
+                        <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider mb-2">{(t as any).xToVerify}</p>
+                        <ul className="space-y-1">
+                          {ds.verification_items!.map((vi, i) => (
+                            <li key={i} className="text-sm text-textMain flex items-start gap-2">
+                              <span className="text-amber-500 mt-0.5">?</span>
+                              <span>{(t as any).verifyPrefix}: {vi.criterion_text}{vi.cd_reason ? ` — ${(t as any).cdReasonLabels?.[vi.cd_reason] || vi.cd_reason}` : ''}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     {ds.qualitative_summary.suggested_interview_questions && ds.qualitative_summary.suggested_interview_questions.length > 0 && (
                       <div>
                         <p className="text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-2">{t.suggestedInterviewQuestions || 'Suggested Interview Questions'}</p>
@@ -2323,6 +2436,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                 <span className="text-emerald-600">{dim.n_required_matched}✓</span>
                                 {dim.n_required_partial > 0 && <span className="text-amber-500"> {dim.n_required_partial}△</span>}
                                 {dim.n_required_absent > 0 && <span className="text-red-500"> {dim.n_required_absent}✗</span>}
+                                {cdCount(dim.n_required_cannot_determine) > 0 && <span className="text-amber-600"> {dim.n_required_cannot_determine}?</span>}
                                 <span className="ml-1 text-textMuted">req</span>
                               </span>
                             )}
@@ -2331,6 +2445,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                 <span className="text-emerald-600">{dim.n_preferred_matched}✓</span>
                                 {dim.n_preferred_partial > 0 && <span className="text-amber-500"> {dim.n_preferred_partial}△</span>}
                                 {dim.n_preferred_absent > 0 && <span className="text-red-500"> {dim.n_preferred_absent}✗</span>}
+                                {cdCount(dim.n_preferred_cannot_determine) > 0 && <span className="text-amber-600"> {dim.n_preferred_cannot_determine}?</span>}
                                 <span className="ml-1 text-textMuted">pref</span>
                               </span>
                             )}
@@ -2358,6 +2473,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                       <span>{t.xConfidence}: {Math.round(c.confidence * 100)}%</span>
                                       <span>{t.xEffectiveCredit}: {Math.round(c.effective_credit * 100)}%</span>
                                     </div>
+                                    {cdDetails(c)}
                                     {c.supporting_evidence.length > 0 && (
                                       <div className="mt-2 space-y-1">
                                         <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.xEvidence}</p>
@@ -2366,7 +2482,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                         ))}
                                       </div>
                                     )}
-                                    {ds !== 'ABSENT' && c.supporting_evidence.length === 0 && (
+                                    {ds !== 'ABSENT' && ds !== 'CANNOT_DETERMINE' && c.supporting_evidence.length === 0 && (
                                       <p className="mt-2 text-[10px] text-textMuted italic">{t.xNoEvidence}</p>
                                     )}
                                   </div>
@@ -2390,6 +2506,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                                       <span>{t.xConfidence}: {Math.round(c.confidence * 100)}%</span>
                                       <span>{t.xEffectiveCredit}: {Math.round(c.effective_credit * 100)}%</span>
                                     </div>
+                                    {cdDetails(c)}
                                     {c.supporting_evidence.length > 0 && (
                                       <div className="mt-2 space-y-1">
                                         <p className="text-[10px] font-black text-textMuted uppercase tracking-wider">{t.xEvidence}</p>

@@ -493,6 +493,7 @@ export const BulkUploadPage: React.FC<BulkUploadPageProps> = ({
     if (!d) return 'text-slate-400';
     if (d === 'qualified')  return 'text-emerald-700 font-bold';
     if (d === 'partial')    return 'text-amber-700 font-bold';
+    if (d === 'needs_verification') return 'text-amber-600 font-bold';
     if (d === 'rejected')   return 'text-red-600 font-bold';
     if (d === 'low_match')  return 'text-orange-600 font-bold';
     return 'text-slate-600';

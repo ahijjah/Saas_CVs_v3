@@ -259,7 +259,8 @@ class TestDeterministicMode:
         inserts = _score_inserts(log)
         assert len(inserts) == 1
         sql, params = inserts[0]
-        assert params["scoring_method"] == "deterministic_v1"
+        # P0-02a: new deterministic results are tagged deterministic_v2
+        assert params["scoring_method"] == "deterministic_v2"
         assert "'deterministic'" in sql
         assert params["det_final_score"] is not None
         assert params["final"] == params["det_final_score"]
@@ -296,7 +297,7 @@ class TestDeterministicMode:
         result (score 0), not a technical failure."""
         log, mocks = await _run(tmp_path, assess=AsyncMock(return_value=_llm_result("ABSENT")))
         (sql, params), = _score_inserts(log)
-        assert params["scoring_method"] == "deterministic_v1"
+        assert params["scoring_method"] == "deterministic_v2"
         assert params["det_final_score"] == 0
         mocks["score_cv"].assert_not_called()
 
@@ -518,7 +519,7 @@ def _valid_item(text, dim, status):
         "confidence": 0.9 if status != "ABSENT" else 0.0,
         "supporting_evidence": ["e"] if status != "ABSENT" else [],
         "match_type": "direct" if status != "ABSENT" else "missing",
-        "criterion_class": "flexible", "match_reason": "",
+        "criterion_class": "flexible", "match_reason": "reason",
     }
 
 
@@ -538,17 +539,17 @@ class TestMalformedD01Response:
     @pytest.mark.asyncio
     async def test_missing_assessments_key_raises(self):
         with pytest.raises(CriteriaMappingResponseError, match="missing 'assessments'"):
-            await _assess_with(json.dumps({"result": "x"}))
+            await _assess_with(json.dumps({"result": "x"}), json.dumps({"result": "x"}))  # main + one repair call
 
     @pytest.mark.asyncio
     async def test_empty_assessments_raises(self):
         with pytest.raises(CriteriaMappingResponseError, match="empty 'assessments'"):
-            await _assess_with(json.dumps({"assessments": []}))
+            await _assess_with(json.dumps({"assessments": []}), json.dumps({"assessments": []}))  # main + one repair call
 
     @pytest.mark.asyncio
     async def test_only_malformed_items_raises(self):
-        with pytest.raises(CriteriaMappingResponseError, match="no valid assessment items"):
-            await _assess_with(json.dumps({"assessments": ["not a dict", 42]}))
+        with pytest.raises(CriteriaMappingResponseError, match="not a JSON object"):
+            await _assess_with(json.dumps({"assessments": ["not a dict", 42]}), json.dumps({"assessments": ["not a dict", 42]}))  # main + one repair call
 
     @pytest.mark.asyncio
     async def test_all_absent_valid_response_is_not_an_error(self):
@@ -669,3 +670,73 @@ class TestMixedScoringMethods:
 
     def test_empty(self):
         assert not self._fn()({})
+
+
+# ── P0-02a: deterministic_v2 worker behaviour ────────────────────────────────
+
+def _cd_llm_result() -> LLMMatchResult:
+    """MS Office MATCHED; the relevance-qualified experience criterion CANNOT_DETERMINE."""
+    r = _llm_result("MATCHED")
+    exp = r.assessments[1]
+    exp.status = "CANNOT_DETERMINE"
+    exp.cd_reason = "relevance_unverified"
+    exp.match_reason = "Five years total; HR relevance not stated."
+    return r
+
+
+def _decision_params(log):
+    return [p for s, p in log if "UPDATE applications" in s and "decision" in p]
+
+
+class TestP002aWorker:
+
+    @pytest.mark.asyncio
+    async def test_needs_verification_persisted_with_v2_method(self, tmp_path):
+        log, mocks = await _run(tmp_path, assess=AsyncMock(return_value=_cd_llm_result()))
+        (sql, params), = _score_inserts(log)
+        assert params["scoring_method"] == "deterministic_v2"
+        det = json.loads(params["det_score_json"])
+        assert det["_schema"] == "det_score_v3"
+        assert det["recommendation"] == "needs_verification"
+        assert det["pending_points"] > 0
+        assert det["upper_score"] == det["verified_score"] + det["pending_points"]
+        assert params["final"] == det["verified_score"]
+        (upd,) = _decision_params(log)
+        assert upd["decision"] == "needs_verification"
+        mocks["score_cv"].assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_cd_decision_unchanged(self, tmp_path):
+        log, _ = await _run(tmp_path)
+        (upd,) = _decision_params(log)
+        assert upd["decision"] == "qualified"
+
+    @pytest.mark.asyncio
+    async def test_validation_failure_no_legacy_no_score(self, tmp_path):
+        err = CriteriaMappingResponseError(
+            "D-01 response invalid for 2 criteria after repair call: assessment[0]: status 'UNCLEAR'")
+        log: list = []
+        with pytest.raises(cv_score.ScoringPathError, match="CriteriaMappingResponseError") as ei:
+            log, mocks = await _run(tmp_path, assess=AsyncMock(side_effect=err))
+        assert cv_score._stop_reason_for(ei.value) == "scoring_failed"
+        assert _score_inserts(log) == []
+
+    @pytest.mark.usefixtures("_celery_engine_stub")
+    def test_validation_failure_retry_exhaustion_marks_scoring_failed(self):
+        err = cv_score.ScoringPathError(
+            "D-01 criteria mapping failed: CriteriaMappingResponseError: invalid after repair call")
+        task = cv_score.score_cv_task
+        mark_failed = AsyncMock()
+        with patch.object(cv_score, "_score_cv_async", AsyncMock(side_effect=err)), \
+             patch.object(cv_score, "_mark_failed", mark_failed), \
+             patch.object(task, "retry", side_effect=task.MaxRetriesExceededError()):
+            task.run(APP_ID, JOB_ID, TENANT_ID, "/tmp/x.pdf", "application/pdf")
+        assert mark_failed.call_args.kwargs["stopped_reason"] == "scoring_failed"
+        assert task.max_retries == 3          # 4 attempts in total
+
+
+@pytest.fixture
+def _celery_engine_stub():
+    with patch("sqlalchemy.ext.asyncio.create_async_engine", MagicMock()), \
+         patch("sqlalchemy.ext.asyncio.async_sessionmaker", MagicMock()):
+        yield

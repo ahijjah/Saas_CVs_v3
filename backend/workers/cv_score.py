@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 # ── Scoring methods (application_scores.scoring_method, migration 104) ───────
 from services.scoring_method import (  # noqa: E402
-    DETERMINISTIC as SCORING_METHOD_DETERMINISTIC,
+    DETERMINISTIC_V2 as SCORING_METHOD_DETERMINISTIC,
     GATEKEEPER_LOCAL as SCORING_METHOD_GATEKEEPER,
     LEGACY_LLM as SCORING_METHOD_LEGACY_LLM,
 )
@@ -1046,7 +1046,10 @@ async def _score_cv_async(
                 _det_score_dict = json.loads(_det_score_json_val)
                 _det_signal = _det_score_dict.get("recruiter_signal", "")
                 final_score = _det_final_score_val
-                decision = decision_from_signal(_det_signal)
+                # P0-02a: the engine's recommendation already applies the
+                # CANNOT_DETERMINE rule (needs_verification; never rejected
+                # because of CD). Older payloads fall back to the signal.
+                decision = _det_score_dict.get("recommendation") or decision_from_signal(_det_signal)
 
                 _qs = _det_score_dict.get("qualitative_summary") or {}
                 extracted_name = str(_qs.get("candidate_name") or "").strip()

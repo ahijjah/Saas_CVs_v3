@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class CriterionScore:
-    status: str          # 'MATCHED' | 'PARTIAL' | 'ABSENT'
+    status: str          # 'MATCHED' | 'PARTIAL' | 'ABSENT' | 'CANNOT_DETERMINE'
     match_type: str      # 'direct' | 'equivalent' | ... | 'missing'
     effective_credit: float
     confidence: float
@@ -31,7 +31,10 @@ def display_status(c: CriterionScore) -> str:
 
     Safety rule: effective_credit=0 must never render a green check,
     even if the raw status is 'MATCHED'.
+    P0-02a: CANNOT_DETERMINE (zero verified credit by design) is never ✗.
     """
+    if c.status == 'CANNOT_DETERMINE':
+        return 'CANNOT_DETERMINE'
     if (c.effective_credit or 0) == 0:
         return 'ABSENT'
     return c.status
@@ -148,6 +151,7 @@ def _icon(ds: str) -> str:
     """Mirror of statusIcon() in ApplicationDetails.tsx."""
     if ds == 'MATCHED': return '✓'
     if ds == 'PARTIAL': return '△'
+    if ds == 'CANNOT_DETERMINE': return 'To verify'
     return '✗'
 
 
@@ -176,3 +180,20 @@ class TestDisplayStatusIconMapping:
                            supporting_evidence=['Microsoft Word & Excel'])
         assert _icon(display_status(c)) == '✗'
         assert _icon(display_status(c)) != '✓'
+
+
+class TestCannotDetermineDisplay:
+    """P0-02a: a CANNOT_DETERMINE row is amber "To verify", never ✗."""
+
+    def test_cd_zero_credit_is_not_absent(self):
+        c = CriterionScore(status='CANNOT_DETERMINE', match_type='direct',
+                           effective_credit=0.0, confidence=0.5,
+                           supporting_evidence=['5 years as ICT support officer'])
+        assert display_status(c) == 'CANNOT_DETERMINE'
+
+    def test_cd_never_shows_cross(self):
+        c = CriterionScore(status='CANNOT_DETERMINE', match_type='missing',
+                           effective_credit=0.0, confidence=0.4,
+                           supporting_evidence=['Bachelor degree'])
+        assert _icon(display_status(c)) == 'To verify'
+        assert _icon(display_status(c)) != '✗'

@@ -417,6 +417,7 @@ async def get_campaign(
                 COUNT(a.application_id)                                              AS applications_total,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')     AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')       AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'needs_verification') AS applications_needs_verification,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')      AS applications_rejected,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored') AS applications_scored
             FROM applications a
@@ -431,11 +432,13 @@ async def get_campaign(
         out["applications_total"]     = int(sr["applications_total"])
         out["applications_qualified"] = int(sr["applications_qualified"])
         out["applications_partial"]   = int(sr["applications_partial"])
+        out["applications_needs_verification"] = int(sr["applications_needs_verification"])
         out["applications_rejected"]  = int(sr["applications_rejected"])
         out["applications_scored"]    = int(sr["applications_scored"])
     else:
         out["applications_total"] = out["applications_qualified"] = 0
         out["applications_partial"] = out["applications_rejected"] = 0
+        out["applications_needs_verification"] = 0
         out["applications_scored"] = 0
 
     return out
@@ -749,7 +752,7 @@ async def get_campaign_candidates(
             JOIN jobs j ON j.job_id = a.job_id
             LEFT JOIN application_scores s ON s.application_id = a.application_id
             {where_sql}
-            ORDER BY a.applied_at DESC
+            ORDER BY a.applied_at DESC, a.application_id
         """),
         params,
     )

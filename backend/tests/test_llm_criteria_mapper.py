@@ -44,7 +44,6 @@ from services.llm_criteria_mapper import (
     _GOOGLE_WORKSPACE_MEMBERS,
     _SKILL_FAMILY_RULES,
     _SKILL_FAMILY_UPGRADE_CONFIDENCE,
-    _absent_fallback_assessments,
     _apply_skill_family_upgrade,
     _build_user_message,
     _criterion_matches_family_member,
@@ -53,6 +52,7 @@ from services.llm_criteria_mapper import (
     _parse_llm_response,
     _parse_one_assessment,
     _select_evidence_snippets,
+    CriteriaMappingResponseError,
 )
 from services.evidence_serialiser import (
     SerialisationError,
@@ -522,24 +522,22 @@ class TestParseLlmResponse:
         assert result[0].confidence == pytest.approx(0.92)
         assert result[0].match_type == "direct"
 
-    def test_invalid_json_returns_absent_fallback(self):
-        result, _ = _parse_llm_response("{not valid json", self._criteria(), **PROMPT_META)
-        assert len(result) == 1
-        assert result[0].status == "ABSENT"
-        assert "assessment_failed" in result[0].risk_flags
+    # P0-02a: invalid responses raise; there is no all-ABSENT fallback.
+    def test_invalid_json_raises(self):
+        with pytest.raises(CriteriaMappingResponseError, match="invalid JSON"):
+            _parse_llm_response("{not valid json", self._criteria(), **PROMPT_META)
 
-    def test_missing_assessments_key_returns_fallback(self):
+    def test_missing_assessments_key_raises(self):
         raw = json.dumps({"result": "something else"})
-        result, _ = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
-        assert result[0].status == "ABSENT"
-        assert "assessment_failed" in result[0].risk_flags
+        with pytest.raises(CriteriaMappingResponseError, match="missing 'assessments'"):
+            _parse_llm_response(raw, self._criteria(), **PROMPT_META)
 
-    def test_empty_assessments_array(self):
+    def test_empty_assessments_array_raises(self):
         raw = json.dumps({"assessments": []})
-        result, _ = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
-        assert result == []
+        with pytest.raises(CriteriaMappingResponseError, match="empty 'assessments'"):
+            _parse_llm_response(raw, self._criteria(), **PROMPT_META)
 
-    def test_malformed_item_skipped(self):
+    def test_malformed_item_invalidates_response(self):
         raw = json.dumps({
             "assessments": [
                 "not a dict",
@@ -557,16 +555,15 @@ class TestParseLlmResponse:
                 },
             ]
         })
-        result, _ = _parse_llm_response(raw, self._criteria(), **PROMPT_META)
-        assert len(result) == 1
-        assert result[0].status == "ABSENT"
+        with pytest.raises(CriteriaMappingResponseError, match="not a JSON object"):
+            _parse_llm_response(raw, self._criteria(), **PROMPT_META)
 
     def test_prompt_metadata_attached(self):
         raw = json.dumps({
             "assessments": [{
                 "criterion_text": "Python", "dimension": "skills", "required": True,
                 "status": "MATCHED", "confidence": 0.8,
-                "supporting_evidence": [], "match_reason": "ok",
+                "supporting_evidence": ["Python developer"], "match_reason": "ok",
                 "match_type": "direct", "criterion_class": "strict", "risk_flags": [],
             }]
         })
@@ -597,9 +594,9 @@ class TestParseOneAssessment:
         d.update(overrides)
         return d
 
-    def test_invalid_status_falls_back(self):
-        a = _parse_one_assessment(self._base(status="WRONG"), **PROMPT_META)
-        assert a.status == "ABSENT"
+    def test_invalid_status_raises(self):
+        with pytest.raises(CriteriaMappingResponseError, match="status 'WRONG'"):
+            _parse_one_assessment(self._base(status="WRONG"), **PROMPT_META)
 
     def test_invalid_match_type_falls_back(self):
         a = _parse_one_assessment(self._base(match_type="magic"), **PROMPT_META)
@@ -613,15 +610,21 @@ class TestParseOneAssessment:
         a = _parse_one_assessment(self._base(dimension="magic"), **PROMPT_META)
         assert a.dimension == "other"
 
-    def test_confidence_clamped_to_zero_one(self):
-        a = _parse_one_assessment(self._base(confidence=1.5), **PROMPT_META)
-        assert a.confidence == pytest.approx(1.0)
-        b = _parse_one_assessment(self._base(confidence=-0.5), **PROMPT_META)
-        assert b.confidence == pytest.approx(0.0)
+    def test_confidence_out_of_range_raises(self):
+        for bad in (1.5, -0.5, "0.8", None, True):
+            with pytest.raises(CriteriaMappingResponseError, match="confidence"):
+                _parse_one_assessment(self._base(confidence=bad), **PROMPT_META)
 
-    def test_supporting_evidence_list_sanitised(self):
-        a = _parse_one_assessment(self._base(supporting_evidence="not a list"), **PROMPT_META)
+    def test_supporting_evidence_non_list_on_absent_sanitised(self):
+        a = _parse_one_assessment(
+            self._base(status="ABSENT", match_type="missing", supporting_evidence="not a list"),
+            **PROMPT_META,
+        )
         assert a.supporting_evidence == []
+
+    def test_supporting_evidence_non_list_on_matched_raises(self):
+        with pytest.raises(CriteriaMappingResponseError, match="MATCHED without supporting_evidence"):
+            _parse_one_assessment(self._base(supporting_evidence="not a list"), **PROMPT_META)
 
     def test_risk_flags_list_sanitised(self):
         a = _parse_one_assessment(self._base(risk_flags=None), **PROMPT_META)
@@ -948,15 +951,10 @@ class TestEmptyMalformedCriteria:
         items = _flatten_criteria({"skills": {"required": None, "preferred": None}})
         assert items == []
 
-    def test_absent_fallback_covers_all_criteria(self):
-        criteria = [
-            {"text": "Python", "dimension": "skills", "required": True},
-            {"text": "3 years", "dimension": "experience", "required": True},
-        ]
-        result = _absent_fallback_assessments(criteria, "rc", "1", "gpt-4o-mini", "test")
-        assert len(result) == 2
-        assert all(a.status == "ABSENT" for a in result)
-        assert all("assessment_failed" in a.risk_flags for a in result)
+    def test_no_absent_fallback_helper(self):
+        """P0-02a: the all-ABSENT placeholder helper no longer exists."""
+        import services.llm_criteria_mapper as m
+        assert not hasattr(m, "_absent_fallback_assessments")
 
     def test_snippet_selection_short_cv(self):
         result = _select_evidence_snippets("ok", [], max_snippets=10)
@@ -1133,11 +1131,9 @@ class TestSoftSkillPipelineRepair:
                 "risk_flags": [],
             }]
         })
-        result, _ = _parse_llm_response(raw, [{"text": "Python", "dimension": "skills", "required": True}], **PROMPT_META)
-        assert result[0].status == "ABSENT"
-        assert result[0].match_type == "missing"
-        assert result[0].confidence == pytest.approx(0.0)
-        assert "missing_supporting_evidence" in result[0].risk_flags
+        # P0-02a: evidence-less MATCHED invalidates the response (no C4 downgrade)
+        with pytest.raises(CriteriaMappingResponseError, match="MATCHED without supporting_evidence"):
+            _parse_llm_response(raw, [{"text": "Python", "dimension": "skills", "required": True}], **PROMPT_META)
 
     def test_partial_without_evidence_downgraded_to_absent(self):
         raw = json.dumps({
@@ -1154,13 +1150,13 @@ class TestSoftSkillPipelineRepair:
                 "risk_flags": [],
             }]
         })
-        result, _ = _parse_llm_response(
-            raw,
-            [{"text": "teamwork", "dimension": "soft_skills", "required": False}],
-            **PROMPT_META,
-        )
-        assert result[0].status == "ABSENT"
-        assert "missing_supporting_evidence" in result[0].risk_flags
+        # P0-02a: evidence-less PARTIAL invalidates the response (no C4 downgrade)
+        with pytest.raises(CriteriaMappingResponseError, match="PARTIAL without supporting_evidence"):
+            _parse_llm_response(
+                raw,
+                [{"text": "teamwork", "dimension": "soft_skills", "required": False}],
+                **PROMPT_META,
+            )
 
     def test_matched_with_evidence_not_downgraded(self):
         raw = json.dumps({
@@ -1202,8 +1198,8 @@ class TestSoftSkillPipelineRepair:
         assert result[0].status == "ABSENT"
         assert "missing_supporting_evidence" not in result[0].risk_flags
 
-    def test_downgrade_preserves_existing_risk_flags(self):
-        """Existing risk_flags must be preserved when downgrading."""
+    def test_evidence_less_partial_with_flags_still_invalid(self):
+        """P0-02a: existing risk_flags do not excuse missing evidence."""
         raw = json.dumps({
             "assessments": [{
                 "criterion_text": "leadership",
@@ -1218,14 +1214,12 @@ class TestSoftSkillPipelineRepair:
                 "risk_flags": ["self_assessed_only"],
             }]
         })
-        result, _ = _parse_llm_response(
-            raw,
-            [{"text": "leadership", "dimension": "soft_skills", "required": True}],
-            **PROMPT_META,
-        )
-        assert result[0].status == "ABSENT"
-        assert "self_assessed_only" in result[0].risk_flags
-        assert "missing_supporting_evidence" in result[0].risk_flags
+        with pytest.raises(CriteriaMappingResponseError):
+            _parse_llm_response(
+                raw,
+                [{"text": "leadership", "dimension": "soft_skills", "required": True}],
+                **PROMPT_META,
+            )
 
     # ── Feature flag still gates the mapper ──────────────────────────────────
 

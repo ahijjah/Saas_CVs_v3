@@ -420,6 +420,7 @@ def _llm_assessment_from_dict(d: dict) -> LLMCriterionAssessment:
         prompt_code=_s(d, "prompt_code"),
         prompt_version=_s(d, "prompt_version"),
         llm_model=_s(d, "llm_model"),
+        cd_reason=(d.get("cd_reason") or None) if isinstance(d.get("cd_reason"), str) else None,
     )
 
 
@@ -459,6 +460,7 @@ def llm_matchresult_from_dict(data: Any) -> LLMMatchResult:
         matched_count=_i(data, "matched_count"),
         partial_count=_i(data, "partial_count"),
         absent_count=_i(data, "absent_count"),
+        cannot_determine_count=_i(data, "cannot_determine_count"),
         high_confidence_count=_i(data, "high_confidence_count"),
         low_confidence_count=_i(data, "low_confidence_count"),
         qualitative_summary=_parse_qs(data.get("qualitative_summary")),

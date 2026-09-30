@@ -11,6 +11,10 @@ Design
    - MATCHED  → status_credit = 1.0
    - PARTIAL  → status_credit = cfg.partial_credit  (default 0.50)
    - ABSENT   → status_credit = 0.0
+   - CANNOT_DETERMINE → verified credit 0.0, upper credit 1.0 (P0-02a).
+     Every CD criterion stays in the denominator; the verified score is what
+     the CV evidence supports and the upper score is the maximum if every
+     unresolved criterion is later verified as fully met.
 
 2. match_quality_factor:
    - direct:       1.00
@@ -41,7 +45,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from services.llm_criteria_mapper import LLMMatchResult, QualitativeSummary
+from services.llm_criteria_mapper import (
+    STATUS_CANNOT_DETERMINE,
+    LLMMatchResult,
+    QualitativeSummary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +58,7 @@ try:
 except ImportError:
     MatchResult = None  # Optional import for Phase 3 reconciliation
 
-_ENGINE_VERSION = "det_score_v2"
+_ENGINE_VERSION = "det_score_v3"  # P0-02a: verified/upper scores, CANNOT_DETERMINE
 
 # ── Match-type factors ────────────────────────────────────────────────────────
 
@@ -106,7 +114,7 @@ class DeterministicCriterionScore:
     criterion_text:       str
     dimension:            str
     required:             bool
-    status:               str            # MATCHED | PARTIAL | ABSENT
+    status:               str            # MATCHED | PARTIAL | ABSENT | CANNOT_DETERMINE
     match_type:           str
     criterion_class:      str
     status_credit:        float          # 0.0 | partial_credit | 1.0
@@ -116,6 +124,18 @@ class DeterministicCriterionScore:
     supporting_evidence:  list[str]
     risk_flags:           list[str]
     has_overqualification: bool
+    cd_reason:            str | None = None
+    upper_credit:         float | None = None   # None → equals effective_credit
+    pending_worth:        float = 0.0           # final-score points (CD rows only)
+    match_reason:         str = ""
+
+    @property
+    def verified_credit(self) -> float:
+        return self.effective_credit
+
+    @property
+    def upper(self) -> float:
+        return self.effective_credit if self.upper_credit is None else self.upper_credit
 
 
 @dataclass
@@ -140,6 +160,10 @@ class DeterministicDimensionScore:
     low_confidence_count:       int
     review_recommended:         bool
     criteria:                   list[DeterministicCriterionScore]
+    dimension_score_upper:      float = 0.0
+    weighted_contribution_upper: float = 0.0
+    n_required_cannot_determine:  int = 0
+    n_preferred_cannot_determine: int = 0
 
 
 @dataclass
@@ -152,6 +176,7 @@ class DeterministicScore:
     overqualification_risk_dimensions: list[str]
     dimensions:                      dict[str, DeterministicDimensionScore]
     qualitative_summary:             QualitativeSummary | None = None
+    upper_score:                     int | None = None   # None → equals final_score
 
 
 # ── Core calculation helpers ──────────────────────────────────────────────────
@@ -208,6 +233,13 @@ def _status_credit(status: str, cfg: DeterministicScoringConfig) -> float:
     if status == "PARTIAL":
         return cfg.partial_credit
     return 0.0
+
+
+def _upper_status_credit(status: str, cfg: DeterministicScoringConfig) -> float:
+    """Status credit for the upper bound: CANNOT_DETERMINE counts as fully met."""
+    if status == STATUS_CANNOT_DETERMINE:
+        return 1.0
+    return _status_credit(status, cfg)
 
 
 def _check_evidence_criterion_overlap(
@@ -307,6 +339,22 @@ def _check_min_years_threshold(
             if candidate_years >= required_years:
                 return True
     return None
+
+
+def _min_years_shortfall(criterion_text: str, evidence: list[str]) -> bool:
+    """True when a minimum-years criterion has years values in the evidence and
+    every one of them is below the requirement (an established shortfall)."""
+    crit_match = _MIN_YEARS_CRITERION_RE.search(criterion_text or "")
+    if not crit_match:
+        return False
+    required_years = float(crit_match.group(1))
+    found = [
+        float(m.group(1))
+        for ev in evidence
+        for m in [_EVIDENCE_YEARS_RE.search(ev or "")]
+        if m
+    ]
+    return bool(found) and max(found) < required_years
 
 
 # ── Phase 3 Reconciliation: Local matcher relevance bounds on LLM results ─────
@@ -427,6 +475,26 @@ def _apply_local_relevance_bound(
     return None, None
 
 
+def _local_relevance_shortfall_established(
+    criterion_text: str,
+    llm_evidence: list[str],
+    local_criterion: Any,
+) -> bool:
+    """P0-02a: does the local Phase 3 result record an ESTABLISHED shortfall?
+
+    Established (the local PARTIAL/ABSENT stands, as before):
+      - the local matcher's numeric years comparison did not pass
+        (local ABSENT: "No verifiable years and no clear role relevance"), or
+      - years found in the LLM/local evidence are all below the requirement.
+    Not established (→ CANNOT_DETERMINE, relevance_unverified):
+      - local PARTIAL because years passed but role relevance is not verified
+        (a relevance-only disagreement is not established non-compliance).
+    """
+    local_status = _get_field(local_criterion, "status") or "ABSENT"
+    if local_status != "PARTIAL":
+        return True
+    local_evidence = list(_get_field(local_criterion, "supporting_evidence", []) or [])
+    return _min_years_shortfall(criterion_text, list(llm_evidence) + local_evidence)
 
 
 # ── Engine ────────────────────────────────────────────────────────────────────
@@ -497,6 +565,7 @@ class DeterministicScoringEngine:
 
         dimension_scores: dict[str, DeterministicDimensionScore] = {}
         weighted_sum: float = 0.0
+        weighted_sum_upper: float = 0.0
 
         for dim, wk in _DIMENSION_WEIGHT_KEY.items():
             w = weights.get(wk, 0)
@@ -504,11 +573,13 @@ class DeterministicScoringEngine:
             dim_score_obj = self._score_dimension(dim, criteria_list, w, total_weight, cfg)
             dimension_scores[dim] = dim_score_obj
             weighted_sum += dim_score_obj.weighted_contribution
+            weighted_sum_upper += dim_score_obj.weighted_contribution_upper
 
         # ── Final score ───────────────────────────────────────────────────────
         # weighted_contribution already accounts for normalised weights,
         # so the raw sum × 100 gives the final score in [0, 100].
         final_score = min(100, math.ceil(weighted_sum * 100))
+        upper_score = max(final_score, min(100, math.ceil(weighted_sum_upper * 100)))
 
         # ── Overqualification risk dimensions ────────────────────────────────
         oq_dims = [
@@ -525,6 +596,7 @@ class DeterministicScoringEngine:
             overqualification_risk_dimensions=oq_dims,
             dimensions=dimension_scores,
             qualitative_summary=llm_match_result.qualitative_summary,
+            upper_score=upper_score,
         )
 
     # ── Private helpers ───────────────────────────────────────────────────────
@@ -541,6 +613,11 @@ class DeterministicScoringEngine:
         confidence      = float(assessment.confidence or 0.0)
         evidence        = list(assessment.supporting_evidence or [])
         risk_flags      = list(assessment.risk_flags or [])
+        cd_reason       = getattr(assessment, "cd_reason", None) if status == STATUS_CANNOT_DETERMINE else None
+
+        # CANNOT_DETERMINE skips every status-specific adjustment below
+        # (inferred normalisation, min-years, overlap upgrade, severity
+        # scaling): its verified credit is 0 and its upper credit is 1.0.
 
         # Normalize contradictory status/match_type: when the LLM finds evidence
         # and sets status=MATCHED/PARTIAL but also sets match_type='missing',
@@ -590,7 +667,19 @@ class DeterministicScoringEngine:
         ):
             local_match = _find_matching_local_criterion(criterion_text, local_matches, assessment)
             risk_flag, new_confidence = _apply_local_relevance_bound(assessment, local_match)
-            if risk_flag is not None:
+            if risk_flag is not None and not _local_relevance_shortfall_established(
+                criterion_text, evidence, local_match
+            ):
+                # P0-02a: relevance-only disagreement, no established shortfall
+                # → the criterion is unresolved, not failed.
+                status = STATUS_CANNOT_DETERMINE
+                cd_reason = "relevance_unverified"
+                if new_confidence is not None:
+                    confidence = new_confidence
+                for flag in (risk_flag, "local_relevance_check"):
+                    if flag not in risk_flags:
+                        risk_flags.append(flag)
+            elif risk_flag is not None:
                 # Bound the LLM's result to the local matcher's status
                 status = _get_field(local_match, "status", "ABSENT")
                 if new_confidence is not None:
@@ -622,7 +711,8 @@ class DeterministicScoringEngine:
         # - Not a minimum-years criterion, OR
         # - Is a minimum-years criterion AND threshold is met AND status is MATCHED
         allow_overlap_upgrade = (
-            match_type == "inferred"
+            status != STATUS_CANNOT_DETERMINE
+            and match_type == "inferred"
             and evidence
             and criterion_text
             and (not is_years_criterion or (years_threshold_met is True and status == "MATCHED"))
@@ -677,6 +767,7 @@ class DeterministicScoringEngine:
                 risk_flags.append("experience_role_mismatch_severity_scaled")
 
         effective = sc * qf
+        upper = _upper_status_credit(status, cfg) if status == STATUS_CANNOT_DETERMINE else effective
 
         has_oq = "overqualified" in risk_flags
 
@@ -694,6 +785,9 @@ class DeterministicScoringEngine:
             supporting_evidence=evidence,
             risk_flags=risk_flags,
             has_overqualification=has_oq,
+            cd_reason=cd_reason,
+            upper_credit=upper,
+            match_reason=str(getattr(assessment, "match_reason", "") or ""),
         )
 
     @staticmethod
@@ -707,22 +801,31 @@ class DeterministicScoringEngine:
         required_crit  = [c for c in criteria if c.required]
         preferred_crit = [c for c in criteria if not c.required]
 
-        # Per-group averages
-        def _avg(clist: list[DeterministicCriterionScore]) -> float:
+        # Per-group averages (verified and upper; every criterion, including
+        # CANNOT_DETERMINE, stays in the denominator)
+        def _avg(clist: list[DeterministicCriterionScore], upper: bool = False) -> float:
             if not clist:
                 return 0.0
-            return sum(c.effective_credit for c in clist) / len(clist)
+            return sum((c.upper if upper else c.effective_credit) for c in clist) / len(clist)
 
         req_avg  = _avg(required_crit)
         pref_avg = _avg(preferred_crit)
+        req_avg_upper  = _avg(required_crit, upper=True)
+        pref_avg_upper = _avg(preferred_crit, upper=True)
 
         # Weighted dimension score
         if required_crit and preferred_crit:
             dim_score = req_avg * cfg.required_weight + pref_avg * cfg.preferred_weight
+            dim_score_upper = req_avg_upper * cfg.required_weight + pref_avg_upper * cfg.preferred_weight
+            req_share, pref_share = cfg.required_weight, cfg.preferred_weight
         elif required_crit:
             dim_score = req_avg
+            dim_score_upper = req_avg_upper
+            req_share, pref_share = 1.0, 0.0
         else:
             dim_score = pref_avg
+            dim_score_upper = pref_avg_upper
+            req_share, pref_share = 0.0, 1.0
 
         # Optional required-absent floor
         absent_floor_triggered = False
@@ -733,10 +836,20 @@ class DeterministicScoringEngine:
                 if dim_score > cfg.required_absent_floor_cap:
                     dim_score = cfg.required_absent_floor_cap
                     absent_floor_triggered = True
+                # The floor counts ABSENT only; the same cap bounds the upper.
+                dim_score_upper = min(dim_score_upper, cfg.required_absent_floor_cap)
+        dim_score_upper = max(dim_score_upper, dim_score)
 
         # Normalised weight fraction
         weight_pct = weight / total_weight if total_weight > 0 else 0.0
         weighted_contrib = dim_score * weight_pct
+        weighted_contrib_upper = dim_score_upper * weight_pct
+
+        # Final-score points each unresolved criterion could add if verified
+        for group, share in ((required_crit, req_share), (preferred_crit, pref_share)):
+            for c in group:
+                if c.status == STATUS_CANNOT_DETERMINE:
+                    c.pending_worth = round(weight_pct * share / len(group) * 100, 1)
 
         # Counters
         def _count(clist: list[DeterministicCriterionScore], status: str) -> int:
@@ -769,6 +882,10 @@ class DeterministicScoringEngine:
             low_confidence_count=low_conf,
             review_recommended=review,
             criteria=criteria,
+            dimension_score_upper=dim_score_upper,
+            weighted_contribution_upper=weighted_contrib_upper,
+            n_required_cannot_determine=_count(required_crit, STATUS_CANNOT_DETERMINE),
+            n_preferred_cannot_determine=_count(preferred_crit, STATUS_CANNOT_DETERMINE),
         )
 
 
@@ -789,6 +906,11 @@ def _criterion_to_dict(c: DeterministicCriterionScore) -> dict[str, Any]:
         "supporting_evidence":  c.supporting_evidence,
         "risk_flags":           c.risk_flags,
         "has_overqualification": c.has_overqualification,
+        "cd_reason":            c.cd_reason,
+        "match_reason":         c.match_reason,
+        "verified_credit":      round(c.verified_credit, 4),
+        "upper_credit":         round(c.upper, 4),
+        "pending_worth":        c.pending_worth,
     }
 
 
@@ -796,6 +918,7 @@ def _dimension_to_dict(ds: DeterministicDimensionScore) -> dict[str, Any]:
     return {
         "dimension":                     ds.dimension,
         "dimension_score":               round(ds.dimension_score, 4),
+        "dimension_score_upper":         round(ds.dimension_score_upper, 4),
         "weighted_contribution":         round(ds.weighted_contribution, 4),
         "weight_pct":                    round(ds.weight_pct, 4),
         "n_required":                    ds.n_required,
@@ -806,6 +929,8 @@ def _dimension_to_dict(ds: DeterministicDimensionScore) -> dict[str, Any]:
         "n_preferred_matched":           ds.n_preferred_matched,
         "n_preferred_partial":           ds.n_preferred_partial,
         "n_preferred_absent":            ds.n_preferred_absent,
+        "n_required_cannot_determine":   ds.n_required_cannot_determine,
+        "n_preferred_cannot_determine":  ds.n_preferred_cannot_determine,
         "required_avg":                  round(ds.required_avg, 4),
         "preferred_avg":                 round(ds.preferred_avg, 4),
         "required_absent_floor_triggered": ds.required_absent_floor_triggered,
@@ -890,6 +1015,38 @@ def decision_from_signal(signal: str) -> str:
     return _SIGNAL_TO_DECISION.get(signal, "partial")
 
 
+DECISION_NEEDS_VERIFICATION = "needs_verification"
+
+
+def _signal_for_counts(
+    req_total: int, req_matched: int, req_partial: int, req_absent: int,
+    pref_total: int, pref_matched: int,
+) -> tuple[str, str]:
+    req_coverage  = round(req_matched / req_total * 100, 1) if req_total > 0 else None
+    req_pm_pct    = round((req_matched + req_partial) / req_total * 100, 1) if req_total > 0 else None
+    pref_coverage = round(pref_matched / pref_total * 100, 1) if pref_total > 0 else None
+    return _recruiter_signal(
+        req_total, req_coverage, pref_coverage,
+        partial_or_matched_pct=req_pm_pct,
+        blocking_gaps=req_absent,
+    )
+
+
+def recommendation_from_decisions(n_required_cd: int, d_lower: str, d_upper: str) -> str:
+    """P0-02a recommendation rule. Never rejects because of CANNOT_DETERMINE.
+
+    d_lower: decision with required CD counted in the total only.
+    d_upper: decision with every required CD counted as MATCHED.
+    """
+    if n_required_cd == 0:
+        return d_lower
+    if d_upper == "qualified" and d_lower != "qualified":
+        return DECISION_NEEDS_VERIFICATION
+    if d_lower == "rejected" and d_upper != "rejected":
+        return d_upper
+    return d_lower
+
+
 def deterministic_score_to_dict(score: DeterministicScore) -> dict[str, Any]:
     """Serialise a DeterministicScore to a JSON-safe dict (det_score_json schema)."""
     dims = score.dimensions
@@ -902,25 +1059,51 @@ def deterministic_score_to_dict(score: DeterministicScore) -> dict[str, Any]:
     pref_matched = sum(ds.n_preferred_matched for ds in dims.values())
     pref_partial = sum(ds.n_preferred_partial for ds in dims.values())
     pref_absent  = sum(ds.n_preferred_absent  for ds in dims.values())
+    req_cd  = sum(ds.n_required_cannot_determine  for ds in dims.values())
+    pref_cd = sum(ds.n_preferred_cannot_determine for ds in dims.values())
 
     req_coverage  = round(req_matched / req_total * 100, 1)  if req_total  > 0 else None
     req_pm_pct    = round((req_matched + req_partial) / req_total * 100, 1) if req_total > 0 else None
     pref_coverage = round(pref_matched / pref_total * 100, 1) if pref_total > 0 else None
     pref_pm_pct   = round((pref_matched + pref_partial) / pref_total * 100, 1) if pref_total > 0 else None
 
-    blocking_gaps  = req_absent
-    fully_covered  = req_total > 0 and req_absent == 0 and req_partial == 0
-    signal, label  = _recruiter_signal(
-        req_total, req_coverage, pref_coverage,
-        partial_or_matched_pct=req_pm_pct,
-        blocking_gaps=blocking_gaps,
+    blocking_gaps  = req_absent  # confirmed gaps only; CANNOT_DETERMINE is never blocking
+    fully_covered  = req_total > 0 and req_absent == 0 and req_partial == 0 and req_cd == 0
+    # D_L: required CD counted in the total only (not matched/partial/absent)
+    signal, label  = _signal_for_counts(
+        req_total, req_matched, req_partial, req_absent, pref_total, pref_matched,
     )
+    decision_verified_basis = decision_from_signal(signal)
+    # D_U: every required CD counted as MATCHED
+    signal_u, _ = _signal_for_counts(
+        req_total, req_matched + req_cd, req_partial, req_absent, pref_total, pref_matched,
+    )
+    decision_if_verified = decision_from_signal(signal_u)
+    recommendation = recommendation_from_decisions(
+        req_cd, decision_verified_basis, decision_if_verified,
+    )
+
+    upper_score = score.upper_score if score.upper_score is not None else score.final_score
+    verification_items = [
+        {
+            "criterion_text": c.criterion_text,
+            "dimension":      c.dimension,
+            "required":       c.required,
+            "cd_reason":      c.cd_reason,
+            "pending_worth":  c.pending_worth,
+        }
+        for ds in dims.values()
+        for c in ds.criteria
+        if c.status == STATUS_CANNOT_DETERMINE
+    ]
+    verification_items.sort(key=lambda i: (not i["required"], -i["pending_worth"]))
 
     required_summary = {
         "total":         req_total,
         "matched":       req_matched,
         "partial":       req_partial,
         "absent":        req_absent,
+        "cannot_determine": req_cd,
         "coverage_pct":  req_coverage,
         "partial_or_matched_pct": req_pm_pct,
         "blocking_gaps": blocking_gaps,
@@ -933,6 +1116,7 @@ def deterministic_score_to_dict(score: DeterministicScore) -> dict[str, Any]:
         "matched":       pref_matched,
         "partial":       pref_partial,
         "absent":        pref_absent,
+        "cannot_determine": pref_cd,
         "coverage_pct":  pref_coverage,
         "partial_or_matched_pct": pref_pm_pct,
         "signal":        _pref_signal(pref_coverage),
@@ -952,6 +1136,13 @@ def deterministic_score_to_dict(score: DeterministicScore) -> dict[str, Any]:
     return {
         "_schema":                          score.scoring_version,
         "final_score":                      score.final_score,
+        "verified_score":                   score.final_score,
+        "upper_score":                      upper_score,
+        "pending_points":                   upper_score - score.final_score,
+        "decision_verified_basis":          decision_verified_basis,
+        "decision_if_verified":             decision_if_verified,
+        "recommendation":                   recommendation,
+        "verification_items":               verification_items,
         "scoring_version":                  score.scoring_version,
         "scored_at":                        score.scored_at,
         "mapper_version":                   score.mapper_version,

@@ -30,7 +30,10 @@ type StopReasonFilter =
   | 'scoring_failed'
   | 'processing_error';
 
-type AiResultFilter = 'all' | 'qualified' | 'partial' | 'rejected_low_match' | 'not_scored';
+type AiResultFilter = 'all' | 'qualified' | 'needs_verification' | 'partial' | 'rejected_low_match' | 'not_scored';
+
+// P0-02a: optional score orderings ('' = newest first, the default)
+type SortKey = '' | 'score' | 'score_upper' | 'pending_points';
 
 type GenderFilter = 'all' | 'male' | 'female' | 'unknown';
 
@@ -73,6 +76,7 @@ function fromLegacyFilter(f: ApplicationFilter): AppFilters {
     case 'ai_scored':          return { ...base, processing: 'ai_scored' };
     case 'qualified':          return { ...base, processing: 'ai_scored', aiResult: 'qualified' };
     case 'partial':            return { ...base, processing: 'ai_scored', aiResult: 'partial' };
+    case 'needs_verification': return { ...base, processing: 'ai_scored', aiResult: 'needs_verification' };
     case 'rejected':
     case 'low_match':          return { ...base, processing: 'ai_scored', aiResult: 'rejected_low_match' };
     case 'security_blocked':   return { ...base, processing: 'stopped_before_ai', stopReason: 'security_blocked' };
@@ -157,6 +161,7 @@ const T = {
     aiAll:               'All AI Results',
     aiQualified:         'Qualified',
     aiPartial:           'Partial',
+    aiNeedsVerification: 'Needs verification',
     aiRejectedLowMatch:  'Rejected / Low Match',
     aiNotScored:         'Not Scored',
     // Workflow options
@@ -183,7 +188,16 @@ const T = {
     // AI decision labels (card pill)
     decQualified:  'Qualified',
     decPartial:    'Partial',
+    decNeedsVerification: 'Needs verification',
     decRejected:   'Rejected',
+    // P0-02a
+    dimSort:          'Sort',
+    sortNewest:       'Newest',
+    sortVerifiedScore: 'Verified score',
+    sortScoreUpper:   'Score range upper bound',
+    sortPending:      'Pending verification',
+    scoreRange:       'Score range',
+    scoreRangeTooltip: 'Upper value = the maximum score if every unresolved criterion is later verified as fully met. It is not a prediction.',
   },
   ar: {
     backToJob:        'العودة إلى الوظيفة',
@@ -216,6 +230,7 @@ const T = {
     aiAll:               'جميع نتائج الذكاء',
     aiQualified:         'مؤهل',
     aiPartial:           'جزئي',
+    aiNeedsVerification: 'بحاجة إلى تحقق',
     aiRejectedLowMatch:  'مرفوض / تطابق منخفض',
     aiNotScored:         'لم يُقيَّم',
     wfAll: 'جميع المراحل',
@@ -238,7 +253,15 @@ const T = {
     general:          'عام',
     decQualified:     'مؤهل',
     decPartial:       'جزئي',
+    decNeedsVerification: 'بحاجة إلى تحقق',
     decRejected:      'مرفوض',
+    dimSort:          'الترتيب',
+    sortNewest:       'الأحدث',
+    sortVerifiedScore: 'الدرجة المُتحقَّق منها',
+    sortScoreUpper:   'الحد الأعلى لنطاق الدرجة',
+    sortPending:      'بانتظار التحقق',
+    scoreRange:       'نطاق الدرجة',
+    scoreRangeTooltip: 'القيمة العليا = أعلى درجة ممكنة إذا تم التحقق لاحقاً من استيفاء كل معيار غير محسوم بالكامل. وهي ليست تنبؤاً.',
   },
 };
 
@@ -312,13 +335,16 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   const fetchInFlightRef                          = useRef<string | null>(null);
   const [jobMeta, setJobMeta]                     = useState<JobMeta | null>(null);
   const [downloadingCVId, setDownloadingCVId]     = useState<string | null>(null);
+  const [sortKey, setSortKey]                     = useState<SortKey>('');
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
   const fetchApplications = async () => {
     setLoading(true);
     try {
-      const data = await apiService.get(WEBHOOK_CONFIG.GET_APPLICATIONS_WEBHOOK_URL, { job_id: jobId }, auth.token!);
+      const params: Record<string, string> = { job_id: jobId };
+      if (sortKey) { params.sort_by = sortKey; params.sort_order = 'desc'; }
+      const data = await apiService.get(WEBHOOK_CONFIG.GET_APPLICATIONS_WEBHOOK_URL, params, auth.token!);
       setApplicationsAll(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('[ApplicationsList] Fetch error:', err);
@@ -503,6 +529,11 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   // ── Effects ────────────────────────────────────────────────────────────────
 
   useEffect(() => { fetchApplications(); fetchJobMeta(); }, [jobId]);
+  const sortInitialised = useRef(false);
+  useEffect(() => {
+    if (!sortInitialised.current) { sortInitialised.current = true; return; }
+    fetchApplications();
+  }, [sortKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (view === 'details') setPageTitle(lang === 'ar' ? 'تفاصيل الطلب' : 'Application Details');
@@ -571,6 +602,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         if (!(isAiScored(a) && a.status === 'qualified')) return false; break;
       case 'partial':
         if (!(isAiScored(a) && a.status === 'partial')) return false; break;
+      case 'needs_verification':
+        if (!(isAiScored(a) && a.status === 'needs_verification')) return false; break;
       case 'rejected_low_match':
         if (!(isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase()) === 'rejected')) return false; break;
       case 'not_scored':
@@ -642,6 +675,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     const s = normaliseStatus((app.status ?? '').toLowerCase().trim());
     if (s === 'qualified') return { pill: 'bg-green-100 text-green-800', badge: 'bg-success',  label: t.decQualified, score: app.score != null ? String(app.score) : '—' };
     if (s === 'partial')   return { pill: 'bg-amber-100 text-amber-800', badge: 'bg-warning',  label: t.decPartial,   score: app.score != null ? String(app.score) : '—' };
+    if (s === 'needs_verification') return { pill: 'bg-amber-50 text-amber-800 border border-amber-300', badge: 'bg-warning', label: t.decNeedsVerification, score: app.score != null ? String(app.score) : '—' };
     return                        { pill: 'bg-red-100   text-red-800',   badge: 'bg-error',    label: t.decRejected,  score: app.score != null ? String(app.score) : '—' };
   };
 
@@ -667,6 +701,7 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
   const aiResultOptions = [
     { value: 'all',              label: t.aiAll              },
     { value: 'qualified',        label: t.aiQualified        },
+    { value: 'needs_verification', label: t.aiNeedsVerification },
     { value: 'partial',          label: t.aiPartial          },
     { value: 'rejected_low_match', label: t.aiRejectedLowMatch },
     { value: 'not_scored',       label: t.aiNotScored        },
@@ -771,6 +806,18 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
             active={filters.gender !== 'all'}
             onChange={v => updateFilters({ gender: v as GenderFilter })}
             options={genderOptions}
+          />
+          <FilterSelect
+            label={t.dimSort}
+            value={sortKey}
+            active={sortKey !== ''}
+            onChange={v => setSortKey(v as SortKey)}
+            options={[
+              { value: '',               label: t.sortNewest        },
+              { value: 'score',          label: t.sortVerifiedScore },
+              { value: 'score_upper',    label: t.sortScoreUpper    },
+              { value: 'pending_points', label: t.sortPending       },
+            ]}
           />
         </div>
 
@@ -877,6 +924,12 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${styles.pill}`}>
                     {styles.label}
                   </span>
+                  {/* P0-02a: score range when points are pending verification */}
+                  {app.score != null && app.score_upper != null && (app.pending_points ?? 0) > 0 && (
+                    <span className="text-[10px] font-bold text-amber-800 tabular-nums" title={t.scoreRangeTooltip}>
+                      {t.scoreRange}: {app.score}–{app.score_upper}%
+                    </span>
+                  )}
                   {/* Workflow status pill */}
                   {wfStatus && (
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider ${WORKFLOW_STATUS_STYLES[wfStatus]}`}>

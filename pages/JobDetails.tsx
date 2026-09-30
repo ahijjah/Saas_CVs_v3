@@ -27,7 +27,7 @@ const T = {
     kpiAiScoredLabel: 'AI Scored',
     kpiBlockedLabel: 'Stopped Before AI',
     kpiNoneBlocked: 'None',
-    kpiLabels: ['Qualified', 'Partial', 'Rejected'],
+    kpiLabels: ['Qualified', 'Needs verification', 'Partial', 'Rejected'],
     kpiChipSecurityBlocked: 'Security Blocked',
     kpiChipDuplicateBlocked: 'Duplicate Blocked',
     kpiChipFailedNeedsReview: 'Failed / Needs Review',
@@ -271,7 +271,7 @@ const T = {
     kpiAiScoredLabel: 'مُقيَّم بالذكاء الاصطناعي',
     kpiBlockedLabel: 'موقوف قبل الذكاء الاصطناعي',
     kpiNoneBlocked: 'لا يوجد',
-    kpiLabels: ['مؤهلون', 'جزئيون', 'مرفوضون'],
+    kpiLabels: ['مؤهلون', 'بحاجة إلى تحقق', 'جزئيون', 'مرفوضون'],
     kpiChipSecurityBlocked: 'محظور أمنياً',
     kpiChipDuplicateBlocked: 'مكرر موقوف',
     kpiChipFailedNeedsReview: 'فشل / يحتاج مراجعة',
@@ -1326,6 +1326,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const aiScoredTotal   = (details as any).applications_scored || 0;
   const aiSubItems = [
     { value: details.applications_qualified || 0, filter: 'qualified', color: 'text-success',   hoverBg: 'hover:bg-green-50  hover:border-green-200',  hoverText: 'group-hover:text-success' },
+    { value: details.applications_needs_verification || 0, filter: 'needs_verification', color: 'text-amber-600', hoverBg: 'hover:bg-amber-50  hover:border-amber-200',  hoverText: 'group-hover:text-amber-700' },
     { value: details.applications_partial   || 0, filter: 'partial',   color: 'text-warning',   hoverBg: 'hover:bg-amber-50  hover:border-amber-200',  hoverText: 'group-hover:text-warning' },
     { value: details.applications_rejected  || 0, filter: 'rejected',  color: 'text-error',     hoverBg: 'hover:bg-red-50    hover:border-red-200',    hoverText: 'group-hover:text-error'   },
   ];
@@ -1389,6 +1390,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     const map: Record<string, string> = {
       qualified: 'bg-green-100 text-success',
       partial:   'bg-amber-100 text-warning',
+      needs_verification: 'bg-amber-50 text-amber-800 border border-amber-300',
       rejected:  'bg-red-100 text-error',
     };
     return <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${map[cv.decision] || 'bg-slate-100 text-textMuted'}`}>{cv.decision}</span>;
@@ -1396,9 +1398,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   // ── Mini donut chart ───────────────────────────────────────────────────────
   const qualifiedCount = details.applications_qualified || 0;
+  const needsVerificationCount = details.applications_needs_verification || 0;
   const partialCount   = details.applications_partial   || 0;
   const rejectedCount  = details.applications_rejected  || 0;
-  const chartTotal     = qualifiedCount + partialCount + rejectedCount;
+  const chartTotal     = qualifiedCount + needsVerificationCount + partialCount + rejectedCount;
   const renderDonut = () => {
     const r = 32; const circ = 2 * Math.PI * r;
     if (chartTotal === 0) return (
@@ -1409,6 +1412,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     );
     const segs = [
       { count: qualifiedCount, color: '#16a34a' },
+      { count: needsVerificationCount, color: '#fcd34d' },
       { count: partialCount,   color: '#d97706' },
       { count: rejectedCount,  color: '#dc2626' },
     ];
@@ -1520,7 +1524,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 {aiScoredTotal}
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {aiSubItems.map((item, idx) => (
                 <button key={idx} onClick={() => onViewApplications(details.job_id, item.filter)}
                   className={`flex flex-col items-center py-3 px-2 rounded-xl bg-slate-50 border border-transparent ${item.hoverBg} transition-all group cursor-pointer`}>

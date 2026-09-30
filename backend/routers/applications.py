@@ -130,6 +130,16 @@ async def get_assignable_users(
     return {"users": users}
 
 
+# P0-02a score expressions and candidate-list ordering (services/candidate_ordering.py)
+from services.candidate_ordering import (  # noqa: E402
+    CANDIDATE_SORT_FIELDS as _CANDIDATE_SORT_FIELDS,
+    SQL_PENDING_POINTS as _SQL_PENDING_POINTS,
+    SQL_REQUIRED_TO_VERIFY as _SQL_REQUIRED_TO_VERIFY,
+    SQL_SCORE_UPPER as _SQL_SCORE_UPPER,
+    candidate_order_by as _candidate_order_by,
+)
+
+
 def _build_candidate_filter_clause(
     current_user,
     is_admin: bool,
@@ -370,7 +380,7 @@ async def list_applications(
     Supports multi-dimensional filtering:
     - workflow_status: awaiting_review, under_review, interviewing, etc.
     - processing_status: ai_scored, pending, failed, security_blocked, etc.
-    - ai_decision: qualified, partial, rejected_low_match, not_scored
+    - ai_decision: qualified, partial, needs_verification, rejected_low_match, not_scored
     - possible_duplicate: true/false
     - has_notes: true/false
     - date range: applied_after, applied_before (ISO format)
@@ -395,9 +405,8 @@ async def list_applications(
     offset = (page - 1) * limit
 
     # Validate sorting
-    valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
-    sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
-    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+    sort_by = sort_by if sort_by in _CANDIDATE_SORT_FIELDS else "applied_at"
+    order_by = _candidate_order_by(sort_by, sort_order)
 
     where_clause, params = _build_candidate_filter_clause(
         current_user,
@@ -420,14 +429,6 @@ async def list_applications(
         validation_issues=validation_issues,
         gender=gender,
     )
-
-    # Map sort_by to actual column
-    sort_column = {
-        "applied_at": "a.applied_at",
-        "updated_at": "a.scored_at",
-        "score": "COALESCE(s.det_final_score, s.final_score)",
-        "candidate_name": "a.candidate_name",
-    }.get(sort_by, "a.applied_at")
 
     # Count total for pagination
     count_query = f"""
@@ -464,6 +465,11 @@ async def list_applications(
             a.scored_at                         AS updated_at,
             a.is_talent_pool,
             COALESCE(s.det_final_score, s.final_score) AS score,
+            CASE WHEN COALESCE(s.det_final_score, s.final_score) IS NULL THEN NULL
+                 ELSE {_SQL_SCORE_UPPER} END    AS score_upper,
+            CASE WHEN COALESCE(s.det_final_score, s.final_score) IS NULL THEN NULL
+                 ELSE {_SQL_PENDING_POINTS} END AS pending_points,
+            {_SQL_REQUIRED_TO_VERIFY}           AS required_to_verify,
             s.evaluation_notes                  AS summary,
             j.allow_advanced_workflow_move      AS job_allow_advanced_workflow_move,
             a.assigned_user_id,
@@ -504,7 +510,7 @@ async def list_applications(
         LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
         LEFT JOIN users au ON au.user_id = a.assigned_user_id
         WHERE {where_clause}
-        ORDER BY {sort_column} {sort_order}
+        ORDER BY {order_by}
         LIMIT :limit OFFSET :offset
     """
 
@@ -544,6 +550,9 @@ async def list_applications(
             "applied_at": r["applied_at"].isoformat() if r["applied_at"] else None,
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
             "score": float(r["score"]) if r["score"] is not None else None,
+            "score_upper": float(r["score_upper"]) if r["score_upper"] is not None else None,
+            "pending_points": float(r["pending_points"]) if r["pending_points"] is not None else None,
+            "required_to_verify": int(r["required_to_verify"] or 0),
             "summary": r["summary"],
             "job_allow_advanced_workflow_move": bool(r["job_allow_advanced_workflow_move"]),
             "assigned_user_id":   str(r["assigned_user_id"]) if r["assigned_user_id"] else None,
@@ -592,6 +601,11 @@ _EXPORT_COLUMNS: list[str] = [
     "Talent Pool",
     "Recruiter Notes",
     "Scoring Method",
+    # P0-02a (appended; existing columns unchanged). "AI Score" stays the
+    # verified score.
+    "Pending Verification Points",
+    "Score Range Upper",
+    "Required Criteria To Verify",
 ]
 
 # Maps raw `decision`/`status` DB values (and the UI's 'rejected_low_match' alias)
@@ -600,6 +614,7 @@ _EXPORT_COLUMNS: list[str] = [
 _AI_RECOMMENDATION_LABELS: dict[str, str] = {
     "qualified":          "Qualified",
     "partial":            "Partial Match",
+    "needs_verification": "Needs Verification",
     "rejected":           "Rejected — Low Match",
     "rejected_low_match": "Rejected — Low Match",
     "low_match":          "Rejected — Low Match",
@@ -640,6 +655,9 @@ def _export_row(r) -> list:
         "Yes" if r["is_talent_pool"] else "No",
         r["recruiter_notes"] or "",
         r["scoring_method"] or "",
+        float(r["pending_points"]) if r["pending_points"] is not None else "",
+        float(r["score_upper"]) if r["score_upper"] is not None else "",
+        int(r["required_to_verify"]) if r["score"] is not None else "",
     ]
 
 
@@ -728,6 +746,7 @@ _WORKFLOW_STATUS_LABELS: dict[str, str] = {
 _AI_DECISION_FILTER_LABELS: dict[str, str] = {
     "qualified":           "Qualified",
     "partial":             "Partial Match",
+    "needs_verification":  "Needs Verification",
     "rejected":            "Rejected — Low Match",
     "rejected_low_match":  "Rejected — Low Match",
     "not_scored":          "Not Scored",
@@ -882,11 +901,13 @@ def _build_pdf_export(
     story.append(Paragraph(f"Total candidates exported: <b>{total}</b>", body_style))
 
     # AI Recommendation summary
-    ai_counts = {"Qualified": 0, "Partial Match": 0, "Not Recommended": 0}
+    ai_counts = {"Qualified": 0, "Needs Verification": 0, "Partial Match": 0, "Not Recommended": 0}
     for r in records:
         decision = (r["status"] or "").lower()
         if decision == "qualified":
             ai_counts["Qualified"] += 1
+        elif decision == "needs_verification":
+            ai_counts["Needs Verification"] += 1
         elif decision == "partial":
             ai_counts["Partial Match"] += 1
         elif decision:
@@ -1035,9 +1056,8 @@ async def export_applications(
     is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
     is_super_admin = (current_user.role or "").lower() == "super_admin"
 
-    valid_sort_fields = {"applied_at", "updated_at", "score", "candidate_name"}
-    sort_by = sort_by if sort_by in valid_sort_fields else "applied_at"
-    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+    sort_by = sort_by if sort_by in _CANDIDATE_SORT_FIELDS else "applied_at"
+    order_by = _candidate_order_by(sort_by, sort_order)
 
     where_clause, params = _build_candidate_filter_clause(
         current_user,
@@ -1060,13 +1080,6 @@ async def export_applications(
         validation_issues=validation_issues,
     )
 
-    sort_column = {
-        "applied_at": "a.applied_at",
-        "updated_at": "a.scored_at",
-        "score": "COALESCE(s.det_final_score, s.final_score)",
-        "candidate_name": "a.candidate_name",
-    }.get(sort_by, "a.applied_at")
-
     # No LIMIT/OFFSET — export must cover every matching record, not one page.
     data_query = f"""
         SELECT
@@ -1078,6 +1091,11 @@ async def export_applications(
             co.organization_name             AS client_org_name,
             COALESCE(s.det_final_score, s.final_score) AS score,
             s.scoring_method                    AS scoring_method,
+            CASE WHEN COALESCE(s.det_final_score, s.final_score) IS NULL THEN NULL
+                 ELSE {_SQL_SCORE_UPPER} END    AS score_upper,
+            CASE WHEN COALESCE(s.det_final_score, s.final_score) IS NULL THEN NULL
+                 ELSE {_SQL_PENDING_POINTS} END AS pending_points,
+            {_SQL_REQUIRED_TO_VERIFY}           AS required_to_verify,
             a.decision                       AS status,
             a.processing_status,
             a.workflow_status,
@@ -1094,7 +1112,7 @@ async def export_applications(
         LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
         LEFT JOIN users au ON au.user_id = a.assigned_user_id
         WHERE {where_clause}
-        ORDER BY {sort_column} {sort_order}
+        ORDER BY {order_by}
     """
 
     rows = await db.execute(text(data_query), params)
@@ -1413,6 +1431,11 @@ async def get_application_details(
     if stage == 1 and gk_passed is False and display_decision == "rejected":
         display_decision = "low_match"  # frontend display alias only
 
+    _overall_score = int(app["det_final_score"] if app["det_final_score"] is not None else (app["final_score"] or 0))
+    _has_score = app["det_final_score"] is not None or app["final_score"] is not None
+    from services.scoring_method import verification_summary
+    _verification = verification_summary(det_score_json, _overall_score if _has_score else None)
+
     return {
         "application_id": str(app["application_id"]),
         "candidate_name": app["candidate_name"],
@@ -1431,7 +1454,9 @@ async def get_application_details(
         "submitted_by_email": app["submitted_by_email"],
         "original_filename":  app["original_filename"],
         "decision": display_decision,
-        "overall_score": int(app["det_final_score"] if app["det_final_score"] is not None else (app["final_score"] or 0)),
+        "overall_score": _overall_score,
+        # P0-02a: overall_score stays the verified score
+        **_verification,
         "submission_source": app["submission_source"],
         "processing_status": app["processing_status"],
         "stopped_reason":    app["stopped_reason"],
@@ -1614,7 +1639,7 @@ async def list_uploaded_cvs(
                       AND auc.tenant_id = CAST(:tid AS uuid)
                 )
               )
-            ORDER BY a.applied_at DESC
+            ORDER BY a.applied_at DESC, a.application_id
         """),
         {
             "jid":      job_id,

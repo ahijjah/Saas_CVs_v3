@@ -59,10 +59,13 @@ interface Candidate {
   campaign_name: string | null;
   client_organization_id: string | null;
   client_org_name: string | null;
-  status: string | null;           // AI decision: qualified/partial/rejected/null
+  status: string | null;           // AI decision: qualified/partial/needs_verification/rejected/null
   processing_status: string;
   workflow_status: WorkflowStatus | null;
-  score: number | null;
+  score: number | null;            // verified score
+  score_upper?: number | null;     // P0-02a: upper bound of the score range
+  pending_points?: number | null;  // P0-02a: points pending verification
+  required_to_verify?: number;
   applied_at: string | null;
   updated_at: string | null;
   duplicate_status: string;
@@ -252,7 +255,15 @@ const T = {
     // AI decision labels
     decQualified: 'Qualified',
     decPartial: 'Partial',
+    decNeedsVerification: 'Needs verification',
     decRejected: 'Rejected',
+    // P0-02a: candidate-list ordering (default stays newest first)
+    sortLabel: 'Sort',
+    sortNewest: 'Newest',
+    sortVerifiedScore: 'Verified score',
+    sortScoreUpper: 'Score range upper bound',
+    sortPending: 'Pending verification',
+    scoreRangeTooltip: 'Verified score {l}%. Upper value {u}% = the maximum score if every unresolved criterion is later verified as fully met. It is not a prediction.',
     decNotScored: 'Not Scored',
     // Processing labels
     procPending: 'Pending',
@@ -520,7 +531,14 @@ const T = {
     next: 'التالي',
     decQualified: 'مؤهل',
     decPartial: 'جزئي',
+    decNeedsVerification: 'بحاجة إلى تحقق',
     decRejected: 'مرفوض',
+    sortLabel: 'الترتيب',
+    sortNewest: 'الأحدث',
+    sortVerifiedScore: 'الدرجة المُتحقَّق منها',
+    sortScoreUpper: 'الحد الأعلى لنطاق الدرجة',
+    sortPending: 'بانتظار التحقق',
+    scoreRangeTooltip: 'الدرجة المُتحقَّق منها {l}%. القيمة العليا {u}% = أعلى درجة ممكنة إذا تم التحقق لاحقاً من استيفاء كل معيار غير محسوم بالكامل. وهي ليست تنبؤاً.',
     decNotScored: 'غير مقيَّم',
     procPending: 'معلق',
     procInProgress: 'قيد المعالجة',
@@ -756,6 +774,7 @@ const T = {
 function aiDecisionStyle(decision: string | null): string {
   if (decision === 'qualified') return 'bg-green-100 text-green-800';
   if (decision === 'partial')   return 'bg-yellow-100 text-yellow-800';
+  if (decision === 'needs_verification') return 'bg-amber-50 text-amber-800 border border-amber-300';
   if (decision === 'rejected' || decision === 'rejected_low_match') return 'bg-red-100 text-red-700';
   return 'bg-slate-100 text-slate-500';
 }
@@ -763,6 +782,7 @@ function aiDecisionStyle(decision: string | null): string {
 function aiDecisionLabel(decision: string | null, t: typeof T['en']): string {
   if (decision === 'qualified') return t.decQualified;
   if (decision === 'partial')   return t.decPartial;
+  if (decision === 'needs_verification') return t.decNeedsVerification;
   if (decision === 'rejected' || decision === 'rejected_low_match') return t.decRejected;
   return t.decNotScored;
 }
@@ -4075,6 +4095,7 @@ function buildApiParams(
   possibleDuplicateFilter: boolean = false,
   appliedAfter: string = '',
   appliedBefore: string = '',
+  sortKey: string = '',
 ): Record<string, string> {
   const p: Record<string, string> = {
     limit: '50',
@@ -4108,6 +4129,11 @@ function buildApiParams(
   if (possibleDuplicateFilter) p.possible_duplicate = 'true';
   if (appliedAfter.trim())  p.applied_after  = appliedAfter.trim();
   if (appliedBefore.trim()) p.applied_before = appliedBefore.trim();
+  // P0-02a: optional score orderings; '' keeps the default newest-first order
+  if (sortKey === 'score' || sortKey === 'score_upper' || sortKey === 'pending_points') {
+    p.sort_by = sortKey;
+    p.sort_order = 'desc';
+  }
 
   console.debug('[buildApiParams]', { tagFilter, talentPoolOnly, params: p });
   return p;
@@ -4163,6 +4189,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [possibleDuplicateFilter, setPossibleDuplicateFilter] = useState(searchParams.get('possible_duplicate') === 'true');
   const [appliedAfter, setAppliedAfter]                   = useState(searchParams.get('applied_after') || '');
   const [appliedBefore, setAppliedBefore]                 = useState(searchParams.get('applied_before') || '');
+  const [sortKey, setSortKey]                             = useState(searchParams.get('sort') || '');
 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -4784,8 +4811,9 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (possibleDuplicateFilter)  p.possible_duplicate = 'true';
     if (appliedAfter)             p.applied_after  = appliedAfter;
     if (appliedBefore)            p.applied_before = appliedBefore;
+    if (sortKey)                  p.sort = sortKey;
     setSearchParams(p, { replace: true });
-  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, selectedAppId, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore, setSearchParams]);
+  }, [activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, selectedAppId, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore, sortKey, setSearchParams]);
 
   // Debounce search field
   const handleSearchChange = (value: string) => {
@@ -4802,7 +4830,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     if (!auth.token) return;
     setLoading(true);
     try {
-      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore);
+      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore, sortKey);
       const data = await apiService.get(WEBHOOK_CONFIG.CANDIDATES_SEARCH_URL, params, auth.token);
       // Tenant-wide mode returns { candidates, pagination }
       if (data && typeof data === 'object' && Array.isArray(data.candidates)) {
@@ -4824,7 +4852,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       setLoading(false);
     }
   // addToast intentionally omitted — using ref to avoid infinite loop
-  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.token, activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore, sortKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchCandidates();
@@ -4881,7 +4909,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
     setShowExportMenu(false);
     setExporting(true);
     try {
-      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore);
+      const params = buildApiParams(activeView, workflowFilter, processingFilter, aiResultFilter, campaignFilter, clientFilter, jobFilter, debouncedSearch, assignedFilter, page, tagFilter, talentPoolOnly, hasNotesFilter, possibleDuplicateFilter, appliedAfter, appliedBefore, sortKey);
       delete params.page;
       delete params.limit;
       params.format = fmt;
@@ -5216,8 +5244,22 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
         >
           <option value="">{t.filterAiResult}</option>
           <option value="qualified">Qualified</option>
+          <option value="needs_verification">{t.decNeedsVerification}</option>
           <option value="partial">Partial</option>
           <option value="rejected_low_match">Rejected / Low Match</option>
+        </select>
+
+        {/* P0-02a: sort (default newest first) */}
+        <select
+          value={sortKey}
+          onChange={e => { setSortKey(e.target.value); setPage(1); }}
+          aria-label={t.sortLabel}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+        >
+          <option value="">{t.sortLabel}: {t.sortNewest}</option>
+          <option value="score">{t.sortLabel}: {t.sortVerifiedScore}</option>
+          <option value="score_upper">{t.sortLabel}: {t.sortScoreUpper}</option>
+          <option value="pending_points">{t.sortLabel}: {t.sortPending}</option>
         </select>
 
         {/* Campaign filter */}
@@ -5944,9 +5986,24 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                     {/* AI Score */}
                     <td className="px-4 py-3">
                       {c.score !== null && c.score !== undefined ? (
-                        <span className="font-semibold text-slate-800 tabular-nums">
-                          {c.score.toFixed(0)}%
-                        </span>
+                        (c.pending_points ?? 0) > 0 && c.score_upper != null ? (
+                          <span
+                            className="inline-flex flex-col gap-0.5"
+                            title={t.scoreRangeTooltip.replace('{l}', c.score.toFixed(0)).replace('{u}', c.score_upper.toFixed(0))}
+                          >
+                            <span className="font-semibold text-slate-800 tabular-nums">
+                              {c.score.toFixed(0)}–{c.score_upper.toFixed(0)}
+                            </span>
+                            <span className="relative block w-16 h-1 rounded-full bg-slate-200 overflow-hidden" aria-hidden="true">
+                              <span className="absolute inset-y-0 left-0 bg-amber-200" style={{ width: `${Math.min(100, c.score_upper)}%` }} />
+                              <span className="absolute inset-y-0 left-0 bg-emerald-500" style={{ width: `${Math.min(100, c.score)}%` }} />
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="font-semibold text-slate-800 tabular-nums">
+                            {c.score.toFixed(0)}%
+                          </span>
+                        )
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}

@@ -139,7 +139,7 @@ class TestProcessRow:
         llm_json = self._serialised_llm()
         _, json_str, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
         parsed = json.loads(json_str)
-        assert parsed["_schema"] == "det_score_v2"
+        assert parsed["_schema"] == "det_score_v3"
         assert "final_score" in parsed
         assert "dimensions" in parsed
 
@@ -232,7 +232,7 @@ class TestProcessRow:
         llm_json = self._serialised_llm()
         _, json_str, _ = _process_row(llm_json, _DEFAULT_WEIGHTS, _DEFAULT_CFG)
         parsed = json.loads(json_str)
-        assert parsed["_schema"] == "det_score_v2"
+        assert parsed["_schema"] == "det_score_v3"
 
     def test_mapper_version_preserved_in_output(self):
         llm_json = self._serialised_llm()

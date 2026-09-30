@@ -500,7 +500,7 @@ class TestFinalScore:
     def test_scoring_version_set(self):
         a = _assessment()
         result = _engine().score(_llm_result([a]), _DEFAULT_WEIGHTS)
-        assert result.scoring_version == "det_score_v2"
+        assert result.scoring_version == "det_score_v3"
 
     def test_mapper_version_preserved(self):
         a = _assessment()
@@ -537,7 +537,7 @@ class TestSerialisation:
 
     def test_schema_key(self):
         d = deterministic_score_to_dict(self._scored())
-        assert d["_schema"] == "det_score_v2"
+        assert d["_schema"] == "det_score_v3"
 
     def test_final_score_in_dict(self):
         scored = self._scored()
@@ -934,10 +934,10 @@ class TestRequiredPreferredSummary:
         # (matched=1 + partial=1) / total=3 = 66.7%
         assert rs["partial_or_matched_pct"] == pytest.approx(66.7)
 
-    def test_schema_version_is_v2(self):
+    def test_schema_version_is_v3(self):
         a = _assessment()
         d = self._score_with([a])
-        assert d["_schema"] == "det_score_v2"
+        assert d["_schema"] == "det_score_v3"
 
 
 # ── Qualitative summary pass-through ────────────────────────────────────────
@@ -1241,9 +1241,10 @@ class TestPhase3LocalRelevanceBounds:
             "supporting_evidence": ["Total Experience: 7.0 years"],
         }
 
-    def test_relevance_qualified_llm_matched_local_partial_bounds_to_partial(self):
-        """LLM: MATCHED "Minimum 7 years of relevant experience", 
-        Local: PARTIAL due to relevance gap → cap to PARTIAL + risk flag."""
+    def test_relevance_qualified_llm_matched_local_partial_becomes_cannot_determine(self):
+        """LLM: MATCHED "Minimum 7 years of relevant experience",
+        Local: PARTIAL because relevance is not verified (years passed) →
+        P0-02a: CANNOT_DETERMINE / relevance_unverified (no established shortfall)."""
         llm_assessment = _assessment(
             "Minimum 7 years of relevant experience",
             dimension="experience",
@@ -1266,10 +1267,13 @@ class TestPhase3LocalRelevanceBounds:
         d = deterministic_score_to_dict(scored)
         exp_crit = d["dimensions"]["experience"]["criteria"][0]
 
-        # Should be capped to PARTIAL
-        assert exp_crit["status"] == "PARTIAL"
+        assert exp_crit["status"] == "CANNOT_DETERMINE"
+        assert exp_crit["cd_reason"] == "relevance_unverified"
         assert exp_crit["confidence"] == pytest.approx(0.45)  # From local matcher
         assert "llm_local_relevance_disagreement" in exp_crit["risk_flags"]
+        assert "local_relevance_check" in exp_crit["risk_flags"]
+        assert exp_crit["verified_credit"] == pytest.approx(0.0)
+        assert exp_crit["upper_credit"] == pytest.approx(1.0)
 
     def test_relevance_qualified_both_matched_no_bounding(self):
         """LLM: MATCHED "Minimum 7 years of relevant experience",
@@ -1412,7 +1416,8 @@ class TestPhase3LocalRelevanceBounds:
         """Real case: Electronics Engineer with pre-sales background.
         LLM: MATCHED "Minimum 7 years of relevant experience" (false positive)
         Local: PARTIAL (7 years total, but relevance not verified)
-        Expected: Bounded to PARTIAL with risk_flag."""
+        Expected (P0-02a): CANNOT_DETERMINE / relevance_unverified — no
+        verified credit, full upper credit."""
         llm_assessment = _assessment(
             "Minimum 7 years of relevant experience",
             dimension="experience",
@@ -1445,13 +1450,15 @@ class TestPhase3LocalRelevanceBounds:
         assert exp_crit_before["status"] == "MATCHED"
         assert exp_crit_before["confidence"] == pytest.approx(0.85)
 
-        # After: bounded to local's PARTIAL
-        assert exp_crit_after["status"] == "PARTIAL"
+        # After: unresolved, not failed
+        assert exp_crit_after["status"] == "CANNOT_DETERMINE"
+        assert exp_crit_after["cd_reason"] == "relevance_unverified"
         assert exp_crit_after["confidence"] == pytest.approx(0.45)
         assert "llm_local_relevance_disagreement" in exp_crit_after["risk_flags"]
 
-        # Final score should be lower after bounding
+        # Verified score is lower; the upper bound keeps the LLM's full credit
         assert d_after["final_score"] < d_before["final_score"]
+        assert d_after["upper_score"] == d_before["final_score"]
 
     def test_robust_matching_real_string_mismatch_application_405476f2(self):
         """Regression test: Real application 405476f2 has mismatched criterion_text.
@@ -1496,8 +1503,8 @@ class TestPhase3LocalRelevanceBounds:
         d = deterministic_score_to_dict(scored)
         exp_crit = d["dimensions"]["experience"]["criteria"][0]
 
-        # Robust matching should find the local criterion and apply bounding
-        assert exp_crit["status"] == "PARTIAL", "Should be bounded to local's PARTIAL despite text mismatch"
+        # Robust matching should find the local criterion and apply the check
+        assert exp_crit["status"] == "CANNOT_DETERMINE", "Local relevance check must apply despite text mismatch"
         assert exp_crit["confidence"] == pytest.approx(0.45)
         assert "llm_local_relevance_disagreement" in exp_crit["risk_flags"]
 
@@ -1544,8 +1551,8 @@ class TestPhase3LocalRelevanceBounds:
         d = deterministic_score_to_dict(scored)
         exp_crit = d["dimensions"]["experience"]["criteria"][0]
 
-        # Should be bounded despite dataclass format
-        assert exp_crit["status"] == "PARTIAL", "Should be bounded to dataclass's PARTIAL"
+        # Local relevance check applies despite dataclass format
+        assert exp_crit["status"] == "CANNOT_DETERMINE", "Local relevance check must apply to dataclass input"
         assert exp_crit["confidence"] == pytest.approx(0.45)
         assert "llm_local_relevance_disagreement" in exp_crit["risk_flags"]
 

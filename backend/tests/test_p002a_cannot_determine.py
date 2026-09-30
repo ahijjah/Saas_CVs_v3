@@ -1,0 +1,806 @@
+"""
+P0-02a — CANNOT_DETERMINE, strict D-01 validation, verified/upper scores.
+
+Covers:
+- D-01 status contract validation (every rule fails on its own, no coercion)
+- single repair call per attempt, call counts, summary call only after a valid response
+- D-01 client limits (max_retries=1, timeout=120 s)
+- F-01 verified/upper credits, pending points/worth, blocking gaps, absent floor
+- Phase 3: relevance-only disagreement → CD; established shortfall stays
+- recommendation rule (all branches) and golden candidates X, A, Y, B, C, Z, D, E
+- serialiser cd_reason round trip; historical v1/v2 payloads read as fully verified
+- candidate ordering SQL, export columns/labels, migration 105
+"""
+from __future__ import annotations
+
+import ast
+import json
+import os
+import re
+import sys
+import types
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+import pytest
+
+import services.llm_criteria_mapper as mapper_mod
+from services.llm_criteria_mapper import (
+    CriteriaMappingResponseError,
+    LLMCriteriaMapper,
+    LLMCriterionAssessment,
+    LLMMatchResult,
+    _apply_skill_family_upgrade,
+    _parse_llm_response,
+    _response_validation_errors,
+    _validate_assessment,
+)
+from services.deterministic_scoring import (
+    DeterministicScoringConfig,
+    DeterministicScoringEngine,
+    decision_from_signal,
+    deterministic_score_to_dict,
+    recommendation_from_decisions,
+)
+from services.evidence_serialiser import (
+    extract_flat_columns_from_det_score_json,
+    llm_matchresult_from_dict,
+    llm_matchresult_to_dict,
+)
+from services.candidate_ordering import CANDIDATE_SORT_FIELDS, candidate_order_by
+from services.scoring_method import DETERMINISTIC, DETERMINISTIC_V2, verification_summary
+
+BACKEND = Path(__file__).resolve().parent.parent
+PROMPT_META = dict(prompt_code="recruitment.criteria_mapping", prompt_version="10", llm_model="gpt-4o-mini")
+CD = "CANNOT_DETERMINE"
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def _item(**over) -> dict:
+    d = {
+        "criterion_text": "Minimum 2 years of relevant experience",
+        "dimension": "experience",
+        "required": True,
+        "status": "MATCHED",
+        "cd_reason": None,
+        "confidence": 0.8,
+        "supporting_evidence": ["Teacher 2015-2021"],
+        "match_reason": "Six years as a teacher.",
+        "match_type": "direct",
+        "criterion_class": "experience",
+        "risk_flags": [],
+    }
+    d.update(over)
+    return d
+
+
+def _cd_item(**over) -> dict:
+    d = _item(status=CD, cd_reason="relevance_unverified",
+              match_reason="Six years total; education-sector relevance not stated.")
+    d.update(over)
+    return d
+
+
+def _raw(*items) -> str:
+    return json.dumps({"assessments": list(items)})
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 1. D-01 validation
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestStatusContractValidation:
+
+    @pytest.mark.parametrize("status", ["MATCHED", "PARTIAL", "ABSENT", CD])
+    def test_all_four_states_accepted(self, status):
+        item = _cd_item() if status == CD else _item(
+            status=status,
+            supporting_evidence=[] if status == "ABSENT" else ["Teacher 2015-2021"],
+            match_type="missing" if status == "ABSENT" else "direct",
+        )
+        assert _validate_assessment(item) is None
+        (a,), _ = _parse_llm_response(_raw(item), [], **PROMPT_META)
+        assert a.status == status
+        assert a.cd_reason == ("relevance_unverified" if status == CD else None)
+
+    @pytest.mark.parametrize("reason", ["relevance_unverified", "detail_missing", "ambiguous", "conflicting"])
+    def test_every_cd_reason_accepted(self, reason):
+        assert _validate_assessment(_cd_item(cd_reason=reason)) is None
+
+    @pytest.mark.parametrize("item, fragment", [
+        ("not a dict", "not a JSON object"),
+        (_item(status=None), "status None"),
+        (_item(status="UNCLEAR"), "status 'UNCLEAR'"),
+        (_item(status="matched"), "status 'matched'"),
+        (_item(criterion_text=""), "criterion_text"),
+        (_item(criterion_text=None), "criterion_text"),
+        (_item(supporting_evidence=[]), "MATCHED without supporting_evidence"),
+        (_item(supporting_evidence=["", "  "]), "MATCHED without supporting_evidence"),
+        (_item(status="PARTIAL", supporting_evidence=[]), "PARTIAL without supporting_evidence"),
+        (_cd_item(supporting_evidence=[]), "CANNOT_DETERMINE without supporting_evidence"),
+        (_cd_item(match_reason=""), "CANNOT_DETERMINE without match_reason"),
+        (_cd_item(cd_reason=None), "invalid cd_reason None"),
+        (_cd_item(cd_reason="extraction_gap"), "invalid cd_reason 'extraction_gap'"),
+        (_item(cd_reason="ambiguous"), "cd_reason 'ambiguous' set on MATCHED"),
+        (_item(status="ABSENT", supporting_evidence=[], cd_reason="detail_missing"), "set on ABSENT"),
+        (_item(confidence="0.8"), "confidence '0.8'"),
+        (_item(confidence=1.2), "confidence 1.2"),
+        (_item(confidence=-0.1), "confidence -0.1"),
+        (_item(confidence=None), "confidence None"),
+        (_item(match_reason=""), "MATCHED without match_reason"),
+    ])
+    def test_each_rule_fails_without_coercion(self, item, fragment):
+        err = _validate_assessment(item)
+        assert err is not None and fragment in err
+        # and the whole response is rejected — never coerced to ABSENT or CD
+        with pytest.raises(CriteriaMappingResponseError, match=re.escape(fragment)):
+            _parse_llm_response(_raw(item), [], **PROMPT_META)
+
+    def test_one_invalid_item_invalidates_the_response(self):
+        errors = _response_validation_errors(_raw(_item(), _item(status="UNCLEAR"), _item()))
+        assert len(errors) == 1 and errors[0].startswith("assessment[1]")
+        with pytest.raises(CriteriaMappingResponseError):
+            _parse_llm_response(_raw(_item(), _item(status="UNCLEAR")), [], **PROMPT_META)
+
+    def test_response_level_failures(self):
+        assert _response_validation_errors("{bad") == ["invalid JSON"]
+        assert _response_validation_errors("[]") == ["response is not a JSON object"]
+        assert _response_validation_errors("{}") == ["missing 'assessments' array"]
+        assert _response_validation_errors('{"assessments": []}') == ["empty 'assessments' array"]
+
+    def test_all_absent_response_is_valid(self):
+        absent = _item(status="ABSENT", supporting_evidence=[], match_type="missing", confidence=0.0)
+        assert _response_validation_errors(_raw(absent, absent)) == []
+
+    def test_match_type_missing_on_matched_tolerated_with_flag(self):
+        (a,), _ = _parse_llm_response(_raw(_item(match_type="missing")), [], **PROMPT_META)
+        assert a.status == "MATCHED"
+        assert "match_type_missing" in a.risk_flags
+
+    def test_absent_may_quote_a_non_matching_fact(self):
+        item = _item(status="ABSENT", supporting_evidence=["Diploma in Arts"], match_type="missing")
+        assert _validate_assessment(item) is None
+
+    def test_skill_family_upgrade_leaves_cd_alone(self):
+        def a(text, status, ev):
+            return LLMCriterionAssessment(
+                criterion_text=text, dimension="skills", required=True, status=status,
+                confidence=0.6, supporting_evidence=ev, match_reason="r",
+                match_type="direct", criterion_class="flexible",
+                cd_reason="detail_missing" if status == CD else None,
+            )
+        items = [a("MS Office", "MATCHED", ["Microsoft Office suite"]), a("Microsoft Excel", CD, ["Office"])]
+        assert _apply_skill_family_upgrade(items) == 0
+        assert items[1].status == CD and items[1].cd_reason == "detail_missing"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 2. Repair call, call budget, summary call, client limits
+# ═════════════════════════════════════════════════════════════════════════════
+
+ANALYSIS_JSON = {"skills": {"required": ["MS Office"], "preferred": []}}
+
+
+def _client(*contents):
+    responses = []
+    for c in contents:
+        r = MagicMock()
+        r.choices = [MagicMock(message=MagicMock(content=c))]
+        responses.append(r)
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(side_effect=responses)
+    return client
+
+
+async def _assess(client, summary=None, prompt=None):
+    from services.cv_evidence import CVFacts
+    summary = summary or AsyncMock(return_value=None)
+    with patch.object(mapper_mod, "_get_mapper_client", return_value=client), \
+         patch("services.ai_service.load_active_prompt", AsyncMock(return_value=prompt)), \
+         patch("services.ai_service._apply_security_hardening", side_effect=lambda c: c), \
+         patch.object(mapper_mod, "_generate_qualitative_summary", summary):
+        return await LLMCriteriaMapper().assess(
+            cv_facts=CVFacts(language="en", total_char_count=10),
+            analysis_json=ANALYSIS_JSON, raw_cv_text="MS Office user. " * 5,
+            application_id="app-1", job_id="job-1", db=None,
+        )
+
+
+_VALID = _raw(_item(criterion_text="MS Office", dimension="skills", criterion_class="flexible",
+                    supporting_evidence=["Excel, Word"]))
+_VALID_CD = _raw(_cd_item(criterion_text="MS Office", dimension="skills", criterion_class="flexible",
+                          cd_reason="detail_missing", supporting_evidence=["Office tools"]))
+_INVALID = _raw(_item(criterion_text="MS Office", status="UNCLEAR"))
+
+
+class TestRepairCall:
+
+    @pytest.mark.asyncio
+    async def test_valid_first_response_makes_one_call(self):
+        client = _client(_VALID)
+        result = await _assess(client)
+        assert client.chat.completions.create.await_count == 1
+        assert result.matched_count == 1
+
+    @pytest.mark.asyncio
+    async def test_repair_success(self):
+        client = _client(_INVALID, _VALID_CD)
+        result = await _assess(client, prompt={"prompt_code": "recruitment.criteria_mapping",
+                                               "version": 10, "system_prompt": "sys", "max_tokens": 7000})
+        calls = client.chat.completions.create.await_args_list
+        assert len(calls) == 2
+        repair = calls[1].kwargs
+        assert repair["max_tokens"] == 8000                       # max(7000, 8000)
+        note = repair["messages"][-1]
+        assert note["role"] == "system" and "status 'UNCLEAR'" in note["content"]
+        assert repair["messages"][:2] == calls[0].kwargs["messages"]
+        assert result.cannot_determine_count == 1
+        assert result.assessments[0].cd_reason == "detail_missing"
+
+    @pytest.mark.asyncio
+    async def test_repair_keeps_higher_configured_max_tokens(self):
+        client = _client("{bad json", _VALID)
+        await _assess(client, prompt={"system_prompt": "sys", "max_tokens": 9000})
+        assert client.chat.completions.create.await_args_list[1].kwargs["max_tokens"] == 9000
+
+    @pytest.mark.asyncio
+    async def test_repair_failure_raises_after_exactly_two_calls(self):
+        client = _client(_INVALID, _INVALID, _VALID)   # a third response must never be requested
+        with pytest.raises(CriteriaMappingResponseError, match="after repair call"):
+            await _assess(client)
+        assert client.chat.completions.create.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_then_invalid_json_raises(self):
+        client = _client("{bad", "{still bad")
+        with pytest.raises(CriteriaMappingResponseError, match="invalid JSON"):
+            await _assess(client)
+        assert client.chat.completions.create.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_summary_call_only_after_valid_response(self):
+        summary = AsyncMock(return_value=None)
+        with pytest.raises(CriteriaMappingResponseError):
+            await _assess(_client(_INVALID, _INVALID), summary=summary)
+        summary.assert_not_called()
+        await _assess(_client(_INVALID, _VALID), summary=summary)
+        summary.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_max_d01_calls_across_celery_attempts(self):
+        """Always-invalid output: 2 D-01 calls per attempt x 4 attempts = 8 (unchanged ceiling)."""
+        total = 0
+        for _attempt in range(4):   # Celery max_retries=3 → 4 attempts
+            client = _client(_INVALID, _INVALID, _INVALID)
+            with pytest.raises(CriteriaMappingResponseError):
+                await _assess(client)
+            total += client.chat.completions.create.await_count
+        assert total == 8
+
+
+class TestMapperClientLimits:
+
+    def test_client_built_with_one_retry_and_120s_timeout(self):
+        fake_openai = types.ModuleType("openai")
+        fake_openai.AsyncOpenAI = MagicMock(name="AsyncOpenAI")
+        fake_config = types.ModuleType("config")
+        fake_config.get_settings = lambda: types.SimpleNamespace(openai_api_key="sk-test")
+        saved = mapper_mod._mapper_client
+        mapper_mod._mapper_client = None
+        try:
+            with patch.dict(sys.modules, {"openai": fake_openai, "config": fake_config}):
+                mapper_mod._get_mapper_client()
+            fake_openai.AsyncOpenAI.assert_called_once_with(
+                api_key="sk-test", max_retries=1, timeout=120.0)
+        finally:
+            mapper_mod._mapper_client = saved
+
+    def test_limits_scoped_to_mapper_module(self):
+        """Only llm_criteria_mapper's own client gets the D-01 limits."""
+        hits = [p.relative_to(BACKEND).as_posix()
+                for p in (BACKEND / "services").glob("*.py")
+                if "_MAPPER_MAX_RETRIES" in p.read_text(encoding="utf-8")]
+        assert hits == ["services/llm_criteria_mapper.py"]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 3. F-01 verified / upper scoring
+# ═════════════════════════════════════════════════════════════════════════════
+
+W = {"weight_skills": 40, "weight_experience": 30, "weight_education": 20, "weight_soft_skills": 10}
+EXP = "Minimum 3 years of relevant HR experience"
+CRIT = [
+    ("Excel", "skills", True), ("SAP", "skills", True), ("Payroll", "skills", True),
+    ("Power BI", "skills", False), (EXP, "experience", True),
+    ("Bachelor in HR/Business", "education", True),
+    ("Communication", "soft_skills", True), ("Arabic/English bilingual", "soft_skills", False),
+]
+
+
+def _llm(statuses: dict, match_types: dict | None = None, crit=CRIT) -> LLMMatchResult:
+    match_types = match_types or {}
+    out = []
+    for text, dim, req in crit:
+        st = statuses.get(text, "MATCHED")
+        out.append(LLMCriterionAssessment(
+            criterion_text=text, dimension=dim, required=req, status=st, confidence=0.8,
+            supporting_evidence=[] if st == "ABSENT" else ["quoted"],
+            match_reason="reason",
+            match_type="missing" if st == "ABSENT" else match_types.get(text, "direct"),
+            criterion_class="other",
+            cd_reason="relevance_unverified" if st == CD else None,
+        ))
+    return LLMMatchResult(application_id="a", job_id="j", assessments=out, processing_ms=0,
+                          created_at="", prompt_code="", prompt_version="", model="")
+
+
+def _score(statuses, match_types=None, cfg=None, local=None, weights=W, crit=CRIT):
+    engine = DeterministicScoringEngine(cfg or DeterministicScoringConfig())
+    return deterministic_score_to_dict(engine.score(_llm(statuses, match_types, crit), weights, local))
+
+
+GOLDEN = {
+    # name: (statuses, match_types, verified, upper, pending, D_L, D_U, recommendation)
+    "X": ({}, {"SAP": "equivalent"}, 100, 100, 0, "qualified", "qualified", "qualified"),
+    "A": ({"Power BI": CD}, None, 88, 100, 12, "qualified", "qualified", "qualified"),
+    "Y": ({"Power BI": "ABSENT", "Arabic/English bilingual": "ABSENT"},
+          {"Payroll": "transferable", "SAP": "inferred"}, 80, 80, 0, "qualified", "qualified", "qualified"),
+    "B": ({EXP: CD, "Arabic/English bilingual": "PARTIAL"}, None, 69, 99, 30,
+          "partial", "qualified", "needs_verification"),
+    "C": ({EXP: CD, "Communication": CD, "Power BI": CD, "SAP": "PARTIAL",
+           "Arabic/English bilingual": "ABSENT"}, None, 44, 93, 49,
+          "partial", "qualified", "needs_verification"),
+    "Z": ({"Payroll": "ABSENT"}, None, 91, 91, 0, "partial", "partial", "partial"),
+    "D": ({"Payroll": "ABSENT", "SAP": "ABSENT", EXP: CD}, None, 52, 82, 30,
+          "partial", "partial", "partial"),
+    "E": ({"Excel": "ABSENT", "SAP": "ABSENT", "Payroll": "ABSENT", EXP: CD, "Communication": CD,
+           "Power BI": "ABSENT"}, None, 23, 60, 37, "rejected", "partial", "partial"),
+}
+
+
+class TestGoldenCandidates:
+
+    @pytest.fixture(autouse=True)
+    def _no_embedding_model(self):
+        # Candidate Y's inferred SAP runs the evidence-overlap check; keep it
+        # deterministic and offline (the evidence "quoted" never overlaps).
+        with patch("services.deterministic_scoring._compute_semantic_similarity", return_value=0.0):
+            yield
+
+    @pytest.mark.parametrize("name", list(GOLDEN))
+    def test_golden(self, name):
+        statuses, mts, verified, upper, pending, d_l, d_u, rec = GOLDEN[name]
+        d = _score(statuses, mts)
+        assert (d["verified_score"], d["upper_score"], d["pending_points"]) == (verified, upper, pending)
+        assert d["final_score"] == verified
+        assert (d["decision_verified_basis"], d["decision_if_verified"], d["recommendation"]) == (d_l, d_u, rec)
+
+    def test_candidate_e_not_rejected(self):
+        d = _score(GOLDEN["E"][0])
+        assert d["decision_verified_basis"] == "rejected"
+        assert d["recommendation"] != "rejected"
+
+
+class TestVerifiedUpperCredits:
+
+    def _crit(self, d, text):
+        return next(c for dim in d["dimensions"].values() for c in dim["criteria"] if c["criterion_text"] == text)
+
+    def test_credits_per_status(self):
+        d = _score({"SAP": "PARTIAL", "Payroll": "ABSENT", "Excel": CD})
+        assert (self._crit(d, "Power BI")["verified_credit"], self._crit(d, "Power BI")["upper_credit"]) == (1.0, 1.0)
+        assert (self._crit(d, "SAP")["verified_credit"], self._crit(d, "SAP")["upper_credit"]) == (0.5, 0.5)
+        assert (self._crit(d, "Payroll")["verified_credit"], self._crit(d, "Payroll")["upper_credit"]) == (0.0, 0.0)
+        excel = self._crit(d, "Excel")
+        assert (excel["verified_credit"], excel["upper_credit"]) == (0.0, 1.0)
+        assert excel["effective_credit"] == excel["verified_credit"]
+        assert excel["cd_reason"] == "relevance_unverified"
+        assert excel["match_reason"] == "reason"
+
+    def test_cd_skips_status_specific_adjustments(self):
+        d = _score({"Excel": CD}, {"Excel": "missing"})
+        excel = self._crit(d, "Excel")
+        assert excel["match_type"] == "missing"                  # no inferred normalisation
+        assert "inferred_from_evidence" not in excel["risk_flags"]
+        assert excel["upper_credit"] == 1.0                       # full credit regardless of qf
+
+    def test_cd_stays_in_denominator(self):
+        # skills: 3 required (Excel CD) + 1 preferred → req verified avg 2/3
+        d = _score({"Excel": CD})
+        skills = d["dimensions"]["skills"]
+        assert skills["required_avg"] == pytest.approx(2 / 3, abs=1e-4)
+        assert skills["dimension_score_upper"] == pytest.approx(1.0)
+        assert skills["n_required_cannot_determine"] == 1
+
+    def test_pending_worth_and_multiple_cds(self):
+        d = _score(GOLDEN["C"][0])
+        worth = {i["criterion_text"]: i["pending_worth"] for i in d["verification_items"]}
+        assert worth == {EXP: 30.0, "Communication": 7.0, "Power BI": 12.0}
+        # required items first, then by worth
+        assert [i["required"] for i in d["verification_items"]] == [True, True, False]
+        assert d["required_summary"]["cannot_determine"] == 2
+        assert d["preferred_summary"]["cannot_determine"] == 1
+
+    def test_required_cd_never_blocking(self):
+        d = _score({EXP: CD, "Payroll": "ABSENT"})
+        assert d["required_summary"]["blocking_gaps"] == 1       # Payroll only
+        assert d["required_summary"]["absent"] == 1
+        assert d["required_summary"]["fully_covered"] is False
+
+    def test_absent_floor_counts_absent_only(self):
+        cfg = DeterministicScoringConfig(enable_required_absent_floor=True,
+                                         required_absent_floor_threshold=0.5,
+                                         required_absent_floor_cap=0.4)
+        # skills: Excel ABSENT, SAP CD, Payroll CD → 1/3 absent: floor NOT triggered
+        d = _score({"Excel": "ABSENT", "SAP": CD, "Payroll": CD}, cfg=cfg)
+        assert d["dimensions"]["skills"]["required_absent_floor_triggered"] is False
+        # 2/3 absent → floor applies; the upper (0.7/3 + 0.3 = 0.533) is capped at 0.4
+        d = _score({"Excel": "ABSENT", "SAP": "ABSENT", "Payroll": CD}, cfg=cfg)
+        sk = d["dimensions"]["skills"]
+        assert sk["dimension_score"] == pytest.approx(0.3)      # below the cap already
+        assert sk["dimension_score_upper"] == pytest.approx(0.4)
+
+    def test_preferred_cd_shown_but_never_changes_decision(self):
+        d = _score({"Power BI": CD, "Payroll": "ABSENT"})
+        assert d["pending_points"] > 0
+        assert d["decision_verified_basis"] == d["decision_if_verified"] == d["recommendation"]
+        assert d["required_summary"]["cannot_determine"] == 0
+
+    @pytest.mark.parametrize("statuses", [
+        {}, {"Payroll": "ABSENT"}, {"SAP": "PARTIAL", "Communication": "ABSENT"},
+        {"Excel": "ABSENT", "SAP": "ABSENT", "Payroll": "ABSENT", EXP: "ABSENT"},
+    ])
+    def test_no_cd_regression_identical_to_signal_decision(self, statuses):
+        d = _score(statuses)
+        assert d["upper_score"] == d["verified_score"] == d["final_score"]
+        assert d["pending_points"] == 0 and d["verification_items"] == []
+        assert d["recommendation"] == decision_from_signal(d["recruiter_signal"])
+
+    def test_schema_v3(self):
+        d = _score({})
+        assert d["_schema"] == "det_score_v3"
+
+
+class TestRecommendationRule:
+
+    @pytest.mark.parametrize("n_cd, d_l, d_u, expected", [
+        (0, "partial", "qualified", "partial"),                 # no required CD → D_L
+        (0, "rejected", "rejected", "rejected"),
+        (1, "partial", "qualified", "needs_verification"),      # verification can qualify
+        (1, "rejected", "qualified", "needs_verification"),
+        (2, "rejected", "partial", "partial"),                  # never reject because of CD
+        (1, "partial", "partial", "partial"),                   # D_L == D_U
+        (1, "qualified", "qualified", "qualified"),
+        (1, "rejected", "rejected", "rejected"),                # confirmed gaps alone reject
+    ])
+    def test_branches(self, n_cd, d_l, d_u, expected):
+        assert recommendation_from_decisions(n_cd, d_l, d_u) == expected
+
+
+class TestPhase3LocalRelevanceCondition:
+
+    def _local(self, status, reason, evidence):
+        return [{"criterion_text": "Minimum 7 years of relevant experience", "status": status,
+                 "confidence": 0.45, "partial_reason": reason, "dimension": "experience",
+                 "required": True, "supporting_evidence": evidence}]
+
+    def _run(self, llm_evidence, local):
+        crit = [("Minimum 7 years of relevant experience", "experience", True)]
+        llm = _llm({}, crit=crit)
+        llm.assessments[0].supporting_evidence = llm_evidence
+        engine = DeterministicScoringEngine()
+        d = deterministic_score_to_dict(engine.score(llm, {"weight_experience": 100}, local))
+        return d["dimensions"]["experience"]["criteria"][0]
+
+    def test_relevance_only_disagreement_becomes_cd(self):
+        c = self._run(["Total Experience: 8.0 years"],
+                      self._local("PARTIAL", "8 years total experience, but relevance to role not verified",
+                                  ["8.0 years total experience extracted from CV"]))
+        assert c["status"] == CD and c["cd_reason"] == "relevance_unverified"
+        assert "local_relevance_check" in c["risk_flags"]
+
+    def test_established_years_shortfall_stays_partial(self):
+        c = self._run(["Total Experience: 3.0 years"],
+                      self._local("PARTIAL", "3 years total experience, but relevance to role not verified",
+                                  ["3.0 years total experience extracted from CV"]))
+        assert c["status"] == "PARTIAL"
+        assert "local_relevance_check" not in c["risk_flags"]
+
+    def test_local_numeric_comparison_failed_stays_absent(self):
+        c = self._run(["Total Experience: 8.0 years"],
+                      self._local("ABSENT", "No verifiable years and no clear role relevance found in CV", []))
+        assert c["status"] == "ABSENT"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 4. Serialisation and historical compatibility
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestSerialisation:
+
+    def test_cd_reason_round_trip(self):
+        llm = _llm({EXP: CD})
+        llm.cannot_determine_count = 1
+        back = llm_matchresult_from_dict(json.loads(json.dumps(llm_matchresult_to_dict(llm))))
+        exp = next(a for a in back.assessments if a.criterion_text == EXP)
+        assert exp.status == CD and exp.cd_reason == "relevance_unverified"
+        assert back.cannot_determine_count == 1
+
+    def test_historical_llm_json_without_cd_reason_loads(self):
+        old = {"application_id": "a", "job_id": "j", "assessments": [
+            {"criterion_text": "Python", "dimension": "skills", "required": True, "status": "MATCHED",
+             "confidence": 0.9, "supporting_evidence": ["x"], "match_reason": "r",
+             "match_type": "direct", "criterion_class": "strict", "risk_flags": []}]}
+        r = llm_matchresult_from_dict(old)
+        assert r.assessments[0].cd_reason is None and r.cannot_determine_count == 0
+
+    def test_missing_skills_excludes_cd(self):
+        d = _score({"Excel": CD, "SAP": "ABSENT"})
+        flat = extract_flat_columns_from_det_score_json(json.dumps(d))
+        assert flat["missing_skills"] == ["SAP"]
+        assert "Excel" not in flat["matched_skills"]
+
+    @pytest.mark.parametrize("payload", [
+        None,
+        {"_schema": "det_score_v2", "final_score": 72, "required_summary": {"total": 3}},
+        {"_schema": "det_score_v1", "final_score": 72},
+        "not a dict",
+    ])
+    def test_historical_payloads_read_as_fully_verified(self, payload):
+        v = verification_summary(payload, 72)
+        assert (v["verified_score"], v["score_upper"], v["pending_points"]) == (72, 72, 0)
+        assert v["required_to_verify"] == 0 and v["preferred_to_verify"] == 0
+        assert v["decision_if_verified"] is None
+
+    def test_v3_payload_fields(self):
+        d = _score(GOLDEN["B"][0])
+        v = verification_summary(d, d["final_score"])
+        assert (v["verified_score"], v["score_upper"], v["pending_points"]) == (69, 99, 30)
+        assert v["required_to_verify"] == 1 and v["decision_if_verified"] == "qualified"
+
+    def test_unscored_has_no_upper(self):
+        assert verification_summary(None, None)["score_upper"] is None
+
+    def test_scoring_method_constants(self):
+        assert DETERMINISTIC == "deterministic_v1"      # historical value unchanged
+        assert DETERMINISTIC_V2 == "deterministic_v2"
+        assert re.match(r"^[a-z][a-z0-9_]*_v[0-9]+$", DETERMINISTIC_V2)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 5. Ordering, export, migration 105
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestCandidateOrdering:
+
+    def _parse(self, order_by):
+        pglast = pytest.importorskip("pglast")
+        return pglast.parse_sql(
+            "SELECT 1 FROM applications a LEFT JOIN application_scores s "
+            f"ON s.application_id = a.application_id ORDER BY {order_by}")
+
+    def test_default_is_newest_first_with_tiebreaker(self):
+        assert candidate_order_by("applied_at", "desc") == "a.applied_at DESC, a.application_id"
+        assert candidate_order_by("unknown", "desc") == "a.applied_at DESC, a.application_id"
+
+    @pytest.mark.parametrize("key", sorted(CANDIDATE_SORT_FIELDS))
+    @pytest.mark.parametrize("order", ["desc", "asc"])
+    def test_every_ordering_is_valid_sql_and_ends_with_application_id(self, key, order):
+        ob = candidate_order_by(key, order)
+        assert ob.endswith("a.application_id")
+        self._parse(ob)
+
+    def test_score_order(self):
+        ob = candidate_order_by("score", "desc")
+        parts = [p.strip() for p in re.split(r",\s(?![^()]*\))", ob)]
+        assert parts[0] == "COALESCE(s.det_final_score, s.final_score) DESC NULLS LAST"
+        assert "required_summary" in parts[1] and parts[1].endswith("ASC")
+        assert "pending_points" in parts[2] and parts[2].endswith("ASC")
+        assert parts[3:] == ["a.applied_at DESC", "a.application_id"]
+
+    def test_upper_and_pending_orders_put_unscored_last(self):
+        assert re.match(r"^\(COALESCE\(s\.det_final_score, s\.final_score\) \+ .*\) ASC NULLS LAST, ",
+                        candidate_order_by("score_upper", "asc"))
+        assert candidate_order_by("pending_points", "desc").startswith(
+            "(CASE WHEN COALESCE(s.det_final_score, s.final_score) IS NULL THEN NULL")
+
+    def test_router_uses_shared_ordering_everywhere(self):
+        src = (BACKEND / "routers" / "applications.py").read_text(encoding="utf-8")
+        assert src.count("ORDER BY {order_by}") == 2
+        assert "sort_column" not in src
+        assert "ORDER BY a.applied_at DESC, a.application_id" in src
+        camp = (BACKEND / "routers" / "campaigns.py").read_text(encoding="utf-8")
+        assert "ORDER BY a.applied_at DESC, a.application_id" in camp
+
+
+def _router_export_namespace() -> dict:
+    """Compile only the export helpers from routers/applications.py (the router
+    itself can't be imported in this environment)."""
+    src = (BACKEND / "routers" / "applications.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    wanted = {"_EXPORT_COLUMNS", "_AI_RECOMMENDATION_LABELS", "_AI_DECISION_FILTER_LABELS",
+              "_effective_workflow_status", "_ai_recommendation_label", "_export_row"}
+    body = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in wanted:
+            body.append(node)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            target = node.targets[0] if isinstance(node, ast.Assign) else node.target
+            if getattr(target, "id", None) in wanted:
+                body.append(node)
+    ns: dict = {}
+    exec(compile(ast.Module(body=body, type_ignores=[]), "applications_export", "exec"), ns)
+    return ns
+
+
+_P001_COLUMNS = [
+    "Candidate Name", "Candidate Email", "Job Title", "Job Code", "Campaign", "Client",
+    "AI Score", "AI Recommendation", "Workflow Status", "Assigned Recruiter", "Applied Date",
+    "Security Status", "Duplicate Status", "Talent Pool", "Recruiter Notes", "Scoring Method",
+]
+
+
+class TestExport:
+
+    def test_columns_appended_last_existing_unchanged(self):
+        cols = _router_export_namespace()["_EXPORT_COLUMNS"]
+        assert cols[:16] == _P001_COLUMNS
+        assert cols[16:] == ["Pending Verification Points", "Score Range Upper", "Required Criteria To Verify"]
+
+    def _row(self, **over):
+        from datetime import datetime
+        r = {"candidate_name": "N", "candidate_email": "e", "job_title": "T", "job_code": "J",
+             "campaign_name": "", "client_org_name": "", "score": 69, "status": "needs_verification",
+             "processing_status": "ai_scored", "workflow_status": None, "assigned_user_name": None,
+             "applied_at": datetime(2026, 9, 1, 10, 0), "security_check_status": "passed",
+             "duplicate_status": None, "is_talent_pool": False, "recruiter_notes": None,
+             "scoring_method": "deterministic_v2", "pending_points": 30, "score_upper": 99,
+             "required_to_verify": 1}
+        r.update(over)
+        return r
+
+    def test_row_values(self):
+        ns = _router_export_namespace()
+        row = ns["_export_row"](self._row())
+        assert len(row) == len(ns["_EXPORT_COLUMNS"])
+        assert row[6] == 69.0                        # AI Score = verified score
+        assert row[7] == "Needs Verification"
+        assert row[-3:] == [30.0, 99.0, 1]
+
+    def test_unscored_row_blank_verification_cells(self):
+        ns = _router_export_namespace()
+        row = ns["_export_row"](self._row(score=None, status=None, pending_points=None,
+                                          score_upper=None, required_to_verify=0))
+        assert row[7] == "Not Scored"
+        assert row[-3:] == ["", "", ""]
+
+    def test_filter_label(self):
+        assert _router_export_namespace()["_AI_DECISION_FILTER_LABELS"]["needs_verification"] == "Needs Verification"
+
+
+class TestMigration105:
+    SQL = (BACKEND / "db" / "migrations" / "105_needs_verification.sql").read_text(encoding="utf-8")
+
+    def test_idempotent_shape(self):
+        body = "\n".join(l for l in self.SQL.splitlines() if not l.lstrip().startswith("--"))
+        drop = body.index("DROP CONSTRAINT IF EXISTS applications_decision_check")
+        add = body.index("ADD CONSTRAINT applications_decision_check")
+        assert drop < add
+        assert "BEGIN;" in body and "COMMIT;" in body and "SET search_path = cv_analyzer;" in body
+        for forbidden in ("UPDATE ", "INSERT ", "DELETE ", "ADD COLUMN"):
+            assert forbidden not in body
+
+    def test_values(self):
+        m = re.search(r"CHECK \(decision IN \(([^)]*)\)\)", self.SQL)
+        assert {v.strip().strip("'") for v in m.group(1).split(",")} == {
+            "qualified", "partial", "rejected", "needs_verification"}
+
+    def test_parses(self):
+        pglast = pytest.importorskip("pglast")
+        body = "\n".join(l for l in self.SQL.splitlines() if not l.lstrip().startswith("--"))
+        assert len(pglast.parse_sql(body)) == 5
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 6. v10 prompt builder (offline)
+# ═════════════════════════════════════════════════════════════════════════════
+
+_V9_LIKE = """\
+You are an expert CV-to-job-criteria mapping analyst.
+
+For TYPE B criteria: do NOT assign MATCHED/direct/confidence≥0.85 based on
+total years alone. If years are met AND you have title/responsibility/
+domain evidence confirming relevance → MATCHED is appropriate. If years
+are met but you have NO title/responsibility/domain evidence to confirm
+relevance (e.g. you were only given a total-years figure with no itemized
+roles) → assign PARTIAL, match_type="inferred", confidence 0.35-0.59, state
+in match_reason that years are met but relevance is unconfirmed. If years
+are NOT met → PARTIAL.
+
+REQUIRED vs PREFERRED:
+- required=true criteria are hard requirements. Missing evidence → ABSENT. Partial evidence → PARTIAL.
+- required=false criteria are nice-to-have. Apply flexible judgment; missing is normal.
+
+MATCH STATUS DEFINITIONS:
+- MATCHED:  Clear, sufficient evidence in CV that the criterion is met.
+- PARTIAL:  Some evidence exists but it is incomplete.
+- ABSENT:   No evidence found in the CV.
+
+MATCH TYPE GUIDE:
+- direct: explicit.
+
+RISK FLAGS:
+- relevance_unverified:   years met, relevance unconfirmed (status PARTIAL).
+
+OUTPUT:
+{
+  "assessments": [
+    {
+      "status": "<MATCHED|PARTIAL|ABSENT>",
+      "risk_flags": []
+    }
+  ],
+  "qualitative_summary": {
+    "gaps_identified": ["<gap derived from ABSENT/PARTIAL assessments above>"]
+  }
+}
+
+QUALITATIVE SUMMARY RULES:
+QS3. strengths and gaps reference criteria.
+QS4. suggested_interview_questions should target PARTIAL or ABSENT criteria areas.
+QS5. Keep it short.
+"""
+
+
+def _builder():
+    sys.path.insert(0, str(BACKEND / "scripts"))
+    import build_d01_prompt_v10 as b
+    return b
+
+
+class TestPromptV10Builder:
+
+    def test_all_edits_applied_and_rest_untouched(self):
+        r = _builder().build_v10(_V9_LIKE)
+        assert r.errors == [] and r.not_found == [] and r.review == []
+        t = r.text
+        assert "ASSESSMENT STATUS CONTRACT" in t and "MATCH STATUS DEFINITIONS" not in t
+        assert '"status": "<MATCHED|PARTIAL|ABSENT|CANNOT_DETERMINE>",' in t
+        assert '"cd_reason":' in t
+        assert 'assign CANNOT_DETERMINE with cd_reason "relevance_unverified", state' in t
+        assert "are NOT met → PARTIAL." in t                    # known shortfall untouched
+        assert "Partial evidence → PARTIAL" not in t
+        assert "(status CANNOT_DETERMINE)" in t
+        assert "(never CANNOT_DETERMINE)" in t
+        assert t.count("QS4.") == 1 and "verify CANNOT_DETERMINE criteria" in t and "QS5. Keep it short." in t
+        for keep in ("You are an expert CV-to-job-criteria mapping analyst.", "MATCH TYPE GUIDE:",
+                     "- direct: explicit.", "QS3. strengths and gaps reference criteria."):
+            assert keep in t
+
+    def test_rerun_on_v10_refused(self):
+        b = _builder()
+        assert b.build_v10(b.build_v10(_V9_LIKE).text).errors
+
+    def test_missing_required_anchor_writes_nothing(self, tmp_path):
+        b = _builder()
+        src = tmp_path / "v9.txt"
+        src.write_text("no anchors here", encoding="utf-8")
+        assert b.main(["--v9-file", str(src), "--out-dir", str(tmp_path / "out")]) == 2
+        assert not (tmp_path / "out" / "d01_prompt_v10.txt").exists()
+        assert (tmp_path / "out" / "d01_prompt_v10_report.md").exists()
+
+    def test_cli_writes_v10_diff_report(self, tmp_path):
+        b = _builder()
+        src = tmp_path / "v9.txt"
+        src.write_text(_V9_LIKE, encoding="utf-8")
+        assert b.main(["--v9-file", str(src), "--out-dir", str(tmp_path)]) == 0
+        assert "ASSESSMENT STATUS CONTRACT" in (tmp_path / "d01_prompt_v10.txt").read_text(encoding="utf-8")
+        assert (tmp_path / "d01_prompt_v9_to_v10.diff").read_text(encoding="utf-8").startswith("--- v9")
+
+    def test_contract_text_is_the_code_fallback_contract(self):
+        assert mapper_mod.D01_STATUS_CONTRACT.rstrip("\n") in _builder().build_v10(_V9_LIKE).text
+        assert mapper_mod.D01_STATUS_CONTRACT in mapper_mod._HARDCODED_SYSTEM_PROMPT
+        assert "{D01_STATUS_CONTRACT}" not in mapper_mod._HARDCODED_SYSTEM_PROMPT
