@@ -26,7 +26,9 @@ Outputs (in --out-dir; contain CV-derived text, keep them on the server):
 Usage (inside a one-off container from the worker image; see PR/notes):
     python scripts/p002a_offline_compare.py --out-dir /p002a_out --dry-run
     python scripts/p002a_offline_compare.py --out-dir /p002a_out \
-        --limit 40 --per-job 3 --include-job JOB-2026-0110 --v10-max-tokens 12000
+        --limit 40 --per-job 3 --include-job JOB-2026-0110
+    (v9 keeps its production settings; v10 always runs with max_tokens=12000,
+     so its repair call also uses 12000; the script aborts otherwise)
 """
 from __future__ import annotations
 
@@ -47,6 +49,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 PROMPT_CODE = "recruitment.criteria_mapping"
 V9_MD5_EXPECTED = "18de95b0f4559a9383aa2136db64ccba"   # md5(system_prompt || '\n'), exported 2026-09-30
 CD = "CANNOT_DETERMINE"
+# Agreed test value for v10 (jobs with 42-44 criteria were truncated at 7000/8000).
+V10_MAX_TOKENS = 12000
 
 _SAMPLE_SQL = """
 WITH v9 AS (
@@ -151,6 +155,38 @@ async def load_case(db: ReadOnlyDB, application_id, job_id) -> dict | None:
             "weights": weights}
 
 
+# ── prompt configurations (the only place max_tokens is decided) ─────────────
+
+def build_prompt_configs(v9_row: dict, v10_text: str, v10_max_tokens: int) -> list[dict]:
+    """v9 exactly as configured in production; v10 = v9 settings except the
+    system prompt and max_tokens. Aborts unless v10 uses V10_MAX_TOKENS."""
+    base = {"prompt_code": PROMPT_CODE, "model": v9_row["model"],
+            "temperature": float(v9_row["temperature"]),
+            "output_language": v9_row["output_language"]}
+    v9 = dict(base, version=9, system_prompt=v9_row["system_prompt"],
+              max_tokens=int(v9_row["max_tokens"]))
+    v10 = dict(base, version=10, system_prompt=v10_text, max_tokens=int(v10_max_tokens))
+    if v10["max_tokens"] != V10_MAX_TOKENS:
+        raise SystemExit(f"v10 max_tokens is {v10['max_tokens']}, expected {V10_MAX_TOKENS}; refusing to run")
+    return [v9, v10]
+
+
+def expected_call_tokens(prompt_cfg: dict) -> tuple[int, int]:
+    """(main call, repair call) max_tokens the mapper must send for this prompt."""
+    from services.llm_criteria_mapper import _REPAIR_MIN_MAX_TOKENS
+    configured = int(prompt_cfg["max_tokens"])
+    return configured, max(configured, _REPAIR_MIN_MAX_TOKENS)
+
+
+def check_call_tokens(prompt_cfg: dict, sent: list) -> None:
+    """Abort if any D-01 call used a different max_tokens than intended."""
+    main_tokens, repair_tokens = expected_call_tokens(prompt_cfg)
+    expected = [main_tokens, repair_tokens][:len(sent)]
+    if list(sent) != expected:
+        raise SystemExit(
+            f"prompt v{prompt_cfg['version']}: max_tokens sent {sent}, expected {expected}; aborting")
+
+
 # ── one D-01 + F-01 run ──────────────────────────────────────────────────────
 
 class _CountingClient:
@@ -158,11 +194,13 @@ class _CountingClient:
 
     def __init__(self, real):
         self.calls = 0
+        self.max_tokens: list[int] = []   # max_tokens actually sent, per call
         outer = self
 
         class _Completions:
             async def create(self_inner, **kw):
                 outer.calls += 1
+                outer.max_tokens.append(kw.get("max_tokens"))
                 return await real.chat.completions.create(**kw)
 
         self.chat = type("Chat", (), {"completions": _Completions()})()
@@ -174,13 +212,18 @@ async def run_one(prompt_cfg: dict, case: dict, app_id: str, job_id: str, det_cf
 
     client = _CountingClient(m._get_mapper_client())
     t0 = time.monotonic()
-    out: dict = {"application_id": app_id, "prompt_version": prompt_cfg["version"]}
+    out: dict = {"application_id": app_id, "prompt_version": prompt_cfg["version"],
+                 "configured_max_tokens": prompt_cfg["max_tokens"]}
 
     async def _no_summary(*a, **k):
         return None
 
     async def _prompt(*a, **k):
         return dict(prompt_cfg)
+
+    def _check_tokens() -> None:
+        out["max_tokens_sent"] = list(client.max_tokens)
+        check_call_tokens(prompt_cfg, client.max_tokens)
 
     with patch.object(m, "_get_mapper_client", return_value=client), \
          patch.object(m, "_generate_qualitative_summary", _no_summary), \
@@ -190,14 +233,17 @@ async def run_one(prompt_cfg: dict, case: dict, app_id: str, job_id: str, det_cf
                 cv_facts=cv_facts, analysis_json=case["analysis_json"], raw_cv_text=case["text"],
                 application_id=app_id, job_id=job_id, db=None)
         except m.CriteriaMappingResponseError as exc:
+            _check_tokens()
             out.update(ok=False, error=f"validation: {exc}"[:500], calls=client.calls,
                        seconds=round(time.monotonic() - t0, 1))
             return out
         except Exception as exc:  # network/API errors are reported, not retried here
+            _check_tokens()
             out.update(ok=False, error=f"{type(exc).__name__}: {exc}"[:500], calls=client.calls,
                        seconds=round(time.monotonic() - t0, 1))
             return out
 
+    _check_tokens()
     det = deterministic_score_to_dict(DeterministicScoringEngine(det_cfg).score(res, case["weights"], local))
     crit_by_text = {c["criterion_text"]: c for d in det["dimensions"].values() for c in d["criteria"]}
     out.update(
@@ -230,6 +276,9 @@ def summarise(results: list[dict], sample: list[dict]) -> str:
         rs = by_v[v]
         ok = [r for r in rs if r["ok"]]
         lines.append(f"\n=== prompt v{v} ===")
+        sent = sorted({t for r in rs for t in r.get("max_tokens_sent", [])})
+        lines.append(f"max_tokens: configured {sorted({r['configured_max_tokens'] for r in rs})}, "
+                     f"sent on calls {sent}")
         lines.append(f"runs {len(rs)} | valid {len(ok)} | failed {len(rs) - len(ok)} | "
                      f"repair used {sum(1 for r in ok if r.get('repair_used'))} | "
                      f"LLM calls {sum(r.get('calls', 0) for r in rs)}")
@@ -303,21 +352,17 @@ async def main_async(args) -> int:
         if built.errors:
             raise SystemExit(f"v10 build failed: {built.errors}")
         (out / "d01_prompt_v10.txt").write_text(built.text, encoding="utf-8")
-        prompts = [
-            {"prompt_code": PROMPT_CODE, "version": 9, "system_prompt": v9["system_prompt"],
-             "model": v9["model"], "temperature": float(v9["temperature"]),
-             "max_tokens": int(v9["max_tokens"]), "output_language": v9["output_language"]},
-            {"prompt_code": PROMPT_CODE, "version": 10, "system_prompt": built.text,
-             "model": v9["model"], "temperature": float(v9["temperature"]),
-             "max_tokens": int(args.v10_max_tokens or v9["max_tokens"]),
-             "output_language": v9["output_language"]},
-        ]
+        prompts = build_prompt_configs(dict(v9), built.text, args.v10_max_tokens)
 
         rows = await db.fetch(_SAMPLE_SQL, args.per_job, args.include_job, args.limit)
         sample = [{"application_id": str(r["application_id"]), "job_id": str(r["job_id"]),
                    "job_code": r["job_code"]} for r in rows]
         print(f"v9 md5 OK; v10 built ({len(built.applied)} edits). Sample: {len(sample)} applications, "
-              f"{len({s['job_code'] for s in sample})} jobs; v10 max_tokens={prompts[1]['max_tokens']}")
+              f"{len({s['job_code'] for s in sample})} jobs")
+        for p in prompts:
+            main_t, repair_t = expected_call_tokens(p)
+            print(f"  prompt v{p['version']}: model={p['model']} temperature={p['temperature']} "
+                  f"max_tokens={main_t} (repair call {repair_t})")
         for s in sample:
             print(f"  {s['job_code']}  {s['application_id']}")
         if args.dry_run:
@@ -379,7 +424,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--per-job", type=int, default=3)
     ap.add_argument("--include-job", action="append", default=[],
                     help="job_code to always include (repeatable)")
-    ap.add_argument("--v10-max-tokens", type=int, default=0, help="0 = same as v9")
+    ap.add_argument("--v10-max-tokens", type=int, default=V10_MAX_TOKENS,
+                    help=f"must be {V10_MAX_TOKENS} (the agreed test value); anything else aborts")
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--v9-md5", default=V9_MD5_EXPECTED)
     ap.add_argument("--dry-run", action="store_true", help="select the sample and build v10; no OpenAI calls")

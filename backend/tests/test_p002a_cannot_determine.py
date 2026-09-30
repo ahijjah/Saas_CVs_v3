@@ -848,3 +848,89 @@ MATCH TYPE GUIDE
         assert "MATCH STATUS DEFINITIONS" not in t and "- PARTIAL:  Some evidence exists" not in t
         # the IMPORTANT evidence paragraph is not a status-definition bullet and stays
         assert "IMPORTANT: Only set status=MATCHED or status=PARTIAL" in t
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 7. Offline v9/v10 comparison — max_tokens safeguards
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _compare_mod():
+    sys.path.insert(0, str(BACKEND / "scripts"))
+    import p002a_offline_compare as c
+    return c
+
+
+_V9_ROW = {"system_prompt": "v9 prompt", "model": "gpt-4o-mini", "temperature": 0.1,
+           "max_tokens": 7000, "output_language": "en"}
+
+
+class TestOfflineCompareMaxTokens:
+
+    def test_default_is_12000(self):
+        c = _compare_mod()
+        assert c.V10_MAX_TOKENS == 12000
+        with patch.object(c, "main_async", AsyncMock(return_value=0)) as run:
+            c.main(["--out-dir", "/tmp/x", "--dry-run"])
+        assert run.await_args.args[0].v10_max_tokens == 12000
+
+    def test_v9_keeps_production_settings_v10_uses_12000(self):
+        v9, v10 = _compare_mod().build_prompt_configs(_V9_ROW, "v10 prompt", 12000)
+        assert (v9["version"], v9["max_tokens"], v9["system_prompt"]) == (9, 7000, "v9 prompt")
+        assert (v10["version"], v10["max_tokens"], v10["system_prompt"]) == (10, 12000, "v10 prompt")
+        for k in ("model", "temperature", "output_language", "prompt_code"):
+            assert v9[k] == v10[k]
+
+    @pytest.mark.parametrize("bad", [0, 7000, 8000, 16000])
+    def test_refuses_any_other_v10_value(self, bad):
+        with pytest.raises(SystemExit, match="expected 12000"):
+            _compare_mod().build_prompt_configs(_V9_ROW, "v10", bad)
+
+    def test_expected_call_tokens(self):
+        c = _compare_mod()
+        v9, v10 = c.build_prompt_configs(_V9_ROW, "v10", 12000)
+        assert c.expected_call_tokens(v9) == (7000, 8000)      # repair = max(7000, 8000)
+        assert c.expected_call_tokens(v10) == (12000, 12000)   # repair = max(12000, 8000)
+
+    def test_check_call_tokens(self):
+        c = _compare_mod()
+        _, v10 = c.build_prompt_configs(_V9_ROW, "v10", 12000)
+        c.check_call_tokens(v10, [12000])
+        c.check_call_tokens(v10, [12000, 12000])
+        with pytest.raises(SystemExit, match="expected"):
+            c.check_call_tokens(v10, [7000])
+        with pytest.raises(SystemExit, match="expected"):
+            c.check_call_tokens(v10, [12000, 8000])
+
+    @pytest.mark.asyncio
+    async def test_run_one_really_sends_12000_on_main_and_repair(self):
+        c = _compare_mod()
+        v9, v10 = c.build_prompt_configs(_V9_ROW, "v10 prompt", 12000)
+        from services.cv_evidence import CVFacts
+        case = {"text": "MS Office user. " * 5, "analysis_json": ANALYSIS_JSON,
+                "weights": {"weight_skills": 100}}
+        facts = CVFacts(language="en", total_char_count=10)
+
+        client = _client(_INVALID, _VALID_CD)
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=client):
+            r = await c.run_one(v10, case, "app-1", "job-1", DeterministicScoringConfig(), facts, None)
+        assert r["ok"] and r["repair_used"]
+        assert r["max_tokens_sent"] == [12000, 12000]
+        assert [k.kwargs["max_tokens"] for k in client.chat.completions.create.await_args_list] == [12000, 12000]
+
+        client = _client(_INVALID, _VALID)
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=client):
+            r = await c.run_one(v9, case, "app-1", "job-1", DeterministicScoringConfig(), facts, None)
+        assert r["max_tokens_sent"] == [7000, 8000]              # v9 unchanged from production
+
+    @pytest.mark.asyncio
+    async def test_run_one_aborts_if_mapper_sends_wrong_tokens(self):
+        c = _compare_mod()
+        _, v10 = c.build_prompt_configs(_V9_ROW, "v10 prompt", 12000)
+        from services.cv_evidence import CVFacts
+        case = {"text": "MS Office user. " * 5, "analysis_json": ANALYSIS_JSON, "weights": {"weight_skills": 100}}
+        wrong = dict(v10, max_tokens=7000)   # simulate a config that slipped past build_prompt_configs
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=_client(_VALID)), \
+             patch.object(c, "expected_call_tokens", return_value=(12000, 12000)):
+            with pytest.raises(SystemExit, match=r"sent \[7000\]"):
+                await c.run_one(wrong, case, "a", "j", DeterministicScoringConfig(),
+                                CVFacts(language="en", total_char_count=10), None)
