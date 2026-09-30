@@ -92,6 +92,13 @@ def _block_span(lines: list[str], start: int) -> int:
     return i
 
 
+def _block_span_from(lines: list[str], i: int) -> int:
+    """Index one past the last non-blank, non-heading line starting at lines[i]."""
+    while i < len(lines) and lines[i].strip() and not _HEADING_RE.match(lines[i]):
+        i += 1
+    return i
+
+
 def build_v10(v9: str) -> BuildResult:
     r = BuildResult(text=v9)
     if _CONTRACT_HEADING in v9:
@@ -105,8 +112,17 @@ def build_v10(v9: str) -> BuildResult:
     lines = text.split("\n")
     idx = next((i for i, ln in enumerate(lines) if ln.strip().startswith("MATCH STATUS DEFINITIONS")), None)
     if idx is not None:
-        end = _block_span(lines, idx)
-        lines[idx:end] = contract.split("\n")
+        # Keep a banner rule ("=====…") directly under the heading, if present.
+        body_start = idx + 1
+        if body_start < len(lines) and re.fullmatch(r"=+\s*", lines[body_start]):
+            body_start += 1
+        end = _block_span(lines, body_start - 1) if body_start == idx + 1 else _block_span_from(lines, body_start)
+        contract_lines = contract.split("\n")
+        if body_start == idx + 1:
+            lines[idx:end] = contract_lines
+        else:
+            # heading line → contract heading; keep the banner; contract body replaces the bullets
+            lines[idx:end] = [contract_lines[0], lines[idx + 1]] + contract_lines[1:]
         r.applied.append(f"E1 replaced MATCH STATUS DEFINITIONS block ({end - idx} lines)")
     else:
         anchor = next((i for i, ln in enumerate(lines) if ln.strip().startswith("MATCH TYPE GUIDE")), None)
@@ -162,6 +178,27 @@ def build_v10(v9: str) -> BuildResult:
         return f'{span}{mm.group(2)} {mm.group(3) or ""}CANNOT_DETERMINE with cd_reason "relevance_unverified"'
 
     text, n = typeb_re.subn(_typeb, text)
+
+    # v9 wording: "If the years threshold is met/exceeded but you have NO …
+    # evidence available to confirm relevance … Assign status=PARTIAL,
+    # match_type="inferred", confidence in the 0.35–0.59 range," — replace the
+    # status only when the enclosing bullet/paragraph is about years being met
+    # with relevance unconfirmed (never "NOT met").
+    status_re = re.compile(
+        r'status=PARTIAL(?:,\s*match_type="inferred")?'
+        r'(?:,\s*confidence in the [0-9.]+\s*[–-]\s*[0-9.]+ range)?'
+    )
+
+    def _typeb_status(mm: re.Match) -> str:
+        start = max(text.rfind("\n- ", 0, mm.start()), text.rfind("\n\n", 0, mm.start()))
+        ctx = text[start:mm.start()]
+        if (re.search(r"years(?:\s+threshold)?\s+(?:is|are)\s+met", ctx, re.IGNORECASE)
+                and re.search(r"confirm\s+relevance|relevance\s+(?:could\s+not|cannot|is\s+not)", ctx, re.IGNORECASE)
+                and not re.search(r"\bNOT\s+met\b", ctx)):
+            return 'status=CANNOT_DETERMINE with cd_reason "relevance_unverified"'
+        return mm.group(0)
+
+    text = status_re.sub(_typeb_status, text)
     n = sum(1 for _ in re.finditer(r'CANNOT_DETERMINE with cd_reason "relevance_unverified"', text))
     if n:
         r.applied.append(f"E4 years met + relevance not established → CANNOT_DETERMINE ({n} occurrence(s))")

@@ -804,3 +804,47 @@ class TestPromptV10Builder:
         assert mapper_mod.D01_STATUS_CONTRACT.rstrip("\n") in _builder().build_v10(_V9_LIKE).text
         assert mapper_mod.D01_STATUS_CONTRACT in mapper_mod._HARDCODED_SYSTEM_PROMPT
         assert "{D01_STATUS_CONTRACT}" not in mapper_mod._HARDCODED_SYSTEM_PROMPT
+
+
+class TestPromptV10BuilderProductionV9Wording:
+    """Wording taken from production v9 (md5 18de95b0…): banner-style headings
+    and the 'years threshold is met/exceeded … Assign status=PARTIAL' sentence."""
+
+    V9_SNIPPET = """\
+For Type B criteria:
+- If the years threshold is met/exceeded but you have NO title, responsibility,
+  or domain evidence available to confirm relevance (for example, the
+  experience data you were given contains only a total-years figure with no
+  itemized roles) → do not guess relevance in either direction. Assign
+  status=PARTIAL, match_type="inferred", confidence in the 0.35–0.59 range,
+  and state plainly in match_reason that the years threshold is met but
+  relevance could not be confirmed from the available data. Add risk_flag
+  "relevance_unverified".
+
+=====================================================================
+MATCH STATUS DEFINITIONS
+=====================================================================
+- MATCHED:  Clear, sufficient evidence that the criterion is met.
+- PARTIAL:  Some evidence exists but it is incomplete.
+- ABSENT:   No evidence found anywhere in the provided data.
+
+IMPORTANT: Only set status=MATCHED or status=PARTIAL if you can provide at least one entry in supporting_evidence.
+
+=====================================================================
+MATCH TYPE GUIDE
+=====================================================================
+- direct: explicit.
+      "status": "<MATCHED|PARTIAL|ABSENT>",
+"""
+
+    def test_v9_type_b_and_banner(self):
+        r = _builder().build_v10(self.V9_SNIPPET)
+        assert r.errors == []
+        t = r.text
+        assert 'Assign\n  status=CANNOT_DETERMINE with cd_reason "relevance_unverified",\n  and state plainly' in t
+        # banner kept directly under the new heading; old definitions gone
+        assert "=====\nASSESSMENT STATUS CONTRACT (authoritative" in t
+        assert "(authoritative: overrides any other status guidance in these instructions):\n=====" in t
+        assert "MATCH STATUS DEFINITIONS" not in t and "- PARTIAL:  Some evidence exists" not in t
+        # the IMPORTANT evidence paragraph is not a status-definition bullet and stays
+        assert "IMPORTANT: Only set status=MATCHED or status=PARTIAL" in t
