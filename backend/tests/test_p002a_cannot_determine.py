@@ -14,6 +14,7 @@ Covers:
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
 import os
 import re
@@ -911,14 +912,14 @@ class TestOfflineCompareMaxTokens:
         facts = CVFacts(language="en", total_char_count=10)
 
         client = _client(_INVALID, _VALID_CD)
-        with patch.object(mapper_mod, "_get_mapper_client", return_value=client):
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=client), c.mapper_hooks():
             r = await c.run_one(v10, case, "app-1", "job-1", DeterministicScoringConfig(), facts, None)
         assert r["ok"] and r["repair_used"]
         assert r["max_tokens_sent"] == [12000, 12000]
         assert [k.kwargs["max_tokens"] for k in client.chat.completions.create.await_args_list] == [12000, 12000]
 
         client = _client(_INVALID, _VALID)
-        with patch.object(mapper_mod, "_get_mapper_client", return_value=client):
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=client), c.mapper_hooks():
             r = await c.run_one(v9, case, "app-1", "job-1", DeterministicScoringConfig(), facts, None)
         assert r["max_tokens_sent"] == [7000, 8000]              # v9 unchanged from production
 
@@ -930,7 +931,7 @@ class TestOfflineCompareMaxTokens:
         case = {"text": "MS Office user. " * 5, "analysis_json": ANALYSIS_JSON, "weights": {"weight_skills": 100}}
         wrong = dict(v10, max_tokens=7000)   # simulate a config that slipped past build_prompt_configs
         with patch.object(mapper_mod, "_get_mapper_client", return_value=_client(_VALID)), \
-             patch.object(c, "expected_call_tokens", return_value=(12000, 12000)):
+             patch.object(c, "expected_call_tokens", return_value=(12000, 12000)), c.mapper_hooks():
             with pytest.raises(SystemExit, match=r"sent \[7000\]"):
                 await c.run_one(wrong, case, "a", "j", DeterministicScoringConfig(),
                                 CVFacts(language="en", total_char_count=10), None)
@@ -966,7 +967,7 @@ class TestOfflineCompareCapture:
         c, _, v10, case, facts = self._setup()
         client = _seq_client(_resp('{"assessments": [{"crit', finish="length", completion_tokens=12000),
                              _resp(_VALID_CD, completion_tokens=800))
-        with patch.object(mapper_mod, "_get_mapper_client", return_value=client):
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=client), c.mapper_hooks():
             r = await c.run_one(v10, case, "a1", "j1", DeterministicScoringConfig(), facts, None)
         main, repair = r["call_log"]
         assert (main["call"], main["max_tokens"], main["finish_reason"]) == ("main", 12000, "length")
@@ -981,7 +982,7 @@ class TestOfflineCompareCapture:
     async def test_call_log_records_openai_exception(self):
         c, v9, _, case, facts = self._setup()
         client = _seq_client(TimeoutError("Request timed out."))
-        with patch.object(mapper_mod, "_get_mapper_client", return_value=client):
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=client), c.mapper_hooks():
             r = await c.run_one(v9, case, "a1", "j1", DeterministicScoringConfig(), facts, None)
         assert r["ok"] is False and "TimeoutError" in r["error"]
         (call,) = r["call_log"]
@@ -991,7 +992,7 @@ class TestOfflineCompareCapture:
     async def test_capture_does_not_change_the_run(self):
         """Same responses → same assessments with and without the capture wrapper."""
         c, v9, _, case, facts = self._setup()
-        with patch.object(mapper_mod, "_get_mapper_client", return_value=_client(_INVALID, _VALID)):
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=_client(_INVALID, _VALID)), c.mapper_hooks():
             r = await c.run_one(v9, case, "a1", "j1", DeterministicScoringConfig(), facts, None)
         direct = await _assess(_client(_INVALID, _VALID))
         assert [a["llm_status"] for a in r["assessments"]] == [a.status for a in direct.assessments]
@@ -1055,3 +1056,92 @@ class TestOfflineCompareCapture:
         for name in ("report.md", "summary.txt", "cd_review.tsv"):
             assert (tmp_path / name).exists()
         assert "SECRET-CV-QUOTE" in (tmp_path / "cd_review.tsv").read_text()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 9. Offline comparison — isolation of concurrent runs (regression: v9 run
+#    recorded a v10 call "[7000, 12000]" because per-run patches overlapped)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestOfflineCompareConcurrency:
+
+    def _slow_client(self, tag, log):
+        """Fake OpenAI client: each call takes time (so tasks interleave), first
+        response is invalid to force a repair call, second is valid."""
+        state = {"n": 0}
+
+        async def create(**kw):
+            state["n"] += 1
+            sysp = kw["messages"][0]["content"]
+            log.append((tag, kw["max_tokens"],
+                        "v10" if sysp.startswith("v10 prompt") else "v9" if sysp.startswith("v9 prompt") else "other"))
+            await asyncio.sleep(0.02 if tag % 2 else 0.035)
+            body = {"assessments": [dict(_item(criterion_text="MS Office", dimension="skills",
+                                               criterion_class="flexible", supporting_evidence=["Excel"]),
+                                         status="UNCLEAR" if state["n"] == 1 else "MATCHED")]}
+            return _resp(json.dumps(body))
+
+        client = MagicMock()
+        client.chat.completions.create = create
+        return client
+
+    @pytest.mark.asyncio
+    async def test_concurrent_v9_v10_runs_are_isolated(self):
+        c = _compare_mod()
+        v9, v10 = c.build_prompt_configs(_V9_ROW, "v10 prompt", 12000)
+        from services.cv_evidence import CVFacts
+        case = {"text": "MS Office user. " * 5, "analysis_json": ANALYSIS_JSON, "weights": {"weight_skills": 100}}
+        facts = CVFacts(language="en", total_char_count=10)
+        log: list = []
+        clients = iter([self._slow_client(i, log) for i in range(8)])
+        prompts = [v9, v10] * 4
+        summary = AsyncMock(return_value=None)
+        with patch.object(mapper_mod, "_get_mapper_client", side_effect=lambda: next(clients)), \
+             c.mapper_hooks():
+            results = await asyncio.gather(*(
+                c.run_one(p, case, f"app-{i}", "job", DeterministicScoringConfig(), facts, None)
+                for i, p in enumerate(prompts)))
+        # every run: its own prompt on both calls, the right max_tokens, a repair, success
+        for p, r in zip(prompts, results):
+            assert r["ok"] and r["repair_used"], r
+            want = [7000, 8000] if p["version"] == 9 else [12000, 12000]
+            assert r["max_tokens_sent"] == want
+            assert [cl["prompt_version_sent"] for cl in r["call_log"]] == [p["version"]] * 2
+        # every OpenAI request carried the prompt matching its max_tokens
+        assert len(log) == 16
+        for _tag, mt, sent in log:
+            assert (sent, mt) in {("v9", 7000), ("v9", 8000), ("v10", 12000)}
+        summary.assert_not_called()
+        # the module functions are restored afterwards
+        assert mapper_mod._get_mapper_client is not None
+        import services.ai_service as ai
+        assert ai.load_active_prompt.__name__ == "load_active_prompt"
+
+    @pytest.mark.asyncio
+    async def test_hooks_restore_originals(self):
+        c = _compare_mod()
+        import services.ai_service as ai
+        before = (mapper_mod._get_mapper_client, mapper_mod._generate_qualitative_summary, ai.load_active_prompt)
+        with c.mapper_hooks():
+            assert mapper_mod._get_mapper_client is not before[0]
+        assert (mapper_mod._get_mapper_client, mapper_mod._generate_qualitative_summary,
+                ai.load_active_prompt) == before
+
+    @pytest.mark.asyncio
+    async def test_run_one_requires_hooks(self):
+        c = _compare_mod()
+        v9, _ = c.build_prompt_configs(_V9_ROW, "v10 prompt", 12000)
+        with pytest.raises(RuntimeError, match="mapper_hooks"):
+            await c.run_one(v9, {}, "a", "j", DeterministicScoringConfig(), None, None)
+
+    def test_check_request_guards(self):
+        c = _compare_mod()
+        v9, v10 = c.build_prompt_configs(_V9_ROW, "v10 prompt", 12000)
+        ok = {"messages": [{"role": "system", "content": "v9 prompt" + "\n\nSECURITY SUFFIX"}]}
+        c.check_request(v9, 0, ok)                         # security suffix appended is fine
+        with pytest.raises(SystemExit, match="system prompt"):
+            c.check_request(v9, 0, {"messages": [{"role": "system", "content": "v10 prompt"}]})
+        with pytest.raises(SystemExit, match="system prompt"):
+            c.check_request(v10, 0, {"messages": [{"role": "system", "content": "v9 prompt"}]})
+        with pytest.raises(SystemExit, match="unexpected D-01 call #3"):
+            c.check_request(v9, 2, ok)

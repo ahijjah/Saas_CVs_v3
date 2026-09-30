@@ -39,13 +39,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import collections
+import contextlib
+import contextvars
 import hashlib
 import json
 import sys
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -203,7 +204,7 @@ class _CountingClient:
     main/repair, duration, finish_reason, token usage, response length,
     validation errors of that response, or the exception raised."""
 
-    def __init__(self, real):
+    def __init__(self, real, prompt_cfg: dict):
         self.calls = 0
         self.max_tokens: list[int] = []   # max_tokens actually sent, per call
         self.records: list[dict] = []
@@ -212,8 +213,10 @@ class _CountingClient:
         class _Completions:
             async def create(self_inner, **kw):
                 from services.llm_criteria_mapper import _response_validation_errors
+                check_request(prompt_cfg, outer.calls, kw)
                 rec: dict = {"call": "repair" if outer.calls else "main",
-                             "max_tokens": kw.get("max_tokens")}
+                             "max_tokens": kw.get("max_tokens"),
+                             "prompt_version_sent": prompt_cfg["version"]}
                 outer.calls += 1
                 outer.max_tokens.append(kw.get("max_tokens"))
                 t0 = time.monotonic()
@@ -246,29 +249,71 @@ class _CountingClient:
         self.chat = type("Chat", (), {"completions": _Completions()})()
 
 
+def check_request(prompt_cfg: dict, calls_so_far: int, kw: dict) -> None:
+    """Abort unless this OpenAI request belongs to this run: its own system
+    prompt (the mapper may append the security suffix, never replace it) and
+    at most main + one repair call."""
+    if calls_so_far >= 2:
+        raise SystemExit(f"prompt v{prompt_cfg['version']}: unexpected D-01 call #{calls_so_far + 1}; aborting")
+    messages = kw.get("messages") or []
+    sent = messages[0].get("content", "") if messages and isinstance(messages[0], dict) else ""
+    if not isinstance(sent, str) or not sent.startswith(prompt_cfg["system_prompt"]):
+        raise SystemExit(f"prompt v{prompt_cfg['version']}: request did not carry this run's system prompt; aborting")
+
+
+# Per-run state for concurrent runs. The mapper looks up its OpenAI client and
+# prompt through module-level functions; those are replaced ONCE (mapper_hooks)
+# by dispatchers that read this ContextVar. asyncio gives every task its own
+# copy of the context, so concurrent runs never see each other's prompt,
+# client or call log.
+_RUN: contextvars.ContextVar = contextvars.ContextVar("p002a_run")
+_ORIGINAL_CLIENT_FACTORY: list = []
+
+
+@contextlib.contextmanager
+def mapper_hooks():
+    import services.ai_service as ai
+    import services.llm_criteria_mapper as m
+
+    saved = (m._get_mapper_client, m._generate_qualitative_summary, ai.load_active_prompt)
+
+    def _client():
+        return _RUN.get()["client"]
+
+    async def _prompt(*_a, **_k):
+        return dict(_RUN.get()["prompt"])
+
+    async def _no_summary(*_a, **_k):   # summary call skipped for every run
+        return None
+
+    _ORIGINAL_CLIENT_FACTORY.append(saved[0])
+    m._get_mapper_client, m._generate_qualitative_summary, ai.load_active_prompt = _client, _no_summary, _prompt
+    try:
+        yield
+    finally:
+        m._get_mapper_client, m._generate_qualitative_summary, ai.load_active_prompt = saved
+        _ORIGINAL_CLIENT_FACTORY.pop()
+
+
 async def run_one(prompt_cfg: dict, case: dict, app_id: str, job_id: str, det_cfg, cv_facts, local) -> dict:
+    """One D-01 + F-01 run. Must be called inside mapper_hooks()."""
     import services.llm_criteria_mapper as m
     from services.deterministic_scoring import DeterministicScoringEngine, deterministic_score_to_dict
 
-    client = _CountingClient(m._get_mapper_client())
+    if not _ORIGINAL_CLIENT_FACTORY:
+        raise RuntimeError("run_one must be called inside mapper_hooks()")
+    client = _CountingClient(_ORIGINAL_CLIENT_FACTORY[-1](), prompt_cfg)
     t0 = time.monotonic()
     out: dict = {"application_id": app_id, "prompt_version": prompt_cfg["version"],
                  "configured_max_tokens": prompt_cfg["max_tokens"]}
-
-    async def _no_summary(*a, **k):
-        return None
-
-    async def _prompt(*a, **k):
-        return dict(prompt_cfg)
 
     def _check_tokens() -> None:
         out["max_tokens_sent"] = list(client.max_tokens)
         out["call_log"] = list(client.records)
         check_call_tokens(prompt_cfg, client.max_tokens)
 
-    with patch.object(m, "_get_mapper_client", return_value=client), \
-         patch.object(m, "_generate_qualitative_summary", _no_summary), \
-         patch("services.ai_service.load_active_prompt", _prompt):
+    token = _RUN.set({"client": client, "prompt": prompt_cfg})
+    try:
         try:
             res = await m.LLMCriteriaMapper().assess(
                 cv_facts=cv_facts, analysis_json=case["analysis_json"], raw_cv_text=case["text"],
@@ -283,6 +328,8 @@ async def run_one(prompt_cfg: dict, case: dict, app_id: str, job_id: str, det_cf
             out.update(ok=False, error=f"{type(exc).__name__}: {exc}"[:500], calls=client.calls,
                        seconds=round(time.monotonic() - t0, 1))
             return out
+    finally:
+        _RUN.reset(token)
 
     _check_tokens()
     det = deterministic_score_to_dict(DeterministicScoringEngine(det_cfg).score(res, case["weights"], local))
@@ -630,7 +677,8 @@ async def main_async(args) -> int:
                   f"{'OK ' + r['recommendation'] if r['ok'] else 'FAILED'} calls={r['calls']} {r['seconds']}s",
                   flush=True)
 
-    await asyncio.gather(*(one(s, p) for s in sample for p in prompts))
+    with mapper_hooks():
+        await asyncio.gather(*(one(s, p) for s in sample for p in prompts))
 
     summary = write_outputs(out, results, sample, args.include_job)
     print("\n" + summary)
