@@ -19,9 +19,13 @@ job_criteria.analysis_json and weights, CVFactsExtractor, CriteriaMatchEngine
 Outputs (in --out-dir; contain CV-derived text, keep them on the server):
     d01_prompt_v10.txt   v10 built from the DB v9 (for review / later insert)
     v10_build_report.md  builder edit report
-    results.jsonl        one line per (application, prompt) with every assessment
-    cd_review.tsv        every CANNOT_DETERMINE row, for manual review
-    summary.txt          aggregate comparison (no personal data; also printed)
+    sample.json          the selected sample
+    results.jsonl        one line per (application, prompt): every assessment with
+                         evidence, and a per-call log (main/repair, max_tokens,
+                         finish_reason, token usage, validation errors, exceptions)
+    cd_review.tsv        every CANNOT_DETERMINE row with evidence, for manual review
+    report.md            full report incl. CD cases and criterion changes (CV-derived text)
+    summary.txt          same report without CV-derived text (safe to paste; also printed)
 
 Usage (inside a one-off container from the worker image; see PR/notes):
     python scripts/p002a_offline_compare.py --out-dir /p002a_out --dry-run
@@ -189,19 +193,55 @@ def check_call_tokens(prompt_cfg: dict, sent: list) -> None:
 
 # ── one D-01 + F-01 run ──────────────────────────────────────────────────────
 
+def _int_or_none(v: Any) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
 class _CountingClient:
-    """Wraps the real mapper client and counts chat.completions.create calls."""
+    """Wraps the real mapper client. Records, per D-01 call (capture only; the
+    request and response are passed through unchanged): max_tokens sent,
+    main/repair, duration, finish_reason, token usage, response length,
+    validation errors of that response, or the exception raised."""
 
     def __init__(self, real):
         self.calls = 0
         self.max_tokens: list[int] = []   # max_tokens actually sent, per call
+        self.records: list[dict] = []
         outer = self
 
         class _Completions:
             async def create(self_inner, **kw):
+                from services.llm_criteria_mapper import _response_validation_errors
+                rec: dict = {"call": "repair" if outer.calls else "main",
+                             "max_tokens": kw.get("max_tokens")}
                 outer.calls += 1
                 outer.max_tokens.append(kw.get("max_tokens"))
-                return await real.chat.completions.create(**kw)
+                t0 = time.monotonic()
+                try:
+                    resp = await real.chat.completions.create(**kw)
+                except Exception as exc:
+                    rec.update(seconds=round(time.monotonic() - t0, 1),
+                               error=f"{type(exc).__name__}: {exc}"[:300])
+                    outer.records.append(rec)
+                    raise
+                try:
+                    choice = resp.choices[0]
+                    content = choice.message.content or ""
+                    finish = getattr(choice, "finish_reason", None)
+                    usage = getattr(resp, "usage", None)
+                    rec.update(
+                        seconds=round(time.monotonic() - t0, 1),
+                        finish_reason=finish if isinstance(finish, str) else None,
+                        prompt_tokens=_int_or_none(getattr(usage, "prompt_tokens", None)),
+                        completion_tokens=_int_or_none(getattr(usage, "completion_tokens", None)),
+                        response_chars=len(content) if isinstance(content, str) else None,
+                        validation_errors=_response_validation_errors(content)[:10]
+                        if isinstance(content, str) else ["non-text content"],
+                    )
+                except Exception as exc:  # capture must never change the run
+                    rec["capture_error"] = f"{type(exc).__name__}: {exc}"[:200]
+                outer.records.append(rec)
+                return resp
 
         self.chat = type("Chat", (), {"completions": _Completions()})()
 
@@ -223,6 +263,7 @@ async def run_one(prompt_cfg: dict, case: dict, app_id: str, job_id: str, det_cf
 
     def _check_tokens() -> None:
         out["max_tokens_sent"] = list(client.max_tokens)
+        out["call_log"] = list(client.records)
         check_call_tokens(prompt_cfg, client.max_tokens)
 
     with patch.object(m, "_get_mapper_client", return_value=client), \
@@ -256,77 +297,267 @@ async def run_one(prompt_cfg: dict, case: dict, app_id: str, job_id: str, det_cf
             "criterion_text": a.criterion_text, "dimension": a.dimension, "required": a.required,
             "llm_status": a.status, "cd_reason": a.cd_reason, "confidence": a.confidence,
             "match_type": a.match_type, "risk_flags": a.risk_flags, "match_reason": a.match_reason,
+            "supporting_evidence": list(a.supporting_evidence),
             "final_status": (crit_by_text.get(a.criterion_text) or {}).get("status"),
+            "final_cd_reason": (crit_by_text.get(a.criterion_text) or {}).get("cd_reason"),
+            "verified_credit": (crit_by_text.get(a.criterion_text) or {}).get("verified_credit"),
+            "upper_credit": (crit_by_text.get(a.criterion_text) or {}).get("upper_credit"),
+            "pending_worth": (crit_by_text.get(a.criterion_text) or {}).get("pending_worth"),
         } for a in res.assessments],
     )
     return out
 
 
-# ── summary ──────────────────────────────────────────────────────────────────
+# ── report ───────────────────────────────────────────────────────────────────
 
-def summarise(results: list[dict], sample: list[dict]) -> str:
-    lines: list[str] = []
-    by_v: dict[str, list[dict]] = collections.defaultdict(list)
+# gpt-4o-mini list prices (USD per 1M tokens) used for the cost ESTIMATE only.
+PRICE_IN_PER_M = 0.15
+PRICE_OUT_PER_M = 0.60
+STATUSES = ("MATCHED", "PARTIAL", "ABSENT", CD)
+MATERIAL_SCORE_DELTA = 10
+
+
+def _pct(n: int, d: int) -> str:
+    return f"{100 * n / d:5.1f}%" if d else "    -"
+
+
+def _one_line(v: Any, n: int = 240) -> str:
+    return str(v).replace("\n", " ").replace("\t", " ").replace("|", "/")[:n]
+
+
+def _calls(rs: list[dict]) -> list[dict]:
+    return [c for r in rs for c in r.get("call_log", [])]
+
+
+def _section_runs(lines: list[str], rs: list[dict]) -> None:
+    ok = [r for r in rs if r["ok"]]
+    calls = _calls(rs)
+    main = [c for c in calls if c["call"] == "main"]
+    rep = [c for c in calls if c["call"] == "repair"]
+    lines.append(f"- runs {len(rs)} | valid {len(ok)} | failed {len(rs) - len(ok)}")
+    lines.append(f"- D-01 calls {len(calls)} (main {len(main)}, repair {len(rep)}); "
+                 f"runs needing repair {sum(1 for r in rs if r.get('calls', 0) > 1)}; "
+                 f"repair succeeded {sum(1 for r in ok if r.get('repair_used'))}")
+    lines.append(f"- max_tokens configured {sorted({r['configured_max_tokens'] for r in rs})}; "
+                 f"sent main {sorted({c['max_tokens'] for c in main})}, "
+                 f"repair {sorted({c['max_tokens'] for c in rep})}")
+    fin = collections.Counter(f"{c['call']}:{c.get('finish_reason') or c.get('error', '?')[:40]}" for c in calls)
+    lines.append(f"- finish_reason per call: {dict(fin)}")
+    lines.append(f"- truncated responses (finish_reason=length): "
+                 f"{sum(1 for c in calls if c.get('finish_reason') == 'length')}")
+    pt = sum(c.get("prompt_tokens") or 0 for c in calls)
+    ct = sum(c.get("completion_tokens") or 0 for c in calls)
+    missing = sum(1 for c in calls if c.get("prompt_tokens") is None and "error" not in c)
+    cost = pt / 1e6 * PRICE_IN_PER_M + ct / 1e6 * PRICE_OUT_PER_M
+    lines.append(f"- tokens: prompt {pt:,} | completion {ct:,} | estimated cost ${cost:.3f} "
+                 f"(gpt-4o-mini list price){' | usage missing on %d calls' % missing if missing else ''}")
+    maxc = max((c.get("completion_tokens") or 0 for c in calls), default=0)
+    lines.append(f"- largest completion {maxc:,} tokens")
+    secs = [r.get("seconds", 0) for r in rs]
+    if secs:
+        lines.append(f"- duration per run: mean {sum(secs) / len(secs):.1f}s, max {max(secs):.1f}s")
+
+
+def _status_table(lines: list[str], ok: list[dict]) -> None:
+    mix: dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
+    for r in ok:
+        for a in r["assessments"]:
+            grp = "required" if a["required"] else "preferred"
+            mix[(grp, a["dimension"])][a["final_status"]] += 1
+            mix[(grp, "ALL")][a["final_status"]] += 1
+            mix[("all", "ALL")][a["final_status"]] += 1
+    lines.append("| group | dimension | MATCHED | PARTIAL | ABSENT | CANNOT_DETERMINE | total |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for key in sorted(mix, key=lambda k: (k[0] != "all", k[0], k[1] != "ALL", k[1])):
+        c = mix[key]
+        tot = sum(c.values())
+        cells = " | ".join(f"{c[st]} ({_pct(c[st], tot).strip()})" for st in STATUSES)
+        lines.append(f"| {key[0]} | {key[1]} | {cells} | {tot} |")
+
+
+def build_report(results: list[dict], sample: list[dict], focus_jobs: list[str],
+                 details: bool = True) -> str:
+    """details=False → aggregate only (no CV-derived text): safe to paste."""
+    by_v: dict[int, list[dict]] = collections.defaultdict(list)
     for r in results:
-        by_v[str(r["prompt_version"])].append(r)
+        by_v[int(r["prompt_version"])].append(r)
+    L: list[str] = ["# P0-02a offline D-01 comparison — v9 vs v10", ""]
+    L.append(f"Sample: {len(sample)} applications from {len({s['job_code'] for s in sample})} jobs; "
+             f"focus jobs: {', '.join(focus_jobs) or '-'}")
 
-    lines.append(f"Sample: {len(sample)} applications from "
-                 f"{len({s['job_code'] for s in sample})} jobs")
-    for v in sorted(by_v, key=int):
+    # 1-3, 9, 11 per prompt
+    for v in sorted(by_v):
         rs = by_v[v]
         ok = [r for r in rs if r["ok"]]
-        lines.append(f"\n=== prompt v{v} ===")
-        sent = sorted({t for r in rs for t in r.get("max_tokens_sent", [])})
-        lines.append(f"max_tokens: configured {sorted({r['configured_max_tokens'] for r in rs})}, "
-                     f"sent on calls {sent}")
-        lines.append(f"runs {len(rs)} | valid {len(ok)} | failed {len(rs) - len(ok)} | "
-                     f"repair used {sum(1 for r in ok if r.get('repair_used'))} | "
-                     f"LLM calls {sum(r.get('calls', 0) for r in rs)}")
-        for r in rs:
-            if not r["ok"]:
-                lines.append(f"  FAILED {r['application_id']}: {r['error'][:160]}")
-        mix: dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
-        cd_reasons = collections.Counter()
-        for r in ok:
-            for a in r["assessments"]:
-                grp = "required" if a["required"] else "preferred"
-                mix[(grp, a["dimension"])][a["final_status"]] += 1
-                mix[(grp, "ALL")][a["final_status"]] += 1
-                if a["final_status"] == CD:
-                    cd_reasons[a["cd_reason"] or "?"] += 1
-        lines.append("status mix (final, after F-01) — MATCHED / PARTIAL / ABSENT / CD / total, CD%:")
-        for key in sorted(mix, key=lambda k: (k[0], k[1] != "ALL", k[1])):
-            c = mix[key]
-            tot = sum(c.values())
-            lines.append(f"  {key[0]:9} {key[1]:16} {c['MATCHED']:5} {c['PARTIAL']:5} {c['ABSENT']:5} "
-                         f"{c[CD]:5} {tot:6}  {100 * c[CD] / tot if tot else 0:5.1f}%")
-        lines.append(f"cd_reason: {dict(cd_reasons)}")
-        lines.append(f"recommendation: {dict(collections.Counter(r['recommendation'] for r in ok))}")
+        L += ["", f"## Prompt v{v}", ""]
+        _section_runs(L, rs)
+        L += ["", "### Status counts (final, after F-01)", ""]
+        _status_table(L, ok)
+        cdr = collections.Counter(a["final_cd_reason"] or "?" for r in ok for a in r["assessments"]
+                                  if a["final_status"] == CD)
+        L.append(f"\ncd_reason: {dict(cdr)}")
+        L.append(f"recommendation: {dict(collections.Counter(r['recommendation'] for r in ok))}")
         if ok:
-            lines.append(f"mean verified {sum(r['verified'] for r in ok) / len(ok):.1f} | "
-                         f"mean upper {sum(r['upper'] for r in ok) / len(ok):.1f} | "
-                         f"apps with pending>0 {sum(1 for r in ok if r['pending'] > 0)}")
+            L.append(f"verified mean {sum(r['verified'] for r in ok) / len(ok):.1f} | upper mean "
+                     f"{sum(r['upper'] for r in ok) / len(ok):.1f} | runs with pending>0 "
+                     f"{sum(1 for r in ok if r['pending'] > 0)}")
+        # 9: errors
+        bad = [r for r in rs if not r["ok"]]
+        first_errs = [(r, c) for r in rs for c in r.get("call_log", []) if c.get("validation_errors")]
+        L += ["", "### Errors (malformed JSON, truncation, validation, OpenAI)", ""]
+        if not bad and not first_errs and not any("error" in c for c in _calls(rs)):
+            L.append("- none")
+        for r, c in first_errs:
+            L.append(f"- {r['job_code']} {r['application_id']} {c['call']} call "
+                     f"(finish_reason={c.get('finish_reason')}, completion_tokens={c.get('completion_tokens')}): "
+                     f"{_one_line('; '.join(c['validation_errors'][:3]), 300)}")
+        for r in rs:
+            for c in r.get("call_log", []):
+                if "error" in c:
+                    L.append(f"- {r['job_code']} {r['application_id']} {c['call']} call raised: {_one_line(c['error'])}")
+        for r in bad:
+            L.append(f"- FAILED RUN {r['job_code']} {r['application_id']}: {_one_line(r['error'], 300)}")
 
-    if "9" in by_v and "10" in by_v:
-        v9 = {r["application_id"]: r for r in by_v["9"] if r["ok"]}
-        v10 = {r["application_id"]: r for r in by_v["10"] if r["ok"]}
+    # 7: v10 per application
+    if 10 in by_v:
+        L += ["", "## v10 per application (verified / upper / pending / recommendation)", "",
+              "| job | application | verified | upper | pending | recommendation | calls |",
+              "|---|---|---|---|---|---|---|"]
+        for r in sorted(by_v[10], key=lambda r: (r["job_code"], r["application_id"])):
+            if r["ok"]:
+                L.append(f"| {r['job_code']} | {r['application_id']} | {r['verified']} | {r['upper']} | "
+                         f"{r['pending']} | {r['recommendation']} | {r['calls']} |")
+            else:
+                L.append(f"| {r['job_code']} | {r['application_id']} | FAILED | | | | {r.get('calls')} |")
+
+    # 6, 8: paired comparison
+    if 9 in by_v and 10 in by_v:
+        v9 = {r["application_id"]: r for r in by_v[9] if r["ok"]}
+        v10 = {r["application_id"]: r for r in by_v[10] if r["ok"]}
         both = sorted(set(v9) & set(v10))
-        trans = collections.Counter((v9[a]["recommendation"], v10[a]["recommendation"]) for a in both)
-        changed = [a for a in both if v9[a]["recommendation"] != v10[a]["recommendation"]]
-        lines.append(f"\n=== v9 → v10 (both valid: {len(both)}) ===")
-        lines.append(f"recommendation changed: {len(changed)}")
-        for (a, b), n in sorted(trans.items()):
-            if a != b:
-                lines.append(f"  {a:>18} → {b:<18} {n}")
+        L += ["", f"## v9 → v10 (applications valid under both: {len(both)})", ""]
+        trans = collections.Counter()
+        unmatched = 0
+        changes: list[tuple] = []
+        for aid in both:
+            a9 = {a["criterion_text"]: a for a in v9[aid]["assessments"]}
+            for a in v10[aid]["assessments"]:
+                b = a9.get(a["criterion_text"])
+                if b is None:
+                    unmatched += 1
+                    continue
+                trans[(b["final_status"], a["final_status"])] += 1
+                if b["final_status"] != a["final_status"]:
+                    changes.append((v10[aid]["job_code"], aid, a, b))
+        tot = sum(trans.values())
+        L.append(f"Criterion status transitions (same application + criterion text; {tot} pairs, "
+                 f"{unmatched} v10 criteria without a v9 counterpart):")
+        L.append("")
+        L.append("| v9 \\ v10 | " + " | ".join(STATUSES) + " |")
+        L.append("|---|" + "---|" * len(STATUSES))
+        for s9 in STATUSES:
+            L.append(f"| {s9} | " + " | ".join(str(trans[(s9, s10)]) for s10 in STATUSES) + " |")
+        L.append(f"\nchanged: {len(changes)} of {tot} ({_pct(len(changes), tot).strip()})")
+        rec_t = collections.Counter((v9[a]["recommendation"], v10[a]["recommendation"]) for a in both)
+        L += ["", "Recommendation transitions:", ""]
+        for (x, y), n in sorted(rec_t.items()):
+            L.append(f"- {x} → {y}: {n}")
         if both:
             dv = [v10[a]["verified"] - v9[a]["verified"] for a in both]
-            lines.append(f"verified score change v10−v9: mean {sum(dv) / len(dv):+.1f}, "
-                         f"min {min(dv):+d}, max {max(dv):+d}")
-        lines.append("changed applications: " + ", ".join(changed))
-    return "\n".join(lines)
+            L.append(f"\nverified score v10−v9: mean {sum(dv) / len(dv):+.1f}, min {min(dv):+d}, max {max(dv):+d}")
+        mat = [a for a in both if abs(v10[a]["verified"] - v9[a]["verified"]) >= MATERIAL_SCORE_DELTA
+               or v9[a]["recommendation"] != v10[a]["recommendation"]]
+        L += ["", f"Material differences (|verified Δ| ≥ {MATERIAL_SCORE_DELTA} or recommendation changed): "
+              f"{len(mat)}", "",
+              "| job | application | v9 verified | v9 rec | v10 verified | v10 upper | v10 pending | v10 rec |",
+              "|---|---|---|---|---|---|---|---|"]
+        for a in mat:
+            x, y = v9[a], v10[a]
+            L.append(f"| {y['job_code']} | {a} | {x['verified']} | {x['recommendation']} | {y['verified']} | "
+                     f"{y['upper']} | {y['pending']} | {y['recommendation']} |")
+        only = sorted((set(r["application_id"] for r in by_v[9]) | set(r["application_id"] for r in by_v[10]))
+                      - set(both))
+        L.append(f"\nnot comparable (failed under v9 and/or v10): {len(only)} {', '.join(only)}")
+
+        if details:
+            L += ["", "### Criterion status changes v9 → v10 (details)", "",
+                  "| job | application | req | dimension | criterion | v9 | v10 | v10 cd_reason | v10 match_reason |",
+                  "|---|---|---|---|---|---|---|---|---|"]
+            for job, aid, a, b in sorted(changes, key=lambda t: (t[0], t[1])):
+                L.append(f"| {job} | {aid} | {'R' if a['required'] else 'P'} | {a['dimension']} | "
+                         f"{_one_line(a['criterion_text'], 120)} | {b['final_status']} | {a['final_status']} | "
+                         f"{a['final_cd_reason'] or ''} | {_one_line(a['match_reason'], 200)} |")
+
+    # 5: every CD case
+    if details:
+        L += ["", "## Every CANNOT_DETERMINE case", "",
+              "| prompt | job | application | req | dimension | criterion | cd_reason | evidence | match_reason | pending_worth |",
+              "|---|---|---|---|---|---|---|---|---|---|"]
+        for r in sorted(results, key=lambda r: (r["prompt_version"], r["job_code"], r["application_id"])):
+            for a in r.get("assessments", []):
+                if a["final_status"] == CD:
+                    L.append(f"| v{r['prompt_version']} | {r['job_code']} | {r['application_id']} | "
+                             f"{'required' if a['required'] else 'preferred'} | {a['dimension']} | "
+                             f"{_one_line(a['criterion_text'], 120)} | {a['final_cd_reason']} | "
+                             f"{_one_line(' // '.join(a.get('supporting_evidence') or []), 240)} | "
+                             f"{_one_line(a['match_reason'], 240)} | {a.get('pending_worth')} |")
+
+    # 10: focus jobs
+    for job in focus_jobs:
+        L += ["", f"## Focus job {job}", ""]
+        for v in sorted(by_v):
+            rs = [r for r in by_v[v] if r["job_code"] == job]
+            L += [f"### v{v}", ""]
+            if not rs:
+                L.append("- no runs")
+                continue
+            _section_runs(L, rs)
+            for r in sorted(rs, key=lambda r: r["application_id"]):
+                calls = "; ".join(
+                    f"{c['call']} max_tokens={c['max_tokens']} finish={c.get('finish_reason')} "
+                    f"completion={c.get('completion_tokens')} chars={c.get('response_chars')} "
+                    f"errors={len(c.get('validation_errors') or [])}{' raised' if 'error' in c else ''}"
+                    for c in r.get("call_log", []))
+                res = (f"OK verified={r['verified']} upper={r['upper']} pending={r['pending']} "
+                       f"rec={r['recommendation']} criteria={len(r['assessments'])}"
+                       if r["ok"] else f"FAILED {_one_line(r['error'], 160)}")
+                L.append(f"- {r['application_id']}: {res} | {calls}")
+            L.append("")
+    return "\n".join(L)
 
 
 # ── main ─────────────────────────────────────────────────────────────────────
+
+def write_outputs(out: Path, results: list[dict], sample: list[dict], focus_jobs: list[str]) -> str:
+    with open(out / "results.jsonl", "w", encoding="utf-8") as f:
+        for r in sorted(results, key=lambda r: (r["application_id"], r["prompt_version"])):
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    with open(out / "cd_review.tsv", "w", encoding="utf-8") as f:
+        f.write("prompt\tjob_code\tapplication_id\trequired\tdimension\tcriterion\tcd_reason"
+                "\tsupporting_evidence\tmatch_reason\tpending_worth\n")
+        for r in results:
+            for a in r.get("assessments", []):
+                if a["final_status"] == CD:
+                    f.write("\t".join(_one_line(x, 2000) for x in (
+                        r["prompt_version"], r["job_code"], r["application_id"], a["required"],
+                        a["dimension"], a["criterion_text"], a["final_cd_reason"],
+                        " // ".join(a.get("supporting_evidence") or []), a["match_reason"],
+                        a.get("pending_worth"))) + "\n")
+    (out / "report.md").write_text(build_report(results, sample, focus_jobs, details=True) + "\n",
+                                   encoding="utf-8")
+    summary = build_report(results, sample, focus_jobs, details=False)
+    (out / "summary.txt").write_text(summary + "\n", encoding="utf-8")
+    return summary
+
+
+def report_only(args) -> int:
+    """Rebuild report.md / summary.txt / cd_review.tsv from an existing run (no DB, no OpenAI)."""
+    out = Path(args.out_dir)
+    results = [json.loads(l) for l in (out / "results.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
+    sample = json.loads((out / "sample.json").read_text(encoding="utf-8"))
+    print(write_outputs(out, results, sample, args.include_job))
+    return 0
+
 
 async def main_async(args) -> int:
     from config import get_settings
@@ -365,6 +596,7 @@ async def main_async(args) -> int:
                   f"max_tokens={main_t} (repair call {repair_t})")
         for s in sample:
             print(f"  {s['job_code']}  {s['application_id']}")
+        (out / "sample.json").write_text(json.dumps(sample, indent=1), encoding="utf-8")
         if args.dry_run:
             print("dry run: no OpenAI calls made")
             return 0
@@ -400,19 +632,7 @@ async def main_async(args) -> int:
 
     await asyncio.gather(*(one(s, p) for s in sample for p in prompts))
 
-    with open(out / "results.jsonl", "w", encoding="utf-8") as f:
-        for r in sorted(results, key=lambda r: (r["application_id"], r["prompt_version"])):
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    with open(out / "cd_review.tsv", "w", encoding="utf-8") as f:
-        f.write("prompt\tjob_code\tapplication_id\trequired\tdimension\tcriterion\tcd_reason\tmatch_reason\n")
-        for r in results:
-            for a in r.get("assessments", []):
-                if a["final_status"] == CD:
-                    f.write("\t".join(str(x).replace("\t", " ").replace("\n", " ") for x in (
-                        r["prompt_version"], r["job_code"], r["application_id"], a["required"],
-                        a["dimension"], a["criterion_text"], a["cd_reason"], a["match_reason"][:300])) + "\n")
-    summary = summarise(results, sample)
-    (out / "summary.txt").write_text(summary + "\n", encoding="utf-8")
+    summary = write_outputs(out, results, sample, args.include_job)
     print("\n" + summary)
     return 0
 
@@ -429,7 +649,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--v9-md5", default=V9_MD5_EXPECTED)
     ap.add_argument("--dry-run", action="store_true", help="select the sample and build v10; no OpenAI calls")
+    ap.add_argument("--report-only", action="store_true",
+                    help="rebuild the report from an existing --out-dir (no DB, no OpenAI)")
     args = ap.parse_args(argv)
+    if args.report_only:
+        return report_only(args)
     return asyncio.run(main_async(args))
 
 

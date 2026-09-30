@@ -934,3 +934,124 @@ class TestOfflineCompareMaxTokens:
             with pytest.raises(SystemExit, match=r"sent \[7000\]"):
                 await c.run_one(wrong, case, "a", "j", DeterministicScoringConfig(),
                                 CVFacts(language="en", total_char_count=10), None)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 8. Offline comparison — per-call capture and report
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _resp(content, finish="stop", prompt_tokens=5000, completion_tokens=900):
+    return types.SimpleNamespace(
+        choices=[types.SimpleNamespace(message=types.SimpleNamespace(content=content), finish_reason=finish)],
+        usage=types.SimpleNamespace(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens))
+
+
+def _seq_client(*items):
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(side_effect=list(items))
+    return client
+
+
+class TestOfflineCompareCapture:
+
+    def _setup(self):
+        c = _compare_mod()
+        v9, v10 = c.build_prompt_configs(_V9_ROW, "v10 prompt", 12000)
+        from services.cv_evidence import CVFacts
+        case = {"text": "MS Office user. " * 5, "analysis_json": ANALYSIS_JSON, "weights": {"weight_skills": 100}}
+        return c, v9, v10, case, CVFacts(language="en", total_char_count=10)
+
+    @pytest.mark.asyncio
+    async def test_call_log_truncated_main_then_repair(self):
+        c, _, v10, case, facts = self._setup()
+        client = _seq_client(_resp('{"assessments": [{"crit', finish="length", completion_tokens=12000),
+                             _resp(_VALID_CD, completion_tokens=800))
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=client):
+            r = await c.run_one(v10, case, "a1", "j1", DeterministicScoringConfig(), facts, None)
+        main, repair = r["call_log"]
+        assert (main["call"], main["max_tokens"], main["finish_reason"]) == ("main", 12000, "length")
+        assert main["completion_tokens"] == 12000 and main["validation_errors"] == ["invalid JSON"]
+        assert (repair["call"], repair["max_tokens"], repair["finish_reason"]) == ("repair", 12000, "stop")
+        assert repair["validation_errors"] == [] and repair["prompt_tokens"] == 5000
+        cd = r["assessments"][0]
+        assert cd["final_status"] == CD and cd["supporting_evidence"] == ["Office tools"]
+        assert cd["final_cd_reason"] == "detail_missing" and cd["pending_worth"] > 0
+
+    @pytest.mark.asyncio
+    async def test_call_log_records_openai_exception(self):
+        c, v9, _, case, facts = self._setup()
+        client = _seq_client(TimeoutError("Request timed out."))
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=client):
+            r = await c.run_one(v9, case, "a1", "j1", DeterministicScoringConfig(), facts, None)
+        assert r["ok"] is False and "TimeoutError" in r["error"]
+        (call,) = r["call_log"]
+        assert call["call"] == "main" and "TimeoutError" in call["error"]
+
+    @pytest.mark.asyncio
+    async def test_capture_does_not_change_the_run(self):
+        """Same responses → same assessments with and without the capture wrapper."""
+        c, v9, _, case, facts = self._setup()
+        with patch.object(mapper_mod, "_get_mapper_client", return_value=_client(_INVALID, _VALID)):
+            r = await c.run_one(v9, case, "a1", "j1", DeterministicScoringConfig(), facts, None)
+        direct = await _assess(_client(_INVALID, _VALID))
+        assert [a["llm_status"] for a in r["assessments"]] == [a.status for a in direct.assessments]
+        assert r["call_log"][0]["validation_errors"][0].startswith("assessment[0]")
+
+    def _results(self):
+        def run(v, aid, job, statuses, verified, upper, rec, calls):
+            return {"application_id": aid, "job_code": job, "prompt_version": v, "ok": True,
+                    "configured_max_tokens": 12000 if v == 10 else 7000, "calls": len(calls),
+                    "repair_used": len(calls) > 1, "seconds": 3.0, "verified": verified, "upper": upper,
+                    "pending": upper - verified, "recommendation": rec, "call_log": calls,
+                    "assessments": [{"criterion_text": t, "dimension": "skills", "required": True,
+                                     "final_status": st, "final_cd_reason": "detail_missing" if st == CD else None,
+                                     "match_reason": "SECRET-MATCH-REASON", "pending_worth": 20.0 if st == CD else 0,
+                                     "supporting_evidence": ["SECRET-CV-QUOTE"]} for t, st in statuses]}
+        ok9 = [{"call": "main", "max_tokens": 7000, "finish_reason": "stop", "prompt_tokens": 4000,
+                "completion_tokens": 700, "validation_errors": []}]
+        ok10 = [{"call": "main", "max_tokens": 12000, "finish_reason": "length", "prompt_tokens": 4500,
+                 "completion_tokens": 12000, "validation_errors": ["invalid JSON"]},
+                {"call": "repair", "max_tokens": 12000, "finish_reason": "stop", "prompt_tokens": 4600,
+                 "completion_tokens": 900, "validation_errors": []}]
+        fail9 = {"application_id": "big-1", "job_code": "JOB-2026-0110", "prompt_version": 9, "ok": False,
+                 "configured_max_tokens": 7000, "calls": 2, "seconds": 20.0,
+                 "error": "validation: D-01 response invalid ... after repair call: invalid JSON",
+                 "call_log": [dict(ok9[0], finish_reason="length", completion_tokens=7000,
+                                   validation_errors=["invalid JSON"]),
+                              {"call": "repair", "max_tokens": 8000, "finish_reason": "length",
+                               "prompt_tokens": 4000, "completion_tokens": 8000, "validation_errors": ["invalid JSON"]}]}
+        return [
+            run(9, "a1", "JOB-1", [("Excel", "MATCHED"), ("SAP", "PARTIAL")], 75, 75, "partial", ok9),
+            run(10, "a1", "JOB-1", [("Excel", "MATCHED"), ("SAP", CD)], 50, 100, "needs_verification", ok10),
+            fail9,
+            run(10, "big-1", "JOB-2026-0110", [("Excel", "ABSENT")], 0, 0, "rejected", ok10),
+        ]
+
+    def test_report_sections(self):
+        c = _compare_mod()
+        rep = c.build_report(self._results(), [{"job_code": "JOB-1"}, {"job_code": "JOB-2026-0110"}],
+                             ["JOB-2026-0110"], details=True)
+        for needle in ("## Prompt v9", "## Prompt v10", "truncated responses (finish_reason=length): 2",
+                       "repair [8000]", "repair [12000]", "estimated cost $", "| all | ALL |",
+                       "## v10 per application", "| PARTIAL | 0 | 0 | 0 | 1 |", "changed: 1 of 2",
+                       "- partial → needs_verification: 1", "Material differences", "not comparable",
+                       "## Every CANNOT_DETERMINE case", "SECRET-CV-QUOTE", "## Focus job JOB-2026-0110",
+                       "FAILED RUN JOB-2026-0110 big-1"):
+            assert needle in rep, needle
+
+    def test_summary_has_no_cv_text(self):
+        c = _compare_mod()
+        s = c.build_report(self._results(), [], ["JOB-2026-0110"], details=False)
+        assert "SECRET-CV-QUOTE" not in s and "SECRET-MATCH-REASON" not in s
+        assert "## Focus job JOB-2026-0110" in s and "Material differences" in s
+
+    def test_report_only_rebuilds_from_files(self, tmp_path):
+        c = _compare_mod()
+        with open(tmp_path / "results.jsonl", "w") as f:
+            for r in self._results():
+                f.write(json.dumps(r) + "\n")
+        (tmp_path / "sample.json").write_text(json.dumps([{"job_code": "JOB-1"}]))
+        assert c.main(["--out-dir", str(tmp_path), "--report-only", "--include-job", "JOB-2026-0110"]) == 0
+        for name in ("report.md", "summary.txt", "cd_review.tsv"):
+            assert (tmp_path / name).exists()
+        assert "SECRET-CV-QUOTE" in (tmp_path / "cd_review.tsv").read_text()
