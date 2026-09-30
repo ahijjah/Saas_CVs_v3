@@ -236,8 +236,9 @@ class TestRepairCall:
         repair = calls[1].kwargs
         assert repair["max_tokens"] == 8000                       # max(7000, 8000)
         note = repair["messages"][-1]
-        assert note["role"] == "system" and "status 'UNCLEAR'" in note["content"]
+        assert note["role"] == "user" and "status 'UNCLEAR'" in note["content"]
         assert repair["messages"][:2] == calls[0].kwargs["messages"]
+        assert repair["messages"][2] == {"role": "assistant", "content": _INVALID}   # previous reply
         assert result.cannot_determine_count == 1
         assert result.assessments[0].cd_reason == "detail_missing"
 
@@ -730,6 +731,8 @@ MATCH STATUS DEFINITIONS:
 - PARTIAL:  Some evidence exists but it is incomplete.
 - ABSENT:   No evidence found in the CV.
 
+IMPORTANT: Only set status=MATCHED or status=PARTIAL if you can provide at least one entry in supporting_evidence. If you cannot cite any supporting text, set status=ABSENT.
+
 MATCH TYPE GUIDE:
 - direct: explicit.
 
@@ -847,8 +850,10 @@ MATCH TYPE GUIDE
         assert "=====\nASSESSMENT STATUS CONTRACT (authoritative" in t
         assert "(authoritative: overrides any other status guidance in these instructions):\n=====" in t
         assert "MATCH STATUS DEFINITIONS" not in t and "- PARTIAL:  Some evidence exists" not in t
-        # the IMPORTANT evidence paragraph is not a status-definition bullet and stays
-        assert "IMPORTANT: Only set status=MATCHED or status=PARTIAL" in t
+        # E7: the v9 evidence paragraph also covers CANNOT_DETERMINE
+        assert ("IMPORTANT: Only set status=MATCHED, status=PARTIAL or status=CANNOT_DETERMINE "
+                "if you can provide at least one entry in supporting_evidence.") in t
+        assert any(a.startswith("E7 ") for a in r.applied)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1145,3 +1150,181 @@ class TestOfflineCompareConcurrency:
             c.check_request(v10, 0, {"messages": [{"role": "system", "content": "v9 prompt"}]})
         with pytest.raises(SystemExit, match="unexpected D-01 call #3"):
             c.check_request(v9, 2, ok)
+
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 10. v10 evidence fix — no evidence-less PARTIAL/CD instructions; repair call
+#     names the invalid item and offers only "quote" or "ABSENT"
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestEvidenceRuleWording:
+
+    def _prompts(self):
+        return {"contract": mapper_mod.D01_STATUS_CONTRACT,
+                "fallback": mapper_mod._HARDCODED_SYSTEM_PROMPT,
+                "v10": _builder().build_v10(TestPromptV10BuilderProductionV9Wording.V9_SNIPPET).text}
+
+    @pytest.mark.parametrize("name", ["contract", "fallback", "v10"])
+    def test_no_unconditional_years_not_met_partial(self, name):
+        t = self._prompts()[name]
+        assert "Years NOT met -> PARTIAL (known shortfall)" not in t
+        assert "If years are NOT met → PARTIAL." not in t
+        assert "even if\n  relevance is also unclear" not in t
+
+    @pytest.mark.parametrize("name", ["contract", "fallback", "v10"])
+    def test_evidence_rule_and_examples_present(self, name):
+        t = self._prompts()[name]
+        assert "EVIDENCE RULE: MATCHED, PARTIAL and CANNOT_DETERMINE are only valid with at least one quote" in t
+        assert "status is ABSENT (rule 1 or 3)" in t and "Never invent" in t
+        assert "Required years not being met is never, on its own, a reason for\n  PARTIAL." in t
+        assert '"Minimum 5 years of relevant HR experience" / CV shows 2 years in an HR role\n  -> PARTIAL, quoting the 2-year HR role.' in t
+        assert "no HR role, HR duty or other HR evidence in the CV\n  -> ABSENT" in t
+        assert "market or regulations -> ABSENT (not CANNOT_DETERMINE)" in t
+        assert 'CV shows business roles but not where\n  -> CANNOT_DETERMINE, cd_reason "relevance_unverified", quoting the business role.' in t
+
+    def test_fallback_type_b_sentence(self):
+        assert ("If years are NOT met → PARTIAL only when relevant\nexperience can be quoted; "
+                "with nothing relevant to quote → ABSENT.") in mapper_mod._HARDCODED_SYSTEM_PROMPT
+
+    def test_builder_e7_reported_when_missing(self):
+        r = _builder().build_v10(_V9_LIKE.replace(
+            "IMPORTANT: Only set status=MATCHED or status=PARTIAL", "IMPORTANT: something else"))
+        assert any(n.startswith("E7 ") for n in r.not_found) and not r.errors
+
+    def test_v9_itself_untouched_by_builder(self):
+        src = TestPromptV10BuilderProductionV9Wording.V9_SNIPPET
+        before = str(src)
+        _builder().build_v10(src)
+        assert src == before
+
+
+class TestRepairNote:
+
+    def _raw(self, *items):
+        return json.dumps({"assessments": list(items)})
+
+    @pytest.mark.parametrize("status", ["PARTIAL", CD, "MATCHED"])
+    def test_evidence_error_names_item_and_offers_quote_or_absent(self, status):
+        crit = "Minimum 5 years of relevant HR experience in a similar role (full text kept)"
+        bad = _item(criterion_text=crit, status=status, supporting_evidence=[],
+                    cd_reason="relevance_unverified" if status == CD else None)
+        raw = self._raw(_item(), bad)
+        note = mapper_mod._repair_note(_response_validation_errors(raw), raw)
+        line = next(l for l in note.splitlines() if "assessment[1]" in l)
+        assert f'"{crit}"' in line                                   # full criterion text
+        assert f"you returned {status} with no supporting_evidence" in line
+        assert "copy it exactly into supporting_evidence" in line   # option a: genuine quote
+        assert "set status to ABSENT, cd_reason to null and supporting_evidence to []" in line  # option b
+        assert "Do not invent or paraphrase a quote." in line
+        assert "assessment[0]" not in note                            # valid items not listed
+        assert "keep every other assessment unchanged" in note
+        assert "Return the COMPLETE corrected JSON object" in note
+
+    def test_never_suggests_inventing_or_keeping_cd_without_quote(self):
+        raw = self._raw(_cd_item(supporting_evidence=[]))
+        note = mapper_mod._repair_note(_response_validation_errors(raw), raw).lower()
+        assert "invent evidence" in note and "never invent" in note
+        for bad in ("keep cannot_determine", "add any quote", "make up", "placeholder"):
+            assert bad not in note
+
+    def test_other_errors_listed(self):
+        raw = self._raw(_item(status="UNCLEAR"), _cd_item(cd_reason="extraction_gap"))
+        note = mapper_mod._repair_note(_response_validation_errors(raw), raw)
+        assert "status 'UNCLEAR'" in note and "invalid cd_reason 'extraction_gap'" in note
+
+    def test_invalid_json_falls_back_to_error_list(self):
+        note = mapper_mod._repair_note(["invalid JSON"], '{"assessments": [{"crit')
+        assert "- invalid JSON" in note and "Return the COMPLETE corrected JSON object" in note
+
+
+class TestRepairCallCarriesPreviousResponse:
+
+    _PARTIAL_NO_EVIDENCE = _raw(_item(criterion_text="MS Office", dimension="skills", criterion_class="flexible",
+                                      status="PARTIAL", supporting_evidence=[]))
+    _FIXED_ABSENT = _raw(_item(criterion_text="MS Office", dimension="skills", criterion_class="flexible",
+                               status="ABSENT", supporting_evidence=[], match_type="missing",
+                               match_reason="No office software mentioned."))
+
+    @pytest.mark.asyncio
+    async def test_repair_messages_and_limits(self):
+        client = _client(self._PARTIAL_NO_EVIDENCE, self._FIXED_ABSENT)
+        await _assess(client, prompt={"system_prompt": "sys", "max_tokens": 12000})
+        calls = client.chat.completions.create.await_args_list
+        assert len(calls) == 2                                            # exactly one repair
+        main, repair = calls[0].kwargs, calls[1].kwargs
+        assert (main["max_tokens"], repair["max_tokens"]) == (12000, 12000)
+        roles = [m["role"] for m in repair["messages"]]
+        assert roles == ["system", "user", "assistant", "user"]
+        assert repair["messages"][:2] == main["messages"]
+        assert repair["messages"][2]["content"] == self._PARTIAL_NO_EVIDENCE
+        assert '"MS Office": you returned PARTIAL with no supporting_evidence' in repair["messages"][3]["content"]
+
+    @pytest.mark.asyncio
+    async def test_partial_to_absent_repair_accepted_and_scored_absent(self):
+        res = await _assess(_client(self._PARTIAL_NO_EVIDENCE, self._FIXED_ABSENT))
+        assert res.absent_count == 1 and res.partial_count == 0
+        d = deterministic_score_to_dict(DeterministicScoringEngine().score(res, {"weight_skills": 100}))
+        crit = d["dimensions"]["skills"]["criteria"][0]
+        assert crit["status"] == "ABSENT" and crit["verified_credit"] == 0.0
+        assert d["required_summary"]["blocking_gaps"] == 1
+
+    @pytest.mark.asyncio
+    async def test_repeated_invalid_still_raises_after_one_repair(self):
+        client = _client(self._PARTIAL_NO_EVIDENCE, self._PARTIAL_NO_EVIDENCE, self._FIXED_ABSENT)
+        with pytest.raises(CriteriaMappingResponseError, match="PARTIAL without supporting_evidence"):
+            await _assess(client)
+        assert client.chat.completions.create.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_previous_response_not_sent_as_assistant(self):
+        client = _client("", self._FIXED_ABSENT)
+        await _assess(client)
+        roles = [m["role"] for m in client.chat.completions.create.await_args_list[1].kwargs["messages"]]
+        assert roles == ["system", "user", "user"]
+
+    def test_validator_unchanged_for_evidence_less_statuses(self):
+        for status in ("MATCHED", "PARTIAL", CD):
+            item = _item(status=status, supporting_evidence=[],
+                         cd_reason="ambiguous" if status == CD else None)
+            assert _validate_assessment(item) == f"{status} without supporting_evidence"
+        assert _validate_assessment(_item(status="ABSENT", supporting_evidence=[], match_type="missing")) is None
+
+
+class TestOfflineHarnessWithRepairMessages:
+    """The comparison harness guards must accept the new repair message shape
+    (system prompt still first) under concurrency."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_runs_with_assistant_message_repairs(self):
+        c = _compare_mod()
+        v9, v10 = c.build_prompt_configs(_V9_ROW, "v10 prompt", 12000)
+        from services.cv_evidence import CVFacts
+        case = {"text": "MS Office user. " * 5, "analysis_json": ANALYSIS_JSON, "weights": {"weight_skills": 100}}
+        seen: list = []
+
+        def make(i):
+            n = {"k": 0}
+
+            async def create(**kw):
+                n["k"] += 1
+                seen.append([m["role"] for m in kw["messages"]])
+                await asyncio.sleep(0.01 * (i % 3 + 1))
+                body = TestRepairCallCarriesPreviousResponse._PARTIAL_NO_EVIDENCE if n["k"] == 1 \
+                    else TestRepairCallCarriesPreviousResponse._FIXED_ABSENT
+                return _resp(body)
+            cl = MagicMock()
+            cl.chat.completions.create = create
+            return cl
+
+        clients = iter([make(i) for i in range(6)])
+        prompts = [v9, v10] * 3
+        with patch.object(mapper_mod, "_get_mapper_client", side_effect=lambda: next(clients)), c.mapper_hooks():
+            results = await asyncio.gather(*(
+                c.run_one(p, case, f"a{i}", "j", DeterministicScoringConfig(),
+                          CVFacts(language="en", total_char_count=10), None) for i, p in enumerate(prompts)))
+        for p, r in zip(prompts, results):
+            assert r["ok"] and r["repair_used"]
+            assert r["max_tokens_sent"] == ([7000, 8000] if p["version"] == 9 else [12000, 12000])
+            assert [a["final_status"] for a in r["assessments"]] == ["ABSENT"]
+        assert sorted(map(tuple, seen)).count(("system", "user", "assistant", "user")) == 6

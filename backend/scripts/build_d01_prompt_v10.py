@@ -16,6 +16,9 @@ v10 = v9 + targeted edits (everything else in v9 is left untouched):
   E5  relevance_unverified risk-flag definition points to CANNOT_DETERMINE
   E6  qualitative summary: CANNOT_DETERMINE is never a gap; interview
       questions verify CANNOT_DETERMINE criteria first
+  E7  v9 evidence paragraph ("Only set status=MATCHED or status=PARTIAL if you
+      can provide … supporting_evidence … else ABSENT") also covers
+      CANNOT_DETERMINE
 
 Every edit is reported (applied / not found). E1 and E3 are required: when
 their anchors are missing nothing is written and the exit code is 2, so the
@@ -232,6 +235,15 @@ def build_v10(v9: str) -> BuildResult:
         r.applied.append("E6b appended a CANNOT_DETERMINE rule to QUALITATIVE SUMMARY RULES")
     else:
         r.not_found.append("E6b QS4 / QUALITATIVE SUMMARY RULES")
+
+    # ── E7: v9 evidence paragraph also covers CANNOT_DETERMINE ───────────────
+    ev_re = re.compile(r"^(IMPORTANT: Only set )status=MATCHED or status=PARTIAL( if you can provide)",
+                       re.MULTILINE)
+    if ev_re.search(text):
+        text = ev_re.sub(r"\1status=MATCHED, status=PARTIAL or status=CANNOT_DETERMINE\2", text, count=1)
+        r.applied.append("E7 evidence paragraph now covers CANNOT_DETERMINE (no quote -> ABSENT)")
+    else:
+        r.not_found.append("E7 'IMPORTANT: Only set status=MATCHED or status=PARTIAL' evidence paragraph")
 
     # ── Manual-review list (lines outside the inserted contract) ─────────────
     contract_lines = set(contract.split("\n"))

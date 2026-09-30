@@ -180,8 +180,11 @@ CANNOT_DETERMINE RULES:
 - match_reason must state what is established and what is not established.
 - Relevance-qualified experience ("X years of relevant experience", "X years in [domain/role]"):
   years met but relevance not established -> CANNOT_DETERMINE, cd_reason "relevance_unverified",
-  and add risk_flag "relevance_unverified". Years NOT met -> PARTIAL (known shortfall), even if
-  relevance is also unclear.
+  quoting the experience, and add risk_flag "relevance_unverified".
+  Years NOT met: if the CV shows some experience relevant to the criterion that you can quote
+  -> PARTIAL, quoting it. If there is no relevant experience you can quote -> ABSENT, stating the
+  shortfall in match_reason. Required years not being met is never, on its own, a reason for
+  PARTIAL.
 
 FIELD REQUIREMENTS (responses that break these are rejected and must be regenerated):
 - status must be exactly one of: MATCHED, PARTIAL, ABSENT, CANNOT_DETERMINE.
@@ -189,6 +192,10 @@ FIELD REQUIREMENTS (responses that break these are rejected and must be regenera
 - ABSENT: supporting_evidence may be empty or may quote a non-matching fact; cd_reason null.
 - CANNOT_DETERMINE: at least one supporting_evidence quote; cd_reason as above; match_reason required.
 - Every assessment needs criterion_text, status, match_reason and a numeric confidence (0.0-1.0).
+- EVIDENCE RULE: MATCHED, PARTIAL and CANNOT_DETERMINE are only valid with at least one quote of
+  CV text in supporting_evidence. If you cannot quote any CV text relevant to the criterion, the
+  status is ABSENT (rule 1 or 3), never PARTIAL or CANNOT_DETERMINE with an empty
+  supporting_evidence list. Never invent, paraphrase or fabricate a quote.
 
 EXAMPLES:
 - "ICT systems support" / CV shows technical support roles, ICT relevance not stated
@@ -197,8 +204,16 @@ EXAMPLES:
   6 years total, education-sector relevance not stated -> CANNOT_DETERMINE, "relevance_unverified".
 - "Palestinian construction sector" / CV shows construction experience, location/context not
   stated -> CANNOT_DETERMINE, "relevance_unverified".
-- "Minimum 1 year of relevant experience" / CV shows 0.5 years, relevance unclear
-  -> PARTIAL (the duration shortfall is established).
+- "Minimum 1 year of relevant experience" / CV shows 0.5 years of relevant work
+  -> PARTIAL, quoting the 0.5-year role (the duration shortfall is established).
+- "Minimum 5 years of relevant HR experience" / CV shows 2 years in an HR role
+  -> PARTIAL, quoting the 2-year HR role.
+- "Minimum 5 years of relevant HR experience" / no HR role, HR duty or other HR evidence in the CV
+  -> ABSENT (nothing relevant to quote; not PARTIAL).
+- "Knowledge of the local business / regulatory environment" / the CV never mentions the country,
+  market or regulations -> ABSENT (not CANNOT_DETERMINE).
+- "Knowledge of the local business environment" / CV shows business roles but not where
+  -> CANNOT_DETERMINE, cd_reason "relevance_unverified", quoting the business role.
 - "Bachelor's degree in HR or Business" / CV shows "Bachelor's degree" with no field
   -> CANNOT_DETERMINE, cd_reason "detail_missing".
 - "Knowledge of construction-sector regulation" / nothing construction-related in the CV -> ABSENT.
@@ -292,7 +307,8 @@ total years alone. If years are met AND you have title/responsibility/
 domain evidence confirming relevance → MATCHED is appropriate. If years
 are met but relevance is not established → CANNOT_DETERMINE with cd_reason
 "relevance_unverified" and risk_flag "relevance_unverified" (see the
-ASSESSMENT STATUS CONTRACT). If years are NOT met → PARTIAL. Never fabricate
+ASSESSMENT STATUS CONTRACT). If years are NOT met → PARTIAL only when relevant
+experience can be quoted; with nothing relevant to quote → ABSENT. Never fabricate
 a years figure that isn't present in the provided data.
 
 REQUIRED vs PREFERRED:
@@ -1212,21 +1228,70 @@ def _parse_qualitative_summary(raw: Any) -> QualitativeSummary | None:
     )
 
 
-def _repair_note(errors: list[str]) -> str:
-    """System note for the single D-01 repair call, naming the violated rules."""
-    listed = "\n".join(f"- {e}" for e in errors[:10])
-    more = f"\n- …and {len(errors) - 10} more" if len(errors) > 10 else ""
+_ABSENT_OR_QUOTE = (
+    "If the CV contains text relevant to this criterion, copy it exactly into "
+    "supporting_evidence and keep only a status that the quote supports. If the CV contains no "
+    "relevant text you can quote, set status to ABSENT, cd_reason to null and supporting_evidence "
+    "to [], and state what is missing in match_reason. Do not invent or paraphrase a quote."
+)
+
+
+def _repair_items(raw_json: str) -> list[str]:
+    """One instruction per invalid assessment in the previous response
+    (full criterion text, the status returned, and how to correct it)."""
+    try:
+        data = json.loads(raw_json)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return []
+    items = data.get("assessments") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return []
+    lines: list[str] = []
+    for i, item in enumerate(items):
+        err = _validate_assessment(item)
+        if not err:
+            continue
+        crit = item.get("criterion_text") if isinstance(item, dict) else None
+        status = item.get("status") if isinstance(item, dict) else None
+        label = f'assessment[{i}] "{crit}"' if isinstance(crit, str) and crit.strip() else f"assessment[{i}]"
+        if err.endswith("without supporting_evidence"):
+            lines.append(f"- {label}: you returned {status} with no supporting_evidence. {_ABSENT_OR_QUOTE}")
+        elif "invalid cd_reason" in err:
+            lines.append(f"- {label}: {err}. Use one of relevance_unverified | detail_missing | "
+                         f"ambiguous | conflicting, or choose another status the evidence supports.")
+        else:
+            lines.append(f"- {label}: {err}.")
+    return lines
+
+
+def _repair_note(errors: list[str], raw_content: str = "") -> str:
+    """Correction instruction for the single D-01 repair call.
+
+    Sent after the previous (invalid) response, which is included as an
+    assistant message. Names each invalid item; for MATCHED/PARTIAL/
+    CANNOT_DETERMINE without evidence it offers exactly two valid outcomes
+    (a genuine quote, or ABSENT) — never to invent evidence.
+    """
+    per_item = _repair_items(raw_content)
+    if per_item:
+        listed = "\n".join(per_item[:20])
+        if len(per_item) > 20:
+            listed += f"\n- …and {len(per_item) - 20} more invalid assessments"
+    else:
+        listed = "\n".join(f"- {e}" for e in errors[:10])
+        if len(errors) > 10:
+            listed += f"\n- …and {len(errors) - 10} more"
     return (
-        "Your previous response was rejected because it violated the output "
-        "contract:\n" + listed + more + "\n\n"
-        "Return the COMPLETE JSON object again (all criteria), following the "
-        "status contract exactly: status must be one of MATCHED, PARTIAL, "
-        "ABSENT, CANNOT_DETERMINE; MATCHED, PARTIAL and CANNOT_DETERMINE need "
-        "at least one supporting_evidence quote; CANNOT_DETERMINE needs a "
-        "cd_reason (relevance_unverified | detail_missing | ambiguous | "
-        "conflicting) and every other status needs cd_reason null; "
-        "criterion_text and match_reason must be non-empty; confidence must "
-        "be a number from 0 to 1."
+        "Your previous response (above) was rejected because it violated the output contract:\n"
+        + listed + "\n\n"
+        "Return the COMPLETE corrected JSON object (all criteria, same order). Correct the items "
+        "listed above and keep every other assessment unchanged. Rules: status must be one of "
+        "MATCHED, PARTIAL, ABSENT, CANNOT_DETERMINE; MATCHED, PARTIAL and CANNOT_DETERMINE require "
+        "at least one exact quote of CV text in supporting_evidence — if no relevant CV text can "
+        "be quoted, the status must be ABSENT; never invent evidence; CANNOT_DETERMINE needs a "
+        "cd_reason (relevance_unverified | detail_missing | ambiguous | conflicting) and every "
+        "other status needs cd_reason null; criterion_text and match_reason must be non-empty; "
+        "confidence must be a number from 0 to 1."
     )
 
 
@@ -1504,9 +1569,9 @@ class LLMCriteriaMapper:
             )
             response = await client.chat.completions.create(
                 model=model,
-                messages=messages + [
-                    {"role": "system", "content": _repair_note(errors)},
-                ],
+                messages=messages
+                + ([{"role": "assistant", "content": raw_content}] if raw_content else [])
+                + [{"role": "user", "content": _repair_note(errors, raw_content)}],
                 temperature=temp,
                 max_tokens=repair_max_tok,
                 response_format={"type": "json_object"},
