@@ -128,6 +128,7 @@ class DeterministicCriterionScore:
     upper_credit:         float | None = None   # None → equals effective_credit
     pending_worth:        float = 0.0           # final-score points (CD rows only)
     match_reason:         str = ""
+    reconciled_from:      dict[str, Any] | None = None  # set only when F-01 changed the status
 
     @property
     def verified_credit(self) -> float:
@@ -308,6 +309,32 @@ def _check_evidence_criterion_overlap(
         semantic_score = _compute_semantic_similarity(criterion_text, combined_evidence)
         qf = semantic_score * 0.95
         return max(0.0, min(1.0, qf))
+
+
+# ── Total-years-only evidence backstop (P0-02a) ──────────────────────────────
+# The D-01 user message carries one computed line, "Total Experience: X.X
+# years" (llm_criteria_mapper._build_user_message). A CANNOT_DETERMINE whose
+# only evidence is that line has no CV quote for the criterion at all, so
+# nothing is pending verification: the criterion is reconciled to ABSENT.
+# Pure-duration criteria ("Minimum 3 years of experience") are excluded — for
+# them the total is the right evidence and the CD is left for D-01 to resolve.
+
+_COMPUTED_TOTAL_YEARS_RE = re.compile(
+    r"""^\s*["']?total experience:\s*\d+(?:\.\d+)?\s*years?\.?["']?\s*$""",
+    re.IGNORECASE,
+)
+_PURE_DURATION_CRITERION_RE = re.compile(
+    r"^\s*minimum\s+\d+\s+years?\s+(?:of\s+)?"
+    r"(?:professional\s+|work\s+|total\s+)?experience\s*\.?\s*$",
+    re.IGNORECASE,
+)
+TOTAL_YEARS_ONLY_RULE = "total_years_only_evidence"
+
+
+def _evidence_is_total_years_only(evidence: list[Any]) -> bool:
+    """True when every non-empty evidence item is the computed total-years line."""
+    items = [str(e) for e in evidence if str(e or "").strip()]
+    return bool(items) and all(_COMPUTED_TOTAL_YEARS_RE.match(e) for e in items)
 
 
 # ── Minimum-years threshold detection ────────────────────────────────────────
@@ -690,6 +717,25 @@ class DeterministicScoringEngine:
                 # (used when LLM+local disagreement on relevance)
                 local_role_relevance_score = _get_field(local_match, "role_relevance_score", 0.0) or 0.0
 
+        # ── P0-02a backstop: CD supported only by the computed total-years line ──
+        # Runs after relevance reconciliation so it also covers the CDs that
+        # step produces. MATCHED / PARTIAL / ABSENT are never touched.
+        reconciled_from = None
+        if (
+            status == STATUS_CANNOT_DETERMINE
+            and _evidence_is_total_years_only(evidence)
+            and not _PURE_DURATION_CRITERION_RE.match(criterion_text)
+        ):
+            reconciled_from = {
+                "status": STATUS_CANNOT_DETERMINE,
+                "cd_reason": cd_reason,
+                "rule": TOTAL_YEARS_ONLY_RULE,
+            }
+            status = "ABSENT"
+            cd_reason = None
+            if TOTAL_YEARS_ONLY_RULE not in risk_flags:
+                risk_flags.append(TOTAL_YEARS_ONLY_RULE)
+
         sc        = _status_credit(status, cfg)
         qf        = _match_quality_factor(match_type, criterion_class)
 
@@ -788,6 +834,7 @@ class DeterministicScoringEngine:
             cd_reason=cd_reason,
             upper_credit=upper,
             match_reason=str(getattr(assessment, "match_reason", "") or ""),
+            reconciled_from=reconciled_from,
         )
 
     @staticmethod
@@ -892,7 +939,7 @@ class DeterministicScoringEngine:
 # ── Serialisation ─────────────────────────────────────────────────────────────
 
 def _criterion_to_dict(c: DeterministicCriterionScore) -> dict[str, Any]:
-    return {
+    d = {
         "criterion_text":       c.criterion_text,
         "dimension":            c.dimension,
         "required":             c.required,
@@ -912,6 +959,9 @@ def _criterion_to_dict(c: DeterministicCriterionScore) -> dict[str, Any]:
         "upper_credit":         round(c.upper, 4),
         "pending_worth":        c.pending_worth,
     }
+    if c.reconciled_from is not None:
+        d["reconciled_from"] = dict(c.reconciled_from)
+    return d
 
 
 def _dimension_to_dict(ds: DeterministicDimensionScore) -> dict[str, Any]:

@@ -1252,7 +1252,8 @@ class TestPhase3LocalRelevanceBounds:
             status="MATCHED",
             match_type="direct",
             confidence=0.85,
-            supporting_evidence=["Total Experience: 7.0 years"],
+            # A genuine role quote keeps the CD (total-years-only → ABSENT backstop)
+            supporting_evidence=["Total Experience: 7.0 years", "Senior HR Officer, ACME Ltd (2017 - 2024)"],
         )
         local_matches = [
             self._local_match(
@@ -1425,7 +1426,8 @@ class TestPhase3LocalRelevanceBounds:
             status="MATCHED",
             match_type="direct",
             confidence=0.85,
-            supporting_evidence=["Total Experience: 7.0 years"],
+            # A genuine role quote keeps the CD (total-years-only → ABSENT backstop)
+            supporting_evidence=["Total Experience: 7.0 years", "Senior HR Officer, ACME Ltd (2017 - 2024)"],
         )
         local_matches = [
             self._local_match(
@@ -1479,7 +1481,8 @@ class TestPhase3LocalRelevanceBounds:
             status="MATCHED",
             match_type="direct",
             confidence=0.85,
-            supporting_evidence=["Total Experience: 5.0 years"],
+            # A genuine role quote keeps the CD (total-years-only → ABSENT backstop)
+            supporting_evidence=["Total Experience: 5.0 years", "Senior HR Officer, ACME Ltd (2017 - 2024)"],
         )
         local_matches = [
             {
@@ -1528,7 +1531,8 @@ class TestPhase3LocalRelevanceBounds:
             status="MATCHED",
             match_type="direct",
             confidence=0.85,
-            supporting_evidence=["Total Experience: 5.0 years"],
+            # A genuine role quote keeps the CD (total-years-only → ABSENT backstop)
+            supporting_evidence=["Total Experience: 5.0 years", "Senior HR Officer, ACME Ltd (2017 - 2024)"],
         )
 
         # Local match as CriterionMatch DATACLASS (not dict) — this is what

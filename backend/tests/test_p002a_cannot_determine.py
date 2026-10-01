@@ -498,7 +498,7 @@ class TestPhase3LocalRelevanceCondition:
         return d["dimensions"]["experience"]["criteria"][0]
 
     def test_relevance_only_disagreement_becomes_cd(self):
-        c = self._run(["Total Experience: 8.0 years"],
+        c = self._run(["Total Experience: 8.0 years", "Senior HR Officer, ACME Ltd (2017 - 2024)"],
                       self._local("PARTIAL", "8 years total experience, but relevance to role not verified",
                                   ["8.0 years total experience extracted from CV"]))
         assert c["status"] == CD and c["cd_reason"] == "relevance_unverified"
@@ -1428,3 +1428,165 @@ class TestCannotDetermineRefinement:
         t = _builder().build_v10(_V9_LIKE).text
         assert "are NOT met → PARTIAL." in t
         assert "NOT met → ABSENT (a total-years" not in t and "NOT met → CANNOT_DETERMINE" not in t
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# F-01 backstop: CANNOT_DETERMINE supported only by the computed total-years line
+# ═════════════════════════════════════════════════════════════════════════════
+
+TOTAL_YEARS = "Total Experience: 4.2 years"
+ROLE_QUOTE = "HR Officer, Gulf Bank (2019 - 2024)"
+RELEVANT = "Minimum 7 years of relevant experience"
+
+
+def _score_with_evidence(statuses, evidence, cd_reasons=None, crit=CRIT, local=None, weights=W):
+    """Score with per-criterion supporting_evidence / cd_reason overrides."""
+    llm = _llm(statuses, crit=crit)
+    for a in llm.assessments:
+        if a.criterion_text in evidence:
+            a.supporting_evidence = list(evidence[a.criterion_text])
+        if cd_reasons and a.criterion_text in cd_reasons:
+            a.cd_reason = cd_reasons[a.criterion_text]
+    before = llm_matchresult_to_dict(llm)
+    d = deterministic_score_to_dict(DeterministicScoringEngine().score(llm, weights, local))
+    return d, before, llm
+
+
+def _crit_of(d, text):
+    return next(c for dim in d["dimensions"].values() for c in dim["criteria"] if c["criterion_text"] == text)
+
+
+class TestTotalYearsOnlyBackstop:
+
+    # 1. model CD + total-years-only → ABSENT
+    def test_model_cd_total_years_only_becomes_absent(self):
+        d, _, _ = _score_with_evidence({EXP: CD}, {EXP: [TOTAL_YEARS]})
+        c = _crit_of(d, EXP)
+        assert c["status"] == "ABSENT"
+        assert c["cd_reason"] is None
+        assert "total_years_only_evidence" in c["risk_flags"]
+        assert c["reconciled_from"] == {"status": CD, "cd_reason": "relevance_unverified",
+                                        "rule": "total_years_only_evidence"}
+        assert (c["verified_credit"], c["upper_credit"], c["pending_worth"]) == (0.0, 0.0, 0.0)
+        assert c["supporting_evidence"] == [TOTAL_YEARS]          # evidence kept for audit
+
+    # 2. relevance-step CD (LLM MATCHED + local PARTIAL relevance-unverified)
+    def test_relevance_step_cd_total_years_only_becomes_absent(self):
+        local = [{"criterion_text": RELEVANT, "status": "PARTIAL", "confidence": 0.45,
+                  "partial_reason": "8 years total experience, but relevance to role not verified",
+                  "dimension": "experience", "required": True,
+                  "supporting_evidence": ["8.0 years total experience extracted from CV"]}]
+        d, _, _ = _score_with_evidence({}, {RELEVANT: ["Total Experience: 8.0 years"]},
+                                       crit=[(RELEVANT, "experience", True)], local=local,
+                                       weights={"weight_experience": 100})
+        c = _crit_of(d, RELEVANT)
+        assert c["status"] == "ABSENT" and c["cd_reason"] is None
+        assert c["reconciled_from"] == {"status": CD, "cd_reason": "relevance_unverified",
+                                        "rule": "total_years_only_evidence"}
+        for flag in ("llm_local_relevance_disagreement", "local_relevance_check",
+                     "total_years_only_evidence"):
+            assert flag in c["risk_flags"]
+        assert c["upper_credit"] == 0.0
+
+    # 3. a genuine CV quote preserves CD
+    @pytest.mark.parametrize("evidence", [
+        [TOTAL_YEARS, ROLE_QUOTE], [ROLE_QUOTE], [ROLE_QUOTE, TOTAL_YEARS, ""],
+    ])
+    def test_genuine_quote_preserves_cd(self, evidence):
+        d, _, _ = _score_with_evidence({EXP: CD}, {EXP: evidence})
+        c = _crit_of(d, EXP)
+        assert c["status"] == CD and c["cd_reason"] == "relevance_unverified"
+        assert "total_years_only_evidence" not in c["risk_flags"]
+        assert "reconciled_from" not in c
+        assert c["upper_credit"] == 1.0
+
+    # 4. detail_missing CD with a genuine quote is preserved
+    def test_detail_missing_cd_with_quote_preserved(self):
+        d, _, _ = _score_with_evidence({EXP: CD}, {EXP: [ROLE_QUOTE]}, {EXP: "detail_missing"})
+        c = _crit_of(d, EXP)
+        assert c["status"] == CD and c["cd_reason"] == "detail_missing"
+        assert "reconciled_from" not in c
+
+    def test_reconciled_from_records_original_cd_reason(self):
+        d, _, _ = _score_with_evidence({EXP: CD}, {EXP: [TOTAL_YEARS]}, {EXP: "detail_missing"})
+        c = _crit_of(d, EXP)
+        assert c["status"] == "ABSENT"
+        assert c["reconciled_from"]["cd_reason"] == "detail_missing"
+
+    # 5. regex edge cases
+    @pytest.mark.parametrize("evidence, reconciled", [
+        (["Total Experience: 4.2 years"], True),
+        (['"Total Experience: 4.2 years"'], True),
+        (["'Total Experience: 4.2 years'"], True),
+        (["total experience: 4.2 YEARS"], True),
+        (["Total Experience: 4.2 years."], True),
+        (["Total Experience: 4 years"], True),
+        (["Total Experience: 1.0 year"], True),
+        (["  Total Experience: 6.2 years  "], True),
+        (["Total Experience: 4.2 years", "Total Experience: 4.2 years"], True),
+        (["Total Experience: 4.2 years", "", "   "], True),
+        (["Total Experience: 5.0 years at Ministry of Health"], False),
+        (["Total Experience: 4.2 years in HR"], False),
+        (["Highest Education: Bachelor of Commerce"], False),
+        (["Total Experience: 4.2 years", "Highest Education: Bachelor of Commerce"], False),
+        (["4.2 years"], False),
+    ])
+    def test_regex_edge_cases(self, evidence, reconciled):
+        d, _, _ = _score_with_evidence({EXP: CD}, {EXP: evidence})
+        c = _crit_of(d, EXP)
+        assert (c["status"] == "ABSENT") is reconciled
+        assert ("total_years_only_evidence" in c["risk_flags"]) is reconciled
+
+    # 6. pure-duration criteria are excluded
+    @pytest.mark.parametrize("text", [
+        "Minimum 3 years of experience", "Minimum 3 years experience",
+        "Minimum 5 years of professional experience", "minimum 2 years of work experience.",
+        "Minimum 1 year of total experience",
+    ])
+    def test_pure_duration_cd_unchanged(self, text):
+        d, _, _ = _score_with_evidence({text: CD}, {text: [TOTAL_YEARS]},
+                                       crit=[(text, "experience", True)],
+                                       weights={"weight_experience": 100})
+        c = _crit_of(d, text)
+        assert c["status"] == CD and c["cd_reason"] == "relevance_unverified"
+        assert "reconciled_from" not in c and c["upper_credit"] == 1.0
+
+    # 7. MATCHED / PARTIAL / ABSENT with total-years-only are never touched
+    @pytest.mark.parametrize("status", ["MATCHED", "PARTIAL", "ABSENT"])
+    def test_non_cd_statuses_unchanged(self, status):
+        d, _, _ = _score_with_evidence({EXP: status}, {EXP: [TOTAL_YEARS]})
+        c = _crit_of(d, EXP)
+        assert c["status"] == status
+        assert "total_years_only_evidence" not in c["risk_flags"]
+        assert "reconciled_from" not in c
+
+    def test_other_criteria_untouched(self):
+        base = _score({EXP: CD})
+        d, _, _ = _score_with_evidence({EXP: CD}, {EXP: [TOTAL_YEARS]})
+        for text, _dim, _req in CRIT:
+            if text != EXP:
+                assert _crit_of(d, text) == _crit_of(base, text)
+
+    # 8. blocking gaps, pending/upper and recommendation impact
+    def test_blocking_pending_upper_and_recommendation(self):
+        statuses = GOLDEN["B"][0]                       # EXP CD → needs_verification
+        base = _score(statuses)
+        assert base["recommendation"] == "needs_verification"
+        d, _, _ = _score_with_evidence(statuses, {EXP: [TOTAL_YEARS]})
+        assert d["verified_score"] == base["verified_score"] == 69
+        assert d["upper_score"] == 69 and d["pending_points"] == 0
+        assert d["verification_items"] == []
+        assert d["required_summary"]["cannot_determine"] == 0
+        assert d["required_summary"]["absent"] == 1
+        assert d["required_summary"]["blocking_gaps"] == 1
+        assert d["recommendation"] == d["decision_verified_basis"] == "partial"
+
+    # 9. llm_match_results_json keeps the original assessment
+    def test_llm_match_results_unchanged(self):
+        d, before, llm = _score_with_evidence({EXP: CD}, {EXP: [TOTAL_YEARS]})
+        assert _crit_of(d, EXP)["status"] == "ABSENT"
+        assert llm_matchresult_to_dict(llm) == before
+        a = next(x for x in before["assessments"] if x["criterion_text"] == EXP)
+        assert a["status"] == CD and a["cd_reason"] == "relevance_unverified"
+        assert a["supporting_evidence"] == [TOTAL_YEARS]
+        assert "total_years_only_evidence" not in (a.get("risk_flags") or [])
