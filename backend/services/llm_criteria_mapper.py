@@ -144,7 +144,7 @@ class LLMMatchResult:
 # fallback prompt below and inserted into production v9 by
 # scripts/build_d01_prompt_v10.py to produce v10.
 D01_STATUS_CONTRACT = """\
-ASSESSMENT STATUS CONTRACT (authoritative: overrides any other status guidance in these instructions):
+ASSESSMENT STATUS CONTRACT (authoritative for choosing the status; the evidence-interpretation principles elsewhere in these instructions still decide what the CV demonstrates):
 Split each criterion into its components (for example: duration, relevance/domain, level,
 field of study, named item, context/geography). For each component decide whether the
 provided CV information ESTABLISHES it as satisfied, ESTABLISHES it as NOT satisfied, or does
@@ -167,8 +167,11 @@ STATUS MEANINGS:
                     (a known shortfall). PARTIAL is never used to express uncertainty.
 - ABSENT:           No relevant evidence was found in the CV information provided (or rule 3).
                     ABSENT is not a finding that the candidate lacks the requirement.
-- CANNOT_DETERMINE: Relevant CV information exists, but it is insufficient, ambiguous,
-                    incomplete or contradictory for deciding whether the criterion is satisfied.
+- CANNOT_DETERMINE: Evidence genuinely relevant to this criterion establishes a meaningful part
+                    or context of it, nothing establishes a shortfall, and exactly ONE necessary
+                    fact is not stated (e.g. the field of a quoted degree, the domain of a quoted
+                    relevant role, the location of quoted work), so compliance cannot be decided.
+                    match_reason must name that missing fact.
 
 CANNOT_DETERMINE RULES:
 - Use it only for uncertainty in the candidate's evidence. Never use it when the CV does not
@@ -177,14 +180,29 @@ CANNOT_DETERMINE RULES:
 - cd_reason is required and must be exactly one of:
   relevance_unverified | detail_missing | ambiguous | conflicting
 - supporting_evidence must quote at least one piece of CV text showing the part that IS established.
-- match_reason must state what is established and what is not established.
-- Relevance-qualified experience ("X years of relevant experience", "X years in [domain/role]"):
-  years met but relevance not established -> CANNOT_DETERMINE, cd_reason "relevance_unverified",
-  quoting the experience, and add risk_flag "relevance_unverified".
-  Years NOT met: if the CV shows some experience relevant to the criterion that you can quote
-  -> PARTIAL, quoting it. If there is no relevant experience you can quote -> ABSENT, stating the
-  shortfall in match_reason. Required years not being met is never, on its own, a reason for
-  PARTIAL.
+- match_reason must state what is established and name the one fact that is not established.
+- Adjacent, generic, speculative or merely related text is NOT relevant evidence -> ABSENT, not
+  CANNOT_DETERMINE: a job title that does not show the criterion's activity, a list of other
+  skills, experience in a different area, or the computed "Total Experience: X years" line
+  (it says nothing about relevance).
+- A stated value that does not match is a known shortfall, not uncertainty (e.g. a degree in a
+  field that is neither listed nor closely related; a role in an unrelated area) -> ABSENT, or
+  PARTIAL if another part is satisfied. cd_reason "detail_missing" is only for a value that is
+  genuinely not stated.
+- Evidence does not need the criterion's exact words: concrete work or actions that clearly
+  demonstrate the capability establish it -> MATCHED (PARTIAL when only part is demonstrated).
+- Relevance-qualified experience ("Minimum N years of experience in a relevant role (...)",
+  "N years of relevant / [domain] experience"). A total-years figure on its own establishes
+  nothing about relevance:
+  a) relevant role/activity evidenced and its duration meets N -> MATCHED;
+  b) relevant role/activity evidenced but its duration is below N -> PARTIAL, quoting it;
+  c) a genuinely relevant role/activity is quoted and total years meet N, but it cannot be
+     established that it falls within the required relevance or how much of the time was
+     relevant -> CANNOT_DETERMINE, cd_reason "relevance_unverified", quoting the role/activity,
+     and add risk_flag "relevance_unverified";
+  d) only a total-years figure, or only roles/activities unrelated to the criterion -> ABSENT
+     (never MATCHED or CANNOT_DETERMINE).
+  Required years not being met is never, on its own, a reason for PARTIAL.
 
 FIELD REQUIREMENTS (responses that break these are rejected and must be regenerated):
 - status must be exactly one of: MATCHED, PARTIAL, ABSENT, CANNOT_DETERMINE.
@@ -198,10 +216,12 @@ FIELD REQUIREMENTS (responses that break these are rejected and must be regenera
   supporting_evidence list. Never invent, paraphrase or fabricate a quote.
 
 EXAMPLES:
-- "ICT systems support" / CV shows technical support roles, ICT relevance not stated
-  -> CANNOT_DETERMINE, cd_reason "relevance_unverified".
+- "ICT systems support" / CV shows "IT helpdesk: supported staff on company systems" but not
+  which systems -> CANNOT_DETERMINE, cd_reason "relevance_unverified", quoting it.
 - "Minimum 2 years of experience in a relevant role (Education Coordinator, ...)" / CV shows
-  6 years total, education-sector relevance not stated -> CANNOT_DETERMINE, "relevance_unverified".
+  "Teacher Assistant 2018-2021" and 6 years total, the setting's relevance unclear
+  -> CANNOT_DETERMINE, cd_reason "relevance_unverified", quoting the role.
+- Same criterion / CV shows only "Total Experience: 6 years" -> ABSENT.
 - "Palestinian construction sector" / CV shows construction experience, location/context not
   stated -> CANNOT_DETERMINE, "relevance_unverified".
 - "Minimum 1 year of relevant experience" / CV shows 0.5 years of relevant work
@@ -212,10 +232,24 @@ EXAMPLES:
   -> ABSENT (nothing relevant to quote; not PARTIAL).
 - "Knowledge of the local business / regulatory environment" / the CV never mentions the country,
   market or regulations -> ABSENT (not CANNOT_DETERMINE).
-- "Knowledge of the local business environment" / CV shows business roles but not where
-  -> CANNOT_DETERMINE, cd_reason "relevance_unverified", quoting the business role.
+- "Knowledge of the local business environment" / CV shows "Business Development Manager -
+  market entry and licensing" but not the country -> CANNOT_DETERMINE, cd_reason
+  "relevance_unverified", quoting the role.
 - "Bachelor's degree in HR or Business" / CV shows "Bachelor's degree" with no field
   -> CANNOT_DETERMINE, cd_reason "detail_missing".
+- "Bachelor in Civil Engineering, Education, Engineering Management, Project Management or
+  Development Studies" / CV shows "Bachelor in Planetary Health" -> ABSENT (the stated field is
+  not among the accepted or closely related fields; not CANNOT_DETERMINE).
+- "Business applications support" or "enterprise applications" / only the job title
+  "Full Stack Software Engineer" -> ABSENT.
+- "Enterprise applications" / "Built an internal order management dashboard with role-based
+  access control" -> MATCHED.
+- "Organizational skills" / CV only lists "Fast Learning | Troubleshooting | Teamwork |
+  Documentation" -> ABSENT.
+- "Attention to detail" / "Audited 300 payroll records monthly with zero discrepancies" -> MATCHED.
+- "Minimum 5 years HR-relevant experience" / "Total Experience: 5.0 years" plus "HR Assistant -
+  onboarding and staff records" with no dates for that role -> CANNOT_DETERMINE, cd_reason
+  "relevance_unverified", quoting the HR role.
 - "Knowledge of construction-sector regulation" / nothing construction-related in the CV -> ABSENT.
 """
 
@@ -305,9 +339,10 @@ Experience-duration criteria come in two types:
 For TYPE B criteria: do NOT assign MATCHED/direct/confidence≥0.85 based on
 total years alone. If years are met AND you have title/responsibility/
 domain evidence confirming relevance → MATCHED is appropriate. If years
-are met but relevance is not established → CANNOT_DETERMINE with cd_reason
-"relevance_unverified" and risk_flag "relevance_unverified" (see the
-ASSESSMENT STATUS CONTRACT). If years are NOT met → PARTIAL only when relevant
+are met and a genuinely relevant role/activity is quoted but its relevance
+cannot be fully established → CANNOT_DETERMINE with cd_reason
+"relevance_unverified" and risk_flag "relevance_unverified". If only a
+total-years figure is available → ABSENT (see the ASSESSMENT STATUS CONTRACT). If years are NOT met → PARTIAL only when relevant
 experience can be quoted; with nothing relevant to quote → ABSENT. Never fabricate
 a years figure that isn't present in the provided data.
 
@@ -385,7 +420,7 @@ RISK FLAGS (add only when genuinely applicable):
 - single_mention:         Criterion appears only once with no context.
 - transferable_only:      Only transferable evidence found, no direct evidence.
 - possible_extraction_gap: ABSENT assigned because the relevant input section was empty/sparse relative to stated background, not confirmed non-evidence.
-- relevance_unverified:   A relevance-qualified experience criterion's years threshold was met, but domain/functional relevance could not be confirmed from available data (status CANNOT_DETERMINE).
+- relevance_unverified:   A relevance-qualified experience criterion's years threshold was met and a relevant role/activity is quoted, but its relevance to the required domain/function could not be confirmed (status CANNOT_DETERMINE). When only a total-years figure is available the status is ABSENT.
 
 DIMENSION vs CRITERION_CLASS CRITICAL DISTINCTION:
 - dimension: The scoring category for this criterion (skills, experience, education,

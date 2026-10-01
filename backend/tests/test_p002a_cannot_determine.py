@@ -774,7 +774,7 @@ class TestPromptV10Builder:
         assert "ASSESSMENT STATUS CONTRACT" in t and "MATCH STATUS DEFINITIONS" not in t
         assert '"status": "<MATCHED|PARTIAL|ABSENT|CANNOT_DETERMINE>",' in t
         assert '"cd_reason":' in t
-        assert 'assign CANNOT_DETERMINE with cd_reason "relevance_unverified", state' in t
+        assert 'assign ABSENT (a total-years figure alone does not establish relevance), state' in t
         assert "are NOT met → PARTIAL." in t                    # known shortfall untouched
         assert "Partial evidence → PARTIAL" not in t
         assert "(status CANNOT_DETERMINE)" in t
@@ -845,10 +845,11 @@ MATCH TYPE GUIDE
         r = _builder().build_v10(self.V9_SNIPPET)
         assert r.errors == []
         t = r.text
-        assert 'Assign\n  status=CANNOT_DETERMINE with cd_reason "relevance_unverified",\n  and state plainly' in t
+        assert 'Assign\n  status=ABSENT (a total-years figure alone does not establish relevance),\n  and state plainly' in t
         # banner kept directly under the new heading; old definitions gone
         assert "=====\nASSESSMENT STATUS CONTRACT (authoritative" in t
-        assert "(authoritative: overrides any other status guidance in these instructions):\n=====" in t
+        assert ("(authoritative for choosing the status; the evidence-interpretation principles elsewhere "
+                "in these instructions still decide what the CV demonstrates):\n=====") in t
         assert "MATCH STATUS DEFINITIONS" not in t and "- PARTIAL:  Some evidence exists" not in t
         # E7: the v9 evidence paragraph also covers CANNOT_DETERMINE
         assert ("IMPORTANT: Only set status=MATCHED, status=PARTIAL or status=CANNOT_DETERMINE "
@@ -1177,11 +1178,12 @@ class TestEvidenceRuleWording:
         t = self._prompts()[name]
         assert "EVIDENCE RULE: MATCHED, PARTIAL and CANNOT_DETERMINE are only valid with at least one quote" in t
         assert "status is ABSENT (rule 1 or 3)" in t and "Never invent" in t
-        assert "Required years not being met is never, on its own, a reason for\n  PARTIAL." in t
+        assert "Required years not being met is never, on its own, a reason for PARTIAL." in t
         assert '"Minimum 5 years of relevant HR experience" / CV shows 2 years in an HR role\n  -> PARTIAL, quoting the 2-year HR role.' in t
         assert "no HR role, HR duty or other HR evidence in the CV\n  -> ABSENT" in t
         assert "market or regulations -> ABSENT (not CANNOT_DETERMINE)" in t
-        assert 'CV shows business roles but not where\n  -> CANNOT_DETERMINE, cd_reason "relevance_unverified", quoting the business role.' in t
+        assert ('"Business Development Manager -\n  market entry and licensing" but not the country -> '
+                'CANNOT_DETERMINE, cd_reason\n  "relevance_unverified", quoting the role.') in t
 
     def test_fallback_type_b_sentence(self):
         assert ("If years are NOT met → PARTIAL only when relevant\nexperience can be quoted; "
@@ -1328,3 +1330,101 @@ class TestOfflineHarnessWithRepairMessages:
             assert r["max_tokens_sent"] == ([7000, 8000] if p["version"] == 9 else [12000, 12000])
             assert [a["final_status"] for a in r["assessments"]] == ["ABSENT"]
         assert sorted(map(tuple, seen)).count(("system", "user", "assistant", "user")) == 6
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 11. v10 CANNOT_DETERMINE refinement (prompt only; F-01 unchanged)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestCannotDetermineRefinement:
+
+    def _prompts(self):
+        return {"contract": mapper_mod.D01_STATUS_CONTRACT,
+                "fallback": mapper_mod._HARDCODED_SYSTEM_PROMPT,
+                "v10": _builder().build_v10(TestPromptV10BuilderProductionV9Wording.V9_SNIPPET).text}
+
+    @pytest.mark.parametrize("name", ["contract", "fallback", "v10"])
+    def test_header_keeps_evidence_principles(self, name):
+        t = self._prompts()[name]
+        assert ("ASSESSMENT STATUS CONTRACT (authoritative for choosing the status; the evidence-interpretation "
+                "principles elsewhere in these instructions still decide what the CV demonstrates):\n") in t
+        assert "overrides any other status guidance" not in t
+
+    @pytest.mark.parametrize("name", ["contract", "fallback", "v10"])
+    def test_tightened_cd_definition_and_rules(self, name):
+        t = self._prompts()[name]
+        assert "Evidence genuinely relevant to this criterion establishes a meaningful part" in t
+        assert "exactly ONE necessary\n                    fact is not stated" in t
+        assert "match_reason must name that missing fact." in t
+        assert "Adjacent, generic, speculative or merely related text is NOT relevant evidence -> ABSENT" in t
+        assert 'the computed "Total Experience: X years" line\n  (it says nothing about relevance)' in t
+        assert "A stated value that does not match is a known shortfall, not uncertainty" in t
+        assert 'cd_reason "detail_missing" is only for a value that is\n  genuinely not stated.' in t
+        assert "Evidence does not need the criterion's exact words" in t
+        assert "Relevant CV information exists, but it is insufficient, ambiguous" not in t
+
+    @pytest.mark.parametrize("name", ["contract", "fallback", "v10"])
+    def test_relevant_experience_ladder(self, name):
+        t = self._prompts()[name]
+        assert "A total-years figure on its own establishes\n  nothing about relevance" in t
+        assert "a) relevant role/activity evidenced and its duration meets N -> MATCHED;" in t
+        assert "b) relevant role/activity evidenced but its duration is below N -> PARTIAL, quoting it;" in t
+        assert 'relevant -> CANNOT_DETERMINE, cd_reason "relevance_unverified", quoting the role/activity' in t
+        assert ("d) only a total-years figure, or only roles/activities unrelated to the criterion -> ABSENT\n"
+                "     (never MATCHED or CANNOT_DETERMINE).") in t
+        assert "years met but relevance not established -> CANNOT_DETERMINE" not in t
+
+    @pytest.mark.parametrize("name", ["contract", "fallback", "v10"])
+    def test_adjacent_domain_cd_examples_replaced(self, name):
+        t = self._prompts()[name]
+        for old in ("CV shows technical support roles, ICT relevance not stated",
+                    "6 years total, education-sector relevance not stated -> CANNOT_DETERMINE",
+                    "CV shows business roles but not where"):
+            assert old not in t, old
+
+    @pytest.mark.parametrize("name", ["contract", "fallback", "v10"])
+    def test_new_examples_present(self, name):
+        t = self._prompts()[name]
+        for needle in (
+            '"IT helpdesk: supported staff on company systems" but not\n  which systems -> CANNOT_DETERMINE',
+            '"Teacher Assistant 2018-2021" and 6 years total',
+            'Same criterion / CV shows only "Total Experience: 6 years" -> ABSENT.',
+            '"Business Development Manager -\n  market entry and licensing" but not the country -> CANNOT_DETERMINE',
+            '"Bachelor in Planetary Health" -> ABSENT',
+            '"Full Stack Software Engineer" -> ABSENT.',
+            'access control" -> MATCHED.',
+            'Documentation" -> ABSENT.',
+            '"Audited 300 payroll records monthly with zero discrepancies" -> MATCHED.',
+            '"HR Assistant -\n  onboarding and staff records" with no dates for that role -> CANNOT_DETERMINE',
+            # legitimate CD and earlier examples kept
+            '"Palestinian construction sector" / CV shows construction experience',
+            '"Bachelor\'s degree" with no field\n  -> CANNOT_DETERMINE, cd_reason "detail_missing".',
+            "-> PARTIAL, quoting the 2-year HR role.",
+        ):
+            assert needle in t, needle
+
+    @pytest.mark.parametrize("name", ["fallback", "v10"])
+    def test_relevance_flag_definition(self, name):
+        # v10 built from a v9 text that has the relevance_unverified flag line (E5)
+        t = mapper_mod._HARDCODED_SYSTEM_PROMPT if name == "fallback" else _builder().build_v10(_V9_LIKE).text
+        assert ("and a relevant role/activity is quoted, but its relevance to the required domain/function "
+                "could not be confirmed (status CANNOT_DETERMINE). When only a total-years figure is "
+                "available the status is ABSENT.") in t
+
+    def test_fallback_type_b_sentence(self):
+        t = mapper_mod._HARDCODED_SYSTEM_PROMPT
+        assert ("are met and a genuinely relevant role/activity is quoted but its relevance\n"
+                "cannot be fully established → CANNOT_DETERMINE") in t
+        assert "If only a\ntotal-years figure is available → ABSENT" in t
+
+    def test_builder_e4_total_years_only_becomes_absent(self):
+        r = _builder().build_v10(TestPromptV10BuilderProductionV9Wording.V9_SNIPPET)
+        assert any(a.startswith("E4 ") and "→ ABSENT" in a for a in r.applied)
+        assert "status=ABSENT (a total-years figure alone does not establish relevance)" in r.text
+        assert 'status=PARTIAL, match_type="inferred"' not in r.text
+        assert "Assign\n  status=CANNOT_DETERMINE" not in r.text
+
+    def test_builder_e4_never_touches_years_not_met(self):
+        t = _builder().build_v10(_V9_LIKE).text
+        assert "are NOT met → PARTIAL." in t
+        assert "NOT met → ABSENT (a total-years" not in t and "NOT met → CANNOT_DETERMINE" not in t

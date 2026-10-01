@@ -11,8 +11,9 @@ v10 = v9 + targeted edits (everything else in v9 is left untouched):
   E2  REQUIRED vs PREFERRED: drop "Partial evidence -> PARTIAL" (uncertainty
       is CANNOT_DETERMINE; a known shortfall is PARTIAL)
   E3  output schema: status enum gains CANNOT_DETERMINE, plus a cd_reason line
-  E4  TYPE B: "years met, relevance not established -> PARTIAL" becomes
-      CANNOT_DETERMINE with cd_reason "relevance_unverified" (flag kept)
+  E4  TYPE B: "years met but no title/responsibility/domain evidence (only a
+      total-years figure) -> PARTIAL" becomes ABSENT (a total-years figure
+      alone does not establish relevance)
   E5  relevance_unverified risk-flag definition points to CANNOT_DETERMINE
   E6  qualitative summary: CANNOT_DETERMINE is never a gap; interview
       questions verify CANNOT_DETERMINE criteria first
@@ -61,10 +62,15 @@ _REQUIRED_PREFERRED_TEXT = (
     "  not which status you choose."
 )
 _RELEVANCE_FLAG_TEXT = (
-    "- relevance_unverified:   A relevance-qualified experience criterion's years threshold was "
-    "met, but domain/functional relevance could not be confirmed from available data "
-    "(status CANNOT_DETERMINE)."
+    "- relevance_unverified:   A relevance-qualified experience criterion's years threshold was met "
+    "and a relevant role/activity is quoted, but its relevance to the required domain/function "
+    "could not be confirmed (status CANNOT_DETERMINE). When only a total-years figure is "
+    "available the status is ABSENT."
 )
+# E4 (P0-02a refinement): v9's "years met but NO title/responsibility/domain
+# evidence (only a total-years figure) → PARTIAL" case has nothing relevant to
+# quote, so it becomes ABSENT — not CANNOT_DETERMINE.
+_TYPEB_ABSENT = "ABSENT (a total-years figure alone does not establish relevance)"
 _QS_CD_RULE = (
     "suggested_interview_questions should first verify CANNOT_DETERMINE criteria, then target "
     "PARTIAL or ABSENT criteria areas. CANNOT_DETERMINE criteria are never listed as gaps."
@@ -163,7 +169,7 @@ def build_v10(v9: str) -> BuildResult:
     else:
         r.errors.append('E3 anchor missing: "status": "<MATCHED|PARTIAL|ABSENT>", in the output schema')
 
-    # ── E4: TYPE B relevance → CANNOT_DETERMINE ──────────────────────────────
+    # ── E4: TYPE B "years met, nothing to confirm relevance" → ABSENT ────────
     # One sentence (no '.' other than "e.g."/"i.e.") that says the years are met and relevance is not
     # established/confirmed, then "→ (assign) PARTIAL" (optionally with the
     # old match_type/confidence hints). "years are NOT met → PARTIAL" is a
@@ -178,7 +184,7 @@ def build_v10(v9: str) -> BuildResult:
         span = mm.group(1)
         if not re.search(r"relevan", span, re.IGNORECASE):
             return mm.group(0)
-        return f'{span}{mm.group(2)} {mm.group(3) or ""}CANNOT_DETERMINE with cd_reason "relevance_unverified"'
+        return f'{span}{mm.group(2)} {mm.group(3) or ""}{_TYPEB_ABSENT}'
 
     text, n = typeb_re.subn(_typeb, text)
 
@@ -198,15 +204,15 @@ def build_v10(v9: str) -> BuildResult:
         if (re.search(r"years(?:\s+threshold)?\s+(?:is|are)\s+met", ctx, re.IGNORECASE)
                 and re.search(r"confirm\s+relevance|relevance\s+(?:could\s+not|cannot|is\s+not)", ctx, re.IGNORECASE)
                 and not re.search(r"\bNOT\s+met\b", ctx)):
-            return 'status=CANNOT_DETERMINE with cd_reason "relevance_unverified"'
+            return f"status={_TYPEB_ABSENT}"
         return mm.group(0)
 
     text = status_re.sub(_typeb_status, text)
-    n = sum(1 for _ in re.finditer(r'CANNOT_DETERMINE with cd_reason "relevance_unverified"', text))
+    n = text.count(_TYPEB_ABSENT)
     if n:
-        r.applied.append(f"E4 years met + relevance not established → CANNOT_DETERMINE ({n} occurrence(s))")
+        r.applied.append(f"E4 years met + only total years (no relevant role evidence) → ABSENT ({n} occurrence(s))")
     else:
-        r.not_found.append("E4 'years met … relevance not established … → PARTIAL' sentence")
+        r.not_found.append("E4 'years met … no evidence to confirm relevance … → PARTIAL' sentence")
 
     # ── E5: relevance_unverified flag definition ────────────────────────────
     flag_re = re.compile(r"^- relevance_unverified:.*$", re.MULTILINE)
