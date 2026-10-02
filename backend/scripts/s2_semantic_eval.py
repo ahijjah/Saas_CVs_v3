@@ -35,7 +35,17 @@ Output (contains CV-derived text: keep it on the server):
   <out>/report.md       human-review report
   <out>/review.csv      one row per classification with blank reviewer columns
 
+Real-job mode (--job-code): ALL applications of that job with usable text
+(largest 'done' extracted text >= --min-text-chars) are evaluated against a
+job-scoped fixture whose "job_code" must match; the generic fixture and any
+mismatched fixture are refused. --dry-run then also shows excluded
+applications, the exact masked S2 criterion block, a date-masked preview and a
+call/token/cost budget computed deterministically (no AI call; S0 output is
+only shown when already present in the local S0 cache).
+
 Usage (one-off container on the server, e.g. the worker image):
+  python scripts/s2_semantic_eval.py --out /tmp/s2_eval --job-code JOB-2026-0031 \
+      --criteria scripts/s2_eval_fixtures/job_2026_0031.json --dry-run
   python scripts/s2_semantic_eval.py --out /tmp/s2_eval --dry-run
   python scripts/s2_semantic_eval.py --out /tmp/s2_eval --max-cvs 25
   python scripts/s2_semantic_eval.py --out /tmp/s2_eval --application-id <uuid> [...]
@@ -50,23 +60,29 @@ import re
 import sys
 import unicodedata
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services.experience_accounting import RequirementSpec  # noqa: E402
 from services.s0_experience import llm_call  # noqa: E402
+from services.s0_experience.dates import extract_anchors  # noqa: E402
 from services.s0_experience import structurer as s0  # noqa: E402
 from services.s0_experience.schema import TRUSTED_STRUCTURE, S0Document  # noqa: E402
 from services.s0_experience.text import split_lines  # noqa: E402
 from services.s2_experience import classifier as s2  # noqa: E402
+from services.s2_experience.masking import date_spans_by_line, mask_line  # noqa: E402
 
 DEFAULT_CRITERIA = Path(__file__).resolve().parent / "s2_eval_criteria.json"
 # gpt-4o-mini list prices (USD per 1M tokens) — an ASSUMPTION; override with flags.
 DEFAULT_PRICE_IN = 0.15
 DEFAULT_PRICE_OUT = 0.60
+# Dry-run budget ASSUMPTIONS for completion tokens per call (no AI call is made to measure them).
+ASSUMED_S0_OUTPUT_TOKENS = 2_000
+ASSUMED_S2_OUTPUT_TOKENS = 1_000
 LABELS = ("qualifying", "related", "not_relevant", "insufficient")
 
 # Review-flag categories (heuristic prioritisation only).
@@ -145,7 +161,23 @@ FROM application_files f
 JOIN applications a ON a.application_id = f.application_id
 JOIN jobs j ON j.job_id = a.job_id
 WHERE f.application_id = ANY($1::uuid[]) AND f.extracted_text IS NOT NULL
+  AND f.extraction_status = 'done'
 ORDER BY f.application_id, length(f.extracted_text) DESC
+"""
+
+JOB_APPS_SQL = """
+SELECT a.application_id::text AS application_id, a.job_id::text AS job_id, j.title AS job_title,
+       j.job_code,
+       count(f.file_id) AS files,
+       count(f.file_id) FILTER (WHERE f.extraction_status = 'done') AS done_files,
+       coalesce(max(length(coalesce(f.extracted_text, '')))
+                FILTER (WHERE f.extraction_status = 'done'), 0) AS max_text_len
+FROM applications a
+JOIN jobs j ON j.job_id = a.job_id
+LEFT JOIN application_files f ON f.application_id = a.application_id
+WHERE j.job_code = $1
+GROUP BY a.application_id, a.job_id, j.title, j.job_code
+ORDER BY a.application_id
 """
 
 
@@ -183,7 +215,48 @@ async def load_sample(db: ReadOnlyDB, args) -> list[dict]:
     return [texts[i] for i in ids if i in texts]
 
 
+def exclusion_reason(row: dict, min_chars: int) -> str | None:
+    if not row["files"]:
+        return "no_files"
+    if not row["done_files"]:
+        return "extraction_not_done"
+    if row["max_text_len"] < min_chars:
+        return f"text_shorter_than_{min_chars}_chars"
+    return None
+
+
+async def load_job_sample(db: ReadOnlyDB, job_code: str, min_chars: int) -> tuple[list[dict], list[dict], int]:
+    """ALL applications of one job with usable text (application_id only).
+    Returns (sample, excluded [{application_id, reason}], total applications)."""
+    rows = [dict(r) for r in await db.fetch(JOB_APPS_SQL, job_code)]
+    excluded = [{"application_id": r["application_id"], "reason": exclusion_reason(r, min_chars)}
+                for r in rows if exclusion_reason(r, min_chars)]
+    ids = [r["application_id"] for r in rows if not exclusion_reason(r, min_chars)]
+    texts = {r["application_id"]: dict(r) for r in await db.fetch(TEXT_SQL, ids)} if ids else {}
+    sample = []
+    for i in ids:
+        if i in texts:
+            sample.append({**texts[i], "job_code": job_code})
+        else:                                           # changed between the two SELECTs
+            excluded.append({"application_id": i, "reason": "text_not_found"})
+    return sample, excluded, len(rows)
+
+
 # ── fixtures ────────────────────────────────────────────────────────────────
+
+def fixture_job_code(path: Path) -> str | None:
+    return json.loads(path.read_text(encoding="utf-8")).get("job_code")
+
+
+def check_fixture_scope(fixture_path: Path, job_code: str | None) -> None:
+    """A job-scoped fixture only with its own --job-code; --job-code only with its own fixture."""
+    fx = fixture_job_code(fixture_path)
+    if job_code and fx != job_code:
+        raise ValueError(f"fixture {fixture_path.name} is for job_code={fx!r}, not {job_code!r}: refusing "
+                         f"(a generic or mismatched fixture must not be used for a real-job evaluation)")
+    if fx and not job_code:
+        raise ValueError(f"fixture {fixture_path.name} is scoped to {fx}: run it with --job-code {fx}")
+
 
 def load_criteria(path: Path, only: list[str] | None = None) -> list[tuple[RequirementSpec, list[str]]]:
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -359,6 +432,7 @@ async def run_eval(sample: list[dict], criteria, args, out: Path) -> dict:
     for app, doc, spec, res in results:
         base = {"application_id": app["application_id"], "job_title": app["job_title"],
                 "criterion_id": spec.criterion_id, "criterion_text": spec.criterion_text,
+                "spec_version": spec.spec_version,
                 "policy": spec.policy, "targets": list(spec.targets), "setting": spec.setting,
                 "required_years": spec.required_years,
                 "s0_structure_status": doc.structure_status, "s0_date_status": doc.date_status,
@@ -419,6 +493,9 @@ def summarize(sample, docs, results, pairs, calls, s0_hits, s2_hits, args) -> di
     cost = lambda t: (t["prompt_tokens"] * args.price_in + t["completion_tokens"] * args.price_out) / 1e6  # noqa: E731
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "job_code": getattr(args, "job_code", None),
+        "spec_versions": sorted({p.get("spec_version") for p in pairs if p.get("spec_version")}),
+        "s2_version": s2.S2_VERSION,
         "s2_prompt_version": s2.S2_PROMPT_VERSION, "s2_model": s2.S2_MODEL,
         "s0_prompt_version": s0.S0C_PROMPT_VERSION,
         "applications": len(sample), "jobs": len({a["job_id"] for a in sample}),
@@ -498,7 +575,8 @@ def _entry_block(p: dict, with_crit: bool = False) -> list[str]:
 def render_report(sample, criteria, docs, pairs, summary) -> str:
     L: list[str] = [
         "# S2 semantic evaluation report", "",
-        f"Generated {summary['generated_at']} · S2 prompt `{summary['s2_prompt_version']}` "
+        (f"Job `{summary['job_code']}` · " if summary.get("job_code") else "") +
+        f"Generated {summary['generated_at']} · S2 `{summary['s2_version']}` prompt `{summary['s2_prompt_version']}` "
         f"({summary['s2_model']}) · S0 prompt `{summary['s0_prompt_version']}`", "",
         "> Contains CV-derived text. Keep on the server. Review flags are keyword heuristics that only "
         "prioritise review; they are not judgements. No years, statuses or scores are computed here.", "",
@@ -584,29 +662,159 @@ def render_report(sample, criteria, docs, pairs, summary) -> str:
     return "\n".join(L) + "\n"
 
 
+# ── dry run: deterministic preview + budget (never calls the AI) ────────────
+
+def _clip(t: str | None, n: int = 90) -> str | None:
+    return t if t is None or len(t) <= n else t[:n] + " …"
+
+
+def s2_request_preview(app: dict, spec: RequirementSpec, s0_cache: FileCache | None) -> tuple[dict, str]:
+    """The S2 request for one CV without any AI call. With an S0 result already in
+    the local cache the real entries are shown (line texts clipped); otherwise the
+    exact criterion block plus an entry-shape placeholder (entries come from S0)."""
+    text = app["extracted_text"]
+    hit = s0_cache.get(s0.s0_cache_key(text)) if s0_cache else None
+    if hit is not None:
+        doc = S0Document.from_dict(hit)
+        if doc.structure_status in TRUSTED_STRUCTURE:
+            payload = s2.build_request(doc, spec, text).payload
+            for e in payload["entries"]:
+                e["title"], e["employer"] = _clip(e["title"]), _clip(e["employer"])
+                e["lines"] = [{"line": ln["line"], "text": _clip(ln["text"])} for ln in e["lines"]]
+            return payload, f"from cached S0 ({doc.structure_status}, {len(payload['entries'])} entries)"
+    lines = split_lines(text)
+    scan = extract_anchors(lines, (date.today().year, date.today().month))
+    stub = SimpleNamespace(anchors=scan.anchors, unparsed_date_texts=scan.unparsed,
+                           experience_entries=lambda: [])
+    payload = s2.build_request(stub, spec, text).payload
+    payload["entries"] = [{"entry_id": "E<k>", "title": "<entry title, dates masked>",
+                           "employer": "<entry employer, dates masked>",
+                           "lines": [{"line": "<n>", "text": "<owned CV line, dates as [dates]>"}]}]
+    return payload, "no S0 output cached: entries are produced by S0 at run time (shape shown)"
+
+
+def masked_date_lines(app: dict, limit: int = 4) -> list[str]:
+    """A few CV lines that contain dates, as S2 would see them (dates -> [dates])."""
+    lines = split_lines(app["extracted_text"])
+    scan = extract_anchors(lines, (date.today().year, date.today().month))
+    spans = date_spans_by_line(SimpleNamespace(anchors=scan.anchors, unparsed_date_texts=scan.unparsed), lines)
+    return [f"L{ln}: {_clip(mask_line(ln, lines, spans).masked)}" for ln in sorted(spans)[:limit]]
+
+
+def call_budget(sample: list[dict], n_semantic: int, price_in: float, price_out: float) -> dict:
+    """Deterministic budget: input token UPPER BOUNDS (UTF-8 bytes; real tokens are lower)
+    plus ASSUMED completion sizes. No AI call."""
+    s0_in = s2_in = 0
+    for app in sample:
+        lines = split_lines(app["extracted_text"])
+        scan = extract_anchors(lines, (date.today().year, date.today().month))
+        s0_in += llm_call.request_token_upper_bound(
+            [{"role": "system", "content": s0.S0C_SYSTEM_PROMPT},
+             {"role": "user", "content": s0.build_user_message(lines, scan.anchors)}])
+        # S2 sees at most every CV line once (entries own a subset) plus the criterion block.
+        s2_in += n_semantic * (llm_call.request_token_upper_bound(
+            [{"role": "system", "content": s2.S2_SYSTEM_PROMPT},
+             {"role": "user", "content": "INPUT:\n" + app["extracted_text"]}]) + 400)
+    n = len(sample)
+    s0_out, s2_out = n * ASSUMED_S0_OUTPUT_TOKENS, n * n_semantic * ASSUMED_S2_OUTPUT_TOKENS
+    expected = ((s0_in + s2_in) * price_in + (s0_out + s2_out) * price_out) / 1e6
+    # Worst case: every call repaired (repair input ~ input + previous output; output again).
+    worst = ((2 * (s0_in + s2_in) + s0_out + s2_out) * price_in + 2 * (s0_out + s2_out) * price_out) / 1e6
+    return {"s0_calls_main": n, "s0_calls_max": 2 * n, "s2_calls_main_max": n * n_semantic,
+            "s2_calls_max": 2 * n * n_semantic,
+            "s0_input_tokens_upper_bound": s0_in, "s2_input_tokens_upper_bound": s2_in,
+            "assumed_output_tokens": {"s0_per_call": ASSUMED_S0_OUTPUT_TOKENS,
+                                      "s2_per_call": ASSUMED_S2_OUTPUT_TOKENS},
+            "cost_usd_upper_bound_no_repairs": round(expected, 4),
+            "cost_usd_upper_bound_all_repaired": round(worst, 4),
+            "prices_per_1m": {"in": price_in, "out": price_out}}
+
+
+def render_dry_run(args, sample, excluded, total, criteria, s0_cache: FileCache | None) -> str:
+    semantic = [sp for sp, _ in criteria if sp.policy != "pure_duration"]
+    L = ["=" * 100, "S2 EVALUATION DRY RUN — no OpenAI client created, no AI call made, nothing written",
+         "=" * 100]
+    if args.job_code:
+        L.append(f"job_code: {args.job_code}   applications: {total}   usable CVs selected: {len(sample)}"
+                 f"   excluded: {len(excluded)}")
+        for reason, n in sorted(Counter(e["reason"] for e in excluded).items()):
+            L.append(f"  excluded {n} x {reason}")
+        for e in excluded:
+            L.append(f"    {e['application_id']}  {e['reason']}")
+    else:
+        L.append(f"sample: {len(sample)} applications across {len({a['job_id'] for a in sample})} jobs")
+    L.append("selected applications (application_id only):")
+    for a in sample:
+        L.append(f"  {a['application_id']}  {len(a['extracted_text']):>6} chars  {a['job_title']}")
+    L.append("")
+    L.append(f"S2 version {s2.S2_VERSION} · prompt {s2.S2_PROMPT_VERSION} ({s2.prompt_fingerprint()}) · "
+             f"input {s2.S2_INPUT_VERSION} · model {s2.S2_MODEL}")
+    for sp, _ in criteria:
+        L.append(f"spec {sp.criterion_id} [{sp.spec_version}] policy={sp.policy} targets={list(sp.targets)} "
+                 f"setting={sp.setting!r} required_years={sp.required_years} (S4/S5 only — not sent to S2)")
+    if sample and semantic:
+        app = sample[0]
+        payload, how = s2_request_preview(app, semantic[0], s0_cache)
+        L += ["", f"S2 request for application {app['application_id']} — {how}:",
+              json.dumps(payload, indent=2, ensure_ascii=False)]
+        dl = masked_date_lines(app)
+        if dl:
+            L += ["", "date masking preview (first date lines of that CV, as S2 sees them):"] + ["  " + x for x in dl]
+    b = call_budget(sample, len(semantic), args.price_in, args.price_out)
+    L += ["", "call budget (uncached):",
+          f"  S0: {b['s0_calls_main']} main + at most {b['s0_calls_main']} repairs",
+          f"  S2: at most {b['s2_calls_main_max']} main + at most {b['s2_calls_main_max']} repairs "
+          f"(one per CV with a trusted S0 structure and >= 1 experience entry)",
+          f"  input tokens UPPER BOUND (UTF-8 bytes; real tokens are fewer): S0 {b['s0_input_tokens_upper_bound']:,}"
+          f"  S2 {b['s2_input_tokens_upper_bound']:,}",
+          f"  ASSUMED output tokens per call: S0 {ASSUMED_S0_OUTPUT_TOKENS:,}  S2 {ASSUMED_S2_OUTPUT_TOKENS:,}",
+          f"  cost upper bound (USD, at {args.price_in}/{args.price_out} per 1M in/out): "
+          f"{b['cost_usd_upper_bound_no_repairs']} without repairs, "
+          f"{b['cost_usd_upper_bound_all_repaired']} if every call is repaired",
+          "", "DRY RUN COMPLETE: no OpenAI calls were made; the database was only read (SELECT); "
+              "nothing was written."]
+    return "\n".join(L)
+
+
 # ── entry point ─────────────────────────────────────────────────────────────
 
-async def main_async(args) -> int:
-    criteria = load_criteria(Path(args.criteria), args.criterion)
+async def connect_db() -> ReadOnlyDB:
     from config import get_settings
-    db = await ReadOnlyDB.connect(_plain_dsn(get_settings().database_url))
+    return await ReadOnlyDB.connect(_plain_dsn(get_settings().database_url))
+
+
+async def main_async(args) -> int:
+    if args.job_code and args.application_id:
+        raise SystemExit("--job-code and --application-id are mutually exclusive")
     try:
-        sample = await load_sample(db, args)
+        check_fixture_scope(Path(args.criteria), args.job_code)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+    criteria = load_criteria(Path(args.criteria), args.criterion)
+    db = await connect_db()
+    excluded: list[dict] = []
+    total = 0
+    try:
+        if args.job_code:
+            sample, excluded, total = await load_job_sample(db, args.job_code, args.min_text_chars)
+        else:
+            sample = await load_sample(db, args)
     finally:
         await db.close()
+    if args.job_code and total == 0:
+        print(f"No applications found for job_code {args.job_code}.")
+        return 1
     if not sample:
         print("No applications matched the sample query.")
         return 1
-    semantic = [sp for sp, _ in criteria if sp.policy != "pure_duration"]
-    print(f"Sample: {len(sample)} applications across {len({a['job_id'] for a in sample})} jobs")
-    for a in sample:
-        print(f"  {a['application_id']}  {len(a['extracted_text']):>6} chars  {a['job_title']}")
-    print(f"Criteria: {len(criteria)} ({', '.join(sp.criterion_id for sp, _ in criteria)})")
-    print(f"Call budget (uncached): S0 <= {2 * len(sample)}, S2 <= {2 * len(sample) * len(semantic)} "
-          f"(main + at most one repair each)")
     if args.dry_run:
-        print("--dry-run: no OpenAI calls made, nothing written.")
+        cache_root = Path(args.cache_dir) if args.cache_dir else Path(args.out) / "cache"
+        s0_cache = _ReadOnlyFileCache(cache_root / "s0")
+        print(render_dry_run(args, sample, excluded, total, criteria, s0_cache))
         return 0
+    semantic = [sp for sp, _ in criteria if sp.policy != "pure_duration"]
+    print(f"Evaluating {len(sample)} applications x {len(semantic)} criteria"
+          + (f" for {args.job_code}" if args.job_code else ""))
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     summary = await run_eval(sample, criteria, args, out)
@@ -617,7 +825,18 @@ async def main_async(args) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+class _ReadOnlyFileCache:
+    """Dry-run view of the S0 file cache: reads if present, never creates or writes."""
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def get(self, key: str) -> dict | None:
+        p = self.root / f"{key}.json"
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True, help="output directory (on the server)")
     ap.add_argument("--criteria", default=str(DEFAULT_CRITERIA), help="criteria fixture JSON")
@@ -631,8 +850,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cache-dir", help="S0/S2 file cache (default <out>/cache)")
     ap.add_argument("--price-in", type=float, default=DEFAULT_PRICE_IN, help="USD per 1M input tokens")
     ap.add_argument("--price-out", type=float, default=DEFAULT_PRICE_OUT, help="USD per 1M output tokens")
-    ap.add_argument("--dry-run", action="store_true", help="select and print the sample only")
-    return asyncio.run(main_async(ap.parse_args(argv)))
+    ap.add_argument("--job-code", help="evaluate ALL usable CVs of this job (needs a matching job fixture)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="select, preview and budget only: no AI call, nothing written")
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    return asyncio.run(main_async(build_parser().parse_args(argv)))
 
 
 if __name__ == "__main__":
