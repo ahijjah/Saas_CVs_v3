@@ -354,7 +354,10 @@ class TestInputContract:
         p = s2.S2_SYSTEM_PROMPT
         for frag in ("Never reason about duration", "NEVER quote \"[dates]\"", "VERBATIM",
                      "insufficient means the entry LACKS INFORMATION", "SECURITY RULES",
-                     "POLICY: explicit_role", "POLICY: functional", "POLICY: sector"):
+                     "POLICY: explicit_role", "POLICY: functional", "POLICY: sector",
+                     "Targets are authoritative", "NOT listed in targets", "NOT itself a target",
+                     "outside the required setting", "the entry must also establish that setting",
+                     "functional/explicit_role with a setting", "evidence for BOTH the role and the setting"):
             assert frag in p, frag
 
 
@@ -472,7 +475,8 @@ class TestValidator:
         r = json.loads(GOOD)
         r["results"][1]["basis"] = "context"
         for sp in (spec(policy="sector", targets=("humanitarian",)),
-                   spec(policy="functional", targets=("project management",), setting="education sector")):
+                   spec(policy="functional", targets=("project management",), setting="education sector"),
+                   spec(policy="explicit_role", targets=("project manager",), setting="education sector")):
             v = validate_response(r, _views(doc, sp), policy=sp.policy, has_setting=bool(sp.setting))
             assert v.ok, v.errors
 
@@ -551,6 +555,168 @@ class TestPolicyExamples:
             res("E1", "qualifying", [(2, "مدير برامج"), (5, "إدارة أربعة برامج ممولة")], basis="title_and_responsibilities"),
             res("E2", "related", [(6, "مساعد مشروع")], basis="title")))
         assert out.ok and out.results[0]["quotes"][1]["original_text"] == "إدارة أربعة برامج ممولة"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# s2-2 contract: authoritative targets + setting for explicit_role
+# ═════════════════════════════════════════════════════════════════════════════
+
+CONSTRUCTION = """EXPERIENCE
+Assistant Project Manager
+BuildCo Construction
+Jan 2019 - Dec 2021
+- Coordinated subcontractors and site schedules for commercial buildings
+Assistant Project Manager
+CloudSoft Technologies
+Jan 2017 - Dec 2018
+- Coordinated software release plans for the mobile app team
+Project Manager
+Delta Contracting LLC
+Jan 2014 - Dec 2016
+- Managed construction projects from initiation to closeout
+Site Engineer
+Delta Contracting LLC
+Jan 2012 - Dec 2013
+- Supervised concrete works on residential towers
+Assistant Project Manager
+XYZ Ltd
+Jan 2010 - Dec 2011
+- Coordinated project schedules and budgets
+Project Assistant
+BuildCo Construction
+Jan 2008 - Dec 2009
+- Prepared meeting minutes for the project team"""
+CONSTRUCTION_S0 = s0_resp([
+    s0_entry(f"A{k + 1}", title=(2 + 4 * k, t), employer=(3 + 4 * k, emp),
+             header=(2 + 4 * k, 3 + 4 * k, 4 + 4 * k), body=[(5 + 4 * k, 5 + 4 * k)])
+    for k, (t, emp) in enumerate([
+        ("Assistant Project Manager", "BuildCo Construction"),
+        ("Assistant Project Manager", "CloudSoft Technologies"),
+        ("Project Manager", "Delta Contracting LLC"),
+        ("Site Engineer", "Delta Contracting LLC"),
+        ("Assistant Project Manager", "XYZ Ltd"),
+        ("Project Assistant", "BuildCo Construction")])])
+
+# The real JOB-2026-0031 shape: explicit targets incl. an assistant role, setting construction.
+CONSTRUCTION_TEXT = ("Minimum 5 years of experience in a relevant role "
+                     "(Construction Project Manager or Assistant Project Manager)")
+
+
+def construction_spec(setting="construction"):
+    return RequirementSpec(policy="explicit_role", required_years=5,
+                           targets=("Construction Project Manager", "Assistant Project Manager"),
+                           setting=setting, spec_version="fx-2", criterion_id="C-CPM",
+                           criterion_text=CONSTRUCTION_TEXT,
+                           source_spans=("Construction Project Manager", "Assistant Project Manager"))
+
+
+CONSTRUCTION_RESULTS = [
+    # explicit target "Assistant Project Manager" in construction -> qualifying (title + employer setting)
+    res("E1", "qualifying", [(2, "Assistant Project Manager"), (3, "BuildCo Construction")], basis="title"),
+    # same target title outside construction -> related
+    res("E2", "related", [(6, "Assistant Project Manager"), (9, "Coordinated software release plans")],
+        basis="title"),
+    # equivalent PM accountability; setting from employer context -> qualifying, basis context
+    res("E3", "qualifying", [(11, "Delta Contracting LLC"),
+                             (13, "Managed construction projects from initiation to closeout")], basis="context"),
+    # supporting construction role -> related
+    res("E4", "related", [(17, "Supervised concrete works on residential towers")]),
+    # target role, setting not establishable -> insufficient / setting
+    res("E5", "insufficient", [(18, "Assistant Project Manager")], basis="title", missing=["setting"]),
+    # non-target assistant/support role -> related
+    res("E6", "related", [(22, "Project Assistant")], basis="title"),
+]
+
+
+@pytest.fixture(scope="module")
+def construction_doc():
+    d = s0_doc(CONSTRUCTION, CONSTRUCTION_S0)
+    assert d.structure_status == "validated" and len(d.experience_entries()) == 6
+    return d
+
+
+class TestExplicitRoleSetting:
+
+    def test_contract_labels_pass_through(self, construction_doc):
+        out, _ = classify(construction_doc, CONSTRUCTION, construction_spec(), s2_resp(*CONSTRUCTION_RESULTS))
+        assert out.ok, out.validation
+        assert out.labels() == {"E1": "qualifying", "E2": "related", "E3": "qualifying",
+                                "E4": "related", "E5": "insufficient", "E6": "related"}
+        e3 = out.results[2]
+        assert e3["basis"] == "context" and e3["quotes"][0]["original_text"] == "Delta Contracting LLC"
+        assert out.results[4]["missing"] == ["setting"]
+
+    def test_request_carries_setting_and_masks_threshold_and_dates(self, construction_doc):
+        req = s2.build_request(construction_doc, construction_spec(), CONSTRUCTION)
+        c = req.payload["criterion"]
+        assert c["setting"] == "construction" and c["policy"] == "explicit_role"
+        assert c["targets"] == ["Construction Project Manager", "Assistant Project Manager"]
+        assert c["criterion_text"].startswith("Minimum [N] years")
+        assert req.payload["s2_input_version"] == "s2-in-1"
+        for leaked in ("2019", "2021", "Jan", "Dec", "required_years", '"5"'):
+            assert leaked not in req.user_message, leaked
+
+    def test_explicit_role_with_setting_allows_context_basis(self, construction_doc):
+        sp = construction_spec()
+        v = validate_response(s2_resp(*CONSTRUCTION_RESULTS),
+                              s2.build_request(construction_doc, sp, CONSTRUCTION).entries,
+                              policy=sp.policy, has_setting=True)
+        assert v.ok, v.errors
+
+    def test_explicit_role_without_setting_rejects_context_basis(self, construction_doc):
+        sp = construction_spec(setting=None)
+        v = validate_response(s2_resp(*CONSTRUCTION_RESULTS),
+                              s2.build_request(construction_doc, sp, CONSTRUCTION).entries,
+                              policy=sp.policy, has_setting=False)
+        assert v.errors == ["S2-V8 results[2] (E3): basis=context is only allowed for sector criteria or "
+                            "functional/explicit_role criteria with a setting"]
+
+    def test_context_basis_without_setting_is_repaired_not_trusted(self, construction_doc):
+        sp = construction_spec(setting=None)
+        fixed = [dict(r) for r in CONSTRUCTION_RESULTS]
+        fixed[2] = res("E3", "qualifying", [(13, "Managed construction projects from initiation to closeout")])
+        out, client = classify(construction_doc, CONSTRUCTION, sp,
+                               s2_resp(*CONSTRUCTION_RESULTS), s2_resp(*fixed))
+        assert out.ok and out.structurer["outcome"] == "repaired" and len(client.requests) == 2
+        assert any("S2-V8" in e for e in out.validation["errors"])
+
+
+class TestS2Versioning:
+
+    def test_versions(self):
+        assert (s2.S2_PROMPT_VERSION, s2.S2_VERSION, s2.S2_INPUT_VERSION) == ("s2-2", "1.1.0", "s2-in-1")
+
+    def test_cache_key_depends_on_prompt_version_and_s2_version(self, monkeypatch):
+        k = s2.s2_cache_key("s0", "spec")
+        assert k != s2.s2_cache_key("s0", "spec", prompt_version="s2-1")
+        monkeypatch.setattr(s2, "S2_VERSION", "1.0.0")
+        assert s2.s2_cache_key("s0", "spec") != k
+
+    def test_cache_key_depends_on_prompt_text(self, monkeypatch):
+        k = s2.s2_cache_key("s0", "spec")
+        monkeypatch.setattr(s2, "S2_SYSTEM_PROMPT", s2.S2_SYSTEM_PROMPT + " ")
+        assert s2.s2_cache_key("s0", "spec") != k
+
+    def test_setting_changes_spec_hash(self, construction_doc):
+        a = s2.build_request(construction_doc, construction_spec(), CONSTRUCTION)
+        b = s2.build_request(construction_doc, construction_spec(setting=None), CONSTRUCTION)
+        assert (s2.spec_semantic_hash(construction_spec(), a.criterion_text_masked)
+                != s2.spec_semantic_hash(construction_spec(setting=None), b.criterion_text_masked))
+
+    def test_result_records_versions(self, construction_doc):
+        out, _ = classify(construction_doc, CONSTRUCTION, construction_spec(), s2_resp(*CONSTRUCTION_RESULTS))
+        d = out.to_dict()
+        assert d["s2_version"] == "1.1.0" and d["structurer"]["prompt_version"] == "s2-2"
+        assert d["structurer"]["prompt_fingerprint"] == s2.prompt_fingerprint()
+
+    def test_old_version_cache_entry_is_not_reused(self, construction_doc):
+        cache = s2.InMemoryS2Cache()
+        sp = construction_spec()
+        out, _ = classify(construction_doc, CONSTRUCTION, sp, s2_resp(*CONSTRUCTION_RESULTS), cache=cache)
+        stale = dict(out.to_dict(), s2_version="1.0.0")
+        cache.store = {s2.s2_cache_key(out.s0_cache_key, out.spec_hash, prompt_version="s2-1"): stale}
+        _, client = classify(construction_doc, CONSTRUCTION, sp, s2_resp(*CONSTRUCTION_RESULTS), cache=cache)
+        assert len(client.requests) == 1          # stale s2-1 entry ignored; fresh call made
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -686,7 +852,7 @@ class TestCache:
         assert s2.spec_semantic_hash(spec(), "y") != h
         k = s2.s2_cache_key("s0", h)
         assert k != s2.s2_cache_key("s0b", h) and k != s2.s2_cache_key("s0", h, model="m2")
-        assert k != s2.s2_cache_key("s0", h, prompt_version="s2-2")
+        assert k != s2.s2_cache_key("s0", h, prompt_version="s2-99")
 
     def test_threshold_change_reuses_cache(self, doc):
         cache = s2.InMemoryS2Cache()

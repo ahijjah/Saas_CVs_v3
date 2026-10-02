@@ -27,6 +27,16 @@ Call flow (all-or-nothing per criterion; technical failures are never labels):
       valid                          -> ok (repaired; cached)
       invalid                        -> failed validation_failed (cached)
   masking / mapping invariant broken -> failed internal_error (retryable; not cached)
+
+Semantic contract notes (s2-2):
+  - RequirementSpec.targets are AUTHORITATIVE: a role listed in targets is a
+    target role as written (e.g. "Assistant Project Manager"); generic
+    assistant/associate/deputy/junior heuristics apply only to roles NOT listed.
+    Target quality is therefore an explicit S1 responsibility: S1 must only
+    list roles the job genuinely accepts as fully qualifying.
+  - setting is meaningful for explicit_role (as for functional): qualifying
+    needs the target/equivalent role AND the setting; a target role outside the
+    setting is related; basis "context" is allowed only when a setting exists.
 """
 from __future__ import annotations
 
@@ -51,10 +61,10 @@ from services.s2_experience.validator import EntryView, validate_response
 logger = logging.getLogger(__name__)
 
 S2_SCHEMA = "s2_result_v1"
-S2_VERSION = "1.0.0"                   # input format + masking + validator
+S2_VERSION = "1.1.0"                   # input format + masking + validator
 S2_INPUT_VERSION = "s2-in-1"
 S2_PROMPT_CODE = "recruitment.experience_relevance"
-S2_PROMPT_VERSION = "s2-1"
+S2_PROMPT_VERSION = "s2-2"
 S2_MODEL = "gpt-4o-mini"
 S2_TEMPERATURE = 0.0
 S2_MAX_TOKENS = llm_call.MAX_OUTPUT_TOKENS
@@ -92,12 +102,13 @@ HARD RULES
 4. "Substantial" means a regular or main responsibility; incidental, occasional or exposure-level involvement is related, not qualifying.
 5. insufficient means the entry LACKS INFORMATION (say what is missing); it is not for being unsure. A clearly described job must get one of the other three labels.
 6. Quotes must be copied VERBATIM from a line of the SAME entry (part of a line is fine). Never invent or paraphrase evidence.
+7. Targets are authoritative: a role listed in "targets" is a target role exactly as written, even if its title contains assistant, associate, deputy, junior or similar. Generic title heuristics apply only to roles that are NOT listed in targets.
 
 POLICY: explicit_role (candidate must have HELD one of the target roles)
-- qualifying: title is a target role or plain equivalent; OR responsibilities show that role's accountability (owning delivery, budget, team, programme/project) as the main substance of the job.
-- related: assistant/associate/deputy/supporting role; supports the target role or does tasks it oversees; same domain at lower/supporting accountability; does the role's duties only occasionally.
-- not_relevant: enough information to see no material connection to the role's function or domain.
-- insufficient: generic title/context without information about the accountability held.
+- qualifying: title is a target role or plain equivalent; OR responsibilities show that role's accountability (owning delivery, budget, team, programme/project) as the main substance of the job. If a setting is given, the entry must also establish that setting (title, employer, context or responsibilities).
+- related: an assistant/associate/deputy/supporting role that is NOT itself a target; supports the target role or does tasks it oversees; same domain at lower/supporting accountability; does the role's duties only occasionally. With a setting, ALSO related: the setting is shown but target-role accountability is not; OR a target or equivalent role is shown outside the required setting.
+- not_relevant: enough information to see no material connection to the role's function or domain (or, with a setting, to the required role in that setting).
+- insufficient: generic title/context without information about the accountability held; OR, with a setting, the role is shown but the setting cannot be identified (include "setting" in missing).
 
 POLICY: functional (candidate must have PERFORMED the target function, whatever the title)
 - qualifying: performs the target function substantially (shown by responsibilities, or a title that inherently denotes doing it); if a setting is given, the setting must also be shown.
@@ -114,7 +125,8 @@ POLICY: sector (candidate must have worked IN the target sector)
 EVIDENCE
 - qualifying, related, not_relevant: at least one quote that shows what the experience actually was.
 - insufficient: list what is missing in "missing" (responsibilities, function, setting, employer_context, role_level); quotes optional.
-- basis: "title" | "responsibilities" | "title_and_responsibilities" | "context" ("context" only for sector, or functional with a setting).
+- basis: "title" | "responsibilities" | "title_and_responsibilities" | "context" ("context" only for sector, or functional/explicit_role with a setting).
+- With a setting, quote evidence for BOTH the role and the setting (an employer or context line may show the setting).
 
 OUTPUT — JSON only:
 {"results": [{"entry_id": "E1", "label": "qualifying", "basis": "responsibilities",

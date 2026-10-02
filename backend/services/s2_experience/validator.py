@@ -17,7 +17,7 @@ model-generated text is ever used as recruiter-facing evidence.
          with >= 3 non-space characters.
   S2-V7  quote must not contain or overlap the [dates] mask.
   S2-V8  basis=title -> >= 1 quote on the title line inside the title text;
-         basis=context only for sector, or functional with a setting.
+         basis=context only for sector, or functional/explicit_role with a setting.
   S2-V9  any other field is ignored and never trusted.
 """
 from __future__ import annotations
@@ -176,9 +176,10 @@ def validate_response(raw: str | dict, entries: list[EntryView], *, policy: str,
             if not on_title:
                 err.append(f"S2-V8 {w}: basis=title requires a quote of the title on its title line")
                 ok = False
-        if ok and basis == "context" and not (policy == "sector" or (policy == "functional" and has_setting)):
+        if ok and basis == "context" and not (
+                policy == "sector" or (policy in ("functional", "explicit_role") and has_setting)):
             err.append(f"S2-V8 {w}: basis=context is only allowed for sector criteria or "
-                       f"functional criteria with a setting")
+                       f"functional/explicit_role criteria with a setting")
             ok = False
         if ok:
             out.results.append(ValidatedResult(eid, label, basis, reason.strip(),
