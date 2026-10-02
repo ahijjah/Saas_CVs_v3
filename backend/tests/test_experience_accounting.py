@@ -155,7 +155,7 @@ class TestS5Threshold:
 
     def test_t3_dated_insufficient_not_decisive_falls_through(self):
         d = _decide(5, [_exp("PM", 2019, None, 2022), _exp("Consultant", 2017, None, 2018)], [Q, I])
-        assert (d.status, d.rule) == (PARTIAL, "T4_shortfall_or_related_only")
+        assert (d.status, d.rule) == (PARTIAL, "T4_qualifying_shortfall")
         assert d.cd_reason is None and d.uncertainty_entry_ids == ()
 
     def test_t3_insufficient_overlapping_qualifying_does_not_count_twice(self):
@@ -164,7 +164,7 @@ class TestS5Threshold:
         assert d.rule == "T3_insufficient_could_close_gap"
         assert d.audit["insufficient_years_beyond_qualifying"] == 1.0
         d = _decide(6, [_exp("PM", 2018, None, 2022), _exp("Consultant", 2017, None, 2022)], [Q, I])
-        assert d.rule == "T4_shortfall_or_related_only"
+        assert d.rule == "T4_qualifying_shortfall"
 
     def test_t3_several_insufficient_only_together_close_gap(self):
         d = _decide(5, [_exp("PM", 2020, None, 2022), _exp("C1", 2016, None, 2018),
@@ -186,14 +186,23 @@ class TestS5Threshold:
         d = _decide(5, [_exp("PM", 2020, None, 2022), _exp("C1"), _exp("C2", 2018, None, 2019)], [Q, I, I])
         assert d.uncertainty_entry_ids == ("E2",)
 
-    def test_t4_related_only(self):
+    def test_related_only_is_absent(self):
+        # Related experience satisfies no portion of a years requirement, even
+        # when it alone would exceed N; it stays visible in the audit.
         d = _decide(5, [_exp("Teaching Assistant", 2010, None, 2020)], [R])
-        assert (d.status, d.rule) == (PARTIAL, "T4_shortfall_or_related_only")
+        assert (d.status, d.cd_reason, d.rule) == (ABSENT, None, "T5_related_only")
         assert d.audit["related_years"] == 10.0 and d.audit["qualifying_years"] == 0.0
+        assert [e["label"] for e in d.audit["entries"]] == [R]
 
     def test_t4_qualifying_shortfall(self):
         d = _decide(5, [_exp("PM", 2020, None, 2022), _exp("Sales", 2010, None, 2020)], [Q, NR])
-        assert d.status == PARTIAL
+        assert (d.status, d.rule) == (PARTIAL, "T4_qualifying_shortfall")
+
+    def test_t4_related_does_not_top_up_qualifying(self):
+        # 2 y qualifying + 10 y related against N = 5 -> PARTIAL, never MATCHED
+        d = _decide(5, [_exp("PM", 2020, None, 2022), _exp("TA", 2010, None, 2020)], [Q, R])
+        assert (d.status, d.rule) == (PARTIAL, "T4_qualifying_shortfall")
+        assert d.audit["related_years"] == 10.0
 
     def test_t5_no_relevant_experience(self):
         d = _decide(5, [_exp("Sales", 2010, None, 2020), _exp("Driver")], [NR, NR])
@@ -201,11 +210,20 @@ class TestS5Threshold:
 
     def test_t5_no_entries(self):
         d = _decide(5, [], [])
-        assert d.status == ABSENT
+        assert (d.status, d.rule) == (ABSENT, "T5_no_relevant_experience")
 
-    def test_undated_related_has_no_effect(self):
+    def test_t5_split_same_status_different_rule(self):
+        # related + not_relevant -> related_only; not_relevant only -> no_relevant
+        a = _decide(5, [_exp("TA", 2010, None, 2012), _exp("Sales", 2012, None, 2020)], [R, NR])
+        b = _decide(5, [_exp("Driver", 2010, None, 2012), _exp("Sales", 2012, None, 2020)], [NR, NR])
+        assert (a.status, a.cd_reason, a.rule) == (ABSENT, None, "T5_related_only")
+        assert (b.status, b.cd_reason, b.rule) == (ABSENT, None, "T5_no_relevant_experience")
+        assert a.uncertainty_entry_ids == b.uncertainty_entry_ids == ()
+
+    def test_undated_related_only_is_absent(self):
         d = _decide(5, [_exp("Assistant")], [R])
-        assert d.status == PARTIAL and d.audit["related_years"] == 0.0
+        assert (d.status, d.rule) == (ABSENT, "T5_related_only")
+        assert d.audit["related_years"] == 0.0 and d.audit["entries"][0]["label"] == R
 
     def test_fractional_threshold(self):
         d = _decide(1.5, [_exp("PM", 2020, 1, 2021, 7)], [Q])
@@ -330,14 +348,16 @@ class TestUnownedThreshold:
                     unowned=[_uo(I)])
         assert d.uncertainty_entry_ids == ("E2",) and d.uncertainty_evidence_ids == ("U1",)
 
-    def test_t4_unowned_related(self):
+    def test_unowned_related_only_is_absent(self):
         d = _decide(5, [_exp("Sales", 2010, None, 2020)], [NR], unowned=[_uo(R)])
-        assert (d.status, d.rule) == (PARTIAL, "T4_shortfall_or_related_only")
-        assert d.uncertainty_evidence_ids == ("U1",)
+        assert (d.status, d.rule) == (ABSENT, "T5_related_only")
+        assert d.uncertainty_evidence_ids == ()
+        assert d.audit["unowned_counts"][R] == 1 and len(d.audit["unowned_evidence"]) == 1
 
-    def test_t4_owned_related_takes_precedence_over_unowned(self):
+    def test_owned_and_unowned_related_only_is_absent(self):
         d = _decide(5, [_exp("TA", 2010, None, 2020)], [R], unowned=[_uo(R)])
-        assert d.status == PARTIAL and d.uncertainty_evidence_ids == ()
+        assert (d.status, d.rule) == (ABSENT, "T5_related_only")
+        assert d.uncertainty_evidence_ids == () and d.audit["related_years"] == 10.0
 
     def test_unowned_not_relevant_is_absent(self):
         d = _decide(5, [_exp("Sales", 2010, None, 2020)], [NR], unowned=[_uo(NR)])
@@ -400,12 +420,16 @@ class TestStructureStatus:
     @pytest.mark.parametrize("labs, status, cd", [
         ([Q], CANNOT_DETERMINE, "detail_missing"),
         ([I], CANNOT_DETERMINE, "relevance_unverified"),
-        ([R], PARTIAL, None),
+        ([R], ABSENT, None),
         ([NR], ABSENT, None),
     ])
     def test_undated_trusted_structure(self, labs, status, cd):
         d = _decide(3, [_exp("Role")], labs, date_status="undated")
         assert (d.status, d.cd_reason) == (status, cd)
+        if labs == [R]:
+            assert d.rule == "T5_related_only"
+        if labs == [NR]:
+            assert d.rule == "T5_no_relevant_experience"
 
     def test_undated_no_years_qualifying_matches(self):
         assert _decide(None, [_exp("Role")], [Q], date_status="undated").status == MATCHED
@@ -545,6 +569,8 @@ class TestNotWiredIntoScoring:
         for sub in ("services", "workers", "routers", "api"):
             root = os.path.join(backend, sub)
             for dirpath, _, files in os.walk(root):
+                if "s2_experience" in dirpath.split(os.sep):      # shadow-only S2 may use it
+                    continue
                 for f in files:
                     if f.endswith(".py") and f != "experience_accounting.py":
                         with open(os.path.join(dirpath, f), encoding="utf-8") as fh:

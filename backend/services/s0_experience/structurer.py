@@ -43,7 +43,9 @@ import logging
 from datetime import date
 from typing import Any, Protocol
 
+from services.s0_experience import llm_call
 from services.s0_experience.dates import extract_anchors
+from services.s0_experience.llm_call import request_token_upper_bound
 from services.s0_experience.schema import (
     DATES_UNDATED, OWNERSHIP_UNCERTAIN, REASON_AI_UNAVAILABLE, REASON_INTERNAL_ERROR,
     REASON_EXCEEDS_MODEL_CONTEXT, REASON_NO_TEXT, REASON_OUTPUT_TRUNCATED, REASON_VALIDATION_FAILED, RETRYABLE_REASONS, S0_VERSION,
@@ -60,18 +62,13 @@ logger = logging.getLogger(__name__)
 S0C_PROMPT_VERSION = "s0c-1"
 S0C_MODEL = "gpt-4o-mini"
 S0C_TEMPERATURE = 0.0
-# gpt-4o-mini limits (OpenAI published model limits): 128,000-token context
-# window, 16,384 maximum output tokens.
-S0C_MODEL_CONTEXT_TOKENS = 128_000
-S0C_MAX_TOKENS = 16_384                      # output allowance per call (= model maximum)
-S0C_INPUT_SAFETY = 0.90
-# Safe request size: what is left of the context after the full output
-# allowance, minus a 10% margin -> int((128000 - 16384) * 0.9) = 100,454.
-S0C_MAX_INPUT_TOKENS = int((S0C_MODEL_CONTEXT_TOKENS - S0C_MAX_TOKENS) * S0C_INPUT_SAFETY)
-# Chat-format overhead per message (role markers etc.), counted generously.
-_PER_MESSAGE_OVERHEAD_TOKENS = 16
-_CLIENT_MAX_RETRIES = 1
-_CLIENT_TIMEOUT_S = 120.0
+# gpt-4o-mini limits and the safe input budget come from the shared helper
+# (services.s0_experience.llm_call): 128,000 context, 16,384 output,
+# int((128000 - 16384) * 0.9) = 100,454 input.
+S0C_MODEL_CONTEXT_TOKENS = llm_call.MODEL_CONTEXT_TOKENS
+S0C_MAX_TOKENS = llm_call.MAX_OUTPUT_TOKENS  # output allowance per call (= model maximum)
+S0C_INPUT_SAFETY = llm_call.INPUT_SAFETY
+S0C_MAX_INPUT_TOKENS = llm_call.MAX_INPUT_TOKENS
 
 S0C_SYSTEM_PROMPT = """You structure the EXPERIENCE HISTORY of one CV. You do not judge relevance to any job.
 
@@ -129,18 +126,6 @@ class InMemoryS0Cache:
         self.store[key] = value
 
 
-def request_token_upper_bound(messages: list[dict]) -> int:
-    """Deterministic UPPER BOUND on the request's input tokens.
-
-    gpt-4o-mini uses a byte-level BPE tokenizer: every token covers at least
-    one UTF-8 byte, so the token count of a text never exceeds its UTF-8 byte
-    length. No tokenizer dependency or runtime download is needed, and the
-    bound can never under-count (it is ~4x generous for English, ~1-2x for
-    Arabic, which is 2 bytes per letter)."""
-    return sum(len((m.get("content") or "").encode("utf-8")) + _PER_MESSAGE_OVERHEAD_TOKENS
-               for m in messages)
-
-
 def prompt_fingerprint() -> str:
     return hashlib.sha256(S0C_SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12]
 
@@ -162,10 +147,7 @@ _client = None
 def _get_client():
     global _client
     if _client is None:
-        from openai import AsyncOpenAI
-        from config import get_settings
-        _client = AsyncOpenAI(api_key=get_settings().openai_api_key,
-                              max_retries=_CLIENT_MAX_RETRIES, timeout=_CLIENT_TIMEOUT_S)
+        _client = llm_call.create_client()
     return _client
 
 
@@ -354,19 +336,9 @@ async def _build(text: str, key: str, client, model: str, prompt_version: str, t
 async def _call(client, model: str, messages: list[dict], meta: dict, kind: str) -> tuple[str, str | None]:
     """One chat call. Records finish_reason and token usage (where the API
     returns them) in meta["call_log"]; returns (content, finish_reason)."""
-    resp = await client.chat.completions.create(
-        model=model, messages=messages, temperature=S0C_TEMPERATURE,
-        max_tokens=S0C_MAX_TOKENS, response_format={"type": "json_object"})
-    choice = resp.choices[0]
-    finish = getattr(choice, "finish_reason", None)
-    usage = getattr(resp, "usage", None)
-    meta["call_log"].append({
-        "call": kind, "finish_reason": finish,
-        "prompt_tokens": getattr(usage, "prompt_tokens", None),
-        "completion_tokens": getattr(usage, "completion_tokens", None),
-        "total_tokens": getattr(usage, "total_tokens", None),
-    })
-    return choice.message.content or "", finish
+    return await llm_call.chat_json_call(
+        client, model=model, messages=messages, temperature=S0C_TEMPERATURE,
+        max_tokens=S0C_MAX_TOKENS, call_log=meta["call_log"], kind=kind)
 
 
 def summarize(doc: S0Document) -> dict:

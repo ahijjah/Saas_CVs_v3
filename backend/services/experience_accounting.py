@@ -77,7 +77,8 @@ RULE_QUALIFYING_MEETS_THRESHOLD = "T1_qualifying_meets_threshold"
 RULE_UNDATED_QUALIFYING = "T2_undated_qualifying"
 RULE_UNOWNED_QUALIFYING = "T2s_unowned_qualifying_evidence"
 RULE_INSUFFICIENT_COULD_CLOSE_GAP = "T3_insufficient_could_close_gap"
-RULE_SHORTFALL_OR_RELATED = "T4_shortfall_or_related_only"
+RULE_QUALIFYING_SHORTFALL = "T4_qualifying_shortfall"
+RULE_RELATED_ONLY = "T5_related_only"
 RULE_NO_RELEVANT_EXPERIENCE = "T5_no_relevant_experience"
 RULE_NO_YEARS_QUALIFYING = "N1_qualifying"
 RULE_NO_YEARS_INSUFFICIENT = "N2_insufficient"
@@ -323,6 +324,10 @@ class RequirementSpec:
     targets: tuple[str, ...] = ()
     setting: str | None = None
     spec_version: str = ""
+    # Identity/text used by S2 (never by S4/S5 arithmetic):
+    criterion_id: str = ""
+    criterion_text: str = ""                 # verbatim criterion; S2 sees it with the threshold masked
+    source_spans: tuple[str, ...] = ()       # verbatim spans the targets were taken from
 
     def __post_init__(self):
         if self.policy not in POLICIES:
@@ -361,9 +366,14 @@ def decide_experience_status(
       T2s Q < N and UO_Q                                 -> CD / structure_unverified
       T3  Q < N and (owned insufficient could close the gap, or an owned
           insufficient entry is undated, or UO_I)        -> CD / relevance_unverified
-      T4  Q + R > 0, or an owned qualifying/related entry (dated or not),
-          or UO_R                                        -> PARTIAL
-      T5  otherwise                                      -> ABSENT
+      T4  0 < Q < N (positive dated qualifying years)    -> PARTIAL
+      T5  otherwise                                      -> ABSENT, recorded as
+          T5_related_only            owned related entry (dated or not) or UO_R:
+                                     related experience exists but satisfies no
+                                     portion of a years requirement; it stays in
+                                     the audit (related_years, entry labels,
+                                     unowned_evidence);
+          T5_no_relevant_experience  neither qualifying nor related evidence.
     No threshold (N = None):
       N1 owned qualifying or UO_Q -> MATCHED;  N2 owned insufficient or UO_I ->
       CD / relevance_unverified;  N3 owned related or UO_R -> PARTIAL;  N4 ABSENT.
@@ -432,11 +442,13 @@ def decide_experience_status(
             uncertainty = tuple(sorted(set(acc.i_undated_ids) | set(contributing if could_close else ()),
                                        key=lambda x: int(x[1:])))
             responsible = uo[INSUFFICIENT]
-        elif acc.ids_by_label[QUALIFYING] or acc.ids_by_label[RELATED] or uo[RELATED]:
-            # Positive evidence of some relevant experience (an undated related
-            # entry or unowned related evidence counts; zero evidence does not).
-            status, rule = PARTIAL, RULE_SHORTFALL_OR_RELATED
-            responsible = [] if (acc.ids_by_label[QUALIFYING] or acc.ids_by_label[RELATED]) else uo[RELATED]
+        elif acc.q_months > 0:
+            # Verified qualifying years below N (undated qualifying is T2, UO_Q
+            # is T2s). Related experience alone never earns PARTIAL here.
+            status, rule = PARTIAL, RULE_QUALIFYING_SHORTFALL
+        elif acc.ids_by_label[RELATED] or uo[RELATED]:
+            # Audit distinction only: same ABSENT status as no relevant experience.
+            status, rule = ABSENT, RULE_RELATED_ONLY
         else:
             status, rule = ABSENT, RULE_NO_RELEVANT_EXPERIENCE
         if not ctx.trusted and status == MATCHED:          # structural invariant (Q = 0)
