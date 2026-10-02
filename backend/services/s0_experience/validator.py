@@ -14,6 +14,13 @@ Rules
   V3  kind / disposition / ownership come from the allowed sets.
   V4  line numbers are integers within the document; title/employer lines are
       non-blank header lines and their text is a verbatim substring of that line.
+      Line relocation (attribution only): when a valid title/employer text is NOT
+      verbatim on the cited (valid) line, and EXACTLY ONE of the entry's own declared
+      header_lines passes the same verbatim test, the line number is corrected to it
+      and recorded in ParsedEntry.relocations (rule unique_exact_header_match). The
+      text is never changed; zero or several matches keep the V4 error. A text that IS
+      verbatim on a cited line outside header_lines is never relocated (ownership
+      error kept). Nothing else is searched (no body, other entries or whole CV).
   V5  body ranges are [a, b] with a <= b inside the document; every entry owns at
       least one line.
   V6  a line is claimed by at most one entry — except a SHARED EMPLOYER HEADER:
@@ -39,6 +46,7 @@ from services.s0_experience.schema import (
 from services.s0_experience.text import norm
 
 ANCHOR_PROXIMITY_LINES = 3
+RELOCATION_RULE = "unique_exact_header_match"
 
 
 @dataclass
@@ -54,6 +62,9 @@ class ParsedEntry:
     body_lines: list[tuple[int, int]]
     ownership: str
     undated_reason: str | None
+    # V4 line relocations: {"field", "from_line", "to_line", "rule"} — the single
+    # source of truth for S0Entry.flags and S0Document.validation["line_relocations"].
+    relocations: list[dict] = field(default_factory=list)
 
     def lines(self) -> set[int]:
         out = set(self.header_lines)
@@ -154,6 +165,10 @@ def validate_structure(raw: str | dict, lines: list[str], anchors: list[Anchor])
                 body.append((a, b))
         pe = ParsedEntry(i, aid, kind, None, None, None, None, hdr, body, own,
                          reason.strip() if isinstance(reason, str) else None)
+
+        def _verbatim(line_no: int, text: str) -> bool:      # the existing V4 test, unchanged
+            return bool(lines[line_no - 1].strip()) and norm(text) in norm(lines[line_no - 1])
+
         for fld in ("title", "employer"):
             ln, tx = e.get(f"{fld}_line"), e.get(f"{fld}_text")
             if ln is None and tx in (None, ""):
@@ -163,9 +178,15 @@ def validate_structure(raw: str | dict, lines: list[str], anchors: list[Anchor])
             if not isinstance(tx, str) or not tx.strip():
                 err.append(f"V4 {w}: {fld}_text must be the verbatim {fld} text on line {ln}")
                 continue
+            if not _verbatim(ln, tx):
+                matches = sorted({h for h in hdr if _verbatim(h, tx)})
+                if len(matches) == 1:
+                    pe.relocations.append({"field": fld, "from_line": ln, "to_line": matches[0],
+                                           "rule": RELOCATION_RULE})
+                    ln = matches[0]
             if ln not in hdr:
                 err.append(f"V4 {w}: {fld}_line {ln} must be one of the entry's header_lines")
-            if not lines[ln - 1].strip() or norm(tx) not in norm(lines[ln - 1]):
+            if not _verbatim(ln, tx):
                 err.append(f"V4 {w}: {fld}_text {tx!r} is not verbatim on line {ln} "
                            f"({lines[ln - 1][:80]!r})")
             setattr(pe, f"{fld}_line", ln)

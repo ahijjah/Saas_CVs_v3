@@ -181,7 +181,18 @@ def _candidate_blocks(anchors, line_count: int) -> list[dict]:
     return blocks
 
 
-def _assemble(res: ValidationResult, lines: list[str], anchors) -> tuple[list[S0Entry], list[dict], list[dict]]:
+def relocation_flag(rec: dict) -> str:
+    return f"line_relocated:{rec['field']}:{rec['from_line']}->{rec['to_line']}:{rec['rule']}"
+
+
+def _relocation_records(res: ValidationResult, attempt: str) -> list[dict]:
+    """Diagnostic form for a response that was NOT assembled (no entry_id yet)."""
+    return [{"entry_id": None, "response_entry": pe.index, **r, "attempt": attempt}
+            for pe in res.entries for r in pe.relocations]
+
+
+def _assemble(res: ValidationResult, lines: list[str], anchors, attempt: str = "main"
+              ) -> tuple[list[S0Entry], list[dict], list[dict], list[dict]]:
     anchor_by_id = {a.anchor_id: a for a in anchors}
     certain = [pe for pe in res.entries if pe.ownership != OWNERSHIP_UNCERTAIN]
     uncertain = [pe for pe in res.entries if pe.ownership == OWNERSHIP_UNCERTAIN]
@@ -197,6 +208,7 @@ def _assemble(res: ValidationResult, lines: list[str], anchors) -> tuple[list[S0
             shared_lines.setdefault(ln, []).append(pe.index)
     index_to_id: dict[int, str] = {}
     entries: list[S0Entry] = []
+    relocations: list[dict] = []                         # same records as the entry flags
     for k, pe in enumerate(certain, 1):
         eid = f"E{k}"
         index_to_id[pe.index] = eid
@@ -208,6 +220,10 @@ def _assemble(res: ValidationResult, lines: list[str], anchors) -> tuple[list[S0
             flags.append(f"anchor_invalid:{a.invalid_reason}")
         if a and a.day_month_ambiguous:
             flags.append("day_month_ambiguous")
+        for r in pe.relocations:                         # one record -> flag + validation entry
+            rec = {"entry_id": eid, "response_entry": pe.index, **r, "attempt": attempt}
+            relocations.append(rec)
+            flags.append(relocation_flag(rec))
         owned = sorted(pe.lines())
         entries.append(S0Entry(
             entry_id=eid, anchor_id=pe.anchor_id, kind=pe.kind,
@@ -224,7 +240,7 @@ def _assemble(res: ValidationResult, lines: list[str], anchors) -> tuple[list[S0
                for g in res.ignored]
     unc = [{"anchor_id": pe.anchor_id, "kind": pe.kind, "claimed_lines": sorted(pe.lines()),
             "display_only": True} for pe in uncertain]
-    return entries, ignored, unc
+    return entries, ignored, unc, relocations
 
 
 async def build_s0(extracted_text: str, *, client: Any = None, model: str = S0C_MODEL,
@@ -307,18 +323,23 @@ async def _build(text: str, key: str, client, model: str, prompt_version: str, t
             if finish == "length":
                 return _unverified(REASON_OUTPUT_TRUNCATED,
                                    {"errors": first_errors, "repair_errors": []})
+            main_res = res
             res = validate_structure(raw, lines, scan.anchors)
             status = STRUCTURE_REPAIRED
             if not res.ok:
-                return _unverified(REASON_VALIDATION_FAILED,
-                                   {"errors": first_errors, "repair_errors": list(res.errors)})
+                failed = {"errors": first_errors, "repair_errors": list(res.errors)}
+                relocs = _relocation_records(main_res, "main") + _relocation_records(res, "repair")
+                if relocs:
+                    failed["line_relocations"] = relocs
+                return _unverified(REASON_VALIDATION_FAILED, failed)
     except Exception as exc:                            # network / API / auth / timeout
         logger.warning("S0 structurer unavailable: %s", exc)
         meta["error"] = f"{type(exc).__name__}: {exc}"[:300]
         return _unverified(REASON_AI_UNAVAILABLE, {"errors": first_errors, "repair_errors": []})
 
     try:
-        entries, ignored, uncertain = _assemble(res, lines, scan.anchors)
+        entries, ignored, uncertain, relocations = _assemble(
+            res, lines, scan.anchors, "repair" if status == STRUCTURE_REPAIRED else "main")
     except Exception:
         logger.exception("S0 assembly failed")
         return S0Document(line_count=len(lines), structure_status=STRUCTURE_FAILED,
@@ -330,7 +351,8 @@ async def _build(text: str, key: str, client, model: str, prompt_version: str, t
         date_status=compute_date_status(status, entries, scan.anchors, scan.unparsed),
         anchors=scan.anchors, unparsed_date_texts=scan.unparsed, entries=entries,
         ignored_anchors=ignored, uncertain_entries=uncertain, structurer=meta, ocr=ocr,
-        validation={"errors": first_errors, "repair_errors": []}, **base)
+        validation={"errors": first_errors, "repair_errors": [],
+                    **({"line_relocations": relocations} if relocations else {})}, **base)
 
 
 async def _call(client, model: str, messages: list[dict], meta: dict, kind: str) -> tuple[str, str | None]:

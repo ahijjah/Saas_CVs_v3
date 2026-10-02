@@ -1108,7 +1108,7 @@ class TestSchema:
             entry("A1", title=(3, "Senior Education Officer"), employer=(2, "UNICEF"), header=(2, 3, 4), body=[(5, 5)]),
             entry("A2", title=(6, "Education Officer"), employer=(2, "UNICEF"), header=(2, 6, 7), body=[(8, 8)])]))
         d = json.loads(json.dumps(doc.to_dict()))
-        assert d["_schema"] == "s0_experience_v1" and d["s0_version"] == "1.0.0"
+        assert d["_schema"] == "s0_experience_v1" and d["s0_version"] == "1.1.0"
         assert S0Document.from_dict(d).to_dict() == doc.to_dict()
         assert build_experience_entries(d, as_of=AS_OF) == build_experience_entries(doc, as_of=AS_OF)
 
@@ -1137,3 +1137,188 @@ class TestIsolation:
                 if "s0_experience" in p.read_text(encoding="utf-8"):
                     hits.append(str(p))
         assert hits == []
+
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# V4 deterministic line relocation (S0 1.1.0) — attribution only, text untouched
+# ═════════════════════════════════════════════════════════════════════════════
+
+BULLET_CV = "EXPERIENCE\nSite Engineer\n2022 - Present\n\nUrbanAxis Engineering\n- Managed site works"
+DATE_CV = ("EXPERIENCE\nProject Manager\nVertex Commercial Builders | Denver, CO\n"
+           "January 2022 – Present\n- Delivered commercial projects")
+WRAP_CV = ("EXPERIENCE\nProject Manager\nMilestone Structural Group | Colorado\n"
+           "Springs, CO March 2019 – January 2022\n- Led structural projects")
+SHARED_CV = ("EXPERIENCE\nUNICEF\nSenior Education Officer\n2021 - 2024\n- Led the portfolio\n"
+             "Education Officer\n2018 - 2021\n- Supported school programmes")
+VERTEX = "Vertex Commercial Builders | Denver, CO"
+
+
+def _date_entry(employer_line=4, title_line=2, header=(2, 3, 4), body=((5, 5),), employer_text=VERTEX):
+    return entry("A1", title=(title_line, "Project Manager"), employer=(employer_line, employer_text),
+                 header=header, body=body)
+
+
+def _v4(res):
+    return [e for e in res.errors if e.startswith("V4")]
+
+
+class TestLineRelocation:
+
+    def test_bullet_line_off_by_one_relocated(self):
+        raw = response([entry("A1", title=(2, "Site Engineer"), employer=(4, "UrbanAxis Engineering"),
+                              header=(2, 3, 4, 5), body=[(6, 6)])])
+        doc, client = build(BULLET_CV, raw)
+        assert doc.structure_status == "validated" and len(client.requests) == 1     # no repair needed
+        (e,) = doc.entries
+        assert (e.employer.line, e.employer.text) == (5, "UrbanAxis Engineering")    # text untouched
+        assert "line_relocated:employer:4->5:unique_exact_header_match" in e.flags
+        assert doc.validation["line_relocations"] == [
+            {"entry_id": "E1", "response_entry": 0, "field": "employer", "from_line": 4, "to_line": 5,
+             "rule": "unique_exact_header_match", "attempt": "main"}]
+
+    def test_date_line_off_by_one_relocated(self):
+        doc, _ = build(DATE_CV, response([_date_entry()]))
+        (e,) = doc.entries
+        assert doc.structure_status == "validated" and (e.employer.line, e.employer.text) == (3, VERTEX)
+        assert e.flags == ("line_relocated:employer:4->3:unique_exact_header_match",)
+
+    def test_correct_line_unchanged_no_flag(self):
+        doc, _ = build(DATE_CV, response([_date_entry(employer_line=3)]))
+        (e,) = doc.entries
+        assert e.employer.line == 3 and e.flags == ()
+        assert doc.validation == {"errors": [], "repair_errors": []}           # no relocation key at all
+
+    def test_zero_matches_keeps_v4_error(self):
+        res = validate(DATE_CV, response([_date_entry(employer_text="Granite Holdings")]))
+        assert _v4(res) == ["V4 entries[0]: employer_text 'Granite Holdings' is not verbatim on line 4 "
+                            "('January 2022 – Present')"]
+        assert res.entries[0].relocations == [] and res.entries[0].employer_line == 4
+
+    def test_duplicate_header_matches_keep_v4_error(self):
+        cv = ("EXPERIENCE\nProject Manager, Vertex Commercial Builders\nVertex Commercial Builders | Denver, CO\n"
+              "January 2022 – Present\n- Delivered projects")
+        res = validate(cv, response([_date_entry(employer_text="Vertex Commercial Builders")]))
+        assert len(_v4(res)) == 1 and "not verbatim on line 4" in _v4(res)[0]
+        assert res.entries[0].relocations == []
+
+    def test_match_only_outside_header_lines_ignored(self):
+        # text is on line 3, but line 3 is not a declared header line (and body-only text is never searched)
+        res = validate(DATE_CV, response([_date_entry(header=(2, 4), body=[(5, 5)])]))
+        assert res.entries[0].relocations == [] and "not verbatim on line 4" in _v4(res)[0]
+        cv = DATE_CV.replace("- Delivered commercial projects", "- Worked for Granite Holdings")
+        res = validate(cv, response([_date_entry(employer_text="Granite Holdings")]))
+        assert res.entries[0].relocations == [] and "not verbatim on line 4" in _v4(res)[0]
+
+    def test_cited_line_has_text_but_outside_header_keeps_membership_error(self):
+        res = validate(DATE_CV, response([_date_entry(employer_line=3, header=(2, 4))]))
+        assert _v4(res) == ["V4 entries[0]: employer_line 3 must be one of the entry's header_lines"]
+        assert res.entries[0].relocations == []
+
+    @pytest.mark.parametrize("bad", [99, 0, "4"])
+    def test_invalid_line_not_relocated(self, bad):
+        res = validate(DATE_CV, response([_date_entry(employer_line=bad)]))
+        assert any(f"line {bad!r} is not a line number" in e for e in _v4(res))
+        assert res.entries[0].relocations == [] and res.entries[0].employer_line is None
+
+    def test_title_and_employer_relocate_independently(self):
+        both = validate(DATE_CV, response([_date_entry(title_line=4, employer_line=4)])).entries[0]
+        assert [(r["field"], r["from_line"], r["to_line"]) for r in both.relocations] == [
+            ("title", 4, 2), ("employer", 4, 3)]
+        title_only = validate(DATE_CV, response([_date_entry(title_line=3, employer_line=3)]))
+        assert [(r["field"], r["to_line"]) for r in title_only.entries[0].relocations] == [("title", 2)]
+        assert title_only.ok and title_only.entries[0].employer_line == 3
+
+    def test_wrapped_two_line_value_still_fails(self):
+        full = "Milestone Structural Group | Colorado Springs, CO"
+        res = validate(WRAP_CV, response([entry("A1", title=(2, "Project Manager"), employer=(4, full),
+                                                header=(2, 3, 4), body=[(5, 5)])]))
+        assert res.entries[0].relocations == []
+        assert _v4(res) == [f"V4 entries[0]: employer_text {full!r} is not verbatim on line 4 "
+                            "('Springs, CO March 2019 – January 2022')"]
+
+    def test_relocation_in_repair_response_recorded_as_repair(self):
+        bad_main = response([_date_entry(employer_text="Granite Holdings")])       # unfixable -> repair
+        doc, client = build(DATE_CV, bad_main, response([_date_entry()]))         # repair is off by one
+        assert doc.structure_status == "repaired" and len(client.requests) == 2
+        assert client.requests[1]["messages"][2] == {"role": "assistant", "content": bad_main}   # raw untouched
+        assert doc.validation["line_relocations"][0]["attempt"] == "repair"
+        assert doc.entries[0].flags == ("line_relocated:employer:4->3:unique_exact_header_match",)
+
+    def test_failed_document_keeps_diagnostic_relocations_of_both_attempts(self):
+        reloc_but_bad = response([_date_entry(), entry("A9", header=(5,), kind="employment")])  # unknown anchor
+        doc, _ = build(DATE_CV, reloc_but_bad, reloc_but_bad)
+        assert doc.structure_status == "unverified" and doc.status_reason == "validation_failed"
+        assert [(r["attempt"], r["entry_id"], r["to_line"]) for r in doc.validation["line_relocations"]] == [
+            ("main", None, 3), ("repair", None, 3)]
+
+    def test_v6_shared_employer_valid_after_relocation(self):
+        raw = response([
+            entry("A1", title=(3, "Senior Education Officer"), employer=(3, "UNICEF"), header=(2, 3, 4),
+                  body=[(5, 5)]),                                                   # employer cited wrong
+            entry("A2", title=(6, "Education Officer"), employer=(2, "UNICEF"), header=(2, 6, 7), body=[(8, 8)])])
+        res = validate(SHARED_CV, raw)
+        assert res.ok, res.errors                                                  # V6 sees corrected line 2
+        assert res.entries[0].employer_line == 2 and res.entries[0].relocations[0]["to_line"] == 2
+        doc, _ = build(SHARED_CV, raw)
+        assert doc.structure_status == "validated"
+        assert doc.validation["line_relocations"][0]["entry_id"] == "E1"
+
+    def test_v6_invalid_ownership_still_fails(self):
+        raw = response([
+            entry("A1", title=(3, "Senior Education Officer"), employer=(3, "UNICEF"), header=(2, 3, 4),
+                  body=[(5, 5)]),
+            entry("A2", title=(6, "Education Officer"), header=(6, 7), body=[(2, 2), (8, 8)])])  # body claims 2
+        res = validate(SHARED_CV, raw)
+        assert res.entries[0].relocations and any(e.startswith("V6 line 2") for e in res.errors)
+
+    def test_ownership_and_anchors_unchanged_by_relocation(self):
+        wrong = validate(DATE_CV, response([_date_entry(title_line=4, employer_line=4)])).entries[0]
+        right = validate(DATE_CV, response([_date_entry(title_line=2, employer_line=3)])).entries[0]
+        assert (wrong.lines(), wrong.header_lines, wrong.body_lines, wrong.anchor_id) == \
+               (right.lines(), right.header_lines, right.body_lines, right.anchor_id)
+        assert (wrong.title_line, wrong.employer_line) == (right.title_line, right.employer_line)
+        d_wrong, _ = build(DATE_CV, response([_date_entry(title_line=4, employer_line=4)]))
+        d_right, _ = build(DATE_CV, response([_date_entry(title_line=2, employer_line=3)]))
+        strip = lambda d: {k: v for k, v in d.to_dict()["entries"][0].items() if k != "flags"}  # noqa: E731
+        assert strip(d_wrong) == strip(d_right)
+
+    def test_s2_uses_corrected_title_line(self):
+        from services.experience_accounting import RequirementSpec
+        from services.s2_experience import classifier as s2
+        from services.s2_experience.validator import validate_response
+        doc, _ = build(BULLET_CV, response([entry("A1", title=(3, "Site Engineer"),
+                                                  employer=(4, "UrbanAxis Engineering"),
+                                                  header=(2, 3, 4, 5), body=[(6, 6)])]))
+        assert doc.entries[0].title.line == 2
+        sp = RequirementSpec(policy="explicit_role", required_years=3, targets=("Site Engineer",),
+                             criterion_id="C", criterion_text="3 years as Site Engineer",
+                             source_spans=("Site Engineer",))
+        req = s2.build_request(doc, sp, BULLET_CV)
+        assert req.entries[0].title_line == 2
+        v = validate_response({"results": [{"entry_id": "E1", "label": "qualifying", "basis": "title",
+                                            "quotes": [{"line": 2, "text": "Site Engineer"}],
+                                            "reason": "r", "missing": []}]},
+                              req.entries, policy="explicit_role", has_setting=False)
+        assert v.ok, v.errors
+
+    def test_flags_and_relocations_survive_serialisation_and_cache(self):
+        cache = st.InMemoryS0Cache()
+        doc, _ = build(DATE_CV, response([_date_entry()]), cache=cache)
+        again = S0Document.from_dict(json.loads(json.dumps(doc.to_dict())))
+        assert again.entries[0].flags == doc.entries[0].flags
+        assert again.validation["line_relocations"] == doc.validation["line_relocations"]
+        cached, client = build(DATE_CV, cache=cache)                                 # served from cache
+        assert client.requests == [] and cached.to_dict() == doc.to_dict()
+
+    def test_flag_and_record_come_from_one_source(self):
+        doc, _ = build(DATE_CV, response([_date_entry(title_line=4, employer_line=4)]))
+        flags = [f for f in doc.entries[0].flags if f.startswith("line_relocated:")]
+        assert flags == [st.relocation_flag(r) for r in doc.validation["line_relocations"]]
+
+    def test_existing_valid_responses_unchanged(self):
+        doc, _ = build(MULTI_ROLE_CV, response([
+            entry("A1", title=(3, "Senior Education Officer"), employer=(2, "UNICEF"), header=(2, 3, 4), body=[(5, 5)]),
+            entry("A2", title=(6, "Education Officer"), employer=(2, "UNICEF"), header=(2, 6, 7), body=[(8, 8)])]))
+        assert doc.validation == {"errors": [], "repair_errors": []}
+        assert all(not any(f.startswith("line_relocated") for f in e.flags) for e in doc.entries)

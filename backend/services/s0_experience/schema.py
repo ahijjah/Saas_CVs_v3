@@ -16,7 +16,7 @@ from typing import Any
 from services.s0_experience.dates import Anchor
 
 S0_SCHEMA = "s0_experience_v1"
-S0_VERSION = "1.0.0"
+S0_VERSION = "1.1.0"
 
 # structure_status
 STRUCTURE_VALIDATED = "validated"
