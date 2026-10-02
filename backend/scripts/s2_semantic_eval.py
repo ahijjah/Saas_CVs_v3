@@ -34,6 +34,14 @@ Output (contains CV-derived text: keep it on the server):
   <out>/summary.json    statistics
   <out>/report.md       human-review report
   <out>/review.csv      one row per classification with blank reviewer columns
+  <out>/raw/s0/<application_id>.<main|repair>.json
+  <out>/raw/s2/<application_id>.<criterion_id>.<main|repair>.json
+                        DIAGNOSTIC raw OpenAI responses (exact content, finish_reason,
+                        cache key) for every S0/S2 call made in this run. CV-derived:
+                        keep on the server; never printed, never in report.md. Captured by
+                        wrapping the client the harness passes in: requests, responses,
+                        results, validation, repair, caching and token accounting are
+                        unchanged. A failed raw write is recorded as a warning only.
 
 Real-job mode (--job-code): ALL applications of that job with usable text
 (largest 'done' extracted text >= --min-text-chars) are evaluated against a
@@ -398,19 +406,90 @@ def entry_texts(doc: S0Document, lines: list[str]) -> dict[str, dict]:
     return out
 
 
+# ── diagnostic raw-response capture (evaluation only; never production) ─────
+
+class _CapturingCompletions:
+    """Pass-through for client.chat.completions: forwards the request untouched,
+    returns the provider's response object unchanged, and appends a copy of the
+    raw content to an in-memory sink. Capture can never raise into S0/S2."""
+
+    def __init__(self, inner_create, sink: list[dict], warnings: list[str]):
+        self._inner_create, self._sink, self._warnings = inner_create, sink, warnings
+
+    async def create(self, **kwargs):
+        resp = await self._inner_create(**kwargs)
+        try:
+            choice = resp.choices[0]
+            usage = getattr(resp, "usage", None)
+            self._sink.append({
+                "call": "repair" if any(m.get("role") == "assistant" for m in kwargs.get("messages", []))
+                        else "main",
+                "finish_reason": getattr(choice, "finish_reason", None),
+                "content": choice.message.content,
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+            })
+        except Exception as exc:                       # never affect the evaluated call
+            self._warnings.append(f"capture failed: {type(exc).__name__}")
+        return resp
+
+
+class CapturingClient:
+    """Wraps the harness's OpenAI client for ONE S0 build or ONE S2 classification."""
+
+    def __init__(self, inner, sink: list[dict], warnings: list[str]):
+        self.chat = SimpleNamespace(completions=_CapturingCompletions(
+            inner.chat.completions.create, sink, warnings))
+
+
+_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe(part: str) -> str:
+    return _SAFE.sub("_", part).strip("._") or "x"
+
+
+def write_raw(out: Path, stage: str, application_id: str, criterion_id: str | None,
+              cache_key: str | None, records: list[dict], warnings: list[str]) -> int:
+    """Write captured responses as <out>/raw/<stage>/<app>[.<criterion>].<call>.json.
+    Never raises: a failed write becomes a warning and the evaluation is unaffected."""
+    written = 0
+    seen: Counter = Counter()
+    for rec in records:
+        seen[rec["call"]] += 1
+        suffix = rec["call"] if seen[rec["call"]] == 1 else f"{rec['call']}{seen[rec['call']]}"
+        name = ".".join([_safe(application_id)] + ([_safe(criterion_id)] if criterion_id else [])
+                        + [suffix, "json"])
+        try:
+            d = out / "raw" / stage
+            d.mkdir(parents=True, exist_ok=True)
+            (d / name).write_text(json.dumps({
+                "stage": stage, "application_id": application_id, "criterion_id": criterion_id,
+                "cache_key": cache_key, **rec}, ensure_ascii=False, indent=1), encoding="utf-8")
+            written += 1
+        except Exception as exc:
+            warnings.append(f"raw write failed for {stage}/{name}: {type(exc).__name__}")
+    return written
+
+
 async def run_eval(sample: list[dict], criteria, args, out: Path) -> dict:
     cache_root = Path(args.cache_dir) if args.cache_dir else out / "cache"
     s0_cache, s2_cache = FileCache(cache_root / "s0"), FileCache(cache_root / "s2")
     sem = asyncio.Semaphore(args.concurrency)
     client = llm_call.create_client()
     calls = {"s0": [], "s2": []}                       # call_logs of calls made in THIS run
+    raw = {"files_written": 0, "warnings": []}
 
     async def build(app):
         async with sem:
             cc = _CallCache(s0_cache)
-            doc = await s0.build_s0(app["extracted_text"], client=client, cache=cc)
+            sink: list[dict] = []
+            doc = await s0.build_s0(app["extracted_text"], client=CapturingClient(client, sink, raw["warnings"]),
+                                    cache=cc)
             if not cc.hit:
                 calls["s0"].extend(doc.structurer.get("call_log") or [])
+            raw["files_written"] += write_raw(out, "s0", app["application_id"], None, doc.cache_key,
+                                              sink, raw["warnings"])
             return doc
 
     docs = await asyncio.gather(*(build(a) for a in sample))
@@ -418,10 +497,14 @@ async def run_eval(sample: list[dict], criteria, args, out: Path) -> dict:
     async def classify(app, doc, spec):
         async with sem:
             cc = _CallCache(s2_cache)
+            sink: list[dict] = []
             res = await s2.classify_criterion(doc, spec, extracted_text=app["extracted_text"],
-                                              client=client, cache=cc)
+                                              client=CapturingClient(client, sink, raw["warnings"]),
+                                              cache=cc)
             if not cc.hit:
                 calls["s2"].extend(res.structurer.get("call_log") or [])
+            raw["files_written"] += write_raw(out, "s2", app["application_id"], spec.criterion_id,
+                                              res.cache_key, sink, raw["warnings"])
             return app, doc, spec, res
 
     jobs = [classify(a, d, sp) for a, d in zip(sample, docs) for sp, _ in criteria]
@@ -465,6 +548,9 @@ async def run_eval(sample: list[dict], criteria, args, out: Path) -> dict:
             f.write(json.dumps({"application_id": app["application_id"], "job_title": app["job_title"],
                                 **s0.summarize(doc)}, ensure_ascii=False, default=str) + "\n")
     summary = summarize(sample, docs, results, pairs, calls, s0_cache.hits, s2_cache.hits, args)
+    summary["raw_capture"] = {"dir": "raw/", "files_written": raw["files_written"],
+                              "warnings": list(raw["warnings"]),
+                              "note": "diagnostic raw OpenAI responses; CV-derived — keep on the server"}
     (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     write_review_csv(out / "review.csv", pairs)
     (out / "report.md").write_text(render_report(sample, criteria, docs, pairs, summary), encoding="utf-8")
@@ -598,6 +684,9 @@ def render_report(sample, criteria, docs, pairs, summary) -> str:
              f"{summary['api']['s0']['prompt_tokens'] + summary['api']['s2']['prompt_tokens']} / "
              f"{summary['api']['s0']['completion_tokens'] + summary['api']['s2']['completion_tokens']}"],
             ["estimated cost (USD)", summary["estimated_cost_usd"]["total"]],
+            ["raw responses captured (raw/, server-only)",
+             f"{summary.get('raw_capture', {}).get('files_written', 0)} files, "
+             f"{len(summary.get('raw_capture', {}).get('warnings', []))} capture warnings"],
         ]), "",
         "### Label distribution", "",
         _table(["label", "count"], [[k, v] for k, v in summary["label_distribution"].items()]), "",
@@ -821,6 +910,9 @@ async def main_async(args) -> int:
     print(json.dumps({k: summary[k] for k in ("classifications", "label_distribution", "s2_criterion_results",
                                               "s2_repaired", "s2_failed", "flags", "api",
                                               "estimated_cost_usd")}, indent=2))
+    rc = summary.get("raw_capture", {})
+    print(f"Raw responses: {rc.get('files_written', 0)} files under {out / 'raw'} "
+          f"(CV-derived — keep on the server); capture warnings: {len(rc.get('warnings', []))}")
     print(f"Report: {out / 'report.md'}  (contains CV text — keep on the server)")
     return 0
 

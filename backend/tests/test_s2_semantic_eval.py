@@ -3,6 +3,7 @@ import asyncio
 import importlib.util
 import json
 from argparse import Namespace
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -325,3 +326,118 @@ def test_refusals_happen_before_any_db_access(tmp_path, monkeypatch, criteria, e
                                          "--dry-run", *extra])
     with pytest.raises(SystemExit, match=msg):
         run(ev.main_async(args))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Diagnostic raw-response capture (evaluation harness only)
+# ═════════════════════════════════════════════════════════════════════════════
+
+S0_BAD = json.dumps({"entries": [], "ignored_anchors": []})          # V1: anchors unaccounted -> repair
+S2_BAD = s2_resp(res("E1", "qualifying", [(3, "Programme Manager")], basis="title"))   # E2/E3 missing
+S2_GOOD = s2_resp(
+    res("E1", "qualifying", [(3, "Programme Manager")], basis="title"),
+    res("E2", "related", [(11, "Organised logistics and meeting minutes")]),
+    res("E3", "insufficient", [(12, "Consultant")], basis="title", missing=["responsibilities"]))
+SP_C1 = ev.RequirementSpec(policy="explicit_role", required_years=5, targets=("Programme Manager",),
+                           criterion_id="C1", criterion_text="5 years as Programme Manager",
+                           source_spans=("Programme Manager",), spec_version="t")
+APP = {"application_id": "app-1", "job_id": "j1", "job_title": "PM", "extracted_text": CV}
+
+
+def _eval(tmp_path, monkeypatch, name, *responses):
+    client = FakeClient(*responses)
+    monkeypatch.setattr(ev.llm_call, "create_client", lambda: client)
+    out = tmp_path / name
+    out.mkdir()
+    summary = run(ev.run_eval([APP], [(SP_C1, ["programme"])], _args(tmp_path), out))
+    return summary, client, out
+
+
+def test_raw_capture_s0_and_s2_main_and_repair_exact(tmp_path, monkeypatch):
+    summary, _, out = _eval(tmp_path, monkeypatch, "o", S0_BAD, CV_S0, S2_BAD, S2_GOOD)
+    files = sorted(str(p.relative_to(out)) for p in (out / "raw").rglob("*.json"))
+    assert files == ["raw/s0/app-1.main.json", "raw/s0/app-1.repair.json",
+                     "raw/s2/app-1.C1.main.json", "raw/s2/app-1.C1.repair.json"]
+    rd = lambda p: json.loads((out / "raw" / p).read_text(encoding="utf-8"))   # noqa: E731
+    s0m, s0r, s2m, s2r = rd("s0/app-1.main.json"), rd("s0/app-1.repair.json"), \
+        rd("s2/app-1.C1.main.json"), rd("s2/app-1.C1.repair.json")
+    assert (s0m["content"], s0r["content"], s2m["content"], s2r["content"]) == (S0_BAD, CV_S0, S2_BAD, S2_GOOD)
+    assert [r["call"] for r in (s0m, s0r, s2m, s2r)] == ["main", "repair", "main", "repair"]
+    assert {r["finish_reason"] for r in (s0m, s0r, s2m, s2r)} == {"stop"}
+    assert (s0m["stage"], s0m["criterion_id"], s2m["stage"], s2m["criterion_id"]) == ("s0", None, "s2", "C1")
+    assert s0m["cache_key"] == ev.s0.s0_cache_key(CV)
+    (s2_line,) = (out / "s2_results.jsonl").read_text().splitlines()
+    assert s2m["cache_key"] == json.loads(s2_line)["cache_key"]
+    assert summary["raw_capture"]["files_written"] == 4 and summary["raw_capture"]["warnings"] == []
+    report = (out / "report.md").read_text()
+    assert S2_GOOD not in report and "4 files, 0 capture warnings" in report
+
+
+def test_capture_changes_no_request_result_or_accounting(tmp_path, monkeypatch):
+    # Reference: S0 + S2 called directly with an unwrapped client.
+    ref_client = FakeClient(S0_BAD, CV_S0, S2_BAD, S2_GOOD)
+    ref_doc = run(ev.s0.build_s0(CV, client=ref_client))
+    ref_res = run(ev.s2.classify_criterion(ref_doc, SP_C1, extracted_text=CV, client=ref_client))
+    summary, client, out = _eval(tmp_path, monkeypatch, "o", S0_BAD, CV_S0, S2_BAD, S2_GOOD)
+    assert client.requests == ref_client.requests                    # identical OpenAI requests
+    (line,) = (out / "s2_results.jsonl").read_text().splitlines()
+    got = json.loads(line)
+    assert got["results"] == ref_res.to_dict()["results"] and got["validation"] == ref_res.validation
+    assert got["structurer"]["call_log"] == ref_res.structurer["call_log"]
+    assert summary["api"]["s0"]["calls"] == 2 and summary["api"]["s2"]["calls"] == 2
+    assert summary["api"]["s0"]["repair_calls"] == summary["api"]["s2"]["repair_calls"] == 1
+
+
+def test_capture_write_failure_does_not_change_outcome(tmp_path, monkeypatch):
+    ok, _, ok_out = _eval(tmp_path, monkeypatch, "ok", S0_BAD, CV_S0, S2_BAD, S2_GOOD)
+    bad_out = tmp_path / "bad"
+    bad_out.mkdir()
+    (bad_out / "raw").write_text("not a directory")                  # every raw write fails
+    client = FakeClient(S0_BAD, CV_S0, S2_BAD, S2_GOOD)
+    monkeypatch.setattr(ev.llm_call, "create_client", lambda: client)
+    bad = run(ev.run_eval([APP], [(SP_C1, ["programme"])], _args(tmp_path, cache_dir=str(tmp_path / "c2")),
+                          bad_out))
+    assert bad["raw_capture"]["files_written"] == 0 and len(bad["raw_capture"]["warnings"]) == 4
+    assert all("raw write failed" in w for w in bad["raw_capture"]["warnings"])
+    for k in ("classifications", "label_distribution", "s2_criterion_results", "s2_repaired", "s2_failed",
+              "s0_structure_status"):
+        assert bad[k] == ok[k], k
+    assert (bad_out / "pairs.jsonl").read_text() == (ok_out / "pairs.jsonl").read_text()
+
+
+def test_capturing_client_returns_response_unchanged_and_never_raises():
+    sentinel = object()                                              # no .choices: capture must not raise
+
+    async def inner(**kw):
+        return sentinel
+    sink, warnings = [], []
+    c = ev.CapturingClient(SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=inner))),
+                           sink, warnings)
+    assert run(c.chat.completions.create(model="m", messages=[{"role": "user", "content": "x"}])) is sentinel
+    assert sink == [] and warnings == ["capture failed: AttributeError"]
+
+
+def test_cache_hit_makes_no_call_and_writes_no_raw(tmp_path, monkeypatch):
+    _eval(tmp_path, monkeypatch, "first", CV_S0, S2_GOOD)
+    client = FakeClient()
+    monkeypatch.setattr(ev.llm_call, "create_client", lambda: client)
+    out = tmp_path / "second"
+    out.mkdir()
+    s = run(ev.run_eval([APP], [(SP_C1, [])], _args(tmp_path, cache_dir=str(tmp_path / "first" / "cache")), out))
+    assert client.requests == [] and s["raw_capture"]["files_written"] == 0 and not (out / "raw").exists()
+
+
+def test_raw_filenames_are_safe():
+    assert ev._safe("../etc/passwd") == "etc_passwd"
+    assert ev._safe("JOB-2026-0031.experience.1") == "JOB-2026-0031.experience.1"
+    assert ev._safe("a b/c\\d") == "a_b_c_d"
+
+
+def test_dry_run_writes_no_raw_output(tmp_path, monkeypatch, capsys):
+    _no_ai(monkeypatch)
+
+    async def fake_connect():
+        return FakeDB(_apps(), {"a-ok": CPM_CV})
+    monkeypatch.setattr(ev, "connect_db", fake_connect)
+    assert run(ev.main_async(_dry_args(tmp_path))) == 0
+    assert not (tmp_path / "out").exists() and not list(tmp_path.rglob("raw"))
