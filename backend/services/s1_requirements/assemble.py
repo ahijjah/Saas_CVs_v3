@@ -185,10 +185,21 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
     in_req = [{"id": did, "line": ln, "text": m.text, "years": m.years, "bound": m.bound}
               for did, (ln, m) in sorted(durations.items(), key=lambda kv: int(kv[0][1:]))
               if any(Span(ln, m.start, m.end, m.text).within(r) for r in req)]
+    # audit only (no effect on status, provenance or views): every AI mapping and every jd_asserted target
+    target_mappings = [
+        {"target_id": t.target_id, "target_text": pt.text, "mapped_text": pt.span.text, "line": pt.span.line,
+         "start": pt.span.start, "end": pt.span.end, "used": t.provenance == PROV_JD_ASSERTED}
+        for pt, t in zip(pc.targets, targets) if pt.hint_id and pt.span is not None]
+    review_required = [t.target_id for t in targets if t.provenance == PROV_JD_ASSERTED]
     audit = {**_hint_audit(c, rf), "jd_sha256": jd.text_sha256, "duration_candidates_in_requirement": in_req,
+             "target_mappings": target_mappings, "review_required": review_required,
              "ai": {"policy": pc.policy, "duration": pc.duration_id, "ambiguity": list(pc.ambiguity),
                     "note": pc.note},
              "call": run.get("call", {})}
+    if pc.statement_anchored and not reasons and not gov:
+        # invariant: a model-declared statement alone never resolves a criterion
+        raise ValueError(f"criterion {c.criterion_id}: statement-anchored requirement cannot resolve")
+    audit["requirement_anchor"] = None if not req else "statement" if pc.statement_anchored else "evidence"
     status = STATUS_NEEDS_CONFIRMATION if reasons else STATUS_RESOLVED
     return S1Artifact(requirement_text=requirement_text, spec_status=status, policy=pc.policy,
                       targets=tuple(targets), setting=setting, required_years=ry, reasons=tuple(reasons),

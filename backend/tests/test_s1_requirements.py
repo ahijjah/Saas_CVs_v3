@@ -414,17 +414,27 @@ class TestAuthority:
         assert (art.required_years.value, art.required_years.provenance) == (5, "original_ai")
 
     def test_setting_accepted_only_inside_requirement_span(self):
-        cid = job31_cid()
-        ok = job31_ok(cid, requirement_spans=[{"line": 6, "text": JOB31_REQ}, {"line": 3, "text":
-                      "We deliver commercial construction projects across the region"}],
-                      setting={"line": 3, "text": "commercial construction"})
-        _, out = classify(JOB31_JD, JOB31_ANALYSIS, ai(ok), job_id="JOB-2026-0031")
-        assert out.artifacts[0].setting.text == "commercial construction"
+        a = {"experience": {"minimum_years": 5, "relevant_roles": ["Site Engineer"]}}
+        jd = "We build oil and gas plants.\n- Minimum 5 years of experience as a Site Engineer on oil and gas projects"
+        req = "Minimum 5 years of experience as a Site Engineer on oil and gas projects"
+        cid = only_cid(a)
+        ok = res(cid, "explicit_role", [(2, req)], [{"hint": "T1", "type": "role", "jd_span": None}],
+                 setting={"line": 2, "text": "oil and gas projects"}, duration="D1")
+        _, out = classify(jd, a, ai(ok))
+        assert out.artifacts[0].setting.text == "oil and gas projects"
         assert out.artifacts[0].field_provenance["setting"] == "jd_asserted"
-        bad = job31_ok(cid, setting={"line": 3, "text": "commercial construction"})   # outside its spans
+        # an About-us line cannot be added as a requirement span to obtain a setting (V-anchor)
+        about = res(cid, "explicit_role", [(2, req), (1, "We build oil and gas plants")],
+                    [{"hint": "T1", "type": "role"}], setting={"line": 1, "text": "oil and gas plants"},
+                    duration="D1")
+        _, out = classify(jd, a, ai(about), ai(about))
+        assert out.artifacts[0].spec_status == "failed_validation"
+        assert any("contains no anchor" in e for e in out.validation["errors"])
+        bad = job31_ok(job31_cid(), setting={"line": 3, "text": "commercial construction"})   # outside its spans
         val = validate_response(ai(bad), JDText(JOB31_JD), enumerate_experience_criteria("JOB-2026-0031",
                                 JOB31_ANALYSIS), {did: (ln, m) for did, ln, m in JDText(JOB31_JD).durations()})
         assert not val.ok and any("setting" in e and "not inside" in e for e in val.errors)
+        cid = job31_cid()
         free = job31_ok(cid, setting="construction")                                 # free text
         _, out = classify(JOB31_JD, JOB31_ANALYSIS, ai(free), ai(free), job_id="JOB-2026-0031")
         assert out.artifacts[0].spec_status == "failed_validation"
@@ -493,6 +503,18 @@ def elsewhere(cid, t1=None, t2=None):
     return res(cid, "explicit_role", [(5, ELSEWHERE_REQ)], tg, duration="D1")
 
 
+ARABIC_JD = "المتطلبات\n- خبرة 5 سنوات كمدير مشروع إنشائي أو مساعد مدير مشروع"
+ARABIC_REQ = "خبرة 5 سنوات كمدير مشروع إنشائي أو مساعد مدير مشروع"
+T1_AR = {"line": 2, "text": "كمدير مشروع إنشائي"}
+T2_AR = {"line": 2, "text": "مساعد مدير مشروع"}
+
+
+def arabic(cid, t1, t2):
+    return res(cid, "explicit_role", [(2, ARABIC_REQ)],
+               [{"hint": "T1", "type": "role", "jd_span": t1}, {"hint": "T2", "type": "role", "jd_span": t2}],
+               duration="D1")
+
+
 class TestTargetProvenance:
     """jd_verified only inside the criterion's requirement spans; mapping -> jd_asserted."""
 
@@ -518,20 +540,18 @@ class TestTargetProvenance:
         assert art.required_years.provenance == "jd_verified"                       # N unaffected
 
     def test_valid_ai_mapping_is_jd_asserted(self):
-        m = {"line": 5, "text": "project management roles"}
-        _, out = classify(ELSEWHERE_JD, JOB31_ANALYSIS, ai(elsewhere(job31_cid(), t1=m, t2=m)),
-                          job_id="JOB-2026-0031")
+        _, out = classify(ARABIC_JD, JOB31_ANALYSIS, ai(arabic(job31_cid(), T1_AR, T2_AR)), job_id="JOB-2026-0031")
         (art,) = out.artifacts
         assert art.spec_status == "resolved" and art.reasons == ()
         assert [(t.text, t.provenance, t.jd_span.text, t.jd_span.line) for t in art.targets] == [
-            ("Construction Project Manager", "jd_asserted", "project management roles", 5),
-            ("Assistant Project Manager", "jd_asserted", "project management roles", 5)]   # text unchanged
+            ("Construction Project Manager", "jd_asserted", "كمدير مشروع إنشائي", 2),
+            ("Assistant Project Manager", "jd_asserted", "مساعد مدير مشروع", 2)]   # text unchanged
         (v,) = asm.s2_views(art)
         assert v.targets == ("Construction Project Manager", "Assistant Project Manager")
+        assert v.source_spans == ("كمدير مشروع إنشائي", "مساعد مدير مشروع")
 
     def test_partial_mapping(self):
-        m = {"line": 5, "text": "project management roles"}
-        _, out = classify(ELSEWHERE_JD, JOB31_ANALYSIS, ai(elsewhere(job31_cid(), t1=m)), job_id="JOB-2026-0031")
+        _, out = classify(ARABIC_JD, JOB31_ANALYSIS, ai(arabic(job31_cid(), T1_AR, None)), job_id="JOB-2026-0031")
         (art,) = out.artifacts
         assert [t.provenance for t in art.targets] == ["jd_asserted", "original_ai"]
         assert [(r.code, r.field) for r in art.reasons] == [("target_not_in_jd", "targets.T2")]
@@ -548,11 +568,10 @@ class TestTargetProvenance:
         assert not v.ok and any(frag in e for e in v.errors), v.errors
 
     def test_mapping_survives_cache_round_trip(self):
-        m = {"line": 5, "text": "project management roles"}
         cache = clf.InMemoryS1Cache()
-        _, first = classify(ELSEWHERE_JD, JOB31_ANALYSIS, ai(elsewhere(job31_cid(), t1=m, t2=m)),
+        _, first = classify(ARABIC_JD, JOB31_ANALYSIS, ai(arabic(job31_cid(), T1_AR, T2_AR)),
                             job_id="JOB-2026-0031", cache=cache)
-        client, second = classify(ELSEWHERE_JD, JOB31_ANALYSIS, job_id="JOB-2026-0031", cache=cache)
+        client, second = classify(ARABIC_JD, JOB31_ANALYSIS, job_id="JOB-2026-0031", cache=cache)
         assert client.requests == [] and second.artifacts[0].content_hash == first.artifacts[0].content_hash
         assert [t.provenance for t in second.artifacts[0].targets] == ["jd_asserted", "jd_asserted"]
 
@@ -568,6 +587,348 @@ class TestTargetProvenance:
         _, out = classify(JOB31_JD, JOB31_ANALYSIS, ai(job31_ok(job31_cid())), job_id="JOB-2026-0031",
                           recruiter_fields={"experience.relevant_roles": prov})
         assert {t.provenance for t in out.artifacts[0].targets} == {prov}
+
+
+# ── s1-2: equivalence-only target mapping ───────────────────────────────────
+
+def _case(hints, line, *, years=5, maps=(), types=None, ambiguity=(), setting=None, extra_lines=()):
+    """One criterion; JD = 'Requirements' + '- <line>' (+ continuation lines). Returns (jd, analysis, response)."""
+    a = {"experience": {"minimum_years": years, "relevant_roles": list(hints)}}
+    jd = "\n".join(["Requirements", "- " + line, *extra_lines])
+    types = types or ["role"] * len(hints)
+    maps = list(maps) + [None] * (len(hints) - len(maps))
+    tg = [{"hint": f"T{i}", "type": ty, "jd_span": ({"line": 2, "text": m} if m else None)}
+          for i, (ty, m) in enumerate(zip(types, maps), 1)]
+    policy = "explicit_role" if set(types) == {"role"} else "functional" if set(types) == {"function"} else "mixed"
+    spans = [(2, line)] + [(3 + i, ln.strip()) for i, ln in enumerate(extra_lines)]
+    r = res(only_cid(a), policy, spans, tg, setting=setting,
+            duration="D1" if parse_durations(line) else None, ambiguity=ambiguity)
+    return jd, a, r
+
+
+def run_case(*args, **kw):
+    jd, a, r = _case(*args, **kw)
+    _, out = classify(jd, a, ai(r), ai(r))          # second response = identical repair
+    return out
+
+
+def prov(out):
+    return [(t.target_id, t.provenance) for t in out.artifacts[0].targets]
+
+
+def codes(out):
+    return [r.code for r in out.artifacts[0].reasons]
+
+
+def rejected(out, frag):
+    return out.artifacts[0].spec_status == "failed_validation" and any(
+        frag in e for e in out.validation["errors"])
+
+
+class TestS12EquivalenceMapping:
+    # positive mappings: same role/function, only wording/language/form differs
+    def test_arabic_equivalent_is_jd_asserted_and_resolved(self):
+        out = run_case(["Construction Project Manager"], "خبرة 5 سنوات كمدير مشروع إنشائي",
+                       maps=["كمدير مشروع إنشائي"])
+        art = out.artifacts[0]
+        assert prov(out) == [("T1", "jd_asserted")]
+        assert art.spec_status == "resolved" and art.reasons == ()          # jd_asserted alone can resolve
+        assert art.targets[0].text == "Construction Project Manager"
+        assert art.audit["target_mappings"] == [{
+            "target_id": "T1", "target_text": "Construction Project Manager", "mapped_text": "كمدير مشروع إنشائي",
+            "line": 2, "start": art.targets[0].jd_span.start, "end": art.targets[0].jd_span.end, "used": True}]
+        assert art.audit["review_required"] == ["T1"]
+
+    def test_arabic_attached_letter_must_be_copied(self):
+        out = run_case(["Construction Project Manager"], "خبرة 5 سنوات كمدير مشروع إنشائي",
+                       maps=["مدير مشروع إنشائي"])
+        assert rejected(out, "whole words")
+
+    def test_arabic_generic_project_manager_is_not_mapped(self):
+        out = run_case(["Construction Project Manager"], "خبرة 5 سنوات كمدير مشروع")
+        assert prov(out) == [("T1", "original_ai")] and codes(out) == ["target_not_in_jd"]
+        assert out.artifacts[0].spec_status == "needs_confirmation"
+        assert out.artifacts[0].audit["target_mappings"] == [] and out.artifacts[0].audit["review_required"] == []
+
+    def test_pm_with_explicit_expansion(self):
+        out = run_case(["PM"], "Minimum 5 years as a Project Manager (P.M.)", maps=["Project Manager"])
+        assert prov(out) == [("T1", "jd_asserted")] and out.artifacts[0].spec_status == "resolved"
+        verbatim = run_case(["PM"], "Minimum 5 years as a Project Manager (PM)")        # "PM" itself in span
+        assert prov(verbatim) == [("T1", "jd_verified")]
+
+    def test_ambiguous_pm_not_mapped(self):
+        out = run_case(["PM"], "Minimum 5 years as a P.M.")
+        assert prov(out) == [("T1", "original_ai")] and codes(out) == ["target_not_in_jd"]
+
+    def test_software_implementation_grammatical_form(self):
+        out = run_case(["software implementation"], "Minimum 3 years of experience implementing software",
+                       years=3, maps=["implementing software"], types=["function"])
+        assert prov(out) == [("T1", "jd_asserted")] and out.artifacts[0].spec_status == "resolved"
+
+    def test_enterprise_software_is_not_jd_asserted(self):
+        # JD narrows with a platform qualifier: AI must not map (null -> target_not_in_jd)
+        out = run_case(["software implementation"], "Minimum 3 years implementing enterprise software systems",
+                       years=3, types=["function"])
+        assert prov(out) == [("T1", "original_ai")] and codes(out) == ["target_not_in_jd"]
+        # target embedded in a longer qualified phrase: verbatim -> jd_verified, but AI reports ambiguity
+        line = "Minimum 3 years of experience in enterprise software implementation"
+        out = run_case(["software implementation"], line, years=3, types=["function"],
+                       ambiguity=["ambiguous_relevance"])
+        assert prov(out) == [("T1", "jd_verified")] and codes(out) == ["ambiguous_relevance"]
+        assert out.artifacts[0].spec_status == "needs_confirmation"
+        # and a mapping onto the longer phrase is rejected (V-sub-b)
+        out = run_case(["software implementation"], line, years=3, types=["function"],
+                       maps=["enterprise software implementation"])
+        assert rejected(out, "adds words to the target")
+
+    def test_database_administration(self):
+        out = run_case(["database administration"], "Minimum 4 years of experience administering databases",
+                       years=4, maps=["administering databases"], types=["function"])
+        assert prov(out) == [("T1", "jd_asserted")]
+        out = run_case(["database administration"], "Minimum 4 years of experience in database support",
+                       years=4, types=["function"])
+        assert prov(out) == [("T1", "original_ai")] and codes(out) == ["target_not_in_jd"]
+
+    @pytest.mark.parametrize("hint, line, longer", [
+        ("Project Manager", "Minimum 5 years as a Construction Project Manager", "Construction Project Manager"),
+        ("Accountant", "Minimum 5 years as a Senior Accountant", "Senior Accountant"),
+        ("Project Manager", "Minimum 5 years as an Assistant Project Manager", "Assistant Project Manager"),
+    ])
+    def test_embedded_in_longer_title_is_ambiguity(self, hint, line, longer):
+        out = run_case([hint], line, ambiguity=["ambiguous_relevance"])
+        assert prov(out) == [("T1", "jd_verified")] and codes(out) == ["ambiguous_relevance"]
+        assert out.artifacts[0].spec_status == "needs_confirmation"
+        assert rejected(run_case([hint], line, maps=[longer]), "adds words to the target")       # V-sub-b
+
+    def test_construction_pm_vs_generic_pm(self):
+        out = run_case(["Construction Project Manager"], "Minimum 5 years as a Project Manager")
+        assert prov(out) == [("T1", "original_ai")] and codes(out) == ["target_not_in_jd"]
+        out = run_case(["Construction Project Manager"], "Minimum 5 years as a Project Manager",
+                       maps=["Project Manager"])
+        assert rejected(out, "drops words of the target")                                      # V-sub-a
+
+    @pytest.mark.parametrize("hint, line, ty", [
+        ("project management", "Minimum 5 years of experience in project coordination", "function"),
+        ("Project Manager", "Minimum 5 years working with the project management team", "role"),
+    ])
+    def test_related_wording_is_not_mapped(self, hint, line, ty):
+        out = run_case([hint], line, types=[ty])
+        assert prov(out) == [("T1", "original_ai")] and codes(out) == ["target_not_in_jd"]
+        assert out.artifacts[0].spec_status == "needs_confirmation"
+
+
+class TestS12ValidatorGuards:
+    def test_v_m9_hints_cannot_share_a_generic_phrase(self):
+        out = run_case(["Project Manager", "Assistant Project Manager"],
+                       "Minimum 5 years of experience in project management roles",
+                       maps=["project management roles", "project management roles"])
+        assert rejected(out, "mapped to overlapping phrases")
+
+    def test_v_m8_word_limit(self):
+        line = ("Minimum 5 years as one who supervises and engineers the daily technical works on large "
+                "active building sites")
+        out = run_case(["Site Engineer"], line,
+                       maps=["one who supervises and engineers the daily technical works on large active "
+                             "building sites"])
+        assert rejected(out, "at most 12 words")
+
+    def test_v_m8_no_duration_or_setting_in_mapping(self):
+        out = run_case(["Site Supervisor"], "Minimum 5 years as a site foreman", maps=["5 years as a site foreman"])
+        assert rejected(out, "must not include the duration")
+        out = run_case(["Site Supervisor"], "Minimum 5 years as a site foreman on oil and gas projects",
+                       maps=["site foreman on oil and gas projects"],
+                       setting={"line": 2, "text": "oil and gas projects"})
+        assert rejected(out, "must not include the setting")
+
+    def test_v_m10_mapping_cannot_take_another_hints_text(self):
+        line = "Minimum 5 years as a Construction Project Manager or Assistant PM"
+        hints = ["Construction Project Manager", "Assistant Project Manager"]
+        out = run_case(hints, line, maps=[None, "Construction Project Manager"])
+        assert rejected(out, "overlaps the verbatim text of hint T1")
+        ok = run_case(hints, line, maps=[None, "Assistant PM"])
+        assert prov(ok) == [("T1", "jd_verified"), ("T2", "jd_asserted")]
+        assert [m["target_id"] for m in ok.artifacts[0].audit["target_mappings"]] == ["T2"]
+        assert ok.artifacts[0].audit["review_required"] == ["T2"]
+
+    def test_v_anchor_wrapped_continuation_line_is_valid(self):
+        out = run_case(["Site Engineer"], "Minimum 5 years of experience as a Site Engineer on",
+                       extra_lines=["  oil and gas projects"], setting={"line": 3, "text": "oil and gas projects"})
+        art = out.artifacts[0]
+        assert art.spec_status == "resolved" and art.setting.text == "oil and gas projects"
+        assert [s.line for s in art.requirement_spans] == [2, 3]
+
+    def test_v_anchor_rejects_unanchored_lines(self):
+        jd = "We are a leading oil and gas contractor.\n\nRequirements\n- Minimum 5 years as a Site Engineer"
+        a = {"experience": {"minimum_years": 5, "relevant_roles": ["Site Engineer"]}}
+        r = res(only_cid(a), "explicit_role",
+                [(4, "Minimum 5 years as a Site Engineer"), (1, "We are a leading oil and gas contractor")],
+                [{"hint": "T1", "type": "role", "jd_span": None}],
+                setting={"line": 1, "text": "oil and gas contractor"}, duration="D1")
+        _, out = classify(jd, a, ai(r), ai(r))
+        assert rejected(out, "contains no anchor")
+
+    def test_mapping_unused_when_target_is_verbatim(self):
+        out = run_case(["Site Engineer"], "Minimum 5 years as a Site Engineer", maps=["Site Engineer"])
+        art = out.artifacts[0]
+        assert prov(out) == [("T1", "jd_verified")]
+        assert [m["used"] for m in art.audit["target_mappings"]] == [False]
+        assert art.audit["review_required"] == []
+
+    def test_audit_fields_do_not_change_content_hash(self):
+        out = run_case(["Construction Project Manager"], "خبرة 5 سنوات كمدير مشروع إنشائي",
+                       maps=["كمدير مشروع إنشائي"])
+        art = out.artifacts[0]
+        assert "audit" not in art.semantic_dict()
+        assert sc.S1Artifact.from_dict(art.to_dict()).audit["review_required"] == ["T1"]
+
+
+def _stmt(hints, jd_lines, spans, *, years=0, types=None, setting=None, ambiguity=(), policy=None):
+    """spans: [(line, text, marked)]; returns ClassifyResult after one main (+ identical repair) response."""
+    a = {"experience": {"minimum_years": years, "relevant_roles": list(hints)}}
+    types = types or ["role"] * len(hints)
+    tg = [{"hint": f"T{i}", "type": ty, "jd_span": None} for i, ty in enumerate(types, 1)]
+    pol = policy or ("explicit_role" if set(types) == {"role"} else "functional")
+    r = res(only_cid(a), pol, [], tg, setting=setting, ambiguity=ambiguity)
+    r["requirement_spans"] = [{"line": ln, "text": t, **({"experience_requirement": True} if m else {})}
+                              for ln, t, m in spans]
+    _, out = classify("\n".join(jd_lines), a, ai(r), ai(r))
+    return out
+
+
+class TestStatementAnchor:
+    """No-duration requirements anchored only by the model's experience_requirement marker."""
+    NURSE_JD = ["We are a leading hospital group.", "Requirements", "Experience in nursing is preferred."]
+
+    def test_no_years_target_not_forced_to_map(self):
+        out = _stmt(["Registered Nurse"], self.NURSE_JD, [(3, "Experience in nursing is preferred", True)])
+        art = out.artifacts[0]
+        assert out.status == "ok" and art.requirement_spans[0].text == "Experience in nursing is preferred"
+        assert prov(out) == [("T1", "original_ai")] and codes(out) == ["target_not_in_jd"]
+        assert art.spec_status == "needs_confirmation"
+        assert art.audit["target_mappings"] == [] and art.audit["requirement_anchor"] == "statement"
+        assert "requirement_not_in_jd" not in codes(out)
+
+    def test_unmarked_statement_still_needs_an_anchor(self):
+        out = _stmt(["Registered Nurse"], self.NURSE_JD, [(3, "Experience in nursing is preferred", False)])
+        assert rejected(out, "contains no anchor")
+
+    def test_verbatim_functional_target_uses_normal_anchor(self):
+        out = _stmt(["nursing"], self.NURSE_JD, [(3, "Experience in nursing is preferred", False)],
+                    types=["function"])
+        art = out.artifacts[0]
+        assert prov(out) == [("T1", "jd_verified")] and art.spec_status == "resolved"
+        assert art.audit["requirement_anchor"] == "evidence"
+        # a marker on an evidence-anchored span changes nothing
+        marked = _stmt(["nursing"], self.NURSE_JD, [(3, "Experience in nursing is preferred", True)],
+                       types=["function"])
+        assert marked.artifacts[0].spec_status == "resolved"
+        assert marked.artifacts[0].audit["requirement_anchor"] == "evidence"
+
+    def test_sector_without_duration(self):
+        jd = ["About us: we are a leading bank.", "Requirements", "Experience in the banking sector is preferred."]
+        out = _stmt([], jd, [(3, "Experience in the banking sector is preferred", True)], years=3,
+                    policy="sector", setting={"line": 3, "text": "banking sector"})
+        art = out.artifacts[0]
+        assert out.status == "ok" and art.setting.text == "banking sector" and art.policy == "sector"
+        assert codes(out) == ["n_not_in_jd"] and art.spec_status == "needs_confirmation"
+        assert art.audit["requirement_anchor"] == "statement"
+
+    @pytest.mark.parametrize("context", ["We are a leading bank", "Our projects include healthcare and education"])
+    def test_context_lines_never_qualify(self, context):
+        jd = [context + ".", "Requirements", "- Minimum 5 years as a Site Engineer"]
+        hints = ["Site Engineer"]
+        # unmarked context line as the only span: no anchor
+        assert rejected(_stmt(hints, jd, [(1, context, False)], years=5), "contains no anchor")
+        # marked context line added next to an anchored requirement: still rejected
+        out = _stmt(hints, jd, [(3, "Minimum 5 years as a Site Engineer", False), (1, context, True)], years=5)
+        assert rejected(out, "contains no anchor")
+
+    def test_marked_context_alone_can_never_resolve(self):
+        # residual risk: the marker is the model's declaration; the outcome is still unconfirmed
+        jd = ["We are a leading bank.", "Requirements", "- Teamwork"]
+        out = _stmt(["Bank Teller"], jd, [(1, "We are a leading bank", True)])
+        assert out.artifacts[0].spec_status == "needs_confirmation" and codes(out) == ["target_not_in_jd"]
+
+    def test_target_absent_requirement_not_in_jd_still_possible(self):
+        out = _stmt(["Registered Nurse"], ["We are a leading bank.", "Requirements", "- Fluent English"], [],
+                    ambiguity=["requirement_not_in_jd"])
+        art = out.artifacts[0]
+        assert codes(out) == ["target_not_in_jd", "requirement_not_in_jd"] and art.spec_status == "needs_confirmation"
+        assert art.audit["requirement_anchor"] is None
+
+    def test_at_most_one_marked_span_and_flag_type(self):
+        jd = ["Experience in nursing is preferred.", "Experience in midwifery is an advantage."]
+        out = _stmt(["Registered Nurse"], jd, [(1, "Experience in nursing is preferred", True),
+                                               (2, "Experience in midwifery is an advantage", True)])
+        assert rejected(out, "at most one requirement span")
+        a = {"experience": {"minimum_years": 0, "relevant_roles": ["Registered Nurse"]}}
+        r = res(only_cid(a), "explicit_role", [], [{"hint": "T1", "type": "role", "jd_span": None}])
+        r["requirement_spans"] = [{"line": 1, "text": "Experience in nursing is preferred",
+                                   "experience_requirement": "yes"}]
+        _, bad = classify("\n".join(jd), a, ai(r), ai(r))
+        assert rejected(bad, "experience_requirement must be true or false")
+
+    def test_wrapped_continuation_of_statement_span(self):
+        jd = ["Requirements", "Experience in community nursing or", "home healthcare is preferred."]
+        out = _stmt(["Registered Nurse"], jd, [(2, "Experience in community nursing or", True),
+                                               (3, "home healthcare is preferred", False)])
+        assert out.status == "ok" and [s.line for s in out.artifacts[0].requirement_spans] == [2, 3]
+
+    def test_recruiter_authority_is_what_resolves(self):
+        a = {"experience": {"minimum_years": 0, "relevant_roles": ["Registered Nurse"]}}
+        r = res(only_cid(a), "explicit_role", [], [{"hint": "T1", "type": "role", "jd_span": None}])
+        r["requirement_spans"] = [{"line": 3, "text": "Experience in nursing is preferred",
+                                   "experience_requirement": True}]
+        _, out = classify("\n".join(self.NURSE_JD), a, ai(r), recruiter_fields={
+            "experience.relevant_roles": "recruiter_confirmed"})
+        art = out.artifacts[0]
+        assert art.spec_status == "resolved" and prov(out) == [("T1", "recruiter_confirmed")]
+
+    def test_statement_anchor_survives_cache(self):
+        cache = clf.InMemoryS1Cache()
+        a = {"experience": {"minimum_years": 0, "relevant_roles": ["Registered Nurse"]}}
+        r = res(only_cid(a), "explicit_role", [], [{"hint": "T1", "type": "role", "jd_span": None}])
+        r["requirement_spans"] = [{"line": 3, "text": "Experience in nursing is preferred",
+                                   "experience_requirement": True}]
+        jd = "\n".join(self.NURSE_JD)
+        classify(jd, a, ai(r), cache=cache)
+        client, again = classify(jd, a, cache=cache)
+        assert client.requests == [] and again.artifacts[0].audit["requirement_anchor"] == "statement"
+
+    def test_assembler_invariant(self):
+        from services.s1_requirements.validator import ParsedCriterion, ParsedTarget
+        (c,) = enumerate_experience_criteria("J", {"experience": {"minimum_years": 0,
+                                                                  "relevant_roles": ["Nursing"]}})
+        jd = JDText("Experience in nursing is preferred.")
+        sp = jd.span_on_line(1, "Experience in nursing is preferred")
+        pc = ParsedCriterion(c.criterion_id, "functional", (sp,), (ParsedTarget("Nursing", "function", "T1"),),
+                             None, None, (), "", statement_anchored=True)
+        with pytest.raises(ValueError, match="cannot resolve"):
+            asm.assemble_artifact(c, pc, jd, {}, run={})
+
+
+class TestS12Versioning:
+    def test_versions_and_fingerprint(self):
+        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-2", "1.1.0")
+        assert clf.prompt_fingerprint() == "e64eb1a979e9" != "af51355222e5"
+
+    def test_cache_identity_differs_from_s1_1(self, monkeypatch):
+        req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
+        k2 = clf.s1_cache_key(req)
+        monkeypatch.setattr(clf, "S1_PROMPT_VERSION", "s1-1")
+        monkeypatch.setattr(clf, "S1_VERSION", "1.0.0")
+        monkeypatch.setattr(clf, "prompt_fingerprint", lambda: "af51355222e5")
+        assert clf.s1_cache_key(req) != k2
+
+    def test_prompt_contract(self):
+        p = clf.S1_SYSTEM_PROMPT
+        for frag in ("SUBSTANTIALLY THE SAME", "material qualifier", "null is always acceptable",
+                     "keep EVERY qualifier", "including attached letters", "report \"ambiguous_relevance\"",
+                     "never makes a target a role", "shortest complete verbatim phrase",
+                     "\"jd_span\": null"):
+            assert frag in p, frag
+        assert "SHORTEST verbatim phrase" not in p
+        assert "related, similar, compatible, adjacent, same family, narrower or broader" in p
 
 
 class TestStatusTaxonomy:
@@ -794,7 +1155,7 @@ class TestDeterminism:
         a, b = (o.artifacts[0] for o in outs)
         assert a.to_dict() == b.to_dict()
         assert a.input_hash == b.input_hash and a.content_hash == b.content_hash
-        assert a.spec_version.startswith("s1-1.0.0-") and a.prompt_fingerprint == clf.prompt_fingerprint()
+        assert a.spec_version.startswith(f"s1-{sc.S1_VERSION}-") and a.prompt_fingerprint == clf.prompt_fingerprint()
         assert sc.S1Artifact.from_dict(json.loads(json.dumps(a.to_dict()))) == a
 
     def test_cache_hit_reproduces_artifact(self):

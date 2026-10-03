@@ -52,35 +52,56 @@ CACHEABLE = frozenset({None, REASON_VALIDATION_FAILED, REASON_EXCEEDS_MODEL_CONT
 
 S1_SYSTEM_PROMPT = """You label the EXPERIENCE requirements of ONE job description (JD). You never see or judge candidates.
 
-INPUT (JSON): "jd_lines" (line number + verbatim text), "duration_candidates" (id, line, text: every duration found in the JD), and "criteria" (criterion_id, display_text, has_years, target_hints with ids T1, T2, ...).
+INPUT (JSON): "jd_lines" (line number + verbatim text), "duration_candidates" (id, line, text: every duration found in the JD) and "criteria" (criterion_id, display_text, has_years, target_hints with ids T1, T2, ...). target_hints come from an earlier automatic extraction: they are fixed, and they are not proof that the JD says them.
 
-For EVERY criterion return exactly one result:
-- requirement_spans: the JD text that states this requirement, as [{"line": n, "text": "verbatim text from line n"}] (part of a line is fine). If the JD does not state it, return [] and report "requirement_not_in_jd".
-- policy:
-  explicit_role  the requirement asks whether the candidate HELD a named position or its accountability;
-  functional     it asks whether the candidate PERFORMED a named kind of work, function or discipline, whatever the title;
-  mixed          one requirement lists both role alternatives and function alternatives;
-  sector         it asks for experience in a named sector or setting, with no role or function target;
-  pure_duration  total professional experience with no relevance restriction stated in the JD.
-- targets:
-  If the criterion has target_hints, return EVERY hint exactly once as {"hint": "T1", "type": "role" | "function"}. Never drop, rename, merge, split or add targets.
-  If it has no target_hints, you may select targets ONLY as verbatim JD text inside this criterion's requirement_spans: {"line": n, "text": "verbatim", "type": "role" | "function"}.
-  type "role" = a position title; type "function" = a kind of work, function or discipline.
-- setting: null, or a criterion-specific setting (industry/sector/environment) quoted verbatim from INSIDE this criterion's requirement_spans as {"line": n, "text": "verbatim"}. Never invent a setting and never take it from elsewhere in the JD.
-- duration: null, or the id of the duration candidate (D1, ...) that states THIS criterion's minimum experience; it must lie inside this criterion's requirement_spans. Never compute or restate a number. Only for has_years criteria.
-- ambiguity: [] or any of "ambiguous_relevance", "multiple_durations", "conflicting_requirements", "requirement_not_in_jd". Report ambiguity instead of guessing; never broaden a requirement.
-- note: one short sentence.
+For EVERY criterion return exactly one result.
 
-RULES
-1. Quote JD text exactly as written; never paraphrase.
-2. sector and pure_duration are only for criteria WITHOUT target_hints; they take no targets; pure_duration takes no setting; sector needs a setting.
-3. explicit_role targets are all roles, functional targets are all functions, mixed has at least one of each.
+1 REQUIREMENT_SPANS: the JD sentence(s) or bullet(s) that state THIS experience requirement, as [{"line": n, "text": "verbatim"}]. Quote the whole requirement statement; if it continues on the next line, quote each line. Never quote company descriptions, "about us", duties/responsibilities, other requirements (education, skills, licences, languages) or headings. If the JD does not state this requirement, return [] and report "requirement_not_in_jd".
+  Mark a span {"line": n, "text": "verbatim", "experience_requirement": true} ONLY when the quoted text itself states this experience requirement but contains neither its duration, nor a hint word for word, nor a phrase you map (e.g. "Experience in nursing is preferred."). Never mark company descriptions or context (e.g. "We are a leading bank."). Such a criterion stays unconfirmed: never add a jd_span just to anchor a span.
 
-OUTPUT — JSON only:
+2 TARGETS
+  a. Criterion WITH target_hints: return every hint exactly once as {"hint": "T1", "type": "role" | "function", "jd_span": null | {"line": n, "text": "verbatim"}}. Never drop, rename, merge, split, translate or add targets.
+  b. type "role": something a person can BE, a position title (Project Manager, Civil Engineer, Accountant, Assistant Project Manager). type "function": something a person DOES or works IN, a kind of work, discipline or field (project management, procurement, software implementation, accounting). Being supplied as a hint, or stored as a "role", never makes a target a role. If the type cannot be decided, use "function" and report "ambiguous_relevance".
+  c. Criterion WITHOUT target_hints: select targets only as verbatim text inside its requirement_spans, {"line": n, "text": "verbatim", "type": ...}, and only when the requirement names a role or function.
+
+3 JD_SPAN (target mapping), for each hint:
+  - A mapping means: the hint and a JD phrase name SUBSTANTIALLY THE SAME required role or function, and differ ONLY in wording, language or form (translation, abbreviation vs full form, noun vs verb form). It does NOT mean related, similar, compatible, adjacent, same family, narrower or broader.
+  - If the hint appears word for word inside this criterion's requirement_spans as the complete role/function, set jd_span = null (it is matched automatically).
+  - If the hint appears word for word only as part of a longer phrase that adds a material qualifier (e.g. "Project Manager" inside "Assistant Project Manager", "software implementation" inside "enterprise software implementation"), set jd_span = null and report "ambiguous_relevance".
+  - Otherwise you MAY set jd_span to the verbatim phrase inside THIS criterion's requirement_spans that names the same role or function. The phrase must keep EVERY qualifier that the JD attaches to that role/function: copy the complete phrase, never a shorter part that drops a qualifier (e.g. never "مدير مشروع" when the JD says "مدير مشروع إنشائي"). Copy whole words exactly as written, including attached letters (e.g. "كمدير مشروع إنشائي").
+  - A material qualifier is any word that adds, removes or changes: sector, industry, technology or platform, project type, role level or seniority (assistant, senior, junior, lead, head), professional specialisation, functional scope (coordination vs management, support vs administration) or environment/context. If the hint and the JD phrase differ in ANY material qualifier, in either direction, set jd_span = null.
+  - Never map to: working with, reporting to, supporting or being supervised by the target; the same employer, sector, project or industry; an adjacent profession; a transferable skill; general relevance; the duration; the setting; or text outside this criterion's requirement_spans.
+  - An abbreviation maps only when the requirement span itself makes its meaning unambiguous.
+  - A phrase may be mapped by at most one hint; if two hints seem to match the same phrase, return null for both.
+  - If you are not certain the meaning is the same, return null. null is always acceptable; a wrong mapping is not.
+  - A mapping never changes the target: the hint text stays exactly as supplied.
+
+4 POLICY
+  explicit_role  every target is a role: the candidate must have HELD one of the named positions.
+  functional     every target is a function: the candidate must have PERFORMED the named work, whatever the title (e.g. "experience managing construction projects" is functional: no position is named).
+  mixed          the alternatives include at least one role and at least one function.
+  sector         (no target_hints only) the requirement names only an industry/sector/setting, no role or function.
+  pure_duration  (no target_hints only) total professional experience with no restriction. If the JD says "relevant", "related", "similar" or "in the field" without naming what, use pure_duration AND report "ambiguous_relevance".
+  For criteria with target_hints the policy follows from the target types; sector and pure_duration are never used for them.
+
+5 SETTING: null, or the shortest complete verbatim phrase INSIDE this criterion's requirement_spans that restricts WHERE the experience must have been gained (industry, sector, project type or environment, e.g. "oil and gas sector", "commercial construction projects", "hospital"). Never take it from other JD text or the job title. Never use the hiring company's name, a location, seniority, tools or generic adjectives ("dynamic", "fast-paced", "multinational"). Do not extract a setting that is already part of a target (e.g. "Construction" in "Construction Project Manager"). If the setting does not clearly apply to EVERY alternative of the criterion, return null and report "ambiguous_relevance". sector needs a setting; pure_duration takes none.
+
+6 DURATION: null, or the id of the duration candidate inside this criterion's requirement_spans that states its minimum experience. Never compute or restate a number. If more than one candidate could be this criterion's minimum, return null and report "multiple_durations". Only for has_years criteria.
+
+7 AMBIGUITY: [] or any of:
+  "ambiguous_relevance"       what counts as relevant, a target's type, a target embedded in a longer qualified phrase, or the setting's scope is unclear;
+  "multiple_durations"        more than one duration could be this criterion's minimum;
+  "conflicting_requirements"  the JD states this requirement differently in different places, or names other roles/functions than the hints;
+  "requirement_not_in_jd"     the JD does not state this requirement.
+  Report ambiguity instead of guessing; never broaden a requirement.
+
+8 NOTE: one short sentence; for every non-null jd_span state that the only difference is wording, language or form.
+
+OUTPUT: JSON only:
 {"criteria": [{"criterion_id": "...", "policy": "explicit_role",
   "requirement_spans": [{"line": 7, "text": "verbatim"}],
-  "targets": [{"hint": "T1", "type": "role"}], "setting": null, "duration": "D1",
-  "ambiguity": [], "note": "one sentence"}]}""" + _SECURITY_HARDENING_SUFFIX
+  "targets": [{"hint": "T1", "type": "role", "jd_span": null}],
+  "setting": null, "duration": "D1", "ambiguity": [], "note": "one sentence"}]}""" + _SECURITY_HARDENING_SUFFIX
 
 
 def prompt_fingerprint() -> str:
@@ -139,7 +160,9 @@ def s1_cache_key(req: BuiltRequest, *, model: str = S1_MODEL) -> str:
 def repair_note(errors: list[str]) -> str:
     return ("Your previous JSON violates these rules. Return the COMPLETE corrected JSON with exactly one "
             "result for every criterion, fixing every violation and changing nothing else. Quote JD text "
-            "verbatim and never add, drop or rewrite targets:\n- " + "\n- ".join(errors[:40]))
+            "verbatim and never add, drop or rewrite targets. A jd_span is only for the SAME role/function in "
+            "different wording; when in doubt set it to null. Quote only the criterion's own requirement "
+            "statement:\n- " + "\n- ".join(errors[:40]))
 
 
 @dataclass
@@ -169,7 +192,8 @@ def _serialise_parsed(results: dict[str, ParsedCriterion]) -> dict:
                   "targets": [{"text": t.text, "type": t.type, "hint_id": t.hint_id,
                                "span": t.span.to_dict() if t.span else None} for t in p.targets],
                   "setting": p.setting.to_dict() if p.setting else None, "duration": p.duration_id,
-                  "ambiguity": list(p.ambiguity), "note": p.note} for cid, p in results.items()}
+                  "ambiguity": list(p.ambiguity), "note": p.note,
+                  "statement_anchored": p.statement_anchored} for cid, p in results.items()}
 
 
 def _deserialise_parsed(d: dict) -> dict[str, ParsedCriterion]:
@@ -179,7 +203,8 @@ def _deserialise_parsed(d: dict) -> dict[str, ParsedCriterion]:
         cid, p["policy"], tuple(Span.from_dict(s) for s in p["requirement_spans"]),
         tuple(ParsedTarget(t["text"], t["type"], t.get("hint_id"), Span.from_dict(t.get("span")))
               for t in p["targets"]),
-        Span.from_dict(p.get("setting")), p.get("duration"), tuple(p.get("ambiguity") or ()), p.get("note", ""))
+        Span.from_dict(p.get("setting")), p.get("duration"), tuple(p.get("ambiguity") or ()), p.get("note", ""),
+        bool(p.get("statement_anchored")))
         for cid, p in d.items()}
 
 
