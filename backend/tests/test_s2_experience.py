@@ -27,7 +27,8 @@ from services.s0_experience.text import split_lines
 from services.s2_experience import classifier as s2
 from services.s2_experience import masking as mk
 from services.s2_experience.masking import (
-    MASK_TOKEN, locate_quote, mask_free_text, mask_text, mask_threshold, merge_spans,
+    MASK_TOKEN, locate_evidence, locate_quote, mask_free_text, mask_text, mask_threshold, merge_spans,
+    title_core,
 )
 from services.s2_experience.validator import validate_response
 
@@ -455,11 +456,28 @@ class TestValidator:
         r["results"][0]["quotes"] = [{"line": 6, "text": "a "}]
         assert "S2-V6" in self._errs(doc, r)
 
-    @pytest.mark.parametrize("q", ["[dates]", "Led the [dates] national", "the [dates"])
-    def test_v7_mask_in_quote(self, doc, q):
+    # s2 v1.2: [dates] inside a VERIFIED quote is removed from the evidence; a quote
+    # with nothing meaningful outside the placeholder still fails S2-V7.
+    @pytest.mark.parametrize("q", ["[dates]", "[dat", "dates]"])
+    def test_v7_placeholder_only_quote(self, doc, q):
         r = json.loads(GOOD)
         r["results"][0]["quotes"] = [{"line": 7, "text": q}]
-        assert "S2-V7" in self._errs(doc, r)
+        assert "S2-V7 results[0] (E1).quotes[0]: quote has no evidence outside [dates] on line 7" \
+            in self._errs(doc, r)
+
+    def test_v7_placeholder_in_middle_gives_two_records(self, doc):
+        r = json.loads(GOOD)
+        r["results"][0]["quotes"] = [{"line": 7, "text": "Led the [dates] national"}]
+        v = validate_response(r, _views(doc), policy="explicit_role", has_setting=False)
+        assert v.ok, v.errors
+        recs = v.results[0].quotes
+        line7 = split_lines(CV)[6]
+        assert [(q["original_text"], q["segment"], q["segments"]) for q in recs] == [
+            ("Led the", 1, 2), ("national", 2, 2)]
+        for q in recs:
+            assert line7[q["char_start"]:q["char_end"]] == q["original_text"]
+            assert q["model_text"] == "Led the [dates] national" and q["transform"] == "placeholder_removed"
+            assert not any(c.isdigit() for c in q["original_text"])
 
     def test_v8_title_basis_needs_title_quote(self, doc):
         r = json.loads(GOOD)
@@ -684,7 +702,7 @@ class TestExplicitRoleSetting:
 class TestS2Versioning:
 
     def test_versions(self):
-        assert (s2.S2_PROMPT_VERSION, s2.S2_VERSION, s2.S2_INPUT_VERSION) == ("s2-2", "1.1.0", "s2-in-1")
+        assert (s2.S2_PROMPT_VERSION, s2.S2_VERSION, s2.S2_INPUT_VERSION) == ("s2-2", "1.2.0", "s2-in-1")
 
     def test_cache_key_depends_on_prompt_version_and_s2_version(self, monkeypatch):
         k = s2.s2_cache_key("s0", "spec")
@@ -706,14 +724,14 @@ class TestS2Versioning:
     def test_result_records_versions(self, construction_doc):
         out, _ = classify(construction_doc, CONSTRUCTION, construction_spec(), s2_resp(*CONSTRUCTION_RESULTS))
         d = out.to_dict()
-        assert d["s2_version"] == "1.1.0" and d["structurer"]["prompt_version"] == "s2-2"
+        assert d["s2_version"] == "1.2.0" and d["structurer"]["prompt_version"] == "s2-2"
         assert d["structurer"]["prompt_fingerprint"] == s2.prompt_fingerprint()
 
     def test_old_version_cache_entry_is_not_reused(self, construction_doc):
         cache = s2.InMemoryS2Cache()
         sp = construction_spec()
         out, _ = classify(construction_doc, CONSTRUCTION, sp, s2_resp(*CONSTRUCTION_RESULTS), cache=cache)
-        stale = dict(out.to_dict(), s2_version="1.0.0")
+        stale = dict(out.to_dict(), s2_version="1.1.0")
         cache.store = {s2.s2_cache_key(out.s0_cache_key, out.spec_hash, prompt_version="s2-1"): stale}
         _, client = classify(construction_doc, CONSTRUCTION, sp, s2_resp(*CONSTRUCTION_RESULTS), cache=cache)
         assert len(client.requests) == 1          # stale s2-1 entry ignored; fresh call made
@@ -962,3 +980,199 @@ class TestIsolation:
                 if "s2_experience" in p.read_text(encoding="utf-8"):
                     hits.append(str(p))
         assert hits == []
+
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# S2 v1.2: verify-first placeholder handling + V8 title evidence
+# ═════════════════════════════════════════════════════════════════════════════
+
+HEADER_CV = """EXPERIENCE
+Construction Project Manager | BuildCore Contractors | Mar 2017 – Present
+- Managed construction projects from initiation to closeout
+Performance Marketing Manager | OmniCart Retail | Jan 2012 – Feb 2017
+- Owned complex deliverables while coordinating technical and
+business stakeholders across paid campaigns"""
+HEADER_S0 = s0_resp([
+    s0_entry("A1", title=(2, "Construction Project Manager"), employer=(2, "BuildCore Contractors"),
+             header=(2,), body=[(3, 3)]),
+    s0_entry("A2", title=(4, "Performance Marketing Manager"), employer=(4, "OmniCart Retail"),
+             header=(4,), body=[(5, 6)])])
+WHOLE_HEADER = "Construction Project Manager | BuildCore Contractors | [dates]"
+MKT_HEADER = "Performance Marketing Manager | OmniCart Retail | [dates]"
+
+
+@pytest.fixture(scope="module")
+def header_doc():
+    d = s0_doc(HEADER_CV, HEADER_S0)
+    assert d.structure_status == "validated" and len(d.experience_entries()) == 2
+    return d
+
+
+def _hv(header_doc, *results, sp=None):
+    sp = sp or construction_spec()
+    return validate_response(s2_resp(*results), s2.build_request(header_doc, sp, HEADER_CV).entries,
+                             policy=sp.policy, has_setting=bool(sp.setting))
+
+
+def _date_chars(line_no: int) -> set[int]:
+    lines = split_lines(HEADER_CV)
+    a = next(a for a in extract_anchors_for(HEADER_CV) if a.line == line_no)
+    assert lines[line_no - 1][a.char_start:a.char_end] in ("Mar 2017 – Present", "Jan 2012 – Feb 2017")
+    return set(range(a.char_start, a.char_end))
+
+
+def extract_anchors_for(text):
+    from services.s0_experience.dates import extract_anchors
+    return extract_anchors(split_lines(text), (2026, 10)).anchors
+
+
+NR2 = res("E2", "not_relevant", [(5, "Owned complex deliverables")])
+
+
+class TestPlaceholderEvidence:
+
+    def test_whole_header_verified_then_placeholder_removed(self, header_doc):
+        v = _hv(header_doc, res("E1", "qualifying", [(2, WHOLE_HEADER)], basis="title"), NR2)
+        assert v.ok, v.errors
+        (q,) = v.results[0].quotes
+        line2 = split_lines(HEADER_CV)[1]
+        assert q == {"line": 2, "char_start": 0, "char_end": 52,
+                     "original_text": "Construction Project Manager | BuildCore Contractors",
+                     "model_text": WHOLE_HEADER, "occurrence": "only", "transform": "placeholder_removed"}
+        assert line2[q["char_start"]:q["char_end"]] == q["original_text"]
+        assert not set(range(q["char_start"], q["char_end"])) & _date_chars(2)     # no date characters
+
+    def test_forged_quote_with_placeholder_rejected_before_sanitising(self, header_doc):
+        v = _hv(header_doc, res("E1", "qualifying", [(2, "Construction Project Manager | [dates]")],
+                                basis="title"), NR2)
+        assert any(e.startswith("S2-V6 results[0] (E1).quotes[0]") and "not verbatim" in e for e in v.errors)
+        assert not any("S2-V7" in e for e in v.errors) and v.results == []
+
+    @pytest.mark.parametrize("q", ["[dates]", "| [dates]", "[dat"])
+    def test_placeholder_only_fails_v7(self, header_doc, q):
+        v = _hv(header_doc, res("E1", "qualifying", [(2, q)]), NR2)
+        assert any("S2-V7" in e and "no evidence outside [dates]" in e for e in v.errors)
+
+    def test_placeholder_in_middle_unit(self):
+        line = "Site Engineer | 2015 - 2018 | Delta Contracting"
+        ml = mask_text(line, [(16, 27)], 9)
+        assert ml.masked == "Site Engineer | [dates] | Delta Contracting"
+        spans, why = locate_evidence("Site Engineer | [dates] | Delta Contracting", ml, min_chars=3)
+        assert why is None
+        assert [(s_.original_text, s_.segment, s_.segments) for s_ in spans] == [
+            ("Site Engineer", 1, 2), ("Delta Contracting", 2, 2)]
+        for s_ in spans:
+            assert line[s_.char_start:s_.char_end] == s_.original_text
+            assert not set(range(s_.char_start, s_.char_end)) & set(range(16, 27))
+
+    def test_trim_only_next_to_removed_placeholder(self):
+        ml = mask_text("- Engineer (2015 - 2018) on site", [(12, 23)], 1)
+        assert ml.masked == "- Engineer ([dates]) on site"
+        spans, _ = locate_evidence("- Engineer ([dates]) on site", ml, min_chars=3)
+        assert [s_.original_text for s_ in spans] == ["- Engineer", "on site"]   # leading "- " kept (not adjacent)
+
+    def test_repeated_occurrence_deterministic(self):
+        line = "Lead | 2019 - 2020 | Lead | 2021 - 2022"
+        ml = mask_text(line, [(7, 18), (28, 39)], 1)
+        assert ml.masked == "Lead | [dates] | Lead | [dates]"
+        spans, _ = locate_evidence("Lead | [dates]", ml, min_chars=3)
+        (sp,) = spans
+        assert (sp.char_start, sp.char_end, sp.original_text, sp.occurrence) == (0, 4, "Lead", "first_of_2")
+
+    def test_quote_without_placeholder_keeps_previous_shape(self, header_doc):
+        v = _hv(header_doc, res("E1", "qualifying",
+                                [(3, "Managed construction projects from initiation to closeout")]), NR2)
+        assert v.ok
+        assert set(v.results[0].quotes[0]) == {"line", "char_start", "char_end", "original_text",
+                                               "model_text", "occurrence"}
+        ml = mask_text("led team; led team", [], 1)
+        assert locate_evidence("led team", ml, min_chars=3)[0] == [locate_quote("led team", ml)[0]]
+
+    def test_multiline_responsibility_quote_still_rejected(self, header_doc):
+        joined = "Owned complex deliverables while coordinating technical and business stakeholders"
+        v = _hv(header_doc, res("E1", "qualifying", [(2, WHOLE_HEADER)], basis="title"),
+                res("E2", "not_relevant", [(5, joined)]))
+        assert any(e.startswith("S2-V6 results[1] (E2).quotes[0]") for e in v.errors)
+
+
+class TestTitleBasisV12:
+
+    def test_title_core(self):
+        assert title_core("Engineer [dates]") == "engineer"
+        assert title_core("[dates] - Site Engineer") == "site engineer"
+        assert title_core("[dates]") == "" and title_core(None) == ""
+
+    @pytest.mark.parametrize("quote", [
+        WHOLE_HEADER,                                                  # whole header with [dates]
+        "Construction Project Manager | BuildCore Contractors |",       # the real repaired quote
+        "Construction Project Manager",                                 # exact title
+        "Project Manager",                                              # partial title: existing debt, still passes
+    ])
+    def test_title_basis_passes(self, header_doc, quote):
+        v = _hv(header_doc, res("E1", "qualifying", [(2, quote)], basis="title"), NR2)
+        assert v.ok, v.errors
+
+    def test_employer_only_quote_on_title_line_fails(self, header_doc):
+        v = _hv(header_doc, res("E1", "qualifying", [(2, "BuildCore Contractors")], basis="title"), NR2)
+        assert any(e.startswith("S2-V8 results[0] (E1): basis=title requires") for e in v.errors)
+
+    def test_title_evidence_on_wrong_line_fails(self):
+        text = ("EXPERIENCE\nConstruction Project Manager\nConstruction Project Manager | BuildCore Contractors\n"
+                "Mar 2017 – Present\n- Managed projects")
+        d = s0_doc(text, s0_resp([s0_entry("A1", title=(2, "Construction Project Manager"),
+                                           employer=(3, "BuildCore Contractors"), header=(2, 3, 4),
+                                           body=[(5, 5)])]))
+        sp = construction_spec()
+        v = validate_response(s2_resp(res("E1", "qualifying",
+                                          [(3, "Construction Project Manager | BuildCore Contractors")],
+                                          basis="title")),
+                              s2.build_request(d, sp, text).entries, policy=sp.policy, has_setting=True)
+        assert any(e.startswith("S2-V8") for e in v.errors)
+
+    def test_title_with_placeholder_uses_token_free_core(self):
+        text = "EXPERIENCE\nSite Engineer 2015 - 2018\n- Supervised works"
+        d = s0_doc(text, s0_resp([s0_entry("A1", title=(2, "Site Engineer 2015 - 2018"), header=(2,),
+                                           body=[(3, 3)])]))
+        sp = construction_spec()
+        req = s2.build_request(d, sp, text)
+        assert req.entries[0].title_masked == "Site Engineer [dates]"
+        v = validate_response(s2_resp(res("E1", "related", [(2, "Site Engineer [dates]")], basis="title")),
+                              req.entries, policy=sp.policy, has_setting=True)
+        assert v.ok, v.errors
+        assert v.results[0].quotes[0]["original_text"] == "Site Engineer"
+
+
+class TestRealFailureShapes:
+    """Recorded response shapes from the real JOB-2026-0031 run: labels unchanged, now valid."""
+
+    def test_qualifying_title_whole_header(self, header_doc):
+        out, client = classify(header_doc, HEADER_CV, construction_spec(), s2_resp(
+            res("E1", "qualifying", [(2, WHOLE_HEADER)], basis="title"),
+            res("E2", "not_relevant", [(4, MKT_HEADER)], basis="title")))
+        assert out.ok and out.structurer["outcome"] == "validated" and len(client.requests) == 1
+        assert out.labels() == {"E1": "qualifying", "E2": "not_relevant"}
+        assert out.results[0]["quotes"][0]["model_text"] == WHOLE_HEADER                 # raw text kept
+
+    def test_title_and_responsibilities_whole_header(self, header_doc):
+        out, _ = classify(header_doc, HEADER_CV, construction_spec(), s2_resp(
+            res("E1", "qualifying", [(2, WHOLE_HEADER),
+                                     (3, "Managed construction projects from initiation to closeout")],
+                basis="title_and_responsibilities"), NR2))
+        assert out.ok and out.labels()["E1"] == "qualifying"
+        assert [q["original_text"] for q in out.results[0]["quotes"]] == [
+            "Construction Project Manager | BuildCore Contractors",
+            "Managed construction projects from initiation to closeout"]
+
+    def test_not_relevant_repair_with_whole_header(self, header_doc):
+        main = s2_resp(res("E1", "qualifying", [(2, WHOLE_HEADER)], basis="title"),
+                       res("E2", "not_relevant", [], basis="title"))                    # S2-V4: no quote
+        repair = s2_resp(res("E1", "qualifying", [(2, WHOLE_HEADER)], basis="title"),
+                         res("E2", "not_relevant", [(4, MKT_HEADER)], basis="title"))
+        out, client = classify(header_doc, HEADER_CV, construction_spec(), main, repair)
+        assert out.ok and out.structurer["outcome"] == "repaired" and len(client.requests) == 2
+        assert any("S2-V4" in e for e in out.validation["errors"])
+        assert out.labels() == {"E1": "qualifying", "E2": "not_relevant"}
+        q = out.results[1]["quotes"][0]
+        assert q["original_text"] == "Performance Marketing Manager | OmniCart Retail"
+        assert not set(range(q["char_start"], q["char_end"])) & _date_chars(4)

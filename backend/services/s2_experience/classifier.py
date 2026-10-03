@@ -61,7 +61,7 @@ from services.s2_experience.validator import EntryView, validate_response
 logger = logging.getLogger(__name__)
 
 S2_SCHEMA = "s2_result_v1"
-S2_VERSION = "1.1.0"                   # input format + masking + validator
+S2_VERSION = "1.2.0"                   # input format + masking + validator
 S2_INPUT_VERSION = "s2-in-1"
 S2_PROMPT_CODE = "recruitment.experience_relevance"
 S2_PROMPT_VERSION = "s2-2"

@@ -182,6 +182,16 @@ class QuoteSpan:
     char_end: int
     original_text: str
     occurrence: str                       # "only" | "first_of_<n>"
+    transform: str | None = None          # "placeholder_removed" when [dates] was dropped
+    segment: int | None = None            # 1..n when one model quote maps to n > 1 spans
+    segments: int | None = None
+
+
+PLACEHOLDER_REMOVED = "placeholder_removed"
+# Separator artifacts trimmed ONLY at an edge immediately adjacent to a removed placeholder.
+_SEP = " \t|,;:·•/-–—"
+_TRIM_BEFORE_TOKEN = _SEP + "("          # right edge of a run that is followed by [dates]
+_TRIM_AFTER_TOKEN = _SEP + ")"           # left edge of a run that follows [dates]
 
 
 def locate_quote(quote: str, ml: MaskedLine) -> tuple[QuoteSpan | None, str | None]:
@@ -206,3 +216,81 @@ def locate_quote(quote: str, ml: MaskedLine) -> tuple[QuoteSpan | None, str | No
     os_, oe = ml.origin[ms], ml.origin[me - 1] + 1
     return QuoteSpan(os_, oe, ml.original[os_:oe],
                      "only" if len(clean) == 1 else f"first_of_{len(clean)}"), None
+
+
+def _meaningful(text: str, min_chars: int) -> bool:
+    return len("".join(text.split())) >= min_chars and any(c.isalnum() for c in text)
+
+
+def locate_evidence(quote: str, ml: MaskedLine, *, min_chars: int
+                    ) -> tuple[list[QuoteSpan] | None, str | None]:
+    """Verify-then-map a model quote against one masked line (S2 v1.2).
+
+    1. A quote whose normalised text matches the masked line WITHOUT touching a
+       [dates] token is mapped exactly as ``locate_quote`` always did (same span,
+       same occurrence metadata, no new fields).
+    2. Otherwise the COMPLETE quote (placeholder text included) must still be a
+       normalised verbatim substring of the masked line — if not: "not_found",
+       nothing is sanitised. Only then are the characters that belong to a mask
+       token (origin None, including partial "[dat" / "dates]") removed; the
+       remaining maximal runs map to genuine original characters only. Separator
+       artifacts are trimmed only at edges adjacent to a removed token. Runs
+       that are not meaningful (< min_chars non-space chars or no letter/digit)
+       are dropped; if none remain -> "placeholder_only". Two or more runs give
+       one QuoteSpan each (segment k of n) — never one span across a hidden date.
+    """
+    span, why = locate_quote(quote, ml)
+    if span is not None:
+        return [span], None
+    q = normalize(quote)
+    if not q:
+        return None, "not_found"
+    hay, idx = _norm_with_index(ml.masked)
+    occ = list(_find_all(hay, q))
+    if not occ:
+        return None, "not_found"
+    i = occ[0]                                            # deterministic first occurrence
+    ms, me = idx[i], idx[i + len(q) - 1] + 1
+    runs: list[list[int]] = []                            # [first, last] masked indices with an origin
+    for k in range(ms, me):
+        if ml.origin[k] is None:
+            continue
+        if runs and runs[-1][1] == k - 1:
+            runs[-1][1] = k
+        else:
+            runs.append([k, k])
+    kept: list[tuple[int, int]] = []
+    for a_m, b_m in runs:
+        a, b = ml.origin[a_m], ml.origin[b_m] + 1
+        if a_m > ms and ml.origin[a_m - 1] is None:       # follows a removed token
+            while a < b and ml.original[a] in _TRIM_AFTER_TOKEN:
+                a += 1
+        if b_m + 1 < me and ml.origin[b_m + 1] is None:   # followed by a removed token
+            while b > a and ml.original[b - 1] in _TRIM_BEFORE_TOKEN:
+                b -= 1
+        if b > a and _meaningful(ml.original[a:b], min_chars):
+            kept.append((a, b))
+    if not kept:
+        return None, "placeholder_only"
+    occurrence = "only" if len(occ) == 1 else f"first_of_{len(occ)}"
+    n = len(kept)
+    return [QuoteSpan(a, b, ml.original[a:b], occurrence, PLACEHOLDER_REMOVED,
+                      k if n > 1 else None, n if n > 1 else None)
+            for k, (a, b) in enumerate(kept, 1)], None
+
+
+def title_core(title_masked: str | None) -> str:
+    """Normalised title with every [dates] token removed and the separator artifacts
+    adjacent to it trimmed; the remaining pieces joined by one space."""
+    if not title_masked:
+        return ""
+    pieces = title_masked.split(MASK_TOKEN)
+    out = []
+    for k, piece in enumerate(pieces):
+        if k > 0:
+            piece = piece.lstrip(_TRIM_AFTER_TOKEN)
+        if k < len(pieces) - 1:
+            piece = piece.rstrip(_TRIM_BEFORE_TOKEN)
+        if piece.strip():
+            out.append(piece)
+    return normalize(" ".join(out))

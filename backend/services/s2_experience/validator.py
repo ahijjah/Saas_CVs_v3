@@ -13,10 +13,19 @@ model-generated text is ever used as recruiter-facing evidence.
   S2-V4  quotes >= 1 for qualifying/related/not_relevant; insufficient needs
          >= 1 ``missing`` value; ``missing`` only with insufficient.
   S2-V5  each quote's line is one of THAT entry's supplied lines.
-  S2-V6  quote text is a verbatim (normalised) substring of that masked line,
-         with >= 3 non-space characters.
-  S2-V7  quote must not contain or overlap the [dates] mask.
-  S2-V8  basis=title -> >= 1 quote on the title line inside the title text;
+  S2-V6  the COMPLETE quote (any [dates] placeholder text included) is a verbatim
+         (normalised) substring of that masked line, with >= 3 non-space characters.
+         Verified first — nothing is sanitised before this check passes.
+  S2-V7  [dates] never becomes evidence: after verification the placeholder
+         characters are removed (masking.locate_evidence); separator artifacts
+         next to it are trimmed; a quote with no meaningful evidence outside the
+         placeholder fails. A placeholder splitting the quote yields one evidence
+         record per side (segment k of n) — never one span across a hidden date.
+  S2-V8  basis=title -> >= 1 retained evidence record on the title line whose
+         normalised text contains the title core or is contained in it
+         (masking.title_core: [dates] removed). The "contained in the title"
+         direction accepts partial titles — existing technical debt kept for
+         compatibility, may be tightened separately.
          basis=context only for sector, or functional/explicit_role with a setting.
   S2-V9  any other field is ignored and never trusted.
 """
@@ -25,7 +34,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from services.s2_experience.masking import MASK_TOKEN, MaskedLine, locate_quote, normalize
+from services.s2_experience.masking import MASK_TOKEN, MaskedLine, locate_evidence, normalize, title_core
 
 LABELS = ("qualifying", "related", "not_relevant", "insufficient")
 BASES = ("title", "responsibilities", "title_and_responsibilities", "context")
@@ -149,30 +158,34 @@ def validate_response(raw: str | dict, entries: list[EntryView], *, policy: str,
                            f"{sorted(ent.lines)}")
                 ok = False
                 continue
-            if MASK_TOKEN in text or "[dates" in text or "dates]" in text:
-                err.append(f"S2-V7 {qw}: quotes must not contain the {MASK_TOKEN} placeholder")
-                ok = False
-                continue
             if len(normalize(text).replace(" ", "")) < MIN_QUOTE_CHARS:
                 err.append(f"S2-V6 {qw}: quote is too short")
                 ok = False
                 continue
-            span, why = locate_quote(text, ent.lines[ln])
-            if span is None:
-                if why == "overlaps_mask":
-                    err.append(f"S2-V7 {qw}: quote overlaps the {MASK_TOKEN} placeholder on line {ln}")
+            spans, why = locate_evidence(text, ent.lines[ln], min_chars=MIN_QUOTE_CHARS)
+            if spans is None:
+                if why == "placeholder_only":
+                    err.append(f"S2-V7 {qw}: quote has no evidence outside {MASK_TOKEN} on line {ln}")
                 else:
                     err.append(f"S2-V6 {qw}: {text!r} is not verbatim on line {ln} "
                                f"({ent.lines[ln].masked[:80]!r})")
                 ok = False
                 continue
-            quotes.append({"line": ln, "char_start": span.char_start, "char_end": span.char_end,
-                           "original_text": span.original_text, "model_text": text,
-                           "occurrence": span.occurrence})
+            for span in spans:
+                q_rec = {"line": ln, "char_start": span.char_start, "char_end": span.char_end,
+                         "original_text": span.original_text, "model_text": text,
+                         "occurrence": span.occurrence}
+                if span.transform:
+                    q_rec["transform"] = span.transform
+                if span.segments:
+                    q_rec["segment"], q_rec["segments"] = span.segment, span.segments
+                quotes.append(q_rec)
 
         if ok and basis == "title":
-            on_title = [q for q in quotes if q["line"] == ent.title_line and ent.title_masked
-                        and normalize(q["model_text"]) in normalize(ent.title_masked)]
+            core = title_core(ent.title_masked)
+            on_title = [q for q in quotes if q["line"] == ent.title_line and core
+                        and (core in normalize(q["original_text"])
+                             or normalize(q["original_text"]) in core)]
             if not on_title:
                 err.append(f"S2-V8 {w}: basis=title requires a quote of the title on its title line")
                 ok = False
