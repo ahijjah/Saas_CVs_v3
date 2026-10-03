@@ -1,0 +1,845 @@
+{
+ "_comment": "HELD-OUT synthetic boundary cases for S1 s1-3 (semantic equivalence and qualifier preservation). Vocabulary is disjoint from the production prompt illustrations and from s1_boundary_cases.json, so it measures generalisation. No candidate, CV, application or personal data. Same schema as s1_boundary_cases.json.",
+ "fixture_version": "s1-heldout-1",
+ "cases": [
+  {
+   "id": "HO01",
+   "family": "HO_exact_role",
+   "description": "exact role",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Air Traffic Controller"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as an Air Traffic Controller."
+   ],
+   "oracle": {
+    "policy": "explicit_role",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience as an Air Traffic Controller"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Air Traffic Controller",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 4 years of experience as an Air Traffic Controller"
+    ]
+   }
+  },
+  {
+   "id": "HO02",
+   "family": "HO_translated_role",
+   "description": "Arabic translation with attached letter",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Veterinarian"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات كطبيب بيطري."
+   ],
+   "oracle": {
+    "policy": "explicit_role",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 3 سنوات كطبيب بيطري"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "كطبيب بيطري"
+      }
+     }
+    ],
+    "setting": null,
+    "duration": "3 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Veterinarian",
+      "type": "role",
+      "provenance": "jd_asserted",
+      "mapped": true
+     }
+    ],
+    "setting": null,
+    "duration": "3 سنوات",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "خبرة 3 سنوات كطبيب بيطري"
+    ]
+   }
+  },
+  {
+   "id": "HO03",
+   "family": "HO_qualifier_dropped",
+   "description": "Arabic JD drops the specialisation",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Equine Veterinarian"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات كطبيب بيطري."
+   ],
+   "oracle": {
+    "policy": "explicit_role",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 3 سنوات كطبيب بيطري"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Equine Veterinarian",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 سنوات",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "خبرة 3 سنوات كطبيب بيطري"
+    ]
+   }
+  },
+  {
+   "id": "HO04",
+   "family": "HO_translated_function",
+   "description": "Arabic function translation",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "web development"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات في تطوير الويب."
+   ],
+   "oracle": {
+    "policy": "functional",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 4 سنوات في تطوير الويب"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "تطوير الويب"
+      }
+     }
+    ],
+    "setting": null,
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "web development",
+      "type": "function",
+      "provenance": "jd_asserted",
+      "mapped": true
+     }
+    ],
+    "setting": null,
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "خبرة 4 سنوات في تطوير الويب"
+    ]
+   }
+  },
+  {
+   "id": "HO05",
+   "family": "HO_qualifier_added",
+   "description": "Arabic JD narrows the function",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "web development"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات في تطوير مواقع التجارة الإلكترونية."
+   ],
+   "oracle": {
+    "policy": "functional",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 4 سنوات في تطوير مواقع التجارة الإلكترونية"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "web development",
+      "type": "function",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "خبرة 4 سنوات في تطوير مواقع التجارة الإلكترونية"
+    ]
+   }
+  },
+  {
+   "id": "HO06",
+   "family": "HO_grammatical",
+   "description": "noun vs verb form",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "event planning"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience planning events."
+   ],
+   "oracle": {
+    "policy": "functional",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience planning events"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "planning events"
+      }
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "event planning",
+      "type": "function",
+      "provenance": "jd_asserted",
+      "mapped": true
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 3 years of experience planning events"
+    ]
+   }
+  },
+  {
+   "id": "HO07",
+   "family": "HO_qualifier_added",
+   "description": "JD narrows the event type",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "event planning"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience planning corporate events."
+   ],
+   "oracle": {
+    "policy": "functional",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience planning corporate events"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "event planning",
+      "type": "function",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 3 years of experience planning corporate events"
+    ]
+   }
+  },
+  {
+   "id": "HO08",
+   "family": "HO_adjacent",
+   "description": "adjacent function",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "event planning"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience in event ticket sales."
+   ],
+   "oracle": {
+    "policy": "functional",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience in event ticket sales"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "event planning",
+      "type": "function",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 3 years of experience in event ticket sales"
+    ]
+   }
+  },
+  {
+   "id": "HO09",
+   "family": "HO_abbreviation",
+   "description": "abbreviation expanded in the JD",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "UX Designer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years as a User Experience Designer."
+   ],
+   "oracle": {
+    "policy": "explicit_role",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years as a User Experience Designer"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "User Experience Designer"
+      }
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "UX Designer",
+      "type": "role",
+      "provenance": "jd_asserted",
+      "mapped": true
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 3 years as a User Experience Designer"
+    ]
+   }
+  },
+  {
+   "id": "HO10",
+   "family": "HO_seniority",
+   "description": "target embedded in a more senior title",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Pilot"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Chief Pilot."
+   ],
+   "oracle": {
+    "policy": "explicit_role",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience as a Chief Pilot"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Pilot",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 5 years of experience as a Chief Pilot"
+    ]
+   }
+  },
+  {
+   "id": "HO11",
+   "family": "HO_qualifier_dropped",
+   "description": "JD drops the licence qualifier",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Commercial Pilot"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Pilot."
+   ],
+   "oracle": {
+    "policy": "explicit_role",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience as a Pilot"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Commercial Pilot",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 5 years of experience as a Pilot"
+    ]
+   }
+  },
+  {
+   "id": "HO12",
+   "family": "HO_typing",
+   "description": "function stored as a role",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "copywriting"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of copywriting experience."
+   ],
+   "oracle": {
+    "policy": "functional",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years of copywriting experience"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "copywriting",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "At least 3 years of copywriting experience"
+    ]
+   }
+  },
+  {
+   "id": "HO13",
+   "family": "HO_typing",
+   "description": "role counterpart",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Copywriter"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience as a Copywriter."
+   ],
+   "oracle": {
+    "policy": "explicit_role",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years of experience as a Copywriter"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Copywriter",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "At least 3 years of experience as a Copywriter"
+    ]
+   }
+  },
+  {
+   "id": "HO14",
+   "family": "HO_works_with",
+   "description": "works with the target's team",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Veterinarian"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience working with veterinary teams."
+   ],
+   "oracle": {
+    "policy": "explicit_role",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience working with veterinary teams"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Veterinarian",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 3 years of experience working with veterinary teams"
+    ]
+   }
+  },
+  {
+   "id": "HO15",
+   "family": "HO_typing",
+   "description": "role and function alternatives",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Copywriter",
+     "content editing"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years as a Copywriter or in content editing."
+   ],
+   "oracle": {
+    "policy": "mixed",
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years as a Copywriter or in content editing"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     },
+     {
+      "hint": "T2",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "mixed",
+    "targets": [
+     {
+      "text": "Copywriter",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     },
+     {
+      "text": "content editing",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "At least 3 years as a Copywriter or in content editing"
+    ]
+   }
+  }
+ ]
+}

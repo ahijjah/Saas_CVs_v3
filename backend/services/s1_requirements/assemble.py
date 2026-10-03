@@ -188,11 +188,12 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
     # audit only (no effect on status, provenance or views): every AI mapping and every jd_asserted target
     target_mappings = [
         {"target_id": t.target_id, "target_text": pt.text, "mapped_text": pt.span.text, "line": pt.span.line,
-         "start": pt.span.start, "end": pt.span.end, "used": t.provenance == PROV_JD_ASSERTED}
+         "start": pt.span.start, "end": pt.span.end, "used": t.provenance == PROV_JD_ASSERTED, "match": pt.match}
         for pt, t in zip(pc.targets, targets) if pt.hint_id and pt.span is not None]
     review_required = [t.target_id for t in targets if t.provenance == PROV_JD_ASSERTED]
     audit = {**_hint_audit(c, rf), "jd_sha256": jd.text_sha256, "duration_candidates_in_requirement": in_req,
              "target_mappings": target_mappings, "review_required": review_required,
+             "target_matches": {t.target_id: pt.match for pt, t in zip(pc.targets, targets) if pt.hint_id},
              "ai": {"policy": pc.policy, "duration": pc.duration_id, "ambiguity": list(pc.ambiguity),
                     "note": pc.note},
              "call": run.get("call", {})}

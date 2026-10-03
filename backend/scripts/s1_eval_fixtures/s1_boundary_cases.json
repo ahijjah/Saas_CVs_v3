@@ -1,6 +1,6 @@
 {
- "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants.",
- "fixture_version": "s1-boundary-1",
+ "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants. s1-boundary-2: oracle hint targets gained the s1-3 'match' field (structural only; every 'expected' label is unchanged from s1-boundary-1).",
+ "fixture_version": "s1-boundary-2",
  "cases": [
   {
    "id": "A1",
@@ -28,6 +28,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "exact",
       "jd_span": null
      }
     ],
@@ -81,6 +82,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "equivalent",
       "jd_span": {
        "line": 2,
        "text": "كمدير مشروع إنشائي"
@@ -137,6 +139,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "equivalent",
       "jd_span": {
        "line": 2,
        "text": "كمهندس موقع"
@@ -193,6 +196,7 @@
      {
       "hint": "T1",
       "type": "function",
+      "match": "equivalent",
       "jd_span": {
        "line": 2,
        "text": "المشتريات"
@@ -249,6 +253,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "equivalent",
       "jd_span": {
        "line": 2,
        "text": "كمحاسب"
@@ -305,6 +310,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -358,6 +364,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -411,6 +418,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -468,6 +476,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -525,6 +534,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -582,6 +592,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -635,6 +646,7 @@
      {
       "hint": "T1",
       "type": "function",
+      "match": "exact",
       "jd_span": null
      }
     ],
@@ -688,6 +700,7 @@
      {
       "hint": "T1",
       "type": "function",
+      "match": "exact",
       "jd_span": null
      }
     ],
@@ -741,6 +754,7 @@
      {
       "hint": "T1",
       "type": "function",
+      "match": "equivalent",
       "jd_span": {
        "line": 2,
        "text": "implementing software"
@@ -797,6 +811,7 @@
      {
       "hint": "T1",
       "type": "function",
+      "match": "equivalent",
       "jd_span": {
        "line": 2,
        "text": "administering databases"
@@ -853,6 +868,7 @@
      {
       "hint": "T1",
       "type": "function",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -906,6 +922,7 @@
      {
       "hint": "T1",
       "type": "function",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -963,6 +980,7 @@
      {
       "hint": "T1",
       "type": "function",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -1016,6 +1034,7 @@
      {
       "hint": "T1",
       "type": "function",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -1069,6 +1088,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -1122,6 +1142,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "equivalent",
       "jd_span": {
        "line": 2,
        "text": "Project Manager"
@@ -1178,6 +1199,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -1232,11 +1254,13 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "exact",
       "jd_span": null
      },
      {
       "hint": "T2",
       "type": "function",
+      "match": "exact",
       "jd_span": null
      }
     ],
@@ -1434,6 +1458,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "exact",
       "jd_span": null
      }
     ],
@@ -1656,6 +1681,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -1710,6 +1736,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "exact",
       "jd_span": null
      }
     ],
@@ -1767,6 +1794,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "exact",
       "jd_span": null
      }
     ],
@@ -1866,6 +1894,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "exact",
       "jd_span": null
      }
     ],
@@ -1935,6 +1964,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "exact",
       "jd_span": null
      }
     ],
@@ -1999,6 +2029,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],
@@ -2050,6 +2081,7 @@
      {
       "hint": "T1",
       "type": "role",
+      "match": "none",
       "jd_span": null
      }
     ],

@@ -44,6 +44,7 @@ from services.s1_requirements import classifier as clf  # noqa: E402
 from services.s1_requirements import schema as sc  # noqa: E402
 from services.s1_requirements.criteria import enumerate_experience_criteria  # noqa: E402
 from services.s1_requirements.jd_text import JDText, normalize  # noqa: E402
+from services.s1_requirements.validator import implied_policy  # noqa: E402
 
 FIXTURE = Path(__file__).resolve().parent / "s1_eval_fixtures" / "s1_boundary_cases.json"
 PRICE_IN, PRICE_OUT = 0.15, 0.60          # gpt-4o-mini USD per 1M tokens (ASSUMPTION; override with flags)
@@ -126,7 +127,40 @@ class Capture:
 
 # ── observation + scoring ────────────────────────────────────────────────────
 
-def observe(case: dict, out) -> dict:
+def _first_item(content) -> dict | None:
+    try:
+        it = json.loads(content)["criteria"][0]
+    except (TypeError, ValueError, KeyError, IndexError):
+        return None
+    return it if isinstance(it, dict) else None
+
+
+def _types(item: dict) -> list:
+    return [t.get("type") for t in item.get("targets") or [] if isinstance(t, dict)]
+
+
+def call_diagnostics(case: dict, raw: list) -> dict:
+    """Diagnostics from the raw main/repair answers (before validation)."""
+    main = next((_first_item(x["content"]) for x in raw if x["call"] == "main"), None)
+    rep = next((_first_item(x["content"]) for x in raw if x["call"] == "repair"), None)
+    exp_types = sorted(t["type"] for t in case["expected"]["targets"])
+    d = {"type_ok_policy_inconsistent_main": False, "repair_to_mixed_incorrect": False,
+         "repair_changed_types": False}
+    if main is not None:
+        mt = _types(main)
+        imp = implied_policy([t for t in mt if t in ("role", "function")])
+        d["type_ok_policy_inconsistent_main"] = (sorted(mt) == exp_types and imp is not None
+                                                 and main.get("policy") != imp)
+    if main is not None and rep is not None:
+        rt = _types(rep)
+        d["repair_changed_types"] = _types(main) != rt
+        d["repair_to_mixed_incorrect"] = (rep.get("policy") == "mixed" and main.get("policy") != "mixed"
+                                          and (set(rt) != {"role", "function"}
+                                               or case["expected"]["policy"] != "mixed"))
+    return d
+
+
+def observe(case: dict, out, raw: list = ()) -> dict:
     art = out.artifacts[0]
     outcome = {sc.STATUS_FAILED_TECHNICAL: "technical",
                sc.STATUS_FAILED_VALIDATION: "validation"}.get(art.spec_status, "ok")
@@ -138,6 +172,7 @@ def observe(case: dict, out) -> dict:
         "calls": [{k: c.get(k) for k in ("call", "finish_reason", "prompt_tokens", "completion_tokens")}
                   for c in log],
         "error": out.meta.get("error"),
+        "diagnostics": call_diagnostics(case, list(raw)),
     }
     if outcome != "ok":
         return obs
@@ -153,6 +188,7 @@ def observe(case: dict, out) -> dict:
         "spans": [{"line": s.line, "text": s.text} for s in art.requirement_spans],
         "anchor": art.audit.get("requirement_anchor"),
         "note": ai.get("note"),
+        "matches": art.audit.get("target_matches", {}),
     })
     return obs
 
@@ -229,7 +265,7 @@ async def run_case(case: dict, client, model: str) -> tuple[dict, list]:
     sink: list = []
     out = await clf.classify_job(case_job_id(case), case_jd(case), case_analysis(case),
                                  client=Capture(client, sink), model=model, cache=None)
-    return observe(case, out), sink
+    return observe(case, out, sink), sink
 
 
 async def run_all(cases: list[dict], *, runs: int, client_for, model: str) -> list[dict]:
@@ -325,6 +361,10 @@ def summarize(records: list[dict], cases: list[dict], *, price_in: float = PRICE
         "type_confusion": {k: dict(v) for k, v in sorted(confusion.items())},
         "stability": stability, "unstable_cases": unstable,
         "by_family": {f: {"pass": p, "runs": n} for f, (p, n) in sorted(fam.items())},
+        "diagnostics": {k: sum(1 for r in records if r["diagnostics"][k])
+                        for k in ("type_ok_policy_inconsistent_main", "repair_to_mixed_incorrect",
+                                  "repair_changed_types")},
+        "match_counts": dict(Counter(m for r in ok for m in r["matches"].values())),
         "semantic_failures": [{"case": r["case"], "run": r["run"],
                                "failed_fields": [f for f, v in r["checks"].items() if not v]}
                               for r in ok if not r["pass"]],
@@ -365,6 +405,9 @@ def render_markdown(meta: dict, s: dict) -> str:
         *[f"- semantic {x['case']} run {x['run']}: {', '.join(x['failed_fields'])}" for x in s["semantic_failures"]],
         *[f"- validation {x['case']} run {x['run']}" for x in s["validation_failures"]],
         *[f"- technical {x['case']} run {x['run']}: {x['status_reasons']}" for x in s["technical_failures"]], "",
+        "## Diagnostics",
+        *[f"- {k}: {v}" for k, v in s["diagnostics"].items()],
+        f"- match counts (ok runs): {s['match_counts']}", "",
         "## By family",
         *[f"- {f}: {v['pass']}/{v['runs']}" for f, v in s["by_family"].items()], "",
         f"Tokens: prompt {s['tokens']['prompt']}, completion {s['tokens']['completion']}; "

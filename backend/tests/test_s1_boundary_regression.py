@@ -106,7 +106,7 @@ class TestFixture:
 class TestMetrics:
     def test_false_positive_jd_asserted(self):
         # C2: model maps the generic Arabic "كمدير مشروع" (valid span, wrong semantics)
-        bad = with_oracle("C2", targets=[{"hint": "T1", "type": "role",
+        bad = with_oracle("C2", targets=[{"hint": "T1", "type": "role", "match": "equivalent",
                                           "jd_span": {"line": 2, "text": "كمدير مشروع"}}])
         records, cases = scripted_records({"C2": [[bad]], "B1": None, "G1": None})
         s = br.summarize(records, cases)
@@ -120,13 +120,14 @@ class TestMetrics:
         assert s["semantic_error_runs"] == 1 and s["outcomes"]["ok"] == 3
 
     def test_false_negative_jd_asserted(self):
-        miss = with_oracle("G1", targets=[{"hint": "T1", "type": "function", "jd_span": None}])
+        miss = with_oracle("G1", targets=[{"hint": "T1", "type": "function", "match": "none", "jd_span": None}])
         records, cases = scripted_records({"G1": [[miss]], "B1": None})
         j = br.summarize(records, cases)["jd_asserted"]
         assert (j["tp"], j["fp"], j["fn"], j["recall"]) == (1, 0, 1, 0.5)
 
     def test_role_function_confusion(self):
-        wrong = with_oracle("F1", policy="explicit_role", targets=[{"hint": "T1", "type": "role", "jd_span": None}])
+        wrong = with_oracle("F1", policy="explicit_role",
+                            targets=[{"hint": "T1", "type": "role", "match": "exact", "jd_span": None}])
         records, cases = scripted_records({"F1": [[wrong]], "A1": None})
         s = br.summarize(records, cases)
         assert s["type_confusion"] == {"function": {"role": 1}, "role": {"role": 1}}
@@ -176,7 +177,9 @@ class TestErrorClasses:
 
 class TestStability:
     def test_stability_detects_changes(self):
-        plan = {"D1": [[with_oracle("D1")], [with_oracle("D1", ambiguity=[])], [with_oracle("D1")]],
+        silent = with_oracle("D1", ambiguity=[], targets=[{"hint": "T1", "type": "role", "match": "exact",
+                                                           "jd_span": None}])
+        plan = {"D1": [[with_oracle("D1")], [silent], [with_oracle("D1")]],
                 "A1": None}
         records, cases = scripted_records(plan, runs=3)
         s = br.summarize(records, cases)
@@ -187,7 +190,7 @@ class TestStability:
     def test_mapping_presence_and_duration_stability(self):
         plan = {"R1": [[with_oracle("R1")], [with_oracle("R1", duration=None, ambiguity=["multiple_durations"])]],
                 "G1": [[with_oracle("G1")], [with_oracle("G1", targets=[
-                    {"hint": "T1", "type": "function", "jd_span": None}])]]}
+                    {"hint": "T1", "type": "function", "match": "none", "jd_span": None}])]]}
         records, cases = scripted_records(plan, runs=2)
         s = br.summarize(records, cases)
         assert {u["case"]: u["fields"] for u in s["unstable_cases"]} == {
@@ -205,7 +208,7 @@ class TestSafety:
         assert not (tmp_path / "d").exists()
         assert br.main(["--out", str(tmp_path / "o"), "--mode", "oracle", "--runs", "1", "--cases", "A1,B1"]) == 0
         res = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))
-        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "e64eb1a979e9"
+        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "c9b570d82f4e"
         assert res["meta"]["temperature"] == 0.0 and res["meta"]["mode"] == "oracle"
         report = (tmp_path / "o" / "report.md").read_text(encoding="utf-8")
         for frag in ("## jd_asserted", "## Stability", "## Role/function confusion", "## Outcomes"):
@@ -225,4 +228,91 @@ class TestSafety:
 
     def test_s1_prompt_unchanged(self):
         assert (br.sc.S1_PROMPT_VERSION, br.sc.S1_VERSION, br.clf.prompt_fingerprint()) == (
-            "s1-2", "1.1.0", "e64eb1a979e9")
+            "s1-3", "1.2.0", "c9b570d82f4e")
+
+
+# ── s1-3: diagnostics, held-out set, prompt independence ───────────────────
+
+HELDOUT = br.load_cases(br.FIXTURE.parent / "s1_heldout_cases.json")
+
+
+def fixture_phrases(cases) -> set[str]:
+    out = set()
+    for c in cases:
+        out |= set(c["analysis"]["relevant_roles"])
+        for t in c["oracle"]["targets"]:
+            if t.get("jd_span"):
+                out.add(t["jd_span"]["text"])
+            if "text" in t:
+                out.add(t["text"])
+        if c["oracle"].get("setting"):
+            out.add(c["oracle"]["setting"]["text"])
+    return out
+
+
+def _tokens(s):
+    return re.findall(r"\w+", br.normalize(s))
+
+
+def _contains_phrase(text, phrase) -> bool:
+    t, p = _tokens(text), _tokens(phrase)
+    return any(t[i:i + len(p)] == p for i in range(len(t) - len(p) + 1))
+
+
+class TestS13Diagnostics:
+    def test_type_ok_policy_inconsistent_then_repair_to_mixed(self):
+        # F1: correct function type, wrong policy; repair wrongly switches to mixed
+        bad = with_oracle("F1", policy="explicit_role")
+        mixed = with_oracle("F1", policy="mixed")
+        records, cases = scripted_records({"F1": [[bad, mixed]]})
+        s = br.summarize(records, cases)
+        assert s["outcomes"]["failed_validation"] == 1
+        assert s["diagnostics"] == {"type_ok_policy_inconsistent_main": 1, "repair_to_mixed_incorrect": 1,
+                                    "repair_changed_types": 0}
+
+    def test_repair_changed_types(self):
+        bad = with_oracle("F1", policy="explicit_role")
+        flipped = with_oracle("F1", targets=[{"hint": "T1", "type": "role", "match": "exact", "jd_span": None}],
+                              policy="explicit_role")
+        records, cases = scripted_records({"F1": [[bad, flipped]]})
+        s = br.summarize(records, cases)
+        assert s["diagnostics"]["repair_changed_types"] == 1 and s["outcomes"]["ok"] == 1
+        assert s["semantic_error_runs"] == 1                          # repaired, but to the wrong type
+
+    def test_match_counts(self):
+        records, cases = scripted_records({}, cases=CASES)
+        assert br.summarize(records, cases)["match_counts"] == {"exact": 10, "equivalent": 7, "none": 15}
+
+
+class TestHeldOut:
+    def test_size_families_and_schema(self):
+        assert len(HELDOUT) >= 12 and len({c["id"] for c in HELDOUT}) == len(HELDOUT)
+        fams = {c["family"] for c in HELDOUT}
+        for f in ("HO_translated_role", "HO_translated_function", "HO_grammatical", "HO_abbreviation",
+                  "HO_qualifier_dropped", "HO_qualifier_added", "HO_adjacent", "HO_seniority", "HO_works_with",
+                  "HO_typing"):
+            assert f in fams, f
+        mapped = [t["mapped"] for c in HELDOUT for t in c["expected"]["targets"]]
+        assert sum(mapped) >= 4 and mapped.count(False) >= 8
+        assert sum(1 for c in HELDOUT if any(re.search(r"[؀-ۿ]", ln) for ln in c["jd_lines"])) >= 4
+
+    def test_oracle_answers_score_100_percent(self):
+        records, cases = scripted_records({}, cases=HELDOUT)
+        assert all(r["outcome"] == "ok" and r["pass"] for r in records), [
+            (r["case"], r.get("checks")) for r in records if not r.get("pass")]
+
+    def test_vocabulary_disjoint_from_main_fixture(self):
+        main, held = fixture_phrases(CASES), fixture_phrases(HELDOUT)
+        for h in held:
+            assert not any(_contains_phrase(m, h) or _contains_phrase(h, m) for m in main), h
+
+
+class TestPromptIndependence:
+    BANNED = ("مدير مشروع إنشائي", "مهندس موقع", "محاسب", "Senior Accountant", "Assistant Project Manager",
+              "enterprise software", "database support", "project coordination", "nursing", "leading bank",
+              "oil and gas", "banking", "construction")
+
+    def test_prompt_uses_no_fixture_phrases(self):
+        prompt = br.clf.S1_SYSTEM_PROMPT
+        for phrase in sorted(fixture_phrases(CASES) | fixture_phrases(HELDOUT) | set(self.BANNED)):
+            assert not _contains_phrase(prompt, phrase), phrase

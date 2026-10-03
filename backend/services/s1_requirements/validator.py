@@ -1,5 +1,5 @@
 """
-S1 deterministic validator for the AI classifier output (prompt s1-2, S1 1.1.0).
+S1 deterministic validator for the AI classifier output (prompt s1-3, S1 1.2.0).
 
 The AI may only: type the analysis_json target hints (role | function), pick a
 policy, select verbatim JD spans (requirement spans, targets for hint-less
@@ -45,6 +45,16 @@ Rules
   V-sub-b  a mapping does not contain its target as a proper whole-word
            sub-phrase ("software implementation" -> "enterprise software
            implementation" fails).
+  s1-3 target match (hint targets only; consistency checks, no semantics):
+  V-match  "match" is required and one of exact | equivalent | none;
+           exact      -> jd_span null AND the hint is word for word inside one of
+                         the criterion's requirement spans;
+           equivalent -> jd_span required (all mapping guards above apply);
+           none       -> jd_span null; if the hint is nevertheless word for word
+                         inside a requirement span (embedded in a longer
+                         qualified phrase) the criterion must report
+                         ambiguous_relevance.
+  R8 messages name the policy implied by the current target types.
   V-anchor every requirement span contains an anchor (the selected duration, a
          verbatim hint match, a mapped jd_span or a JD-selected target) or is the
          line immediately after an anchored requirement span (wrapped bullet).
@@ -68,7 +78,8 @@ from services.s1_requirements.criteria import CriterionInput
 from services.s1_requirements.durations import DurationMatch
 from services.s1_requirements.jd_text import JDText, normalize
 from services.s1_requirements.schema import (
-    AMB_REQUIREMENT_NOT_IN_JD, AMBIGUITY_CODES, POLICY_EXPLICIT_ROLE, POLICY_FUNCTIONAL, POLICY_MIXED,
+    AMB_AMBIGUOUS_RELEVANCE, AMB_REQUIREMENT_NOT_IN_JD, AMBIGUITY_CODES, MATCH_EQUIVALENT, MATCH_EXACT,
+    MATCH_NONE, MATCHES, POLICY_EXPLICIT_ROLE, POLICY_FUNCTIONAL, POLICY_MIXED,
     POLICY_PURE_DURATION, POLICY_SECTOR, S1_POLICIES, TARGET_FUNCTION, TARGET_ROLE, TARGET_TYPES, Span,
 )
 
@@ -83,6 +94,7 @@ class ParsedTarget:
     type: str
     hint_id: str | None = None        # "T1".. when it is an analysis_json hint
     span: Span | None = None          # AI-selected JD span (hint-less target, or a hint's explicit mapping)
+    match: str | None = None          # hint targets: exact | equivalent | none
 
 
 @dataclass(frozen=True)
@@ -170,6 +182,55 @@ def _mapping_errors(c: CriterionInput, targets: list[ParsedTarget], req: tuple[S
         for other, spans in verbatim.items():
             if other != hid and any(_overlap(sp, v) for v in spans):
                 errs.append(f"{tw}: overlaps the verbatim text of hint {other} ({hints[other]!r})")
+    return errs
+
+
+def implied_policy(types: list[str]) -> str | None:
+    kinds = set(types)
+    if not kinds:
+        return None
+    if kinds == {TARGET_ROLE}:
+        return POLICY_EXPLICIT_ROLE
+    if kinds == {TARGET_FUNCTION}:
+        return POLICY_FUNCTIONAL
+    return POLICY_MIXED
+
+
+def _implied_note(types: list[str]) -> str:
+    imp = implied_policy(types)
+    if imp is None:
+        return "there are no valid targets"
+    return f"the current target types {types} imply policy {imp}"
+
+
+def _match_errors(c: CriterionInput, targets: list[ParsedTarget], req: tuple[Span, ...], jd: JDText,
+                  amb: list[str], w: str) -> list[str]:
+    errs: list[str] = []
+    hints = hint_ids(c)
+    for t in targets:
+        if not t.hint_id:
+            continue
+        tw = f"{w} target {t.hint_id}"
+        verbatim = any(_inside(s, req) for s in jd.find(hints[t.hint_id]))
+        if t.match not in MATCHES:
+            errs.append(f"{tw}: match must be one of {list(MATCHES)}, got {t.match!r}")
+        elif t.match == MATCH_EXACT:
+            if t.span is not None:
+                errs.append(f"{tw}: match exact takes jd_span null")
+            if not verbatim:
+                errs.append(f"{tw}: match exact but {hints[t.hint_id]!r} is not word for word inside this "
+                            f"criterion's requirement_spans; use equivalent (with jd_span) or none")
+        elif t.match == MATCH_EQUIVALENT:
+            if t.span is None:
+                errs.append(f"{tw}: match equivalent requires jd_span (the verbatim JD phrase); if you are not "
+                            f"certain the meaning is the same, use none")
+        elif t.match == MATCH_NONE:
+            if t.span is not None:
+                errs.append(f"{tw}: match none takes jd_span null")
+            if verbatim and AMB_AMBIGUOUS_RELEVANCE not in amb:
+                errs.append(f"{tw}: {hints[t.hint_id]!r} is word for word inside the requirement_spans: use match "
+                            f"exact, or, if it is only part of a longer qualified phrase, keep none and report "
+                            f"ambiguous_relevance")
     return errs
 
 
@@ -286,7 +347,7 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
                                       f"requirement_spans")
                         mapped = None
                 if ttype in TARGET_TYPES:
-                    targets.append(ParsedTarget(hints[hid], ttype, hint_id=hid, span=mapped))
+                    targets.append(ParsedTarget(hints[hid], ttype, hint_id=hid, span=mapped, match=t.get("match")))
             else:
                 if hints:
                     errors.append(f"{tw}: this criterion has target hints {sorted(hints)}; return exactly those "
@@ -341,12 +402,15 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
         # R8 policy consistency
         roles = sum(1 for t in targets if t.type == TARGET_ROLE)
         funcs = sum(1 for t in targets if t.type == TARGET_FUNCTION)
+        types = [t.type for t in targets]
         if policy == POLICY_EXPLICIT_ROLE and not (roles >= 1 and funcs == 0):
-            errors.append(f"{w}: explicit_role needs >= 1 target and every target of type role")
+            errors.append(f"{w}: explicit_role needs >= 1 target and every target of type role; "
+                          f"{_implied_note(types)}")
         elif policy == POLICY_FUNCTIONAL and not (funcs >= 1 and roles == 0):
-            errors.append(f"{w}: functional needs >= 1 target and every target of type function")
+            errors.append(f"{w}: functional needs >= 1 target and every target of type function; "
+                          f"{_implied_note(types)}")
         elif policy == POLICY_MIXED and not (roles >= 1 and funcs >= 1):
-            errors.append(f"{w}: mixed needs at least one role and one function target")
+            errors.append(f"{w}: mixed needs at least one role AND one function target; {_implied_note(types)}")
         elif policy == POLICY_SECTOR:
             if tl or hints:
                 errors.append(f"{w}: sector takes no targets and is not allowed for a criterion with target hints")
@@ -364,6 +428,7 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
             dl, dm = durations[dur]
             dur_span = Span(dl, dm.start, dm.end, dm.text)
         errors.extend(_mapping_errors(c, targets, req_t, jd, dur_span, setting, w))
+        errors.extend(_match_errors(c, targets, req_t, jd, list(amb), w))
         anchors = [s for s in (dur_span,) if s is not None]
         anchors += [t.span for t in targets if t.span is not None]
         anchors += [s for text in hints.values() for s in jd.find(text) if _inside(s, req_t)]

@@ -64,7 +64,42 @@ def res(cid, policy, spans, targets=(), setting=None, duration=None, ambiguity=(
             "ambiguity": list(ambiguity), "note": note}
 
 
+def with_match(raw, jd, analysis, job_id):
+    """Fill ``match`` on hint targets that do not set it (pre-s1-3 test outputs), using the value the s1-2
+    semantics imply: jd_span -> equivalent; hint verbatim in a requirement span -> exact (none when the
+    criterion reports ambiguous_relevance, i.e. the embedded case); otherwise none. Explicit values are kept."""
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return raw
+    if not isinstance(data, dict) or not isinstance(data.get("criteria"), list):
+        return raw
+    j = JDText(jd)
+    by_id = {c.criterion_id: c for c in enumerate_experience_criteria(job_id, analysis)}
+    for it in data["criteria"]:
+        c = by_id.get(it.get("criterion_id")) if isinstance(it, dict) else None
+        if c is None or not isinstance(it.get("targets"), list):
+            continue
+        hints = {f"T{i}": h for i, h in enumerate(c.target_hints, 1)}
+        req = [j.span_on_line(sp.get("line"), sp.get("text", "")) for sp in it.get("requirement_spans") or []
+               if isinstance(sp, dict)]
+        req = [r for r in req if r is not None]
+        for t in it["targets"]:
+            if not isinstance(t, dict) or "hint" not in t or "match" in t or t.get("hint") not in hints:
+                continue
+            if t.get("jd_span") is not None:
+                t["match"] = "equivalent"
+            elif any(s.within(r) for s in j.find(hints[t["hint"]]) for r in req):
+                t["match"] = "none" if "ambiguous_relevance" in (it.get("ambiguity") or []) else "exact"
+            else:
+                t["match"] = "none"
+    return json.dumps(data, ensure_ascii=False)
+
+
 def classify(jd, analysis, *responses, job_id="J1", **kw):
+    responses = [with_match(r, jd, analysis, job_id) if isinstance(r, str) else
+                 (with_match(r[0], jd, analysis, job_id), r[1]) if isinstance(r, tuple) else r
+                 for r in responses]
     client = FakeClient(*responses)
     return client, run(clf.classify_job(job_id, jd, analysis, client=client, **kw))
 
@@ -636,7 +671,8 @@ class TestS12EquivalenceMapping:
         assert art.targets[0].text == "Construction Project Manager"
         assert art.audit["target_mappings"] == [{
             "target_id": "T1", "target_text": "Construction Project Manager", "mapped_text": "كمدير مشروع إنشائي",
-            "line": 2, "start": art.targets[0].jd_span.start, "end": art.targets[0].jd_span.end, "used": True}]
+            "line": 2, "start": art.targets[0].jd_span.start, "end": art.targets[0].jd_span.end, "used": True,
+            "match": "equivalent"}]
         assert art.audit["review_required"] == ["T1"]
 
     def test_arabic_attached_letter_must_be_copied(self):
@@ -909,8 +945,17 @@ class TestStatementAnchor:
 
 class TestS12Versioning:
     def test_versions_and_fingerprint(self):
-        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-2", "1.1.0")
-        assert clf.prompt_fingerprint() == "e64eb1a979e9" != "af51355222e5"
+        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-3", "1.2.0")
+        assert clf.prompt_fingerprint() == "c9b570d82f4e"
+        assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9")
+
+    def test_cache_identity_differs_from_s1_2(self, monkeypatch):
+        req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
+        k3 = clf.s1_cache_key(req)
+        monkeypatch.setattr(clf, "S1_PROMPT_VERSION", "s1-2")
+        monkeypatch.setattr(clf, "S1_VERSION", "1.1.0")
+        monkeypatch.setattr(clf, "prompt_fingerprint", lambda: "e64eb1a979e9")
+        assert clf.s1_cache_key(req) != k3
 
     def test_cache_identity_differs_from_s1_1(self, monkeypatch):
         req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
@@ -922,13 +967,132 @@ class TestS12Versioning:
 
     def test_prompt_contract(self):
         p = clf.S1_SYSTEM_PROMPT
-        for frag in ("SUBSTANTIALLY THE SAME", "material qualifier", "null is always acceptable",
-                     "keep EVERY qualifier", "including attached letters", "report \"ambiguous_relevance\"",
-                     "never makes a target a role", "shortest complete verbatim phrase",
-                     "\"jd_span\": null"):
+        for frag in ("SUBSTANTIALLY THE SAME", "material qualifier", "\"none\" is always acceptable",
+                     "complete phrase with all its qualifiers", "attached to a word", "report \"ambiguous_relevance\"",
+                     "NOT evidence that a target is a role", "shortest complete verbatim phrase",
+                     "\"match\": \"exact\" | \"equivalent\" | \"none\"", "it is REQUIRED",
+                     "absent, broader, narrower, adjacent, related, compatible, qualifier-changing, or uncertain",
+                     "decide every target's type first, then derive the policy",
+                     "\"mixed\" is wrong for a single target",
+                     "A hint that differs from the JD wording is NOT a conflict"):
             assert frag in p, frag
-        assert "SHORTEST verbatim phrase" not in p
-        assert "related, similar, compatible, adjacent, same family, narrower or broader" in p
+        assert "SHORTEST verbatim phrase" not in p and "MAY set jd_span" not in p
+
+
+def _raw(hints, line, targets, *, years=4, policy="explicit_role", ambiguity=(), job_id="J1"):
+    """One-criterion JD + an explicit raw response (no match auto-fill)."""
+    a = {"experience": {"minimum_years": years, "relevant_roles": list(hints)}}
+    jd = "Requirements\n- " + line
+    j = JDText(jd)
+    (c,) = enumerate_experience_criteria(job_id, a)
+    r = res(c.criterion_id, policy, [(2, line)], targets, ambiguity=ambiguity,
+            duration="D1" if parse_durations(line) else None)
+    return jd, a, ai(r), j, [c], {did: (ln, m) for did, ln, m in j.durations()}
+
+
+def _val(*args, **kw):
+    jd, a, raw, j, crits, durs = _raw(*args, **kw)
+    return validate_response(raw, j, crits, durs)
+
+
+LAB_LINE = "Minimum 4 years of experience as a Laboratory Technician"
+HR_LINE = "Minimum 4 years of experience as a Human Resources Manager"
+
+
+class TestS13Match:
+    def test_match_required_and_enumerated(self):
+        v = _val(["Laboratory Technician"], LAB_LINE, [{"hint": "T1", "type": "role", "jd_span": None}])
+        assert any("match must be one of" in e for e in v.errors)
+        v = _val(["Laboratory Technician"], LAB_LINE, [{"hint": "T1", "type": "role", "match": "partial",
+                                                        "jd_span": None}])
+        assert any("match must be one of" in e for e in v.errors)
+
+    def test_exact_rules(self):
+        ok = _val(["Laboratory Technician"], LAB_LINE, [{"hint": "T1", "type": "role", "match": "exact",
+                                                         "jd_span": None}])
+        assert ok.ok
+        v = _val(["Laboratory Technician"], LAB_LINE, [{"hint": "T1", "type": "role", "match": "exact",
+                                                        "jd_span": {"line": 2, "text": "Laboratory Technician"}}])
+        assert any("match exact takes jd_span null" in e for e in v.errors)
+        v = _val(["HR Manager"], HR_LINE, [{"hint": "T1", "type": "role", "match": "exact", "jd_span": None}])
+        assert any("is not word for word" in e for e in v.errors)
+
+    def test_equivalent_requires_span(self):
+        v = _val(["HR Manager"], HR_LINE, [{"hint": "T1", "type": "role", "match": "equivalent", "jd_span": None}])
+        assert any("match equivalent requires jd_span" in e for e in v.errors)
+        ok = _val(["HR Manager"], HR_LINE, [{"hint": "T1", "type": "role", "match": "equivalent",
+                                             "jd_span": {"line": 2, "text": "Human Resources Manager"}}])
+        assert ok.ok
+
+    def test_none_rules(self):
+        v = _val(["HR Manager"], HR_LINE, [{"hint": "T1", "type": "role", "match": "none",
+                                            "jd_span": {"line": 2, "text": "Human Resources Manager"}}])
+        assert any("match none takes jd_span null" in e for e in v.errors)
+        assert _val(["HR Manager"], HR_LINE, [{"hint": "T1", "type": "role", "match": "none", "jd_span": None}]).ok
+        # verbatim hint + none needs ambiguous_relevance (embedded case)
+        v = _val(["Laboratory Technician"], LAB_LINE, [{"hint": "T1", "type": "role", "match": "none",
+                                                        "jd_span": None}])
+        assert any("use match exact, or" in e for e in v.errors)
+        assert _val(["Laboratory Technician"], LAB_LINE, [{"hint": "T1", "type": "role", "match": "none",
+                                                           "jd_span": None}], ambiguity=["ambiguous_relevance"]).ok
+
+    @pytest.mark.parametrize("match, span, prov, codes_", [
+        ("exact", None, "jd_verified", []),
+        ("equivalent", {"line": 2, "text": "Human Resources Manager"}, "jd_asserted", []),
+        ("none", None, "original_ai", ["target_not_in_jd"]),
+    ])
+    def test_provenance_unchanged_by_match(self, match, span, prov, codes_):
+        hint, line = ("Laboratory Technician", LAB_LINE) if match == "exact" else ("HR Manager", HR_LINE)
+        jd, a, raw, *_ = _raw([hint], line, [{"hint": "T1", "type": "role", "match": match, "jd_span": span}])
+        client = FakeClient(raw)
+        out = run(clf.classify_job("J1", jd, a, client=client))
+        art = out.artifacts[0]
+        assert [t.provenance for t in art.targets] == [prov] and [r.code for r in art.reasons] == codes_
+        assert art.audit["target_matches"] == {"T1": match}
+
+    def test_policy_errors_name_the_implied_policy(self):
+        line = "Minimum 4 years of payroll administration experience"
+        v = _val(["payroll administration"], line,
+                 [{"hint": "T1", "type": "function", "match": "exact", "jd_span": None}], policy="explicit_role")
+        assert any("explicit_role needs" in e and "imply policy functional" in e for e in v.errors)
+        v = _val(["payroll administration"], line,
+                 [{"hint": "T1", "type": "function", "match": "exact", "jd_span": None}], policy="mixed")
+        assert any("mixed needs at least one role AND one function" in e and "imply policy functional" in e
+                   for e in v.errors)
+        v = _val(["Laboratory Technician"], LAB_LINE,
+                 [{"hint": "T1", "type": "role", "match": "exact", "jd_span": None}], policy="functional")
+        assert any("imply policy explicit_role" in e for e in v.errors)
+        two = "Minimum 4 years as a Translator or in translation"
+        v = _val(["Translator", "translation"], two,
+                 [{"hint": "T1", "type": "role", "match": "exact", "jd_span": None},
+                  {"hint": "T2", "type": "function", "match": "exact", "jd_span": None}], policy="functional")
+        assert any("imply policy mixed" in e for e in v.errors)
+
+    def test_repair_note_states_policy_derivation(self):
+        note = clf.repair_note(["x"])
+        assert "all function -> functional" in note and "all role -> explicit_role" in note
+        assert "Never switch to mixed unless both types are present" in note
+
+    def test_repair_to_mixed_fails_repair_to_functional_succeeds(self):
+        line = "Minimum 4 years of payroll administration experience"
+        tg = [{"hint": "T1", "type": "function", "match": "exact", "jd_span": None}]
+        jd, a, bad, *_ = _raw(["payroll administration"], line, tg, policy="explicit_role")
+        _, _, mixed, *_ = _raw(["payroll administration"], line, tg, policy="mixed")
+        _, _, good, *_ = _raw(["payroll administration"], line, tg, policy="functional")
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(bad, mixed)))
+        assert out.artifacts[0].spec_status == "failed_validation"
+        client = FakeClient(bad, good)
+        out = run(clf.classify_job("J1", jd, a, client=client))
+        assert out.artifacts[0].spec_status == "resolved" and out.meta["outcome"] == "repaired"
+        assert "imply policy functional" in client.requests[1]["messages"][3]["content"]
+
+    def test_match_survives_cache(self):
+        jd, a, raw, *_ = _raw(["HR Manager"], HR_LINE, [{"hint": "T1", "type": "role", "match": "equivalent",
+                                                          "jd_span": {"line": 2, "text": "Human Resources Manager"}}])
+        cache = clf.InMemoryS1Cache()
+        run(clf.classify_job("J1", jd, a, client=FakeClient(raw), cache=cache))
+        again = run(clf.classify_job("J1", jd, a, client=FakeClient(), cache=cache))
+        assert again.artifacts[0].audit["target_matches"] == {"T1": "equivalent"}
 
 
 class TestStatusTaxonomy:
@@ -998,7 +1162,8 @@ class TestStatusTaxonomy:
 
 def _validate(resp, jd=JOB31_JD, analysis=JOB31_ANALYSIS, job_id="JOB-2026-0031"):
     j = JDText(jd)
-    return validate_response(resp if isinstance(resp, str) else ai(*resp), j,
+    raw = with_match(resp if isinstance(resp, str) else ai(*resp), jd, analysis, job_id)
+    return validate_response(raw, j,
                              enumerate_experience_criteria(job_id, analysis),
                              {did: (ln, m) for did, ln, m in j.durations()})
 
@@ -1081,7 +1246,8 @@ class TestCallFlow:
         assert out.artifacts[0].spec_status == "resolved"
         assert out.validation["errors"] and out.validation["repair_errors"] == []
         rep = client.requests[1]["messages"]
-        assert rep[2] == {"role": "assistant", "content": ai(bad)}
+        assert rep[2] == {"role": "assistant",
+                          "content": with_match(ai(bad), JOB31_JD, JOB31_ANALYSIS, "JOB-2026-0031")}
         assert "hint T2" in rep[3]["content"] and "never add, drop or rewrite targets" in rep[3]["content"]
         assert [c["call"] for c in out.meta["call_log"]] == ["main", "repair"]
 
