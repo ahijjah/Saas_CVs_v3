@@ -569,7 +569,8 @@ class TestNotWiredIntoScoring:
         for sub in ("services", "workers", "routers", "api"):
             root = os.path.join(backend, sub)
             for dirpath, _, files in os.walk(root):
-                if "s2_experience" in dirpath.split(os.sep):      # shadow-only S2 may use it
+                parts = dirpath.split(os.sep)
+                if "s2_experience" in parts or "s1_requirements" in parts:   # shadow-only S2/S1 may use it
                     continue
                 for f in files:
                     if f.endswith(".py") and f != "experience_accounting.py":
