@@ -101,9 +101,18 @@ class PromptConfig:
     min_extracted_text_chars: int = 300
     # ── AI comparison default ─────────────────────────────────────────────────
     enable_ai_comparison_default: bool = False
+    # ── Scoring V2 — LLM Criteria Mapping (D-01) ─────────────────────────────
+    llm_criteria_mapping_enabled: bool = True
     # Per-job mandatory skills (if non-empty, missing any = automatic penalty)
     mandatory_skills: list[str] = field(default_factory=list)
     mandatory_skills_weight: float = 0.0
+    # ── F-01 — Deterministic Scoring Engine (silent mode) ─────────────────────
+    det_partial_credit:                  float = 0.50
+    det_required_weight:                 float = 0.70
+    det_preferred_weight:                float = 0.30
+    det_enable_required_absent_floor:    bool  = False
+    det_required_absent_floor_threshold: float = 0.50
+    det_required_absent_floor_cap:       float = 0.40
 
 
 async def load_prompt_config(
@@ -145,7 +154,14 @@ async def load_prompt_config(
                 'gatekeeper_non_english_similarity_reject_below',
                 'gatekeeper_non_english_skill_ratio_reject_below',
                 'min_extracted_text_chars',
-                'enable_ai_comparison_default'
+                'enable_ai_comparison_default',
+                'scoring_v2.llm_criteria_mapping_enabled',
+                'scoring_v2.det_partial_credit',
+                'scoring_v2.det_required_weight',
+                'scoring_v2.det_preferred_weight',
+                'scoring_v2.det_enable_required_absent_floor',
+                'scoring_v2.det_required_absent_floor_threshold',
+                'scoring_v2.det_required_absent_floor_cap'
             )
         """)
     )
@@ -220,6 +236,23 @@ async def load_prompt_config(
     enable_ai_comparison_default = (
         sys_map.get("enable_ai_comparison_default", "false").lower() == "true"
     )
+    llm_criteria_mapping_enabled = (
+        sys_map.get("scoring_v2.llm_criteria_mapping_enabled", "true").lower() == "true"
+    )
+
+    # ── F-01 deterministic scoring parameters ─────────────────────────────────
+    det_partial_credit = float(sys_map.get("scoring_v2.det_partial_credit", "0.50"))
+    det_required_weight = float(sys_map.get("scoring_v2.det_required_weight", "0.70"))
+    det_preferred_weight = float(sys_map.get("scoring_v2.det_preferred_weight", "0.30"))
+    det_enable_required_absent_floor = (
+        sys_map.get("scoring_v2.det_enable_required_absent_floor", "false").lower() == "true"
+    )
+    det_required_absent_floor_threshold = float(
+        sys_map.get("scoring_v2.det_required_absent_floor_threshold", "0.50")
+    )
+    det_required_absent_floor_cap = float(
+        sys_map.get("scoring_v2.det_required_absent_floor_cap", "0.40")
+    )
 
     return PromptConfig(
         weight_profile=weight_profile_name,
@@ -238,6 +271,13 @@ async def load_prompt_config(
         gatekeeper_non_english_skill_ratio_reject_below=gk_non_en_skill,
         min_extracted_text_chars=min_extracted_text_chars,
         enable_ai_comparison_default=enable_ai_comparison_default,
+        llm_criteria_mapping_enabled=llm_criteria_mapping_enabled,
         mandatory_skills=overrides.get("mandatory_skills", []) if overrides else [],
         mandatory_skills_weight=float(overrides.get("mandatory_skills_weight", 0)) if overrides else 0.0,
+        det_partial_credit=det_partial_credit,
+        det_required_weight=det_required_weight,
+        det_preferred_weight=det_preferred_weight,
+        det_enable_required_absent_floor=det_enable_required_absent_floor,
+        det_required_absent_floor_threshold=det_required_absent_floor_threshold,
+        det_required_absent_floor_cap=det_required_absent_floor_cap,
     )

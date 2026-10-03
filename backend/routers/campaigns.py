@@ -29,6 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.module_guards import RequireAIRecruitment
 from database import get_db, set_rls_context
 from services.campaign_service import (
     CAMPAIGN_STATUSES,
@@ -37,7 +38,7 @@ from services.campaign_service import (
     validate_status_transition,
 )
 
-router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+router = APIRouter(prefix="/campaigns", tags=["campaigns"], dependencies=[RequireAIRecruitment])
 
 
 # ── Date parsing helpers ──────────────────────────────────────────────────────
@@ -416,6 +417,7 @@ async def get_campaign(
                 COUNT(a.application_id)                                              AS applications_total,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')     AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')       AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.decision = 'needs_verification') AS applications_needs_verification,
                 COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')      AS applications_rejected,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored') AS applications_scored
             FROM applications a
@@ -430,11 +432,13 @@ async def get_campaign(
         out["applications_total"]     = int(sr["applications_total"])
         out["applications_qualified"] = int(sr["applications_qualified"])
         out["applications_partial"]   = int(sr["applications_partial"])
+        out["applications_needs_verification"] = int(sr["applications_needs_verification"])
         out["applications_rejected"]  = int(sr["applications_rejected"])
         out["applications_scored"]    = int(sr["applications_scored"])
     else:
         out["applications_total"] = out["applications_qualified"] = 0
         out["applications_partial"] = out["applications_rejected"] = 0
+        out["applications_needs_verification"] = 0
         out["applications_scored"] = 0
 
     return out
@@ -742,13 +746,13 @@ async def get_campaign_candidates(
                 a.workflow_status,
                 a.processing_status,
                 a.applied_at,
-                s.final_score AS ai_score,
+                COALESCE(s.det_final_score, s.final_score) AS ai_score,
                 j.title       AS job_title
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             LEFT JOIN application_scores s ON s.application_id = a.application_id
             {where_sql}
-            ORDER BY a.applied_at DESC
+            ORDER BY a.applied_at DESC, a.application_id
         """),
         params,
     )

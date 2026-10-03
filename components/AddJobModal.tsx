@@ -402,8 +402,13 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               const numVal = parseFloat(q.passingValue ?? '');
               criteria = { operator: q.passingOperator || '>=', value: isNaN(numVal) ? 0 : numVal };
             }
+            // Guard: strip description text if it was accidentally prepended (e.g. browser autofill)
+            let questionText = q.question_text!.trim();
+            if (questionText.startsWith(description)) {
+              questionText = questionText.slice(description.length).trimStart();
+            }
             return {
-              question_text: q.question_text!.trim(),
+              question_text: questionText,
               question_type: qtype,
               is_required: q.is_required ?? true,
               options: opts,
@@ -640,6 +645,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               <textarea
                 required
                 name="job_description"
+                autoComplete="off"
                 rows={7}
                 placeholder={t.jobDescPlaceholder}
                 className={`w-full px-4 py-3 border rounded-lg focus:ring-2 outline-none transition-all text-sm leading-relaxed ${
@@ -693,6 +699,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                         <div className="flex-1 space-y-2">
                           <input
                             type="text"
+                            name={`knockout_question_${idx}`}
+                            autoComplete="off"
                             value={q.question_text || ''}
                             onChange={e => updateKnockoutQuestion(idx, 'question_text', e.target.value)}
                             placeholder={(t as any).knockoutQuestionPlaceholder}

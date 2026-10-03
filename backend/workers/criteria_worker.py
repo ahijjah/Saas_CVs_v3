@@ -129,8 +129,12 @@ def _run_in_fresh_loop(coro):
     default_retry_delay=30,
     name="workers.criteria_worker.extract_criteria_task",
 )
-def extract_criteria_task(self, job_id: str, description: str) -> None:
-    """Background task: extract AI criteria and update job_criteria row."""
+def extract_criteria_task(self, job_id: str, description: str, job_metadata: dict | None = None) -> None:
+    """Background task: extract AI criteria and update job_criteria row.
+
+    job_metadata: optional dict with title, department, experience_level,
+                  location, job_type, work_mode — passed to the AI for richer context.
+    """
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
     from sqlalchemy.pool import NullPool
     from config import get_settings
@@ -146,7 +150,7 @@ def extract_criteria_task(self, job_id: str, description: str) -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(_extract_async(job_id, description, TaskSession))
+        loop.run_until_complete(_extract_async(job_id, description, TaskSession, job_metadata))
     except Exception as exc:
         logger.error("extract_criteria_task failed for job %s (attempt %d/%d): %s",
                      job_id, self.request.retries + 1, self.max_retries + 1, exc)
@@ -164,7 +168,7 @@ def extract_criteria_task(self, job_id: str, description: str) -> None:
         task_engine.dispose()
 
 
-async def _extract_async(job_id: str, description: str, Session) -> None:
+async def _extract_async(job_id: str, description: str, Session, job_metadata: dict | None = None) -> None:
     from database import set_rls_context
     from services.ai_service import extract_job_criteria, flatten_criteria_for_scoring, load_active_prompt
     from config import get_settings
@@ -220,6 +224,7 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
         description,
         prompt_override=_crit_prompt,
         openai_client=_crit_reg.client if _crit_reg else None,
+        job_metadata=job_metadata,
     )
     flat = flatten_criteria_for_scoring(analysis)
 
