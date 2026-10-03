@@ -359,18 +359,31 @@ class TestInputContract:
                      "Targets are authoritative", "NOT listed in targets", "NOT itself a target",
                      "outside the required setting", "the entry must also establish that setting",
                      "functional/explicit_role with a setting", "evidence for BOTH the role and the setting",
-                     # s2-3 semantic boundary
-                     "related requires positive evidence IN THE ENTRY of a material connection to the target role "
-                     "or its function", "Generic support, administrative, operational, coordination or supervised "
-                     "work is not related unless the entry itself establishes that connection",
+                     # s2-3/s2-4 semantic boundary
+                     "related requires positive evidence IN THE ENTRY of a material connection to the target "
+                     "role's work or function",
+                     "it never requires holding the target role or its accountability — that is qualifying",
+                     "POLICY: explicit_role (qualifying = the candidate HELD one of the target roles or its "
+                     "equivalent accountability)",
+                     "Generic support, administrative, operational or generic coordination work, or work done "
+                     "under someone else's supervision, is not related unless the entry itself establishes "
+                     "that connection",
                      "work that is clearly described but unconnected is not_relevant, not insufficient",
                      "involvement in the target is related, not qualifying",
+                     "target-role accountability is NOT shown, but a material connection to the target role's "
+                     "work is shown in the entry",
                      "is shown to support the target role or its function",
-                     "the setting is shown and the work is connected to the target role's function",
+                     "does or supervises part of the work the target role manages",
+                     "works with the target role's team on that work",
+                     "the setting is shown and the work is connected to the target role's work",
                      "The setting or employer alone never makes unconnected work related",
-                     "the entry shows what the work is and it has no material connection",
-                     "the entry does not establish what work was done",
-                     "Never use insufficient merely because relevance cannot be proven",
+                     "the entry establishes what the work is and shows no material connection to the target "
+                     "role's work or function",
+                     "It does not require proof that the person was not the target role",
+                     "the entry does not establish the work, function or domain needed to judge its connection",
+                     "an activity whose subject is not stated",
+                     "Never use insufficient merely because relevance cannot be proven when the work itself is "
+                     "clearly described",
                      "shown to involve the target function"):
             assert frag in p, frag
 
@@ -539,8 +552,8 @@ class TestPolicyExamples:
         ("functional: support vs ownership / incidental", spec(policy="functional", targets=("logistics management",)),
          [res("E1", "not_relevant", [(6, "Managed 4 donor-funded programmes")]),
           res("E2", "qualifying", [(11, "Organised logistics")]),
-          # s2-3: advising is a clearly established, unconnected function -> not_relevant
-          res("E3", "not_relevant", [(14, "Advised clients")])]),
+          # s2-4: the subject of the advice is not established -> insufficient
+          res("E3", "insufficient", [(14, "Advised clients")], missing=["function"])]),
         ("functional with setting", spec(policy="functional", targets=("programme management",),
                                          setting="development sector"),
          [res("E1", "qualifying", [(4, "IISD"), (6, "Managed 4 donor-funded programmes")], basis="context"),
@@ -716,7 +729,7 @@ class TestExplicitRoleSetting:
 class TestS2Versioning:
 
     def test_versions(self):
-        assert (s2.S2_PROMPT_VERSION, s2.S2_VERSION, s2.S2_INPUT_VERSION) == ("s2-3", "1.2.0", "s2-in-1")
+        assert (s2.S2_PROMPT_VERSION, s2.S2_VERSION, s2.S2_INPUT_VERSION) == ("s2-4", "1.2.0", "s2-in-1")
 
     def test_cache_key_depends_on_prompt_version_and_s2_version(self, monkeypatch):
         k = s2.s2_cache_key("s0", "spec")
@@ -738,7 +751,7 @@ class TestS2Versioning:
     def test_result_records_versions(self, construction_doc):
         out, _ = classify(construction_doc, CONSTRUCTION, construction_spec(), s2_resp(*CONSTRUCTION_RESULTS))
         d = out.to_dict()
-        assert d["s2_version"] == "1.2.0" and d["structurer"]["prompt_version"] == "s2-3"
+        assert d["s2_version"] == "1.2.0" and d["structurer"]["prompt_version"] == "s2-4"
         assert d["structurer"]["prompt_fingerprint"] == s2.prompt_fingerprint()
 
     def test_old_version_cache_entry_is_not_reused(self, construction_doc):
@@ -1212,12 +1225,20 @@ BOUNDARY_ENTRIES = [
      "Assisted the Project Manager with site logistics on commercial builds.", "related"),
     ("G", "Assistant Project Manager", "CloudSoft Technologies",
      "Coordinated software release plans for the mobile app team.", "related"),
-    ("H", "Site Engineer", "Delta Contracting LLC", "Supervised concrete works on residential towers.", "related"),
+    ("H", "Site Engineer", "BuildCo Construction",
+     "Supervised construction works and coordinated site activities with the project management team.", "related"),
     ("I", "Project Assistant", "BuildCo Construction",
      "Prepared meeting minutes for the construction project management team.", "related"),
     ("J", "Officer", "Ministry of Planning", "Various duties.", "insufficient"),
-    ("K", "Consultant", "ACME Ltd", "Advised clients.", "not_relevant"),
+    ("K", "Consultant", "ACME Ltd", "Advised clients.", "insufficient"),     # s2-4: subject not established
+    ("L", "Receptionist", "BuildCo Construction", "Greeted visitors and managed the front desk.", "not_relevant"),
+    ("M", "Quantity Surveyor", "BuildCo Construction", "Prepared cost estimates for the project managers.",
+     "related"),
+    ("N", "Administrative Assistant", "BuildCo Construction",
+     "Maintained document control for the construction project management team.", "related"),
 ]
+# A may legitimately be insufficient (domain not established) or not_relevant; never related/qualifying.
+BOUNDARY_ACCEPTABLE = {"A": {"insufficient", "not_relevant"}}
 
 
 def _boundary_cv():
@@ -1241,7 +1262,7 @@ def _boundary_result(k: int):
     eid = f"E{k + 1}"
     if label == "insufficient":
         return res(eid, label, [(base, title)], basis="title", missing=["function", "responsibilities"])
-    if key in ("E", "I"):            # connection + setting shown: role support + employer context
+    if key in ("E", "H", "I", "M", "N"):   # connection + setting shown: work connection + employer context
         return res(eid, label, [(base + 1, emp), (base + 3, resp.rstrip("."))], basis="context")
     if key == "G":                   # target role outside the required setting
         return res(eid, label, [(base, title), (base + 3, resp.rstrip("."))], basis="title_and_responsibilities")
@@ -1294,3 +1315,21 @@ class TestSemanticBoundaryS23:
         assert out.ok and out.labels()["E1"] == "qualifying"
         p = s2.S2_SYSTEM_PROMPT
         assert "Targets are authoritative" in p and "even if its title contains assistant, associate, deputy, junior" in p
+
+
+    def test_a_insufficient_variant_also_valid(self, boundary_doc):
+        results = [_boundary_result(k) for k in range(len(BOUNDARY_ENTRIES))]
+        results[0] = res("E1", "insufficient", [(5, "دعم المهام الإدارية والتشغيلية الأساسية")],
+                         missing=["function", "employer_context"])
+        out, _ = classify(boundary_doc, BOUNDARY_CV, construction_spec(), s2_resp(*results))
+        assert out.ok and out.labels()["E1"] in BOUNDARY_ACCEPTABLE["A"]
+        assert out.labels()["E1"] not in ("related", "qualifying")
+
+    def test_h_is_related_not_qualifying(self, boundary_doc):
+        out, _ = classify(boundary_doc, BOUNDARY_CV, construction_spec(),
+                          s2_resp(*[_boundary_result(k) for k in range(len(BOUNDARY_ENTRIES))]))
+        h = out.results[7]
+        assert h["label"] == "related" and h["basis"] == "context"
+        assert [q["original_text"] for q in h["quotes"]] == [
+            "BuildCo Construction",
+            "Supervised construction works and coordinated site activities with the project management team"]

@@ -6,7 +6,7 @@ review. It changes no production behaviour, reads no database and uses only the
 synthetic cases below (no candidate data).
 
 What it does
-  * 11 synthetic one-entry CVs (cases A-K) against ONE fixed criterion:
+  * 14 synthetic one-entry CVs (cases A-N) against ONE fixed criterion:
       explicit_role, targets Construction Project Manager / Assistant Project
       Manager, setting construction, criterion text with the duration masked
       ("Minimum [N] years ..."). required_years is never sent to S2.
@@ -21,7 +21,7 @@ What it does
 
 Output (synthetic content only): <out>/results.jsonl, <out>/summary.json, stdout summary.
 
-Usage (needs OPENAI_API_KEY / app config; makes 11 x runs S2 calls, + repairs):
+Usage (needs OPENAI_API_KEY / app config; makes 14 x runs S2 calls, + repairs):
   python scripts/s2_boundary_regression.py --out /tmp/s2_boundary --runs 3
   python scripts/s2_boundary_regression.py --out /tmp/s2_boundary --dry-run   # no API call
 """
@@ -72,9 +72,16 @@ CASES = [
      "Supported the construction project management team with schedules, meeting records and project "
      "documentation.", "related"),
     ("J", "Officer", None, "Various duties.", "insufficient"),
-    ("K", "Consultant", None, "Advised clients.", "not_relevant"),
+    ("K", "Consultant", None, "Advised clients.", "insufficient"),        # subject of the advice not stated
+    ("L", "Receptionist", "BuildCo Construction", "Greeted visitors and managed the front desk.", "not_relevant"),
+    ("M", "Quantity Surveyor", "BuildCo Construction", "Prepared cost estimates for the project managers.",
+     "related"),
+    ("N", "Administrative Assistant", "BuildCo Construction",
+     "Maintained document control for the construction project management team.", "related"),
 ]
 J_MISSING_OK = {"function", "responsibilities"}
+# Acceptable label sets where more than one label is defensible (fail only outside the set).
+ACCEPTABLE = {"A": {"insufficient", "not_relevant"}}
 
 
 def case_cv(title, employer, resp) -> tuple[str, str]:
@@ -149,8 +156,9 @@ async def run_all(args) -> list[dict]:
                                               client=_Capture(client, sink), cache=None)
             r = res.results[0] if res.ok and res.results else {}
             log = res.structurer.get("call_log") or []
-            row = {"case": case, "run": run, "expected": expected, "actual": r.get("label"),
-                   "pass": r.get("label") == expected, "basis": r.get("basis"), "reason": r.get("reason"),
+            ok_labels = ACCEPTABLE.get(case, {expected})
+            row = {"case": case, "run": run, "expected": "|".join(sorted(ok_labels)), "actual": r.get("label"),
+                   "pass": r.get("label") in ok_labels, "basis": r.get("basis"), "reason": r.get("reason"),
                    "missing": r.get("missing"), "quotes": [q["original_text"] for q in r.get("quotes", [])],
                    "s2_status": res.status, "s2_status_reason": res.status_reason,
                    "outcome": res.structurer.get("outcome"), "validation": res.validation,
@@ -161,7 +169,7 @@ async def run_all(args) -> list[dict]:
             if case == "J" and row["pass"]:
                 row["j_missing_ok"] = bool(J_MISSING_OK & set(row["missing"] or []))
             rows.append(row)
-            print(f"run {run} case {case}: expected {expected:13s} actual {str(row['actual']):13s} "
+            print(f"run {run} case {case}: expected {row['expected']:26s} actual {str(row['actual']):13s} "
                   f"{'PASS' if row['pass'] else 'FAIL'}  ({res.status}/{row['outcome'] or row['s2_status_reason']})")
     return rows
 
@@ -196,7 +204,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
     ap.add_argument("--runs", type=int, default=3)
-    ap.add_argument("--dry-run", action="store_true", help="print the 11 S2 requests; no API call")
+    ap.add_argument("--dry-run", action="store_true", help="print the S2 requests; no API call")
     ap.add_argument("--price-in", type=float, default=PRICE_IN)
     ap.add_argument("--price-out", type=float, default=PRICE_OUT)
     args = ap.parse_args(argv)
