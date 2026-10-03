@@ -358,7 +358,20 @@ class TestInputContract:
                      "POLICY: explicit_role", "POLICY: functional", "POLICY: sector",
                      "Targets are authoritative", "NOT listed in targets", "NOT itself a target",
                      "outside the required setting", "the entry must also establish that setting",
-                     "functional/explicit_role with a setting", "evidence for BOTH the role and the setting"):
+                     "functional/explicit_role with a setting", "evidence for BOTH the role and the setting",
+                     # s2-3 semantic boundary
+                     "related requires positive evidence IN THE ENTRY of a material connection to the target role "
+                     "or its function", "Generic support, administrative, operational, coordination or supervised "
+                     "work is not related unless the entry itself establishes that connection",
+                     "work that is clearly described but unconnected is not_relevant, not insufficient",
+                     "involvement in the target is related, not qualifying",
+                     "is shown to support the target role or its function",
+                     "the setting is shown and the work is connected to the target role's function",
+                     "The setting or employer alone never makes unconnected work related",
+                     "the entry shows what the work is and it has no material connection",
+                     "the entry does not establish what work was done",
+                     "Never use insufficient merely because relevance cannot be proven",
+                     "shown to involve the target function"):
             assert frag in p, frag
 
 
@@ -526,7 +539,8 @@ class TestPolicyExamples:
         ("functional: support vs ownership / incidental", spec(policy="functional", targets=("logistics management",)),
          [res("E1", "not_relevant", [(6, "Managed 4 donor-funded programmes")]),
           res("E2", "qualifying", [(11, "Organised logistics")]),
-          res("E3", "insufficient", [(14, "Advised clients")], missing=["function"])]),
+          # s2-3: advising is a clearly established, unconnected function -> not_relevant
+          res("E3", "not_relevant", [(14, "Advised clients")])]),
         ("functional with setting", spec(policy="functional", targets=("programme management",),
                                          setting="development sector"),
          [res("E1", "qualifying", [(4, "IISD"), (6, "Managed 4 donor-funded programmes")], basis="context"),
@@ -702,7 +716,7 @@ class TestExplicitRoleSetting:
 class TestS2Versioning:
 
     def test_versions(self):
-        assert (s2.S2_PROMPT_VERSION, s2.S2_VERSION, s2.S2_INPUT_VERSION) == ("s2-2", "1.2.0", "s2-in-1")
+        assert (s2.S2_PROMPT_VERSION, s2.S2_VERSION, s2.S2_INPUT_VERSION) == ("s2-3", "1.2.0", "s2-in-1")
 
     def test_cache_key_depends_on_prompt_version_and_s2_version(self, monkeypatch):
         k = s2.s2_cache_key("s0", "spec")
@@ -724,7 +738,7 @@ class TestS2Versioning:
     def test_result_records_versions(self, construction_doc):
         out, _ = classify(construction_doc, CONSTRUCTION, construction_spec(), s2_resp(*CONSTRUCTION_RESULTS))
         d = out.to_dict()
-        assert d["s2_version"] == "1.2.0" and d["structurer"]["prompt_version"] == "s2-2"
+        assert d["s2_version"] == "1.2.0" and d["structurer"]["prompt_version"] == "s2-3"
         assert d["structurer"]["prompt_fingerprint"] == s2.prompt_fingerprint()
 
     def test_old_version_cache_entry_is_not_reused(self, construction_doc):
@@ -1176,3 +1190,107 @@ class TestRealFailureShapes:
         q = out.results[1]["quotes"][0]
         assert q["original_text"] == "Performance Marketing Manager | OmniCart Retail"
         assert not set(range(q["char_start"], q["char_end"])) & _date_chars(4)
+
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# s2-3 semantic boundary: related needs a connection SHOWN IN THE ENTRY
+# (recorded responses: these prove the contract accepts the intended labels;
+#  real model behaviour is measured by the evaluation harness)
+# ═════════════════════════════════════════════════════════════════════════════
+
+BOUNDARY_ENTRIES = [
+    # (key, title, employer, responsibility line, expected label)
+    ("A", "Administrative Support", "Gulf Trading Co", "دعم المهام الإدارية والتشغيلية الأساسية تحت إشراف مباشر.",
+     "not_relevant"),
+    ("B", "Office Assistant", "BuildCo Construction", "Answered phones and filed documents.", "not_relevant"),
+    ("C", "Coordinator", "Northwind Sales Ltd", "Coordinated meetings and travel for the sales team.", "not_relevant"),
+    ("D", "Customer Service Agent", "TelcoOne", "Handled customer support tickets.", "not_relevant"),
+    ("E", "Project Coordinator", "BuildCo Construction",
+     "Supported the Construction Project Manager with schedules and RFIs.", "related"),
+    ("F", "Site Coordinator", "Delta Contracting LLC",
+     "Assisted the Project Manager with site logistics on commercial builds.", "related"),
+    ("G", "Assistant Project Manager", "CloudSoft Technologies",
+     "Coordinated software release plans for the mobile app team.", "related"),
+    ("H", "Site Engineer", "Delta Contracting LLC", "Supervised concrete works on residential towers.", "related"),
+    ("I", "Project Assistant", "BuildCo Construction",
+     "Prepared meeting minutes for the construction project management team.", "related"),
+    ("J", "Officer", "Ministry of Planning", "Various duties.", "insufficient"),
+    ("K", "Consultant", "ACME Ltd", "Advised clients.", "not_relevant"),
+]
+
+
+def _boundary_cv():
+    lines = ["EXPERIENCE"]
+    entries = []
+    for k, (_, title, emp, resp, _) in enumerate(BOUNDARY_ENTRIES):
+        base = len(lines) + 1                                     # title line number
+        y = 2020 - 2 * k
+        lines += [title, emp, f"Jan {y} - Dec {y + 1}", f"- {resp}"]
+        entries.append(s0_entry(f"A{k + 1}", title=(base, title), employer=(base + 1, emp),
+                                header=(base, base + 1, base + 2), body=[(base + 3, base + 3)]))
+    return "\n".join(lines), s0_resp(entries)
+
+
+BOUNDARY_CV, BOUNDARY_S0 = _boundary_cv()
+
+
+def _boundary_result(k: int):
+    key, title, emp, resp, label = BOUNDARY_ENTRIES[k]
+    base = 2 + 4 * k
+    eid = f"E{k + 1}"
+    if label == "insufficient":
+        return res(eid, label, [(base, title)], basis="title", missing=["function", "responsibilities"])
+    if key in ("E", "I"):            # connection + setting shown: role support + employer context
+        return res(eid, label, [(base + 1, emp), (base + 3, resp.rstrip("."))], basis="context")
+    if key == "G":                   # target role outside the required setting
+        return res(eid, label, [(base, title), (base + 3, resp.rstrip("."))], basis="title_and_responsibilities")
+    return res(eid, label, [(base + 3, resp.rstrip("."))])
+
+
+@pytest.fixture(scope="module")
+def boundary_doc():
+    d = s0_doc(BOUNDARY_CV, BOUNDARY_S0)
+    assert d.structure_status == "validated" and len(d.experience_entries()) == len(BOUNDARY_ENTRIES)
+    return d
+
+
+class TestSemanticBoundaryS23:
+
+    def test_all_boundary_labels_validate_and_pass_through(self, boundary_doc):
+        out, client = classify(boundary_doc, BOUNDARY_CV, construction_spec(),
+                               s2_resp(*[_boundary_result(k) for k in range(len(BOUNDARY_ENTRIES))]))
+        assert out.ok and out.structurer["outcome"] == "validated" and len(client.requests) == 1, out.validation
+        assert out.labels() == {f"E{k + 1}": e[4] for k, e in enumerate(BOUNDARY_ENTRIES)}
+
+    @pytest.mark.parametrize("k", range(len(BOUNDARY_ENTRIES)),
+                             ids=[f"{e[0]}-{e[4]}" for e in BOUNDARY_ENTRIES])
+    def test_boundary_case(self, boundary_doc, k):
+        out, _ = classify(boundary_doc, BOUNDARY_CV, construction_spec(),
+                          s2_resp(*[_boundary_result(j) for j in range(len(BOUNDARY_ENTRIES))]))
+        r = out.results[k]
+        assert r["label"] == BOUNDARY_ENTRIES[k][4]
+        for q in r["quotes"]:                                     # evidence is exact original CV text
+            assert split_lines(BOUNDARY_CV)[q["line"] - 1][q["char_start"]:q["char_end"]] == q["original_text"]
+
+    def test_arabic_generic_support_evidence_maps_to_original(self, boundary_doc):
+        out, _ = classify(boundary_doc, BOUNDARY_CV, construction_spec(),
+                          s2_resp(*[_boundary_result(k) for k in range(len(BOUNDARY_ENTRIES))]))
+        (q,) = out.results[0]["quotes"]
+        assert out.results[0]["label"] == "not_relevant"
+        assert q["original_text"] == "دعم المهام الإدارية والتشغيلية الأساسية تحت إشراف مباشر"
+
+    def test_insufficient_without_missing_still_rejected(self, boundary_doc):
+        bad = [_boundary_result(k) for k in range(len(BOUNDARY_ENTRIES))]
+        bad[9] = res("E10", "insufficient", [(38, "Officer")], basis="title")             # no 'missing'
+        sp = construction_spec()
+        v = validate_response(s2_resp(*bad), s2.build_request(boundary_doc, sp, BOUNDARY_CV).entries,
+                              policy=sp.policy, has_setting=True)
+        assert any("S2-V4 results[9] (E10): insufficient requires" in e for e in v.errors)
+
+    def test_target_authority_not_regressed(self, construction_doc):
+        # JOB-2026-0031 correction kept: Assistant Project Manager in construction stays a qualifying target
+        out, _ = classify(construction_doc, CONSTRUCTION, construction_spec(), s2_resp(*CONSTRUCTION_RESULTS))
+        assert out.ok and out.labels()["E1"] == "qualifying"
+        p = s2.S2_SYSTEM_PROMPT
+        assert "Targets are authoritative" in p and "even if its title contains assistant, associate, deputy, junior" in p

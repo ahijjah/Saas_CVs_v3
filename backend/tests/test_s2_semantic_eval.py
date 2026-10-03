@@ -288,7 +288,7 @@ def test_dry_run_no_ai_no_writes(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     for frag in (f"job_code: {JOB}", "usable CVs selected: 1", "excluded: 3", "excluded 1 x no_files",
                  "a-ok", "Minimum [N] years of experience", '"setting": "construction"',
-                 "required_years=5 (S4/S5 only — not sent to S2)", f"S2 version {ev.s2.S2_VERSION} · prompt s2-2",
+                 "required_years=5 (S4/S5 only — not sent to S2)", f"S2 version {ev.s2.S2_VERSION} · prompt {ev.s2.S2_PROMPT_VERSION}",
                  "entries are produced by S0 at run time", "L4: [dates]", "S0: 1 main + at most 1 repairs",
                  "S2: at most 1 main", "no OpenAI calls were made"):
         assert frag in out, frag

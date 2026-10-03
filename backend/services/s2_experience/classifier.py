@@ -28,7 +28,7 @@ Call flow (all-or-nothing per criterion; technical failures are never labels):
       invalid                        -> failed validation_failed (cached)
   masking / mapping invariant broken -> failed internal_error (retryable; not cached)
 
-Semantic contract notes (s2-2):
+Semantic contract notes (s2-2, kept in s2-3):
   - RequirementSpec.targets are AUTHORITATIVE: a role listed in targets is a
     target role as written (e.g. "Assistant Project Manager"); generic
     assistant/associate/deputy/junior heuristics apply only to roles NOT listed.
@@ -37,6 +37,12 @@ Semantic contract notes (s2-2):
   - setting is meaningful for explicit_role (as for functional): qualifying
     needs the target/equivalent role AND the setting; a target role outside the
     setting is related; basis "context" is allowed only when a setting exists.
+  s2-3 boundary clarification: related needs positive evidence IN THE ENTRY of a
+    material connection to the target role/function (sector: target sector);
+    generic support/admin/operational/coordination/supervised work, or a setting
+    employer alone, is not related; clearly described but unconnected work is
+    not_relevant; insufficient only when the entry cannot establish what the
+    work/function is.
 """
 from __future__ import annotations
 
@@ -64,7 +70,7 @@ S2_SCHEMA = "s2_result_v1"
 S2_VERSION = "1.2.0"                   # input format + masking + validator
 S2_INPUT_VERSION = "s2-in-1"
 S2_PROMPT_CODE = "recruitment.experience_relevance"
-S2_PROMPT_VERSION = "s2-2"
+S2_PROMPT_VERSION = "s2-3"
 S2_MODEL = "gpt-4o-mini"
 S2_TEMPERATURE = 0.0
 S2_MAX_TOKENS = llm_call.MAX_OUTPUT_TOKENS
@@ -99,20 +105,21 @@ HARD RULES
 1. Judge each entry only against the stated requirement and only from that entry's own lines.
 2. Never reason about duration, dates, years, how long something lasted, or seniority-by-time. Never compute years or decide whether the requirement as a whole is met.
 3. A job title is not required: responsibilities can establish qualifying. A title alone qualifies only when it inherently denotes the target and nothing in the entry contradicts it (basis "title").
-4. "Substantial" means a regular or main responsibility; incidental, occasional or exposure-level involvement is related, not qualifying.
-5. insufficient means the entry LACKS INFORMATION (say what is missing); it is not for being unsure. A clearly described job must get one of the other three labels.
+4. "Substantial" means a regular or main responsibility; incidental, occasional or exposure-level involvement in the target is related, not qualifying.
+5. insufficient means the entry LACKS INFORMATION (say what is missing); it is not for being unsure. A clearly described job must get one of the other three labels. Never use insufficient merely because relevance cannot be proven.
 6. Quotes must be copied VERBATIM from a line of the SAME entry (part of a line is fine). Never invent or paraphrase evidence.
 7. Targets are authoritative: a role listed in "targets" is a target role exactly as written, even if its title contains assistant, associate, deputy, junior or similar. Generic title heuristics apply only to roles that are NOT listed in targets.
+8. related requires positive evidence IN THE ENTRY of a material connection to the target role or its function (for sector: to the target sector). Generic support, administrative, operational, coordination or supervised work is not related unless the entry itself establishes that connection; work that is clearly described but unconnected is not_relevant, not insufficient.
 
 POLICY: explicit_role (candidate must have HELD one of the target roles)
 - qualifying: title is a target role or plain equivalent; OR responsibilities show that role's accountability (owning delivery, budget, team, programme/project) as the main substance of the job. If a setting is given, the entry must also establish that setting (title, employer, context or responsibilities).
-- related: an assistant/associate/deputy/supporting role that is NOT itself a target; supports the target role or does tasks it oversees; same domain at lower/supporting accountability; does the role's duties only occasionally. With a setting, ALSO related: the setting is shown but target-role accountability is not; OR a target or equivalent role is shown outside the required setting.
-- not_relevant: enough information to see no material connection to the role's function or domain (or, with a setting, to the required role in that setting).
-- insufficient: generic title/context without information about the accountability held; OR, with a setting, the role is shown but the setting cannot be identified (include "setting" in missing).
+- related (the connection must be shown in the entry): an assistant/associate/deputy/supporting role that is NOT itself a target and is shown to support the target role or its function; does tasks the target role oversees; same domain at lower/supporting accountability; does the role's duties only occasionally. With a setting, ALSO related: the setting is shown and the work is connected to the target role's function but target-role accountability is not; OR a target or equivalent role is shown outside the required setting. The setting or employer alone never makes unconnected work related.
+- not_relevant: the entry shows what the work is and it has no material connection to the role's function or domain (or, with a setting, to the required role in that setting).
+- insufficient: the entry does not establish what work was done or the accountability held (generic title/context only); OR, with a setting, the role is shown but the setting cannot be identified (include "setting" in missing).
 
 POLICY: functional (candidate must have PERFORMED the target function, whatever the title)
 - qualifying: performs the target function substantially (shown by responsibilities, or a title that inherently denotes doing it); if a setting is given, the setting must also be shown.
-- related: adjacent, supporting or user-only work, or incidental involvement; OR the function performed outside a required setting.
+- related: adjacent, supporting or user-only work shown to involve the target function, or incidental involvement in it; OR the function performed outside a required setting.
 - not_relevant: a different function with no material involvement in the target.
 - insufficient: the entry does not show what work was done (or, with a setting requirement, the setting cannot be identified while the function is shown: include "setting" in missing).
 
