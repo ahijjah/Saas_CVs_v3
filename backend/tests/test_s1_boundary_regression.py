@@ -357,7 +357,7 @@ class TestS14Diagnostics:
 
     def test_match_counts(self):
         records, cases = scripted_records({}, cases=CASES)
-        assert br.summarize(records, cases)["match_counts"] == {"exact": 10, "equivalent": 7, "none": 15}
+        assert br.summarize(records, cases)["match_counts"] == {"exact": 16, "equivalent": 7, "none": 15}
 
 
 class TestHeldOut:
@@ -446,3 +446,85 @@ class TestPromptIndependence:
         prompt = br.clf.S1_SYSTEM_PROMPT
         for phrase in sorted(fixture_phrases(CASES) | fixture_phrases(HELDOUT) | set(self.BANNED)):
             assert not _contains_phrase(prompt, phrase), phrase
+
+
+# ── target + setting family (s1-boundary-7 / s1-heldout-6) ──────────────────────────────────────
+
+SETTING_MAIN = ["M4", "M5", "M6", "M7", "M8", "M9"]
+SETTING_HELD = ["HO16", "HO17", "HO18", "HO19", "HO20", "HO21"]
+ALL_BY_ID = {**BY_ID, **{c["id"]: c for c in HELDOUT}}
+
+
+def _variants(case):
+    s = case["expected"]["setting"]
+    return s["one_of"] if isinstance(s, dict) else ([] if s is None else [s])
+
+
+def _with_setting(case, text):
+    d = json.loads(br.oracle_response(case))
+    d["criteria"][0]["setting"] = None if text is None else {"line": 2, "text": text}
+    return json.dumps(d, ensure_ascii=False)
+
+
+def _score_one(case, raw):
+    (r,), _ = scripted_records({case["id"]: [[raw]]}, cases=[case])
+    return r
+
+
+class TestTargetSettingFamily:
+    def test_composition(self):
+        assert [c for c in SETTING_MAIN if BY_ID[c]["family"] == "M_sector"] == SETTING_MAIN
+        assert {c: ALL_BY_ID[c]["family"] for c in SETTING_HELD} == {
+            "HO16": "HO_setting", "HO17": "HO_setting", "HO18": "HO_setting", "HO19": "HO_setting",
+            "HO20": "HO_setting_none", "HO21": "HO_setting_none"}
+        with_setting = [c for c in SETTING_MAIN + SETTING_HELD if _variants(ALL_BY_ID[c])]
+        assert with_setting == ["M4", "M5", "M6", "HO16", "HO17", "HO18", "HO19"]
+        for cid in SETTING_MAIN + SETTING_HELD:                      # one criterion, one target, conjunctive
+            c = ALL_BY_ID[cid]
+            assert len(c["analysis"]["relevant_roles"]) == 1 and len(c["expected"]["targets"]) == 1
+            assert c["expected"]["status"] == "resolved" and c["oracle"]["targets"][0]["match"] == "exact"
+        assert BY_ID["M3"]["expected"]["setting"] == "oil and gas projects"            # M3 unchanged
+
+    def test_setting_variants_are_only_faithful_verbatim_spans(self):
+        for c in [c for c in CASES + HELDOUT if isinstance(c["expected"]["setting"], dict)]:
+            canonical = (c["oracle"].get("setting") or {}).get("text") or next(
+                r["text"] for r in c["oracle"]["restrictions"] if r["kind"] == "sector")
+            vs = _variants(c)
+            assert vs[0] == canonical and len(set(vs)) == len(vs), c["id"]
+            for v in vs:
+                assert v in c["jd_lines"][1], (c["id"], v)                   # verbatim in the JD line
+                assert v == canonical or v.endswith(" " + canonical), (c["id"], v)  # only a leading word added
+                assert len(v.split()) <= len(canonical.split()) + 2, (c["id"], v)
+        assert _variants(BY_ID["M1"]) == ["banking sector", "the banking sector", "in the banking sector"]
+
+    @pytest.mark.parametrize("cid", SETTING_MAIN + SETTING_HELD)
+    def test_every_new_oracle_validates_and_passes(self, cid):
+        r = _score_one(ALL_BY_ID[cid], br.oracle_response(ALL_BY_ID[cid]))
+        assert r["outcome"] == "ok" and r["pass"], r.get("checks")
+
+    @pytest.mark.parametrize("cid", ["M4", "M5", "M6", "HO16", "HO17", "HO18", "HO19"])
+    def test_equivalent_variants_pass_missing_or_different_setting_fails(self, cid):
+        case = ALL_BY_ID[cid]
+        for v in _variants(case):
+            assert _score_one(case, _with_setting(case, v))["pass"], v
+        missing = _score_one(case, _with_setting(case, None))
+        assert missing["outcome"] == "ok" and not missing["checks"]["setting"] and not missing["pass"]
+        other = "experience" if not re.search(r"[؀-ۿ]", case["jd_lines"][1]) else "خبرة"
+        wrong = _score_one(case, _with_setting(case, other))
+        assert wrong["outcome"] == "ok" and not wrong["checks"]["setting"]
+
+    @pytest.mark.parametrize("cid, invented", [
+        ("M7", "Project Manager"), ("M8", "database administration"), ("M9", "fast-paced environment"),
+        ("HO20", "fleet maintenance"), ("HO21", "multicultural team environment"),
+    ])
+    def test_null_setting_controls_reject_an_invented_setting(self, cid, invented):
+        case = ALL_BY_ID[cid]
+        r = _score_one(case, _with_setting(case, invented))
+        assert not r["pass"] and (r["outcome"] != "ok" or not r["checks"]["setting"])
+
+    def test_m1_variants(self):
+        for v in _variants(BY_ID["M1"]):
+            raw = with_oracle("M1", restrictions=[{"line": 2, "text": v, "kind": "sector"}])
+            assert _score_one(BY_ID["M1"], raw)["pass"], v
+        raw = with_oracle("M1", restrictions=[])
+        assert not _score_one(BY_ID["M1"], raw)["pass"]                      # a missing sector still fails

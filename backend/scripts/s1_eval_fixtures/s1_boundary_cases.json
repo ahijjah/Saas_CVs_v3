@@ -1,6 +1,6 @@
 {
- "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants. s1-boundary-2: oracle hint targets gained the s1-3 'match' field (structural only; every 'expected' label is unchanged from s1-boundary-1). s1-boundary-3 (s1-4 contract): oracle answers no longer carry a model policy (policy is derived); hint-less cases carry relevance_basis; K2 (PM vs P.M.) is policy-sensitive (either mapping accepted, excluded from the jd_asserted precision gate); E3 accepts a defensive ambiguous_relevance. All other expectations unchanged. s1-boundary-4 (s1-5 contract): equivalent reference answers carry a word alignment; years-only cases carry typed restrictions instead of relevance_basis/targets/setting; M2 is anchored by its sector restriction (anchor 'restriction'); R1 is a compound requirement (two thresholds) and must be compound_requirement / needs_confirmation instead of a resolved single threshold. All other expectations unchanged. s1-boundary-5 (s1-5.1): the B1/B2/B4 reference alignments pair the bare Arabic word (مدير, مهندس, محاسب) inside the span word that carries the attached letter ك, exercising the canonical proclitic boundary; no expectation changed. s1-boundary-6 (s1-5.2 trust contract): a model-labelled grammatical 'form' pair is NOT trust-bearing, so G1/G2 (equivalence through a form pair) are needs_confirmation with an original_ai target, reason equivalence_unverified and the candidate mapping kept in the audit (no jd_asserted, no S2 view). I1 is unchanged: none (target_not_in_jd) or a form candidate (equivalence_unverified) are both safe; it is never jd_asserted, jd_verified or resolved. No other expectation changed.",
- "fixture_version": "s1-boundary-6",
+ "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants. s1-boundary-2: oracle hint targets gained the s1-3 'match' field (structural only; every 'expected' label is unchanged from s1-boundary-1). s1-boundary-3 (s1-4 contract): oracle answers no longer carry a model policy (policy is derived); hint-less cases carry relevance_basis; K2 (PM vs P.M.) is policy-sensitive (either mapping accepted, excluded from the jd_asserted precision gate); E3 accepts a defensive ambiguous_relevance. All other expectations unchanged. s1-boundary-4 (s1-5 contract): equivalent reference answers carry a word alignment; years-only cases carry typed restrictions instead of relevance_basis/targets/setting; M2 is anchored by its sector restriction (anchor 'restriction'); R1 is a compound requirement (two thresholds) and must be compound_requirement / needs_confirmation instead of a resolved single threshold. All other expectations unchanged. s1-boundary-5 (s1-5.1): the B1/B2/B4 reference alignments pair the bare Arabic word (مدير, مهندس, محاسب) inside the span word that carries the attached letter ك, exercising the canonical proclitic boundary; no expectation changed. s1-boundary-6 (s1-5.2 trust contract): a model-labelled grammatical 'form' pair is NOT trust-bearing, so G1/G2 (equivalence through a form pair) are needs_confirmation with an original_ai target, reason equivalence_unverified and the candidate mapping kept in the audit (no jd_asserted, no S2 view). I1 is unchanged: none (target_not_in_jd) or a form candidate (equivalence_unverified) are both safe; it is never jd_asserted, jd_verified or resolved. No other expectation changed. s1-boundary-7: target + setting family expansion (M4-M9: role/function with a sector, project-domain or organisational setting; negative controls without a setting; generic environment wording that is not a setting). An expected setting may be {\"one_of\": [...]} listing only faithful verbatim variants of the canonical shortest span (a leading article/preposition); a missing or materially different setting still fails. M1's expected setting uses the same variants. No other expectation changed.",
+ "fixture_version": "s1-boundary-7",
  "cases": [
   {
    "id": "A1",
@@ -1468,7 +1468,13 @@
    "expected": {
     "policy": "sector",
     "targets": [],
-    "setting": "banking sector",
+    "setting": {
+     "one_of": [
+      "banking sector",
+      "the banking sector",
+      "in the banking sector"
+     ]
+    },
     "duration": "2 years",
     "ambiguity": [],
     "status": "resolved",
@@ -1570,6 +1576,349 @@
     "status": "resolved",
     "span_includes": [
      "Minimum 5 years of experience as a Site Engineer on oil and gas projects"
+    ]
+   }
+  },
+  {
+   "id": "M4",
+   "family": "M_sector",
+   "description": "role with a sector setting",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Accountant"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience as an Accountant in the banking sector."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience as an Accountant in the banking sector"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "banking sector"
+    },
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Accountant",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": {
+     "one_of": [
+      "banking sector",
+      "the banking sector",
+      "in the banking sector"
+     ]
+    },
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 3 years of experience as an Accountant in the banking sector"
+    ]
+   }
+  },
+  {
+   "id": "M5",
+   "family": "M_sector",
+   "description": "role with a project-domain setting",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 5 years of experience as a Project Manager on construction projects."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 5 years of experience as a Project Manager on construction projects"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "construction projects"
+    },
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": {
+     "one_of": [
+      "construction projects",
+      "on construction projects"
+     ]
+    },
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "At least 5 years of experience as a Project Manager on construction projects"
+    ]
+   }
+  },
+  {
+   "id": "M6",
+   "family": "M_sector",
+   "description": "function with an organisational setting",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "database administration"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience in database administration within financial institutions."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience in database administration within financial institutions"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "financial institutions"
+    },
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "database administration",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": {
+     "one_of": [
+      "financial institutions",
+      "within financial institutions"
+     ]
+    },
+    "duration": "4 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 4 years of experience in database administration within financial institutions"
+    ]
+   }
+  },
+  {
+   "id": "M7",
+   "family": "M_sector",
+   "description": "role without a setting (negative control)",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Project Manager."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience as a Project Manager"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 5 years of experience as a Project Manager"
+    ]
+   }
+  },
+  {
+   "id": "M8",
+   "family": "M_sector",
+   "description": "function without a setting (negative control)",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "database administration"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience in database administration."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years of experience in database administration"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "database administration",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "At least 3 years of experience in database administration"
+    ]
+   }
+  },
+  {
+   "id": "M9",
+   "family": "M_sector",
+   "description": "generic environment wording is not a setting",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as a Project Manager in a dynamic, fast-paced environment."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience as a Project Manager in a dynamic, fast-paced environment"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 4 years of experience as a Project Manager in a dynamic, fast-paced environment"
     ]
    }
   },

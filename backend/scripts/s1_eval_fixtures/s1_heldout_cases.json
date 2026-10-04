@@ -1,6 +1,6 @@
 {
- "_comment": "HELD-OUT synthetic boundary cases for S1 s1-3 (semantic equivalence and qualifier preservation). Vocabulary is disjoint from the production prompt illustrations and from s1_boundary_cases.json, so it measures generalisation. No candidate, CV, application or personal data. Same schema as s1_boundary_cases.json. s1-heldout-2 (s1-4 contract): oracle answers no longer carry a model policy; expectations unchanged. s1-heldout-3 (s1-5 contract): equivalent reference answers carry a word alignment; expectations unchanged. s1-heldout-4 (s1-5.2 trust contract): HO06 (equivalence through a form pair) is needs_confirmation with an original_ai target, reason equivalence_unverified and the candidate mapping kept in the audit. No other expectation changed. s1-heldout-5 (s1-5.2.2 abbreviation trust contract): an abbreviation EXPANSION is evidence only when the JD itself defines it (\"Full Form (ACR)\" / \"ACR (Full Form)\"). HO09 (UX Designer vs 'User Experience Designer', no definition in the JD) is therefore an unverified candidate: needs_confirmation, original_ai, equivalence_unverified, candidate mapping kept in the audit, no jd_asserted, no S2. No other expectation changed.",
- "fixture_version": "s1-heldout-5",
+ "_comment": "HELD-OUT synthetic boundary cases for S1 s1-3 (semantic equivalence and qualifier preservation). Vocabulary is disjoint from the production prompt illustrations and from s1_boundary_cases.json, so it measures generalisation. No candidate, CV, application or personal data. Same schema as s1_boundary_cases.json. s1-heldout-2 (s1-4 contract): oracle answers no longer carry a model policy; expectations unchanged. s1-heldout-3 (s1-5 contract): equivalent reference answers carry a word alignment; expectations unchanged. s1-heldout-4 (s1-5.2 trust contract): HO06 (equivalence through a form pair) is needs_confirmation with an original_ai target, reason equivalence_unverified and the candidate mapping kept in the audit. No other expectation changed. s1-heldout-5 (s1-5.2.2 abbreviation trust contract): an abbreviation EXPANSION is evidence only when the JD itself defines it (\"Full Form (ACR)\" / \"ACR (Full Form)\"). HO09 (UX Designer vs 'User Experience Designer', no definition in the JD) is therefore an unverified candidate: needs_confirmation, original_ai, equivalence_unverified, candidate mapping kept in the audit, no jd_asserted, no S2. No other expectation changed. s1-heldout-6: target + setting family (HO16-HO21: Arabic and English role/function with a setting, negative controls without a setting, a team description that is not a setting) with fresh vocabulary; expected settings may list faithful verbatim variants (one_of) of the canonical shortest span. No other expectation changed.",
+ "fixture_version": "s1-heldout-6",
  "cases": [
   {
    "id": "HO01",
@@ -876,6 +876,357 @@
     "status": "resolved",
     "span_includes": [
      "At least 3 years as a Copywriter or in content editing"
+    ]
+   }
+  },
+  {
+   "id": "HO16",
+   "family": "HO_setting",
+   "description": "Arabic role with a sector setting",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "محاسب"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 3 سنوات كمحاسب في القطاع المصرفي."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة لا تقل عن 3 سنوات كمحاسب في القطاع المصرفي"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "القطاع المصرفي"
+    },
+    "duration": "3 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "محاسب",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": {
+     "one_of": [
+      "القطاع المصرفي",
+      "في القطاع المصرفي"
+     ]
+    },
+    "duration": "3 سنوات",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "خبرة لا تقل عن 3 سنوات كمحاسب في القطاع المصرفي"
+    ]
+   }
+  },
+  {
+   "id": "HO17",
+   "family": "HO_setting",
+   "description": "Arabic function with an organisational setting",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "إدارة قواعد البيانات"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 4 سنوات في إدارة قواعد البيانات في المؤسسات المالية."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة لا تقل عن 4 سنوات في إدارة قواعد البيانات في المؤسسات المالية"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "المؤسسات المالية"
+    },
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "إدارة قواعد البيانات",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": {
+     "one_of": [
+      "المؤسسات المالية",
+      "في المؤسسات المالية"
+     ]
+    },
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "خبرة لا تقل عن 4 سنوات في إدارة قواعد البيانات في المؤسسات المالية"
+    ]
+   }
+  },
+  {
+   "id": "HO18",
+   "family": "HO_setting",
+   "description": "role with a sector setting",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Claims Adjuster"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as a Claims Adjuster in the insurance sector."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience as a Claims Adjuster in the insurance sector"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "insurance sector"
+    },
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Claims Adjuster",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": {
+     "one_of": [
+      "insurance sector",
+      "the insurance sector",
+      "in the insurance sector"
+     ]
+    },
+    "duration": "4 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 4 years of experience as a Claims Adjuster in the insurance sector"
+    ]
+   }
+  },
+  {
+   "id": "HO19",
+   "family": "HO_setting",
+   "description": "function with an operational setting",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "fleet maintenance"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience in fleet maintenance within mining operations."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years of experience in fleet maintenance within mining operations"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "mining operations"
+    },
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "fleet maintenance",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": {
+     "one_of": [
+      "mining operations",
+      "within mining operations"
+     ]
+    },
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "At least 3 years of experience in fleet maintenance within mining operations"
+    ]
+   }
+  },
+  {
+   "id": "HO20",
+   "family": "HO_setting_none",
+   "description": "function without a setting (negative control)",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "fleet maintenance"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience in fleet maintenance."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years of experience in fleet maintenance"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "fleet maintenance",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "At least 3 years of experience in fleet maintenance"
+    ]
+   }
+  },
+  {
+   "id": "HO21",
+   "family": "HO_setting_none",
+   "description": "team description is not a setting (negative control)",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Claims Adjuster"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as a Claims Adjuster in a multicultural team environment."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience as a Claims Adjuster in a multicultural team environment"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Claims Adjuster",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 4 years of experience as a Claims Adjuster in a multicultural team environment"
     ]
    }
   }
