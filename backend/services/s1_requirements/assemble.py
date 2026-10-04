@@ -226,6 +226,14 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
         raise ValueError(f"criterion {c.criterion_id}: statement-anchored requirement cannot resolve")
     audit["requirement_anchor"] = None if not req else pc.anchor_kind
     status = STATUS_NEEDS_CONFIRMATION if reasons else STATUS_RESOLVED
+    # s1-5.1 deterministic withdrawal: audit it, and it may only ever narrow evidence
+    audit["alignment_withdrawn"] = bool(pc.withdrawn)
+    if pc.withdrawn:
+        audit["withdrawals"] = [dict(x) for x in pc.withdrawn]
+        gone = {x["hint"] for x in pc.withdrawn}
+        if any(t.target_id in gone and t.provenance == PROV_JD_ASSERTED for t in targets) or (
+                status == STATUS_RESOLVED and "targets" not in gov):
+            raise ValueError(f"criterion {c.criterion_id}: a withdrawn equivalent claim cannot establish a target")
     return S1Artifact(requirement_text=requirement_text, spec_status=status, policy=pc.policy,
                       targets=tuple(targets), setting=setting, required_years=ry, reasons=tuple(reasons),
                       field_provenance=field_provenance, requirement_spans=req,

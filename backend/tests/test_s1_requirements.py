@@ -713,8 +713,15 @@ def codes(out):
 
 
 def rejected(out, frag):
-    return out.artifacts[0].spec_status == "failed_validation" and any(
-        frag in e for e in out.validation["errors"])
+    """The equivalent claim was refused: failed_validation, or (s1-5.1) withdrawn after the repair -> the
+    target is never jd_asserted and the criterion is never resolved."""
+    art = out.artifacts[0]
+    if not any(frag in e for e in out.validation["errors"]):
+        return False
+    if art.spec_status == "failed_validation":
+        return True
+    return (art.audit.get("alignment_withdrawn") is True and art.spec_status == "needs_confirmation"
+            and all(t.provenance != "jd_asserted" for t in art.targets))
 
 
 class TestS12EquivalenceMapping:
@@ -1009,10 +1016,18 @@ class TestStatementAnchor:
 
 class TestS12Versioning:
     def test_versions_and_fingerprint(self):
-        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5", "1.4.0")
-        assert clf.prompt_fingerprint() == "a0ae492a27e4"
+        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5.1", "1.4.1")
+        assert clf.prompt_fingerprint() == "b2a063ab2947"
         assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9", "c9b570d82f4e",
-                                                "faad01d30b5c")
+                                                "faad01d30b5c", "a0ae492a27e4")
+
+    def test_cache_identity_differs_from_s1_5(self, monkeypatch):
+        req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
+        k = clf.s1_cache_key(req)
+        monkeypatch.setattr(clf, "S1_PROMPT_VERSION", "s1-5")
+        monkeypatch.setattr(clf, "S1_VERSION", "1.4.0")
+        monkeypatch.setattr(clf, "prompt_fingerprint", lambda: "a0ae492a27e4")
+        assert clf.s1_cache_key(req) != k
 
     def test_cache_identity_differs_from_s1_4(self, monkeypatch):
         req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
@@ -1321,10 +1336,15 @@ class TestS14ScopedRepair:
         gave_up = self._b1_item(c.criterion_id, match="none", jd_span=None, type="function")
         _, out = _run_raw(jd, a, _resp(main), _resp(gave_up))
         art = out.artifacts[0]
-        assert art.spec_status == "failed_validation"                              # not a silent original_ai
-        assert any("match equivalent requires jd_span" in e for e in out.validation["repair_errors"])
         assert {x["field"] for x in out.meta["repair_merge"]["taken"]} == {
             "target:T1:jd_span", "target:T1:alignment", "target:T1:jd_extra"}                # never match/type
+        # s1-5.1: the claim left without a span is withdrawn deterministically and audited (never silent); the
+        # type stays the main answer's, the repair's "function" is still discarded
+        assert art.spec_status == "needs_confirmation" and [(t.type, t.provenance) for t in art.targets] == [
+            ("role", "original_ai")]
+        (w,) = art.audit["withdrawals"]
+        assert art.audit["alignment_withdrawn"] and w["hint"] == "T1" and w["withdrawn_claim"]["match"] == "equivalent"
+        assert any("match equivalent requires jd_span" in e for e in w["errors"])
 
     def test_b1_span_error_fixed_keeps_semantics(self):
         a, jd, (c,) = _job(["Construction Project Manager"], 5, self.ARABIC)
@@ -1532,7 +1552,7 @@ class TestS15AlignmentRejects:
         assert errs_with(v, "unaccounted ['enterprise', 'systems']")                 # cannot silently disappear
         v, *_ = _eqv(*args, [("software", "software systems", SA), ("implementation", "implementing enterprise", FO)],
                      years=3)
-        assert errs_with(v, "relation same needs the identical word") and errs_with(v, "relation form is one word")
+        assert errs_with(v, "are not the identical word") and errs_with(v, "relation form is one word")
 
     def test_ho03_dropped_equine(self):
         v, *_ = _eqv("Equine Veterinarian", "خبرة 3 سنوات كطبيب بيطري", "كطبيب بيطري",
@@ -1575,8 +1595,10 @@ class TestS15AlignmentRejects:
         out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, json.dumps(withdrawn))))
         art = out.artifacts[0]
         assert [t.provenance for t in art.targets] == ["original_ai"] and art.spec_status == "needs_confirmation"
-        same_again = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, raw)))
-        assert same_again.artifacts[0].spec_status == "failed_validation"
+        same_again = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, raw)))       # s1-5.1 withdrawal
+        art = same_again.artifacts[0]
+        assert art.spec_status == "needs_confirmation" and [t.provenance for t in art.targets] == ["original_ai"]
+        assert art.audit["alignment_withdrawn"] and same_again.meta["outcome"] == "repaired_withdrawn"
 
     def test_alignment_copy_error_cannot_flip_match(self):
         line = "Minimum 5 years of experience as a Human Resources Manager"
@@ -1586,7 +1608,9 @@ class TestS15AlignmentRejects:
         gave_up = json.loads(raw)
         gave_up["criteria"][0]["targets"][0].update(match="none", jd_span=None)
         out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, json.dumps(gave_up))))
-        assert out.artifacts[0].spec_status == "failed_validation"                     # match kept: not silent
+        art = out.artifacts[0]                    # the repair's match change is discarded; s1-5.1 withdraws, audited
+        assert art.spec_status == "needs_confirmation" and art.audit["alignment_withdrawn"]
+        assert out.meta["repair_merge"]["discarded_changes"] == 1
 
 
 class TestS15AlignmentAccepts:
@@ -1992,3 +2016,315 @@ class TestIsolation:
         assert [f.name for f in dataclasses.fields(RequirementSpec)] == [
             "policy", "required_years", "targets", "setting", "spec_version", "criterion_id",
             "criterion_text", "source_spans"]
+
+
+# ── s1-5.1: canonical words, relation messages, abbreviations, duplicates, statement anchor, withdrawal ──
+
+from services.s1_requirements import repair as rp                                  # noqa: E402
+from services.s1_requirements.jd_text import locate_words, words                  # noqa: E402
+from services.s1_requirements.validator import ParsedCriterion, ParsedTarget, ScopedError  # noqa: E402
+
+PM_LINE = "Minimum 5 years as a Project Manager (P.M.)"
+
+
+def _accepts(*args, **kw):
+    v, jd, a, raw = _eqv(*args, **kw)
+    assert v.ok, v.errors
+    out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw)))
+    art = out.artifacts[0]
+    assert [t.provenance for t in art.targets] == ["jd_asserted"] and art.spec_status == "resolved"
+    return art
+
+
+class TestS151CanonicalWords:
+    def test_words_and_dotted_acronyms(self):
+        assert words(PM_LINE)[-3:] == ["project", "manager", "pm"]
+        assert words("U.X") == ["ux"] and words("s.manager") == ["s", "manager"]   # not an acronym
+        assert words("كمحاسب") == ["كمحاسب"]
+
+    def test_locate_uses_the_span_boundary_rule(self):
+        assert locate_words(["محاسب"], ["كمحاسب"]) == [(0, "ك")]
+        assert locate_words(["مدير"], ["وبمدير"]) == [(0, "وب")]
+        assert locate_words(["مدير"], ["ممدير"]) == []                                # not a proclitic chain
+        assert locate_words(["محاسب"], ["المحاسب"]) == []                             # no other prefix stripping
+        assert locate_words(["مدير"], ["مديرين"]) == []                                # right edge strict
+        assert locate_words(["manager"], ["kmanager"]) == []                            # Latin unaffected
+        # one implementation: JDText.find accepts exactly the same left residue
+        assert JDText("خبرة كمحاسب").find("محاسب") and not JDText("خبرة ممحاسب").find("محاسب")
+
+    @pytest.mark.parametrize("line, span, pairs", [
+        ("خبرة سنتين كمحاسب", "كمحاسب", [("Accountant", "محاسب", TR)]),
+        ("خبرة سنتين محاسب", "محاسب", [("Accountant", "محاسب", TR)]),
+    ])
+    def test_accountant_inside_attached_letter(self, line, span, pairs):
+        _accepts("Accountant", line, span, pairs, years=2, ar=True)
+
+    @pytest.mark.parametrize("line, span", [
+        ("خبرة 5 سنوات كمدير مشروع", "كمدير مشروع"),
+        ("خبرة 5 سنوات وبمدير مشروع", "وبمدير مشروع"),
+    ])
+    def test_manager_inside_proclitic_chain(self, line, span):
+        _accepts("Project Manager", line, span, [("Project", "مشروع", TR), ("Manager", "مدير", TR)], ar=True)
+
+    @pytest.mark.parametrize("line, span", [
+        ("خبرة سنتين ممحاسب", "ممحاسب"),                  # arbitrary left residue
+        ("خبرة سنتين المحاسب", "المحاسب"),                # the article is not an approved proclitic
+        ("خبرة سنتين كمحاسبين", "كمحاسبين"),              # right-side residue
+    ])
+    def test_other_residues_rejected(self, line, span):
+        v, *_ = _eqv("Accountant", line, span, [("Accountant", "محاسب", TR)], years=2, ar=True)
+        assert errs_with(v, "is not whole word(s) of the jd_span")
+
+
+class TestS151Relations:
+    LINE = "خبرة 5 سنوات كمدير مشروع"
+
+    def test_cross_language_same_or_form_names_translation(self):
+        for rel in (SA, FO):
+            v, *_ = _eqv("Project Manager", self.LINE, "كمدير مشروع",
+                         [("Project", "مشروع", rel), ("Manager", "مدير", TR)], ar=True)
+            assert errs_with(v, "'Project' / 'مشروع' are in different languages") and errs_with(
+                v, "use relation translation")
+
+    def test_cross_language_translation_accepted(self):
+        _accepts("Project Manager", self.LINE, "كمدير مشروع", [("Project", "مشروع", TR), ("Manager", "مدير", TR)],
+                 ar=True)
+
+    def test_same_allows_only_the_approved_orthographic_residue(self):
+        line = "خبرة 5 سنوات كمدير مشروع"
+        v, *_ = _eqv("مدير مشروع", line, "كمدير مشروع", [("مدير", "كمدير", SA), ("مشروع", "مشروع", SA)], ar=True)
+        assert v.ok, v.errors                                               # ك is orthographic, as for spans
+        v, *_ = _eqv("مدير مشروع", "خبرة 5 سنوات ممدير مشروع", "ممدير مشروع",
+                     [("مدير", "ممدير", SA), ("مشروع", "مشروع", SA)], ar=True)
+        assert errs_with(v, "are not the identical word")
+
+    def test_plural_needs_form(self):
+        line, span = "Minimum 4 years of experience administering databases", "administering databases"
+        v, *_ = _eqv("database administration", line, span,
+                     [("database", "databases", SA), ("administration", "administering", FO)], years=4)
+        assert errs_with(v, "'database' / 'databases' are not the identical word") and errs_with(
+            v, "use relation form")
+        _accepts("database administration", line, span,
+                 [("database", "databases", FO), ("administration", "administering", FO)], years=4)
+
+
+class TestS151Abbreviations:
+    @pytest.mark.parametrize("span, pairs", [
+        ("Project Manager", [("PM", "Project Manager", AB)]),        # preferred: the full form
+        ("P.M.", [("PM", "P.M.", AB)]),                              # the acronym only
+        ("P.M.", [("PM", "P.M.", SA)]),                              # dotted acronym = the same canonical word
+    ])
+    def test_one_occurrence_accepted(self, span, pairs):
+        _accepts("PM", PM_LINE, span, pairs)
+
+    @pytest.mark.parametrize("pairs", [[("PM", "Project Manager", AB)], [("PM", "P.M.", AB)]])
+    def test_span_holding_both_forms_rejected(self, pairs):
+        v, *_ = _eqv("PM", PM_LINE, "Project Manager (P.M.)", pairs)
+        assert errs_with(v, "the jd_span names the same role twice")
+        assert errs_with(v, "narrow jd_span to either the full form or the acronym")
+
+    def test_only_acronym_in_jd(self):
+        _accepts("PM", "Minimum 5 years as a P.M. in a fast-paced environment", "P.M.", [("PM", "P.M.", AB)])
+
+    def test_other_unaccounted_words_keep_the_generic_error(self):
+        v, *_ = _eqv("PM", "Minimum 5 years as a Senior Project Manager", "Senior Project Manager",
+                     [("PM", "Project Manager", AB)])
+        assert errs_with(v, "unaccounted ['senior']") and not errs_with(v, "names the same role twice")
+
+    def test_exact_match_semantics_unchanged(self):
+        # canonical acronym keys are for alignment only: "PM" is still not word for word in "P.M."
+        assert JDText("as a P.M. here").find("PM") == []
+
+
+class TestS151DuplicatesAndStatementAnchor:
+    def test_duplicate_hint_rejected_with_one_object_message(self):
+        a, jd, (c,) = _job(["Accountant"], 2, ["المتطلبات", "- خبرة سنتين كمحاسب."])
+        t = {"hint": "T1", "type": "role", "match": "none", "jd_span": None}
+        item = {"criterion_id": c.criterion_id, "requirement_spans": [{"line": 2, "text": "خبرة سنتين كمحاسب"}],
+                "targets": [t, dict(t, type="function")], "setting": None, "duration": "D1", "ambiguity": [],
+                "note": "n"}
+        j = JDText(jd)
+        v = validate_response(_resp(item), j, [c], {d: (ln, m) for d, ln, m in j.durations()})
+        assert errs_with(v, "must appear exactly once in targets, found 2: keep ONE object for T1 with one type, "
+                            "one match and, if equivalent, one complete alignment")
+
+    def _p1(self, marked):
+        a, jd, (c,) = _job(["Registered Nurse"], 0, ["Requirements", "- Experience in nursing is preferred."])
+        span = {"line": 2, "text": "Experience in nursing is preferred"}
+        if marked:
+            span["experience_requirement"] = True
+        return a, jd, c, {"criterion_id": c.criterion_id, "requirement_spans": [span],
+                          "targets": [{"hint": "T1", "type": "role", "match": "none", "jd_span": None}],
+                          "setting": None, "duration": None, "ambiguity": [], "note": "n"}
+
+    def test_target_none_is_not_requirement_absent(self):
+        a, jd, c, plain = self._p1(False)
+        j = JDText(jd)
+        v = validate_response(_resp(plain), j, [c], {})
+        assert errs_with(v, "keep it and mark it \"experience_requirement\": true") and errs_with(
+            v, "only if the JD contains no such experience requirement at all, return [] with requirement_not_in_jd")
+        _, _, _, marked = self._p1(True)
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(_resp(plain), _resp(marked))))
+        art = out.artifacts[0]
+        assert art.spec_status == "needs_confirmation" and art.audit["requirement_anchor"] == "statement"
+        assert [t.provenance for t in art.targets] == ["original_ai"]
+        assert sc.AMB_REQUIREMENT_NOT_IN_JD not in [r.code for r in art.reasons]
+
+    def test_about_us_statement_never_resolves(self):
+        a, jd, (c,) = _job([], 3, ["We are a leading logistics group.", "Requirements", "- Teamwork."])
+        item = {"criterion_id": c.criterion_id, "requirement_spans": [
+            {"line": 1, "text": "We are a leading logistics group", "experience_requirement": True}],
+            "restrictions": [], "duration": None, "ambiguity": [], "note": "n"}
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(_resp(item))))
+        assert out.artifacts[0].spec_status != "resolved"
+
+
+def _c2(**over):
+    """C2-style dishonest alignment (the repair kept it): Construction has no counterpart."""
+    args = ("Construction Project Manager", "خبرة 5 سنوات كمدير مشروع", "كمدير مشروع",
+            [("Construction", "مشروع", TR), ("Project", "مشروع", SA), ("Manager", "مدير", SA)])
+    v, jd, a, raw = _eqv(*args, ar=True)
+    d = json.loads(raw)
+    d["criteria"][0].update(over)
+    return v, jd, a, json.dumps(d, ensure_ascii=False)
+
+
+class TestS151Withdrawal:
+    def test_c2_withdrawn_to_none_after_repair(self):
+        v, jd, a, raw = _c2()
+        assert not v.ok
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, raw)))
+        art = out.artifacts[0]
+        assert out.meta["outcome"] == "repaired_withdrawn" and art.spec_status == "needs_confirmation"
+        assert [(t.text, t.type, t.provenance, t.jd_span) for t in art.targets] == [
+            ("Construction Project Manager", "role", "original_ai", None)]
+        assert art.audit["alignment_withdrawn"] is True and art.audit["target_mappings"] == []
+        (w,) = art.audit["withdrawals"]
+        assert w["hint"] == "T1" and w["type"] == "role" and w["withdrawn_claim"]["match"] == "equivalent"
+        assert w["withdrawn_claim"]["jd_span"] == {"line": 2, "text": "كمدير مشروع"} and w["errors"]
+        # nothing else changed: spans, duration (jd_verified 5), reasons only target_not_in_jd
+        assert art.requirement_text == "خبرة 5 سنوات كمدير مشروع"
+        assert art.required_years.value == 5 and art.required_years.provenance == "jd_verified"
+        assert [r.code for r in art.reasons] == [sc.BIZ_TARGET_NOT_IN_JD]
+        with pytest.raises(asm.S1ViewError):                                          # no scoring view
+            asm.s2_views(art)
+
+    def test_h1_forced_alignment_withdrawn(self):
+        args = ("software implementation", "Minimum 3 years of experience implementing enterprise software systems",
+                "implementing enterprise software systems",
+                [("software", "software systems", SA), ("implementation", "implementing enterprise", FO)])
+        v, jd, a, raw = _eqv(*args, years=3)
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, raw)))
+        art = out.artifacts[0]
+        assert art.spec_status == "needs_confirmation" and [t.provenance for t in art.targets] == ["original_ai"]
+        assert art.audit["alignment_withdrawn"]
+
+    @pytest.mark.parametrize("over", [
+        {"ambiguity": ["unsure"]},                                         # ambiguity error
+        {"duration": "D9"},                                                # duration error
+        {"requirement_spans": [{"line": 2, "text": "not in the JD"}]},     # span error
+        {"setting": {"line": 1, "text": "المتطلبات"}},                    # setting error
+    ])
+    def test_unrelated_error_blocks_withdrawal(self, over):
+        _, jd, a, raw = _c2(**over)
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, raw)))
+        assert out.artifacts[0].spec_status == "failed_validation" and "alignment_withdrawn" not in out.meta
+
+    def test_unrelated_error_in_another_criterion_blocks_withdrawal(self):
+        crits = [SimpleNamespace(criterion_id=cid, target_hints=("A",)) for cid in ("C", "D")]
+        raw = json.dumps({"criteria": [{"criterion_id": cid, "targets": [
+            {"hint": "T1", "type": "role", "match": "equivalent"}]} for cid in ("C", "D")]})
+        claim = ScopedError("C", ("target:T1:alignment",), "a")
+        assert rp.plan_withdrawal([claim], raw, crits) == {"C": ("T1", ["a"])}
+        assert rp.plan_withdrawal([claim, ScopedError("D", ("duration",), "b")], raw, crits) is None
+        assert rp.plan_withdrawal([claim, ScopedError("D", ("restriction:R0",), "b")], raw, crits) is None
+
+    @pytest.mark.parametrize("scoped", [
+        [ScopedError("C", ("target:T1:alignment",), "a"), ScopedError("C", ("duration",), "b")],
+        [ScopedError("C", ("target:T1",), "duplicate")],                              # whole target (duplicate)
+        [ScopedError("C", ("target:T1:alignment", "target:T2:alignment"), "overlap")],  # two targets in one error
+        [ScopedError("C", ("target:T1:alignment",), "a"), ScopedError("C", ("target:T2:match",), "b")],
+        [ScopedError("C", ("target:T1:type",), "type")],                              # type is never withdrawable
+        [ScopedError("C", ("target:T1:alignment", "ambiguity"), "adds words")],
+        [ScopedError(None, ("response",), "bad json")],
+        [],
+    ])
+    def test_plan_requires_one_claim_only(self, scoped):
+        crit = SimpleNamespace(criterion_id="C", target_hints=("A", "B"))
+        raw = json.dumps({"criteria": [{"criterion_id": "C", "targets": [
+            {"hint": "T1", "type": "role", "match": "equivalent"}, {"hint": "T2", "type": "role", "match": "none"}]}]})
+        assert rp.plan_withdrawal(scoped, raw, [crit]) is None
+
+    @pytest.mark.parametrize("t1", [
+        [{"hint": "T1", "type": "role", "match": "exact"}],                          # never touches exact/none
+        [{"hint": "T1", "type": "role", "match": "none"}],
+        [{"hint": "T1", "type": "role", "match": "equivalent"}] * 2,                 # duplicates never chosen
+    ])
+    def test_plan_only_for_a_single_equivalent_object(self, t1):
+        crit = SimpleNamespace(criterion_id="C", target_hints=("A",))
+        raw = json.dumps({"criteria": [{"criterion_id": "C", "targets": t1}]})
+        assert rp.plan_withdrawal([ScopedError("C", ("target:T1:alignment",), "a")], raw, [crit]) is None
+
+    def test_apply_touches_only_the_claim(self):
+        crit = SimpleNamespace(criterion_id="C", target_hints=("A",))
+        item = {"criterion_id": "C", "requirement_spans": [{"line": 2, "text": "x"}], "duration": "D1",
+                "ambiguity": [], "setting": None,
+                "targets": [{"hint": "T1", "type": "function", "match": "equivalent", "jd_span": {"line": 2,
+                             "text": "y"}, "alignment": [{"hint": "a", "jd": "y", "relation": "same"}],
+                             "jd_extra": []}]}
+        raw = json.dumps({"criteria": [item]})
+        plan = rp.plan_withdrawal([ScopedError("C", ("target:T1:alignment", "target:T1:match"), "why")], raw, [crit])
+        new, audit = rp.apply_withdrawal(raw, plan)
+        got = json.loads(new)["criteria"][0]
+        assert got["targets"] == [{"hint": "T1", "type": "function", "match": "none", "jd_span": None,
+                                   "alignment": [], "jd_extra": []}]
+        assert {k: v for k, v in got.items() if k != "targets"} == {k: v for k, v in item.items() if k != "targets"}
+        assert audit["C"]["errors"] == ["why"] and audit["C"]["withdrawn_claim"]["match"] == "equivalent"
+
+    def test_assembler_refuses_a_withdrawn_target_that_establishes_evidence(self):
+        a, jd, (c,) = _job(["Accountant"], 2, ["المتطلبات", "- خبرة سنتين كمحاسب."])
+        j = JDText(jd)
+        req = (j.span_on_line(2, "خبرة سنتين كمحاسب"),)
+        durs = {d: (ln, m) for d, ln, m in j.durations()}
+        rec = ({"hint": "T1", "type": "role", "withdrawn_claim": {}, "errors": []},)
+        mapped = ParsedTarget("Accountant", "role", "T1", j.span_on_line(2, "كمحاسب"), "equivalent")
+        pc = ParsedCriterion(c.criterion_id, "explicit_role", req, (mapped,), None, "D1", (), "", withdrawn=rec)
+        with pytest.raises(ValueError, match="withdrawn equivalent claim"):
+            asm.assemble_artifact(c, pc, j, durs, run={})
+        plain = ParsedTarget("Accountant", "role", "T1", None, "none")
+        ok = asm.assemble_artifact(c, ParsedCriterion(c.criterion_id, "explicit_role", req, (plain,), None, "D1",
+                                                      (), "", withdrawn=rec), j, durs, run={})
+        assert ok.spec_status == "needs_confirmation" and ok.audit["alignment_withdrawn"] is True
+
+    def test_no_withdrawal_when_the_answer_is_valid(self):
+        _, jd, a, ok = _eqv("Project Manager", "خبرة 5 سنوات كمدير مشروع", "كمدير مشروع",
+                            [("Project", "مشروع", TR), ("Manager", "مدير", TR)], ar=True)
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(ok)))
+        assert out.artifacts[0].audit["alignment_withdrawn"] is False and "alignment_withdrawn" not in out.meta
+
+
+class TestS151QualifierRegression:
+    """The qualifier false positives are still never accepted, even when the repair repeats them."""
+
+    @pytest.mark.parametrize("args, kw", [
+        (("Construction Project Manager", "خبرة 5 سنوات كمدير مشروع", "كمدير مشروع",
+          [("Project", "مشروع", TR), ("Manager", "مدير", TR)]), {"ar": True}),
+        (("software implementation", "Minimum 3 years of experience implementing enterprise software systems",
+          "implementing enterprise software systems",
+          [("software", "software", SA), ("implementation", "implementing", FO)],
+          [("enterprise", "grammatical"), ("systems", "material")]), {"years": 3}),
+        (("Equine Veterinarian", "خبرة 3 سنوات كطبيب بيطري", "كطبيب بيطري",
+          [("Veterinarian", "كطبيب بيطري", TR)]), {"years": 3, "ar": True}),
+        (("web development", "خبرة 4 سنوات في تطوير مواقع التجارة الإلكترونية", "تطوير مواقع التجارة الإلكترونية",
+          [("web", "مواقع", TR), ("development", "تطوير", TR)]), {"years": 4, "ar": True}),
+        (("event planning", "Minimum 3 years of experience planning corporate events", "planning corporate events",
+          [("event", "events", FO), ("planning", "planning", SA)], [("corporate", "material")]), {"years": 3}),
+        (("Commercial Pilot", "Minimum 5 years of experience as a Pilot", "Pilot", [("Pilot", "Pilot", SA)]), {}),
+    ])
+    def test_never_jd_asserted(self, args, kw):
+        v, jd, a, raw = _eqv(*args, **kw)
+        assert not v.ok
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, raw)))
+        art = out.artifacts[0]
+        assert art.spec_status in ("needs_confirmation", "failed_validation")
+        assert all(t.provenance != "jd_asserted" for t in art.targets)

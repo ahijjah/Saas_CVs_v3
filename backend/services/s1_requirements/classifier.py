@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Mapping, Protocol
 
 from services.ai_service import _SECURITY_HARDENING_SUFFIX
@@ -46,7 +46,7 @@ from services.s1_requirements.criteria import (
 )
 from services.s1_requirements.durations import DurationMatch
 from services.s1_requirements.jd_text import JDText
-from services.s1_requirements.repair import merge_repair
+from services.s1_requirements.repair import apply_withdrawal, merge_repair, plan_withdrawal
 from services.s1_requirements.schema import (
     REASON_AI_UNAVAILABLE, REASON_EXCEEDS_MODEL_CONTEXT, REASON_INTERNAL_ERROR, REASON_OUTPUT_TRUNCATED,
     REASON_VALIDATION_FAILED, S1_INPUT_VERSION, S1_MAX_TOKENS, S1_MODEL, S1_PROMPT_CODE, S1_PROMPT_VERSION,
@@ -67,9 +67,10 @@ For EVERY criterion return exactly one result. Never return a policy: it is comp
 
 1 REQUIREMENT_SPANS: the JD sentence(s) or bullet(s) that state THIS experience requirement, as [{"line": n, "text": "verbatim"}]. Quote the whole requirement statement; if it continues on the next line, quote each line. Never quote company descriptions, "about us", duties/responsibilities, other requirements (education, skills, licences, languages) or headings. If the JD does not state this requirement, return [] and report "requirement_not_in_jd".
   Mark a span {"line": n, "text": "verbatim", "experience_requirement": true} ONLY when the quoted text itself states this experience requirement but contains neither its duration, nor a hint word for word, nor a phrase you map (e.g. "Experience in physiotherapy is preferred."). Never mark company descriptions or context (e.g. "We are a leading logistics group."). Such a criterion stays unconfirmed: never add a jd_span just to anchor a span.
+  Match "none" for a target is NOT "requirement_not_in_jd": "none" means this supplied target is not stated (or equivalent) in the JD wording; "requirement_not_in_jd" means the JD states no such EXPERIENCE requirement at all. If the hint is a specific role but the JD only asks for experience in its field (e.g. hint "Physiotherapist", JD "Experience in physiotherapy is preferred."), the target is "none" and the requirement span stays, marked "experience_requirement": true.
 
 2 TARGETS (criteria WITH target_hints only)
-  a. Return every hint exactly once as {"hint": "T1", "type": "role" | "function", "match": "exact" | "equivalent" | "none", "jd_span": null | {"line": n, "text": "verbatim"}} (plus "alignment" and "jd_extra" for "equivalent", section 3). Never drop, rename, merge, split or add targets, and never rewrite the hint text itself. Recording the JD's own wording for a hint in jd_span is not a rewrite.
+  a. Return exactly ONE target object for each supplied hint id: never output the same hint twice for different types or matches. Choose one type; if you are genuinely unsure whether it is a role or a function, use the ambiguity rule in b, never a second object. Each object is {"hint": "T1", "type": "role" | "function", "match": "exact" | "equivalent" | "none", "jd_span": null | {"line": n, "text": "verbatim"}} (plus "alignment" and "jd_extra" for "equivalent", section 3). Never drop, rename, merge, split or add targets, and never rewrite the hint text itself. Recording the JD's own wording for a hint in jd_span is not a rewrite.
   b. TYPE: classify the target words themselves.
      "role"      a position the candidate HOLDS or IS: a title naming a person (e.g. Payroll Officer, Translator, Laboratory Technician, Marketing Manager).
      "function"  work, a discipline, field or activity the candidate DOES or WORKS IN, whatever their title (e.g. payroll administration, translation, laboratory testing, marketing).
@@ -83,10 +84,12 @@ For EVERY criterion return exactly one result. Never return a policy: it is comp
   "none"        everything else: absent, broader, narrower, adjacent, related, compatible, qualifier-changing, or uncertain. jd_span = null. If the hint appears word for word only inside a longer phrase that adds a material qualifier (e.g. "Translator" inside "Legal Translator"), use "none" and report "ambiguous_relevance".
   ALIGNMENT for "equivalent": account for EVERY word on both sides.
     "alignment": one pair per word of the hint: {"hint": "<ONE word of the hint>", "jd": "<the verbatim JD word(s) in jd_span that say that same word>", "relation": "same" | "form" | "translation" | "abbreviation"}.
-      same          the identical word.
-      form          the same word in another grammatical form, same language (one word to one word: control / controlling).
-      translation   the same word in another language (may be several JD words).
+      same          letter for letter the same word, in the same language (case, and the periods of a dotted acronym such as "Q.A." / "QA", do not count).
+      form          the SAME word in another grammatical form, same language, one word to one word: plural (account / accounts) or verb/noun form (control / controlling). Never a synonym, a related or broader/narrower word (administration is not a form of support; management is not a form of coordination).
+      translation   EVERY pair between two languages, even when the meaning is identical (Warehouse / مستودع); may be several JD words.
       abbreviation  an all-capitals acronym and its expansion (HR / Human Resources); the only pair that may hold several hint words.
+    A JD word may be given with or without the Arabic letters attached to its start (ك, ب, ل, و, ف): "مستودع" for "كمستودع" is fine; nothing else may be cut from a word.
+    Name a role ONCE: if the JD gives both the full form and its acronym (e.g. "Quality Assurance (Q.A.)"), jd_span is ONE of them, preferably the full form; never a span holding both.
     "jd_extra": every other word of jd_span, each as {"text": "<one word>", "kind": "grammatical" | "material"}. grammatical = carries no requirement meaning (of, the, and, في, ...). material = any word that adds meaning (a sector, industry, technology, platform, project type, seniority, specialisation, scope or context). ANY material word means the JD phrase is NOT the same role/function: use "none" instead.
     A hint word with no JD counterpart means the JD phrase drops it: use "none". Never pair a hint word with a JD word that does not say the same thing.
   Illustrations (these are not the hints you will see):
@@ -203,7 +206,10 @@ def repair_note(errors: list[str]) -> str:
             "answer, so fix these and change nothing else. Quote JD text verbatim and never add, drop or rewrite "
             "targets. A jd_span is only for match \"equivalent\" (the SAME role/function in different wording, "
             "with an alignment accounting for every word); when in doubt use match \"none\". Never drop a "
-            "restriction: that would broaden the requirement. Never return a policy:\n- "
+            "restriction: that would broaden the requirement. Exactly ONE object per hint id. Relations: "
+            "same = letter for letter the same word; form = the same word in another grammatical form of the "
+            "same language (plural, verb/noun form), never a synonym; translation = EVERY pair between two "
+            "languages; abbreviation = acronym and expansion. Never return a policy:\n- "
             + "\n- ".join(errors[:40]))
 
 
@@ -238,7 +244,7 @@ def _serialise_parsed(results: dict[str, ParsedCriterion]) -> dict:
                               for t in p.targets],
                   "restrictions": [{"text": r.text, "kind": r.kind, "span": r.span.to_dict()}
                                    for r in p.restrictions],
-                  "anchor_kind": p.anchor_kind,
+                  "anchor_kind": p.anchor_kind, "withdrawn": [dict(x) for x in p.withdrawn],
                   "setting": p.setting.to_dict() if p.setting else None, "duration": p.duration_id,
                   "ambiguity": list(p.ambiguity), "note": p.note,
                   "statement_anchored": p.statement_anchored, "relevance_basis": p.relevance_basis,
@@ -258,7 +264,7 @@ def _deserialise_parsed(d: dict) -> dict[str, ParsedCriterion]:
         bool(p.get("statement_anchored")), p.get("relevance_basis"), p.get("policy_derivation", "from_types"),
         p.get("model_policy"),
         tuple(ParsedRestriction(r["text"], r["kind"], Span.from_dict(r["span"])) for r in p.get("restrictions") or ()),
-        p.get("anchor_kind", "evidence"))
+        p.get("anchor_kind", "evidence"), tuple(p.get("withdrawn") or ()))
         for cid, p in d.items()}
 
 
@@ -358,6 +364,18 @@ async def _run(req: BuiltRequest, client, model: str, meta: dict) -> dict:
                 return _out(REASON_INTERNAL_ERROR, {"errors": first_errors, "repair_errors": []})
             val = validate_response(merged, req.jd, req.criteria, req.durations)
             outcome = "repaired"
+            withdrawn: dict[str, dict] = {}
+            if not val.ok:
+                # s1-5.1: the only fallback after the one repair: withdraw a lone failing equivalent claim
+                plan = plan_withdrawal(val.scoped, merged, req.criteria)
+                if plan:
+                    narrowed, withdrawn = apply_withdrawal(merged, plan)
+                    wval = validate_response(narrowed, req.jd, req.criteria, req.durations)
+                    if wval.ok:
+                        val, outcome = wval, "repaired_withdrawn"
+                        val.results = {cid: replace(p, withdrawn=(withdrawn[cid],)) if cid in withdrawn else p
+                                       for cid, p in val.results.items()}
+                        meta["alignment_withdrawn"] = [{"criterion_id": cid, **w} for cid, w in withdrawn.items()]
             if not val.ok:
                 return _out(REASON_VALIDATION_FAILED, {"errors": first_errors, "repair_errors": list(val.errors)})
     except Exception as exc:                    # network / API / auth / timeout

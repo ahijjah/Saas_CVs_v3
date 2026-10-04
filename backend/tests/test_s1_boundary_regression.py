@@ -213,7 +213,7 @@ class TestSafety:
         assert not (tmp_path / "d").exists()
         assert br.main(["--out", str(tmp_path / "o"), "--mode", "oracle", "--runs", "1", "--cases", "A1,B1"]) == 0
         res = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))
-        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "a0ae492a27e4"
+        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "b2a063ab2947"
         assert res["meta"]["temperature"] == 0.0 and res["meta"]["mode"] == "oracle"
         report = (tmp_path / "o" / "report.md").read_text(encoding="utf-8")
         for frag in ("## jd_asserted", "## Stability", "## Role/function confusion", "## Outcomes"):
@@ -233,7 +233,7 @@ class TestSafety:
 
     def test_s1_prompt_unchanged(self):
         assert (br.sc.S1_PROMPT_VERSION, br.sc.S1_VERSION, br.clf.prompt_fingerprint()) == (
-            "s1-5", "1.4.0", "a0ae492a27e4")
+            "s1-5.1", "1.4.1", "b2a063ab2947")
 
 
 # ── s1-3: diagnostics, held-out set, prompt independence ───────────────────
@@ -275,7 +275,7 @@ class TestS14Diagnostics:
         (r,) = records
         assert r["pass"] and r["policy"] == "functional" and s["repair_calls"] == 0
         assert s["diagnostics"] == {"model_policy_mismatch_main": 1, "repair_attempted_type_change": 0,
-                                    "repair_discarded_changes": 0, "equivalent_rejected_by_alignment": 0}
+                                    "repair_discarded_changes": 0, "equivalent_rejected_by_alignment": 0, "alignment_withdrawn": 0}
 
     def test_repair_type_change_outside_scope_is_discarded(self):
         bad = with_oracle("F1", ambiguity=["unsure"])                              # only ambiguity is invalid
@@ -285,7 +285,7 @@ class TestS14Diagnostics:
         (r,) = records
         assert r["pass"] and r["repair_used"] and [t["type"] for t in r["targets"]] == ["function"]
         assert s["diagnostics"] == {"model_policy_mismatch_main": 0, "repair_attempted_type_change": 1,
-                                    "repair_discarded_changes": 1, "equivalent_rejected_by_alignment": 0}
+                                    "repair_discarded_changes": 1, "equivalent_rejected_by_alignment": 0, "alignment_withdrawn": 0}
 
     def test_policy_sensitive_mapping_excluded_from_gate(self):
         pm = with_oracle("K2", targets=[{"hint": "T1", "type": "role", "match": "equivalent",
@@ -311,6 +311,20 @@ class TestS14Diagnostics:
         (r,) = records
         assert r["pass"] and r["repair_used"] and s["jd_asserted"]["fp"] == 0
         assert s["diagnostics"]["equivalent_rejected_by_alignment"] == 1
+
+    def test_repeated_dishonest_alignment_is_withdrawn(self):
+        # C2: the repair repeats the dropped-qualifier claim -> s1-5.1 withdraws it -> the labelled outcome
+        drop = with_oracle("C2", targets=[{"hint": "T1", "type": "role", "match": "equivalent",
+                                           "jd_span": {"line": 2, "text": "كمدير مشروع"},
+                                           "alignment": [{"hint": "Construction", "jd": "مشروع", "relation": "translation"},
+                                                         {"hint": "Project", "jd": "مشروع", "relation": "same"},
+                                                         {"hint": "Manager", "jd": "مدير", "relation": "same"}],
+                                           "jd_extra": []}])
+        records, cases = scripted_records({"C2": [[drop, drop]]})
+        s = br.summarize(records, cases)
+        (r,) = records
+        assert r["outcome"] == "ok" and r["pass"] and r["withdrawals"][0]["hint"] == "T1"
+        assert s["diagnostics"]["alignment_withdrawn"] == 1 and s["jd_asserted"]["fp"] == 0
 
     def test_match_counts(self):
         records, cases = scripted_records({}, cases=CASES)

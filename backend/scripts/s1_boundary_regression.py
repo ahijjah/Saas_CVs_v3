@@ -150,7 +150,7 @@ def call_diagnostics(case: dict, raw: list, merge: dict | None = None) -> dict:
     rep = next((_first_item(x["content"]) for x in raw if x["call"] == "repair"), None)
     d = {"model_policy_mismatch_main": False, "repair_attempted_type_change": False,
          "repair_discarded_changes": bool(merge and merge.get("discarded_changes")),
-         "equivalent_rejected_by_alignment": False}
+         "equivalent_rejected_by_alignment": False, "alignment_withdrawn": False}
     if main is not None and isinstance(main.get("policy"), str):
         imp = implied_policy([t for t in _types(main) if t in ("role", "function")])
         d["model_policy_mismatch_main"] = imp is not None and main["policy"] != imp
@@ -174,8 +174,11 @@ def observe(case: dict, out, raw: list = ()) -> dict:
         "diagnostics": {**call_diagnostics(case, list(raw), out.meta.get("repair_merge")),
                         # s1-5: the main answer's equivalent claim failed the alignment coverage contract
                         "equivalent_rejected_by_alignment": any(
-                            " alignment" in e for e in (out.validation or {}).get("errors", []))},
+                            " alignment" in e for e in (out.validation or {}).get("errors", [])),
+                        # s1-5.1: a lone failing equivalent claim was withdrawn after the repair
+                        "alignment_withdrawn": bool(out.meta.get("alignment_withdrawn"))},
         "repair_merge": out.meta.get("repair_merge"),
+        "withdrawals": out.meta.get("alignment_withdrawn") or [],
     }
     if outcome != "ok":
         return obs
@@ -376,7 +379,8 @@ def summarize(records: list[dict], cases: list[dict], *, price_in: float = PRICE
         "by_family": {f: {"pass": p, "runs": n} for f, (p, n) in sorted(fam.items())},
         "diagnostics": {k: sum(1 for r in records if r["diagnostics"][k])
                         for k in ("model_policy_mismatch_main", "repair_attempted_type_change",
-                                  "repair_discarded_changes", "equivalent_rejected_by_alignment")},
+                                  "repair_discarded_changes", "equivalent_rejected_by_alignment",
+                                  "alignment_withdrawn")},
         "match_counts": dict(Counter(m for r in ok for m in r["matches"].values())),
         "semantic_failures": [{"case": r["case"], "run": r["run"],
                                "failed_fields": [f for f, v in r["checks"].items() if not v]}

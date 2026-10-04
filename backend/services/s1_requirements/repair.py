@@ -38,6 +38,17 @@ Merge rules per criterion (scopes come from validator.ScopedError):
                                       otherwise the main list is kept
   "response" (unparseable / malformed main answer, unknown criterion id)
                                    -> the repair answer is taken as a whole
+
+s1-5.1 deterministic withdrawal (plan_withdrawal / apply_withdrawal), AFTER the
+one repair, only when the merged answer is still invalid: if every remaining
+error of a criterion belongs to ONE hint target's equivalent claim (scopes
+target:Tn:match / jd_span / alignment / jd_extra only) and that target's match
+is "equivalent", the claim is withdrawn: match none, jd_span null, alignment
+[], jd_extra []. Nothing else is touched (type, spans, restrictions, duration,
+setting, ambiguity). Any other remaining error anywhere -> no withdrawal at all
+(failed_validation). The withdrawn answer is validated again from scratch. This
+can only narrow evidence: a withdrawn target is never exact, equivalent or
+jd_asserted.
 """
 from __future__ import annotations
 
@@ -70,6 +81,59 @@ def _items(raw: str) -> dict[str, dict] | None:
         if isinstance(it, dict) and isinstance(it.get("criterion_id"), str) and it["criterion_id"] not in out:
             out[it["criterion_id"]] = it
     return out
+
+
+WITHDRAWABLE_FIELDS = ("match", "jd_span", "alignment", "jd_extra")
+
+
+def plan_withdrawal(scoped: list[ScopedError], raw: str, criteria: list[CriterionInput]
+                    ) -> dict[str, tuple[str, list[str]]] | None:
+    """-> {criterion_id: (hint id, error messages)} if EVERY remaining error is withdrawable, else None."""
+    items = _items(raw)
+    if items is None or not scoped:
+        return None
+    hints_by_cid = {c.criterion_id: hint_ids(c) for c in criteria}
+    plan: dict[str, tuple[str, list[str]]] = {}
+    for e in scoped:
+        if e.criterion_id not in hints_by_cid or not e.scopes:
+            return None
+        hids = set()
+        for sc in e.scopes:
+            parts = sc.split(":")
+            if not (len(parts) == 3 and sc.startswith(SCOPE_TARGET_PREFIX) and parts[2] in WITHDRAWABLE_FIELDS):
+                return None                                    # any non-claim error blocks withdrawal
+            hids.add(parts[1])
+        if len(hids) != 1:
+            return None                                        # an error spanning two targets
+        (hid,) = hids
+        prev = plan.get(e.criterion_id)
+        if hid not in hints_by_cid[e.criterion_id] or (prev and prev[0] != hid):
+            return None                                        # more than ONE target's claim in a criterion
+        plan.setdefault(e.criterion_id, (hid, []))[1].append(e.message)
+    for cid, (hid, _) in plan.items():
+        item = items.get(cid)
+        ts = item.get("targets") if isinstance(item, dict) else None
+        objs = [t for t in ts if isinstance(t, dict) and t.get("hint") == hid] if isinstance(ts, list) else []
+        if len(objs) != 1 or objs[0].get("match") != "equivalent":
+            return None
+    return plan
+
+
+def apply_withdrawal(raw: str, plan: dict[str, tuple[str, list[str]]]) -> tuple[str, dict[str, dict]]:
+    """Withdraw each planned equivalent claim -> (new raw answer, {criterion_id: audit record})."""
+    data = json.loads(raw)
+    audit: dict[str, dict] = {}
+    for it in data["criteria"]:
+        cid = it.get("criterion_id") if isinstance(it, dict) else None
+        if cid not in plan or cid in audit:
+            continue
+        hid, errors = plan[cid]
+        t = _hint_target(it, hid)
+        audit[cid] = {"hint": hid, "type": t.get("type"),
+                      "withdrawn_claim": {k: copy.deepcopy(t.get(k)) for k in WITHDRAWABLE_FIELDS},
+                      "errors": list(errors)}
+        t.update({"match": "none", "jd_span": None, "alignment": [], "jd_extra": []})
+    return json.dumps(data, ensure_ascii=False), audit
 
 
 def _hint_target(item: dict, hid: str) -> dict | None:

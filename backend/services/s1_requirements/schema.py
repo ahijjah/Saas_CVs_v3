@@ -26,10 +26,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 S1_SCHEMA = "s1_requirement_spec_v2"
-S1_VERSION = "1.4.0"                     # enumeration + parser + validator + assembly
+S1_VERSION = "1.4.1"                     # enumeration + parser + validator + assembly
 S1_INPUT_VERSION = "s1-in-1"
 S1_PROMPT_CODE = "recruitment.experience_requirement_spec"
-S1_PROMPT_VERSION = "s1-5"
+S1_PROMPT_VERSION = "s1-5.1"
 S1_MODEL = "gpt-4o-mini"
 S1_TEMPERATURE = 0.0
 S1_MAX_TOKENS = 4000

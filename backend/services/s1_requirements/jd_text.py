@@ -10,6 +10,12 @@ S1 JD text: deterministic normalisation, stable line numbering and verbatim span
     word boundaries (an Arabic proclitic chain such as ك / و / فب may precede
     the start of a span; see _left_boundary_ok). No fuzzy matching, no synonym
     tables.
+  * Canonical words (s1-5.1, one implementation for every word-level check):
+    words() splits a text into comparison-form words; a dotted acronym
+    ("P.M.", "U.X.") is ONE word whose key drops the periods ("pm").
+    locate_words() finds a word run inside another word run under the same
+    boundary rule as spans: whole words, except that the first word may sit
+    right after an Arabic proclitic chain (proclitic_chain_ok).
 """
 from __future__ import annotations
 
@@ -62,6 +68,13 @@ def _arabic_letter(ch: str) -> bool:
     return "\u0621" <= ch <= "\u064a"
 
 
+def proclitic_chain_ok(prefix: str, next_char: str) -> bool:
+    """The ONE approved left-side orthographic residue: an Arabic proclitic chain of 1-2 letters directly
+    attached to an Arabic word (ك / و / فب ...). Nothing else may be stripped from a word."""
+    return (1 <= len(prefix) <= 2 and _arabic_letter(next_char) and all(_arabic_letter(ch) for ch in prefix)
+            and _AR_PROCLITIC_CHAIN.fullmatch(prefix) is not None)
+
+
 def _left_boundary_ok(hay: str, a: int) -> bool:
     if a == 0 or not (hay[a - 1].isalnum() and hay[a].isalnum()):
         return True
@@ -70,14 +83,38 @@ def _left_boundary_ok(hay: str, a: int) -> bool:
     w = a
     while w > 0 and hay[w - 1].isalnum():
         w -= 1
-    prefix = hay[w:a]
-    return (1 <= len(prefix) <= 2 and all(_arabic_letter(ch) for ch in prefix)
-            and _AR_PROCLITIC_CHAIN.fullmatch(prefix) is not None)
+    return proclitic_chain_ok(hay[w:a], hay[a])
 
 
 def _boundary_ok(hay: str, a: int, b: int) -> bool:
     after = hay[b] if b < len(hay) else " "
     return _left_boundary_ok(hay, a) and not (after.isalnum() and hay[b - 1].isalnum())
+
+
+# a dotted acronym: single letters each followed by a period ("p.m.", "u.x"), never part of a longer word
+_WORD = re.compile(r"(?<!\w)[^\W\d_](?:\.[^\W\d_](?!\w))+\.?|\w+")
+
+
+def words(s: str) -> list[str]:
+    """Canonical word keys of ``s`` (comparison form; a dotted acronym is one word without its periods)."""
+    return [m.group().replace(".", "") for m in _WORD.finditer(normalize(s))]
+
+
+def locate_words(part: list[str], whole: list[str]) -> list[tuple[int, str]]:
+    """Every start index i where the canonical word run ``part`` occurs in ``whole``, with the proclitic
+    residue left in front of its first word ("" if none). Right edges and all later words are exact."""
+    n, out = len(part), []
+    if not n:
+        return out
+    for i in range(len(whole) - n + 1):
+        if whole[i + 1:i + n] != part[1:]:
+            continue
+        w0, p0 = whole[i], part[0]
+        if w0 == p0:
+            out.append((i, ""))
+        elif w0.endswith(p0) and proclitic_chain_ok(w0[:len(w0) - len(p0)], p0[0]):
+            out.append((i, w0[:len(w0) - len(p0)]))
+    return out
 
 
 class JDText:
