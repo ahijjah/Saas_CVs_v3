@@ -7,17 +7,22 @@ criterion; deterministic validation and assembly do the rest. SHADOW ONLY.
 
 Input to the model (no candidate data, no job title, no domain_knowledge):
   numbered non-blank JD lines, duration candidates D1.. parsed from the JD,
-  and per criterion: criterion_id, display_text, has_years, target hints T1..
-  (the analysis_json relevant_roles feeding it).
+  and per criterion: criterion_id, a neutral "kind", has_years, target hints
+  T1.. (the analysis_json relevant_roles feeding it). The generated D-01
+  display_text ("... in a relevant role (...)") is NOT sent (s1-4): it biased
+  target typing; it stays unchanged in the recruiter-facing artifact.
+  The model returns no policy: it is derived deterministically (validator).
 
 Call flow (all-or-nothing per job; technical failures are never business states):
   no experience criteria             -> no call, no artifacts
   request over the input budget      -> failed_technical exceeds_model_context (cached)
   main call exception                -> failed_technical ai_unavailable (retryable; not cached)
   finish_reason == "length"          -> failed_technical output_truncated (not cached)
-  invalid -> ONE repair call with the exact violations:
+  invalid -> ONE repair call with the exact (scoped) violations; only the failed
+             fields/targets are merged from it into the main answer
+             (services.s1_requirements.repair), then the merge is re-validated:
       over budget / exception / length -> failed_technical (as above)
-      still invalid                    -> failed_validation validation_failed (cached)
+      merged answer still invalid      -> failed_validation validation_failed (cached)
   valid                              -> per criterion resolved | needs_confirmation
   assembly invariant broken          -> failed_technical internal_error (retryable; not cached)
 
@@ -35,9 +40,13 @@ from typing import Any, Mapping, Protocol
 from services.ai_service import _SECURITY_HARDENING_SUFFIX
 from services.s0_experience import llm_call
 from services.s1_requirements.assemble import assemble_artifact, check_recruiter_fields, failed_artifact
-from services.s1_requirements.criteria import CriterionInput, enumerate_experience_criteria, out_of_scope_items
+from services.s1_requirements.criteria import (
+    KIND_ROLE_ONLY, KIND_YEARS_AND_ROLES, KIND_YEARS_ONLY, CriterionInput, enumerate_experience_criteria,
+    out_of_scope_items,
+)
 from services.s1_requirements.durations import DurationMatch
 from services.s1_requirements.jd_text import JDText
+from services.s1_requirements.repair import merge_repair
 from services.s1_requirements.schema import (
     REASON_AI_UNAVAILABLE, REASON_EXCEEDS_MODEL_CONTEXT, REASON_INTERNAL_ERROR, REASON_OUTPUT_TRUNCATED,
     REASON_VALIDATION_FAILED, S1_INPUT_VERSION, S1_MAX_TOKENS, S1_MODEL, S1_PROMPT_CODE, S1_PROMPT_VERSION,
@@ -52,49 +61,46 @@ CACHEABLE = frozenset({None, REASON_VALIDATION_FAILED, REASON_EXCEEDS_MODEL_CONT
 
 S1_SYSTEM_PROMPT = """You label the EXPERIENCE requirements of ONE job description (JD). You never see or judge candidates.
 
-INPUT (JSON): "jd_lines" (line number + verbatim text), "duration_candidates" (id, line, text: every duration found in the JD) and "criteria" (criterion_id, display_text, has_years, target_hints with ids T1, T2, ...). target_hints come from an earlier automatic extraction: they are fixed, and they are not proof that the JD says them. display_text is generated from a template.
+INPUT (JSON): "jd_lines" (line number + verbatim text), "duration_candidates" (id, line, text: every duration found in the JD) and "criteria" (criterion_id, kind, has_years, target_hints with ids T1, T2, ...). kind ("years_with_targets", "years_only" or "single_target") only says how the criterion was built; it says nothing about whether a target is a role or a function. target_hints come from an earlier automatic extraction: they are fixed, and they are not proof that the JD says them.
 
-For EVERY criterion return exactly one result.
+For EVERY criterion return exactly one result. Never return a policy: it is computed from your answers.
 
 1 REQUIREMENT_SPANS: the JD sentence(s) or bullet(s) that state THIS experience requirement, as [{"line": n, "text": "verbatim"}]. Quote the whole requirement statement; if it continues on the next line, quote each line. Never quote company descriptions, "about us", duties/responsibilities, other requirements (education, skills, licences, languages) or headings. If the JD does not state this requirement, return [] and report "requirement_not_in_jd".
   Mark a span {"line": n, "text": "verbatim", "experience_requirement": true} ONLY when the quoted text itself states this experience requirement but contains neither its duration, nor a hint word for word, nor a phrase you map (e.g. "Experience in physiotherapy is preferred."). Never mark company descriptions or context (e.g. "We are a leading logistics group."). Such a criterion stays unconfirmed: never add a jd_span just to anchor a span.
 
 2 TARGETS
   a. Criterion WITH target_hints: return every hint exactly once as {"hint": "T1", "type": "role" | "function", "match": "exact" | "equivalent" | "none", "jd_span": null | {"line": n, "text": "verbatim"}}. Never drop, rename, merge, split or add targets, and never rewrite the hint text itself. Recording the JD's own wording for a hint in jd_span is not a rewrite.
-  b. TYPE, decided from the target text and the JD wording only:
-     "role"      a position or accountability a person HOLDS: a title naming a person (e.g. Payroll Officer, Translator, Laboratory Technician, Marketing Manager).
-     "function"  work, a discipline, field or activity a person PERFORMS, whatever their title (e.g. payroll administration, translation, laboratory testing, marketing).
-     The same subject can be either: "Translator" is a role, "translation" is a function.
-     The words "relevant role" in display_text come from the template and are NOT evidence that a target is a role. Being supplied as a hint, or stored under "roles", is NOT evidence either.
+  b. TYPE: classify the target words themselves.
+     "role"      a position the candidate HOLDS or IS: a title naming a person (e.g. Payroll Officer, Translator, Laboratory Technician, Marketing Manager).
+     "function"  work, a discipline, field or activity the candidate DOES or WORKS IN, whatever their title (e.g. payroll administration, translation, laboratory testing, marketing).
+     Test: if "she is a <target>" makes sense, it is a role; if "experience in <target>" or "doing <target>" names work rather than a person, it is a function. The same subject can be either: "Translator" is a role, "translation" is a function.
+     Nothing in the input tells you the type (not kind, not where a hint came from); decide it from the target words and the JD.
      If the type cannot be decided, use "function" and report "ambiguous_relevance".
-  c. Criterion WITHOUT target_hints: select targets only as verbatim text inside its requirement_spans, {"line": n, "text": "verbatim", "type": ...}, and only when the requirement names a role or function.
+  c. Criterion WITHOUT target_hints: return "relevance_basis" (section 4). Only when it is "targets", select targets as verbatim text inside its requirement_spans, {"line": n, "text": "verbatim", "type": ...}, naming the required role(s) or function(s).
 
 3 MATCH and JD_SPAN, for each hint:
   "exact"       the complete hint appears word for word inside this criterion's requirement_spans as the role/function itself. jd_span = null (the code verifies it).
-  "equivalent"  a verbatim phrase inside this criterion's requirement_spans names SUBSTANTIALLY THE SAME role or function as the hint and differs ONLY in language, grammatical form or a legitimate abbreviation, with every material qualifier preserved. jd_span = that phrase; it is REQUIRED. Whenever you judge the wording equivalent, give the jd_span.
+  "equivalent"  a verbatim phrase inside this criterion's requirement_spans names SUBSTANTIALLY THE SAME role or function as the hint, and the ONLY differences are language (translation), grammatical form (noun vs verb, singular vs plural) or a legitimate abbreviation. jd_span = that phrase; it is REQUIRED. Whenever you judge the wording equivalent, give the jd_span.
   "none"        everything else: absent, broader, narrower, adjacent, related, compatible, qualifier-changing, or uncertain. jd_span = null. If the hint appears word for word only inside a longer phrase that adds a material qualifier (e.g. "Translator" inside "Legal Translator"), use "none" and report "ambiguous_relevance".
-  - A material qualifier is any word that adds, removes or changes: sector, industry, technology or platform, project type, role level or seniority (assistant, senior, junior, lead, head, chief), professional specialisation, functional scope (control vs reporting, administration vs support) or environment/context. Any difference in a material qualifier, in either direction, means "none".
-  - For "equivalent", copy the complete phrase with all its qualifiers, never a shorter part that drops one. Copy whole words exactly as written. Arabic letters attached to a word (ك "as", ب, ل, و, ف) and the article ال are not qualifiers: copy them with the word, because spans are whole words (e.g. "كصيدلي مستشفى").
+  - Compare word by word: every word of the JD phrase must correspond to a word (or its meaning) in the hint, and every word of the hint to the JD phrase. A word with no counterpart is a difference in meaning.
+  - NOT equivalent, in either direction: an added or removed sector or industry, technology or platform, project type, role level or seniority (assistant, senior, junior, lead, head, chief, coordinator vs manager), professional specialisation, functional scope or environment/context; an adjacent or related role or function; working with, for or under the target.
   - Illustrations (these are not the hints you will see):
-      equivalent: "Hospital Pharmacist" -> "كصيدلي مستشفى"; "inventory control" -> "controlling inventory"; "HR Manager" -> "Human Resources Manager".
-      none:       "Hospital Pharmacist" -> "كصيدلي" (drops "hospital"); "inventory control" -> "inventory reporting" (different scope); "Translator" -> "working with the translation team" (works with the target, does not hold it).
-  - Never map to: working with, reporting to, supporting or being supervised by the target; the same employer, sector, project or industry; an adjacent profession; a transferable skill; general relevance; the duration; the setting; or text outside this criterion's requirement_spans.
+      equivalent: "Hospital Pharmacist" -> "كصيدلي مستشفى" (translation); "inventory control" -> "controlling inventory" (grammatical form); "HR Manager" -> "Human Resources Manager" (abbreviation).
+      none: "Hospital Pharmacist" -> "كصيدلي" (sector removed); "inventory control" -> "controlling cold-storage inventory" (environment added); "laboratory testing" -> "laboratory equipment maintenance" (adjacent function); "tax advisory" -> "tax compliance support" (different scope); "Marketing Manager" -> "Marketing Coordinator" (different role level); "Translator" -> "working with the translation team" (works with the target, does not hold it).
+  - For "equivalent", copy the complete phrase with all its qualifiers, never a shorter part that drops one. Copy whole words exactly as written. Arabic letters attached to the start of a word (ك "as", ب, ل, و, ف) are not qualifiers: the span may include them or start right after them (e.g. "كصيدلي مستشفى" or "صيدلي مستشفى").
+  - Never map to the duration, the setting, the same employer, sector, project or industry, a transferable skill, general relevance, or text outside this criterion's requirement_spans.
   - An abbreviation is equivalent only when the requirement span itself makes its meaning unambiguous.
   - A phrase may be the jd_span of at most one hint; if two hints seem to match the same phrase, use "none" for both.
   - If you are not certain the meaning is the same, use "none". "none" is always acceptable; a wrong "equivalent" is not.
   - The hint text stays exactly as supplied whatever the match.
 
-4 POLICY: decide every target's type first, then derive the policy from the types:
-  all targets "role"                      -> "explicit_role" (the candidate must have HELD one of the positions)
-  all targets "function"                  -> "functional" (the candidate must have PERFORMED the work, whatever the title; e.g. "experience managing warehouse teams" is functional: no position is named)
-  at least one "role" AND one "function"  -> "mixed"
-  "mixed" is wrong for a single target and wrong when all targets have the same type.
-  Criteria WITHOUT targets (no target_hints and no selected targets):
-  "sector"         the requirement names only an industry/sector/setting, no role or function;
-  "pure_duration"  total professional experience with no restriction. If the JD says "relevant", "related", "similar" or "in the field" without naming what, use pure_duration AND report "ambiguous_relevance".
-  sector and pure_duration are never used for criteria with target_hints.
+4 RELEVANCE_BASIS (criteria WITHOUT target_hints only; omit it for criteria with target_hints):
+  "targets"           the requirement names the required role(s) or function(s): select them as targets.
+  "sector"            it names only an industry/sector/setting, no role or function: give the setting, no targets.
+  "total_experience"  it asks for total professional experience with no restriction: no targets, no setting.
+  "unspecified"       it says "relevant", "related", "similar" or "in the field" without naming what: no targets, no setting, and report "ambiguous_relevance".
 
-5 SETTING: null, or the shortest complete verbatim phrase INSIDE this criterion's requirement_spans that restricts WHERE the experience must have been gained (industry, sector, project type or environment, e.g. "pharmaceutical manufacturing plants", "telecommunications sector", "public hospitals"). Never take it from other JD text or the job title. Never use the hiring company's name, a location, seniority, tools or generic adjectives ("dynamic", "fast-paced", "multinational"). Do not extract a setting that is already part of a target (e.g. "Hospital" in "Hospital Pharmacist"). If the setting does not clearly apply to EVERY alternative of the criterion, return null and report "ambiguous_relevance". sector needs a setting; pure_duration takes none.
+5 SETTING: null, or the shortest complete verbatim phrase INSIDE this criterion's requirement_spans that restricts WHERE the experience must have been gained (industry, sector, project type or environment, e.g. "pharmaceutical manufacturing plants", "telecommunications sector", "public hospitals"). Never take it from other JD text or the job title. Never use the hiring company's name, a location, seniority, tools or generic adjectives ("dynamic", "fast-paced", "multinational"). Do not extract a setting that is already part of a target (e.g. "Hospital" in "Hospital Pharmacist"). If the setting does not clearly apply to EVERY alternative of the criterion, return null and report "ambiguous_relevance". relevance_basis "sector" needs a setting; "total_experience" and "unspecified" take none.
 
 6 DURATION: null, or the id of the duration candidate inside this criterion's requirement_spans that states its minimum experience. Never compute or restate a number. If more than one candidate could be this criterion's minimum, return null and report "multiple_durations". Only for has_years criteria.
 
@@ -109,12 +115,14 @@ For EVERY criterion return exactly one result.
 
 OUTPUT: JSON only, e.g.:
 {"criteria": [
- {"criterion_id": "...", "policy": "explicit_role", "requirement_spans": [{"line": 7, "text": "verbatim"}],
-  "targets": [{"hint": "T1", "type": "role", "match": "exact", "jd_span": null}],
+ {"criterion_id": "...", "requirement_spans": [{"line": 7, "text": "verbatim"}],
+  "targets": [{"hint": "T1", "type": "function", "match": "exact", "jd_span": null}],
   "setting": null, "duration": "D1", "ambiguity": [], "note": "one sentence"},
- {"criterion_id": "...", "policy": "functional", "requirement_spans": [{"line": 9, "text": "verbatim"}],
-  "targets": [{"hint": "T1", "type": "function", "match": "equivalent", "jd_span": {"line": 9, "text": "verbatim phrase"}}],
-  "setting": null, "duration": "D2", "ambiguity": [], "note": "one sentence"}]}""" + _SECURITY_HARDENING_SUFFIX
+ {"criterion_id": "...", "requirement_spans": [{"line": 9, "text": "verbatim"}],
+  "targets": [{"hint": "T1", "type": "role", "match": "equivalent", "jd_span": {"line": 9, "text": "verbatim phrase"}}],
+  "setting": null, "duration": "D2", "ambiguity": [], "note": "one sentence"},
+ {"criterion_id": "...", "relevance_basis": "total_experience", "requirement_spans": [{"line": 11, "text": "verbatim"}],
+  "targets": [], "setting": null, "duration": "D3", "ambiguity": [], "note": "one sentence"}]}""" + _SECURITY_HARDENING_SUFFIX
 
 
 def prompt_fingerprint() -> str:
@@ -153,13 +161,18 @@ class BuiltRequest:
         return sha256(self.user_message)
 
 
+# neutral criterion kinds sent to the model (the generated display_text is never sent)
+INPUT_KINDS = {KIND_YEARS_AND_ROLES: "years_with_targets", KIND_YEARS_ONLY: "years_only",
+               KIND_ROLE_ONLY: "single_target"}
+
+
 def build_request(jd: JDText, criteria: list[CriterionInput]) -> BuiltRequest:
     durs = {did: (ln, m) for did, ln, m in jd.durations()}
     payload = {
         "s1_input_version": S1_INPUT_VERSION,
         "jd_lines": jd.numbered(),
         "duration_candidates": [{"id": did, "line": ln, "text": m.text} for did, (ln, m) in durs.items()],
-        "criteria": [{"criterion_id": c.criterion_id, "display_text": c.display_text, "has_years": c.has_years,
+        "criteria": [{"criterion_id": c.criterion_id, "kind": INPUT_KINDS[c.kind], "has_years": c.has_years,
                       "target_hints": [{"id": hid, "text": t} for hid, t in hint_ids(c).items()]}
                      for c in criteria],
     }
@@ -171,14 +184,12 @@ def s1_cache_key(req: BuiltRequest, *, model: str = S1_MODEL) -> str:
 
 
 def repair_note(errors: list[str]) -> str:
-    return ("Your previous JSON violates these rules. Return the COMPLETE corrected JSON with exactly one "
-            "result for every criterion, fixing every violation and changing nothing else. Quote JD text "
-            "verbatim and never add, drop or rewrite targets. A jd_span is only for match \"equivalent\" (the "
-            "SAME role/function in different wording); when in doubt use match \"none\". Quote only the "
-            "criterion's own requirement statement. Decide each target's type first (role = a position held; "
-            "function = work performed), then set the policy the types imply: all role -> explicit_role, all "
-            "function -> functional, at least one role AND one function -> mixed. Never switch to mixed unless "
-            "both types are present:\n- " + "\n- ".join(errors[:40]))
+    return ("Some fields of your previous JSON violate the rules below. Return the COMPLETE JSON again with "
+            "exactly one result for every criterion. ONLY the fields and targets named in these errors will be "
+            "taken from your new answer; everything else is kept exactly as in your previous answer, so fix "
+            "these and change nothing else. Quote JD text verbatim and never add, drop or rewrite targets. A "
+            "jd_span is only for match \"equivalent\" (the SAME role/function in different wording); when in "
+            "doubt use match \"none\". Never return a policy:\n- " + "\n- ".join(errors[:40]))
 
 
 @dataclass
@@ -210,7 +221,9 @@ def _serialise_parsed(results: dict[str, ParsedCriterion]) -> dict:
                               for t in p.targets],
                   "setting": p.setting.to_dict() if p.setting else None, "duration": p.duration_id,
                   "ambiguity": list(p.ambiguity), "note": p.note,
-                  "statement_anchored": p.statement_anchored} for cid, p in results.items()}
+                  "statement_anchored": p.statement_anchored, "relevance_basis": p.relevance_basis,
+                  "policy_derivation": p.policy_derivation, "model_policy": p.model_policy}
+            for cid, p in results.items()}
 
 
 def _deserialise_parsed(d: dict) -> dict[str, ParsedCriterion]:
@@ -221,7 +234,8 @@ def _deserialise_parsed(d: dict) -> dict[str, ParsedCriterion]:
         tuple(ParsedTarget(t["text"], t["type"], t.get("hint_id"), Span.from_dict(t.get("span")), t.get("match"))
               for t in p["targets"]),
         Span.from_dict(p.get("setting")), p.get("duration"), tuple(p.get("ambiguity") or ()), p.get("note", ""),
-        bool(p.get("statement_anchored")))
+        bool(p.get("statement_anchored")), p.get("relevance_basis"), p.get("policy_derivation", "from_types"),
+        p.get("model_policy"))
         for cid, p in d.items()}
 
 
@@ -299,7 +313,7 @@ async def _run(req: BuiltRequest, client, model: str, meta: dict) -> dict:
         val = validate_response(raw, req.jd, req.criteria, req.durations)
         outcome = "validated"
         if not val.ok:
-            first_errors = list(val.errors)
+            first_errors, first_scoped, main_raw = list(val.errors), list(val.scoped), raw
             repair_messages = messages + [{"role": "assistant", "content": raw},
                                           {"role": "user", "content": repair_note(first_errors)}]
             rb = llm_call.request_token_upper_bound(repair_messages)
@@ -313,7 +327,13 @@ async def _run(req: BuiltRequest, client, model: str, meta: dict) -> dict:
             meta["calls"] = 2
             if finish == "length":
                 return _out(REASON_OUTPUT_TRUNCATED, {"errors": first_errors, "repair_errors": []})
-            val = validate_response(raw, req.jd, req.criteria, req.durations)
+            try:
+                merged, meta["repair_merge"] = merge_repair(main_raw, raw, first_scoped, req.criteria)
+            except Exception as exc:            # deterministic merge failed = bug, never an AI outage
+                logger.exception("S1 repair merge failed")
+                meta["error"] = f"{type(exc).__name__}: {exc}"[:300]
+                return _out(REASON_INTERNAL_ERROR, {"errors": first_errors, "repair_errors": []})
+            val = validate_response(merged, req.jd, req.criteria, req.durations)
             outcome = "repaired"
             if not val.ok:
                 return _out(REASON_VALIDATION_FAILED, {"errors": first_errors, "repair_errors": list(val.errors)})

@@ -26,10 +26,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 S1_SCHEMA = "s1_requirement_spec_v2"
-S1_VERSION = "1.2.0"                     # enumeration + parser + validator + assembly
+S1_VERSION = "1.3.0"                     # enumeration + parser + validator + assembly
 S1_INPUT_VERSION = "s1-in-1"
 S1_PROMPT_CODE = "recruitment.experience_requirement_spec"
-S1_PROMPT_VERSION = "s1-3"
+S1_PROMPT_VERSION = "s1-4"
 S1_MODEL = "gpt-4o-mini"
 S1_TEMPERATURE = 0.0
 S1_MAX_TOKENS = 4000
@@ -46,6 +46,13 @@ MATCH_EXACT = "exact"              # complete hint verbatim in a requirement spa
 MATCH_EQUIVALENT = "equivalent"    # same role/function in other language/form/abbreviation (jd_span required)
 MATCH_NONE = "none"                # anything else, or uncertain
 MATCHES = (MATCH_EXACT, MATCH_EQUIVALENT, MATCH_NONE)
+
+# s1-4: how a criterion WITHOUT analysis targets restricts relevance (policy is derived from it)
+BASIS_TARGETS = "targets"                    # the requirement names roles/functions (JD-selected targets)
+BASIS_SECTOR = "sector"                      # only a sector/setting                    -> sector
+BASIS_TOTAL_EXPERIENCE = "total_experience"  # total experience, no restriction        -> pure_duration
+BASIS_UNSPECIFIED = "unspecified"            # "relevant" but undefined -> pure_duration + ambiguous_relevance
+RELEVANCE_BASES = (BASIS_TARGETS, BASIS_SECTOR, BASIS_TOTAL_EXPERIENCE, BASIS_UNSPECIFIED)
 
 TARGET_ROLE = "role"
 TARGET_FUNCTION = "function"

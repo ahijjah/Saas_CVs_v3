@@ -134,7 +134,7 @@ class TestMetrics:
         assert s["policy_accuracy"] == 0.5
 
     def test_ambiguity_and_status_accuracy(self):
-        quiet = with_oracle("O1", ambiguity=[])
+        quiet = with_oracle("O1", ambiguity=[], relevance_basis="total_experience")   # misses the vagueness
         records, cases = scripted_records({"O1": [[quiet]], "N1": None})
         s = br.summarize(records, cases)
         assert s["ambiguity_accuracy"] == 0.5 and s["status_accuracy"] == 0.5
@@ -151,7 +151,7 @@ class TestMetrics:
 
 class TestErrorClasses:
     def test_repair_accounting(self):
-        bad = with_oracle("A1", policy="nope")
+        bad = with_oracle("A1", ambiguity=["unsure"])
         records, cases = scripted_records({"A1": [[bad, br.oracle_response(BY_ID["A1"])]]})
         s = br.summarize(records, cases)
         assert s["repaired_ok_runs"] == 1 and s["repair_calls"] == 1 and s["main_calls"] == 1
@@ -159,7 +159,7 @@ class TestErrorClasses:
         assert [x["call"] for x in records[0]["raw"]] == ["main", "repair"]
 
     def test_validation_failure_accounting(self):
-        bad = with_oracle("A1", policy="nope")
+        bad = with_oracle("A1", ambiguity=["unsure"])
         records, cases = scripted_records({"A1": [[bad, bad]], "F1": None})
         s = br.summarize(records, cases)
         assert s["outcomes"] == {"ok": 1, "failed_validation": 1, "failed_technical": 0}
@@ -208,7 +208,7 @@ class TestSafety:
         assert not (tmp_path / "d").exists()
         assert br.main(["--out", str(tmp_path / "o"), "--mode", "oracle", "--runs", "1", "--cases", "A1,B1"]) == 0
         res = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))
-        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "c9b570d82f4e"
+        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "faad01d30b5c"
         assert res["meta"]["temperature"] == 0.0 and res["meta"]["mode"] == "oracle"
         report = (tmp_path / "o" / "report.md").read_text(encoding="utf-8")
         for frag in ("## jd_asserted", "## Stability", "## Role/function confusion", "## Outcomes"):
@@ -228,7 +228,7 @@ class TestSafety:
 
     def test_s1_prompt_unchanged(self):
         assert (br.sc.S1_PROMPT_VERSION, br.sc.S1_VERSION, br.clf.prompt_fingerprint()) == (
-            "s1-3", "1.2.0", "c9b570d82f4e")
+            "s1-4", "1.3.0", "faad01d30b5c")
 
 
 # ── s1-3: diagnostics, held-out set, prompt independence ───────────────────
@@ -259,25 +259,35 @@ def _contains_phrase(text, phrase) -> bool:
     return any(t[i:i + len(p)] == p for i in range(len(t) - len(p) + 1))
 
 
-class TestS13Diagnostics:
-    def test_type_ok_policy_inconsistent_then_repair_to_mixed(self):
-        # F1: correct function type, wrong policy; repair wrongly switches to mixed
-        bad = with_oracle("F1", policy="explicit_role")
-        mixed = with_oracle("F1", policy="mixed")
-        records, cases = scripted_records({"F1": [[bad, mixed]]})
+class TestS14Diagnostics:
+    def test_model_policy_is_diagnostic_only(self):
+        # F1: correct function type but the model still emits explicit_role -> derived functional, no repair
+        records, cases = scripted_records({"F1": [[with_oracle("F1", policy="explicit_role")]]})
         s = br.summarize(records, cases)
-        assert s["outcomes"]["failed_validation"] == 1
-        assert s["diagnostics"] == {"type_ok_policy_inconsistent_main": 1, "repair_to_mixed_incorrect": 1,
-                                    "repair_changed_types": 0}
+        (r,) = records
+        assert r["pass"] and r["policy"] == "functional" and s["repair_calls"] == 0
+        assert s["diagnostics"] == {"model_policy_mismatch_main": 1, "repair_attempted_type_change": 0,
+                                    "repair_discarded_changes": 0}
 
-    def test_repair_changed_types(self):
-        bad = with_oracle("F1", policy="explicit_role")
-        flipped = with_oracle("F1", targets=[{"hint": "T1", "type": "role", "match": "exact", "jd_span": None}],
-                              policy="explicit_role")
+    def test_repair_type_change_outside_scope_is_discarded(self):
+        bad = with_oracle("F1", ambiguity=["unsure"])                              # only ambiguity is invalid
+        flipped = with_oracle("F1", targets=[{"hint": "T1", "type": "role", "match": "exact", "jd_span": None}])
         records, cases = scripted_records({"F1": [[bad, flipped]]})
         s = br.summarize(records, cases)
-        assert s["diagnostics"]["repair_changed_types"] == 1 and s["outcomes"]["ok"] == 1
-        assert s["semantic_error_runs"] == 1                          # repaired, but to the wrong type
+        (r,) = records
+        assert r["pass"] and r["repair_used"] and [t["type"] for t in r["targets"]] == ["function"]
+        assert s["diagnostics"] == {"model_policy_mismatch_main": 0, "repair_attempted_type_change": 1,
+                                    "repair_discarded_changes": 1}
+
+    def test_policy_sensitive_mapping_excluded_from_gate(self):
+        pm = with_oracle("K2", targets=[{"hint": "T1", "type": "role", "match": "equivalent",
+                                         "jd_span": {"line": 2, "text": "P.M."}}])
+        records, cases = scripted_records({"K2": [[pm]], "B1": None})
+        s = br.summarize(records, cases)
+        assert all(r["pass"] for r in records)                                    # K2 alternative accepted
+        j = s["jd_asserted"]
+        assert (j["tp"], j["fp"]) == (1, 0) and j["policy_sensitive_excluded"] == [
+            {"case": "K2", "run": 1, "target": "PM", "jd_asserted": True}]
 
     def test_match_counts(self):
         records, cases = scripted_records({}, cases=CASES)

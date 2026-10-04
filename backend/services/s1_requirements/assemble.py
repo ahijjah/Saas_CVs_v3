@@ -15,7 +15,10 @@ Field authority (see schema.py):
                   picks a candidate span id; the number comes from the parser.
   setting         verbatim JD span inside a requirement span (jd_asserted) only;
                   never domain_knowledge or any analysis_json field
-  policy / type   s1_interpreted
+  policy / type   s1_interpreted; the policy is DERIVED (validator) from the target type labels or,
+                  for criteria without analysis targets, from relevance_basis (never the model's policy);
+                  audit.policy_derivation = from_types | relevance_basis; relevance_basis "unspecified"
+                  always adds ambiguous_relevance (needs_confirmation)
   requirement_text  JD requirement spans (verbatim, in JD order) unless a
                   recruiter field governs the criterion or no span exists, in
                   which case it is display_text.
@@ -34,7 +37,7 @@ from services.s1_requirements.criteria import KIND_ROLE_ONLY, KIND_YEARS_AND_ROL
 from services.s1_requirements.durations import DurationMatch
 from services.s1_requirements.jd_text import JDText
 from services.s1_requirements.schema import (
-    AMB_REQUIREMENT_NOT_IN_JD, BIZ_N_MISMATCH, BIZ_N_NOT_IN_JD, BIZ_TARGET_NOT_IN_JD, FIELD_MIN_YEARS,
+    AMB_AMBIGUOUS_RELEVANCE, AMB_REQUIREMENT_NOT_IN_JD, BASIS_UNSPECIFIED, BIZ_N_MISMATCH, BIZ_N_NOT_IN_JD, BIZ_TARGET_NOT_IN_JD, FIELD_MIN_YEARS,
     FIELD_ROLES, POLICY_EXPLICIT_ROLE, POLICY_FUNCTIONAL, POLICY_MIXED, POLICY_PURE_DURATION, POLICY_SECTOR,
     PROV_JD_ASSERTED, PROV_JD_VERIFIED, PROV_ORIGINAL_AI, PROV_S1_INTERPRETED, RECRUITER_FIELDS,
     RECRUITER_PROVENANCES, REASON_KINDS, RETRYABLE_REASONS, STATUS_FAILED_TECHNICAL,
@@ -165,6 +168,9 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
         if code == AMB_REQUIREMENT_NOT_IN_JD and fully_recruiter:
             continue                                   # recruiter value outranks the JD
         reasons.append(Reason(code, "ai"))
+    if pc.relevance_basis == BASIS_UNSPECIFIED and AMB_AMBIGUOUS_RELEVANCE not in pc.ambiguity:
+        # "relevant" without saying what: never a trusted pure-duration requirement
+        reasons.append(Reason(AMB_AMBIGUOUS_RELEVANCE, "relevance_basis", BASIS_UNSPECIFIED))
 
     if gov or not req:
         requirement_text = c.display_text
@@ -194,8 +200,9 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
     audit = {**_hint_audit(c, rf), "jd_sha256": jd.text_sha256, "duration_candidates_in_requirement": in_req,
              "target_mappings": target_mappings, "review_required": review_required,
              "target_matches": {t.target_id: pt.match for pt, t in zip(pc.targets, targets) if pt.hint_id},
-             "ai": {"policy": pc.policy, "duration": pc.duration_id, "ambiguity": list(pc.ambiguity),
-                    "note": pc.note},
+             "ai": {"duration": pc.duration_id, "ambiguity": list(pc.ambiguity),
+                    "note": pc.note, "relevance_basis": pc.relevance_basis, "model_policy": pc.model_policy},
+             "policy_derivation": pc.policy_derivation,
              "call": run.get("call", {})}
     if pc.statement_anchored and not reasons and not gov:
         # invariant: a model-declared statement alone never resolves a criterion

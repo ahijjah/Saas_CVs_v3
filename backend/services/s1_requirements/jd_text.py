@@ -7,7 +7,9 @@ S1 JD text: deterministic normalisation, stable line numbering and verbatim span
   * Comparison form: NFKC + casefold + whitespace collapse, with an index map
     back to the original characters, so every match is reported as the ORIGINAL
     substring (Span). Matching is exact on the comparison form and must sit on
-    word boundaries. No fuzzy matching, no synonym tables.
+    word boundaries (an Arabic proclitic chain such as ك / و / فب may precede
+    the start of a span; see _left_boundary_ok). No fuzzy matching, no synonym
+    tables.
 """
 from __future__ import annotations
 
@@ -49,10 +51,33 @@ def normalize(s: str) -> str:
     return norm_with_index(s)[0]
 
 
+# Arabic attached proclitics: an optional conjunction (و "and", ف "so") followed by an optional
+# preposition (ب "with/in", ك "as", ل "for"), written joined to the next word. A span may start right after
+# such a chain (e.g. "مدير" inside "كمدير", "ومدير", "فبمدير"). Orthographic only: no meaning is attached,
+# Latin script is unaffected and the right (suffix) boundary stays strict.
+_AR_PROCLITIC_CHAIN = re.compile(r"[وف]?[بكل]?")
+
+
+def _arabic_letter(ch: str) -> bool:
+    return "\u0621" <= ch <= "\u064a"
+
+
+def _left_boundary_ok(hay: str, a: int) -> bool:
+    if a == 0 or not (hay[a - 1].isalnum() and hay[a].isalnum()):
+        return True
+    if not _arabic_letter(hay[a]):
+        return False
+    w = a
+    while w > 0 and hay[w - 1].isalnum():
+        w -= 1
+    prefix = hay[w:a]
+    return (1 <= len(prefix) <= 2 and all(_arabic_letter(ch) for ch in prefix)
+            and _AR_PROCLITIC_CHAIN.fullmatch(prefix) is not None)
+
+
 def _boundary_ok(hay: str, a: int, b: int) -> bool:
-    before = hay[a - 1] if a > 0 else " "
     after = hay[b] if b < len(hay) else " "
-    return not (before.isalnum() and hay[a].isalnum()) and not (after.isalnum() and hay[b - 1].isalnum())
+    return _left_boundary_ok(hay, a) and not (after.isalnum() and hay[b - 1].isalnum())
 
 
 class JDText:

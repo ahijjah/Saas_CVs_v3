@@ -139,24 +139,22 @@ def _types(item: dict) -> list:
     return [t.get("type") for t in item.get("targets") or [] if isinstance(t, dict)]
 
 
-def call_diagnostics(case: dict, raw: list) -> dict:
-    """Diagnostics from the raw main/repair answers (before validation)."""
+def call_diagnostics(case: dict, raw: list, merge: dict | None = None) -> dict:
+    """Diagnostics from the raw main/repair answers (before validation) and the repair merge.
+
+    s1-4: the model's policy is never used; ``model_policy_mismatch_main`` only counts answers that still
+    emit a policy disagreeing with their own target types. ``repair_attempted_type_change`` counts repairs
+    whose raw answer changed target types (the scoped merge keeps error-free types);
+    ``repair_discarded_changes`` counts criteria where the merge discarded out-of-scope repair edits."""
     main = next((_first_item(x["content"]) for x in raw if x["call"] == "main"), None)
     rep = next((_first_item(x["content"]) for x in raw if x["call"] == "repair"), None)
-    exp_types = sorted(t["type"] for t in case["expected"]["targets"])
-    d = {"type_ok_policy_inconsistent_main": False, "repair_to_mixed_incorrect": False,
-         "repair_changed_types": False}
-    if main is not None:
-        mt = _types(main)
-        imp = implied_policy([t for t in mt if t in ("role", "function")])
-        d["type_ok_policy_inconsistent_main"] = (sorted(mt) == exp_types and imp is not None
-                                                 and main.get("policy") != imp)
+    d = {"model_policy_mismatch_main": False, "repair_attempted_type_change": False,
+         "repair_discarded_changes": bool(merge and merge.get("discarded_changes"))}
+    if main is not None and isinstance(main.get("policy"), str):
+        imp = implied_policy([t for t in _types(main) if t in ("role", "function")])
+        d["model_policy_mismatch_main"] = imp is not None and main["policy"] != imp
     if main is not None and rep is not None:
-        rt = _types(rep)
-        d["repair_changed_types"] = _types(main) != rt
-        d["repair_to_mixed_incorrect"] = (rep.get("policy") == "mixed" and main.get("policy") != "mixed"
-                                          and (set(rt) != {"role", "function"}
-                                               or case["expected"]["policy"] != "mixed"))
+        d["repair_attempted_type_change"] = _types(main) != _types(rep)
     return d
 
 
@@ -172,7 +170,8 @@ def observe(case: dict, out, raw: list = ()) -> dict:
         "calls": [{k: c.get(k) for k in ("call", "finish_reason", "prompt_tokens", "completion_tokens")}
                   for c in log],
         "error": out.meta.get("error"),
-        "diagnostics": call_diagnostics(case, list(raw)),
+        "diagnostics": call_diagnostics(case, list(raw), out.meta.get("repair_merge")),
+        "repair_merge": out.meta.get("repair_merge"),
     }
     if outcome != "ok":
         return obs
@@ -184,7 +183,10 @@ def observe(case: dict, out, raw: list = ()) -> dict:
         "mappings": art.audit.get("target_mappings", []),
         "setting": art.setting.text if art.setting else None,
         "duration": duration_ids(case).get(ai.get("duration")) if ai.get("duration") else None,
-        "ambiguity": sorted(ai.get("ambiguity") or []),
+        # effective ambiguity: AI-reported codes plus derived ones (relevance_basis unspecified)
+        "ambiguity": sorted({r.code for r in art.reasons if r.kind == sc.KIND_AMBIGUITY}),
+        "relevance_basis": ai.get("relevance_basis"),
+        "policy_derivation": art.audit.get("policy_derivation"),
         "spans": [{"line": s.line, "text": s.text} for s in art.requirement_spans],
         "anchor": art.audit.get("requirement_anchor"),
         "note": ai.get("note"),
@@ -294,6 +296,7 @@ def summarize(records: list[dict], cases: list[dict], *, price_in: float = PRICE
     field_acc = {f: _ratio(sum(r["checks"][f] for r in ok), len(ok)) for f in FIELDS}
 
     tp = fp = fn = tn = 0
+    sensitive: list[dict] = []
     false_pos, false_neg = [], []
     confusion: dict[str, Counter] = defaultdict(Counter)
     for r in ok:
@@ -303,6 +306,9 @@ def summarize(records: list[dict], cases: list[dict], *, price_in: float = PRICE
             if "mapped" not in e or a is None:
                 continue
             got = a["provenance"] == sc.PROV_JD_ASSERTED
+            if e.get("mapping_policy_sensitive"):          # e.g. abbreviation punctuation: excluded from the gate
+                sensitive.append({"case": r["case"], "run": r["run"], "target": e["text"], "jd_asserted": got})
+                continue
             mapped = next((m["mapped_text"] for m in r["mappings"] if m["target_id"] == a["id"]), None)
             if got and e["mapped"]:
                 tp += 1
@@ -357,13 +363,13 @@ def summarize(records: list[dict], cases: list[dict], *, price_in: float = PRICE
         "ambiguity_accuracy": field_acc["ambiguity"],
         "jd_asserted": {"tp": tp, "fp": fp, "fn": fn, "tn": tn, "precision": _ratio(tp, tp + fp),
                         "recall": _ratio(tp, tp + fn), "false_positives": false_pos,
-                        "false_negatives": false_neg},
+                        "false_negatives": false_neg, "policy_sensitive_excluded": sensitive},
         "type_confusion": {k: dict(v) for k, v in sorted(confusion.items())},
         "stability": stability, "unstable_cases": unstable,
         "by_family": {f: {"pass": p, "runs": n} for f, (p, n) in sorted(fam.items())},
         "diagnostics": {k: sum(1 for r in records if r["diagnostics"][k])
-                        for k in ("type_ok_policy_inconsistent_main", "repair_to_mixed_incorrect",
-                                  "repair_changed_types")},
+                        for k in ("model_policy_mismatch_main", "repair_attempted_type_change",
+                                  "repair_discarded_changes")},
         "match_counts": dict(Counter(m for r in ok for m in r["matches"].values())),
         "semantic_failures": [{"case": r["case"], "run": r["run"],
                                "failed_fields": [f for f, v in r["checks"].items() if not v]}
@@ -395,7 +401,9 @@ def render_markdown(meta: dict, s: dict) -> str:
         "## jd_asserted",
         f"- TP {j['tp']}, FP {j['fp']}, FN {j['fn']}, TN {j['tn']}; precision {j['precision']}, recall {j['recall']}",
         *[f"- FALSE POSITIVE {x['case']} run {x['run']}: {x['target']!r} -> {x['mapped_text']!r}"
-          for x in j["false_positives"]], "",
+          for x in j["false_positives"]],
+        f"- policy-sensitive mappings excluded from the gate: {len(j['policy_sensitive_excluded'])} "
+        f"(jd_asserted {sum(x['jd_asserted'] for x in j['policy_sensitive_excluded'])})", "",
         "## Role/function confusion (expected -> actual)",
         *[f"- {k}: {v}" for k, v in s["type_confusion"].items()], "",
         "## Stability (cases with >= 2 ok runs)",

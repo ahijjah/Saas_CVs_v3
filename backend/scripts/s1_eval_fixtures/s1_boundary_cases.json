@@ -1,6 +1,6 @@
 {
- "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants. s1-boundary-2: oracle hint targets gained the s1-3 'match' field (structural only; every 'expected' label is unchanged from s1-boundary-1).",
- "fixture_version": "s1-boundary-2",
+ "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants. s1-boundary-2: oracle hint targets gained the s1-3 'match' field (structural only; every 'expected' label is unchanged from s1-boundary-1). s1-boundary-3 (s1-4 contract): oracle answers no longer carry a model policy (policy is derived); hint-less cases carry relevance_basis; K2 (PM vs P.M.) is policy-sensitive (either mapping accepted, excluded from the jd_asserted precision gate); E3 accepts a defensive ambiguous_relevance. All other expectations unchanged.",
+ "fixture_version": "s1-boundary-3",
  "cases": [
   {
    "id": "A1",
@@ -17,7 +17,6 @@
     "- Minimum 5 years of experience as a Construction Project Manager."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -71,7 +70,6 @@
     "- خبرة لا تقل عن 5 سنوات كمدير مشروع إنشائي."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -128,7 +126,6 @@
     "- خبرة ثلاث سنوات كمهندس موقع."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -185,7 +182,6 @@
     "- خبرة 4 سنوات في المشتريات."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -242,7 +238,6 @@
     "- خبرة سنتين كمحاسب."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -299,7 +294,6 @@
     "- Minimum 5 years of experience as a Project Manager."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -353,7 +347,6 @@
     "- خبرة 5 سنوات كمدير مشروع."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -407,7 +400,6 @@
     "- Minimum 5 years of experience as a Construction Project Manager."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -465,7 +457,6 @@
     "- Minimum 3 years of experience as a Senior Accountant."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -523,7 +514,6 @@
     "- Minimum 5 years of experience as an Assistant Project Manager."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -581,7 +571,6 @@
     "- Minimum 3 years of experience as an Accountant."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -613,7 +602,14 @@
     ],
     "setting": null,
     "duration": "3 years",
-    "ambiguity": [],
+    "ambiguity": {
+     "one_of": [
+      [],
+      [
+       "ambiguous_relevance"
+      ]
+     ]
+    },
     "status": "needs_confirmation",
     "span_includes": [
      "Minimum 3 years of experience as an Accountant"
@@ -635,7 +631,6 @@
     "- At least 5 years of project management experience."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -689,7 +684,6 @@
     "- 3+ years of experience in Quantity Surveying."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -743,7 +737,6 @@
     "- Minimum 3 years of experience implementing software."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -800,7 +793,6 @@
     "- Minimum 4 years of experience administering databases."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -857,7 +849,6 @@
     "- Minimum 3 years of experience implementing enterprise software systems."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -911,7 +902,6 @@
     "- Minimum 3 years of experience in enterprise software implementation."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -969,7 +959,6 @@
     "- Minimum 4 years of experience in database support."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -1023,7 +1012,6 @@
     "- Minimum 5 years of experience in project coordination."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -1077,7 +1065,6 @@
     "- Minimum 5 years of experience working with the project management team."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -1131,7 +1118,6 @@
     "- Minimum 5 years as a Project Manager (P.M.)."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -1188,7 +1174,6 @@
     "- Minimum 5 years as a P.M. in a fast-paced environment."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -1215,7 +1200,8 @@
       "text": "PM",
       "type": "role",
       "provenance": "original_ai",
-      "mapped": false
+      "mapped": false,
+      "mapping_policy_sensitive": true
      }
     ],
     "setting": null,
@@ -1224,6 +1210,20 @@
     "status": "needs_confirmation",
     "span_includes": [
      "Minimum 5 years as a P.M. in a fast-paced environment"
+    ],
+    "alternatives": [
+     {
+      "targets": [
+       {
+        "text": "PM",
+        "type": "role",
+        "provenance": "jd_asserted",
+        "mapped": true,
+        "mapping_policy_sensitive": true
+       }
+      ],
+      "status": "resolved"
+     }
     ]
    }
   },
@@ -1243,7 +1243,6 @@
     "- Minimum 5 years of experience as a Project Manager or in project management."
    ],
    "oracle": {
-    "policy": "mixed",
     "requirement_spans": [
      {
       "line": 2,
@@ -1307,7 +1306,7 @@
     "- At least 3 years as a Procurement Officer or in contract management."
    ],
    "oracle": {
-    "policy": "mixed",
+    "relevance_basis": "targets",
     "requirement_spans": [
      {
       "line": 2,
@@ -1364,7 +1363,7 @@
     "- 2 years of experience in the banking sector."
    ],
    "oracle": {
-    "policy": "sector",
+    "relevance_basis": "sector",
     "requirement_spans": [
      {
       "line": 2,
@@ -1405,7 +1404,7 @@
     "- Experience in the banking sector is preferred."
    ],
    "oracle": {
-    "policy": "sector",
+    "relevance_basis": "sector",
     "requirement_spans": [
      {
       "line": 2,
@@ -1447,7 +1446,6 @@
     "- Minimum 5 years of experience as a Site Engineer on oil and gas projects."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -1502,7 +1500,7 @@
     "- 5 years of professional experience."
    ],
    "oracle": {
-    "policy": "pure_duration",
+    "relevance_basis": "total_experience",
     "requirement_spans": [
      {
       "line": 2,
@@ -1540,7 +1538,7 @@
     "- خبرة مهنية لا تقل عن ٣ سنوات."
    ],
    "oracle": {
-    "policy": "pure_duration",
+    "relevance_basis": "total_experience",
     "requirement_spans": [
      {
       "line": 2,
@@ -1578,7 +1576,7 @@
     "- 3-5 years of experience in procurement."
    ],
    "oracle": {
-    "policy": "functional",
+    "relevance_basis": "targets",
     "requirement_spans": [
      {
       "line": 2,
@@ -1625,7 +1623,7 @@
     "- Minimum 5 years of relevant experience."
    ],
    "oracle": {
-    "policy": "pure_duration",
+    "relevance_basis": "unspecified",
     "requirement_spans": [
      {
       "line": 2,
@@ -1669,7 +1667,6 @@
     "- Experience in nursing is preferred."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -1725,7 +1722,6 @@
     "- Experience as a Registered Nurse is required."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -1783,7 +1779,6 @@
     "- Minimum 5 years of experience as a Site Engineer."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 5,
@@ -1840,7 +1835,7 @@
     "- Minimum 3 years of professional experience."
    ],
    "oracle": {
-    "policy": "pure_duration",
+    "relevance_basis": "total_experience",
     "requirement_spans": [
      {
       "line": 4,
@@ -1883,7 +1878,6 @@
     "- 7 years of overall experience, including at least 3 years as a Project Manager."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -1949,7 +1943,6 @@
     "- Minimum 8 years of experience as a Project Manager."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -2023,7 +2016,6 @@
     "- Valid driving licence."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [],
     "targets": [
      {
@@ -2075,7 +2067,6 @@
     "- PMP certification."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [],
     "targets": [
      {

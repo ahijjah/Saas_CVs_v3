@@ -1,6 +1,6 @@
 {
- "_comment": "HELD-OUT synthetic boundary cases for S1 s1-3 (semantic equivalence and qualifier preservation). Vocabulary is disjoint from the production prompt illustrations and from s1_boundary_cases.json, so it measures generalisation. No candidate, CV, application or personal data. Same schema as s1_boundary_cases.json.",
- "fixture_version": "s1-heldout-1",
+ "_comment": "HELD-OUT synthetic boundary cases for S1 s1-3 (semantic equivalence and qualifier preservation). Vocabulary is disjoint from the production prompt illustrations and from s1_boundary_cases.json, so it measures generalisation. No candidate, CV, application or personal data. Same schema as s1_boundary_cases.json. s1-heldout-2 (s1-4 contract): oracle answers no longer carry a model policy; expectations unchanged.",
+ "fixture_version": "s1-heldout-2",
  "cases": [
   {
    "id": "HO01",
@@ -17,7 +17,6 @@
     "- Minimum 4 years of experience as an Air Traffic Controller."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -71,7 +70,6 @@
     "- خبرة 3 سنوات كطبيب بيطري."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -128,7 +126,6 @@
     "- خبرة 3 سنوات كطبيب بيطري."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -182,7 +179,6 @@
     "- خبرة 4 سنوات في تطوير الويب."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -239,7 +235,6 @@
     "- خبرة 4 سنوات في تطوير مواقع التجارة الإلكترونية."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -293,7 +288,6 @@
     "- Minimum 3 years of experience planning events."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -350,7 +344,6 @@
     "- Minimum 3 years of experience planning corporate events."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -404,7 +397,6 @@
     "- Minimum 3 years of experience in event ticket sales."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -458,7 +450,6 @@
     "- Minimum 3 years as a User Experience Designer."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -515,7 +506,6 @@
     "- Minimum 5 years of experience as a Chief Pilot."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -573,7 +563,6 @@
     "- Minimum 5 years of experience as a Pilot."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -627,7 +616,6 @@
     "- At least 3 years of copywriting experience."
    ],
    "oracle": {
-    "policy": "functional",
     "requirement_spans": [
      {
       "line": 2,
@@ -681,7 +669,6 @@
     "- At least 3 years of experience as a Copywriter."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -735,7 +722,6 @@
     "- Minimum 3 years of experience working with veterinary teams."
    ],
    "oracle": {
-    "policy": "explicit_role",
     "requirement_spans": [
      {
       "line": 2,
@@ -790,7 +776,6 @@
     "- At least 3 years as a Copywriter or in content editing."
    ],
    "oracle": {
-    "policy": "mixed",
     "requirement_spans": [
      {
       "line": 2,
