@@ -377,10 +377,17 @@ def summarize(records: list[dict], cases: list[dict], *, price_in: float = PRICE
         "type_confusion": {k: dict(v) for k, v in sorted(confusion.items())},
         "stability": stability, "unstable_cases": unstable,
         "by_family": {f: {"pass": p, "runs": n} for f, (p, n) in sorted(fam.items())},
-        "diagnostics": {k: sum(1 for r in records if r["diagnostics"][k])
-                        for k in ("model_policy_mismatch_main", "repair_attempted_type_change",
-                                  "repair_discarded_changes", "equivalent_rejected_by_alignment",
-                                  "alignment_withdrawn")},
+        "diagnostics": {**{k: sum(1 for r in records if r["diagnostics"][k])
+                           for k in ("model_policy_mismatch_main", "repair_attempted_type_change",
+                                     "repair_discarded_changes", "equivalent_rejected_by_alignment",
+                                     "alignment_withdrawn")},
+                        # s1-5.2: retained form candidates (never jd_asserted) and, to measure translation trust,
+                        # the jd_asserted mappings that rest on a translation pair
+                        "unverified_form_candidates": sum(1 for r in ok for m in r["mappings"]
+                                                          if m.get("trust") == sc.TRUST_UNVERIFIED_FORM),
+                        "jd_asserted_via_translation": sum(1 for r in ok for m in r["mappings"]
+                                                           if m.get("used") and sc.REL_TRANSLATION
+                                                           in m.get("relations", []))},
         "match_counts": dict(Counter(m for r in ok for m in r["matches"].values())),
         "semantic_failures": [{"case": r["case"], "run": r["run"],
                                "failed_fields": [f for f, v in r["checks"].items() if not v]}

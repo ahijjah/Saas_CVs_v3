@@ -1,6 +1,6 @@
 {
- "_comment": "HELD-OUT synthetic boundary cases for S1 s1-3 (semantic equivalence and qualifier preservation). Vocabulary is disjoint from the production prompt illustrations and from s1_boundary_cases.json, so it measures generalisation. No candidate, CV, application or personal data. Same schema as s1_boundary_cases.json. s1-heldout-2 (s1-4 contract): oracle answers no longer carry a model policy; expectations unchanged. s1-heldout-3 (s1-5 contract): equivalent reference answers carry a word alignment; expectations unchanged.",
- "fixture_version": "s1-heldout-3",
+ "_comment": "HELD-OUT synthetic boundary cases for S1 s1-3 (semantic equivalence and qualifier preservation). Vocabulary is disjoint from the production prompt illustrations and from s1_boundary_cases.json, so it measures generalisation. No candidate, CV, application or personal data. Same schema as s1_boundary_cases.json. s1-heldout-2 (s1-4 contract): oracle answers no longer carry a model policy; expectations unchanged. s1-heldout-3 (s1-5 contract): equivalent reference answers carry a word alignment; expectations unchanged. s1-heldout-4 (s1-5.2 trust contract): HO06 (equivalence through a form pair) is needs_confirmation with an original_ai target, reason equivalence_unverified and the candidate mapping kept in the audit. No other expectation changed.",
+ "fixture_version": "s1-heldout-4",
  "cases": [
   {
    "id": "HO01",
@@ -350,16 +350,19 @@
      {
       "text": "event planning",
       "type": "function",
-      "provenance": "jd_asserted",
-      "mapped": true
+      "provenance": "original_ai",
+      "mapped": false
      }
     ],
     "setting": null,
     "duration": "3 years",
     "ambiguity": [],
-    "status": "resolved",
+    "status": "needs_confirmation",
     "span_includes": [
      "Minimum 3 years of experience planning events"
+    ],
+    "reasons_include": [
+     "equivalence_unverified"
     ]
    }
   },

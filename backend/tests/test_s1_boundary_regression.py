@@ -77,7 +77,10 @@ class TestFixture:
 
     def test_positive_and_negative_mapping_controls(self):
         mapped = [t["mapped"] for c in CASES for t in c["expected"]["targets"] if "mapped" in t]
-        assert sum(mapped) >= 7 and mapped.count(False) >= 15
+        assert sum(mapped) >= 5 and mapped.count(False) >= 15                  # trust-bearing positives
+        # s1-5.2: equivalences through a form pair are labelled unverified candidates, not positives
+        candidates = [c["id"] for c in CASES if "equivalence_unverified" in c["expected"].get("reasons_include", [])]
+        assert candidates == ["G1", "G2"]
 
     def test_synthetic_only_no_pii(self):
         text = br.FIXTURE.read_text(encoding="utf-8")
@@ -105,28 +108,49 @@ class TestFixture:
 
 class TestMetrics:
     def test_false_positive_jd_asserted(self):
-        # I1: a structurally valid but semantically wrong alignment (administration "form" support) is the
-        # model's audited judgment; the harness scores it as a false positive.
-        bad = with_oracle("I1", targets=[{"hint": "T1", "type": "function", "match": "equivalent",
-                                          "jd_span": {"line": 2, "text": "database support"},
-                                          "alignment": [{"hint": "database", "jd": "database", "relation": "same"},
-                                                        {"hint": "administration", "jd": "support",
-                                                         "relation": "form"}],
-                                          "jd_extra": []}])
-        records, cases = scripted_records({"I1": [[bad]], "B1": None, "G1": None})
+        # HO03: a structurally valid but dishonest TRANSLATION alignment ("Equine" -> "بيطري") is still the model's
+        # audited judgment (translation stays trust-bearing in s1-5.2); the harness scores it as a false positive
+        bad = json.loads(br.oracle_response(HO_BY_ID["HO03"]))
+        bad["criteria"][0]["targets"] = [{
+            "hint": "T1", "type": "role", "match": "equivalent", "jd_span": {"line": 2, "text": "كطبيب بيطري"},
+            "alignment": [{"hint": "Equine", "jd": "بيطري", "relation": "translation"},
+                          {"hint": "Veterinarian", "jd": "طبيب", "relation": "translation"}], "jd_extra": []}]
+        bad = json.dumps(bad, ensure_ascii=False)
+        records, cases = scripted_records({"HO03": [[bad]], "HO02": None, "HO04": None},
+                                          cases=[HO_BY_ID[c] for c in ("HO03", "HO02", "HO04")])
         s = br.summarize(records, cases)
         j = s["jd_asserted"]
         assert (j["tp"], j["fp"], j["fn"]) == (2, 1, 0) and j["precision"] == round(2 / 3, 4) and j["recall"] == 1.0
-        assert j["false_positives"] == [{"case": "I1", "run": 1, "target": "database administration",
-                                         "mapped_text": "database support"}]
-        i1 = next(r for r in records if r["case"] == "I1")
-        assert not i1["pass"] and {"mapping", "provenance", "status"} <= {
-            f for f, v in i1["checks"].items() if not v}
+        assert j["false_positives"] == [{"case": "HO03", "run": 1, "target": "Equine Veterinarian",
+                                         "mapped_text": "كطبيب بيطري"}]
+        ho3 = next(r for r in records if r["case"] == "HO03")
+        assert not ho3["pass"] and {"mapping", "provenance", "status"} <= {
+            f for f, v in ho3["checks"].items() if not v}
         assert s["semantic_error_runs"] == 1 and s["outcomes"]["ok"] == 3
+        assert s["diagnostics"]["jd_asserted_via_translation"] == 3          # measurable for a later decision
+
+    def test_form_candidate_is_never_a_false_positive(self):
+        # I1: administration -> support labelled "form" is structurally valid; s1-5.2 keeps it as an unverified
+        # candidate (original_ai, equivalence_unverified, needs_confirmation) -> a safe, passing outcome
+        cand = with_oracle("I1", targets=[{"hint": "T1", "type": "function", "match": "equivalent",
+                                           "jd_span": {"line": 2, "text": "database support"},
+                                           "alignment": [{"hint": "database", "jd": "database", "relation": "same"},
+                                                         {"hint": "administration", "jd": "support",
+                                                          "relation": "form"}],
+                                           "jd_extra": []}])
+        records, cases = scripted_records({"I1": [[cand]], "B1": None})
+        s = br.summarize(records, cases)
+        i1 = next(r for r in records if r["case"] == "I1")
+        assert i1["pass"] and i1["status"] == "needs_confirmation" and "equivalence_unverified" in i1["reasons"]
+        assert [t["provenance"] for t in i1["targets"]] == ["original_ai"]
+        assert (s["jd_asserted"]["tp"], s["jd_asserted"]["fp"]) == (1, 0)
+        assert s["diagnostics"]["unverified_form_candidates"] == 1
+        (oracle,) = scripted_records({"I1": None})[0]                         # the labelled "none" answer
+        assert oracle["pass"] and "target_not_in_jd" in oracle["reasons"]
 
     def test_false_negative_jd_asserted(self):
-        miss = with_oracle("G1", targets=[{"hint": "T1", "type": "function", "match": "none", "jd_span": None}])
-        records, cases = scripted_records({"G1": [[miss]], "B1": None})
+        miss = with_oracle("B2", targets=[{"hint": "T1", "type": "role", "match": "none", "jd_span": None}])
+        records, cases = scripted_records({"B2": [[miss]], "B1": None})
         j = br.summarize(records, cases)["jd_asserted"]
         assert (j["tp"], j["fp"], j["fn"], j["recall"]) == (1, 0, 1, 0.5)
 
@@ -213,7 +237,7 @@ class TestSafety:
         assert not (tmp_path / "d").exists()
         assert br.main(["--out", str(tmp_path / "o"), "--mode", "oracle", "--runs", "1", "--cases", "A1,B1"]) == 0
         res = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))
-        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "b2a063ab2947"
+        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "4f22dddb117e"
         assert res["meta"]["temperature"] == 0.0 and res["meta"]["mode"] == "oracle"
         report = (tmp_path / "o" / "report.md").read_text(encoding="utf-8")
         for frag in ("## jd_asserted", "## Stability", "## Role/function confusion", "## Outcomes"):
@@ -233,12 +257,13 @@ class TestSafety:
 
     def test_s1_prompt_unchanged(self):
         assert (br.sc.S1_PROMPT_VERSION, br.sc.S1_VERSION, br.clf.prompt_fingerprint()) == (
-            "s1-5.1", "1.4.1", "b2a063ab2947")
+            "s1-5.2", "1.4.2", "4f22dddb117e")
 
 
 # ── s1-3: diagnostics, held-out set, prompt independence ───────────────────
 
 HELDOUT = br.load_cases(br.FIXTURE.parent / "s1_heldout_cases.json")
+HO_BY_ID = {c["id"]: c for c in HELDOUT}
 
 
 def fixture_phrases(cases) -> set[str]:
@@ -275,7 +300,8 @@ class TestS14Diagnostics:
         (r,) = records
         assert r["pass"] and r["policy"] == "functional" and s["repair_calls"] == 0
         assert s["diagnostics"] == {"model_policy_mismatch_main": 1, "repair_attempted_type_change": 0,
-                                    "repair_discarded_changes": 0, "equivalent_rejected_by_alignment": 0, "alignment_withdrawn": 0}
+                                    "repair_discarded_changes": 0, "equivalent_rejected_by_alignment": 0, "alignment_withdrawn": 0,
+                                    "unverified_form_candidates": 0, "jd_asserted_via_translation": 0}
 
     def test_repair_type_change_outside_scope_is_discarded(self):
         bad = with_oracle("F1", ambiguity=["unsure"])                              # only ambiguity is invalid
@@ -285,7 +311,8 @@ class TestS14Diagnostics:
         (r,) = records
         assert r["pass"] and r["repair_used"] and [t["type"] for t in r["targets"]] == ["function"]
         assert s["diagnostics"] == {"model_policy_mismatch_main": 0, "repair_attempted_type_change": 1,
-                                    "repair_discarded_changes": 1, "equivalent_rejected_by_alignment": 0, "alignment_withdrawn": 0}
+                                    "repair_discarded_changes": 1, "equivalent_rejected_by_alignment": 0, "alignment_withdrawn": 0,
+                                    "unverified_form_candidates": 0, "jd_asserted_via_translation": 0}
 
     def test_policy_sensitive_mapping_excluded_from_gate(self):
         pm = with_oracle("K2", targets=[{"hint": "T1", "type": "role", "match": "equivalent",
@@ -340,7 +367,9 @@ class TestHeldOut:
                   "HO_typing"):
             assert f in fams, f
         mapped = [t["mapped"] for c in HELDOUT for t in c["expected"]["targets"]]
-        assert sum(mapped) >= 4 and mapped.count(False) >= 8
+        assert sum(mapped) >= 3 and mapped.count(False) >= 8
+        assert [c["id"] for c in HELDOUT if "equivalence_unverified" in c["expected"].get("reasons_include", [])] == [
+            "HO06"]
         assert sum(1 for c in HELDOUT if any(re.search(r"[؀-ۿ]", ln) for ln in c["jd_lines"])) >= 4
 
     def test_oracle_answers_score_100_percent(self):
@@ -354,10 +383,61 @@ class TestHeldOut:
             assert not any(_contains_phrase(m, h) or _contains_phrase(h, m) for m in main), h
 
 
+def _words(s):
+    from services.s1_requirements.jd_text import words
+    return set(words(s))
+
+
+def fixture_answer_pairs(cases) -> set[tuple[str, str]]:
+    """Lexical pairs that encode a labelled answer (s1-5.2 leakage guard), never single generic words:
+    - every oracle alignment pair whose two sides differ (hint word -> the JD word that answers it);
+    - an "X vs Y" case description, but only when X's words occur in the case's own hint text and Y's in its
+      JD text (or the reverse): that is the case's contrast pair, e.g. administration / support.
+    Generic descriptions ("noun vs verb form") never yield pairs: their words are not the case's vocabulary."""
+    pairs = set()
+    for c in cases:
+        for t in c["oracle"].get("targets") or []:
+            for p in t.get("alignment") or []:
+                for h in _words(p["hint"]):
+                    for j in _words(p["jd"]):
+                        if h != j:
+                            pairs.add((h, j))
+        desc = c.get("description") or ""
+        if " vs " not in desc:
+            continue
+        left, right = (_words(x) for x in desc.split(" vs ", 1))
+        hint_w = set().union(*(_words(h) for h in c["analysis"]["relevant_roles"])) if c["analysis"][
+            "relevant_roles"] else set()
+        jd_w = set().union(*(_words(ln) for ln in c["jd_lines"]))
+        for a_side, b_side in ((left - right, right - left), (right - left, left - right)):
+            if a_side and b_side and a_side <= hint_w and b_side <= jd_w:
+                pairs |= {(x, y) for x in a_side for y in b_side}
+    return pairs
+
+
+def leaked_pairs(prompt: str, pairs) -> list[tuple[str, str]]:
+    """Answer pairs whose two words occur together in one prompt line."""
+    lines = [_words(ln) for ln in prompt.splitlines()]
+    return sorted(p for p in pairs if any(p[0] in ln and p[1] in ln for ln in lines))
+
+
 class TestPromptIndependence:
     BANNED = ("مدير مشروع إنشائي", "مهندس موقع", "محاسب", "Senior Accountant", "Assistant Project Manager",
               "enterprise software", "database support", "project coordination", "nursing", "leading bank",
               "oil and gas", "banking", "construction")
+
+    def test_prompt_leaks_no_fixture_answer_pairs(self):
+        pairs = fixture_answer_pairs(CASES) | fixture_answer_pairs(HELDOUT)
+        assert ("administration", "support") in pairs and ("management", "coordination") in pairs
+        assert ("noun", "verb") not in pairs                                     # generic descriptions ignored
+        assert leaked_pairs(br.clf.S1_SYSTEM_PROMPT, pairs) == []
+
+    def test_leak_detector_catches_the_s1_5_1_contamination(self):
+        pairs = fixture_answer_pairs(CASES)
+        old = ("form  the same word ... (administration is not a form of support; management is not a form of "
+               "coordination).")
+        assert leaked_pairs(old, pairs) == [("administration", "support"), ("management", "coordination")]
+        assert leaked_pairs("administration\nsupport", pairs) == []           # separate lines: generic use is fine
 
     def test_prompt_uses_no_fixture_phrases(self):
         prompt = br.clf.S1_SYSTEM_PROMPT

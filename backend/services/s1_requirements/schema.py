@@ -26,10 +26,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 S1_SCHEMA = "s1_requirement_spec_v2"
-S1_VERSION = "1.4.1"                     # enumeration + parser + validator + assembly
+S1_VERSION = "1.4.2"                     # enumeration + parser + validator + assembly
 S1_INPUT_VERSION = "s1-in-1"
 S1_PROMPT_CODE = "recruitment.experience_requirement_spec"
-S1_PROMPT_VERSION = "s1-5.1"
+S1_PROMPT_VERSION = "s1-5.2"
 S1_MODEL = "gpt-4o-mini"
 S1_TEMPERATURE = 0.0
 S1_MAX_TOKENS = 4000
@@ -64,7 +64,10 @@ RESTRICTION_KINDS = (RESTRICTION_ROLE, RESTRICTION_FUNCTION, RESTRICTION_SECTOR,
 
 # s1-5: word alignment of an "equivalent" mapping (one analysis-target word per pair)
 REL_SAME = "same"                        # identical word
-REL_FORM = "form"                        # same language, other grammatical form (manager / management)
+REL_FORM = "form"                        # same language, other grammatical form; s1-5.2: NOT trust-bearing
+UNVERIFIED_RELATIONS = (REL_FORM,)       # a mapping using any of these never establishes a target
+TRUST_BEARING = "trust_bearing"          # audit.target_mappings[].trust
+TRUST_UNVERIFIED_FORM = "unverified_form"
 REL_TRANSLATION = "translation"          # other language (other script)
 REL_ABBREVIATION = "abbreviation"        # an all-capitals acronym and its expansion
 ALIGN_RELATIONS = (REL_SAME, REL_FORM, REL_TRANSLATION, REL_ABBREVIATION)
@@ -118,7 +121,11 @@ BIZ_TARGET_NOT_IN_JD = "target_not_in_jd"
 BIZ_N_NOT_IN_JD = "n_not_in_jd"
 BIZ_N_MISMATCH = "n_mismatch"
 BIZ_COMPOUND_REQUIREMENT = "compound_requirement"   # s1-5: >= 2 duration thresholds in one requirement
-BUSINESS_CODES = (BIZ_TARGET_NOT_IN_JD, BIZ_N_NOT_IN_JD, BIZ_N_MISMATCH, BIZ_COMPOUND_REQUIREMENT)
+# s1-5.2: the JD wording WAS found and a structurally valid mapping was proposed, but the equivalence rests on
+# a relation the system cannot verify (a model-labelled grammatical "form"): never evidence until confirmed
+BIZ_EQUIVALENCE_UNVERIFIED = "equivalence_unverified"
+BUSINESS_CODES = (BIZ_TARGET_NOT_IN_JD, BIZ_N_NOT_IN_JD, BIZ_N_MISMATCH, BIZ_COMPOUND_REQUIREMENT,
+                  BIZ_EQUIVALENCE_UNVERIFIED)
 
 REASON_VALIDATION_FAILED = "validation_failed"
 CONTRACT_CODES = (REASON_VALIDATION_FAILED,)

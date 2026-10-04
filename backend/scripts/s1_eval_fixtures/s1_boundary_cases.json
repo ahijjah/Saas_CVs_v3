@@ -1,6 +1,6 @@
 {
- "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants. s1-boundary-2: oracle hint targets gained the s1-3 'match' field (structural only; every 'expected' label is unchanged from s1-boundary-1). s1-boundary-3 (s1-4 contract): oracle answers no longer carry a model policy (policy is derived); hint-less cases carry relevance_basis; K2 (PM vs P.M.) is policy-sensitive (either mapping accepted, excluded from the jd_asserted precision gate); E3 accepts a defensive ambiguous_relevance. All other expectations unchanged. s1-boundary-4 (s1-5 contract): equivalent reference answers carry a word alignment; years-only cases carry typed restrictions instead of relevance_basis/targets/setting; M2 is anchored by its sector restriction (anchor 'restriction'); R1 is a compound requirement (two thresholds) and must be compound_requirement / needs_confirmation instead of a resolved single threshold. All other expectations unchanged. s1-boundary-5 (s1-5.1): the B1/B2/B4 reference alignments pair the bare Arabic word (مدير, مهندس, محاسب) inside the span word that carries the attached letter ك, exercising the canonical proclitic boundary; no expectation changed.",
- "fixture_version": "s1-boundary-5",
+ "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants. s1-boundary-2: oracle hint targets gained the s1-3 'match' field (structural only; every 'expected' label is unchanged from s1-boundary-1). s1-boundary-3 (s1-4 contract): oracle answers no longer carry a model policy (policy is derived); hint-less cases carry relevance_basis; K2 (PM vs P.M.) is policy-sensitive (either mapping accepted, excluded from the jd_asserted precision gate); E3 accepts a defensive ambiguous_relevance. All other expectations unchanged. s1-boundary-4 (s1-5 contract): equivalent reference answers carry a word alignment; years-only cases carry typed restrictions instead of relevance_basis/targets/setting; M2 is anchored by its sector restriction (anchor 'restriction'); R1 is a compound requirement (two thresholds) and must be compound_requirement / needs_confirmation instead of a resolved single threshold. All other expectations unchanged. s1-boundary-5 (s1-5.1): the B1/B2/B4 reference alignments pair the bare Arabic word (مدير, مهندس, محاسب) inside the span word that carries the attached letter ك, exercising the canonical proclitic boundary; no expectation changed. s1-boundary-6 (s1-5.2 trust contract): a model-labelled grammatical 'form' pair is NOT trust-bearing, so G1/G2 (equivalence through a form pair) are needs_confirmation with an original_ai target, reason equivalence_unverified and the candidate mapping kept in the audit (no jd_asserted, no S2 view). I1 is unchanged: none (target_not_in_jd) or a form candidate (equivalence_unverified) are both safe; it is never jd_asserted, jd_verified or resolved. No other expectation changed.",
+ "fixture_version": "s1-boundary-6",
  "cases": [
   {
    "id": "A1",
@@ -825,16 +825,19 @@
      {
       "text": "software implementation",
       "type": "function",
-      "provenance": "jd_asserted",
-      "mapped": true
+      "provenance": "original_ai",
+      "mapped": false
      }
     ],
     "setting": null,
     "duration": "3 years",
     "ambiguity": [],
-    "status": "resolved",
+    "status": "needs_confirmation",
     "span_includes": [
      "Minimum 3 years of experience implementing software"
+    ],
+    "reasons_include": [
+     "equivalence_unverified"
     ]
    }
   },
@@ -894,16 +897,19 @@
      {
       "text": "database administration",
       "type": "function",
-      "provenance": "jd_asserted",
-      "mapped": true
+      "provenance": "original_ai",
+      "mapped": false
      }
     ],
     "setting": null,
     "duration": "4 years",
     "ambiguity": [],
-    "status": "resolved",
+    "status": "needs_confirmation",
     "span_includes": [
      "Minimum 4 years of experience administering databases"
+    ],
+    "reasons_include": [
+     "equivalence_unverified"
     ]
    }
   },

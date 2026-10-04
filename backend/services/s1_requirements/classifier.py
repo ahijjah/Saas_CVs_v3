@@ -85,7 +85,7 @@ For EVERY criterion return exactly one result. Never return a policy: it is comp
   ALIGNMENT for "equivalent": account for EVERY word on both sides.
     "alignment": one pair per word of the hint: {"hint": "<ONE word of the hint>", "jd": "<the verbatim JD word(s) in jd_span that say that same word>", "relation": "same" | "form" | "translation" | "abbreviation"}.
       same          letter for letter the same word, in the same language (case, and the periods of a dotted acronym such as "Q.A." / "QA", do not count).
-      form          the SAME word in another grammatical form, same language, one word to one word: plural (account / accounts) or verb/noun form (control / controlling). Never a synonym, a related or broader/narrower word (administration is not a form of support; management is not a form of coordination).
+      form          the SAME word in another grammatical form, same language, one word to one word: plural (account / accounts) or verb/noun form (control / controlling). Never a synonym or a different word with a related, broader or narrower meaning: two different words are never a "form" of each other. A mapping that needs a form pair is kept only as a candidate for recruiter confirmation, so use form only when it is truly the same word.
       translation   EVERY pair between two languages, even when the meaning is identical (Warehouse / مستودع); may be several JD words.
       abbreviation  an all-capitals acronym and its expansion (HR / Human Resources); the only pair that may hold several hint words.
     A JD word may be given with or without the Arabic letters attached to its start (ك, ب, ل, و, ف): "مستودع" for "كمستودع" is fine; nothing else may be cut from a word.

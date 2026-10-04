@@ -7,6 +7,10 @@ Field authority (see schema.py):
                   in the JD does not count) > hint explicitly mapped by the
                   validated AI output to a verbatim span inside a requirement
                   span (jd_asserted) > otherwise original_ai + target_not_in_jd;
+                  s1-5.2: a mapping whose alignment uses a model-labelled "form"
+                  pair is NOT trust-bearing: original_ai + equivalence_unverified,
+                  the candidate kept in audit.target_mappings (used false, trust
+                  "unverified_form"); never jd_asserted, never an S2 view.
                   hint-less criteria: AI-selected verbatim JD spans (jd_asserted)
   required_years  recruiter (explicit) > JD duration span whose parsed lower
                   bound equals the hint (jd_verified); different value ->
@@ -26,7 +30,9 @@ Field authority (see schema.py):
 s2_views(): the unchanged experience_accounting.RequirementSpec. mixed ->
 two homogeneous views (explicit_role over role targets, functional over
 function targets) sharing criterion_id, spec_version, N, setting and text.
-No S2 call and no S2 result combination happens here.
+No S2 call and no S2 result combination happens here. A compound requirement
+or an unverified equivalence has no view at all, even with
+require_resolved=False.
 """
 from __future__ import annotations
 
@@ -38,7 +44,8 @@ from services.s1_requirements.durations import DurationMatch
 from services.s1_requirements.jd_text import JDText
 from services.s1_requirements.schema import (
     AMB_AMBIGUOUS_RELEVANCE, AMB_CONFLICTING_REQUIREMENTS, AMB_REQUIREMENT_NOT_IN_JD, BASIS_UNSPECIFIED,
-    BIZ_COMPOUND_REQUIREMENT, BIZ_N_MISMATCH, BIZ_N_NOT_IN_JD, BIZ_TARGET_NOT_IN_JD, FIELD_MIN_YEARS,
+    BIZ_COMPOUND_REQUIREMENT, BIZ_EQUIVALENCE_UNVERIFIED, BIZ_N_MISMATCH, BIZ_N_NOT_IN_JD, BIZ_TARGET_NOT_IN_JD,
+    FIELD_MIN_YEARS, REL_FORM, TRUST_BEARING, TRUST_UNVERIFIED_FORM, UNVERIFIED_RELATIONS,
     FIELD_ROLES, POLICY_EXPLICIT_ROLE, POLICY_FUNCTIONAL, POLICY_MIXED, POLICY_PURE_DURATION, POLICY_SECTOR,
     PROV_JD_ASSERTED, PROV_JD_VERIFIED, PROV_ORIGINAL_AI, PROV_S1_INTERPRETED, RECRUITER_FIELDS,
     RECRUITER_PROVENANCES, REASON_KINDS, RETRYABLE_REASONS, STATUS_FAILED_TECHNICAL,
@@ -128,6 +135,11 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
                 prov, span = gov["targets"], inside or pt.span
             elif inside is not None:
                 prov, span = PROV_JD_VERIFIED, inside
+            elif pt.span is not None and _unverified(pt):
+                # s1-5.2: a structurally valid mapping that rests on a model-labelled grammatical form is only a
+                # candidate (kept in the audit): the target stays original_ai and the criterion unconfirmed
+                prov, span = PROV_ORIGINAL_AI, None
+                reasons.append(Reason(BIZ_EQUIVALENCE_UNVERIFIED, f"targets.{pt.hint_id}", _unverified_detail(pt)))
             elif pt.span is not None:                  # validated explicit AI mapping inside a requirement span
                 prov, span = PROV_JD_ASSERTED, pt.span
             else:
@@ -205,8 +217,13 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
     target_mappings = [
         {"target_id": t.target_id, "target_text": pt.text, "mapped_text": pt.span.text, "line": pt.span.line,
          "start": pt.span.start, "end": pt.span.end, "used": t.provenance == PROV_JD_ASSERTED, "match": pt.match,
-         "alignment": [dict(x) for x in pt.alignment], "jd_extra": [dict(x) for x in pt.jd_extra]}
+         "alignment": [dict(x) for x in pt.alignment], "jd_extra": [dict(x) for x in pt.jd_extra],
+         "relations": sorted({x.get("relation") for x in pt.alignment}),
+         "trust": TRUST_UNVERIFIED_FORM if _unverified(pt) else TRUST_BEARING}
         for pt, t in zip(pc.targets, targets) if pt.hint_id and pt.span is not None]
+    if any(m["trust"] != TRUST_BEARING and m["used"] for m in target_mappings):
+        # invariant: an unverified (form) mapping never establishes a target
+        raise ValueError(f"criterion {c.criterion_id}: an unverified mapping cannot be jd_asserted")
     review_required = [t.target_id for t in targets if t.provenance == PROV_JD_ASSERTED]
     audit = {**_hint_audit(c, rf), "jd_sha256": jd.text_sha256, "duration_candidates_in_requirement": in_req,
              "target_mappings": target_mappings, "review_required": review_required,
@@ -254,6 +271,16 @@ def _tv(art: S1Artifact, policy: str, targets: tuple[Target, ...], setting: str 
                  tuple(t.jd_span.text if t.jd_span else t.text for t in targets), setting)
 
 
+def _unverified(pt) -> bool:
+    """s1-5.2: the mapping's alignment uses a relation the system cannot verify (a model-labelled form)."""
+    return any(x.get("relation") in UNVERIFIED_RELATIONS for x in pt.alignment)
+
+
+def _unverified_detail(pt) -> str:
+    pairs = "; ".join(f"{x.get('hint')}→{x.get('jd')}" for x in pt.alignment if x.get("relation") == REL_FORM)
+    return f"{pt.text!r} ~ {pt.span.text!r} (unverified grammatical-form equivalence: {pairs})"
+
+
 def s2_views(art: S1Artifact, *, require_resolved: bool = True) -> list[RequirementSpec]:
     """Deterministic RequirementSpec views of one artifact (no S2 execution).
 
@@ -262,6 +289,9 @@ def s2_views(art: S1Artifact, *, require_resolved: bool = True) -> list[Requirem
     if any(r.code == BIZ_COMPOUND_REQUIREMENT for r in art.reasons):
         # one RequirementSpec has one N: a compound requirement has no faithful S2 view yet
         raise S1ViewError(f"criterion {art.criterion_id}: compound requirement has no S2 view")
+    if any(r.code == BIZ_EQUIVALENCE_UNVERIFIED for r in art.reasons):
+        # s1-5.2: an unverified equivalence must never become experience evidence, not even in a preview
+        raise S1ViewError(f"criterion {art.criterion_id}: unverified equivalence has no S2 view")
     if art.spec_status not in allowed:
         raise S1ViewError(f"criterion {art.criterion_id}: no S2 view for status {art.spec_status!r}")
     setting = art.setting.text if art.setting else None

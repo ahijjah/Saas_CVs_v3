@@ -712,6 +712,26 @@ def codes(out):
     return [r.code for r in out.artifacts[0].reasons]
 
 
+def assert_form_candidate(art, mapped_text=None):
+    """s1-5.2: a structurally valid mapping using a form pair is an audited candidate, never evidence."""
+    (t,) = art.targets
+    assert (t.provenance, t.jd_span) == ("original_ai", None) and art.spec_status == "needs_confirmation"
+    assert art.field_provenance["targets"] == {t.target_id: "original_ai"}
+    assert [(r.code, r.kind, r.field) for r in art.reasons if r.field == f"targets.{t.target_id}"] == [
+        ("equivalence_unverified", "business", f"targets.{t.target_id}")]
+    assert "target_not_in_jd" not in [r.code for r in art.reasons]
+    (m,) = art.audit["target_mappings"]
+    assert m["used"] is False and m["trust"] == "unverified_form" and "form" in m["relations"]
+    assert m["match"] == "equivalent" and m["alignment"] and "jd_extra" in m
+    assert {"mapped_text", "line", "start", "end"} <= set(m) and art.audit["review_required"] == []
+    if mapped_text is not None:
+        assert m["mapped_text"] == mapped_text
+    for require_resolved in (True, False):
+        with pytest.raises(asm.S1ViewError):
+            asm.s2_views(art, require_resolved=require_resolved)
+    return m
+
+
 def rejected(out, frag):
     """The equivalent claim was refused: failed_validation, or (s1-5.1) withdrawn after the repair -> the
     target is never jd_asserted and the criterion is never resolved."""
@@ -737,7 +757,7 @@ class TestS12EquivalenceMapping:
             "target_id": "T1", "target_text": "Construction Project Manager", "mapped_text": "كمدير مشروع إنشائي",
             "line": 2, "start": art.targets[0].jd_span.start, "end": art.targets[0].jd_span.end, "used": True,
             "match": "equivalent", "alignment": alignment("Construction Project Manager", "كمدير مشروع إنشائي"),
-            "jd_extra": []}]
+            "jd_extra": [], "relations": ["translation"], "trust": "trust_bearing"}]
         assert art.audit["review_required"] == ["T1"]
 
     def test_arabic_mapping_may_start_after_attached_letter(self):
@@ -770,7 +790,7 @@ class TestS12EquivalenceMapping:
     def test_software_implementation_grammatical_form(self):
         out = run_case(["software implementation"], "Minimum 3 years of experience implementing software",
                        years=3, maps=["implementing software"], types=["function"])
-        assert prov(out) == [("T1", "jd_asserted")] and out.artifacts[0].spec_status == "resolved"
+        assert_form_candidate(out.artifacts[0])                # s1-5.2: a form pair is never trust-bearing
 
     def test_enterprise_software_is_not_jd_asserted(self):
         # JD narrows with a platform qualifier: AI must not map (null -> target_not_in_jd)
@@ -791,7 +811,7 @@ class TestS12EquivalenceMapping:
     def test_database_administration(self):
         out = run_case(["database administration"], "Minimum 4 years of experience administering databases",
                        years=4, maps=["administering databases"], types=["function"])
-        assert prov(out) == [("T1", "jd_asserted")]
+        assert_form_candidate(out.artifacts[0])
         out = run_case(["database administration"], "Minimum 4 years of experience in database support",
                        years=4, types=["function"])
         assert prov(out) == [("T1", "original_ai")] and codes(out) == ["target_not_in_jd"]
@@ -1016,10 +1036,18 @@ class TestStatementAnchor:
 
 class TestS12Versioning:
     def test_versions_and_fingerprint(self):
-        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5.1", "1.4.1")
-        assert clf.prompt_fingerprint() == "b2a063ab2947"
+        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5.2", "1.4.2")
+        assert clf.prompt_fingerprint() == "4f22dddb117e"
         assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9", "c9b570d82f4e",
-                                                "faad01d30b5c", "a0ae492a27e4")
+                                                "faad01d30b5c", "a0ae492a27e4", "b2a063ab2947")
+
+    def test_cache_identity_differs_from_s1_5_1(self, monkeypatch):
+        req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
+        k = clf.s1_cache_key(req)
+        monkeypatch.setattr(clf, "S1_PROMPT_VERSION", "s1-5.1")
+        monkeypatch.setattr(clf, "S1_VERSION", "1.4.1")
+        monkeypatch.setattr(clf, "prompt_fingerprint", lambda: "b2a063ab2947")
+        assert clf.s1_cache_key(req) != k
 
     def test_cache_identity_differs_from_s1_5(self, monkeypatch):
         req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
@@ -1639,13 +1667,17 @@ class TestS15AlignmentAccepts:
                  [("Human", "البشرية", TR), ("Resources", "الموارد", TR), ("Manager", "مدير", TR)], ar=True)
 
     def test_grammatical_form_and_function_word(self):
-        self._ok("software implementation", "Minimum 3 years of experience implementing software",
-                 "implementing software", [("software", "software", SA), ("implementation", "implementing", FO)],
-                 years=3)
-        self._ok("database administration", "Minimum 4 years of experience in administration of databases",
-                 "administration of databases",
-                 [("database", "databases", FO), ("administration", "administration", SA)], [("of", "grammatical")],
-                 years=4)
+        # structurally valid (accepted by the validator) but, s1-5.2, only an unverified candidate
+        for args, kw in [
+            (("software implementation", "Minimum 3 years of experience implementing software",
+              "implementing software", [("software", "software", SA), ("implementation", "implementing", FO)]),
+             {"years": 3}),
+            (("database administration", "Minimum 4 years of experience in administration of databases",
+              "administration of databases", [("database", "databases", FO), ("administration", "administration", SA)],
+              [("of", "grammatical")]), {"years": 4})]:
+            v, jd, a, raw = _eqv(*args, **kw)
+            assert v.ok, v.errors
+            assert_form_candidate(run(clf.classify_job("J1", jd, a, client=FakeClient(raw))).artifacts[0])
 
     @pytest.mark.parametrize("hint, line, span, pairs", [
         ("PM", "Minimum 5 years as a Project Manager", "Project Manager", [("PM", "Project Manager", AB)]),
@@ -2104,8 +2136,10 @@ class TestS151Relations:
                      [("database", "databases", SA), ("administration", "administering", FO)], years=4)
         assert errs_with(v, "'database' / 'databases' are not the identical word") and errs_with(
             v, "use relation form")
-        _accepts("database administration", line, span,
-                 [("database", "databases", FO), ("administration", "administering", FO)], years=4)
+        v, jd, a, raw = _eqv("database administration", line, span,
+                             [("database", "databases", FO), ("administration", "administering", FO)], years=4)
+        assert v.ok, v.errors                                 # structurally valid; s1-5.2: candidate only
+        assert_form_candidate(run(clf.classify_job("J1", jd, a, client=FakeClient(raw))).artifacts[0])
 
 
 class TestS151Abbreviations:
@@ -2328,3 +2362,105 @@ class TestS151QualifierRegression:
         art = out.artifacts[0]
         assert art.spec_status in ("needs_confirmation", "failed_validation")
         assert all(t.provenance != "jd_asserted" for t in art.targets)
+
+
+# ── s1-5.2: FORM is not trust-bearing ───────────────────────────────────────────────────────────────
+
+def _classify_eqv(*args, **kw):
+    v, jd, a, raw = _eqv(*args, **kw)
+    assert v.ok, v.errors                                   # structurally valid: the validator is unchanged
+    return run(clf.classify_job("J1", jd, a, client=FakeClient(raw))).artifacts[0]
+
+
+class TestS152FormNotTrustBearing:
+    def test_a_administration_support_form_is_only_a_candidate(self):
+        art = _classify_eqv("database administration", "Minimum 4 years of experience in database support",
+                            "database support",
+                            [("database", "database", SA), ("administration", "support", FO)], years=4)
+        m = assert_form_candidate(art, "database support")
+        (r,) = art.reasons
+        assert r.detail == ("'database administration' ~ 'database support' (unverified grammatical-form "
+                            "equivalence: administration→support)")
+        assert m["relations"] == ["form", "same"] and m["alignment"][1] == {
+            "hint": "administration", "jd": "support", "relation": "form"}
+
+    def test_b_valid_form_proposal_same_safe_outcome(self):
+        art = _classify_eqv("database administration", "Minimum 4 years of experience administering databases",
+                            "administering databases",
+                            [("database", "databases", FO), ("administration", "administering", FO)], years=4)
+        assert_form_candidate(art, "administering databases")
+        assert art.reasons[0].detail.endswith("database→databases; administration→administering)")
+        assert art.required_years.provenance == "jd_verified"                 # the rest of the criterion intact
+
+    @pytest.mark.parametrize("args, kw, rels", [
+        (("Accountant", "خبرة سنتين كمحاسب", "كمحاسب", [("Accountant", "محاسب", TR)]), {"years": 2, "ar": True},
+         ["translation"]),
+        (("HR Manager", "Minimum 5 years of experience as a Human Resources Manager", "Human Resources Manager",
+          [("HR", "Human Resources", AB), ("Manager", "Manager", SA)]), {}, ["abbreviation", "same"]),
+    ])
+    def test_c_trust_bearing_equivalent_stays_jd_asserted(self, args, kw, rels):
+        art = _classify_eqv(*args, **kw)
+        assert [t.provenance for t in art.targets] == ["jd_asserted"] and art.spec_status == "resolved"
+        (m,) = art.audit["target_mappings"]
+        assert m["used"] is True and m["trust"] == "trust_bearing" and m["relations"] == rels
+        assert len(asm.s2_views(art)) == 1                                      # unchanged: a scoring view
+
+    def test_d_genuine_exact_phrase_stays_jd_verified(self):
+        out = run_case(["database administration"], "Minimum 4 years of experience in database administration",
+                       years=4, types=["function"])
+        assert prov(out) == [("T1", "jd_verified")] and out.artifacts[0].spec_status == "resolved"
+        # a form mapping elsewhere in the span never decides it: the complete phrase is the evidence
+        line = "Minimum 4 years of experience in database administration, administering databases"
+        v, jd, a, raw = _eqv("database administration", line, "administering databases",
+                             [("database", "databases", FO), ("administration", "administering", FO)], years=4)
+        art = run(clf.classify_job("J1", jd, a, client=FakeClient(raw))).artifacts[0]
+        assert [t.provenance for t in art.targets] == ["jd_verified"]
+        assert "equivalence_unverified" not in [r.code for r in art.reasons]
+        assert art.audit["target_mappings"][0]["trust"] == "unverified_form"
+        assert art.audit["target_mappings"][0]["used"] is False
+
+    def test_e_no_s2_view_even_for_a_permissive_caller(self):
+        art = _classify_eqv("database administration", "Minimum 4 years of experience administering databases",
+                            "administering databases",
+                            [("database", "databases", FO), ("administration", "administering", FO)], years=4)
+        with pytest.raises(asm.S1ViewError, match="unverified equivalence"):
+            asm.s2_views(art, require_resolved=False)
+        # contrast: an ordinary needs_confirmation artifact still has a permissive preview view
+        plain = run_case(["database administration"], "Minimum 4 years of experience in database support",
+                         years=4, types=["function"]).artifacts[0]
+        assert plain.spec_status == "needs_confirmation" and asm.s2_views(plain, require_resolved=False)
+
+    def test_f_genuine_none_keeps_target_not_in_jd(self):
+        out = run_case(["database administration"], "Minimum 4 years of experience in database support",
+                       years=4, types=["function"])
+        assert prov(out) == [("T1", "original_ai")] and codes(out) == ["target_not_in_jd"]
+        assert out.artifacts[0].audit["target_mappings"] == []
+
+    def test_g_withdrawal_unchanged_and_never_a_form_candidate(self):
+        _, jd, a, raw = _c2()
+        art = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, raw))).artifacts[0]
+        assert art.audit["alignment_withdrawn"] and [r.code for r in art.reasons] == ["target_not_in_jd"]
+        assert art.audit["target_mappings"] == []
+
+    def test_reason_taxonomy(self):
+        assert sc.REASON_KINDS["equivalence_unverified"] == "business"
+        assert sc.Reason("equivalence_unverified", "targets.T1", "x").to_dict() == {
+            "code": "equivalence_unverified", "kind": "business", "field": "targets.T1", "detail": "x"}
+        assert sc.S1_SCHEMA == "s1_requirement_spec_v2"                         # no public schema bump
+
+    def test_artifact_roundtrip_keeps_candidate(self):
+        art = _classify_eqv("database administration", "Minimum 4 years of experience administering databases",
+                            "administering databases",
+                            [("database", "databases", FO), ("administration", "administering", FO)], years=4)
+        back = sc.S1Artifact.from_dict(art.to_dict())
+        assert back.to_dict() == art.to_dict()
+        with pytest.raises(asm.S1ViewError):
+            asm.s2_views(back, require_resolved=False)
+
+    def test_j_form_cannot_launder_a_mislabelled_qualifier(self):
+        # "corporate" dishonestly labelled grammatical passes the structure; the form pair keeps it a candidate
+        art = _classify_eqv("event planning", "Minimum 3 years of experience planning corporate events",
+                            "planning corporate events",
+                            [("event", "events", FO), ("planning", "planning", SA)], [("corporate", "grammatical")],
+                            years=3)
+        assert_form_candidate(art)
