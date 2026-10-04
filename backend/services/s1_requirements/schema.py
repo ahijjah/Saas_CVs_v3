@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 S1_SCHEMA = "s1_requirement_spec_v2"
-S1_VERSION = "1.4.4"                     # enumeration + parser + validator + assembly
+S1_VERSION = "1.4.5"                     # enumeration + parser + validator + assembly
 S1_INPUT_VERSION = "s1-in-1"
 S1_PROMPT_CODE = "recruitment.experience_requirement_spec"
 S1_PROMPT_VERSION = "s1-5.2"

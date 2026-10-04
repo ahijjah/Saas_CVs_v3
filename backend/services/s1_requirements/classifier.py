@@ -323,6 +323,17 @@ async def classify_job(job_id: str, jd_text: str, analysis_json: dict | None, *,
     return res
 
 
+def _claim_source(merge_info: dict, rec: dict) -> str:
+    """"repair" when the merge took this target's semantic claim (its match or jd_span, the whole target, the whole
+    criterion or the whole answer) from the repair answer; otherwise "main". Read from the merge record only."""
+    if merge_info.get("mode") == "full_replace":
+        return "repair"
+    hid = rec["hint"]
+    claim = {f"target:{hid}", f"target:{hid}:match", f"target:{hid}:jd_span", "criterion"}
+    return "repair" if any(x.get("criterion_id") == rec["criterion_id"] and x.get("field") in claim
+                           for x in merge_info.get("taken", [])) else "main"
+
+
 async def _run(req: BuiltRequest, client, model: str, meta: dict) -> dict:
     def _out(reason, validation=None, parsed=None):
         return {"reason": reason, "parsed": parsed, "meta": meta,
@@ -349,6 +360,7 @@ async def _run(req: BuiltRequest, client, model: str, meta: dict) -> dict:
         if not val.ok:
             # s1-5.2.2: deterministic duplicate-representation span narrowing BEFORE any repair call
             narrowed, normalized = normalize_duplicate_representations(val.scoped, raw, req.criteria)
+            normalized = [{**r, "stage": "pre_repair", "claim_source": "main"} for r in normalized]
             if normalized:
                 main_errors = list(val.errors)
                 raw, val = narrowed, validate_response(narrowed, req.jd, req.criteria, req.durations)
@@ -379,6 +391,18 @@ async def _run(req: BuiltRequest, client, model: str, meta: dict) -> dict:
                 return _out(REASON_INTERNAL_ERROR, {"errors": first_errors, "repair_errors": []})
             val = validate_response(merged, req.jd, req.criteria, req.durations)
             outcome = "repaired"
+            if not val.ok:
+                # s1-5.2.2.1: the SAME duplicate-representation narrowing, once, on the protected merged answer
+                # (after the merge rules and the material lock, before withdrawal); no second repair call
+                narrowed, post = normalize_duplicate_representations(val.scoped, merged, req.criteria)
+                if post:
+                    taken = meta["repair_merge"]
+                    post = [{**r, "stage": "post_repair", "claim_source": _claim_source(taken, r)} for r in post]
+                    merged, val = narrowed, validate_response(narrowed, req.jd, req.criteria, req.durations)
+                    normalized = normalized + post
+                    meta["span_normalized"] = normalized
+                    if val.ok:
+                        outcome = "repaired_normalized"
             withdrawn: dict[str, dict] = {}
             if not val.ok:
                 # s1-5.1: the only fallback after the one repair: withdraw a lone failing equivalent claim

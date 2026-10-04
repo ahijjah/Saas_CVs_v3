@@ -1054,7 +1054,7 @@ class TestStatementAnchor:
 
 class TestS12Versioning:
     def test_versions_and_fingerprint(self):
-        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5.2", "1.4.4")
+        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5.2", "1.4.5")
         assert clf.prompt_fingerprint() == "4f22dddb117e"
         assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9", "c9b570d82f4e",
                                                 "faad01d30b5c", "a0ae492a27e4", "b2a063ab2947")
@@ -2912,3 +2912,99 @@ class TestS1522Normalization:
         v, out, _ = _classify_raw("PM", K1_LINE, "Project Manager", [("PM", "Project Manager", AB)])
         assert [t.provenance for t in out.artifacts[0].targets] == ["jd_asserted"]
         assert out.artifacts[0].audit["target_mappings"][0]["jd_definitions"][0]["text"] == "Project Manager (P.M.)"
+
+
+# ── s1-5.2.2.1: post-repair duplicate-representation normalization ──────────────────────────────────
+
+def _k1_real():
+    """The exact real-model K1 sequence: main exact (invalid), repair equivalent with the definition span."""
+    _, jd, a, rep = _eqv("PM", K1_LINE, "Project Manager (P.M.)", [("PM", "P.M.", AB)])
+    main = _repair_of(rep, match="exact", jd_span=None, alignment=None, jd_extra=None)
+    d = json.loads(main)
+    for k in ("alignment", "jd_extra"):
+        d["criteria"][0]["targets"][0].pop(k)
+    return jd, a, json.dumps(d, ensure_ascii=False), rep
+
+
+class TestS15221PostRepairNormalization:
+    def test_k1_real_answers_recover_after_repair(self):
+        jd, a, main, rep = _k1_real()
+        assert json.loads(main)["criteria"][0]["targets"] == [{"hint": "T1", "type": "role", "match": "exact",
+                                                                "jd_span": None}]
+        assert json.loads(rep)["criteria"][0]["targets"][0] == {
+            "hint": "T1", "type": "role", "match": "equivalent", "jd_span": {"line": 2, "text": "Project Manager (P.M.)"},
+            "alignment": [{"hint": "PM", "jd": "P.M.", "relation": "abbreviation"}], "jd_extra": []}
+        client = FakeClient(main, rep)
+        out = run(clf.classify_job("J1", jd, a, client=client))
+        art = out.artifacts[0]
+        assert len(client.requests) == 2 and out.meta["calls"] == 2                 # main + ONE repair
+        assert any("is not word for word" in e for e in out.validation["errors"])     # main was invalid
+        assert out.meta["outcome"] == "repaired_normalized" and "alignment_withdrawn" not in out.meta
+        assert [t.provenance for t in art.targets] == ["jd_asserted"] and art.spec_status == "resolved"
+        assert art.targets[0].jd_span.text == "P.M." and len(asm.s2_views(art)) == 1
+        assert art.audit["alignment_withdrawn"] is False
+        (rec,) = art.audit["span_normalizations"]
+        assert rec == {"criterion_id": art.criterion_id, "hint": "T1", "original_span": "Project Manager (P.M.)",
+                       "normalized_span": "P.M.", "line": 2, "reason": "duplicate_representation",
+                       "definition": {"text": "Project Manager (P.M.)", "acronym": "P.M.",
+                                      "full_form": "Project Manager"},
+                       "stage": "post_repair", "claim_source": "repair"}
+        (m,) = art.audit["target_mappings"]
+        assert m["alignment"] == [{"hint": "PM", "jd": "P.M.", "relation": "abbreviation"}]    # unchanged
+        assert m["trust"] == "trust_bearing" and m["jd_definitions"][0]["text"] == "Project Manager (P.M.)"
+        taken = {x["field"] for x in out.meta["repair_merge"]["taken"]}
+        assert {"target:T1:match", "target:T1:jd_span"} <= taken                  # the repair made the claim
+
+    def test_pre_repair_stage_is_labelled(self):
+        _, jd, a, raw = _eqv("PM", K1_LINE, "Project Manager (P.M.)", [("PM", "P.M.", AB)])
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw)))
+        (rec,) = out.artifacts[0].audit["span_normalizations"]
+        assert (rec["stage"], rec["claim_source"]) == ("pre_repair", "main") and out.meta["calls"] == 1
+
+    def test_idempotent(self):
+        _, jd, a, raw = _eqv("PM", K1_LINE, "Project Manager (P.M.)", [("PM", "P.M.", AB)])
+        crits = enumerate_experience_criteria("J1", a)
+        j = JDText(jd)
+        durs = {d: (ln, m) for d, ln, m in j.durations()}
+        once, recs = rp.normalize_duplicate_representations(validate_response(raw, j, crits, durs).scoped, raw, crits)
+        assert recs and validate_response(once, j, crits, durs).ok
+        twice, again = rp.normalize_duplicate_representations(validate_response(once, j, crits, durs).scoped, once,
+                                                               crits)
+        assert again == [] and twice == once
+
+    @pytest.mark.parametrize("info, source", [
+        ({"mode": "scoped", "taken": [{"criterion_id": "C", "field": "target:T1:jd_span"}]}, "repair"),
+        ({"mode": "scoped", "taken": [{"criterion_id": "C", "field": "target:T1:match"}]}, "repair"),
+        ({"mode": "scoped", "taken": [{"criterion_id": "C", "field": "target:T1"}]}, "repair"),
+        ({"mode": "scoped", "taken": [{"criterion_id": "C", "field": "criterion"}]}, "repair"),
+        ({"mode": "full_replace", "taken": []}, "repair"),
+        ({"mode": "scoped", "taken": [{"criterion_id": "C", "field": "target:T1:alignment[0]"}]}, "main"),
+        ({"mode": "scoped", "taken": [{"criterion_id": "C", "field": "ambiguity"}]}, "main"),
+        ({"mode": "scoped", "taken": [{"criterion_id": "D", "field": "target:T1:jd_span"}]}, "main"),
+        ({"mode": "scoped", "taken": [{"criterion_id": "C", "field": "target:T2:jd_span"}]}, "main"),
+    ])
+    def test_claim_source_from_the_merge_record(self, info, source):
+        assert clf._claim_source(info, {"criterion_id": "C", "hint": "T1"}) == source
+
+    @pytest.mark.parametrize("over", [
+        {"jd_extra": [{"text": "in", "kind": "grammatical"}]},                        # jd_extra present
+        {"alignment": [{"hint": "PM", "jd": "P.M.", "relation": "abbreviation"},
+                       {"hint": "PM", "jd": "Project Manager", "relation": "abbreviation"}]},   # two pairs
+    ])
+    def test_post_repair_refusal_falls_through_to_withdrawal(self, over):
+        jd, a, main, rep = _k1_real()
+        bad = _repair_of(rep, **over)
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(main, bad)))
+        art = out.artifacts[0]
+        assert "span_normalized" not in out.meta and art.audit["span_normalized"] is False
+        assert all(t.provenance != "jd_asserted" for t in art.targets) and art.spec_status != "resolved"
+
+    def test_post_repair_does_not_rescue_an_undefined_or_qualified_claim(self):
+        # a repair that proposes an undefined expansion / a qualified title gets no normalization and no trust
+        line = "Minimum 5 years as a Senior Project Manager (P.M.)"
+        _, jd, a, rep = _eqv("PM", line, "Senior Project Manager (P.M.)", [("PM", "P.M.", AB)])
+        main = _repair_of(rep, match="exact", jd_span=None, alignment=None, jd_extra=None)
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(main, rep)))
+        art = out.artifacts[0]
+        assert "span_normalized" not in out.meta
+        assert all(t.provenance != "jd_asserted" for t in art.targets) and art.spec_status != "resolved"
