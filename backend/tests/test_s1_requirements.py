@@ -1036,7 +1036,7 @@ class TestStatementAnchor:
 
 class TestS12Versioning:
     def test_versions_and_fingerprint(self):
-        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5.2", "1.4.2")
+        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5.2", "1.4.3")
         assert clf.prompt_fingerprint() == "4f22dddb117e"
         assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9", "c9b570d82f4e",
                                                 "faad01d30b5c", "a0ae492a27e4", "b2a063ab2947")
@@ -2464,3 +2464,256 @@ class TestS152FormNotTrustBearing:
                             [("event", "events", FO), ("planning", "planning", SA)], [("corporate", "grammatical")],
                             years=3)
         assert_form_candidate(art)
+
+
+# ── s1-5.2.1: structured issues, pair-level repair merge, material lock ────────────────────────────
+
+from services.s1_requirements.validator import Issue  # noqa: E402
+
+B1_LINE, B1_SPAN = "خبرة لا تقل عن 5 سنوات كمدير مشروع إنشائي", "كمدير مشروع إنشائي"
+B1_OK = [("Construction", "إنشائي", TR), ("Project", "مشروع", TR), ("Manager", "مدير", TR)]
+
+
+def _pairs(pairs):
+    return [{"hint": h, "jd": j, "relation": r} for h, j, r in pairs]
+
+
+def _repair_of(raw, **target_over):
+    d = json.loads(raw)
+    d["criteria"][0]["targets"][0].update(target_over)
+    return json.dumps(d, ensure_ascii=False)
+
+
+def _b1(main_pairs, repair_pairs=None, **repair_over):
+    v, jd, a, raw = _eqv("Construction Project Manager", B1_LINE, B1_SPAN, main_pairs, ar=True)
+    rep = _repair_of(raw, **({"alignment": _pairs(repair_pairs)} if repair_pairs is not None else {}), **repair_over)
+    client = FakeClient(raw, rep)
+    out = run(clf.classify_job("J1", jd, a, client=client))
+    return v, out, client
+
+
+def _merged_alignment(out):
+    return [(p["hint"], p["jd"], p["relation"]) for p in out.artifacts[0].audit["target_mappings"][0]["alignment"]]
+
+
+class TestS1521StructuredIssues:
+    def test_pair_issue_is_machine_addressable(self):
+        v, *_ = _eqv("Construction Project Manager", B1_LINE, B1_SPAN,
+                     B1_OK[:2] + [("Manager", "مدير", SA)], ar=True)
+        (e,) = v.scoped
+        assert e.issue == Issue("T1", "pair", "relation", 2, ("manager",))
+        assert e.scopes == ("target:T1:alignment", "target:T1:jd_extra", "target:T1:match", "target:T1:jd_span")
+
+    def test_non_local_units(self):
+        v, *_ = _eqv("Construction Project Manager", "خبرة 5 سنوات كمدير مشروع", "كمدير مشروع",
+                     [("Project", "مشروع", TR), ("Manager", "مدير", TR)], ar=True)
+        assert [e.issue.unit for e in v.scoped] == ["coverage"]
+        v, *_ = _eqv("event planning", "Minimum 3 years of experience planning corporate events",
+                     "planning corporate events", [("event", "events", FO), ("planning", "planning", SA)],
+                     [("corporate", "material")], years=3)
+        assert [(e.issue.unit, e.issue.kind, e.issue.index) for e in v.scoped] == [("extra", "material", 0)]
+        v, *_ = _eqv("Accountant", "خبرة سنتين كمحاسب", "كمحاسب", [("Auditor", "محاسب", TR)], years=2, ar=True)
+        assert v.scoped[0].issue == Issue("T1", "pair", "copy", 0)            # not target words: never pair-merged
+
+
+class TestS1521PairMerge:
+    def test_a_b1_valid_pairs_preserved_invalid_pair_taken(self):
+        v, out, client = _b1(B1_OK[:2] + [("Manager", "مدير", SA)],
+                             [("Construction", "إنشائي", TR), ("Project", "مشروع", SA), ("Manager", "مدير", TR)])
+        assert not v.ok
+        art = out.artifacts[0]
+        assert _merged_alignment(out) == B1_OK                          # Project kept from main, Manager from repair
+        assert [t.provenance for t in art.targets] == ["jd_asserted"] and art.spec_status == "resolved"
+        rm = out.meta["repair_merge"]
+        assert rm["pair_merged"] == [{"criterion_id": art.criterion_id, "hint": "T1", "invalid": [2], "replaced": [2]}]
+        assert rm["discarded_changes"] == 1                                  # the Project damage was discarded
+        note = client.requests[1]["messages"][-1]["content"]
+        assert "ONLY alignment[2] (target word(s) 'manager') will be taken" in note
+
+    def test_b_g2_form_pair_repaired_but_still_unverified(self):
+        line, span = "Minimum 4 years of experience administering databases", "administering databases"
+        v, jd, a, raw = _eqv("database administration", line, span,
+                             [("database", "databases", SA), ("administration", "administering", FO)], years=4)
+        rep = _repair_of(raw, alignment=_pairs([("database", "databases", FO), ("administration", "support", FO)]))
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, rep)))
+        art = out.artifacts[0]
+        assert _merged_alignment(out) == [("database", "databases", FO), ("administration", "administering", FO)]
+        assert_form_candidate(art, "administering databases")               # FORM stays non-trust-bearing
+        with pytest.raises(asm.S1ViewError):                                 # O: hard S2 block
+            asm.s2_views(art, require_resolved=False)
+
+    def test_c_g2_repair_gives_up_change_discarded_then_withdrawn(self):
+        line, span = "Minimum 4 years of experience administering databases", "administering databases"
+        v, jd, a, raw = _eqv("database administration", line, span,
+                             [("database", "databases", SA), ("administration", "administering", FO)], years=4)
+        rep = _repair_of(raw, match="none", jd_span=None, alignment=None, jd_extra=None)
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, rep)))
+        art = out.artifacts[0]
+        assert out.meta["repair_merge"]["pair_merged"][0]["replaced"] == []   # no pair invented
+        assert out.meta["outcome"] == "repaired_withdrawn" and art.audit["alignment_withdrawn"]
+        assert [t.provenance for t in art.targets] == ["original_ai"] and art.spec_status == "needs_confirmation"
+        assert [r.code for r in art.reasons] == ["target_not_in_jd"]
+
+    def test_d_duplicate_replacement_is_ambiguous(self):
+        _, out, _ = _b1(B1_OK[:2] + [("Manager", "مدير", SA)],
+                        B1_OK + [("Manager", "كمدير", TR)])
+        assert out.meta["repair_merge"]["pair_merged"][0]["replaced"] == []
+        assert out.artifacts[0].audit["alignment_withdrawn"] and out.artifacts[0].spec_status == "needs_confirmation"
+
+    def test_e_reordered_repair_pairs(self):
+        _, out, _ = _b1(B1_OK[:2] + [("Manager", "مدير", SA)], list(reversed(B1_OK)))
+        assert _merged_alignment(out) == B1_OK and out.artifacts[0].spec_status == "resolved"
+
+    def test_f_g_h_repair_cannot_touch_valid_pairs_span_or_match(self):
+        _, out, _ = _b1(B1_OK[:2] + [("Manager", "مدير", SA)],
+                        [("Construction", "إنشائي", FO), ("Project", "مشروع", SA), ("Manager", "مدير", TR)],
+                        match="none", jd_span={"line": 2, "text": "مشروع إنشائي"},
+                        jd_extra=[{"text": "مدير", "kind": "grammatical"}])
+        art = out.artifacts[0]
+        m = art.audit["target_mappings"][0]
+        assert _merged_alignment(out) == B1_OK and m["match"] == "equivalent" and m["mapped_text"] == B1_SPAN
+        assert m["jd_extra"] == [] and art.spec_status == "resolved"
+
+    def test_i_replacement_outside_the_main_span_is_rejected(self):
+        _, out, _ = _b1(B1_OK[:2] + [("Manager", "مدير", SA)], B1_OK[:2] + [("Manager", "خبرة", TR)])
+        assert _alignment_was_withdrawn(out)
+
+    def test_j_multiple_invalid_pairs(self):
+        _, out, _ = _b1([("Construction", "إنشائي", TR), ("Project", "مشروع", SA), ("Manager", "مدير", SA)], B1_OK)
+        assert out.meta["repair_merge"]["pair_merged"][0]["invalid"] == [1, 2]
+        assert _merged_alignment(out) == B1_OK and out.artifacts[0].spec_status == "resolved"
+
+    def test_j_partial_replacement_keeps_the_other_invalid_pair(self):
+        _, out, _ = _b1([("Construction", "إنشائي", TR), ("Project", "مشروع", SA), ("Manager", "مدير", SA)],
+                        [("Manager", "مدير", TR)])                               # Project never repaired
+        assert out.meta["repair_merge"]["pair_merged"][0]["replaced"] == [2] and _alignment_was_withdrawn(out)
+
+    def test_k_coverage_interaction_rejected_by_full_validation(self):
+        _, out, _ = _b1(B1_OK[:2] + [("Manager", "مدير", SA)], B1_OK[:2] + [("Manager", "مشروع", TR)])
+        assert out.meta["repair_merge"]["pair_merged"][0]["replaced"] == [2] and _alignment_was_withdrawn(out)
+
+    def test_k_coverage_error_stays_whole_target(self):
+        # an unpaired target word is not pair-local: today's whole-target scope applies (no pair merge)
+        v, jd, a, raw = _eqv("Construction Project Manager", B1_LINE, B1_SPAN, B1_OK[1:], ar=True)
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, _repair_of(raw, alignment=_pairs(B1_OK)))))
+        assert out.meta["repair_merge"]["pair_merged"] == [] and out.artifacts[0].spec_status == "resolved"
+
+    def test_l_abbreviation_pair_untouched_and_split_allowed(self):
+        line, span = "Minimum 5 years of experience as a Human Resources Manager", "Human Resources Manager"
+        v, jd, a, raw = _eqv("HR Manager", line, span, [("HR", "Human Resources", AB), ("Manager", "Manager", TR)])
+        rep = _repair_of(raw, alignment=_pairs([("HR", "Human", AB), ("Manager", "Manager", SA)]))
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, rep)))
+        assert _merged_alignment(out) == [("HR", "Human Resources", AB), ("Manager", "Manager", SA)]
+        assert out.artifacts[0].spec_status == "resolved"
+        # a lumped pair may be replaced by pairs that exactly split its target words
+        _, out, _ = _b1([("Construction", "إنشائي", TR), ("Project Manager", "مدير", TR)],
+                        [("Project", "مشروع", TR), ("Manager", "مدير", TR)])
+        assert out.meta["repair_merge"]["pair_merged"][0]["replaced"] == [1]
+
+    def test_m_translation_trust_unchanged(self):
+        _, out, _ = _b1(B1_OK[:2] + [("Manager", "مدير", SA)], B1_OK)
+        (m,) = out.artifacts[0].audit["target_mappings"]
+        assert m["trust"] == "trust_bearing" and m["used"] is True and len(asm.s2_views(out.artifacts[0])) == 1
+
+
+def _alignment_was_withdrawn(out):
+    art = out.artifacts[0]
+    return (art.audit.get("alignment_withdrawn") is True and art.spec_status == "needs_confirmation"
+            and all(t.provenance != "jd_asserted" for t in art.targets))
+
+
+class TestS1521MaterialLock:
+    LINE, SPAN = "خبرة سنتين كمحاسب قانوني", "كمحاسب قانوني"
+    MAIN = [("Accountant", "محاسب", TR)]
+
+    def _run(self, **repair_over):
+        v, jd, a, raw = _eqv("Accountant", self.LINE, self.SPAN, self.MAIN, [("قانوني", "material")], years=2, ar=True)
+        assert not v.ok
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, _repair_of(raw, **repair_over))))
+        return out, jd, a
+
+    def _would_pass_unlocked(self, jd, a, **over):
+        crits = enumerate_experience_criteria("J1", a)
+        v, _, _, raw = _eqv("Accountant", self.LINE, self.SPAN, self.MAIN, [("قانوني", "material")], years=2, ar=True)
+        j = JDText(jd)
+        return validate_response(_repair_of(raw, **over), j, crits, {d: (ln, m) for d, ln, m in j.durations()}).ok
+
+    def test_p_material_cannot_be_relabelled_grammatical(self):
+        over = {"jd_extra": [{"text": "قانوني", "kind": "grammatical"}]}
+        out, jd, a = self._run(**over)
+        assert self._would_pass_unlocked(jd, a, **over)                       # the hole the lock closes
+        assert _alignment_was_withdrawn(out) and out.meta["repair_merge"]["material_locked"]
+
+    def test_q_material_cannot_be_removed_by_narrowing_the_span(self):
+        over = {"jd_span": {"line": 2, "text": "كمحاسب"}, "jd_extra": []}
+        out, jd, a = self._run(**over)
+        assert self._would_pass_unlocked(jd, a, **over)
+        assert _alignment_was_withdrawn(out) and out.meta["repair_merge"]["material_locked"]
+
+    def test_r_material_cannot_be_absorbed_into_a_pair(self):
+        over = {"alignment": _pairs([("Accountant", "محاسب قانوني", TR)]), "jd_extra": []}
+        out, jd, a = self._run(**over)
+        assert self._would_pass_unlocked(jd, a, **over)
+        assert _alignment_was_withdrawn(out) and out.meta["repair_merge"]["material_locked"]
+
+    def test_lock_also_holds_for_a_duplicated_hint(self):
+        # main lists T1 twice (whole-target repair scope); one copy marks the qualifier material
+        v, jd, a, raw = _eqv("Accountant", self.LINE, self.SPAN, self.MAIN, [("قانوني", "material")], years=2, ar=True)
+        d = json.loads(raw)
+        t = d["criteria"][0]["targets"][0]
+        d["criteria"][0]["targets"] = [t, dict(t, type="function")]
+        main = json.dumps(d, ensure_ascii=False)
+        rep = _repair_of(raw, jd_extra=[{"text": "قانوني", "kind": "grammatical"}])
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(main, rep)))
+        assert out.meta["repair_merge"]["material_locked"] and out.artifacts[0].spec_status == "failed_validation"
+
+    def test_giving_up_is_always_allowed(self):
+        out, _, _ = self._run(match="none", jd_span=None, alignment=None, jd_extra=None)
+        art = out.artifacts[0]
+        assert out.meta["repair_merge"]["material_locked"] == [] and [r.code for r in art.reasons] == [
+            "target_not_in_jd"] and not art.audit["alignment_withdrawn"]
+
+
+class TestS1521SafetyUnchanged:
+    def test_s_withdrawal_unchanged(self):
+        _, jd, a, raw = _c2()
+        art = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, raw))).artifacts[0]
+        assert art.audit["alignment_withdrawn"] and [t.provenance for t in art.targets] == ["original_ai"]
+        assert [r.code for r in art.reasons] == ["target_not_in_jd"]
+
+    @pytest.mark.parametrize("hint, line, span, main_pairs, fixed, kw", [
+        # C2: Construction has no counterpart; a pair-level "fix" cannot invent one
+        ("Construction Project Manager", "خبرة 5 سنوات كمدير مشروع", "كمدير مشروع",
+         [("Construction", "مشروع", SA), ("Project", "مشروع", TR), ("Manager", "مدير", TR)],
+         [("Construction", "مشروع", TR)], {"ar": True}),
+        # HO03: Equine has no counterpart
+        ("Equine Veterinarian", "خبرة 3 سنوات كطبيب بيطري", "كطبيب بيطري",
+         [("Equine", "بيطري", SA), ("Veterinarian", "كطبيب", TR)], [("Equine", "بيطري", FO)], {"years": 3, "ar": True}),
+        # HO11: Commercial has no counterpart
+        ("Commercial Pilot", "Minimum 5 years of experience as a Pilot", "Pilot",
+         [("Commercial", "Pilot", TR), ("Pilot", "Pilot", SA)], [("Commercial", "Pilot", SA)], {}),
+    ])
+    def test_t_qualifier_regressions_stay_safe_through_pair_repair(self, hint, line, span, main_pairs, fixed, kw):
+        v, jd, a, raw = _eqv(hint, line, span, main_pairs, **kw)
+        assert not v.ok
+        rep = _repair_of(raw, alignment=_pairs(fixed + [p for p in main_pairs if p[0] != fixed[0][0]]))
+        art = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, rep))).artifacts[0]
+        assert all(t.provenance != "jd_asserted" for t in art.targets) and art.spec_status != "resolved"
+
+    @pytest.mark.parametrize("hint, line, span, pairs, extra, kw", [
+        ("software implementation", "Minimum 3 years of experience implementing enterprise software systems",
+         "implementing enterprise software systems", [("software", "software", SA),
+                                                      ("implementation", "implementing", FO)],
+         [("enterprise", "material"), ("systems", "material")], {"years": 3}),            # H1
+        ("web development", "خبرة 4 سنوات في تطوير مواقع التجارة الإلكترونية", "تطوير مواقع التجارة الإلكترونية",
+         [("web", "مواقع", TR), ("development", "تطوير", TR)],
+         [("التجارة", "material"), ("الإلكترونية", "material")], {"years": 4, "ar": True}),  # HO05
+        ("event planning", "Minimum 3 years of experience planning corporate events", "planning corporate events",
+         [("event", "events", FO), ("planning", "planning", SA)], [("corporate", "material")], {"years": 3}),  # HO07
+    ])
+    def test_t_material_qualifiers_cannot_be_repaired_away(self, hint, line, span, pairs, extra, kw):
+        v, jd, a, raw = _eqv(hint, line, span, pairs, extra, **kw)
+        rep = _repair_of(raw, jd_extra=[{"text": t, "kind": "grammatical"} for t, _ in extra])
+        art = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, rep))).artifacts[0]
+        assert all(t.provenance != "jd_asserted" for t in art.targets) and art.spec_status != "resolved"
+        assert "equivalence_unverified" not in [r.code for r in art.reasons]          # never even a candidate

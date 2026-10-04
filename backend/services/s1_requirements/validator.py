@@ -173,11 +173,30 @@ class ParsedCriterion:
     withdrawn: tuple = ()              # s1-5.1 audit records of equivalent claims withdrawn after repair
 
 
+# s1-5.2.1 structured issue units (internal; never part of the public artifact)
+UNIT_PAIR = "pair"            # one alignment pair, provably local (its hint words are words of the target)
+UNIT_EXTRA = "extra"          # one jd_extra item
+UNIT_COVERAGE = "coverage"    # whole-alignment property (unpaired/unaccounted/over-used words, role named twice)
+UNIT_SPAN = "span"            # the target's jd_span / mapping guards
+UNIT_MATCH = "match"          # the target's match field
+
+
+@dataclass(frozen=True)
+class Issue:
+    """Machine-addressable location of a validation error (repair logic never parses messages)."""
+    target: str | None                 # hint id ("T1") or None
+    unit: str                          # UNIT_*
+    kind: str = ""                     # relation | copy | format | material | coverage | mapping | match ...
+    index: int | None = None           # position in the MAIN alignment / jd_extra array
+    words: tuple[str, ...] | None = None   # canonical target words of the failing pair (UNIT_PAIR only)
+
+
 @dataclass(frozen=True)
 class ScopedError:
     criterion_id: str | None
     scopes: tuple[str, ...]
     message: str
+    issue: Issue | None = None
 
 
 @dataclass
@@ -197,9 +216,9 @@ class _Errors:
         self.messages: list[str] = []
         self.scoped: list[ScopedError] = []
 
-    def add(self, cid: str | None, scopes, message: str) -> None:
+    def add(self, cid: str | None, scopes, message: str, issue: Issue | None = None) -> None:
         self.messages.append(message)
-        self.scoped.append(ScopedError(cid, tuple(scopes), message))
+        self.scoped.append(ScopedError(cid, tuple(scopes), message, issue))
 
     def __len__(self):
         return len(self.messages)
@@ -366,8 +385,16 @@ def _same_msg(pw: str, h: str, j: str, cross: bool) -> str:
             f"of the same word (plural, verb or noun form), use relation form; otherwise use match none")
 
 
+def _scope_target(scopes) -> str | None:
+    """The hint id of the first target scope (target:Tn[:field]), for issue metadata only."""
+    for sc in scopes:
+        if sc.startswith(SCOPE_TARGET_PREFIX):
+            return sc[len(SCOPE_TARGET_PREFIX):].split(":", 1)[0]
+    return None
+
+
 def _alignment_errors(hid: str, hint_text: str, t: dict, sp: Span, w: str
-                      ) -> tuple[list[tuple[tuple[str, ...], str]], tuple, tuple]:
+                      ) -> tuple[list[tuple[tuple[str, ...], str, Issue]], tuple, tuple]:
     """s1-5 V-align: structural coverage of an "equivalent" mapping's word alignment.
 
     Every word of the analysis target is paired exactly once with verbatim words of the jd_span; every word of
@@ -378,7 +405,8 @@ def _alignment_errors(hid: str, hint_text: str, t: dict, sp: Span, w: str
     s1-5.1: words are the canonical jd_text words (a dotted acronym is one word) and a JD piece is located
     with the same boundary rule as spans (locate_words: an Arabic proclitic chain may stay in front of the
     first word, nothing else). Coverage is by word position in the jd_span."""
-    errs: list[tuple[tuple[str, ...], str]] = []
+    errs: list[tuple[tuple[str, ...], str, Issue]] = []
+    cov = Issue(hid, UNIT_COVERAGE, "coverage")
     fmt = _tscope(hid, "alignment", "jd_extra")                       # copy/format: only the alignment
     sem = _tscope(hid, "alignment", "jd_extra", "match", "jd_span")   # coverage: may withdraw to none
     tw = f"{w} target {hid} alignment"
@@ -387,9 +415,9 @@ def _alignment_errors(hid: str, hint_text: str, t: dict, sp: Span, w: str
     if not isinstance(al, list) or not al:
         return [(fmt, f"{tw}: match equivalent requires alignment: one pair per word of the target "
                       f"{hint_text!r}, e.g. {{\"hint\": \"<target word>\", \"jd\": \"<JD word(s)>\", "
-                      f"\"relation\": \"same|form|translation|abbreviation\"}}")], (), ()
+                      f"\"relation\": \"same|form|translation|abbreviation\"}}", cov)], (), ()
     if not isinstance(ex, list):
-        return [(fmt, f"{tw}: jd_extra must be a list")], (), ()
+        return [(fmt, f"{tw}: jd_extra must be a list", cov)], (), ()
     hint_toks, jd_toks = tokens(hint_text), tokens(sp.text)
     used_h: Counter = Counter()
     used_j: Counter = Counter()                       # jd_span word position -> times accounted for
@@ -408,16 +436,19 @@ def _alignment_errors(hid: str, hint_text: str, t: dict, sp: Span, w: str
         if not (isinstance(p, dict) and isinstance(p.get("hint"), str) and isinstance(p.get("jd"), str)
                 and p.get("relation") in ALIGN_RELATIONS):
             errs.append((fmt, f"{pw}: must be {{\"hint\": str, \"jd\": str, \"relation\": one of "
-                              f"{list(ALIGN_RELATIONS)}}}"))
+                              f"{list(ALIGN_RELATIONS)}}}", Issue(hid, UNIT_PAIR, "format", k)))
             continue
         ht, jt, rel = tokens(p["hint"]), tokens(p["jd"]), p["relation"]
         if not _run_in(ht, hint_toks):
-            errs.append((fmt, f"{pw}: {p['hint']!r} is not word(s) of the target {hint_text!r}"))
+            errs.append((fmt, f"{pw}: {p['hint']!r} is not word(s) of the target {hint_text!r}",
+                         Issue(hid, UNIT_PAIR, "copy", k)))
             continue
+        local = Issue(hid, UNIT_PAIR, "relation", k, tuple(ht))      # provably local: ht is a run of the target
         at = place(jt)
         if at is None:
             errs.append((fmt, f"{pw}: {p['jd']!r} is not whole word(s) of the jd_span {sp.text!r} (only the "
-                              f"attached Arabic letters ك ب ل و ف may be left off the front of a word)"))
+                              f"attached Arabic letters ك ب ل و ف may be left off the front of a word)",
+                         Issue(hid, UNIT_PAIR, "copy", k, tuple(ht))))
             continue
         used_h.update(ht)
         used_j.update(range(at, at + len(jt)))
@@ -429,55 +460,57 @@ def _alignment_errors(hid: str, hint_text: str, t: dict, sp: Span, w: str
             jl = _acronym_letters(p["jd"]) if p["jd"] in sp.text and _acronym_letters(p["jd"]) else None
             if not ((hl and _expands(hl, jt)) or (jl and _expands(jl, ht))):
                 errs.append((sem, f"{pw}: abbreviation needs an all-capitals acronym on one side whose letters "
-                                  f"start and run through the words on the other side ({p['hint']!r} / {p['jd']!r})"))
+                                  f"start and run through the words on the other side ({p['hint']!r} / {p['jd']!r})", local))
             else:
                 abbr_letters.append(hl or jl)
             continue
         if len(ht) != 1:
             errs.append((sem, f"{pw}: a pair maps ONE target word (got {p['hint']!r}); pair every target word "
-                              f"separately"))
+                              f"separately", local))
         elif rel == REL_SAME and not (len(ht) == len(jt) and locate_words(ht, jt)):   # same canonical word(s)
-            errs.append((sem, _same_msg(pw, p["hint"], p["jd"], cross)))
+            errs.append((sem, _same_msg(pw, p["hint"], p["jd"], cross), local))
         elif rel == REL_FORM and cross:
             errs.append((sem, f"{pw}: {p['hint']!r} / {p['jd']!r} are in different languages; relation form is "
-                              f"only for the same language: if they mean the same, use relation translation"))
+                              f"only for the same language: if they mean the same, use relation translation", local))
         elif rel == REL_FORM and len(jt) != 1:
             errs.append((sem, f"{pw}: relation form is one word to one word in the same language "
-                              f"({p['hint']!r} / {p['jd']!r})"))
+                              f"({p['hint']!r} / {p['jd']!r})", local))
         elif rel == REL_TRANSLATION and not cross:
             errs.append((sem, f"{pw}: relation translation needs another language ({p['hint']!r} / {p['jd']!r}); "
-                              f"in the same language pair one word to one word (same or form)"))
+                              f"in the same language pair one word to one word (same or form)", local))
     for k, e in enumerate(ex):
         ew = f"{w} target {hid} jd_extra[{k}]"
         if not (isinstance(e, dict) and isinstance(e.get("text"), str) and e.get("kind") in JD_EXTRA_KINDS):
             errs.append((fmt, f"{ew}: must be {{\"text\": one JD word, \"kind\": \"grammatical\" | "
-                              f"\"material\"}}"))
+                              f"\"material\"}}", Issue(hid, UNIT_EXTRA, "format", k)))
             continue
         et = tokens(e["text"])
         at = place(et) if len(et) == 1 else None
         if at is None:
-            errs.append((fmt, f"{ew}: {e['text']!r} must be exactly one word of the jd_span {sp.text!r}"))
+            errs.append((fmt, f"{ew}: {e['text']!r} must be exactly one word of the jd_span {sp.text!r}",
+                         Issue(hid, UNIT_EXTRA, "copy", k)))
             continue
         used_j[at] += 1
         extras.append({"text": e["text"], "kind": e["kind"]})
         if e["kind"] == EXTRA_MATERIAL:
             errs.append((sem, f"{ew}: the JD phrase adds the material word {e['text']!r} that the target "
-                              f"{hint_text!r} does not have: that is not the same role/function; use match none"))
+                              f"{hint_text!r} does not have: that is not the same role/function; use match none",
+                         Issue(hid, UNIT_EXTRA, "material", k)))
     if not errs:
         missing = list((Counter(hint_toks) - used_h).elements())
         twice = list((used_h - Counter(hint_toks)).elements())
         if missing or twice:
             errs.append((sem, f"{tw}: every word of the target must be paired exactly once; unpaired {missing}, "
                               f"paired more than once {twice}. A target word with no JD counterpart means the JD "
-                              f"phrase drops it: use match none"))
+                              f"phrase drops it: use match none", cov))
         unacc = [jd_toks[i] for i in range(len(jd_toks)) if used_j[i] == 0]
         over = [jd_toks[i] for i in range(len(jd_toks)) if used_j[i] > 1]
         if unacc and not over and any(_names_role_twice(a, unacc) for a in abbr_letters):
             errs.append((sem, f"{tw}: the jd_span names the same role twice; narrow jd_span to either the full form or "
-                         f"the acronym (unaccounted {unacc})"))
+                         f"the acronym (unaccounted {unacc})", cov))
         elif unacc or over:
             errs.append((sem, f"{tw}: every word of the jd_span must be paired or listed in jd_extra exactly once; "
-                              f"unaccounted {unacc}, used more than once {over}"))
+                              f"unaccounted {unacc}, used more than once {over}", cov))
     return errs, tuple(pairs), tuple(extras)
 
 
@@ -549,8 +582,8 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
         w = f"criterion {cid}"
         n_err = len(E)
 
-        def add(scopes, msg, _cid=cid):
-            E.add(_cid, scopes, msg)
+        def add(scopes, msg, issue=None, _cid=cid):
+            E.add(_cid, scopes, msg, issue)
 
         def span(obj, where, scopes):
             msgs: list[str] = []
@@ -746,15 +779,15 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
             dl, dm = durations[dur]
             dur_span = Span(dl, dm.start, dm.end, dm.text)
         for scopes, msg in _mapping_errors(c, targets, req_t, jd, dur_span, setting, w):
-            add(scopes, msg)
+            add(scopes, msg, Issue(_scope_target(scopes), UNIT_SPAN, "mapping"))
         for scopes, msg in _match_errors(c, targets, req_t, jd, list(amb), w, bad_span):
-            add(scopes, msg)
+            add(scopes, msg, Issue(_scope_target(scopes), UNIT_MATCH, "match"))
         aligned: dict[str, tuple] = {}
         for t in targets:
             if t.hint_id and t.match == MATCH_EQUIVALENT and t.span is not None:
                 a_errs, pairs, extras = _alignment_errors(t.hint_id, t.text, raw_targets[t.hint_id], t.span, w)
-                for scopes, msg in a_errs:
-                    add(scopes, msg)
+                for scopes, msg, issue in a_errs:
+                    add(scopes, msg, issue)
                 aligned[t.hint_id] = (pairs, extras)
         if aligned:
             targets = [ParsedTarget(t.text, t.type, t.hint_id, t.span, t.match, *aligned[t.hint_id])

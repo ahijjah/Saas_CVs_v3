@@ -257,7 +257,7 @@ class TestSafety:
 
     def test_s1_prompt_unchanged(self):
         assert (br.sc.S1_PROMPT_VERSION, br.sc.S1_VERSION, br.clf.prompt_fingerprint()) == (
-            "s1-5.2", "1.4.2", "4f22dddb117e")
+            "s1-5.2", "1.4.3", "4f22dddb117e")
 
 
 # ── s1-3: diagnostics, held-out set, prompt independence ───────────────────

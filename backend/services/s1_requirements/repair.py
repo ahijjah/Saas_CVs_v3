@@ -39,6 +39,19 @@ Merge rules per criterion (scopes come from validator.ScopedError):
   "response" (unparseable / malformed main answer, unknown criterion id)
                                    -> the repair answer is taken as a whole
 
+s1-5.2.1 pair-level merge: when EVERY error touching a hint target is a
+structured pair-local issue (validator Issue unit "pair": a relation, one-word
+or not-found error of an alignment pair whose hint words are target words),
+only those main pairs may be replaced, by the repair pairs that cover exactly
+the same target words (matched by words, never by position; ambiguous,
+overlapping or partial replacements are refused and the main pair stays).
+Every other main pair, match, jd_span, jd_extra and type are kept. Coverage,
+span, match and other errors keep the whole-field merge above.
+s1-5.2.1 material lock: a jd_extra word the MAIN answer marked "material" can
+never be relabelled, removed, paired or hidden by a new jd_span in the merged
+target (any merge path); the only accepted change is giving up (match none).
+Otherwise the main target is kept. The merged answer is always re-validated.
+
 s1-5.1 deterministic withdrawal (plan_withdrawal / apply_withdrawal), AFTER the
 one repair, only when the merged answer is still invalid: if every remaining
 error of a criterion belongs to ONE hint target's equivalent claim (scopes
@@ -54,12 +67,13 @@ from __future__ import annotations
 
 import copy
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from services.s1_requirements.criteria import CriterionInput
 from services.s1_requirements.jd_text import normalize
 from services.s1_requirements.schema import RESTRICTION_KINDS
 from services.s1_requirements.validator import (
+    UNIT_PAIR, tokens,
     SCOPE_AMBIGUITY, SCOPE_BASIS, SCOPE_CRITERION, SCOPE_DURATION, SCOPE_RESPONSE, SCOPE_SETTING, SCOPE_SPANS,
     SCOPE_RESTRICTION_PREFIX, SCOPE_RESTRICTIONS, SCOPE_TARGET_PREFIX, SCOPE_TARGETS_EXTRA,
     ScopedError, hint_ids,
@@ -136,6 +150,92 @@ def apply_withdrawal(raw: str, plan: dict[str, tuple[str, list[str]]]) -> tuple[
     return json.dumps(data, ensure_ascii=False), audit
 
 
+def _pair_local_issues(scoped: list[ScopedError], cid: str, hid: str) -> dict[int, tuple[str, ...]] | None:
+    """{main alignment index: target words} when EVERY error touching this hint target is a structured,
+    provably pair-local issue (validator Issue unit "pair" with the pair's target words); else None."""
+    own = [e for e in scoped if e.criterion_id == cid and any(
+        sc == f"{SCOPE_TARGET_PREFIX}{hid}" or sc.startswith(f"{SCOPE_TARGET_PREFIX}{hid}:") for sc in e.scopes)]
+    if not own:
+        return None
+    out: dict[int, tuple[str, ...]] = {}
+    for e in own:
+        i = e.issue
+        if i is None or i.unit != UNIT_PAIR or i.target != hid or i.index is None or not i.words:
+            return None
+        if out.get(i.index, i.words) != i.words:
+            return None
+        out[i.index] = i.words
+    return out
+
+
+def pair_repair_guidance(scoped: list[ScopedError]) -> list[str]:
+    """Repair-call lines naming the exact alignment pairs that will be taken (pair-local targets only)."""
+    lines, seen = [], set()
+    for e in scoped:
+        i = e.issue
+        if not (e.criterion_id and i is not None and i.unit == UNIT_PAIR and i.target):
+            continue
+        key = (e.criterion_id, i.target)
+        if key in seen:
+            continue
+        seen.add(key)
+        local = _pair_local_issues(scoped, *key)
+        if local:
+            pairs = ", ".join(f"alignment[{k}] (target word(s) {' '.join(w)!r})" for k, w in sorted(local.items()))
+            lines.append(f"criterion {key[0]} target {key[1]}: ONLY {pairs} will be taken from your answer; give "
+                         f"the corrected pair(s) for exactly those target words. Every other pair, match, jd_span "
+                         f"and jd_extra of this target is kept from your previous answer.")
+    return lines
+
+
+def _merge_pairs(main_al: list, rt: dict | None, invalid: dict[int, tuple[str, ...]]) -> tuple[list, list[int]]:
+    """Main alignment with ONLY the invalid pairs replaced. A replacement is the set of repair pairs whose
+    target words lie inside the invalid pair's words; it is taken only if those pairs cover the invalid pair's
+    words exactly once (no overlap, no duplicate, no ambiguity). Main order is kept; every other main pair is
+    kept exactly. The caller always re-validates the complete result."""
+    rep_al = rt.get("alignment") if isinstance(rt, dict) else None
+    rep_pairs = [(p, Counter(tokens(p["hint"]))) for p in rep_al if isinstance(p, dict)
+                 and isinstance(p.get("hint"), str)] if isinstance(rep_al, list) else []
+    out, replaced = [], []
+    for k, p in enumerate(main_al):
+        if k not in invalid:
+            out.append(copy.deepcopy(p))
+            continue
+        need = Counter(invalid[k])
+        cand = [(q, c) for q, c in rep_pairs if c and not (c - need)]
+        if cand and sum((c for _, c in cand), Counter()) == need:
+            out.extend(copy.deepcopy(q) for q, _ in cand)
+            replaced.append(k)
+        else:
+            out.append(copy.deepcopy(p))                       # no unambiguous replacement: main pair stays
+    return out, replaced
+
+
+def _material_words(t: dict | None) -> set[str]:
+    ex = t.get("jd_extra") if isinstance(t, dict) and t.get("match") == "equivalent" else None
+    return {w for e in ex if isinstance(e, dict) and e.get("kind") == "material" and isinstance(e.get("text"), str)
+            for w in tokens(e["text"])} if isinstance(ex, list) else set()
+
+
+def _material_lock_holds(main_t: dict, merged_t: dict) -> bool:
+    """s1-5.2.1: a word the MAIN answer marked material stays a material jd_extra item of the same jd_span, or
+    the claim is given up (match none). It can never be relabelled, removed, paired or hidden by a new span."""
+    locked = _material_words(main_t)
+    if not locked:
+        return True
+    if merged_t.get("match") == "none":
+        return True
+    paired = {w for p in merged_t.get("alignment") or [] if isinstance(p, dict) and isinstance(p.get("jd"), str)
+              for w in tokens(p["jd"])}
+    return (merged_t.get("match") == "equivalent" and merged_t.get("jd_span") == main_t.get("jd_span")
+            and locked <= _material_words(merged_t) and not (locked & paired))
+
+
+def _hint_targets(item: dict, hid: str) -> list[dict]:
+    targets = item.get("targets")
+    return [t for t in targets if isinstance(t, dict) and t.get("hint") == hid] if isinstance(targets, list) else []
+
+
 def _hint_target(item: dict, hid: str) -> dict | None:
     targets = item.get("targets")
     for t in targets if isinstance(targets, list) else []:
@@ -176,7 +276,8 @@ def _jd_key(t, type_key: str = "type") -> tuple | None:
 
 def merge_repair(main_raw: str, repair_raw: str, scoped: list[ScopedError],
                  criteria: list[CriterionInput]) -> tuple[str, dict]:
-    info: dict = {"mode": "scoped", "taken": [], "kept_main_restrictions": [], "discarded_changes": 0}
+    info: dict = {"mode": "scoped", "taken": [], "kept_main_restrictions": [], "discarded_changes": 0,
+                  "pair_merged": [], "material_locked": []}
     main = _items(main_raw)
     if main is None or any(SCOPE_RESPONSE in e.scopes for e in scoped):
         info["mode"] = "full_replace"
@@ -231,19 +332,35 @@ def merge_repair(main_raw: str, repair_raw: str, scoped: list[ScopedError],
                 for hid in hints:
                     rt, mt_ = _hint_target(r, hid), _hint_target(m, hid)
                     if hid in tkeys and rt is not None:
-                        new.append(copy.deepcopy(rt))
-                        info["taken"].append({"criterion_id": cid, "field": f"target:{hid}"})
+                        if all(_material_lock_holds(o, rt) for o in _hint_targets(m, hid)):
+                            new.append(copy.deepcopy(rt))
+                            info["taken"].append({"criterion_id": cid, "field": f"target:{hid}"})
+                            continue
+                        info["material_locked"].append({"criterion_id": cid, "hint": hid})
+                        new += [copy.deepcopy(o) for o in _hint_targets(m, hid)]   # main kept: stays invalid
                         continue
                     if mt_ is None:
                         continue
                     t = copy.deepcopy(mt_)
-                    if rt is not None:
+                    local = _pair_local_issues(scoped, cid, hid)
+                    if local is not None:
+                        # s1-5.2.1: every error of this target is local to identified alignment pair(s): only
+                        # those pairs may come from the repair; match, jd_span, jd_extra and valid pairs are kept
+                        t["alignment"], replaced = _merge_pairs(mt_["alignment"], rt, local)
+                        info["pair_merged"].append({"criterion_id": cid, "hint": hid,
+                                                    "invalid": sorted(local), "replaced": replaced})
+                        for k in replaced:
+                            info["taken"].append({"criterion_id": cid, "field": f"target:{hid}:alignment[{k}]"})
+                    elif rt is not None:
                         for f in sorted(tfields.get(hid, ())):
                             if f in rt:
                                 t[f] = copy.deepcopy(rt[f])
                             else:
                                 t.pop(f, None)
                             info["taken"].append({"criterion_id": cid, "field": f"target:{hid}:{f}"})
+                    if not _material_lock_holds(mt_, t):
+                        t = copy.deepcopy(mt_)                 # a material qualifier cannot be repaired away
+                        info["material_locked"].append({"criterion_id": cid, "hint": hid})
                     new.append(t)
                 if SCOPE_TARGETS_EXTRA in sc:     # the repair's own non-hint targets (if it kept any, still invalid)
                     rlist = r.get("targets") if isinstance(r.get("targets"), list) else []

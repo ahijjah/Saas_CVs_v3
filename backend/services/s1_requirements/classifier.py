@@ -46,7 +46,7 @@ from services.s1_requirements.criteria import (
 )
 from services.s1_requirements.durations import DurationMatch
 from services.s1_requirements.jd_text import JDText
-from services.s1_requirements.repair import apply_withdrawal, merge_repair, plan_withdrawal
+from services.s1_requirements.repair import apply_withdrawal, merge_repair, pair_repair_guidance, plan_withdrawal
 from services.s1_requirements.schema import (
     REASON_AI_UNAVAILABLE, REASON_EXCEEDS_MODEL_CONTEXT, REASON_INTERNAL_ERROR, REASON_OUTPUT_TRUNCATED,
     REASON_VALIDATION_FAILED, S1_INPUT_VERSION, S1_MAX_TOKENS, S1_MODEL, S1_PROMPT_CODE, S1_PROMPT_VERSION,
@@ -199,7 +199,8 @@ def s1_cache_key(req: BuiltRequest, *, model: str = S1_MODEL) -> str:
     return sha256(f"s1|{S1_VERSION}|{req.input_hash}|{S1_PROMPT_VERSION}:{prompt_fingerprint()}|{model}")
 
 
-def repair_note(errors: list[str]) -> str:
+def repair_note(errors: list[str], pair_guidance: list[str] = ()) -> str:
+    pairs = ("\nPair-level repair (s1-5.2.1):\n- " + "\n- ".join(pair_guidance)) if pair_guidance else ""
     return ("Some fields of your previous JSON violate the rules below. Return the COMPLETE JSON again with "
             "exactly one result for every criterion. ONLY the fields, targets and restrictions named in these "
             "errors will be taken from your new answer; everything else is kept exactly as in your previous "
@@ -210,7 +211,7 @@ def repair_note(errors: list[str]) -> str:
             "same = letter for letter the same word; form = the same word in another grammatical form of the "
             "same language (plural, verb/noun form), never a synonym; translation = EVERY pair between two "
             "languages; abbreviation = acronym and expansion. Never return a policy:\n- "
-            + "\n- ".join(errors[:40]))
+            + "\n- ".join(errors[:40]) + pairs)
 
 
 @dataclass
@@ -344,7 +345,8 @@ async def _run(req: BuiltRequest, client, model: str, meta: dict) -> dict:
         if not val.ok:
             first_errors, first_scoped, main_raw = list(val.errors), list(val.scoped), raw
             repair_messages = messages + [{"role": "assistant", "content": raw},
-                                          {"role": "user", "content": repair_note(first_errors)}]
+                                          {"role": "user", "content": repair_note(
+                                              first_errors, pair_repair_guidance(first_scoped))}]
             rb = llm_call.request_token_upper_bound(repair_messages)
             meta["repair_request_token_upper_bound"] = rb
             if rb > S1_MAX_INPUT_TOKENS:
