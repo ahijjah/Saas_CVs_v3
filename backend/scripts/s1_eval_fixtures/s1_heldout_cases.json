@@ -1,6 +1,6 @@
 {
- "_comment": "HELD-OUT synthetic boundary cases for S1 s1-3 (semantic equivalence and qualifier preservation). Vocabulary is disjoint from the production prompt illustrations and from s1_boundary_cases.json, so it measures generalisation. No candidate, CV, application or personal data. Same schema as s1_boundary_cases.json. s1-heldout-2 (s1-4 contract): oracle answers no longer carry a model policy; expectations unchanged.",
- "fixture_version": "s1-heldout-2",
+ "_comment": "HELD-OUT synthetic boundary cases for S1 s1-3 (semantic equivalence and qualifier preservation). Vocabulary is disjoint from the production prompt illustrations and from s1_boundary_cases.json, so it measures generalisation. No candidate, CV, application or personal data. Same schema as s1_boundary_cases.json. s1-heldout-2 (s1-4 contract): oracle answers no longer carry a model policy; expectations unchanged. s1-heldout-3 (s1-5 contract): equivalent reference answers carry a word alignment; expectations unchanged.",
+ "fixture_version": "s1-heldout-3",
  "cases": [
   {
    "id": "HO01",
@@ -84,7 +84,15 @@
       "jd_span": {
        "line": 2,
        "text": "كطبيب بيطري"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "Veterinarian",
+        "jd": "كطبيب بيطري",
+        "relation": "translation"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,
@@ -193,7 +201,20 @@
       "jd_span": {
        "line": 2,
        "text": "تطوير الويب"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "web",
+        "jd": "الويب",
+        "relation": "translation"
+       },
+       {
+        "hint": "development",
+        "jd": "تطوير",
+        "relation": "translation"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,
@@ -302,7 +323,20 @@
       "jd_span": {
        "line": 2,
        "text": "planning events"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "event",
+        "jd": "events",
+        "relation": "form"
+       },
+       {
+        "hint": "planning",
+        "jd": "planning",
+        "relation": "same"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,
@@ -464,7 +498,20 @@
       "jd_span": {
        "line": 2,
        "text": "User Experience Designer"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "UX",
+        "jd": "User Experience",
+        "relation": "abbreviation"
+       },
+       {
+        "hint": "Designer",
+        "jd": "Designer",
+        "relation": "same"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,

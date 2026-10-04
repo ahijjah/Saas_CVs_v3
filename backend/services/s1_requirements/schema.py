@@ -26,10 +26,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 S1_SCHEMA = "s1_requirement_spec_v2"
-S1_VERSION = "1.3.0"                     # enumeration + parser + validator + assembly
+S1_VERSION = "1.4.0"                     # enumeration + parser + validator + assembly
 S1_INPUT_VERSION = "s1-in-1"
 S1_PROMPT_CODE = "recruitment.experience_requirement_spec"
-S1_PROMPT_VERSION = "s1-4"
+S1_PROMPT_VERSION = "s1-5"
 S1_MODEL = "gpt-4o-mini"
 S1_TEMPERATURE = 0.0
 S1_MAX_TOKENS = 4000
@@ -53,6 +53,24 @@ BASIS_SECTOR = "sector"                      # only a sector/setting            
 BASIS_TOTAL_EXPERIENCE = "total_experience"  # total experience, no restriction        -> pure_duration
 BASIS_UNSPECIFIED = "unspecified"            # "relevant" but undefined -> pure_duration + ambiguous_relevance
 RELEVANCE_BASES = (BASIS_TARGETS, BASIS_SECTOR, BASIS_TOTAL_EXPERIENCE, BASIS_UNSPECIFIED)
+# s1-5: relevance_basis is DERIVED from typed restrictions (never a model claim)
+
+# s1-5: typed restrictions (criteria WITHOUT analysis targets): every JD phrase limiting which experience counts
+RESTRICTION_ROLE = "role"
+RESTRICTION_FUNCTION = "function"
+RESTRICTION_SECTOR = "sector"
+RESTRICTION_VAGUE = "vague"              # "relevant / related / similar / in the field" without saying what
+RESTRICTION_KINDS = (RESTRICTION_ROLE, RESTRICTION_FUNCTION, RESTRICTION_SECTOR, RESTRICTION_VAGUE)
+
+# s1-5: word alignment of an "equivalent" mapping (one analysis-target word per pair)
+REL_SAME = "same"                        # identical word
+REL_FORM = "form"                        # same language, other grammatical form (manager / management)
+REL_TRANSLATION = "translation"          # other language (other script)
+REL_ABBREVIATION = "abbreviation"        # an all-capitals acronym and its expansion
+ALIGN_RELATIONS = (REL_SAME, REL_FORM, REL_TRANSLATION, REL_ABBREVIATION)
+EXTRA_GRAMMATICAL = "grammatical"        # JD word carrying no requirement meaning (of, the, في ...)
+EXTRA_MATERIAL = "material"              # JD word adding meaning (a qualifier): never equivalent
+JD_EXTRA_KINDS = (EXTRA_GRAMMATICAL, EXTRA_MATERIAL)
 
 TARGET_ROLE = "role"
 TARGET_FUNCTION = "function"
@@ -99,7 +117,8 @@ AMBIGUITY_CODES = (AMB_AMBIGUOUS_RELEVANCE, AMB_MULTIPLE_DURATIONS,
 BIZ_TARGET_NOT_IN_JD = "target_not_in_jd"
 BIZ_N_NOT_IN_JD = "n_not_in_jd"
 BIZ_N_MISMATCH = "n_mismatch"
-BUSINESS_CODES = (BIZ_TARGET_NOT_IN_JD, BIZ_N_NOT_IN_JD, BIZ_N_MISMATCH)
+BIZ_COMPOUND_REQUIREMENT = "compound_requirement"   # s1-5: >= 2 duration thresholds in one requirement
+BUSINESS_CODES = (BIZ_TARGET_NOT_IN_JD, BIZ_N_NOT_IN_JD, BIZ_N_MISMATCH, BIZ_COMPOUND_REQUIREMENT)
 
 REASON_VALIDATION_FAILED = "validation_failed"
 CONTRACT_CODES = (REASON_VALIDATION_FAILED,)

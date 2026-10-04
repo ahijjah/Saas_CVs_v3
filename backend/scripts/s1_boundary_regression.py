@@ -49,7 +49,7 @@ from services.s1_requirements.validator import implied_policy  # noqa: E402
 FIXTURE = Path(__file__).resolve().parent / "s1_eval_fixtures" / "s1_boundary_cases.json"
 PRICE_IN, PRICE_OUT = 0.15, 0.60          # gpt-4o-mini USD per 1M tokens (ASSUMPTION; override with flags)
 FIELDS = ("policy", "types", "provenance", "mapping", "setting", "duration", "ambiguity", "status", "spans",
-          "anchor")
+          "anchor", "reasons")
 STABILITY_FIELDS = ("policy", "types", "mapping_offered", "duration", "ambiguity")
 
 
@@ -149,7 +149,8 @@ def call_diagnostics(case: dict, raw: list, merge: dict | None = None) -> dict:
     main = next((_first_item(x["content"]) for x in raw if x["call"] == "main"), None)
     rep = next((_first_item(x["content"]) for x in raw if x["call"] == "repair"), None)
     d = {"model_policy_mismatch_main": False, "repair_attempted_type_change": False,
-         "repair_discarded_changes": bool(merge and merge.get("discarded_changes"))}
+         "repair_discarded_changes": bool(merge and merge.get("discarded_changes")),
+         "equivalent_rejected_by_alignment": False}
     if main is not None and isinstance(main.get("policy"), str):
         imp = implied_policy([t for t in _types(main) if t in ("role", "function")])
         d["model_policy_mismatch_main"] = imp is not None and main["policy"] != imp
@@ -170,7 +171,10 @@ def observe(case: dict, out, raw: list = ()) -> dict:
         "calls": [{k: c.get(k) for k in ("call", "finish_reason", "prompt_tokens", "completion_tokens")}
                   for c in log],
         "error": out.meta.get("error"),
-        "diagnostics": call_diagnostics(case, list(raw), out.meta.get("repair_merge")),
+        "diagnostics": {**call_diagnostics(case, list(raw), out.meta.get("repair_merge")),
+                        # s1-5: the main answer's equivalent claim failed the alignment coverage contract
+                        "equivalent_rejected_by_alignment": any(
+                            " alignment" in e for e in (out.validation or {}).get("errors", []))},
         "repair_merge": out.meta.get("repair_merge"),
     }
     if outcome != "ok":
@@ -186,6 +190,7 @@ def observe(case: dict, out, raw: list = ()) -> dict:
         # effective ambiguity: AI-reported codes plus derived ones (relevance_basis unspecified)
         "ambiguity": sorted({r.code for r in art.reasons if r.kind == sc.KIND_AMBIGUITY}),
         "relevance_basis": ai.get("relevance_basis"),
+        "restrictions": art.audit.get("restrictions", []),
         "policy_derivation": art.audit.get("policy_derivation"),
         "spans": [{"line": s.line, "text": s.text} for s in art.requirement_spans],
         "anchor": art.audit.get("requirement_anchor"),
@@ -238,6 +243,8 @@ def field_checks(exp: dict, obs: dict) -> dict[str, bool]:
         "spans": all(any(normalize(t) in j for j in joined) for t in exp.get("span_includes", []))
         and not (lines & set(exp.get("span_forbidden_lines", []))),
         "anchor": _eq(exp["anchor"], obs["anchor"]) if "anchor" in exp else True,
+        # business reasons that must be present (e.g. compound_requirement); other reasons are not scored here
+        "reasons": all(code in obs["reasons"] for code in exp.get("reasons_include", [])),
     }
     return checks
 
@@ -369,7 +376,7 @@ def summarize(records: list[dict], cases: list[dict], *, price_in: float = PRICE
         "by_family": {f: {"pass": p, "runs": n} for f, (p, n) in sorted(fam.items())},
         "diagnostics": {k: sum(1 for r in records if r["diagnostics"][k])
                         for k in ("model_policy_mismatch_main", "repair_attempted_type_change",
-                                  "repair_discarded_changes")},
+                                  "repair_discarded_changes", "equivalent_rejected_by_alignment")},
         "match_counts": dict(Counter(m for r in ok for m in r["matches"].values())),
         "semantic_failures": [{"case": r["case"], "run": r["run"],
                                "failed_fields": [f for f, v in r["checks"].items() if not v]}

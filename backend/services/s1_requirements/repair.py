@@ -24,9 +24,17 @@ Merge rules per criterion (scopes come from validator.ScopedError):
   targets_extra                    -> hint targets kept from the main answer; only
                                       the repair's non-hint targets are taken (if
                                       it still adds any, the merge stays invalid)
-  target:Jk / targets_if_empty     -> hint-less target list taken from the repair
-                                      ONLY if every error-free main target is
-                                      kept unchanged (line, text, type) in it;
+  targets_extra (no hints)         -> criteria without analysis targets must not
+                                      return targets (they are derived from
+                                      restrictions): only the repair's list is
+                                      taken; if it still has targets, invalid
+  restriction:Rk / restrictions    -> (criteria without analysis targets) the
+                                      repair's restriction list ONLY if every
+                                      error-free main restriction is kept
+                                      unchanged and every restriction kind of the
+                                      main answer is still present: a repair can
+                                      fix a restriction but never broaden the
+                                      requirement (e.g. into total experience);
                                       otherwise the main list is kept
   "response" (unparseable / malformed main answer, unknown criterion id)
                                    -> the repair answer is taken as a whole
@@ -39,9 +47,11 @@ from collections import defaultdict
 
 from services.s1_requirements.criteria import CriterionInput
 from services.s1_requirements.jd_text import normalize
+from services.s1_requirements.schema import RESTRICTION_KINDS
 from services.s1_requirements.validator import (
     SCOPE_AMBIGUITY, SCOPE_BASIS, SCOPE_CRITERION, SCOPE_DURATION, SCOPE_RESPONSE, SCOPE_SETTING, SCOPE_SPANS,
-    SCOPE_TARGET_PREFIX, SCOPE_TARGETS_EXTRA, SCOPE_TARGETS_IF_EMPTY, ScopedError, hint_ids,
+    SCOPE_RESTRICTION_PREFIX, SCOPE_RESTRICTIONS, SCOPE_TARGET_PREFIX, SCOPE_TARGETS_EXTRA,
+    ScopedError, hint_ids,
 )
 
 FIELD_SCOPES = (SCOPE_SPANS, SCOPE_SETTING, SCOPE_DURATION, SCOPE_AMBIGUITY, SCOPE_BASIS)
@@ -70,15 +80,39 @@ def _hint_target(item: dict, hid: str) -> dict | None:
     return None
 
 
-def _jd_key(t) -> tuple | None:
+def _merge_restrictions(m: dict, r: dict, sc: set[str]) -> tuple[list | None, bool]:
+    """-> (list to use, taken_from_repair)."""
+    mr = m.get("restrictions") if isinstance(m.get("restrictions"), list) else None
+    rr = r.get("restrictions") if isinstance(r.get("restrictions"), list) else None
+    if rr is None:
+        return m.get("restrictions"), False
+    if mr is None:                                       # the main list was unusable: nothing to preserve
+        return copy.deepcopy(rr), True
+    bad = {int(k[len(SCOPE_RESTRICTION_PREFIX) + 1:]) for k in sc
+           if k.startswith(SCOPE_RESTRICTION_PREFIX) and k[len(SCOPE_RESTRICTION_PREFIX) + 1:].isdigit()}
+    if SCOPE_RESTRICTIONS in sc and not bad:
+        bad = set(range(len(mr)))
+    keep = [_jd_key(x, "kind") for j, x in enumerate(mr) if j not in bad]
+    have = {_jd_key(x, "kind") for x in rr}
+    # never broaden: every valid restriction kind of the main answer survives, and a non-empty main list is
+    # never repaired into [] (= total experience), even when every main item was malformed
+    kinds_main = {x.get("kind") for x in mr if isinstance(x, dict) and x.get("kind") in RESTRICTION_KINDS}
+    kinds_rep = {x.get("kind") for x in rr if isinstance(x, dict)}
+    if (all(k in have for k in keep if k is not None) and kinds_main <= kinds_rep
+            and (rr or not mr)):
+        return copy.deepcopy(rr), True
+    return mr, False
+
+
+def _jd_key(t, type_key: str = "type") -> tuple | None:
     if not isinstance(t, dict):
         return None
-    return (t.get("line"), normalize(t.get("text") or ""), t.get("type"))
+    return (t.get("line"), normalize(t.get("text") or ""), t.get(type_key))
 
 
 def merge_repair(main_raw: str, repair_raw: str, scoped: list[ScopedError],
                  criteria: list[CriterionInput]) -> tuple[str, dict]:
-    info: dict = {"mode": "scoped", "taken": [], "kept_main_targets": [], "discarded_changes": 0}
+    info: dict = {"mode": "scoped", "taken": [], "kept_main_restrictions": [], "discarded_changes": 0}
     main = _items(main_raw)
     if main is None or any(SCOPE_RESPONSE in e.scopes for e in scoped):
         info["mode"] = "full_replace"
@@ -153,17 +187,13 @@ def merge_repair(main_raw: str, repair_raw: str, scoped: list[ScopedError],
                     info["taken"].append({"criterion_id": cid, "field": "targets_extra"})
                 merged["targets"] = new
         else:
-            mt = m.get("targets") if isinstance(m.get("targets"), list) else []
-            if tkeys or (SCOPE_TARGETS_IF_EMPTY in sc and not mt):
-                rt = r.get("targets") if isinstance(r.get("targets"), list) else []
-                bad = {int(k[1:]) for k in tkeys if k[:1] == "J" and k[1:].isdigit()}
-                keep = [_jd_key(t) for j, t in enumerate(mt) if j not in bad]
-                have = {_jd_key(t) for t in rt}
-                if all(k in have for k in keep if k is not None):
-                    merged["targets"] = copy.deepcopy(rt)
-                    info["taken"].append({"criterion_id": cid, "field": "targets"})
-                else:
-                    info["kept_main_targets"].append(cid)
+            if SCOPE_TARGETS_EXTRA in sc:     # targets are derived from restrictions: only the repair's own list
+                merged["targets"] = copy.deepcopy(r.get("targets"))
+                info["taken"].append({"criterion_id": cid, "field": "targets_extra"})
+            if SCOPE_RESTRICTIONS in sc or any(x.startswith(SCOPE_RESTRICTION_PREFIX) for x in sc):
+                merged["restrictions"], took = _merge_restrictions(m, r, sc)
+                info["taken" if took else "kept_main_restrictions"].append(
+                    {"criterion_id": cid, "field": "restrictions"} if took else cid)
         if r != merged:
             info["discarded_changes"] += 1
         out.append(merged)

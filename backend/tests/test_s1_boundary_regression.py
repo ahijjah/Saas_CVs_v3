@@ -1,4 +1,4 @@
-"""Offline tests for the S1 s1-2 boundary-regression harness (no API, no database)."""
+"""Offline tests for the S1 boundary-regression harness (no API, no database)."""
 import ast
 import asyncio
 import importlib.util
@@ -105,18 +105,23 @@ class TestFixture:
 
 class TestMetrics:
     def test_false_positive_jd_asserted(self):
-        # C2: model maps the generic Arabic "كمدير مشروع" (valid span, wrong semantics)
-        bad = with_oracle("C2", targets=[{"hint": "T1", "type": "role", "match": "equivalent",
-                                          "jd_span": {"line": 2, "text": "كمدير مشروع"}}])
-        records, cases = scripted_records({"C2": [[bad]], "B1": None, "G1": None})
+        # I1: a structurally valid but semantically wrong alignment (administration "form" support) is the
+        # model's audited judgment; the harness scores it as a false positive.
+        bad = with_oracle("I1", targets=[{"hint": "T1", "type": "function", "match": "equivalent",
+                                          "jd_span": {"line": 2, "text": "database support"},
+                                          "alignment": [{"hint": "database", "jd": "database", "relation": "same"},
+                                                        {"hint": "administration", "jd": "support",
+                                                         "relation": "form"}],
+                                          "jd_extra": []}])
+        records, cases = scripted_records({"I1": [[bad]], "B1": None, "G1": None})
         s = br.summarize(records, cases)
         j = s["jd_asserted"]
         assert (j["tp"], j["fp"], j["fn"]) == (2, 1, 0) and j["precision"] == round(2 / 3, 4) and j["recall"] == 1.0
-        assert j["false_positives"] == [{"case": "C2", "run": 1, "target": "Construction Project Manager",
-                                         "mapped_text": "كمدير مشروع"}]
-        c2 = next(r for r in records if r["case"] == "C2")
-        assert not c2["pass"] and {"mapping", "provenance", "status"} <= {
-            f for f, v in c2["checks"].items() if not v}
+        assert j["false_positives"] == [{"case": "I1", "run": 1, "target": "database administration",
+                                         "mapped_text": "database support"}]
+        i1 = next(r for r in records if r["case"] == "I1")
+        assert not i1["pass"] and {"mapping", "provenance", "status"} <= {
+            f for f, v in i1["checks"].items() if not v}
         assert s["semantic_error_runs"] == 1 and s["outcomes"]["ok"] == 3
 
     def test_false_negative_jd_asserted(self):
@@ -134,7 +139,7 @@ class TestMetrics:
         assert s["policy_accuracy"] == 0.5
 
     def test_ambiguity_and_status_accuracy(self):
-        quiet = with_oracle("O1", ambiguity=[], relevance_basis="total_experience")   # misses the vagueness
+        quiet = with_oracle("O1", ambiguity=[], restrictions=[])   # misses the vagueness
         records, cases = scripted_records({"O1": [[quiet]], "N1": None})
         s = br.summarize(records, cases)
         assert s["ambiguity_accuracy"] == 0.5 and s["status_accuracy"] == 0.5
@@ -208,7 +213,7 @@ class TestSafety:
         assert not (tmp_path / "d").exists()
         assert br.main(["--out", str(tmp_path / "o"), "--mode", "oracle", "--runs", "1", "--cases", "A1,B1"]) == 0
         res = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))
-        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "faad01d30b5c"
+        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "a0ae492a27e4"
         assert res["meta"]["temperature"] == 0.0 and res["meta"]["mode"] == "oracle"
         report = (tmp_path / "o" / "report.md").read_text(encoding="utf-8")
         for frag in ("## jd_asserted", "## Stability", "## Role/function confusion", "## Outcomes"):
@@ -228,7 +233,7 @@ class TestSafety:
 
     def test_s1_prompt_unchanged(self):
         assert (br.sc.S1_PROMPT_VERSION, br.sc.S1_VERSION, br.clf.prompt_fingerprint()) == (
-            "s1-4", "1.3.0", "faad01d30b5c")
+            "s1-5", "1.4.0", "a0ae492a27e4")
 
 
 # ── s1-3: diagnostics, held-out set, prompt independence ───────────────────
@@ -240,7 +245,10 @@ def fixture_phrases(cases) -> set[str]:
     out = set()
     for c in cases:
         out |= set(c["analysis"]["relevant_roles"])
-        for t in c["oracle"]["targets"]:
+        for r in c["oracle"].get("restrictions") or []:
+            if r["kind"] != "vague":                     # vague words ("relevant") are generic, not fixture terms
+                out.add(r["text"])
+        for t in c["oracle"].get("targets") or []:
             if t.get("jd_span"):
                 out.add(t["jd_span"]["text"])
             if "text" in t:
@@ -267,7 +275,7 @@ class TestS14Diagnostics:
         (r,) = records
         assert r["pass"] and r["policy"] == "functional" and s["repair_calls"] == 0
         assert s["diagnostics"] == {"model_policy_mismatch_main": 1, "repair_attempted_type_change": 0,
-                                    "repair_discarded_changes": 0}
+                                    "repair_discarded_changes": 0, "equivalent_rejected_by_alignment": 0}
 
     def test_repair_type_change_outside_scope_is_discarded(self):
         bad = with_oracle("F1", ambiguity=["unsure"])                              # only ambiguity is invalid
@@ -277,17 +285,32 @@ class TestS14Diagnostics:
         (r,) = records
         assert r["pass"] and r["repair_used"] and [t["type"] for t in r["targets"]] == ["function"]
         assert s["diagnostics"] == {"model_policy_mismatch_main": 0, "repair_attempted_type_change": 1,
-                                    "repair_discarded_changes": 1}
+                                    "repair_discarded_changes": 1, "equivalent_rejected_by_alignment": 0}
 
     def test_policy_sensitive_mapping_excluded_from_gate(self):
         pm = with_oracle("K2", targets=[{"hint": "T1", "type": "role", "match": "equivalent",
-                                         "jd_span": {"line": 2, "text": "P.M."}}])
+                                         "jd_span": {"line": 2, "text": "P.M."},
+                                         "alignment": [{"hint": "PM", "jd": "P.M.", "relation": "abbreviation"}],
+                                         "jd_extra": []}])
         records, cases = scripted_records({"K2": [[pm]], "B1": None})
         s = br.summarize(records, cases)
         assert all(r["pass"] for r in records)                                    # K2 alternative accepted
         j = s["jd_asserted"]
         assert (j["tp"], j["fp"]) == (1, 0) and j["policy_sensitive_excluded"] == [
             {"case": "K2", "run": 1, "target": "PM", "jd_asserted": True}]
+
+    def test_dropped_qualifier_is_rejected_by_alignment(self):
+        # C2: "Construction" has no counterpart in "كمدير مشروع" -> structural rejection, repair withdraws to none
+        drop = with_oracle("C2", targets=[{"hint": "T1", "type": "role", "match": "equivalent",
+                                           "jd_span": {"line": 2, "text": "كمدير مشروع"},
+                                           "alignment": [{"hint": "Manager", "jd": "كمدير", "relation": "translation"},
+                                                         {"hint": "Project", "jd": "مشروع", "relation": "translation"}],
+                                           "jd_extra": []}])
+        records, cases = scripted_records({"C2": [[drop, br.oracle_response(BY_ID["C2"])]]})
+        s = br.summarize(records, cases)
+        (r,) = records
+        assert r["pass"] and r["repair_used"] and s["jd_asserted"]["fp"] == 0
+        assert s["diagnostics"]["equivalent_rejected_by_alignment"] == 1
 
     def test_match_counts(self):
         records, cases = scripted_records({}, cases=CASES)

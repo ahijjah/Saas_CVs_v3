@@ -67,6 +67,38 @@ def res(cid, policy, spans, targets=(), setting=None, duration=None, ambiguity=(
 LEGACY_BASIS = {"explicit_role": "targets", "functional": "targets", "mixed": "targets", "sector": "sector",
                 "pure_duration": "total_experience"}
 
+# Reviewed word alignments for the legitimate equivalent mappings used by pre-s1-5 tests (hint, jd_span) ->
+# alignment; the legacy fill adds them only to tests that do not state an alignment themselves.
+TR, SA, FO, AB = "translation", "same", "form", "abbreviation"
+TEST_ALIGNMENTS = {
+    ("Construction Project Manager", "كمدير مشروع إنشائي"): [("Construction", "إنشائي", TR), ("Project", "مشروع", TR),
+                                                         ("Manager", "كمدير", TR)],
+    ("Construction Project Manager", "مدير مشروع إنشائي"): [("Construction", "إنشائي", TR), ("Project", "مشروع", TR),
+                                                        ("Manager", "مدير", TR)],
+    ("Assistant Project Manager", "مساعد مدير مشروع"): [("Assistant", "مساعد", TR), ("Project", "مشروع", TR),
+                                                    ("Manager", "مدير", TR)],
+    ("PM", "Project Manager"): [("PM", "Project Manager", AB)],
+    ("software implementation", "implementing software"): [("software", "software", SA),
+                                                           ("implementation", "implementing", FO)],
+    ("database administration", "administering databases"): [("database", "databases", FO),
+                                                              ("administration", "administering", FO)],
+    ("Assistant Project Manager", "Assistant PM"): [("Assistant", "Assistant", SA), ("Project Manager", "PM", AB)],
+    ("Site Engineer", "Site Engineer"): [("Site", "Site", SA), ("Engineer", "Engineer", SA)],
+    ("HR Manager", "Human Resources Manager"): [("HR", "Human Resources", AB), ("Manager", "Manager", SA)],
+}
+
+
+def alignment(hint, jd_text):
+    return [{"hint": h, "jd": j, "relation": r} for h, j, r in TEST_ALIGNMENTS[(hint, jd_text)]]
+
+
+def _vague_restriction(it):
+    for sp in it.get("requirement_spans") or []:
+        for word in ("relevant", "related", "similar"):
+            if isinstance(sp, dict) and word in (sp.get("text") or "").split():
+                return {"line": sp["line"], "text": word, "kind": "vague"}
+    return None
+
 
 def with_match(raw, jd, analysis, job_id):
     """Test-only legacy fill for outputs written before the current contract (explicit values are kept):
@@ -92,14 +124,28 @@ def with_match(raw, jd, analysis, job_id):
             if basis == "total_experience" and "ambiguous_relevance" in (it.get("ambiguity") or []):
                 basis = "unspecified"
             it["relevance_basis"] = basis
+        if not hints and "restrictions" not in it and "relevance_basis" in it:
+            # pre-s1-5 outputs: relevance_basis + JD targets + setting -> typed restrictions
+            basis = it.pop("relevance_basis")
+            rs = [{"line": t["line"], "text": t["text"], "kind": t.get("type")}
+                  for t in it.pop("targets", None) or [] if isinstance(t, dict) and "line" in t]
+            st = it.pop("setting", None)
+            if isinstance(st, dict) and basis in ("targets", "sector"):
+                rs.append({"line": st["line"], "text": st["text"], "kind": "sector"})
+            if basis == "unspecified" and _vague_restriction(it):
+                rs.append(_vague_restriction(it))
+            it["restrictions"] = rs
         req = [j.span_on_line(sp.get("line"), sp.get("text", "")) for sp in it.get("requirement_spans") or []
                if isinstance(sp, dict)]
         req = [r for r in req if r is not None]
-        for t in it["targets"]:
+        for t in it.get("targets") or []:
             if not isinstance(t, dict) or "hint" not in t or "match" in t or t.get("hint") not in hints:
                 continue
             if t.get("jd_span") is not None:
                 t["match"] = "equivalent"
+                key = (hints[t["hint"]], (t["jd_span"] or {}).get("text") if isinstance(t["jd_span"], dict) else None)
+                if "alignment" not in t and key in TEST_ALIGNMENTS:
+                    t["alignment"], t.setdefault("jd_extra", [])[:] = alignment(*key), []
             elif any(s.within(r) for s in j.find(hints[t["hint"]]) for r in req):
                 t["match"] = "none" if "ambiguous_relevance" in (it.get("ambiguity") or []) else "exact"
             else:
@@ -683,7 +729,8 @@ class TestS12EquivalenceMapping:
         assert art.audit["target_mappings"] == [{
             "target_id": "T1", "target_text": "Construction Project Manager", "mapped_text": "كمدير مشروع إنشائي",
             "line": 2, "start": art.targets[0].jd_span.start, "end": art.targets[0].jd_span.end, "used": True,
-            "match": "equivalent"}]
+            "match": "equivalent", "alignment": alignment("Construction Project Manager", "كمدير مشروع إنشائي"),
+            "jd_extra": []}]
         assert art.audit["review_required"] == ["T1"]
 
     def test_arabic_mapping_may_start_after_attached_letter(self):
@@ -884,7 +931,7 @@ class TestStatementAnchor:
         art = out.artifacts[0]
         assert out.status == "ok" and art.setting.text == "banking sector" and art.policy == "sector"
         assert codes(out) == ["n_not_in_jd"] and art.spec_status == "needs_confirmation"
-        assert art.audit["requirement_anchor"] == "statement"
+        assert art.audit["requirement_anchor"] == "restriction"          # s1-5: the sector restriction anchors
 
     @pytest.mark.parametrize("context", ["We are a leading bank", "Our projects include healthcare and education"])
     def test_context_lines_never_qualify(self, context):
@@ -962,17 +1009,18 @@ class TestStatementAnchor:
 
 class TestS12Versioning:
     def test_versions_and_fingerprint(self):
-        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-4", "1.3.0")
-        assert clf.prompt_fingerprint() == "faad01d30b5c"
-        assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9", "c9b570d82f4e")
+        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5", "1.4.0")
+        assert clf.prompt_fingerprint() == "a0ae492a27e4"
+        assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9", "c9b570d82f4e",
+                                                "faad01d30b5c")
 
-    def test_cache_identity_differs_from_s1_3(self, monkeypatch):
+    def test_cache_identity_differs_from_s1_4(self, monkeypatch):
         req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
-        k4 = clf.s1_cache_key(req)
-        monkeypatch.setattr(clf, "S1_PROMPT_VERSION", "s1-3")
-        monkeypatch.setattr(clf, "S1_VERSION", "1.2.0")
-        monkeypatch.setattr(clf, "prompt_fingerprint", lambda: "c9b570d82f4e")
-        assert clf.s1_cache_key(req) != k4
+        k5 = clf.s1_cache_key(req)
+        monkeypatch.setattr(clf, "S1_PROMPT_VERSION", "s1-4")
+        monkeypatch.setattr(clf, "S1_VERSION", "1.3.0")
+        monkeypatch.setattr(clf, "prompt_fingerprint", lambda: "faad01d30b5c")
+        assert clf.s1_cache_key(req) != k5
 
     def test_cache_identity_differs_from_s1_1(self, monkeypatch):
         req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
@@ -984,18 +1032,22 @@ class TestS12Versioning:
 
     def test_prompt_contract(self):
         p = clf.S1_SYSTEM_PROMPT
-        for frag in ("SUBSTANTIALLY THE SAME", "\"none\" is always acceptable",
-                     "complete phrase with all its qualifiers", "attached to the start of a word",
+        for frag in ("SUBSTANTIALLY THE SAME", "\"none\" is always acceptable", "attached to the start of a word",
                      "report \"ambiguous_relevance\"", "shortest complete verbatim phrase",
-                     "\"match\": \"exact\" | \"equivalent\" | \"none\"", "it is REQUIRED",
+                     "\"match\": \"exact\" | \"equivalent\" | \"none\"",
                      "absent, broader, narrower, adjacent, related, compatible, qualifier-changing, or uncertain",
-                     "Never return a policy", "RELEVANCE_BASIS", "\"total_experience\"", "\"unspecified\"",
-                     "Compare word by word", "an adjacent or related role or function",
-                     "she is a <target>", "Nothing in the input tells you the type",
-                     "A hint that differs from the JD wording is NOT a conflict"):
+                     "Never return a policy", "she is a <target>", "Nothing in the input tells you the type",
+                     "A hint that differs from the JD wording is NOT a conflict",
+                     # s1-5
+                     "account for EVERY word on both sides", "one pair per word of the hint",
+                     "\"jd_extra\": every other word of jd_span", "ANY material word means the JD phrase is NOT",
+                     "A hint word with no JD counterpart means the JD phrase drops it",
+                     "4 RESTRICTIONS", "EVERY phrase in the requirement statement that limits",
+                     "Return [] ONLY when the requirement asks for general", "silently broadens",
+                     "compound requirement"):
             assert frag in p, frag
         for gone in ("SHORTEST verbatim phrase", "MAY set jd_span", "display_text", "relevant role",
-                     "derive the policy from the types"):
+                     "RELEVANCE_BASIS", "\"total_experience\"", "relevance_basis"):
             assert gone not in p, gone
 
 
@@ -1017,6 +1069,7 @@ def _val(*args, **kw):
 
 LAB_LINE = "Minimum 4 years of experience as a Laboratory Technician"
 HR_LINE = "Minimum 4 years of experience as a Human Resources Manager"
+HR_ALIGN = {"alignment": alignment("HR Manager", "Human Resources Manager"), "jd_extra": []}
 
 
 class TestS13Match:
@@ -1041,7 +1094,7 @@ class TestS13Match:
         v = _val(["HR Manager"], HR_LINE, [{"hint": "T1", "type": "role", "match": "equivalent", "jd_span": None}])
         assert any("match equivalent requires jd_span" in e for e in v.errors)
         ok = _val(["HR Manager"], HR_LINE, [{"hint": "T1", "type": "role", "match": "equivalent",
-                                             "jd_span": {"line": 2, "text": "Human Resources Manager"}}])
+                                             "jd_span": {"line": 2, "text": "Human Resources Manager"}, **HR_ALIGN}])
         assert ok.ok
 
     def test_none_rules(self):
@@ -1063,7 +1116,8 @@ class TestS13Match:
     ])
     def test_provenance_unchanged_by_match(self, match, span, prov, codes_):
         hint, line = ("Laboratory Technician", LAB_LINE) if match == "exact" else ("HR Manager", HR_LINE)
-        jd, a, raw, *_ = _raw([hint], line, [{"hint": "T1", "type": "role", "match": match, "jd_span": span}])
+        extra = HR_ALIGN if match == "equivalent" else {}
+        jd, a, raw, *_ = _raw([hint], line, [{"hint": "T1", "type": "role", "match": match, "jd_span": span, **extra}])
         client = FakeClient(raw)
         out = run(clf.classify_job("J1", jd, a, client=client))
         art = out.artifacts[0]
@@ -1082,12 +1136,14 @@ class TestS13Match:
 
     def test_repair_note_is_scoped(self):
         note = clf.repair_note(["x"])
-        assert "ONLY the fields and targets named in these errors will be taken" in note
+        assert "ONLY the fields, targets and restrictions named in these errors will be taken" in note
+        assert "Never drop a restriction" in note
         assert "Never return a policy" in note and "mixed" not in note
 
     def test_match_survives_cache(self):
         jd, a, raw, *_ = _raw(["HR Manager"], HR_LINE, [{"hint": "T1", "type": "role", "match": "equivalent",
-                                                          "jd_span": {"line": 2, "text": "Human Resources Manager"}}])
+                                                          "jd_span": {"line": 2, "text": "Human Resources Manager"},
+                                                          **HR_ALIGN}])
         cache = clf.InMemoryS1Cache()
         run(clf.classify_job("J1", jd, a, client=FakeClient(raw), cache=cache))
         again = run(clf.classify_job("J1", jd, a, client=FakeClient(), cache=cache))
@@ -1116,11 +1172,10 @@ MIXED_JD = ["Requirements", "- " + MIXED_LINE + "."]
 
 
 def _mixed_item(cid, **over):
-    it = {"criterion_id": cid, "relevance_basis": "targets",
-          "requirement_spans": [{"line": 2, "text": MIXED_LINE}],
-          "targets": [{"line": 2, "text": "Payroll Officer", "type": "role"},
-                      {"line": 2, "text": "payroll administration", "type": "function"}],
-          "setting": None, "duration": "D1", "ambiguity": [], "note": "n"}
+    it = {"criterion_id": cid, "requirement_spans": [{"line": 2, "text": MIXED_LINE}],
+          "restrictions": [{"line": 2, "text": "Payroll Officer", "kind": "role"},
+                           {"line": 2, "text": "payroll administration", "kind": "function"}],
+          "duration": "D1", "ambiguity": [], "note": "n"}
     it.update(over)
     return it
 
@@ -1141,56 +1196,71 @@ class TestS14PolicyDerivation:
         assert art.policy == policy and art.audit["policy_derivation"] == "from_types"
         assert art.audit["ai"]["relevance_basis"] is None
 
-    def test_hintless_targets_basis_mixed(self):
+    def test_restrictions_role_and_function_become_targets(self):
         a, jd, (c,) = _job([], 3, MIXED_JD)
         _, out = _run_raw(jd, a, _resp(_mixed_item(c.criterion_id)))
         art = out.artifacts[0]
         assert out.meta["calls"] == 1 and art.spec_status == "resolved" and art.policy == "mixed"
         assert (art.audit["policy_derivation"], art.audit["ai"]["relevance_basis"]) == ("from_types", "targets")
-        assert [(t.text, t.type) for t in art.targets] == [("Payroll Officer", "role"),
-                                                           ("payroll administration", "function")]
+        assert [(t.target_id, t.text, t.type, t.provenance) for t in art.targets] == [
+            ("J1", "Payroll Officer", "role", "jd_asserted"), ("J2", "payroll administration", "function",
+                                                               "jd_asserted")]
+        assert art.audit["review_required"] == ["J1", "J2"]
+        assert art.audit["restrictions"] == [{"line": 2, "text": "Payroll Officer", "kind": "role"},
+                                             {"line": 2, "text": "payroll administration", "kind": "function"}]
 
-    @pytest.mark.parametrize("basis, setting, policy, status, codes_", [
-        ("sector", {"line": 2, "text": "telecom sector"}, "sector", "resolved", []),
-        ("total_experience", None, "pure_duration", "resolved", []),
-        ("unspecified", None, "pure_duration", "needs_confirmation", ["ambiguous_relevance"]),
+    @pytest.mark.parametrize("line, restr, policy, basis, status, codes_, setting", [
+        ("3-5 years of experience in procurement", [("procurement", "function")], "functional", "targets",
+         "resolved", [], None),
+        ("Minimum 3 years of experience in the telecom sector", [("telecom sector", "sector")], "sector", "sector",
+         "resolved", [], "telecom sector"),
+        ("Minimum 3 years of professional experience", [], "pure_duration", "total_experience", "resolved", [], None),
+        ("Minimum 3 years of relevant experience", [("relevant", "vague")], "pure_duration", "unspecified",
+         "needs_confirmation", ["ambiguous_relevance"], None),
+        ("Minimum 3 years as a Data Analyst in the telecom sector",
+         [("Data Analyst", "role"), ("telecom sector", "sector")], "explicit_role", "targets", "resolved", [],
+         "telecom sector"),
+        ("Minimum 3 years of relevant experience as a Data Analyst", [("relevant", "vague"), ("Data Analyst", "role")],
+         "explicit_role", "targets", "resolved", [], None),
     ])
-    def test_hintless_bases(self, basis, setting, policy, status, codes_):
-        line = {"sector": "Minimum 3 years of experience in the telecom sector",
-                "total_experience": "Minimum 3 years of professional experience",
-                "unspecified": "Minimum 3 years of relevant experience"}[basis]
+    def test_restriction_derivation(self, line, restr, policy, basis, status, codes_, setting):
         a, jd, (c,) = _job([], 3, ["Requirements", "- " + line + "."])
-        item = {"criterion_id": c.criterion_id, "relevance_basis": basis,
-                "requirement_spans": [{"line": 2, "text": line}], "targets": [], "setting": setting,
+        item = {"criterion_id": c.criterion_id, "requirement_spans": [{"line": 2, "text": line}],
+                "restrictions": [{"line": 2, "text": t, "kind": k} for t, k in restr],
                 "duration": "D1", "ambiguity": [], "note": "n"}
         _, out = _run_raw(jd, a, _resp(item))
         art = out.artifacts[0]
-        assert (art.policy, art.spec_status, [r.code for r in art.reasons]) == (policy, status, codes_)
-        assert art.audit["policy_derivation"] == "relevance_basis"
+        assert (art.policy, art.audit["ai"]["relevance_basis"], art.spec_status, [r.code for r in art.reasons]) == (
+            policy, basis, status, codes_)
+        assert (art.setting.text if art.setting else None) == setting
         if basis == "unspecified":
             assert art.reasons[0].field == "relevance_basis"
             with pytest.raises(asm.S1ViewError):
                 asm.s2_views(art)                        # never a trusted pure-duration requirement
 
-    def test_unspecified_with_reported_ambiguity_is_not_duplicated(self):
-        line = "Minimum 3 years of relevant experience"
+    def test_total_experience_is_never_a_model_claim(self):
+        # an s1-4 style relevance_basis claim is ignored; an omitted restriction list is an error, not "general"
+        line = "Minimum 3 years of experience in procurement"
         a, jd, (c,) = _job([], 3, ["Requirements", "- " + line + "."])
-        item = {"criterion_id": c.criterion_id, "relevance_basis": "unspecified",
-                "requirement_spans": [{"line": 2, "text": line}], "targets": [], "setting": None,
-                "duration": "D1", "ambiguity": ["ambiguous_relevance"], "note": "n"}
-        _, out = _run_raw(jd, a, _resp(item))
-        assert [r.code for r in out.artifacts[0].reasons] == ["ambiguous_relevance"]
+        claim = {"criterion_id": c.criterion_id, "relevance_basis": "total_experience",
+                 "requirement_spans": [{"line": 2, "text": line}], "duration": "D1", "ambiguity": [], "note": "n"}
+        _, out = _run_raw(jd, a, _resp(claim), _resp(claim))
+        assert out.artifacts[0].spec_status == "failed_validation"
+        assert any("restrictions must be a list" in e for e in out.validation["errors"])
 
     @pytest.mark.parametrize("over, frag", [
-        ({"relevance_basis": None}, "relevance_basis must be one of"),
-        ({"relevance_basis": "targets", "targets": []}, "relevance_basis targets needs at least one target"),
-        ({"relevance_basis": "sector"}, "relevance_basis sector takes no targets"),
-        ({"relevance_basis": "sector", "targets": []}, "relevance_basis sector needs a setting span"),
-        ({"relevance_basis": "total_experience", "targets": [], "setting": {"line": 2, "text": "Payroll Officer"}},
-         "relevance_basis total_experience takes no setting"),
-        ({"relevance_basis": "unspecified"}, "relevance_basis unspecified takes no targets"),
+        ({"restrictions": None}, "restrictions must be a list"),
+        ({"restrictions": [{"line": 2, "text": "Payroll Officer", "kind": "person"}]}, "kind"),
+        ({"restrictions": [{"line": 2, "text": "Payroll Offic", "kind": "role"}]}, "not verbatim"),
+        ({"restrictions": [{"line": 1, "text": "Requirements", "kind": "function"}]}, "not inside"),
+        ({"restrictions": [{"line": 2, "text": "3 years as a Payroll Officer", "kind": "role"}]},
+         "must not include the duration"),
+        ({"targets": [{"line": 2, "text": "Payroll Officer", "type": "role"}]}, "return restrictions, not targets"),
+        ({"setting": {"line": 2, "text": "payroll administration"}}, "setting comes from a sector restriction"),
+        ({"restrictions": [{"line": 2, "text": "Payroll Officer", "kind": "sector"},
+                           {"line": 2, "text": "payroll administration", "kind": "sector"}]}, "one sector restriction"),
     ])
-    def test_basis_combinations_are_strict(self, over, frag):
+    def test_restriction_structure_is_strict(self, over, frag):
         a, jd, crits = _job([], 3, MIXED_JD)
         j = JDText(jd)
         v = validate_response(_resp(_mixed_item(crits[0].criterion_id, **over)), j, crits,
@@ -1225,7 +1295,7 @@ class TestS14ScopedRepair:
     def test_l2_destructive_repair_is_discarded(self):
         a, jd, (c,) = _job([], 3, MIXED_JD)
         main = _mixed_item(c.criterion_id, duration="D9")                       # only the duration is wrong
-        destructive = _mixed_item(c.criterion_id, relevance_basis="total_experience", targets=[], duration="D1")
+        destructive = _mixed_item(c.criterion_id, restrictions=[], duration="D1")     # tries "total experience"
         client, out = _run_raw(jd, a, _resp(main), _resp(destructive))
         art = out.artifacts[0]
         assert out.meta["outcome"] == "repaired" and art.spec_status == "resolved"
@@ -1238,7 +1308,8 @@ class TestS14ScopedRepair:
     ARABIC = ["المتطلبات", "- خبرة 5 سنوات كمدير مشروع إنشائي."]
 
     def _b1_item(self, cid, **t):
-        tgt = {"hint": "T1", "type": "role", "match": "equivalent", "jd_span": {"line": 2, "text": "كمدير مشروع إنشائي"}}
+        tgt = {"hint": "T1", "type": "role", "match": "equivalent", "jd_span": {"line": 2, "text": "كمدير مشروع إنشائي"},
+               "alignment": alignment("Construction Project Manager", "كمدير مشروع إنشائي"), "jd_extra": []}
         tgt.update(t)
         return {"criterion_id": cid, "requirement_spans": [{"line": 2, "text": "خبرة 5 سنوات كمدير مشروع إنشائي"}],
                 "targets": [tgt], "setting": None, "duration": "D1", "ambiguity": [], "note": "n"}
@@ -1252,13 +1323,15 @@ class TestS14ScopedRepair:
         art = out.artifacts[0]
         assert art.spec_status == "failed_validation"                              # not a silent original_ai
         assert any("match equivalent requires jd_span" in e for e in out.validation["repair_errors"])
-        assert {x["field"] for x in out.meta["repair_merge"]["taken"]} == {"target:T1:jd_span"}
+        assert {x["field"] for x in out.meta["repair_merge"]["taken"]} == {
+            "target:T1:jd_span", "target:T1:alignment", "target:T1:jd_extra"}                # never match/type
 
     def test_b1_span_error_fixed_keeps_semantics(self):
         a, jd, (c,) = _job(["Construction Project Manager"], 5, self.ARABIC)
         main = self._b1_item(c.criterion_id, jd_span={"line": 2, "text": "مدير مشروع انشائي"})
         fixed_but_retyped = self._b1_item(c.criterion_id, type="function",
-                                          jd_span={"line": 2, "text": "مدير مشروع إنشائي"})
+                                          jd_span={"line": 2, "text": "مدير مشروع إنشائي"},
+                                          alignment=alignment("Construction Project Manager", "مدير مشروع إنشائي"))
         _, out = _run_raw(jd, a, _resp(main), _resp(fixed_but_retyped))
         art = out.artifacts[0]
         assert art.spec_status == "resolved" and [(t.type, t.provenance) for t in art.targets] == [
@@ -1298,17 +1371,49 @@ class TestS14ScopedRepair:
         assert by[c2.criterion_id].targets[0].type == "role"                       # failed field repaired
         assert out.meta["repair_merge"]["discarded_changes"] == 1
 
-    def test_hintless_valid_targets_cannot_be_dropped(self):
+    def test_valid_restrictions_cannot_be_dropped(self):
         a, jd, (c,) = _job([], 3, MIXED_JD)
-        bad_f = [{"line": 2, "text": "Payroll Officer", "type": "role"},
-                 {"line": 2, "text": "payroll admin", "type": "function"}]           # J1 not whole words
-        main = _mixed_item(c.criterion_id, targets=bad_f)
-        dropped = _mixed_item(c.criterion_id, relevance_basis="total_experience", targets=[])
-        _, out = _run_raw(jd, a, _resp(main), _resp(dropped))
+        bad = [{"line": 2, "text": "Payroll Officer", "kind": "role"},
+               {"line": 2, "text": "payroll admin", "kind": "function"}]               # R1 not whole words
+        main = _mixed_item(c.criterion_id, restrictions=bad)
+        _, out = _run_raw(jd, a, _resp(main), _resp(_mixed_item(c.criterion_id, restrictions=[])))
+        assert out.artifacts[0].spec_status == "failed_validation"              # no fallback to total experience
+        assert out.meta["repair_merge"]["kept_main_restrictions"] == [c.criterion_id]
+        only_role = [{"line": 2, "text": "Payroll Officer", "kind": "role"}]        # drops the function dimension
+        _, out = _run_raw(jd, a, _resp(main), _resp(_mixed_item(c.criterion_id, restrictions=only_role)))
         assert out.artifacts[0].spec_status == "failed_validation"
-        assert out.meta["repair_merge"]["kept_main_targets"] == [c.criterion_id]
         _, ok = _run_raw(jd, a, _resp(main), _resp(_mixed_item(c.criterion_id)))
         assert ok.artifacts[0].spec_status == "resolved" and ok.artifacts[0].policy == "mixed"
+
+    def test_malformed_restriction_kind_can_be_repaired_but_not_dropped(self):
+        a, jd, (c,) = _job([], 3, MIXED_JD)
+        bad = [{"line": 2, "text": "Payroll Officer", "kind": "role"},
+               {"line": 2, "text": "payroll administration", "kind": "activity"}]      # R1 kind not allowed
+        main = _mixed_item(c.criterion_id, restrictions=bad)
+        _, ok = _run_raw(jd, a, _resp(main), _resp(_mixed_item(c.criterion_id)))
+        assert ok.artifacts[0].spec_status == "resolved" and ok.artifacts[0].policy == "mixed"
+        only_bad = _mixed_item(c.criterion_id, restrictions=[{"line": 2, "text": "Payroll Officer", "kind": "x"}])
+        _, out = _run_raw(jd, a, _resp(only_bad), _resp(_mixed_item(c.criterion_id, restrictions=[])))
+        assert out.artifacts[0].spec_status == "failed_validation"              # never repaired into []
+        assert out.meta["repair_merge"]["kept_main_restrictions"] == [c.criterion_id]
+
+    def test_duration_overlap_scopes_the_raw_restriction(self):
+        a, jd, (c,) = _job([], 3, MIXED_JD)
+        rs = [{"line": 2, "text": "Payroll Officer", "kind": "x"},                     # R0 malformed (skipped)
+              {"line": 2, "text": MIXED_LINE, "kind": "role"}]                         # R1 includes the duration
+        j = JDText(jd)
+        res = validate_response(_resp(_mixed_item(c.criterion_id, restrictions=rs)), j, [c],
+                                {d: (ln, m) for d, ln, m in j.durations()})
+        scopes = {sc for e in res.scoped for sc in e.scopes if sc.startswith("restriction:")}
+        assert scopes == {"restriction:R0", "restriction:R1"}
+
+    def test_restrictions_untouched_when_other_field_fails(self):
+        a, jd, (c,) = _job([], 3, MIXED_JD)
+        main = _mixed_item(c.criterion_id, ambiguity=["unsure"])
+        repair = _mixed_item(c.criterion_id, restrictions=[{"line": 2, "text": "Payroll Officer", "kind": "role"}])
+        _, out = _run_raw(jd, a, _resp(main), _resp(repair))
+        art = out.artifacts[0]
+        assert art.spec_status == "resolved" and art.policy == "mixed" and len(art.targets) == 2
 
     def test_extra_target_scope_keeps_hint_targets(self):
         cid = job31_cid()
@@ -1381,6 +1486,223 @@ class TestS14ArabicBoundary:
         art = out.artifacts[0]
         assert art.spec_status == "resolved" and art.targets[0].provenance == "jd_verified"
         assert art.targets[0].jd_span.text == "مدير مشروع"
+
+
+# ── s1-5: alignment coverage and compound requirements ───────────────────────────────────────────────
+
+def _eqv(hint, line, jd_span, pairs, extra=(), years=5, ar=False):
+    """One hint criterion with an "equivalent" mapping and an explicit alignment. Returns (validation, jd, a, raw)."""
+    lines = ["المتطلبات" if ar else "Requirements", "- " + line + "."]
+    a, jd, (c,) = _job([hint], years, lines)
+    item = {"criterion_id": c.criterion_id, "requirement_spans": [{"line": 2, "text": line}],
+            "targets": [{"hint": "T1", "type": "role", "match": "equivalent", "jd_span": {"line": 2, "text": jd_span},
+                         "alignment": [{"hint": h, "jd": j, "relation": r} for h, j, r in pairs],
+                         "jd_extra": [{"text": t, "kind": k} for t, k in extra]}],
+            "setting": None, "duration": "D1", "ambiguity": [], "note": "n"}
+    raw = _resp(item)
+    j = JDText(jd)
+    v = validate_response(raw, j, [c], {d: (ln, m) for d, ln, m in j.durations()})
+    return v, jd, a, raw
+
+
+def errs_with(v, frag):
+    return not v.ok and any(frag in e for e in v.errors)
+
+
+class TestS15AlignmentRejects:
+    """The held-out and main false positives cannot pass the structural coverage contract."""
+
+    def test_c2_dropped_construction(self):
+        args = ("Construction Project Manager", "خبرة 5 سنوات كمدير مشروع", "كمدير مشروع")
+        v, *_ = _eqv(*args, [("Project", "مشروع", TR), ("Manager", "كمدير", TR)], ar=True)
+        assert errs_with(v, "unpaired ['construction']")
+        v, *_ = _eqv(*args, [("Construction Project", "مشروع", TR), ("Manager", "كمدير", TR)], ar=True)
+        assert errs_with(v, "a pair maps ONE target word")                            # no lumping
+        v, *_ = _eqv(*args, [("Construction", "مشروع", TR), ("Project", "مشروع", TR), ("Manager", "كمدير", TR)],
+                     ar=True)
+        assert errs_with(v, "used more than once")                                    # no JD word reuse
+
+    def test_h1_added_enterprise_systems(self):
+        args = ("software implementation", "Minimum 3 years of experience implementing enterprise software systems",
+                "implementing enterprise software systems")
+        honest = [("software", "software", SA), ("implementation", "implementing", FO)]
+        v, *_ = _eqv(*args, honest, [("enterprise", "material"), ("systems", "material")], years=3)
+        assert errs_with(v, "adds the material word 'enterprise'")
+        v, *_ = _eqv(*args, honest, years=3)
+        assert errs_with(v, "unaccounted ['enterprise', 'systems']")                 # cannot silently disappear
+        v, *_ = _eqv(*args, [("software", "software systems", SA), ("implementation", "implementing enterprise", FO)],
+                     years=3)
+        assert errs_with(v, "relation same needs the identical word") and errs_with(v, "relation form is one word")
+
+    def test_ho03_dropped_equine(self):
+        v, *_ = _eqv("Equine Veterinarian", "خبرة 3 سنوات كطبيب بيطري", "كطبيب بيطري",
+                     [("Veterinarian", "كطبيب بيطري", TR)], years=3, ar=True)
+        assert errs_with(v, "unpaired ['equine']")
+
+    def test_ho05_added_ecommerce(self):
+        line, span = "خبرة 4 سنوات في تطوير مواقع التجارة الإلكترونية", "تطوير مواقع التجارة الإلكترونية"
+        v, *_ = _eqv("web development", line, span, [("web", "مواقع", TR), ("development", "تطوير", TR)],
+                     [("التجارة", "material"), ("الإلكترونية", "material")], years=4, ar=True)
+        assert errs_with(v, "adds the material word")
+        v, *_ = _eqv("web development", line, span, [("web", "مواقع", TR), ("development", "تطوير", TR)],
+                     years=4, ar=True)
+        assert errs_with(v, "unaccounted")
+
+    def test_ho07_added_corporate(self):
+        line = "Minimum 3 years of experience planning corporate events"
+        v, *_ = _eqv("event planning", line, "planning corporate events",
+                     [("event", "events", FO), ("planning", "planning", SA)], [("corporate", "material")], years=3)
+        assert errs_with(v, "adds the material word 'corporate'")
+        v, *_ = _eqv("event planning", line, "planning corporate events",
+                     [("event", "corporate events", FO), ("planning", "planning", SA)], years=3)
+        assert errs_with(v, "relation form is one word to one word")
+
+    def test_ho11_dropped_commercial(self):
+        line = "Minimum 5 years of experience as a Pilot"
+        v, *_ = _eqv("Commercial Pilot", line, "Pilot", [("Pilot", "Pilot", SA)])
+        assert errs_with(v, "unpaired ['commercial']")
+        v, *_ = _eqv("Commercial Pilot", line, "Pilot", [("Commercial Pilot", "Pilot", SA)])
+        assert errs_with(v, "a pair maps ONE target word")
+
+    def test_rejected_equivalent_can_only_end_unconfirmed(self):
+        # material extra -> the repair may withdraw to none -> original_ai, never a resolved jd_asserted
+        line = "Minimum 3 years of experience planning corporate events"
+        v, jd, a, raw = _eqv("event planning", line, "planning corporate events",
+                             [("event", "events", FO), ("planning", "planning", SA)], [("corporate", "material")],
+                             years=3)
+        withdrawn = json.loads(raw)
+        withdrawn["criteria"][0]["targets"][0].update(match="none", jd_span=None, alignment=None, jd_extra=None)
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, json.dumps(withdrawn))))
+        art = out.artifacts[0]
+        assert [t.provenance for t in art.targets] == ["original_ai"] and art.spec_status == "needs_confirmation"
+        same_again = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, raw)))
+        assert same_again.artifacts[0].spec_status == "failed_validation"
+
+    def test_alignment_copy_error_cannot_flip_match(self):
+        line = "Minimum 5 years of experience as a Human Resources Manager"
+        v, jd, a, raw = _eqv("HR Manager", line, "Human Resources Manager",
+                             [("HR", "Human Resorces", AB), ("Manager", "Manager", SA)])
+        assert errs_with(v, "is not whole word(s) of the jd_span")
+        gave_up = json.loads(raw)
+        gave_up["criteria"][0]["targets"][0].update(match="none", jd_span=None)
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, json.dumps(gave_up))))
+        assert out.artifacts[0].spec_status == "failed_validation"                     # match kept: not silent
+
+
+class TestS15AlignmentAccepts:
+    def _ok(self, *args, **kw):
+        v, jd, a, raw = _eqv(*args, **kw)
+        assert v.ok, v.errors
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw)))
+        art = out.artifacts[0]
+        assert [t.provenance for t in art.targets] == ["jd_asserted"] and art.spec_status == "resolved"
+        return art
+
+    def test_translation_with_attached_particle(self):
+        art = self._ok("Construction Project Manager", "خبرة 5 سنوات كمدير مشروع إنشائي", "كمدير مشروع إنشائي",
+                       [("Construction", "إنشائي", TR), ("Project", "مشروع", TR), ("Manager", "كمدير", TR)], ar=True)
+        assert art.audit["target_mappings"][0]["alignment"][2] == {"hint": "Manager", "jd": "كمدير",
+                                                                   "relation": "translation"}
+        self._ok("Construction Project Manager", "خبرة 5 سنوات كمدير مشروع إنشائي", "مدير مشروع إنشائي",
+                 [("Construction", "إنشائي", TR), ("Project", "مشروع", TR), ("Manager", "مدير", TR)], ar=True)
+
+    def test_translation_one_word_to_several(self):
+        self._ok("Veterinarian", "خبرة 3 سنوات كطبيب بيطري", "كطبيب بيطري",
+                 [("Veterinarian", "كطبيب بيطري", TR)], years=3, ar=True)
+
+    def test_multiword_concept_translated_word_by_word(self):
+        self._ok("Human Resources Manager", "خبرة 5 سنوات مدير الموارد البشرية", "مدير الموارد البشرية",
+                 [("Human", "البشرية", TR), ("Resources", "الموارد", TR), ("Manager", "مدير", TR)], ar=True)
+
+    def test_grammatical_form_and_function_word(self):
+        self._ok("software implementation", "Minimum 3 years of experience implementing software",
+                 "implementing software", [("software", "software", SA), ("implementation", "implementing", FO)],
+                 years=3)
+        self._ok("database administration", "Minimum 4 years of experience in administration of databases",
+                 "administration of databases",
+                 [("database", "databases", FO), ("administration", "administration", SA)], [("of", "grammatical")],
+                 years=4)
+
+    @pytest.mark.parametrize("hint, line, span, pairs", [
+        ("PM", "Minimum 5 years as a Project Manager", "Project Manager", [("PM", "Project Manager", AB)]),
+        ("UX Designer", "Minimum 5 years as a User Experience Designer", "User Experience Designer",
+         [("UX", "User Experience", AB), ("Designer", "Designer", SA)]),
+        ("Human Resources Manager", "Minimum 5 years as an HR Manager", "HR Manager",
+         [("Human Resources", "HR", AB), ("Manager", "Manager", SA)]),
+        ("PM", "Minimum 5 years as a P.M.", "P.M.", [("PM", "P.M.", AB)]),
+    ])
+    def test_abbreviations(self, hint, line, span, pairs):
+        self._ok(hint, line, span, pairs)
+
+    def test_abbreviation_is_structural_not_free(self):
+        v, *_ = _eqv("web developer", "Minimum 5 years as a website engineering builder developer",
+                     "website engineering builder developer",
+                     [("web", "website engineering builder", AB), ("developer", "developer", SA)])
+        assert errs_with(v, "abbreviation needs an all-capitals acronym")
+        v, *_ = _eqv("software implementation", "Minimum 5 years of experience implementing software",
+                     "implementing software", [("software", "software", SA), ("implementation", "implementing", TR)])
+        assert errs_with(v, "relation translation needs another language")
+
+
+class TestS15Compound:
+    R1_LINE = "7 years of overall experience, including at least 3 years as a Project Manager"
+
+    def _r1(self, duration="D2", **over):
+        a, jd, (c,) = _job(["Project Manager"], 3, ["Requirements", "- " + self.R1_LINE + "."])
+        item = {"criterion_id": c.criterion_id, "requirement_spans": [{"line": 2, "text": self.R1_LINE}],
+                "targets": [{"hint": "T1", "type": "role", "match": "exact", "jd_span": None}],
+                "setting": None, "duration": duration, "ambiguity": [], "note": "n"}
+        item.update(over)
+        _, out = _run_raw(jd, a, _resp(item))
+        return out.artifacts[0]
+
+    @pytest.mark.parametrize("duration", ["D1", "D2", None])
+    def test_two_thresholds_are_compound(self, duration):
+        art = self._r1(duration)
+        assert art.spec_status == "needs_confirmation" and "compound_requirement" in [r.code for r in art.reasons]
+        assert art.required_years is None                                          # never collapsed to one N
+        comp = art.audit["compound"]
+        assert [(d["text"], d["years"]) for d in comp["durations"]] == [("7 years", 7.0), ("3 years", 3.0)]
+        assert comp["targets"] == [{"target_id": "T1", "text": "Project Manager", "type": "role"}]
+        assert comp["selected_duration"] == duration
+        for require in (True, False):
+            with pytest.raises(asm.S1ViewError, match="compound"):
+                asm.s2_views(art, require_resolved=require)
+
+    def test_compound_in_hintless_criterion_keeps_restrictions(self):
+        line = "5 years of experience, including 2 years in procurement"
+        a, jd, (c,) = _job([], 5, ["Requirements", "- " + line + "."])
+        item = {"criterion_id": c.criterion_id, "requirement_spans": [{"line": 2, "text": line}],
+                "restrictions": [{"line": 2, "text": "procurement", "kind": "function"}],
+                "duration": "D1", "ambiguity": [], "note": "n"}
+        _, out = _run_raw(jd, a, _resp(item))
+        art = out.artifacts[0]
+        assert "compound_requirement" in [r.code for r in art.reasons] and art.required_years is None
+        assert art.audit["compound"]["restrictions"] == [{"line": 2, "text": "procurement", "kind": "function"}]
+
+    def test_single_threshold_unaffected(self):
+        _, out = classify(JOB31_JD, JOB31_ANALYSIS, ai(job31_ok(job31_cid())), job_id="JOB-2026-0031")
+        art = out.artifacts[0]
+        assert art.spec_status == "resolved" and "compound" not in art.audit and art.required_years.value == 5
+        line = "3-5 years of experience in procurement"                              # a range is one threshold
+        a, jd, (c,) = _job([], 3, ["Requirements", "- " + line + "."])
+        item = {"criterion_id": c.criterion_id, "requirement_spans": [{"line": 2, "text": line}],
+                "restrictions": [{"line": 2, "text": "procurement", "kind": "function"}],
+                "duration": "D1", "ambiguity": [], "note": "n"}
+        _, out = _run_raw(jd, a, _resp(item))
+        assert out.artifacts[0].spec_status == "resolved"
+
+    def test_conflicting_versions_are_not_compound(self):
+        lines = ["Summary", "We are hiring a Project Manager with at least 5 years of experience.", "",
+                 "Requirements", "- Minimum 8 years of experience as a Project Manager."]
+        a, jd, (c,) = _job(["Project Manager"], 5, lines)
+        item = {"criterion_id": c.criterion_id,
+                "requirement_spans": [{"line": 2, "text": lines[1][:-1]}, {"line": 5, "text": lines[4][2:-1]}],
+                "targets": [{"hint": "T1", "type": "role", "match": "exact", "jd_span": None}],
+                "setting": None, "duration": "D1", "ambiguity": ["conflicting_requirements"], "note": "n"}
+        _, out = _run_raw(jd, a, _resp(item))
+        codes_ = [r.code for r in out.artifacts[0].reasons]
+        assert "conflicting_requirements" in codes_ and "compound_requirement" not in codes_
 
 
 class TestStatusTaxonomy:
@@ -1479,8 +1801,8 @@ class TestValidator:
         ({"duration": "D7"}, "duration must be null or one of"),
         ({"duration": 5}, "duration must be null or one of"),
         ({"ambiguity": ["unsure"]}, "ambiguity must be"),
-        ({"relevance_basis": "sector"}, "relevance_basis applies only to criteria without target_hints"),
-        ({"relevance_basis": "total_experience"}, "relevance_basis applies only to criteria without target_hints"),
+        ({"restrictions": [{"line": 6, "text": "Assistant Project Manager", "kind": "role"}]},
+         "restrictions apply only to criteria without target_hints"),
         ({"setting": "construction"}, "setting: must be an object"),
     ])
     def test_rejections(self, over, frag):

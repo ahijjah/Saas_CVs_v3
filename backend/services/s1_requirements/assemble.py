@@ -37,7 +37,8 @@ from services.s1_requirements.criteria import KIND_ROLE_ONLY, KIND_YEARS_AND_ROL
 from services.s1_requirements.durations import DurationMatch
 from services.s1_requirements.jd_text import JDText
 from services.s1_requirements.schema import (
-    AMB_AMBIGUOUS_RELEVANCE, AMB_REQUIREMENT_NOT_IN_JD, BASIS_UNSPECIFIED, BIZ_N_MISMATCH, BIZ_N_NOT_IN_JD, BIZ_TARGET_NOT_IN_JD, FIELD_MIN_YEARS,
+    AMB_AMBIGUOUS_RELEVANCE, AMB_CONFLICTING_REQUIREMENTS, AMB_REQUIREMENT_NOT_IN_JD, BASIS_UNSPECIFIED,
+    BIZ_COMPOUND_REQUIREMENT, BIZ_N_MISMATCH, BIZ_N_NOT_IN_JD, BIZ_TARGET_NOT_IN_JD, FIELD_MIN_YEARS,
     FIELD_ROLES, POLICY_EXPLICIT_ROLE, POLICY_FUNCTIONAL, POLICY_MIXED, POLICY_PURE_DURATION, POLICY_SECTOR,
     PROV_JD_ASSERTED, PROV_JD_VERIFIED, PROV_ORIGINAL_AI, PROV_S1_INTERPRETED, RECRUITER_FIELDS,
     RECRUITER_PROVENANCES, REASON_KINDS, RETRYABLE_REASONS, STATUS_FAILED_TECHNICAL,
@@ -139,9 +140,21 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
         targets.append(t)
         tprov[t.target_id] = t.provenance
 
+    # s1-5 compound detection (deterministic, parser-based): >= 2 distinct duration thresholds inside this
+    # criterion's requirement statement (e.g. "7 years overall, including 3 years as X") cannot be one N.
+    # Unless the AI reports them as conflicting versions, flag compound_requirement: needs_confirmation, no S2
+    # view, N not collapsed; every component is kept in the audit (future: components[] + AND combiner).
+    in_req = [{"id": did, "line": ln, "text": m.text, "years": m.years, "bound": m.bound}
+              for did, (ln, m) in sorted(durations.items(), key=lambda kv: int(kv[0][1:]))
+              if any(Span(ln, m.start, m.end, m.text).within(r) for r in req)]
+    compound = len(in_req) >= 2 and AMB_CONFLICTING_REQUIREMENTS not in pc.ambiguity
+    if compound:
+        reasons.append(Reason(BIZ_COMPOUND_REQUIREMENT, "required_years",
+                              " + ".join(d["text"] for d in in_req)))
+
     # N — parser value only; the AI just names the span
     ry = None
-    if c.has_years:
+    if c.has_years and not compound:
         hint = float(c.min_years)
         line_m = durations.get(pc.duration_id) if pc.duration_id else None
         span = parsed = None
@@ -188,13 +201,11 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
         "requirement_text": rt_prov,
         "display_text": gov.get("targets") or gov.get("required_years") or PROV_ORIGINAL_AI,
     }
-    in_req = [{"id": did, "line": ln, "text": m.text, "years": m.years, "bound": m.bound}
-              for did, (ln, m) in sorted(durations.items(), key=lambda kv: int(kv[0][1:]))
-              if any(Span(ln, m.start, m.end, m.text).within(r) for r in req)]
     # audit only (no effect on status, provenance or views): every AI mapping and every jd_asserted target
     target_mappings = [
         {"target_id": t.target_id, "target_text": pt.text, "mapped_text": pt.span.text, "line": pt.span.line,
-         "start": pt.span.start, "end": pt.span.end, "used": t.provenance == PROV_JD_ASSERTED, "match": pt.match}
+         "start": pt.span.start, "end": pt.span.end, "used": t.provenance == PROV_JD_ASSERTED, "match": pt.match,
+         "alignment": [dict(x) for x in pt.alignment], "jd_extra": [dict(x) for x in pt.jd_extra]}
         for pt, t in zip(pc.targets, targets) if pt.hint_id and pt.span is not None]
     review_required = [t.target_id for t in targets if t.provenance == PROV_JD_ASSERTED]
     audit = {**_hint_audit(c, rf), "jd_sha256": jd.text_sha256, "duration_candidates_in_requirement": in_req,
@@ -203,11 +214,17 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
              "ai": {"duration": pc.duration_id, "ambiguity": list(pc.ambiguity),
                     "note": pc.note, "relevance_basis": pc.relevance_basis, "model_policy": pc.model_policy},
              "policy_derivation": pc.policy_derivation,
+             "restrictions": [{"line": r.span.line, "text": r.text, "kind": r.kind} for r in pc.restrictions],
              "call": run.get("call", {})}
+    if compound:
+        audit["compound"] = {"durations": in_req, "selected_duration": pc.duration_id,
+                             "targets": [{"target_id": t.target_id, "text": t.text, "type": t.type}
+                                         for t in targets],
+                             "restrictions": audit["restrictions"]}
     if pc.statement_anchored and not reasons and not gov:
-        # invariant: a model-declared statement alone never resolves a criterion
+        # invariant: a model-declared statement (or a lone restriction anchor) never resolves a criterion
         raise ValueError(f"criterion {c.criterion_id}: statement-anchored requirement cannot resolve")
-    audit["requirement_anchor"] = None if not req else "statement" if pc.statement_anchored else "evidence"
+    audit["requirement_anchor"] = None if not req else pc.anchor_kind
     status = STATUS_NEEDS_CONFIRMATION if reasons else STATUS_RESOLVED
     return S1Artifact(requirement_text=requirement_text, spec_status=status, policy=pc.policy,
                       targets=tuple(targets), setting=setting, required_years=ry, reasons=tuple(reasons),
@@ -234,6 +251,9 @@ def s2_views(art: S1Artifact, *, require_resolved: bool = True) -> list[Requirem
 
     sector: the setting span is the S2 target (targets=(setting,), setting=None)."""
     allowed = (STATUS_RESOLVED,) if require_resolved else (STATUS_RESOLVED, STATUS_NEEDS_CONFIRMATION)
+    if any(r.code == BIZ_COMPOUND_REQUIREMENT for r in art.reasons):
+        # one RequirementSpec has one N: a compound requirement has no faithful S2 view yet
+        raise S1ViewError(f"criterion {art.criterion_id}: compound requirement has no S2 view")
     if art.spec_status not in allowed:
         raise S1ViewError(f"criterion {art.criterion_id}: no S2 view for status {art.spec_status!r}")
     setting = art.setting.text if art.setting else None

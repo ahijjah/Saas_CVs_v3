@@ -1,6 +1,6 @@
 {
- "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants. s1-boundary-2: oracle hint targets gained the s1-3 'match' field (structural only; every 'expected' label is unchanged from s1-boundary-1). s1-boundary-3 (s1-4 contract): oracle answers no longer carry a model policy (policy is derived); hint-less cases carry relevance_basis; K2 (PM vs P.M.) is policy-sensitive (either mapping accepted, excluded from the jd_asserted precision gate); E3 accepts a defensive ambiguous_relevance. All other expectations unchanged.",
- "fixture_version": "s1-boundary-3",
+ "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants. s1-boundary-2: oracle hint targets gained the s1-3 'match' field (structural only; every 'expected' label is unchanged from s1-boundary-1). s1-boundary-3 (s1-4 contract): oracle answers no longer carry a model policy (policy is derived); hint-less cases carry relevance_basis; K2 (PM vs P.M.) is policy-sensitive (either mapping accepted, excluded from the jd_asserted precision gate); E3 accepts a defensive ambiguous_relevance. All other expectations unchanged. s1-boundary-4 (s1-5 contract): equivalent reference answers carry a word alignment; years-only cases carry typed restrictions instead of relevance_basis/targets/setting; M2 is anchored by its sector restriction (anchor 'restriction'); R1 is a compound requirement (two thresholds) and must be compound_requirement / needs_confirmation instead of a resolved single threshold. All other expectations unchanged.",
+ "fixture_version": "s1-boundary-4",
  "cases": [
   {
    "id": "A1",
@@ -84,7 +84,25 @@
       "jd_span": {
        "line": 2,
        "text": "كمدير مشروع إنشائي"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "Construction",
+        "jd": "إنشائي",
+        "relation": "translation"
+       },
+       {
+        "hint": "Project",
+        "jd": "مشروع",
+        "relation": "translation"
+       },
+       {
+        "hint": "Manager",
+        "jd": "كمدير",
+        "relation": "translation"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,
@@ -140,7 +158,20 @@
       "jd_span": {
        "line": 2,
        "text": "كمهندس موقع"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "Site",
+        "jd": "موقع",
+        "relation": "translation"
+       },
+       {
+        "hint": "Engineer",
+        "jd": "كمهندس",
+        "relation": "translation"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,
@@ -196,7 +227,15 @@
       "jd_span": {
        "line": 2,
        "text": "المشتريات"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "procurement",
+        "jd": "المشتريات",
+        "relation": "translation"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,
@@ -252,7 +291,15 @@
       "jd_span": {
        "line": 2,
        "text": "كمحاسب"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "Accountant",
+        "jd": "كمحاسب",
+        "relation": "translation"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,
@@ -751,7 +798,20 @@
       "jd_span": {
        "line": 2,
        "text": "implementing software"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "software",
+        "jd": "software",
+        "relation": "same"
+       },
+       {
+        "hint": "implementation",
+        "jd": "implementing",
+        "relation": "form"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,
@@ -807,7 +867,20 @@
       "jd_span": {
        "line": 2,
        "text": "administering databases"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "database",
+        "jd": "databases",
+        "relation": "form"
+       },
+       {
+        "hint": "administration",
+        "jd": "administering",
+        "relation": "form"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,
@@ -1132,7 +1205,15 @@
       "jd_span": {
        "line": 2,
        "text": "Project Manager"
-      }
+      },
+      "alignment": [
+       {
+        "hint": "PM",
+        "jd": "Project Manager",
+        "relation": "abbreviation"
+       }
+      ],
+      "jd_extra": []
      }
     ],
     "setting": null,
@@ -1306,29 +1387,27 @@
     "- At least 3 years as a Procurement Officer or in contract management."
    ],
    "oracle": {
-    "relevance_basis": "targets",
     "requirement_spans": [
      {
       "line": 2,
       "text": "At least 3 years as a Procurement Officer or in contract management"
      }
     ],
-    "targets": [
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer",
+    "restrictions": [
      {
       "line": 2,
       "text": "Procurement Officer",
-      "type": "role"
+      "kind": "role"
      },
      {
       "line": 2,
       "text": "contract management",
-      "type": "function"
+      "kind": "function"
      }
-    ],
-    "setting": null,
-    "duration": "3 years",
-    "ambiguity": [],
-    "note": "labelled reference answer"
+    ]
    },
    "expected": {
     "policy": "mixed",
@@ -1363,21 +1442,22 @@
     "- 2 years of experience in the banking sector."
    ],
    "oracle": {
-    "relevance_basis": "sector",
     "requirement_spans": [
      {
       "line": 2,
       "text": "2 years of experience in the banking sector"
      }
     ],
-    "targets": [],
-    "setting": {
-     "line": 2,
-     "text": "banking sector"
-    },
     "duration": "2 years",
     "ambiguity": [],
-    "note": "labelled reference answer"
+    "note": "labelled reference answer",
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "banking sector",
+      "kind": "sector"
+     }
+    ]
    },
    "expected": {
     "policy": "sector",
@@ -1404,22 +1484,22 @@
     "- Experience in the banking sector is preferred."
    ],
    "oracle": {
-    "relevance_basis": "sector",
     "requirement_spans": [
      {
       "line": 2,
-      "text": "Experience in the banking sector is preferred",
-      "experience_requirement": true
+      "text": "Experience in the banking sector is preferred"
      }
     ],
-    "targets": [],
-    "setting": {
-     "line": 2,
-     "text": "banking sector"
-    },
     "duration": null,
     "ambiguity": [],
-    "note": "labelled reference answer"
+    "note": "labelled reference answer",
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "banking sector",
+      "kind": "sector"
+     }
+    ]
    },
    "expected": {
     "policy": "sector",
@@ -1428,7 +1508,7 @@
     "duration": null,
     "ambiguity": [],
     "status": "needs_confirmation",
-    "anchor": "statement"
+    "anchor": "restriction"
    }
   },
   {
@@ -1500,18 +1580,16 @@
     "- 5 years of professional experience."
    ],
    "oracle": {
-    "relevance_basis": "total_experience",
     "requirement_spans": [
      {
       "line": 2,
       "text": "5 years of professional experience"
      }
     ],
-    "targets": [],
-    "setting": null,
     "duration": "5 years",
     "ambiguity": [],
-    "note": "labelled reference answer"
+    "note": "labelled reference answer",
+    "restrictions": []
    },
    "expected": {
     "policy": "pure_duration",
@@ -1538,18 +1616,16 @@
     "- خبرة مهنية لا تقل عن ٣ سنوات."
    ],
    "oracle": {
-    "relevance_basis": "total_experience",
     "requirement_spans": [
      {
       "line": 2,
       "text": "خبرة مهنية لا تقل عن ٣ سنوات"
      }
     ],
-    "targets": [],
-    "setting": null,
     "duration": "٣ سنوات",
     "ambiguity": [],
-    "note": "labelled reference answer"
+    "note": "labelled reference answer",
+    "restrictions": []
    },
    "expected": {
     "policy": "pure_duration",
@@ -1576,24 +1652,22 @@
     "- 3-5 years of experience in procurement."
    ],
    "oracle": {
-    "relevance_basis": "targets",
     "requirement_spans": [
      {
       "line": 2,
       "text": "3-5 years of experience in procurement"
      }
     ],
-    "targets": [
+    "duration": "3-5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer",
+    "restrictions": [
      {
       "line": 2,
       "text": "procurement",
-      "type": "function"
+      "kind": "function"
      }
-    ],
-    "setting": null,
-    "duration": "3-5 years",
-    "ambiguity": [],
-    "note": "labelled reference answer"
+    ]
    },
    "expected": {
     "policy": "functional",
@@ -1623,20 +1697,24 @@
     "- Minimum 5 years of relevant experience."
    ],
    "oracle": {
-    "relevance_basis": "unspecified",
     "requirement_spans": [
      {
       "line": 2,
       "text": "Minimum 5 years of relevant experience"
      }
     ],
-    "targets": [],
-    "setting": null,
     "duration": "5 years",
     "ambiguity": [
      "ambiguous_relevance"
     ],
-    "note": "labelled reference answer"
+    "note": "labelled reference answer",
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "relevant",
+      "kind": "vague"
+     }
+    ]
    },
    "expected": {
     "policy": "pure_duration",
@@ -1835,18 +1913,16 @@
     "- Minimum 3 years of professional experience."
    ],
    "oracle": {
-    "relevance_basis": "total_experience",
     "requirement_spans": [
      {
       "line": 4,
       "text": "Minimum 3 years of professional experience"
      }
     ],
-    "targets": [],
-    "setting": null,
     "duration": "3 years",
     "ambiguity": [],
-    "note": "labelled reference answer"
+    "note": "labelled reference answer",
+    "restrictions": []
    },
    "expected": {
     "policy": "pure_duration",
@@ -1908,20 +1984,27 @@
      }
     ],
     "setting": null,
-    "duration": "3 years",
-    "ambiguity": [],
-    "status": "resolved",
+    "duration": {
+     "one_of": [
+      "3 years",
+      "7 years",
+      null
+     ]
+    },
+    "ambiguity": {
+     "one_of": [
+      [],
+      [
+       "multiple_durations"
+      ]
+     ]
+    },
+    "status": "needs_confirmation",
     "span_includes": [
      "7 years of overall experience, including at least 3 years as a Project Manager"
     ],
-    "alternatives": [
-     {
-      "duration": null,
-      "ambiguity": [
-       "multiple_durations"
-      ],
-      "status": "needs_confirmation"
-     }
+    "reasons_include": [
+     "compound_requirement"
     ]
    }
   },

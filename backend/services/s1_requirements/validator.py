@@ -1,5 +1,5 @@
 """
-S1 deterministic validator for the AI classifier output (prompt s1-4, S1 1.3.0).
+S1 deterministic validator for the AI classifier output (prompt s1-5, S1 1.4.0).
 
 The AI may only: type the analysis_json target hints (role | function), judge
 their match (exact | equivalent | none), select verbatim JD spans (requirement
@@ -27,9 +27,7 @@ Rules
       the OR set). A "jd_span" maps the hint to the verbatim JD text stating it;
       it must lie inside one of the criterion's requirement spans. The hint text
       itself is never replaced by the mapped span.
-  R5  hint-less criteria: targets are {"line", "text", "type"} verbatim JD spans
-      (>= 3 chars) lying INSIDE one of the criterion's requirement spans; no
-      duplicates (comparison form).
+  R5  hint-less criteria: no targets (derived from restrictions, see below).
   R6  setting: null or {"line", "text"} verbatim JD span inside one of the
       criterion's requirement spans. No free text, no analysis_json source.
   R7  duration: null or a duration candidate id that lies inside one of the
@@ -39,13 +37,19 @@ Rules
     hint criteria:   all role -> explicit_role; all function -> functional;
                      role + function -> mixed. relevance_basis must be absent
                      or "targets".
-    hint-less criteria require relevance_basis:
-      targets           >= 1 JD-selected target; policy from the target types
-      sector            no targets, setting required          -> sector
-      total_experience  no targets, no setting                -> pure_duration
-      unspecified       no targets, no setting                -> pure_duration,
-                        always with ambiguous_relevance (never a trusted
-                        pure-duration requirement; added by the assembler)
+    hint-less criteria (s1-5) return typed "restrictions" (verbatim spans inside
+    the requirement spans; kind role | function | sector | vague) and NO targets
+    or setting; the relevance basis is derived, never claimed:
+      role/function restrictions -> JD-derived targets (type = kind, jd_asserted,
+                                    J1..); policy from their types; a single
+                                    sector restriction becomes their setting
+      else one sector restriction -> setting; policy sector
+      else vague restriction      -> pure_duration + ambiguous_relevance
+                                    (needs_confirmation; added by the assembler)
+      else no restriction         -> total experience; pure_duration
+    "total experience" is therefore only the derived absence of restrictions.
+  V-align (s1-5, "equivalent" only): word alignment with full structural
+    coverage, see _alignment_errors.
 
   s1-2 target-mapping guards (span/string checks only; semantic equivalence is
   the AI's judgment, audited, never decided here):
@@ -71,6 +75,10 @@ Rules
   V-anchor every requirement span contains an anchor (the selected duration, a
          verbatim hint match, a mapped jd_span or a JD-selected target) or is the
          line immediately after an anchored requirement span (wrapped bullet).
+         Restriction anchor (s1-5): ONLY when none of the criterion's spans has
+         an evidence anchor, a role/function/sector restriction span anchors its
+         line (hint-less criteria always have years, so no duration ->
+         n_not_in_jd: never resolves on its own).
          Statement anchor: ONLY when none of the criterion's spans contains any
          of those anchors, ONE span the model marks "experience_requirement":
          true anchors itself (e.g. "Experience in nursing is preferred.").
@@ -85,6 +93,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from services.s1_requirements.criteria import CriterionInput
@@ -95,6 +104,8 @@ from services.s1_requirements.schema import (
     BASIS_TOTAL_EXPERIENCE, BASIS_UNSPECIFIED, MATCH_EQUIVALENT, MATCH_EXACT, MATCH_NONE, MATCHES,
     POLICY_EXPLICIT_ROLE, POLICY_FUNCTIONAL, POLICY_MIXED, POLICY_PURE_DURATION, POLICY_SECTOR,
     RELEVANCE_BASES, TARGET_FUNCTION, TARGET_ROLE, TARGET_TYPES, Span,
+    ALIGN_RELATIONS, EXTRA_MATERIAL, JD_EXTRA_KINDS, REL_ABBREVIATION, REL_FORM, REL_SAME, REL_TRANSLATION,
+    RESTRICTION_FUNCTION, RESTRICTION_KINDS, RESTRICTION_ROLE, RESTRICTION_SECTOR, RESTRICTION_VAGUE,
 )
 
 MIN_SPAN_CHARS = 3
@@ -109,8 +120,13 @@ SCOPE_SETTING = "setting"
 SCOPE_DURATION = "duration"
 SCOPE_AMBIGUITY = "ambiguity"
 SCOPE_BASIS = "relevance_basis"
-SCOPE_TARGETS_IF_EMPTY = "targets_if_empty"      # targets may be supplied only where none exist
 SCOPE_TARGETS_EXTRA = "targets_extra"            # non-hint targets added to a hint criterion
+SCOPE_RESTRICTIONS = "restrictions"              # the restriction list as a whole (missing / not a list)
+SCOPE_RESTRICTION_PREFIX = "restriction:"        # restriction:R0 (one restriction, by index)
+
+ANCHOR_EVIDENCE = "evidence"         # duration / verbatim hint / mapped phrase
+ANCHOR_RESTRICTION = "restriction"   # only a typed restriction span (criteria without analysis targets)
+ANCHOR_STATEMENT = "statement"       # only the experience_requirement marker
 SCOPE_TARGET_PREFIX = "target:"                  # target:T1 (whole hint target) | target:T1:<field> (one field of it)
                                                  # | target:J0 (hint-less target, by index)
 
@@ -125,6 +141,15 @@ class ParsedTarget:
     hint_id: str | None = None        # "T1".. when it is an analysis_json hint
     span: Span | None = None          # AI-selected JD span (hint-less target, or a hint's explicit mapping)
     match: str | None = None          # hint targets: exact | equivalent | none
+    alignment: tuple = ()             # equivalent only: ({"hint", "jd", "relation"}, ...)
+    jd_extra: tuple = ()              # equivalent only: ({"text", "kind"}, ...)
+
+
+@dataclass(frozen=True)
+class ParsedRestriction:
+    text: str
+    kind: str                         # role | function | sector | vague
+    span: Span
 
 
 @dataclass(frozen=True)
@@ -141,6 +166,8 @@ class ParsedCriterion:
     relevance_basis: str | None = None
     policy_derivation: str = POLICY_FROM_TYPES
     model_policy: str | None = None    # diagnostics only; never controls the result
+    restrictions: tuple = ()           # ParsedRestriction, criteria without analysis targets only
+    anchor_kind: str = ANCHOR_EVIDENCE
 
 
 @dataclass(frozen=True)
@@ -222,8 +249,8 @@ def _mapping_errors(c: CriterionInput, targets: list[ParsedTarget], req: tuple[S
     mapped = [(t.hint_id, t.span) for t in targets if t.hint_id and t.span is not None]
     for hid, sp in mapped:
         tw = f"{w} target {hid} jd_span {sp.text!r}"
-        sc = _tscope(hid, "jd_span")                     # copy errors: only the span may change
-        sem = _tscope(hid, "jd_span", "match")           # evidence the mapping is not the same: span or match
+        sc = _tscope(hid, "jd_span", "alignment", "jd_extra")   # copy errors: the span (and its alignment) only
+        sem = _tscope(hid, "jd_span", "match", "alignment", "jd_extra")   # not the same: may withdraw to none
         mt, ht = tokens(sp.text), tokens(hints[hid])
         if len(mt) > MAX_MAPPING_WORDS:
             errs.append((sc, f"{tw}: a mapping has at most {MAX_MAPPING_WORDS} words; map only the phrase naming "
@@ -241,7 +268,8 @@ def _mapping_errors(c: CriterionInput, targets: list[ParsedTarget], req: tuple[S
                          f"only inside this longer phrase, report ambiguous_relevance"))
         for other, osp in mapped:
             if other != hid and hid < other and _overlap(sp, osp):
-                errs.append((_tscope(hid, "jd_span", "match") + _tscope(other, "jd_span", "match"),
+                errs.append((_tscope(hid, "jd_span", "match", "alignment", "jd_extra")
+                             + _tscope(other, "jd_span", "match", "alignment", "jd_extra"),
                              f"{w}: hints {hid} and {other} are mapped to overlapping phrases; one phrase may be "
                              f"mapped by at most one hint: use null for both"))
         for other, spans in verbatim.items():
@@ -271,7 +299,7 @@ def _match_errors(c: CriterionInput, targets: list[ParsedTarget], req: tuple[Spa
         if not t.hint_id or t.hint_id in bad_span:
             continue
         tw = f"{w} target {t.hint_id}"
-        sc = _tscope(t.hint_id, "match", "jd_span")
+        sc = _tscope(t.hint_id, "match", "jd_span", "alignment", "jd_extra")
         verbatim = any(_inside(s, req) for s in jd.find(hints[t.hint_id]))
         if t.match not in MATCHES:
             errs.append((sc, f"{tw}: match must be one of {list(MATCHES)}, got {t.match!r}"))
@@ -296,22 +324,149 @@ def _match_errors(c: CriterionInput, targets: list[ParsedTarget], req: tuple[Spa
     return errs
 
 
+def _script(token: str) -> str:
+    if any("\u0600" <= ch <= "\u06ff" for ch in token):
+        return "arabic"
+    if any("a" <= ch <= "z" for ch in token):
+        return "latin"
+    return "other"
+
+
+def _acronym_letters(original: str) -> str | None:
+    """An all-capitals Latin acronym (dots allowed: "PM", "P.M.", "UX") -> its lower-case letters."""
+    letters = (original or "").replace(".", "").strip()
+    if 2 <= len(letters) <= 6 and letters.isascii() and letters.isalpha() and letters.isupper():
+        return letters.lower()
+    return None
+
+
+def _expands(letters: str, words: list[str]) -> bool:
+    """Structural acronym check (no similarity): 1..len(letters) words, the first word starts with the first
+    letter, and the letters occur in order in the words ("ux" -> user experience, "pm" -> project manager)."""
+    if not (1 <= len(words) <= len(letters)) or not words[0].startswith(letters[0]):
+        return False
+    rest = iter("".join(words))
+    return all(ch in rest for ch in letters)
+
+
+def _run_in(part: list[str], whole: list[str]) -> bool:
+    n = len(part)
+    return 0 < n <= len(whole) and any(whole[i:i + n] == part for i in range(len(whole) - n + 1))
+
+
+def _alignment_errors(hid: str, hint_text: str, t: dict, sp: Span, w: str
+                      ) -> tuple[list[tuple[tuple[str, ...], str]], tuple, tuple]:
+    """s1-5 V-align: structural coverage of an "equivalent" mapping's word alignment.
+
+    Every word of the analysis target is paired exactly once with verbatim words of the jd_span; every word of
+    the jd_span is paired or listed in jd_extra exactly once; a "material" jd_extra word means the JD phrase
+    adds meaning (never equivalent). One target word per pair, except a verified abbreviation; same-language
+    pairs are one word to one word, so a qualifier cannot hide inside another word's pair. Whether each pair
+    really means the same is the model's (audited) judgment."""
+    errs: list[tuple[tuple[str, ...], str]] = []
+    fmt = _tscope(hid, "alignment", "jd_extra")                       # copy/format: only the alignment
+    sem = _tscope(hid, "alignment", "jd_extra", "match", "jd_span")   # coverage: may withdraw to none
+    tw = f"{w} target {hid} alignment"
+    al, ex = t.get("alignment"), t.get("jd_extra", [])
+    ex = [] if ex is None else ex
+    if not isinstance(al, list) or not al:
+        return [(fmt, f"{tw}: match equivalent requires alignment: one pair per word of the target "
+                      f"{hint_text!r}, e.g. {{\"hint\": \"<target word>\", \"jd\": \"<JD word(s)>\", "
+                      f"\"relation\": \"same|form|translation|abbreviation\"}}")], (), ()
+    if not isinstance(ex, list):
+        return [(fmt, f"{tw}: jd_extra must be a list")], (), ()
+    hint_toks, jd_toks = tokens(hint_text), tokens(sp.text)
+    used_h, used_j = Counter(), Counter()
+    pairs, extras = [], []
+    for k, p in enumerate(al):
+        pw = f"{tw}[{k}]"
+        if not (isinstance(p, dict) and isinstance(p.get("hint"), str) and isinstance(p.get("jd"), str)
+                and p.get("relation") in ALIGN_RELATIONS):
+            errs.append((fmt, f"{pw}: must be {{\"hint\": str, \"jd\": str, \"relation\": one of "
+                              f"{list(ALIGN_RELATIONS)}}}"))
+            continue
+        ht, jt, rel = tokens(p["hint"]), tokens(p["jd"]), p["relation"]
+        if not _run_in(ht, hint_toks):
+            errs.append((fmt, f"{pw}: {p['hint']!r} is not word(s) of the target {hint_text!r}"))
+            continue
+        if not _run_in(jt, jd_toks):
+            errs.append((fmt, f"{pw}: {p['jd']!r} is not whole word(s) of the jd_span {sp.text!r}"))
+            continue
+        used_h.update(ht)
+        used_j.update(jt)
+        pairs.append({"hint": p["hint"], "jd": p["jd"], "relation": rel})
+        hs, js = {_script(x) for x in ht}, {_script(x) for x in jt}
+        if rel == REL_ABBREVIATION:
+            hl = _acronym_letters(p["hint"]) if len(ht) == 1 and p["hint"] in hint_text else None
+            jl = _acronym_letters(p["jd"]) if p["jd"] in sp.text and _acronym_letters(p["jd"]) else None
+            if not ((hl and _expands(hl, jt)) or (jl and _expands(jl, ht))):
+                errs.append((sem, f"{pw}: abbreviation needs an all-capitals acronym on one side whose letters "
+                                  f"start and run through the words on the other side ({p['hint']!r} / {p['jd']!r})"))
+            continue
+        if len(ht) != 1:
+            errs.append((sem, f"{pw}: a pair maps ONE target word (got {p['hint']!r}); pair every target word "
+                              f"separately"))
+        elif rel == REL_SAME and ht != jt:
+            errs.append((sem, f"{pw}: relation same needs the identical word ({p['hint']!r} / {p['jd']!r})"))
+        elif rel == REL_FORM and (len(jt) != 1 or hs != js):
+            errs.append((sem, f"{pw}: relation form is one word to one word in the same language "
+                              f"({p['hint']!r} / {p['jd']!r})"))
+        elif rel == REL_TRANSLATION and hs & js:
+            errs.append((sem, f"{pw}: relation translation needs another language ({p['hint']!r} / {p['jd']!r}); "
+                              f"in the same language pair one word to one word (same or form)"))
+    for k, e in enumerate(ex):
+        ew = f"{w} target {hid} jd_extra[{k}]"
+        if not (isinstance(e, dict) and isinstance(e.get("text"), str) and e.get("kind") in JD_EXTRA_KINDS):
+            errs.append((fmt, f"{ew}: must be {{\"text\": one JD word, \"kind\": \"grammatical\" | "
+                              f"\"material\"}}"))
+            continue
+        et = tokens(e["text"])
+        if len(et) != 1 or et[0] not in jd_toks:
+            errs.append((fmt, f"{ew}: {e['text']!r} must be exactly one word of the jd_span {sp.text!r}"))
+            continue
+        used_j.update(et)
+        extras.append({"text": e["text"], "kind": e["kind"]})
+        if e["kind"] == EXTRA_MATERIAL:
+            errs.append((sem, f"{ew}: the JD phrase adds the material word {e['text']!r} that the target "
+                              f"{hint_text!r} does not have: that is not the same role/function; use match none"))
+    if not errs:
+        missing = list((Counter(hint_toks) - used_h).elements())
+        twice = list((used_h - Counter(hint_toks)).elements())
+        if missing or twice:
+            errs.append((sem, f"{tw}: every word of the target must be paired exactly once; unpaired {missing}, "
+                              f"paired more than once {twice}. A target word with no JD counterpart means the JD "
+                              f"phrase drops it: use match none"))
+        unacc = list((Counter(jd_toks) - used_j).elements())
+        over = list((used_j - Counter(jd_toks)).elements())
+        if unacc or over:
+            errs.append((sem, f"{tw}: every word of the jd_span must be paired or listed in jd_extra exactly once; "
+                              f"unaccounted {unacc}, used more than once {over}"))
+    return errs, tuple(pairs), tuple(extras)
+
+
 def _anchor_errors(req: tuple[Span, ...], anchors: list[Span], marked: list[Span],
-                   w: str) -> tuple[list[str], bool]:
+                   w: str, restriction_anchors: list[Span] = ()) -> tuple[list[str], str]:
+    """Evidence anchors first. Only when NO span has one: typed restriction spans (criteria without analysis
+    targets), then the experience_requirement marker. Neither can add a context line next to an anchored
+    requirement, and neither can resolve on its own (no duration -> n_not_in_jd / no target evidence)."""
     anchored_lines = {r.line for r in req if any(a.within(r) for a in anchors)}
     errs: list[str] = []
-    statement = False
+    kind = ANCHOR_EVIDENCE
+    if req and not anchored_lines and restriction_anchors:
+        anchored_lines = {r.line for r in req if any(a.within(r) for a in restriction_anchors)}
+        if anchored_lines:
+            kind = ANCHOR_RESTRICTION
     if req and not anchored_lines and marked:
         if len(marked) > 1:
-            return [f"{w}: at most one requirement span may be marked experience_requirement"], False
-        anchored_lines, statement = {marked[0].line}, True
+            return [f"{w}: at most one requirement span may be marked experience_requirement"], ANCHOR_EVIDENCE
+        anchored_lines, kind = {marked[0].line}, ANCHOR_STATEMENT
     for r in req:
         if r.line in anchored_lines or (r.line - 1) in anchored_lines:
             continue
         errs.append(f"{w} requirement span {r.text!r} (line {r.line}) contains no anchor (the selected duration, "
                     f"a target or its mapped phrase) and does not continue an anchored line: quote only this "
                     f"criterion's requirement statement, or return [] with requirement_not_in_jd")
-    return errs, statement
+    return errs, kind
 
 
 def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
@@ -393,11 +548,12 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
         targets: list[ParsedTarget] = []
         tl = it.get("targets")
         if not isinstance(tl, list):
-            add((SCOPE_TARGETS_IF_EMPTY,) + tuple(_tscope(h) for h in hints), f"{w}: targets must be a list")
+            if hints or tl is not None:
+                add(tuple(_tscope(h) for h in hints) or (SCOPE_TARGETS_EXTRA,), f"{w}: targets must be a list")
             tl = []
         used_hints: list[str] = []
+        raw_targets: dict[str, dict] = {}
         bad_span: set[str] = set()
-        seen_norm: set[str] = set()
         for j, t in enumerate(tl):
             tw = f"{w} targets[{j}]"
             hid = t.get("hint") if isinstance(t, dict) else None
@@ -419,34 +575,27 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
                 used_hints.append(hid)
                 mapped = None
                 if t.get("jd_span") is not None:          # explicit mapping to the JD requirement
-                    mapped = span(t["jd_span"], f"{tw} jd_span", _tscope(hid, "jd_span"))
+                    jsc = _tscope(hid, "jd_span", "alignment", "jd_extra")   # span copy error: never match/type
+                    mapped = span(t["jd_span"], f"{tw} jd_span", jsc)
                     if mapped is not None and not _inside(mapped, req_t):
-                        add(_tscope(hid, "jd_span"), f"{tw} jd_span: {mapped.text!r} is not inside one of this "
-                                                     f"criterion's requirement_spans")
+                        add(jsc, f"{tw} jd_span: {mapped.text!r} is not inside one of this "
+                                 f"criterion's requirement_spans")
                         mapped = None
                     if mapped is None:
                         bad_span.add(hid)
                 if ttype in TARGET_TYPES:
                     targets.append(ParsedTarget(hints[hid], ttype, hint_id=hid, span=mapped, match=t.get("match")))
+                    raw_targets[hid] = t
             else:
                 if hints:
                     add((SCOPE_TARGETS_EXTRA,),
                         f"{tw}: this criterion has target hints {sorted(hints)}; return exactly those and add no "
                         f"other targets")
-                    continue
-                sp = span(t, tw, tsc)
-                if sp is None:
-                    continue
-                if not _inside(sp, req_t):
-                    add(tsc, f"{tw}: {sp.text!r} is not inside one of this criterion's requirement_spans")
-                    continue
-                key = normalize(sp.text)
-                if key in seen_norm:
-                    add(tsc, f"{tw}: duplicate target {sp.text!r}")
-                    continue
-                seen_norm.add(key)
-                if ttype in TARGET_TYPES:
-                    targets.append(ParsedTarget(sp.text, ttype, span=sp))
+                else:
+                    add((SCOPE_TARGETS_EXTRA,),
+                        f"{tw}: criteria without target_hints return restrictions, not targets; targets are "
+                        f"derived from role/function restrictions")
+                continue
         for hid in sorted(hints):
             k = used_hints.count(hid)
             if k != 1:
@@ -480,36 +629,68 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
                         f"requirement_spans")
                     dur = None
 
-        # policy derivation (never the model's policy)
-        types = [t.type for t in targets]
-        basis = it.get("relevance_basis")
-        policy, derivation = implied_policy(types), POLICY_FROM_TYPES
+        # s1-5 typed restrictions (criteria WITHOUT analysis targets) -> targets / setting / basis (derived)
+        restrictions: list[ParsedRestriction] = []
+        r_index: list[int] = []                    # position of each parsed restriction in the raw list
+        rl = it.get("restrictions")
         if hints:
-            if basis not in (None, BASIS_TARGETS):
-                add((SCOPE_BASIS,), f"{w}: relevance_basis applies only to criteria without target_hints; omit it "
-                                    f"(got {basis!r})")
-            basis = None
-        elif basis not in RELEVANCE_BASES:
-            add((SCOPE_BASIS,), f"{w}: relevance_basis must be one of {list(RELEVANCE_BASES)}, got {basis!r}")
-        elif basis == BASIS_TARGETS:
-            if not tl:
-                add((SCOPE_BASIS, SCOPE_TARGETS_IF_EMPTY),
-                    f"{w}: relevance_basis targets needs at least one target selected from the requirement_spans")
+            if rl not in (None, []):
+                add((SCOPE_RESTRICTIONS,), f"{w}: restrictions apply only to criteria without target_hints; omit them")
+        elif not isinstance(rl, list):
+            add((SCOPE_RESTRICTIONS,), f"{w}: restrictions must be a list of every phrase that limits which experience "
+                                       f"counts ([] only for general experience with no restriction at all)")
         else:
-            if tl:
-                add((SCOPE_BASIS,), f"{w}: relevance_basis {basis} takes no targets; the requirement names "
-                                    f"targets, so use relevance_basis targets")
-            if basis == BASIS_SECTOR:
-                if so is None:
-                    add((SCOPE_BASIS, SCOPE_SETTING), f"{w}: relevance_basis sector needs a setting span")
-                policy, derivation = POLICY_SECTOR, POLICY_FROM_BASIS
-            else:                                            # total_experience | unspecified
-                if so is not None:
-                    add((SCOPE_BASIS, SCOPE_SETTING), f"{w}: relevance_basis {basis} takes no setting; a stated "
-                                                      f"setting means relevance_basis sector")
-                if not c.has_years:
-                    add((SCOPE_BASIS,), f"{w}: relevance_basis {basis} needs a criterion with a years requirement")
-                policy, derivation = POLICY_PURE_DURATION, POLICY_FROM_BASIS
+            seen_r: set[tuple[str, str]] = set()
+            for j, r in enumerate(rl):
+                rsc = (f"{SCOPE_RESTRICTION_PREFIX}R{j}",)
+                rw = f"{w} restrictions[{j}]"
+                if not isinstance(r, dict) or r.get("kind") not in RESTRICTION_KINDS:
+                    add(rsc, f"{rw}: must be {{\"line\", \"text\", \"kind\": one of {list(RESTRICTION_KINDS)}}}")
+                    continue
+                rsp = span(r, rw, rsc)
+                if rsp is None:
+                    continue
+                if not _inside(rsp, req_t):
+                    add(rsc, f"{rw}: {rsp.text!r} is not inside one of this criterion's requirement_spans")
+                    continue
+                key = (normalize(rsp.text), r["kind"])
+                if key in seen_r:
+                    add(rsc, f"{rw}: duplicate restriction {rsp.text!r}")
+                    continue
+                seen_r.add(key)
+                restrictions.append(ParsedRestriction(rsp.text, r["kind"], rsp))
+                r_index.append(j)
+            if so is not None:
+                add((SCOPE_SETTING,), f"{w}: for criteria without target_hints the setting comes from a sector "
+                                      f"restriction; return setting null")
+                setting = None
+        rf = [r for r in restrictions if r.kind in (RESTRICTION_ROLE, RESTRICTION_FUNCTION)]
+        sec = [r for r in restrictions if r.kind == RESTRICTION_SECTOR]
+        vag = [r for r in restrictions if r.kind == RESTRICTION_VAGUE]
+        if not hints and len(sec) > 1:
+            add((SCOPE_RESTRICTIONS,) + tuple(f"{SCOPE_RESTRICTION_PREFIX}R{j}" for j in range(len(rl or []))),
+                f"{w}: give one sector restriction per requirement (got {[r.text for r in sec]})")
+        if not hints:
+            targets = [ParsedTarget(r.text, r.kind, span=r.span) for r in rf]
+            if len(sec) == 1:
+                setting = sec[0].span
+
+        # policy derivation (never the model's policy; s1-5: never the model's relevance basis either)
+        types = [t.type for t in targets]
+        policy, derivation = implied_policy(types), POLICY_FROM_TYPES
+        basis = None
+        if not hints:
+            if rf:
+                basis = BASIS_TARGETS
+            elif sec:
+                basis, policy, derivation = BASIS_SECTOR, POLICY_SECTOR, POLICY_FROM_BASIS
+            elif vag:
+                basis, policy, derivation = BASIS_UNSPECIFIED, POLICY_PURE_DURATION, POLICY_FROM_BASIS
+            else:
+                basis, policy, derivation = BASIS_TOTAL_EXPERIENCE, POLICY_PURE_DURATION, POLICY_FROM_BASIS
+            if policy == POLICY_PURE_DURATION and not c.has_years:
+                add((SCOPE_RESTRICTIONS,), f"{w}: a requirement without role/function/sector restrictions needs a "
+                                           f"years requirement")
 
         # s1-2 mapping guards, s1-3 match rules and requirement-span anchoring
         dur_span = None
@@ -520,17 +701,35 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
             add(scopes, msg)
         for scopes, msg in _match_errors(c, targets, req_t, jd, list(amb), w, bad_span):
             add(scopes, msg)
+        aligned: dict[str, tuple] = {}
+        for t in targets:
+            if t.hint_id and t.match == MATCH_EQUIVALENT and t.span is not None:
+                a_errs, pairs, extras = _alignment_errors(t.hint_id, t.text, raw_targets[t.hint_id], t.span, w)
+                for scopes, msg in a_errs:
+                    add(scopes, msg)
+                aligned[t.hint_id] = (pairs, extras)
+        if aligned:
+            targets = [ParsedTarget(t.text, t.type, t.hint_id, t.span, t.match, *aligned[t.hint_id])
+                       if t.hint_id in aligned else t for t in targets]
+        if dur_span is not None:
+            for j, r in zip(r_index, restrictions):
+                if _overlap(r.span, dur_span):
+                    add((f"{SCOPE_RESTRICTION_PREFIX}R{j}",), f"{w} restrictions[{j}]: {r.text!r} must not include "
+                                                               f"the duration {dur_span.text!r}")
         anchors = [s for s in (dur_span,) if s is not None]
-        anchors += [t.span for t in targets if t.span is not None]
+        anchors += [t.span for t in targets if t.span is not None and t.hint_id]
         anchors += [s for text in hints.values() for s in jd.find(text) if _inside(s, req_t)]
-        anchor_errs, statement_anchored = _anchor_errors(req_t, anchors, marked, w)
+        r_anchors = [r.span for r in restrictions if r.kind != RESTRICTION_VAGUE]
+        anchor_errs, anchor_kind = _anchor_errors(req_t, anchors, marked, w, r_anchors)
+        statement_anchored = anchor_kind != ANCHOR_EVIDENCE
         for msg in anchor_errs:
             add((SCOPE_SPANS,), msg)
 
         note = it.get("note") if isinstance(it.get("note"), str) else ""
         if len(E) == n_err and policy is not None:
             results[cid] = ParsedCriterion(cid, policy, req_t, tuple(targets), setting, dur, tuple(amb), note,
-                                           statement_anchored, basis, derivation, model_policy)
+                                           statement_anchored, basis, derivation, model_policy,
+                                           tuple(restrictions), anchor_kind)
         elif len(E) == n_err:                                # defensive: no derivable policy
             add((SCOPE_CRITERION,), f"{w}: no policy can be derived (no valid targets and no relevance_basis)")
 
