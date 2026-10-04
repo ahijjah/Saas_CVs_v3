@@ -732,6 +732,22 @@ def assert_form_candidate(art, mapped_text=None):
     return m
 
 
+def assert_abbreviation_candidate(art):
+    """s1-5.2.2: an abbreviation expansion the JD does not define is an audited candidate, never evidence."""
+    (t,) = art.targets
+    assert (t.provenance, t.jd_span) == ("original_ai", None) and art.spec_status == "needs_confirmation"
+    assert [(r.code, r.kind) for r in art.reasons if r.field == f"targets.{t.target_id}"] == [
+        ("equivalence_unverified", "business")]
+    assert "not defined in the JD" in art.reasons[0].detail and "target_not_in_jd" not in [r.code for r in art.reasons]
+    (m,) = art.audit["target_mappings"]
+    assert m["used"] is False and m["trust"] == "unverified_abbreviation" and m["jd_definitions"] == []
+    assert art.audit["review_required"] == []
+    for require_resolved in (True, False):
+        with pytest.raises(asm.S1ViewError):
+            asm.s2_views(art, require_resolved=require_resolved)
+    return m
+
+
 def rejected(out, frag):
     """The equivalent claim was refused: failed_validation, or (s1-5.1) withdrawn after the repair -> the
     target is never jd_asserted and the criterion is never resolved."""
@@ -757,7 +773,7 @@ class TestS12EquivalenceMapping:
             "target_id": "T1", "target_text": "Construction Project Manager", "mapped_text": "كمدير مشروع إنشائي",
             "line": 2, "start": art.targets[0].jd_span.start, "end": art.targets[0].jd_span.end, "used": True,
             "match": "equivalent", "alignment": alignment("Construction Project Manager", "كمدير مشروع إنشائي"),
-            "jd_extra": [], "relations": ["translation"], "trust": "trust_bearing"}]
+            "jd_extra": [], "relations": ["translation"], "trust": "trust_bearing", "jd_definitions": []}]
         assert art.audit["review_required"] == ["T1"]
 
     def test_arabic_mapping_may_start_after_attached_letter(self):
@@ -873,9 +889,11 @@ class TestS12ValidatorGuards:
         out = run_case(hints, line, maps=[None, "Construction Project Manager"])
         assert rejected(out, "overlaps the verbatim text of hint T1")
         ok = run_case(hints, line, maps=[None, "Assistant PM"])
-        assert prov(ok) == [("T1", "jd_verified"), ("T2", "jd_asserted")]
+        # s1-5.2.2: "PM" is not defined in this JD, so the abbreviation mapping is only an unverified candidate
+        assert prov(ok) == [("T1", "jd_verified"), ("T2", "original_ai")]
         assert [m["target_id"] for m in ok.artifacts[0].audit["target_mappings"]] == ["T2"]
-        assert ok.artifacts[0].audit["review_required"] == ["T2"]
+        assert ok.artifacts[0].audit["target_mappings"][0]["trust"] == "unverified_abbreviation"
+        assert ok.artifacts[0].audit["review_required"] == []
 
     def test_v_anchor_wrapped_continuation_line_is_valid(self):
         out = run_case(["Site Engineer"], "Minimum 5 years of experience as a Site Engineer on",
@@ -1036,7 +1054,7 @@ class TestStatementAnchor:
 
 class TestS12Versioning:
     def test_versions_and_fingerprint(self):
-        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5.2", "1.4.3")
+        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5.2", "1.4.4")
         assert clf.prompt_fingerprint() == "4f22dddb117e"
         assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9", "c9b570d82f4e",
                                                 "faad01d30b5c", "a0ae492a27e4", "b2a063ab2947")
@@ -1154,7 +1172,8 @@ class TestS13Match:
 
     @pytest.mark.parametrize("match, span, prov, codes_", [
         ("exact", None, "jd_verified", []),
-        ("equivalent", {"line": 2, "text": "Human Resources Manager"}, "jd_asserted", []),
+        # s1-5.2.2: HR is not defined in the JD -> an unverified abbreviation candidate
+        ("equivalent", {"line": 2, "text": "Human Resources Manager"}, "original_ai", ["equivalence_unverified"]),
         ("none", None, "original_ai", ["target_not_in_jd"]),
     ])
     def test_provenance_unchanged_by_match(self, match, span, prov, codes_):
@@ -1680,15 +1699,24 @@ class TestS15AlignmentAccepts:
             assert_form_candidate(run(clf.classify_job("J1", jd, a, client=FakeClient(raw))).artifacts[0])
 
     @pytest.mark.parametrize("hint, line, span, pairs", [
+        ("PM", "Minimum 5 years as a Project Manager (P.M.)", "Project Manager", [("PM", "Project Manager", AB)]),
+        ("PM", "Minimum 5 years as a P.M. (Project Manager)", "Project Manager", [("PM", "Project Manager", AB)]),
+        ("PM", "Minimum 5 years as a P.M.", "P.M.", [("PM", "P.M.", AB)]),          # same acronym: unchanged
+    ])
+    def test_abbreviations(self, hint, line, span, pairs):
+        self._ok(hint, line, span, pairs)
+
+    @pytest.mark.parametrize("hint, line, span, pairs", [
         ("PM", "Minimum 5 years as a Project Manager", "Project Manager", [("PM", "Project Manager", AB)]),
         ("UX Designer", "Minimum 5 years as a User Experience Designer", "User Experience Designer",
          [("UX", "User Experience", AB), ("Designer", "Designer", SA)]),
         ("Human Resources Manager", "Minimum 5 years as an HR Manager", "HR Manager",
          [("Human Resources", "HR", AB), ("Manager", "Manager", SA)]),
-        ("PM", "Minimum 5 years as a P.M.", "P.M.", [("PM", "P.M.", AB)]),
     ])
-    def test_abbreviations(self, hint, line, span, pairs):
-        self._ok(hint, line, span, pairs)
+    def test_undefined_abbreviations_are_candidates(self, hint, line, span, pairs):
+        v, jd, a, raw = _eqv(hint, line, span, pairs)
+        assert v.ok, v.errors                                                  # structurally valid
+        assert_abbreviation_candidate(run(clf.classify_job("J1", jd, a, client=FakeClient(raw))).artifacts[0])
 
     def test_abbreviation_is_structural_not_free(self):
         v, *_ = _eqv("web developer", "Minimum 5 years as a website engineering builder developer",
@@ -2153,9 +2181,11 @@ class TestS151Abbreviations:
 
     @pytest.mark.parametrize("pairs", [[("PM", "Project Manager", AB)], [("PM", "P.M.", AB)]])
     def test_span_holding_both_forms_rejected(self, pairs):
+        # s1-5.2.2: the span is the JD's own definition -> the specific duplicate-representation issue only
         v, *_ = _eqv("PM", PM_LINE, "Project Manager (P.M.)", pairs)
-        assert errs_with(v, "the jd_span names the same role twice")
-        assert errs_with(v, "narrow jd_span to either the full form or the acronym")
+        (e,) = v.scoped
+        assert e.issue.kind == "duplicate_representation" and "narrow jd_span to exactly ONE of them" in e.message
+        assert not errs_with(v, "adds words to the target")
 
     def test_only_acronym_in_jd(self):
         _accepts("PM", "Minimum 5 years as a P.M. in a fast-paced environment", "P.M.", [("PM", "P.M.", AB)])
@@ -2395,8 +2425,8 @@ class TestS152FormNotTrustBearing:
     @pytest.mark.parametrize("args, kw, rels", [
         (("Accountant", "خبرة سنتين كمحاسب", "كمحاسب", [("Accountant", "محاسب", TR)]), {"years": 2, "ar": True},
          ["translation"]),
-        (("HR Manager", "Minimum 5 years of experience as a Human Resources Manager", "Human Resources Manager",
-          [("HR", "Human Resources", AB), ("Manager", "Manager", SA)]), {}, ["abbreviation", "same"]),
+        (("PM", "Minimum 5 years of experience as a Project Manager (P.M.)", "Project Manager",
+          [("PM", "Project Manager", AB)]), {}, ["abbreviation"]),           # s1-5.2.2: a JD-defined abbreviation
     ])
     def test_c_trust_bearing_equivalent_stays_jd_asserted(self, args, kw, rels):
         art = _classify_eqv(*args, **kw)
@@ -2604,7 +2634,7 @@ class TestS1521PairMerge:
         rep = _repair_of(raw, alignment=_pairs([("HR", "Human", AB), ("Manager", "Manager", SA)]))
         out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, rep)))
         assert _merged_alignment(out) == [("HR", "Human Resources", AB), ("Manager", "Manager", SA)]
-        assert out.artifacts[0].spec_status == "resolved"
+        assert_abbreviation_candidate(out.artifacts[0])            # s1-5.2.2: HR is not defined in this JD
         # a lumped pair may be replaced by pairs that exactly split its target words
         _, out, _ = _b1([("Construction", "إنشائي", TR), ("Project Manager", "مدير", TR)],
                         [("Project", "مشروع", TR), ("Manager", "مدير", TR)])
@@ -2717,3 +2747,168 @@ class TestS1521SafetyUnchanged:
         art = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, rep))).artifacts[0]
         assert all(t.provenance != "jd_asserted" for t in art.targets) and art.spec_status != "resolved"
         assert "equivalence_unverified" not in [r.code for r in art.reasons]          # never even a candidate
+
+
+# ── s1-5.2.2: JD-defined abbreviation trust + duplicate-representation normalization ───────────────
+
+from services.s1_requirements.jd_text import abbreviation_definitions, exact_definition  # noqa: E402
+
+K1_LINE = "Minimum 5 years as a Project Manager (P.M.)"
+
+
+def _classify_raw(*args, **kw):
+    v, jd, a, raw = _eqv(*args, **kw)
+    client = FakeClient(raw, raw)
+    out = run(clf.classify_job("J1", jd, a, client=client))
+    return v, out, client
+
+
+class TestS1522AbbreviationTrust:
+    @pytest.mark.parametrize("hint, line, span, pairs", [
+        ("PM", "Minimum 5 years as a Product Manager", "Product Manager", [("PM", "Product Manager", AB)]),   # A
+        ("PM", "Minimum 5 years as a Plant Manager", "Plant Manager", [("PM", "Plant Manager", AB)]),         # B
+        ("HR Manager", "Minimum 5 years as a Hotel Reservations Manager", "Hotel Reservations Manager",       # C
+         [("HR", "Hotel Reservations", AB), ("Manager", "Manager", SA)]),
+        ("UX Designer", "Minimum 5 years as a User Experience Designer", "User Experience Designer",          # D
+         [("UX", "User Experience", AB), ("Designer", "Designer", SA)]),
+        ("Human Resources Manager", "Minimum 5 years as an HR Manager", "HR Manager",                        # E
+         [("Human Resources", "HR", AB), ("Manager", "Manager", SA)]),
+    ])
+    def test_a_to_e_undefined_expansions_are_never_evidence(self, hint, line, span, pairs):
+        v, out, _ = _classify_raw(hint, line, span, pairs)
+        assert v.ok
+        m = assert_abbreviation_candidate(out.artifacts[0])                 # T: no S2, even require_resolved=False
+        assert m["relations"] == sorted({r for _, _, r in pairs})
+
+    def test_a_a_definition_of_another_role_does_not_help(self):
+        line = "Minimum 5 years as a Project Manager (P.M.) or a Product Manager"
+        v, out, _ = _classify_raw("PM", line, "Product Manager", [("PM", "Product Manager", AB)])
+        assert_abbreviation_candidate(out.artifacts[0])
+
+    @pytest.mark.parametrize("line, rel", [
+        ("Minimum 5 years as a P.M. in a fast-paced environment", AB),
+        ("Minimum 5 years as a P.M. in a fast-paced environment", SA),
+    ])
+    def test_f_same_acronym_orthography_unchanged(self, line, rel):
+        v, out, _ = _classify_raw("PM", line, "P.M.", [("PM", "P.M.", rel)])
+        art = out.artifacts[0]
+        assert [t.provenance for t in art.targets] == ["jd_asserted"] and art.spec_status == "resolved"
+        assert art.audit["target_mappings"][0]["trust"] == "trust_bearing"
+
+    @pytest.mark.parametrize("text, defined", [
+        ("Minimum 5 years as a Project Manager (P.M.).", "Project Manager (P.M.)"),             # G
+        ("Minimum 5 years as a P.M. (Project Manager).", "P.M. (Project Manager)"),             # H
+        ("P.M. (project manager) experience", "P.M. (project manager)"),
+    ])
+    def test_g_h_jd_definitions(self, text, defined):
+        (d,) = abbreviation_definitions(text)
+        assert d.text == defined and d.acronym == "pm" and d.full_words == ("project", "manager")
+
+    @pytest.mark.parametrize("text", [
+        "Project Manager (P.M.",                          # M malformed
+        "Project Manager P.M.)",
+        "Project Manager (P M)",
+        "Project Manager (London)",                       # N unrelated parenthetical
+        "Product Marketing team; P.M. role",
+        "Project Manager (PM/PMP)",                       # O several acronyms
+        "Project Manager ((PM))",                         # P nested parentheses
+        "(Project Manager (PM))",
+        "Senior Project Manager (PM)",                    # R/S a qualifier before the defined phrase
+        "a Project Manager (PM) Lead",                    # ... or after it
+        "enterprise project management (PM)",             # an unbounded lower-case full form
+        "Project Manager (PMO)",                          # initials do not match
+    ])
+    def test_m_to_p_not_definitions(self, text):
+        assert all(d.acronym != "pm" for d in abbreviation_definitions(text))
+
+    def test_o_two_definitions_are_not_one_exact_span(self):
+        assert exact_definition("Project Manager (PM) and Human Resources (HR)") is None
+        assert exact_definition("Project Manager (P.M.)") is not None
+
+    def test_r_senior_project_manager_spm_never_establishes_pm(self):
+        line = "Minimum 5 years as a Senior Project Manager (SPM)"
+        (d,) = abbreviation_definitions(line)
+        assert d.acronym == "spm"
+        v, *_ = _eqv("PM", line, "SPM", [("PM", "SPM", AB)])
+        assert errs_with(v, "abbreviation needs an all-capitals acronym")
+        v, out, _ = _classify_raw("PM", line, "Project Manager", [("PM", "Project Manager", AB)])
+        assert_abbreviation_candidate(out.artifacts[0])                     # "Senior" is not dropped silently
+
+    def test_s_project_manager_vs_senior_project_manager_pm(self):
+        line = "Minimum 5 years as a Senior Project Manager (PM)"
+        assert abbreviation_definitions(line) == []                        # "Senior" blocks the definition
+        v, out, _ = _classify_raw("Project Manager", line, "PM", [("Project Manager", "PM", AB)])
+        art = out.artifacts[0]                                              # (a 2-letter span is also too short)
+        assert art.spec_status != "resolved" and all(t.provenance != "jd_asserted" for t in art.targets)
+        v, *_ = _eqv("Project Manager", line, "Senior Project Manager (PM)",
+                     [("Project", "Project", SA), ("Manager", "Manager", SA)])
+        assert errs_with(v, "adds words to the target")                    # generic rule stays authoritative
+
+    def test_q_material_qualifier_cannot_be_dropped(self):
+        line = "Minimum 5 years as a Senior Project Manager (P.M.)"
+        assert abbreviation_definitions(line) == []                        # "Senior" blocks the definition
+        v, jd, a, raw = _eqv("PM", line, "Senior Project Manager", [("PM", "Project Manager", AB)],
+                             [("Senior", "material")])
+        assert not v.ok and all(e.issue is None or e.issue.kind != "duplicate_representation" for e in v.scoped)
+        rep = _repair_of(raw, jd_extra=[{"text": "Senior", "kind": "grammatical"}])
+        art = run(clf.classify_job("J1", jd, a, client=FakeClient(raw, rep))).artifacts[0]
+        assert all(t.provenance != "jd_asserted" for t in art.targets) and art.spec_status != "resolved"
+
+
+class TestS1522Normalization:
+    @pytest.mark.parametrize("pairs, narrowed", [
+        ([("PM", "P.M.", AB)], "P.M."),
+        ([("PM", "Project Manager", AB)], "Project Manager"),
+    ])
+    def test_i_to_l_k1_normalized_without_a_repair_call(self, pairs, narrowed):
+        v, jd, a, raw = _eqv("PM", K1_LINE, "Project Manager (P.M.)", pairs)
+        assert [e.issue.kind for e in v.scoped] == ["duplicate_representation"]
+        client = FakeClient(raw)                                             # L: one response only
+        out = run(clf.classify_job("J1", jd, a, client=client))
+        art = out.artifacts[0]
+        assert len(client.requests) == 1 and out.meta["outcome"] == "normalized" and not out.meta["repair_used"]
+        assert [t.provenance for t in art.targets] == ["jd_asserted"] and art.spec_status == "resolved"   # J
+        assert art.targets[0].jd_span.text == narrowed and len(asm.s2_views(art)) == 1
+        (rec,) = art.audit["span_normalizations"]                                                         # K
+        assert art.audit["span_normalized"] is True and rec["reason"] == "duplicate_representation"
+        assert (rec["original_span"], rec["normalized_span"]) == ("Project Manager (P.M.)", narrowed)
+        assert rec["definition"] == {"text": "Project Manager (P.M.)", "acronym": "P.M.", "full_form": "Project Manager"}
+        (m,) = art.audit["target_mappings"]
+        assert m["trust"] == "trust_bearing" and m["jd_definitions"][0]["text"] == "Project Manager (P.M.)"
+        assert m["alignment"] == [{"hint": h, "jd": j, "relation": r} for h, j, r in pairs]   # alignment unchanged
+
+    def test_reverse_definition_normalized(self):
+        line = "Minimum 5 years as a P.M. (Project Manager)"
+        v, jd, a, raw = _eqv("PM", line, "P.M. (Project Manager)", [("PM", "P.M.", AB)])
+        out = run(clf.classify_job("J1", jd, a, client=FakeClient(raw)))
+        assert out.meta["outcome"] == "normalized" and out.artifacts[0].targets[0].jd_span.text == "P.M."
+
+    @pytest.mark.parametrize("extra, pairs", [
+        ([("in", "grammatical")], [("PM", "P.M.", AB)]),              # jd_extra present: no narrowing
+        ([], [("PM", "P.M.", AB), ("PM", "Project Manager", AB)]),    # more than one pair: no narrowing
+    ])
+    def test_normalization_refused_unless_every_condition_holds(self, extra, pairs):
+        v, jd, a, raw = _eqv("PM", K1_LINE, "Project Manager (P.M.)", pairs, extra)
+        rp_raw, recs = rp.normalize_duplicate_representations(v.scoped, raw, enumerate_experience_criteria("J1", a))
+        assert recs == [] and rp_raw == raw
+
+    def test_normalization_is_revalidated_and_falls_back_to_repair(self):
+        # a criterion-level error elsewhere stays: the narrowed answer is still invalid -> the repair call runs
+        v, jd, a, raw = _eqv("PM", K1_LINE, "Project Manager (P.M.)", [("PM", "P.M.", AB)])
+        bad = _repair_of(raw)
+        d = json.loads(bad)
+        d["criteria"][0]["ambiguity"] = ["unsure"]
+        bad = json.dumps(d, ensure_ascii=False)
+        fixed = json.loads(bad)
+        fixed["criteria"][0]["ambiguity"] = []
+        client = FakeClient(bad, json.dumps(fixed, ensure_ascii=False))
+        out = run(clf.classify_job("J1", jd, a, client=client))
+        art = out.artifacts[0]
+        assert len(client.requests) == 2 and out.meta["span_normalized"] and art.spec_status == "resolved"
+        assert art.targets[0].jd_span.text == "P.M." and art.audit["span_normalized"] is True
+        assert "duplicate_representation" not in client.requests[1]["messages"][-1]["content"]
+
+    def test_k2_and_k1_oracles_unchanged_in_meaning(self):
+        v, out, _ = _classify_raw("PM", K1_LINE, "Project Manager", [("PM", "Project Manager", AB)])
+        assert [t.provenance for t in out.artifacts[0].targets] == ["jd_asserted"]
+        assert out.artifacts[0].audit["target_mappings"][0]["jd_definitions"][0]["text"] == "Project Manager (P.M.)"

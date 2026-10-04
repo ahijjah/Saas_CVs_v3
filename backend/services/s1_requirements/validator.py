@@ -53,7 +53,12 @@ Rules
     canonical jd_text words (a dotted acronym is one word) and the span
     boundary rule (only the approved Arabic proclitic chain may stay in front
     of a word); a jd_span holding both a role's full form and its acronym is
-    rejected ("names the same role twice").
+    rejected ("names the same role twice"). s1-5.2.2: when the jd_span is
+    exactly the JD's own abbreviation definition ("Project Manager (P.M.)")
+    and the target is one of its representations, the issue is the specific
+    span/duplicate_representation (narrow to one side; the generic "adds
+    words" rule is suppressed); classifier narrows it deterministically
+    before any repair call (repair.normalize_duplicate_representations).
 
   s1-2 target-mapping guards (span/string checks only; semantic equivalence is
   the AI's judgment, audited, never decided here):
@@ -101,7 +106,7 @@ from dataclasses import dataclass, field
 
 from services.s1_requirements.criteria import CriterionInput
 from services.s1_requirements.durations import DurationMatch
-from services.s1_requirements.jd_text import JDText, locate_words, normalize, words
+from services.s1_requirements.jd_text import JDText, acronym_key, exact_definition, locate_words, normalize, words
 from services.s1_requirements.schema import (
     AMB_AMBIGUOUS_RELEVANCE, AMB_REQUIREMENT_NOT_IN_JD, AMBIGUITY_CODES, BASIS_SECTOR, BASIS_TARGETS,
     BASIS_TOTAL_EXPERIENCE, BASIS_UNSPECIFIED, MATCH_EQUIVALENT, MATCH_EXACT, MATCH_NONE, MATCHES,
@@ -171,6 +176,7 @@ class ParsedCriterion:
     restrictions: tuple = ()           # ParsedRestriction, criteria without analysis targets only
     anchor_kind: str = ANCHOR_EVIDENCE
     withdrawn: tuple = ()              # s1-5.1 audit records of equivalent claims withdrawn after repair
+    normalized: tuple = ()             # s1-5.2.2 audit records of deterministic duplicate-representation spans
 
 
 # s1-5.2.1 structured issue units (internal; never part of the public artifact)
@@ -285,7 +291,9 @@ def _mapping_errors(c: CriterionInput, targets: list[ParsedTarget], req: tuple[S
         if _proper_subphrase(mt, ht):
             errs.append((sem, f"{tw}: drops words of the target {hints[hid]!r}; that is not the same role/function: "
                               f"use null"))
-        if _proper_subphrase(ht, mt):
+        if _proper_subphrase(ht, mt) and duplicate_definition(sp.text, hints[hid]) is None:
+            # (a span that is exactly the JD's own "Full Form (ACR)" definition is reported by V-align as a
+            #  duplicate representation to narrow, never as a longer qualified phrase)
             errs.append((sem + (SCOPE_AMBIGUITY,),
                          f"{tw}: adds words to the target {hints[hid]!r}; use null and, if the target appears "
                          f"only inside this longer phrase, report ambiguous_relevance"))
@@ -357,10 +365,15 @@ def _script(token: str) -> str:
 
 def _acronym_letters(original: str) -> str | None:
     """An all-capitals Latin acronym (dots allowed: "PM", "P.M.", "UX") -> its lower-case letters."""
-    letters = (original or "").replace(".", "").strip()
-    if 2 <= len(letters) <= 6 and letters.isascii() and letters.isalpha() and letters.isupper():
-        return letters.lower()
-    return None
+    return acronym_key(original)
+
+
+def duplicate_definition(span_text: str, hint_text: str):
+    """s1-5.2.2: the jd_span is exactly one JD-defined abbreviation construction ("Full Form (ACR)" or
+    "ACR (Full Form)") and the target is one of its two representations -> that definition, else None."""
+    d = exact_definition(span_text)
+    ht = tokens(hint_text)
+    return d if d is not None and ht in ([d.acronym], list(d.full_words)) else None
 
 
 def _expands(letters: str, words: list[str]) -> bool:
@@ -505,7 +518,15 @@ def _alignment_errors(hid: str, hint_text: str, t: dict, sp: Span, w: str
                               f"phrase drops it: use match none", cov))
         unacc = [jd_toks[i] for i in range(len(jd_toks)) if used_j[i] == 0]
         over = [jd_toks[i] for i in range(len(jd_toks)) if used_j[i] > 1]
-        if unacc and not over and any(_names_role_twice(a, unacc) for a in abbr_letters):
+        dup = duplicate_definition(sp.text, hint_text) if unacc and not over and not missing and not twice else None
+        if dup is not None and unacc in ([dup.acronym], list(dup.full_words)):
+            # s1-5.2.2: the span is the JD's own definition; the target already names one side of it
+            errs.append((_tscope(hid, "jd_span", "alignment", "jd_extra"),
+                         f"{tw}: the jd_span is the JD's own definition {dup.text!r}, which contains both the full form "
+                         f"and the acronym; keep match equivalent and narrow jd_span to exactly ONE of them: "
+                         f"{dup.full_text!r} or {dup.acronym_text!r}, with an abbreviation alignment covering it",
+                         Issue(hid, UNIT_SPAN, "duplicate_representation")))
+        elif unacc and not over and any(_names_role_twice(a, unacc) for a in abbr_letters):
             errs.append((sem, f"{tw}: the jd_span names the same role twice; narrow jd_span to either the full form or "
                          f"the acronym (unaccounted {unacc})", cov))
         elif unacc or over:

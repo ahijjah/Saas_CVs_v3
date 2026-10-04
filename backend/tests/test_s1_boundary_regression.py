@@ -257,7 +257,7 @@ class TestSafety:
 
     def test_s1_prompt_unchanged(self):
         assert (br.sc.S1_PROMPT_VERSION, br.sc.S1_VERSION, br.clf.prompt_fingerprint()) == (
-            "s1-5.2", "1.4.3", "4f22dddb117e")
+            "s1-5.2", "1.4.4", "4f22dddb117e")
 
 
 # ── s1-3: diagnostics, held-out set, prompt independence ───────────────────
@@ -301,7 +301,8 @@ class TestS14Diagnostics:
         assert r["pass"] and r["policy"] == "functional" and s["repair_calls"] == 0
         assert s["diagnostics"] == {"model_policy_mismatch_main": 1, "repair_attempted_type_change": 0,
                                     "repair_discarded_changes": 0, "equivalent_rejected_by_alignment": 0, "alignment_withdrawn": 0,
-                                    "unverified_form_candidates": 0, "jd_asserted_via_translation": 0}
+                                    "unverified_form_candidates": 0, "jd_asserted_via_translation": 0,
+                                    "unverified_abbreviation_candidates": 0, "span_normalized": 0}
 
     def test_repair_type_change_outside_scope_is_discarded(self):
         bad = with_oracle("F1", ambiguity=["unsure"])                              # only ambiguity is invalid
@@ -312,7 +313,8 @@ class TestS14Diagnostics:
         assert r["pass"] and r["repair_used"] and [t["type"] for t in r["targets"]] == ["function"]
         assert s["diagnostics"] == {"model_policy_mismatch_main": 0, "repair_attempted_type_change": 1,
                                     "repair_discarded_changes": 1, "equivalent_rejected_by_alignment": 0, "alignment_withdrawn": 0,
-                                    "unverified_form_candidates": 0, "jd_asserted_via_translation": 0}
+                                    "unverified_form_candidates": 0, "jd_asserted_via_translation": 0,
+                                    "unverified_abbreviation_candidates": 0, "span_normalized": 0}
 
     def test_policy_sensitive_mapping_excluded_from_gate(self):
         pm = with_oracle("K2", targets=[{"hint": "T1", "type": "role", "match": "equivalent",
@@ -367,9 +369,10 @@ class TestHeldOut:
                   "HO_typing"):
             assert f in fams, f
         mapped = [t["mapped"] for c in HELDOUT for t in c["expected"]["targets"]]
-        assert sum(mapped) >= 3 and mapped.count(False) >= 8
+        assert sum(mapped) >= 2 and mapped.count(False) >= 8                  # trust-bearing positives
+        # s1-5.2 form candidate (HO06) and s1-5.2.2 undefined-abbreviation candidate (HO09)
         assert [c["id"] for c in HELDOUT if "equivalence_unverified" in c["expected"].get("reasons_include", [])] == [
-            "HO06"]
+            "HO06", "HO09"]
         assert sum(1 for c in HELDOUT if any(re.search(r"[؀-ۿ]", ln) for ln in c["jd_lines"])) >= 4
 
     def test_oracle_answers_score_100_percent(self):

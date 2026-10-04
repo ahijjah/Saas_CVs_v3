@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 S1_SCHEMA = "s1_requirement_spec_v2"
-S1_VERSION = "1.4.3"                     # enumeration + parser + validator + assembly
+S1_VERSION = "1.4.4"                     # enumeration + parser + validator + assembly
 S1_INPUT_VERSION = "s1-in-1"
 S1_PROMPT_CODE = "recruitment.experience_requirement_spec"
 S1_PROMPT_VERSION = "s1-5.2"
@@ -68,6 +68,9 @@ REL_FORM = "form"                        # same language, other grammatical form
 UNVERIFIED_RELATIONS = (REL_FORM,)       # a mapping using any of these never establishes a target
 TRUST_BEARING = "trust_bearing"          # audit.target_mappings[].trust
 TRUST_UNVERIFIED_FORM = "unverified_form"
+# s1-5.2.2: an abbreviation EXPANSION (acronym <-> full form) is evidence only when the JD itself defines it in a
+# requirement span ("Full Form (ACR)" / "ACR (Full Form)"); initials alone are only structural plausibility
+TRUST_UNVERIFIED_ABBREVIATION = "unverified_abbreviation"
 REL_TRANSLATION = "translation"          # other language (other script)
 REL_ABBREVIATION = "abbreviation"        # an all-capitals acronym and its expansion
 ALIGN_RELATIONS = (REL_SAME, REL_FORM, REL_TRANSLATION, REL_ABBREVIATION)

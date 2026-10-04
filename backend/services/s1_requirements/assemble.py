@@ -11,6 +11,14 @@ Field authority (see schema.py):
                   pair is NOT trust-bearing: original_ai + equivalence_unverified,
                   the candidate kept in audit.target_mappings (used false, trust
                   "unverified_form"); never jd_asserted, never an S2 view.
+                  s1-5.2.2: an abbreviation EXPANSION (acronym <-> full form) is
+                  trust-bearing only when a requirement span holds the JD's own
+                  definition of it ("Full Form (ACR)" / "ACR (Full Form)",
+                  jd_text.abbreviation_definitions); otherwise the same
+                  candidate outcome with trust "unverified_abbreviation". The
+                  same acronym written differently (PM / P.M.) is not an
+                  expansion and keeps its trust. Definitions used are audited in
+                  target_mappings[].jd_definitions.
                   hint-less criteria: AI-selected verbatim JD spans (jd_asserted)
   required_years  recruiter (explicit) > JD duration span whose parsed lower
                   bound equals the hint (jd_verified); different value ->
@@ -41,11 +49,12 @@ from typing import Mapping
 from services.experience_accounting import RequirementSpec
 from services.s1_requirements.criteria import KIND_ROLE_ONLY, KIND_YEARS_AND_ROLES, CriterionInput
 from services.s1_requirements.durations import DurationMatch
-from services.s1_requirements.jd_text import JDText
+from services.s1_requirements.jd_text import JDText, abbreviation_definitions, acronym_key
 from services.s1_requirements.schema import (
     AMB_AMBIGUOUS_RELEVANCE, AMB_CONFLICTING_REQUIREMENTS, AMB_REQUIREMENT_NOT_IN_JD, BASIS_UNSPECIFIED,
     BIZ_COMPOUND_REQUIREMENT, BIZ_EQUIVALENCE_UNVERIFIED, BIZ_N_MISMATCH, BIZ_N_NOT_IN_JD, BIZ_TARGET_NOT_IN_JD,
-    FIELD_MIN_YEARS, REL_FORM, TRUST_BEARING, TRUST_UNVERIFIED_FORM, UNVERIFIED_RELATIONS,
+    FIELD_MIN_YEARS, REL_ABBREVIATION, REL_FORM, TRUST_BEARING, TRUST_UNVERIFIED_ABBREVIATION,
+    TRUST_UNVERIFIED_FORM, UNVERIFIED_RELATIONS,
     FIELD_ROLES, POLICY_EXPLICIT_ROLE, POLICY_FUNCTIONAL, POLICY_MIXED, POLICY_PURE_DURATION, POLICY_SECTOR,
     PROV_JD_ASSERTED, PROV_JD_VERIFIED, PROV_ORIGINAL_AI, PROV_S1_INTERPRETED, RECRUITER_FIELDS,
     RECRUITER_PROVENANCES, REASON_KINDS, RETRYABLE_REASONS, STATUS_FAILED_TECHNICAL,
@@ -53,7 +62,7 @@ from services.s1_requirements.schema import (
     TARGET_ROLE, KIND_TECHNICAL, REASON_VALIDATION_FAILED, Reason, RequiredYears, S1Artifact, Setting, Span,
     Target,
 )
-from services.s1_requirements.validator import ParsedCriterion
+from services.s1_requirements.validator import ParsedCriterion, tokens
 
 
 class S1ViewError(ValueError):
@@ -127,6 +136,9 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
     targets: list[Target] = []
     tprov: dict[str, str] = {}
     j = 0
+    # s1-5.2.2: the abbreviations the JD itself defines inside this criterion's requirement spans
+    defs = [(r.line, d) for r in req for d in abbreviation_definitions(r.text)]
+    trust = {pt.hint_id: _assess(pt, defs) for pt in pc.targets if pt.hint_id and pt.span is not None}
     for pt in pc.targets:
         if pt.hint_id:
             # only a match INSIDE this criterion's requirement spans counts; elsewhere in the JD does not
@@ -135,11 +147,13 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
                 prov, span = gov["targets"], inside or pt.span
             elif inside is not None:
                 prov, span = PROV_JD_VERIFIED, inside
-            elif pt.span is not None and _unverified(pt):
-                # s1-5.2: a structurally valid mapping that rests on a model-labelled grammatical form is only a
-                # candidate (kept in the audit): the target stays original_ai and the criterion unconfirmed
+            elif pt.span is not None and trust[pt.hint_id]["trust"] != TRUST_BEARING:
+                # s1-5.2 / s1-5.2.2: a structurally valid mapping that rests on a model-labelled grammatical form or
+                # on an abbreviation expansion the JD does not define is only a candidate (kept in the audit): the
+                # target stays original_ai and the criterion unconfirmed
                 prov, span = PROV_ORIGINAL_AI, None
-                reasons.append(Reason(BIZ_EQUIVALENCE_UNVERIFIED, f"targets.{pt.hint_id}", _unverified_detail(pt)))
+                reasons.append(Reason(BIZ_EQUIVALENCE_UNVERIFIED, f"targets.{pt.hint_id}",
+                                      _unverified_detail(pt, trust[pt.hint_id])))
             elif pt.span is not None:                  # validated explicit AI mapping inside a requirement span
                 prov, span = PROV_JD_ASSERTED, pt.span
             else:
@@ -219,7 +233,8 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
          "start": pt.span.start, "end": pt.span.end, "used": t.provenance == PROV_JD_ASSERTED, "match": pt.match,
          "alignment": [dict(x) for x in pt.alignment], "jd_extra": [dict(x) for x in pt.jd_extra],
          "relations": sorted({x.get("relation") for x in pt.alignment}),
-         "trust": TRUST_UNVERIFIED_FORM if _unverified(pt) else TRUST_BEARING}
+         "trust": trust[pt.hint_id]["trust"],
+         "jd_definitions": [dict(x) for x in trust[pt.hint_id]["definitions"]]}
         for pt, t in zip(pc.targets, targets) if pt.hint_id and pt.span is not None]
     if any(m["trust"] != TRUST_BEARING and m["used"] for m in target_mappings):
         # invariant: an unverified (form) mapping never establishes a target
@@ -244,6 +259,9 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
     audit["requirement_anchor"] = None if not req else pc.anchor_kind
     status = STATUS_NEEDS_CONFIRMATION if reasons else STATUS_RESOLVED
     # s1-5.1 deterministic withdrawal: audit it, and it may only ever narrow evidence
+    audit["span_normalized"] = bool(pc.normalized)          # s1-5.2.2 deterministic duplicate-representation
+    if pc.normalized:
+        audit["span_normalizations"] = [dict(x) for x in pc.normalized]
     audit["alignment_withdrawn"] = bool(pc.withdrawn)
     if pc.withdrawn:
         audit["withdrawals"] = [dict(x) for x in pc.withdrawn]
@@ -271,14 +289,54 @@ def _tv(art: S1Artifact, policy: str, targets: tuple[Target, ...], setting: str 
                  tuple(t.jd_span.text if t.jd_span else t.text for t in targets), setting)
 
 
-def _unverified(pt) -> bool:
-    """s1-5.2: the mapping's alignment uses a relation the system cannot verify (a model-labelled form)."""
-    return any(x.get("relation") in UNVERIFIED_RELATIONS for x in pt.alignment)
+def _expansion(pair: dict) -> tuple[str, tuple[str, ...]] | None:
+    """(acronym key, canonical full-form words) of an abbreviation pair that EXPANDS an acronym; None for the
+    same acronym written differently (PM / P.M.: one canonical word, not an expansion)."""
+    h, j = pair.get("hint") or "", pair.get("jd") or ""
+    if tokens(h) == tokens(j):
+        return None
+    if len(tokens(h)) == 1 and acronym_key(h):
+        return acronym_key(h), tuple(tokens(j))
+    if len(tokens(j)) == 1 and acronym_key(j):
+        return acronym_key(j), tuple(tokens(h))
+    return "", tuple(tokens(h)) + tuple(tokens(j))           # not provable: never matches a definition
 
 
-def _unverified_detail(pt) -> str:
-    pairs = "; ".join(f"{x.get('hint')}→{x.get('jd')}" for x in pt.alignment if x.get("relation") == REL_FORM)
-    return f"{pt.text!r} ~ {pt.span.text!r} (unverified grammatical-form equivalence: {pairs})"
+def _assess(pt, defs) -> dict:
+    """Trust of a validated mapping. FORM pairs are never trust-bearing (s1-5.2). An abbreviation expansion is
+    trust-bearing only when a requirement span holds the JD's own definition of exactly that acronym and full
+    form (s1-5.2.2); the definition is kept for the audit."""
+    form = [x for x in pt.alignment if x.get("relation") in UNVERIFIED_RELATIONS]
+    abbr, used = [], []
+    for x in pt.alignment:
+        if x.get("relation") != REL_ABBREVIATION:
+            continue
+        e = _expansion(x)
+        if e is None:                       # the same acronym (PM / P.M.): trust unchanged; audit any definition
+            key = "".join(tokens(x.get("jd") or ""))
+            for ln, d in defs:
+                rec = {"line": ln, **d.to_dict()}
+                if d.acronym == key and rec not in used:
+                    used.append(rec)
+            continue
+        d = next(({"line": ln, **d.to_dict()} for ln, d in defs if (d.acronym, d.full_words) == e), None)
+        if d is None:
+            abbr.append(x)
+        elif d not in used:
+            used.append(d)
+    label = TRUST_UNVERIFIED_FORM if form else TRUST_UNVERIFIED_ABBREVIATION if abbr else TRUST_BEARING
+    return {"trust": label, "form": form, "abbreviation": abbr, "definitions": used}
+
+
+def _unverified_detail(pt, a: dict) -> str:
+    def pairs(xs):
+        return "; ".join(f"{x.get('hint')}→{x.get('jd')}" for x in xs)
+    parts = []
+    if a["form"]:
+        parts.append(f"unverified grammatical-form equivalence: {pairs(a['form'])}")
+    if a["abbreviation"]:
+        parts.append(f"unverified abbreviation, not defined in the JD: {pairs(a['abbreviation'])}")
+    return f"{pt.text!r} ~ {pt.span.text!r} ({'; '.join(parts)})"
 
 
 def s2_views(art: S1Artifact, *, require_resolved: bool = True) -> list[RequirementSpec]:

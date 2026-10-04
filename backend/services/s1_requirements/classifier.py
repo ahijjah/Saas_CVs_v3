@@ -46,7 +46,9 @@ from services.s1_requirements.criteria import (
 )
 from services.s1_requirements.durations import DurationMatch
 from services.s1_requirements.jd_text import JDText
-from services.s1_requirements.repair import apply_withdrawal, merge_repair, pair_repair_guidance, plan_withdrawal
+from services.s1_requirements.repair import (
+    apply_withdrawal, merge_repair, normalize_duplicate_representations, pair_repair_guidance, plan_withdrawal,
+)
 from services.s1_requirements.schema import (
     REASON_AI_UNAVAILABLE, REASON_EXCEEDS_MODEL_CONTEXT, REASON_INTERNAL_ERROR, REASON_OUTPUT_TRUNCATED,
     REASON_VALIDATION_FAILED, S1_INPUT_VERSION, S1_MAX_TOKENS, S1_MODEL, S1_PROMPT_CODE, S1_PROMPT_VERSION,
@@ -246,6 +248,7 @@ def _serialise_parsed(results: dict[str, ParsedCriterion]) -> dict:
                   "restrictions": [{"text": r.text, "kind": r.kind, "span": r.span.to_dict()}
                                    for r in p.restrictions],
                   "anchor_kind": p.anchor_kind, "withdrawn": [dict(x) for x in p.withdrawn],
+                  "normalized": [dict(x) for x in p.normalized],
                   "setting": p.setting.to_dict() if p.setting else None, "duration": p.duration_id,
                   "ambiguity": list(p.ambiguity), "note": p.note,
                   "statement_anchored": p.statement_anchored, "relevance_basis": p.relevance_basis,
@@ -265,7 +268,7 @@ def _deserialise_parsed(d: dict) -> dict[str, ParsedCriterion]:
         bool(p.get("statement_anchored")), p.get("relevance_basis"), p.get("policy_derivation", "from_types"),
         p.get("model_policy"),
         tuple(ParsedRestriction(r["text"], r["kind"], Span.from_dict(r["span"])) for r in p.get("restrictions") or ()),
-        p.get("anchor_kind", "evidence"), tuple(p.get("withdrawn") or ()))
+        p.get("anchor_kind", "evidence"), tuple(p.get("withdrawn") or ()), tuple(p.get("normalized") or ()))
         for cid, p in d.items()}
 
 
@@ -342,6 +345,16 @@ async def _run(req: BuiltRequest, client, model: str, meta: dict) -> dict:
             return _out(REASON_OUTPUT_TRUNCATED)
         val = validate_response(raw, req.jd, req.criteria, req.durations)
         outcome = "validated"
+        normalized: list[dict] = []
+        if not val.ok:
+            # s1-5.2.2: deterministic duplicate-representation span narrowing BEFORE any repair call
+            narrowed, normalized = normalize_duplicate_representations(val.scoped, raw, req.criteria)
+            if normalized:
+                main_errors = list(val.errors)
+                raw, val = narrowed, validate_response(narrowed, req.jd, req.criteria, req.durations)
+                meta["span_normalized"] = normalized
+                if val.ok:
+                    first_errors, outcome = main_errors, "normalized"
         if not val.ok:
             first_errors, first_scoped, main_raw = list(val.errors), list(val.scoped), raw
             repair_messages = messages + [{"role": "assistant", "content": raw},
@@ -385,7 +398,13 @@ async def _run(req: BuiltRequest, client, model: str, meta: dict) -> dict:
         meta["error"] = f"{type(exc).__name__}: {exc}"[:300]
         return _out(REASON_AI_UNAVAILABLE, {"errors": first_errors, "repair_errors": []})
     meta["outcome"] = outcome
-    return _out(None, {"errors": first_errors, "repair_errors": []}, _serialise_parsed(val.results))
+    results = val.results
+    for rec in normalized:                      # audit only where the final answer kept the narrowed span
+        p = results.get(rec["criterion_id"])
+        t = next((t for t in p.targets if t.hint_id == rec["hint"]), None) if p else None
+        if t is not None and t.span is not None and t.span.text == rec["normalized_span"]:
+            results[rec["criterion_id"]] = replace(p, normalized=p.normalized + (rec,))
+    return _out(None, {"errors": first_errors, "repair_errors": []}, _serialise_parsed(results))
 
 
 __all__ = ["classify_job", "build_request", "S1JobResult", "InMemoryS1Cache", "s1_cache_key",

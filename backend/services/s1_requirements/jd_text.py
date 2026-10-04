@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import dataclass
 
 from services.s1_requirements.durations import DurationMatch, parse_durations
 from services.s1_requirements.schema import Span, sha256
@@ -115,6 +116,112 @@ def locate_words(part: list[str], whole: list[str]) -> list[tuple[int, str]]:
         elif w0.endswith(p0) and proclitic_chain_ok(w0[:len(w0) - len(p0)], p0[0]):
             out.append((i, w0[:len(w0) - len(p0)]))
     return out
+
+
+def acronym_key(original: str) -> str | None:
+    """An all-capitals Latin acronym, dots allowed ("PM", "P.M.", "UX") -> its lower-case letters, else None."""
+    letters = (original or "").replace(".", "").strip()
+    if 2 <= len(letters) <= 6 and letters.isascii() and letters.isalpha() and letters.isupper():
+        return letters.lower()
+    return None
+
+
+# s1-5.2.2 JD-defined abbreviations: tokens of the ORIGINAL text (parentheses kept, case kept)
+_DEF_TOKEN = re.compile(r"[()]|(?<!\w)[^\W\d_](?:\.[^\W\d_](?!\w))+\.?|\w+")
+
+
+@dataclass(frozen=True)
+class AbbreviationDefinition:
+    """A local "Full Form (ACR)" / "ACR (Full Form)" construction; offsets are into the analysed text."""
+    acronym: str                       # canonical key ("pm")
+    full_words: tuple[str, ...]        # canonical words of the full form
+    acronym_text: str
+    full_text: str
+    text: str                          # the whole construction, parentheses included
+    start: int
+    end: int
+    acronym_start: int
+    acronym_end: int
+    full_start: int
+    full_end: int
+
+    def to_dict(self) -> dict:
+        return {"text": self.text, "acronym": self.acronym_text, "full_form": self.full_text}
+
+
+def _is_word(tok: tuple) -> bool:
+    return tok[0] not in "()"
+
+
+def _capitalised(tok: tuple | None) -> bool:
+    return tok is not None and _is_word(tok) and tok[0][:1].isupper()
+
+
+def abbreviation_definitions(text: str) -> list[AbbreviationDefinition]:
+    """Strict, local, dictionary-free detection. A construction counts only when:
+    - the parentheses are top level and contain no other parentheses;
+    - "Full Form (ACR)": exactly one acronym token inside; the full form is the n alphabetic words right before
+      "(" with n = len(acronym), all capitalised (a bounded title run), and their strict initials (one per
+      word) equal the acronym letters;
+    - "ACR (Full Form)": exactly n alphabetic words inside, strict initials equal the acronym right before "(";
+    - no capitalised word directly before or after the construction (a title qualifier such as "Senior" would
+      make the defined phrase only part of the title).
+    Anything else (several acronyms, nested or unbalanced parentheses, mixed tokens) is not a definition."""
+    toks = [(m.group(), m.start(), m.end()) for m in _DEF_TOKEN.finditer(text or "")]
+    out: list[AbbreviationDefinition] = []
+    depth = 0
+    for i, tok in enumerate(toks):
+        if tok[0] == ")":
+            depth = max(0, depth - 1)
+            continue
+        if tok[0] != "(":
+            continue
+        top, depth = depth == 0, depth + 1
+        j = i + 1
+        while j < len(toks) and _is_word(toks[j]):
+            j += 1
+        if not (top and j < len(toks) and toks[j][0] == ")" and j > i + 1):
+            continue
+        inner = toks[i + 1:j]
+        after = toks[j + 1] if j + 1 < len(toks) else None
+        if len(inner) == 1 and acronym_key(inner[0][0]):                    # Full Form (ACR)
+            key = acronym_key(inner[0][0])
+            n = len(key)
+            full = toks[i - n:i] if i >= n else []
+            before = toks[i - n - 1] if i - n - 1 >= 0 else None
+            acr, first, last = inner[0], full[0] if full else None, full[-1] if full else None
+            if not all(_capitalised(t) for t in full):
+                continue            # outside parentheses only a capitalised (title) run is a bounded full form
+        elif i >= 1 and _is_word(toks[i - 1]) and acronym_key(toks[i - 1][0]):  # ACR (Full Form)
+            key = acronym_key(toks[i - 1][0])
+            full = inner
+            before = toks[i - 2] if i >= 2 else None
+            acr, first, last = toks[i - 1], inner[0], inner[-1]
+        else:
+            continue
+        if not (len(full) == len(key) and all(_is_word(t) and t[0].isalpha() for t in full)
+                and "".join(t[0][0].lower() for t in full) == key):
+            continue
+        if _capitalised(before) or _capitalised(after):
+            continue
+        start = min(acr[1], first[1])
+        end = max(toks[j][2], acr[2])
+        out.append(AbbreviationDefinition(
+            key, tuple(words(text[first[1]:last[2]])), acr[0], text[first[1]:last[2]], text[start:end], start, end,
+            acr[1], acr[2], first[1], last[2]))
+    return out
+
+
+def exact_definition(text: str) -> AbbreviationDefinition | None:
+    """The single definition construction that makes up the whole of ``text`` (edges: whitespace/punctuation)."""
+    defs = abbreviation_definitions(text)
+    if len(defs) != 1:
+        return None
+    d = defs[0]
+    edge = re.compile(r"[\s.,;:]*")
+    if edge.fullmatch(text[:d.start]) and edge.fullmatch(text[d.end:]):
+        return d
+    return None
 
 
 class JDText:

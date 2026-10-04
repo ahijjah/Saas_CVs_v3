@@ -179,6 +179,7 @@ def observe(case: dict, out, raw: list = ()) -> dict:
                         "alignment_withdrawn": bool(out.meta.get("alignment_withdrawn"))},
         "repair_merge": out.meta.get("repair_merge"),
         "withdrawals": out.meta.get("alignment_withdrawn") or [],
+        "span_normalized": out.meta.get("span_normalized") or [],
     }
     if outcome != "ok":
         return obs
@@ -387,7 +388,12 @@ def summarize(records: list[dict], cases: list[dict], *, price_in: float = PRICE
                                                           if m.get("trust") == sc.TRUST_UNVERIFIED_FORM),
                         "jd_asserted_via_translation": sum(1 for r in ok for m in r["mappings"]
                                                            if m.get("used") and sc.REL_TRANSLATION
-                                                           in m.get("relations", []))},
+                                                           in m.get("relations", [])),
+                        # s1-5.2.2: abbreviation expansions the JD does not define, and deterministic
+                        # duplicate-representation span narrowing (runs)
+                        "unverified_abbreviation_candidates": sum(
+                            1 for r in ok for m in r["mappings"] if m.get("trust") == sc.TRUST_UNVERIFIED_ABBREVIATION),
+                        "span_normalized": sum(1 for r in records if r.get("span_normalized"))},
         "match_counts": dict(Counter(m for r in ok for m in r["matches"].values())),
         "semantic_failures": [{"case": r["case"], "run": r["run"],
                                "failed_fields": [f for f, v in r["checks"].items() if not v]}

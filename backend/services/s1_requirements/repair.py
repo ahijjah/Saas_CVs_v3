@@ -70,7 +70,7 @@ import json
 from collections import Counter, defaultdict
 
 from services.s1_requirements.criteria import CriterionInput
-from services.s1_requirements.jd_text import normalize
+from services.s1_requirements.jd_text import exact_definition, normalize
 from services.s1_requirements.schema import RESTRICTION_KINDS
 from services.s1_requirements.validator import (
     UNIT_PAIR, tokens,
@@ -166,6 +166,58 @@ def _pair_local_issues(scoped: list[ScopedError], cid: str, hid: str) -> dict[in
             return None
         out[i.index] = i.words
     return out
+
+
+def normalize_duplicate_representations(scoped: list[ScopedError], raw: str, criteria: list[CriterionInput]
+                                        ) -> tuple[str, list[dict]]:
+    """s1-5.2.2, BEFORE any repair call: a jd_span that is exactly the JD's own abbreviation definition
+    ("Project Manager (P.M.)") is narrowed to the one representation the model ALREADY aligned ("P.M."),
+    when that is the ONLY error of the target, the target has exactly one abbreviation pair covering all its
+    words, no jd_extra, and the span is exactly one recognised definition (so no qualifier lies outside it).
+    No new claim: the alignment is unchanged and the definition stays in the requirement span. -> (raw, records)"""
+    items = _items(raw)
+    if items is None:
+        return raw, []
+    hints_by_cid = {c.criterion_id: hint_ids(c) for c in criteria}
+    plan: dict[tuple[str, str], dict] = {}
+    for e in scoped:
+        i = e.issue
+        if not (i is not None and i.kind == "duplicate_representation" and e.criterion_id in hints_by_cid
+                and i.target in hints_by_cid[e.criterion_id]):
+            continue
+        cid, hid = e.criterion_id, i.target
+        own = [x for x in scoped if x.criterion_id == cid and any(
+            sc == f"{SCOPE_TARGET_PREFIX}{hid}" or sc.startswith(f"{SCOPE_TARGET_PREFIX}{hid}:") for sc in x.scopes)]
+        objs = _hint_targets(items.get(cid) or {}, hid)
+        if own != [e] or len(objs) != 1:
+            continue
+        t = objs[0]
+        sp, al = t.get("jd_span"), t.get("alignment")
+        if not (t.get("match") == "equivalent" and isinstance(sp, dict) and isinstance(sp.get("text"), str)
+                and isinstance(sp.get("line"), int) and not t.get("jd_extra") and isinstance(al, list)
+                and len(al) == 1 and isinstance(al[0], dict) and al[0].get("relation") == "abbreviation"
+                and isinstance(al[0].get("hint"), str) and isinstance(al[0].get("jd"), str)
+                and tokens(al[0]["hint"]) == tokens(hints_by_cid[cid][hid])):
+            continue
+        d = exact_definition(sp["text"])
+        if d is None:
+            continue
+        side = tokens(al[0]["jd"])
+        new = d.acronym_text if side == [d.acronym] else d.full_text if side == list(d.full_words) else None
+        if new is None:
+            continue
+        plan[(cid, hid)] = {"criterion_id": cid, "hint": hid, "original_span": sp["text"], "normalized_span": new,
+                            "line": sp["line"], "reason": "duplicate_representation", "definition": d.to_dict()}
+    if not plan:
+        return raw, []
+    data = json.loads(raw)
+    for it in data["criteria"]:
+        cid = it.get("criterion_id") if isinstance(it, dict) else None
+        for hid in hints_by_cid.get(cid, {}):
+            rec = plan.get((cid, hid))
+            if rec:
+                _hint_target(it, hid)["jd_span"] = {"line": rec["line"], "text": rec["normalized_span"]}
+    return json.dumps(data, ensure_ascii=False), list(plan.values())
 
 
 def pair_repair_guidance(scoped: list[ScopedError]) -> list[str]:
