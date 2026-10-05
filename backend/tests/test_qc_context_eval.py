@@ -798,9 +798,18 @@ class TestPinnedBytes:
     def test_production_has_no_qualifying_context_and_no_candidate_reference(self):
         src = (BACKEND / "services" / "ai_service.py").read_text(encoding="utf-8")
         assert "qualifying_context" not in src and "candidate_qc" not in src
+        service = BACKEND / "services" / "qualifying_context"
         for path in (BACKEND / "services").rglob("*.py"):
+            if service in path.parents:
+                continue          # the validated production service records its prompt version by design
             text = path.read_text(encoding="utf-8")
             assert "candidate_qc" not in text and "qc_context_eval" not in text, path
+        # phase P1: the service exists but nothing in production imports it (not wired)
+        for sub in ("services", "workers", "routers"):
+            for path in (BACKEND / sub).rglob("*.py"):
+                if service in path.parents:
+                    continue
+                assert "qualifying_context" not in path.read_text(encoding="utf-8"), path
 
 
 # ── real mode (fake client only: no network, no OpenAI import) ─────────────

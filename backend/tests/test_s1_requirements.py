@@ -2046,6 +2046,10 @@ class TestDeterminism:
 # ── 27 isolation ────────────────────────────────────────────────────────────
 
 class TestIsolation:
+    # The one allowed reader: the (unwired) qualifying-context service reuses the pure JD-text utilities for
+    # verbatim grounding, and nothing else from S1.
+    ALLOWED_READERS = {("qualifying_context", "validation.py"): "from services.s1_requirements.jd_text import "}
+
     def test_nothing_in_production_imports_s1(self):
         hits = []
         for sub in ("services", "workers", "routers", "api"):
@@ -2053,7 +2057,13 @@ class TestIsolation:
             for p in root.rglob("*.py") if root.exists() else []:
                 if "s1_requirements" in p.parts:
                     continue
-                if "s1_requirements" in p.read_text(encoding="utf-8"):
+                text = p.read_text(encoding="utf-8")
+                allowed = self.ALLOWED_READERS.get((p.parent.name, p.name))
+                if allowed:
+                    rest = [ln for ln in text.splitlines() if "s1_requirements" in ln and not ln.startswith(allowed)]
+                    if rest:
+                        hits.append(f"{p}: {rest}")
+                elif "s1_requirements" in text:
                     hits.append(str(p))
         assert hits == []
 
