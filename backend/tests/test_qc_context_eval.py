@@ -36,7 +36,7 @@ def qc(state, *contexts):
 
 class TestFixtureSchema:
     CASE_KEYS = {"id", "family", "lang", "description", "jd_lines", "analysis_stub", "expected", "decoys", "flags",
-                 "oracle", "split"}
+                 "oracle", "split", "fixture_version"}
 
     @pytest.mark.parametrize("path,split,version", [(qe.MAIN_FIXTURE, "main", "qc-main-1"),
                                                     (qe.HELDOUT_FIXTURE, "heldout", "qc-heldout-1")])
@@ -441,12 +441,22 @@ class TestOracle:
 class TestIsolation:
     def test_static_imports(self):
         tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
-        mods = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
-        mods |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
-        assert {m for m in mods if m.startswith("services")} == {"services.s1_requirements.criteria",
-                                                                  "services.s1_requirements.jd_text"}
-        assert not {m for m in mods if any(k in m for k in ("openai", "ai_service", "llm", "database", "routers",
-                                                             "classifier", "sqlalchemy", "httpx", "requests"))}
+        top = {n.module for n in tree.body if isinstance(n, ast.ImportFrom)}
+        top |= {a.name for n in tree.body if isinstance(n, ast.Import) for a in n.names}
+        assert {m for m in top if m.startswith("services")} == {"services.s1_requirements.criteria",
+                                                                 "services.s1_requirements.jd_text"}
+        banned = ("openai", "ai_service", "llm", "database", "routers", "classifier", "sqlalchemy", "httpx",
+                  "requests", "config")
+        assert not {m for m in top if any(k in m for k in banned)}
+        # the ONLY non-top-level imports are the lazy client imports inside make_openai_client
+        lazy = {}
+        for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)):
+            for n in ast.walk(fn):
+                if isinstance(n, ast.ImportFrom):
+                    lazy.setdefault(fn.name, set()).add(n.module)
+                elif isinstance(n, ast.Import):
+                    lazy.setdefault(fn.name, set()).update(a.name for a in n.names)
+        assert lazy == {"make_openai_client": {"openai", "config"}}
 
     @pytest.mark.parametrize("mode", ["oracle", "replay"])
     def test_no_openai_at_runtime(self, mode, tmp_path):
@@ -481,11 +491,13 @@ class TestIsolation:
         assert res["summary"]["overall"]["missed_qualifying_context"] == 1
         assert (out / "report.md").read_text(encoding="utf-8").startswith("# Qualifying-context evaluation (replay")
 
-    def test_real_mode_disabled(self, capsys):
-        assert qe.main(["--mode", "real"]) == 2
-        assert "DISABLED" in capsys.readouterr().err
-        with pytest.raises(NotImplementedError):
-            qe.make_real_responder()
+    def test_real_mode_without_confirmation_makes_no_call(self, capsys, monkeypatch):
+        def boom():
+            raise AssertionError("client must not be built without --confirm-real")
+        monkeypatch.setattr(qe, "make_openai_client", boom)
+        assert qe.main(["--mode", "real", "--set", "main", "--runs", "5"]) == 2
+        out, err = capsys.readouterr()
+        assert "no call made" in err and json.loads(out[:out.rindex("}") + 1])["calls"] == 34 * 5
 
     def test_cli_oracle_exit_code(self, tmp_path):
         assert qe.main(["--mode", "oracle", "--set", "all", "--runs", "2", "--out", str(tmp_path)]) == 0
@@ -660,10 +672,16 @@ class TestPreparedRequest:
         assert res["meta"]["prompt_version"] is None and res["meta"]["model"] is None
         assert res["summary"]["gates"]["status"] == "not_applicable"
 
-    def test_real_mode_still_refuses_with_prompt_present(self, capsys):
-        assert PROMPT_FILE.is_file()
-        assert qe.main(["--mode", "real", "--set", "main", "--runs", "5"]) == 2
-        assert "DISABLED" in capsys.readouterr().err
+    def test_real_mode_refuses_heldout_without_explicit_permission(self, capsys, monkeypatch):
+        monkeypatch.setattr(qe, "make_openai_client", lambda: (_ for _ in ()).throw(AssertionError("no client")))
+        for argv in (["--set", "heldout"], ["--set", "all"]):
+            assert qe.main(["--mode", "real", "--runs", "5", "--confirm-real", *argv]) == 2
+            assert "--allow-heldout" in capsys.readouterr().err
+
+    def test_real_mode_refuses_non_approved_configuration(self):
+        for extra in (["--model", "gpt-4o"], ["--temperature", "0"], ["--max-tokens", "500"]):
+            with pytest.raises(SystemExit):
+                qe.main(["--mode", "real", "--set", "main", "--confirm-real", *extra])
 
 
 def gate_records(plan: dict, cases, runs: int = 5):
@@ -780,3 +798,182 @@ class TestPinnedBytes:
         for path in (BACKEND / "services").rglob("*.py"):
             text = path.read_text(encoding="utf-8")
             assert "candidate_qc" not in text and "qc_context_eval" not in text, path
+
+
+# ── real mode (fake client only: no network, no OpenAI import) ─────────────
+
+class _Usage:
+    prompt_tokens, completion_tokens, total_tokens = 2100, 25, 2125
+
+
+class _Resp:
+    def __init__(self, content, model="gpt-4o-mini-2024-07-18", finish="stop"):
+        self.choices = [type("C", (), {"message": type("M", (), {"content": content})(), "finish_reason": finish})()]
+        self.model, self.usage = model, _Usage()
+
+
+class FakeClient:
+    """Records every request; answers from a per-case script (default: the oracle answer) or raises."""
+
+    def __init__(self, script=None):
+        self.calls, self.script, self._n = [], script or {}, Counter()
+        self.chat = type("Chat", (), {"completions": self})()
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        jd = kwargs["messages"][1]["content"]
+        case = next(c for c in ALL if qe.USER_TEMPLATE.replace("{jd}", qe.case_jd(c)) == jd)
+        k = self._n[case["id"]]
+        self._n[case["id"]] += 1
+        seq = self.script.get(case["id"])
+        item = seq[min(k, len(seq) - 1)] if seq else qe.oracle_response(case)
+        if isinstance(item, Exception):
+            raise item
+        return item if isinstance(item, _Resp) else _Resp(item if isinstance(item, str) else json.dumps(item))
+
+
+def real_run(cases, script=None, runs=5):
+    client = FakeClient(script)
+    prompt = qe.load_prompt()
+    meta = {"prompt_version": prompt["version"], "prompt_sha256": prompt["sha256"], "model": "gpt-4o-mini",
+            "temperature": 0.2}
+    records = qe.run_all(cases, qe.make_real_responder(prompt, client=client), runs=runs, run_meta=meta)
+    return client, records
+
+
+SENTINEL = "ZQXSENTINEL"
+
+
+def poisoned(case):
+    return {**case, "id": SENTINEL + "ID", "family": SENTINEL + "FAM", "description": SENTINEL + "DESC",
+            "analysis_stub": {"minimum_years": 99, "relevant_roles": [SENTINEL + "ROLE"]},
+            "expected": {**case["expected"], "note": SENTINEL + "EXP"}, "decoys": [SENTINEL + "DECOY"],
+            "oracle": {**case["oracle"], "note": SENTINEL + "ORACLE"}, "flags": [SENTINEL + "FLAG"]}
+
+
+class TestRealMode:
+    def test_request_is_exactly_prompt_plus_jd(self):
+        client, _ = real_run(MAIN, runs=1)
+        system = prompt_text()
+        assert len(client.calls) == len(MAIN)
+        for case, call in zip(MAIN, client.calls):
+            assert call == {"model": "gpt-4o-mini", "temperature": 0.2, "max_tokens": 200,
+                            "response_format": {"type": "json_object"},
+                            "messages": [{"role": "system", "content": system},
+                                         {"role": "user",
+                                          "content": qe.USER_TEMPLATE.replace("{jd}", "\n".join(case["jd_lines"]))}]}
+
+    @pytest.mark.parametrize("case", ALL, ids=lambda c: c["id"])
+    def test_no_fixture_information_reaches_the_model(self, case):
+        client = FakeClient()
+        responder = qe.make_real_responder(qe.load_prompt(), client=client)
+        responder.respond(poisoned(case), 0)
+        sent = json.dumps(client.calls[0], ensure_ascii=False)
+        assert SENTINEL not in sent
+        assert case["id"] not in sent and case["description"] not in sent
+        user = client.calls[0]["messages"][1]["content"]
+        assert user == qe.USER_TEMPLATE.replace("{jd}", "\n".join(case["jd_lines"]))
+
+    def test_oracle_and_expected_contexts_are_never_added(self):
+        # a JD-only case whose labels name phrases that are NOT in its JD: they must not appear in the request
+        case = {**BY_ID["QC-D1"], "expected": {"state": "identified", "contexts": ["lunar mining outposts"]},
+                "oracle": {"state": "identified", "contexts": ["lunar mining outposts"], "source": "analysis"}}
+        client = FakeClient()
+        qe.make_real_responder(qe.load_prompt(), client=client).respond(case, 0)
+        assert "lunar" not in json.dumps(client.calls[0])
+
+    def test_records_carry_full_diagnostics(self):
+        _, records = real_run([BY_ID["QC-A1"]], runs=1)
+        (r,) = records
+        assert r["case_id"] == "QC-A1" and r["run"] == 0 and r["fixture_version"] == "qc-main-1"
+        assert r["prompt_version"] == "candidate_qc-1"
+        assert r["prompt_sha256"] == hashlib.sha256(PROMPT_FILE.read_bytes()).hexdigest()
+        assert (r["model"], r["temperature"]) == ("gpt-4o-mini", 0.2)
+        assert r["raw"] == qe.oracle_response(BY_ID["QC-A1"]) and r["parsed"] == BY_ID["QC-A1"]["oracle"]
+        assert r["error"] is None and r["technical_error"] is None and r["finish_reason"] == "stop"
+        assert r["usage"] == {"prompt_tokens": 2100, "completion_tokens": 25, "total_tokens": 2125}
+        assert r["response_model"] == "gpt-4o-mini-2024-07-18"
+        assert r["expected"] == BY_ID["QC-A1"]["expected"] and r["expected_state"] == "identified"
+        assert r["pass"] and r["state_ok"] and r["grounding_ok"] and r["context_ok"]
+
+    def test_technical_failure_is_explicit_not_an_answer(self):
+        script = {"QC-A1": [RuntimeError("upstream 503"), qe.oracle_response(BY_ID["QC-A1"])]}
+        client, records = real_run([BY_ID["QC-A1"], BY_ID["QC-D1"]], script=script, runs=2)
+        assert len(client.calls) == 4                              # exactly one call per run: no retry
+        fail = records[0]
+        assert fail["error"] == qe.FAILED_TECHNICAL and fail["technical_error"] == "RuntimeError: upstream 503"
+        assert fail["raw"] is None and fail["parsed"] is None and fail["state"] is None and not fail["pass"]
+        s = qe.summarize(records, [BY_ID["QC-A1"], BY_ID["QC-D1"]])
+        o = s["overall"]
+        assert o["failed_technical"] == 1 and o["runs"] == 3 and o["state_accuracy"] == 1.0
+        assert o["missed_qualifying_context"] == 0 and o["invalid_outputs"] == 0
+        assert s["technical_failures"] == [{"case_id": "QC-A1", "run": 0, "error": "RuntimeError: upstream 503"}]
+        g = qe.evaluate_gates(records, "real", 2)
+        assert g["failed_technical"] == 1 and g["verdict"] in ("incomplete", "fail") and g["verdict"] != "pass"
+
+    def test_gates_never_pass_with_technical_failures(self):
+        script = {"QC-A1": [qe.oracle_response(BY_ID["QC-A1"])] * 4 + [TimeoutError("timed out")]}
+        _, records = real_run(MAIN, script=script, runs=5)
+        g = qe.evaluate_gates(records, "real", 5)
+        assert g["failed_technical"] == 1 and g["verdict"] == "incomplete"
+        _, clean = real_run(MAIN, runs=5)
+        assert qe.evaluate_gates(clean, "real", 5)["verdict"] == "pass"
+
+    def test_no_fallback_model(self):
+        script = {"QC-A1": [RuntimeError("model overloaded")] * 5}
+        client, records = real_run([BY_ID["QC-A1"]], script=script, runs=5)
+        assert {c["model"] for c in client.calls} == {"gpt-4o-mini"} and len(client.calls) == 5
+        assert all(r["error"] == qe.FAILED_TECHNICAL for r in records)
+        src = SCRIPT.read_text(encoding="utf-8")
+        assert "fallback_model" not in src and src.count('"gpt-4o-mini"') == 1     # only REAL_CONFIG names it
+
+    def test_client_has_no_sdk_retries(self, monkeypatch):
+        created = {}
+
+        class FakeOpenAI:
+            def __init__(self, **kw):
+                created.update(kw)
+        fake_mod = type(sys)("openai")
+        fake_mod.OpenAI = FakeOpenAI
+        fake_cfg = type(sys)("config")
+        fake_cfg.get_settings = lambda: type("S", (), {"openai_api_key": "sk-test"})()
+        monkeypatch.setitem(sys.modules, "openai", fake_mod)
+        monkeypatch.setitem(sys.modules, "config", fake_cfg)
+        qe.make_openai_client()
+        assert created == {"api_key": "sk-test", "max_retries": 0, "timeout": qe.REAL_CLIENT_TIMEOUT_S}
+
+    @pytest.mark.parametrize("content,err", [("{oops", "invalid_json"),
+                                             ('{"state": "identified", "contexts": ["x"]}', "bad_keys"),
+                                             ('{"state": "maybe", "contexts": [], "source": "analysis"}',
+                                              "bad_state"),
+                                             ('```json\n{"state": "none", "contexts": [], "source": "analysis"}\n```',
+                                              "invalid_json"),
+                                             ("", "invalid_json")])
+    def test_malformed_output_stays_invalid(self, content, err):
+        _, (r,) = real_run([BY_ID["QC-D1"]], script={"QC-D1": [content]}, runs=1)
+        assert r["error"] == err and not r["valid"] and r["state"] is None and not r["pass"]
+        assert r["raw"] == content and r["technical_error"] is None
+
+    def test_truncated_output_is_invalid_and_flagged(self):
+        resp = _Resp('{"state": "identified", "contexts": ["banking', finish="length")
+        _, (r,) = real_run([BY_ID["QC-A1"]], script={"QC-A1": [resp]}, runs=1)
+        assert r["error"] == "invalid_json" and r["finish_reason"] == "length" and not r["pass"]
+
+    def test_confirmed_cli_run_uses_injected_client_and_writes_meta(self, tmp_path, monkeypatch):
+        client = FakeClient()
+        monkeypatch.setattr(qe, "make_openai_client", lambda: client)
+        assert qe.main(["--mode", "real", "--set", "main", "--cases", "QC-A1,QC-E1", "--runs", "5",
+                        "--confirm-real", "--out", str(tmp_path)]) == 0
+        res = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+        assert len(client.calls) == 10 and len(res["records"]) == 10
+        m = res["meta"]
+        assert (m["mode"], m["model"], m["temperature"], m["max_tokens"], m["runs"]) == (
+            "real", "gpt-4o-mini", 0.2, 200, 5)
+        assert m["prompt_version"] == "candidate_qc-1" and m["fixture_versions"] == ["qc-main-1"]
+        assert m["prompt_sha256"] == hashlib.sha256(PROMPT_FILE.read_bytes()).hexdigest()
+        assert res["summary"]["gates"]["status"] == "evaluated"
+
+    def test_plan_counts_and_cost_bound(self):
+        plan = qe.real_plan(MAIN, qe.load_prompt(), 5)
+        assert plan["calls"] == 170 and plan["output_token_upper_bound"] == 170 * 200
+        assert 0 < plan["cost_upper_bound_usd"] < 1.0

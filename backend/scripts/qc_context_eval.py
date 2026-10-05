@@ -23,8 +23,11 @@ inside one phrase; several contexts are ANDed. domain_knowledge is never a quali
 Modes
   oracle   every case answered with its labelled reference answer (must score 100%)
   replay   score recorded raw answers: --replay FILE with {"responses": {case_id: [raw, ...]}} (one per run)
-  real     PREPARED BUT DISABLED: the request (eval-only candidate prompt + JD only, REAL_CONFIG) is built by
-           request_payload(), but --mode real refuses to run and no model client exists in this file
+  real     the eval-only candidate prompt + the JD text only (request_payload, REAL_CONFIG: gpt-4o-mini,
+           temperature 0.2, max_tokens 200, json_object), one call per case and run, no retry, no fallback model.
+           Requires --confirm-real (without it: prints the call plan and cost bound, makes no call); the
+           held-out set additionally requires --allow-heldout. A failed API call is recorded as
+           failed_technical (never scored as none/uncertain) and excluded from the semantic metrics.
 
 Acceptance gates (evaluate_gates) apply to model outputs only (replay now, real later); oracle answers are the
 reference labels, so oracle runs report the gates as not applicable.
@@ -35,6 +38,7 @@ Usage:
   python scripts/qc_context_eval.py --mode oracle --set main --runs 3
   python scripts/qc_context_eval.py --mode oracle --set heldout --out /tmp/qc_ho
   python scripts/qc_context_eval.py --mode replay --replay answers.json --set all --prompt candidate_qc-1
+  python scripts/qc_context_eval.py --mode real --set main --runs 5 --out /tmp/qc_real_main --confirm-real
 """
 from __future__ import annotations
 
@@ -84,7 +88,7 @@ def load_cases(path: Path = MAIN_FIXTURE, only: set[str] | None = None) -> list[
     for c in fx["cases"]:
         if only and c["id"] not in only:
             continue
-        out.append({**c, "split": fx["split"]})
+        out.append({**c, "split": fx["split"], "fixture_version": fx["fixture_version"]})
     return out
 
 
@@ -179,11 +183,61 @@ def request_payload(case: dict, prompt: dict, config: dict = REAL_CONFIG) -> dic
             "response_format": dict(config["response_format"])}
 
 
-def make_real_responder(*_args, **_kwargs):
-    """Real mode is prepared but DISABLED in this version. When enabled (separate approval), it must send only
-    request_payload() built from an EVAL-ONLY prompt in PROMPT_DIR (never the production job-analysis prompt)
-    and import the model client lazily inside this function, so oracle/replay never import or need OpenAI."""
-    raise NotImplementedError("qc real mode is disabled in this version; use oracle or replay")
+FAILED_TECHNICAL = "failed_technical"
+REAL_CLIENT_TIMEOUT_S = 60.0
+PRICE_IN_PER_M, PRICE_OUT_PER_M = 0.15, 0.60    # gpt-4o-mini USD per 1M tokens (ASSUMPTION; estimate only)
+
+
+class CallResult:
+    """One model call: the raw content, or an explicit technical failure (never converted into an answer)."""
+
+    def __init__(self, raw=None, technical_error=None, finish_reason=None, usage=None, response_model=None):
+        self.raw, self.technical_error = raw, technical_error
+        self.finish_reason, self.usage, self.response_model = finish_reason, usage, response_model
+
+
+def make_openai_client():
+    """Lazily built, evaluation-only client: the project's OpenAI key from config, NO SDK retries (a failure is
+    recorded, never hidden) and a fixed timeout. Imported only here, so oracle/replay never load OpenAI."""
+    from openai import OpenAI
+    from config import get_settings
+    return OpenAI(api_key=get_settings().openai_api_key, max_retries=0, timeout=REAL_CLIENT_TIMEOUT_S)
+
+
+class RealResponder:
+    """Sends exactly request_payload(case, prompt, config): the candidate system prompt and the JD in the user
+    wrapper. One call per case and run; no retry, no fallback model, no other request."""
+
+    def __init__(self, client, prompt: dict, config: dict = REAL_CONFIG):
+        self.client, self.prompt, self.config = client, prompt, config
+
+    def respond(self, case: dict, run: int) -> CallResult:
+        payload = request_payload(case, self.prompt, self.config)
+        try:
+            resp = self.client.chat.completions.create(**payload)
+            choice = resp.choices[0]
+            usage = getattr(resp, "usage", None)
+            return CallResult(raw=choice.message.content, finish_reason=getattr(choice, "finish_reason", None),
+                              response_model=getattr(resp, "model", None),
+                              usage={k: getattr(usage, k, None)
+                                     for k in ("prompt_tokens", "completion_tokens", "total_tokens")})
+        except Exception as exc:                      # noqa: BLE001 - recorded, never swallowed into an answer
+            return CallResult(technical_error=f"{type(exc).__name__}: {exc}"[:500])
+
+
+def make_real_responder(prompt: dict, config: dict = REAL_CONFIG, client=None) -> RealResponder:
+    """Real responder over an EVAL-ONLY prompt from PROMPT_DIR (never the production job-analysis prompt)."""
+    return RealResponder(client if client is not None else make_openai_client(), prompt, config)
+
+
+def real_plan(cases: list[dict], prompt: dict, runs: int, config: dict = REAL_CONFIG) -> dict:
+    """Calls and a deterministic UPPER BOUND on input tokens (UTF-8 bytes + per-message overhead) and cost."""
+    upper = sum(len(m["content"].encode("utf-8")) + 16 for c in cases
+                for m in request_payload(c, prompt, config)["messages"])
+    calls = len(cases) * runs
+    in_tokens, out_tokens = upper * runs, calls * config["max_tokens"]
+    return {"calls": calls, "input_token_upper_bound": in_tokens, "output_token_upper_bound": out_tokens,
+            "cost_upper_bound_usd": round(in_tokens / 1e6 * PRICE_IN_PER_M + out_tokens / 1e6 * PRICE_OUT_PER_M, 4)}
 
 
 def parse_qc(raw) -> tuple[dict | None, str | None]:
@@ -291,16 +345,26 @@ def passed(chk: dict) -> bool:
 
 # ── run ──────────────────────────────────────────────────────────────────────
 
-def run_all(cases: list[dict], responder, runs: int = 1) -> list[dict]:
+def run_all(cases: list[dict], responder, runs: int = 1, run_meta: dict | None = None) -> list[dict]:
+    """run_meta (prompt version/SHA, model, temperature) is copied into every record."""
     records = []
     for case in cases:
         for r in range(runs):
-            raw = responder.respond(case, r)
-            qc, err = parse_qc(raw)
+            res = responder.respond(case, r)
+            res = res if isinstance(res, CallResult) else CallResult(raw=res)
+            if res.technical_error is not None:
+                qc, err = None, FAILED_TECHNICAL
+            else:
+                qc, err = parse_qc(res.raw)
             chk = check(case, qc)
             records.append({"case_id": case["id"], "family": case["family"], "lang": case["lang"],
-                            "split": case["split"], "run": r, "raw": raw, "error": err,
-                            "expected_state": case["expected"]["state"], **chk, "pass": passed(chk)})
+                            "split": case["split"], "fixture_version": case.get("fixture_version"), "run": r,
+                            **(run_meta or {}),
+                            "raw": res.raw, "parsed": qc, "error": err, "technical_error": res.technical_error,
+                            "finish_reason": res.finish_reason, "usage": res.usage,
+                            "response_model": res.response_model,
+                            "expected_state": case["expected"]["state"], "expected": case["expected"],
+                            **chk, "pass": passed(chk)})
     return records
 
 
@@ -330,6 +394,9 @@ def stability(records: list[dict]) -> dict:
 
 
 def metrics(records: list[dict]) -> dict:
+    """Semantic metrics over SCORED runs; failed_technical runs are counted separately, never scored."""
+    technical = [r for r in records if r["error"] == FAILED_TECHNICAL]
+    records = [r for r in records if r["error"] != FAILED_TECHNICAL]
     n = len(records)
     pred = lambda r, s: r["valid"] and r["state"] == s          # noqa: E731
     exp_id = [r for r in records if r["expected_state"] == "identified"]
@@ -342,7 +409,7 @@ def metrics(records: list[dict]) -> dict:
     with_ctx = [r for r in records if r["valid"] and r["contexts"]]
     both_id = [r for r in records if r["context_ok"] is not None]
     return {
-        "runs": n, "pass": sum(r["pass"] for r in records), "pass_rate": _ratio(sum(r["pass"] for r in records), n),
+        "runs": n, "failed_technical": len(technical), "pass": sum(r["pass"] for r in records), "pass_rate": _ratio(sum(r["pass"] for r in records), n),
         "invalid_outputs": sum(not r["valid"] for r in records),
         "state_accuracy": _ratio(sum(r["state_ok"] for r in records), n),
         "identified_precision": _ratio(tp, len(pred_id)), "identified_recall": _ratio(tp, len(exp_id)),
@@ -381,7 +448,9 @@ def summarize(records: list[dict], cases: list[dict]) -> dict:
                                                if enumeration_gap(next(c for c in cases if c["id"] == cid))],
                                  "note": "context-only requirement: today's experience enumeration produces no "
                                          "criterion; recorded, not fixed"},
-            "failed": sorted({r["case_id"] for r in records if not r["pass"]})}
+            "failed": sorted({r["case_id"] for r in records if not r["pass"]}),
+            "technical_failures": [{"case_id": r["case_id"], "run": r["run"], "error": r["technical_error"]}
+                                   for r in records if r["error"] == FAILED_TECHNICAL]}
 
 
 # ── acceptance gates (model outputs only) ───────────────────────────────────
@@ -454,14 +523,18 @@ def evaluate_gates(records: list[dict], mode: str, runs: int) -> dict:
         out["cross"] = _judge(CROSS_GATES, {"main_heldout_state_gap": round(abs(accs["main"] - accs["heldout"]), 4)})
     results = [g["pass"] for sp in out["splits"].values() for grp in ("hard", "split") for g in sp[grp].values()]
     results += [g["pass"] for g in out["cross"].values()]
-    out["verdict"] = "fail" if False in results else ("pass" if results and None not in results else "incomplete")
+    technical = sum(1 for r in records if r["error"] == FAILED_TECHNICAL)
+    out["failed_technical"] = technical
+    complete = bool(results) and None not in results and technical == 0
+    out["verdict"] = "fail" if False in results else ("pass" if complete else "incomplete")
     return out
 
 
 def _render_gates(g: dict) -> list[str]:
     if g.get("status") != "evaluated":
         return ["## Acceptance gates", f"- not applicable: {g.get('note', '')}", ""]
-    lines = ["## Acceptance gates", f"- verdict: **{g['verdict']}** (runs per case: {g['runs_per_case']})"]
+    lines = ["## Acceptance gates", f"- verdict: **{g['verdict']}** (runs per case: {g['runs_per_case']}; "
+                                    f"failed_technical runs: {g.get('failed_technical', 0)})"]
     if g.get("note"):
         lines.append(f"- {g['note']}")
     for split, sp in g["splits"].items():
@@ -549,16 +622,34 @@ def main(argv=None) -> int:
     ap.add_argument("--model", default=REAL_CONFIG["model"])
     ap.add_argument("--temperature", type=float, default=REAL_CONFIG["temperature"])
     ap.add_argument("--max-tokens", type=int, default=REAL_CONFIG["max_tokens"])
+    ap.add_argument("--confirm-real", action="store_true", help="real mode: actually call the model")
+    ap.add_argument("--allow-heldout", action="store_true", help="real mode: permit held-out cases")
     args = ap.parse_args(argv)
 
-    if args.mode == "real":
-        print("qc real mode is prepared but DISABLED in this version: no OpenAI call is made. "
-              "Use --mode oracle or --mode replay.", file=sys.stderr)
-        return 2
     paths = [Path(p) for p in args.fixture] or fixture_paths(args.which)
     only = {c for c in args.cases.split(",") if c} or None
     cases = [c for p in paths for c in load_cases(p, only)]
-    if args.mode == "oracle":
+    real_meta = {}
+    if args.mode == "real":
+        if (args.model, args.temperature, args.max_tokens) != (REAL_CONFIG["model"], REAL_CONFIG["temperature"],
+                                                               REAL_CONFIG["max_tokens"]):
+            ap.error("real mode uses the approved configuration only (gpt-4o-mini, 0.2, 200)")
+        if any(c["split"] == "heldout" for c in cases) and not args.allow_heldout:
+            print("qc real mode: held-out cases need --allow-heldout (held-out runs are approved separately).",
+                  file=sys.stderr)
+            return 2
+        prompt = load_prompt(args.prompt)
+        plan = real_plan(cases, prompt, args.runs)
+        print(json.dumps({"prompt_version": prompt["version"], "prompt_sha256": prompt["sha256"],
+                          "model": REAL_CONFIG["model"], "temperature": REAL_CONFIG["temperature"],
+                          "cases": len(cases), "runs": args.runs, **plan}, indent=1))
+        if not args.confirm_real:
+            print("qc real mode: no call made (pass --confirm-real to call the model).", file=sys.stderr)
+            return 2
+        real_meta = {"prompt_version": prompt["version"], "prompt_sha256": prompt["sha256"],
+                     "model": REAL_CONFIG["model"], "temperature": REAL_CONFIG["temperature"]}
+        responder, runs = make_real_responder(prompt), args.runs
+    elif args.mode == "oracle":
         responder, runs = OracleResponder(), args.runs
     else:
         if not args.replay:
@@ -566,7 +657,7 @@ def main(argv=None) -> int:
         responses = load_fixture(Path(args.replay))["responses"]
         responder = ReplayResponder(responses)
         runs = max((len(responses.get(c["id"]) or []) for c in cases), default=0) or 1
-    records = run_all(cases, responder, runs=runs)
+    records = run_all(cases, responder, runs=runs, run_meta=real_meta)
     summary = summarize(records, cases)
     summary["gates"] = evaluate_gates(records, args.mode, runs)
     meta = {"eval_version": EVAL_VERSION, "mode": args.mode, "runs": runs,
@@ -575,7 +666,7 @@ def main(argv=None) -> int:
             # oracle uses no prompt or model; replay records the DECLARED producer of the recorded answers
             "prompt_version": None, "prompt_sha256": None, "user_template_sha256": None,
             "model": None, "temperature": None, "max_tokens": None, "response_format": None}
-    if args.mode == "replay":
+    if args.mode in ("replay", "real"):
         prompt = load_prompt(args.prompt)
         meta.update({"prompt_version": prompt["version"], "prompt_sha256": prompt["sha256"],
                      "user_template_sha256": prompt["user_template_sha256"], "model": args.model,
