@@ -537,6 +537,9 @@ PINNED_SHA256 = {
         "d94a39f343e0185cf9d0cca664d1c744f52d5b66b6b32ac57edee22ed3a1b91f",
     BACKEND / "services" / "ai_service.py":
         "b1c4ba7b69d8a96060d7c3f345823bafd77602917cb21486f4b204f3e91f669c",
+    # the evaluated candidate prompt, as committed in 656246a
+    BACKEND / "scripts" / "qc_eval_fixtures" / "prompts" / "candidate_qc-1.txt":
+        "fc979dd4a48b2aa5922c87f62e613700f898da13599e43e62a4fbc1304c851df",
 }
 CONTRACT_LINE = '{"state": "identified" | "none" | "uncertain", "contexts": ["..."], "source": "analysis"}'
 # "experience" is the subject word of every requirement line; it reaches the fixture vocabulary only through the
