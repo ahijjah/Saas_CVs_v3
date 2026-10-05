@@ -23,18 +23,23 @@ inside one phrase; several contexts are ANDed. domain_knowledge is never a quali
 Modes
   oracle   every case answered with its labelled reference answer (must score 100%)
   replay   score recorded raw answers: --replay FILE with {"responses": {case_id: [raw, ...]}} (one per run)
-  real     DISABLED in this version (no candidate prompt exists yet; no OpenAI call is possible)
+  real     PREPARED BUT DISABLED: the request (eval-only candidate prompt + JD only, REAL_CONFIG) is built by
+           request_payload(), but --mode real refuses to run and no model client exists in this file
+
+Acceptance gates (evaluate_gates) apply to model outputs only (replay now, real later); oracle answers are the
+reference labels, so oracle runs report the gates as not applicable.
 
 Output (with --out): <out>/results.json (meta, summary, per-run records) and <out>/report.md.
 
 Usage:
   python scripts/qc_context_eval.py --mode oracle --set main --runs 3
   python scripts/qc_context_eval.py --mode oracle --set heldout --out /tmp/qc_ho
-  python scripts/qc_context_eval.py --mode replay --replay answers.json --set all
+  python scripts/qc_context_eval.py --mode replay --replay answers.json --set all --prompt candidate_qc-1
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections import Counter, defaultdict
@@ -50,7 +55,13 @@ EVAL_VERSION = "qc-eval-1"
 FIXTURE_DIR = Path(__file__).resolve().parent / "qc_eval_fixtures"
 MAIN_FIXTURE = FIXTURE_DIR / "qc_main_cases.json"
 HELDOUT_FIXTURE = FIXTURE_DIR / "qc_heldout_cases.json"
-PROMPT_DIR = FIXTURE_DIR / "prompts"            # future eval-only candidate templates (none in this version)
+PROMPT_DIR = FIXTURE_DIR / "prompts"            # eval-only candidate system prompts (never production prompts)
+DEFAULT_PROMPT = "candidate_qc-1"
+# the model sees the JD only: no title, metadata, fixture family, analysis stub, roles, S1 output or labels
+USER_TEMPLATE = "Job description (verbatim, between the markers):\n<<<JD\n{jd}\nJD>>>"
+# approved configuration for the first real evaluation (not executed in this version)
+REAL_CONFIG = {"model": "gpt-4o-mini", "temperature": 0.2, "max_tokens": 200,
+               "response_format": {"type": "json_object"}, "runs": 5}
 
 STATES = ("identified", "none", "uncertain")
 QC_KEYS = {"state", "contexts", "source"}
@@ -141,10 +152,37 @@ class ScriptedResponder(ReplayResponder):
         return raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
 
 
+# ── eval-only candidate prompt and request (prepared; never sent in this version) ──
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def load_prompt(version: str = DEFAULT_PROMPT) -> dict:
+    """An eval-only candidate system prompt from PROMPT_DIR, with its exact file SHA-256."""
+    path = PROMPT_DIR / f"{version}.txt"
+    raw = path.read_bytes()
+    return {"version": version, "path": str(path), "text": raw.decode("utf-8"), "sha256": _sha256(raw),
+            "user_template_sha256": _sha256(USER_TEMPLATE.encode("utf-8"))}
+
+
+def render_messages(case: dict, system_prompt: str) -> list[dict]:
+    """System = candidate prompt; user = the JD text only (nothing else from the case is ever sent)."""
+    return [{"role": "system", "content": system_prompt},
+            {"role": "user", "content": USER_TEMPLATE.replace("{jd}", case_jd(case))}]
+
+
+def request_payload(case: dict, prompt: dict, config: dict = REAL_CONFIG) -> dict:
+    """The chat-completion arguments a future real run would send for one case (pure; no client)."""
+    return {"model": config["model"], "messages": render_messages(case, prompt["text"]),
+            "temperature": config["temperature"], "max_tokens": config["max_tokens"],
+            "response_format": dict(config["response_format"])}
+
+
 def make_real_responder(*_args, **_kwargs):
-    """Real mode is not enabled in this version. When it is, it must render an EVAL-ONLY candidate template
-    from PROMPT_DIR (never the production job-analysis prompt) and import the model client lazily inside this
-    function, so oracle/replay never import or need OpenAI."""
+    """Real mode is prepared but DISABLED in this version. When enabled (separate approval), it must send only
+    request_payload() built from an EVAL-ONLY prompt in PROMPT_DIR (never the production job-analysis prompt)
+    and import the model client lazily inside this function, so oracle/replay never import or need OpenAI."""
     raise NotImplementedError("qc real mode is disabled in this version; use oracle or replay")
 
 
@@ -313,8 +351,12 @@ def metrics(records: list[dict]) -> dict:
         "identified_on_uncertain": sum(1 for r in exp_unc if pred(r, "identified")),
         "missed_qualifying_context": len(missed), "missed_qualifying_context_rate": _ratio(len(missed), len(exp_id)),
         "safe_miss_uncertain": sum(1 for r in exp_id if pred(r, "uncertain")),
+        "safe_miss_uncertain_rate": _ratio(sum(1 for r in exp_id if pred(r, "uncertain")), len(exp_id)),
         "uncertain_accuracy": _ratio(sum(1 for r in exp_unc if pred(r, "uncertain")), len(exp_unc)),
         "uncertain_overuse": sum(1 for r in records if pred(r, "uncertain") and r["expected_state"] != "uncertain"),
+        "uncertain_overuse_rate": _ratio(
+            sum(1 for r in records if pred(r, "uncertain") and r["expected_state"] != "uncertain"),
+            sum(1 for r in records if r["expected_state"] != "uncertain")),
         "consistency_violations": sum(1 for r in records if r["valid"] and not r["consistency_ok"]),
         "grounding_accuracy": _ratio(sum(r["grounding_ok"] for r in with_ctx), len(with_ctx)),
         "grounding_failures": sum(not r["grounding_ok"] for r in with_ctx),
@@ -342,6 +384,97 @@ def summarize(records: list[dict], cases: list[dict]) -> dict:
             "failed": sorted({r["case_id"] for r in records if not r["pass"]})}
 
 
+# ── acceptance gates (model outputs only) ───────────────────────────────────
+
+# (metric, op, threshold); a None value (empty denominator) is reported as n/a, never as a pass
+HARD_GATES = (("false_qualifying_context", "==", 0), ("role_specific_identified", "==", 0),
+              ("grounding_failures", "==", 0), ("invalid_outputs", "==", 0),
+              ("arabic_false_qualifying_context", "==", 0))
+SPLIT_GATES = {
+    "main": (("identified_precision", ">=", 0.97), ("identified_recall", ">=", 0.90),
+             ("identified_cases_never_identified", "==", 0), ("missed_qualifying_context_rate", "<=", 0.05),
+             ("safe_miss_uncertain_rate", "<=", 0.10), ("uncertain_accuracy", ">=", 0.75),
+             ("uncertain_overuse_rate", "<=", 0.05), ("context_accuracy", ">=", 0.90),
+             ("case_stability", ">=", 0.90), ("arabic_english_state_gap", "<=", 0.10)),
+    "heldout": (("identified_precision", ">=", 0.95), ("identified_recall", ">=", 0.85),
+                ("state_accuracy", ">=", 0.85)),
+}
+CROSS_GATES = (("main_heldout_state_gap", "<=", 0.10),)
+_OPS = {"==": lambda v, t: v == t, "<=": lambda v, t: v <= t, ">=": lambda v, t: v >= t}
+
+
+def gate_values(records: list[dict]) -> dict:
+    m = metrics(records)
+    by_lang = {lang: metrics([r for r in records if r["lang"] == lang]) for lang in ("ar", "en")}
+    ar, en = by_lang["ar"]["state_accuracy"], by_lang["en"]["state_accuracy"]
+    ident = defaultdict(int)
+    for r in records:
+        if r["expected_state"] == "identified":
+            ident[r["case_id"]] += int(r["valid"] and r["state"] == "identified")
+    return {**{k: m[k] for k in ("false_qualifying_context", "grounding_failures", "invalid_outputs",
+                                 "identified_precision", "identified_recall", "missed_qualifying_context_rate",
+                                 "safe_miss_uncertain_rate", "uncertain_accuracy", "uncertain_overuse_rate",
+                                 "context_accuracy", "state_accuracy")},
+            "role_specific_identified": sum(1 for r in records if r["family"] == "J" and r["valid"]
+                                            and r["state"] == "identified"),
+            "arabic_false_qualifying_context": by_lang["ar"]["false_qualifying_context"],
+            "identified_cases_never_identified": sum(1 for v in ident.values() if v == 0),
+            "never_identified_cases": sorted(c for c, v in ident.items() if v == 0),
+            "case_stability": m["stability"]["stable_rate"],
+            "arabic_english_state_gap": None if ar is None or en is None else round(abs(ar - en), 4)}
+
+
+def _judge(gates, values: dict) -> dict:
+    out = {}
+    for name, op, thr in gates:
+        v = values.get(name)
+        out[name] = {"value": v, "op": op, "threshold": thr, "pass": None if v is None else _OPS[op](v, thr)}
+    return out
+
+
+def evaluate_gates(records: list[dict], mode: str, runs: int) -> dict:
+    """Approved acceptance gates. Oracle answers ARE the labels, so oracle mode never claims a gate verdict."""
+    if mode == "oracle":
+        return {"status": "not_applicable",
+                "note": "oracle answers are the reference labels; acceptance gates apply only to model outputs "
+                        "(replayed or real)"}
+    out = {"status": "evaluated", "runs_per_case": runs, "splits": {}, "cross": {}}
+    if runs < REAL_CONFIG["runs"]:
+        out["note"] = f"provisional: {runs} run(s) per case, approved gating uses {REAL_CONFIG['runs']}"
+    accs = {}
+    for split in ("main", "heldout"):
+        recs = [r for r in records if r["split"] == split]
+        if not recs:
+            continue
+        vals = gate_values(recs)
+        accs[split] = vals["state_accuracy"]
+        out["splits"][split] = {"hard": _judge(HARD_GATES, vals), "split": _judge(SPLIT_GATES[split], vals),
+                                "never_identified_cases": vals["never_identified_cases"]}
+    if "main" in accs and "heldout" in accs and None not in (accs["main"], accs["heldout"]):
+        out["cross"] = _judge(CROSS_GATES, {"main_heldout_state_gap": round(abs(accs["main"] - accs["heldout"]), 4)})
+    results = [g["pass"] for sp in out["splits"].values() for grp in ("hard", "split") for g in sp[grp].values()]
+    results += [g["pass"] for g in out["cross"].values()]
+    out["verdict"] = "fail" if False in results else ("pass" if results and None not in results else "incomplete")
+    return out
+
+
+def _render_gates(g: dict) -> list[str]:
+    if g.get("status") != "evaluated":
+        return ["## Acceptance gates", f"- not applicable: {g.get('note', '')}", ""]
+    lines = ["## Acceptance gates", f"- verdict: **{g['verdict']}** (runs per case: {g['runs_per_case']})"]
+    if g.get("note"):
+        lines.append(f"- {g['note']}")
+    for split, sp in g["splits"].items():
+        for grp in ("hard", "split"):
+            for name, r in sp[grp].items():
+                mark = "n/a" if r["pass"] is None else ("PASS" if r["pass"] else "FAIL")
+                lines.append(f"- [{split}/{grp}] {name}: {r['value']} {r['op']} {r['threshold']} -> {mark}")
+    for name, r in g["cross"].items():
+        lines.append(f"- [cross] {name}: {r['value']} {r['op']} {r['threshold']} -> "
+                     f"{'n/a' if r['pass'] is None else ('PASS' if r['pass'] else 'FAIL')}")
+    return lines + [""]
+
+
 HEADLINE = ("pass_rate", "state_accuracy", "false_qualifying_context", "missed_qualifying_context",
             "identified_precision", "identified_recall", "uncertain_accuracy", "grounding_accuracy",
             "grounding_failures", "context_accuracy", "invalid_outputs", "decoy_hits")
@@ -357,7 +490,9 @@ def render_markdown(meta: dict, s: dict) -> str:
     head = ["| group | runs | pass | state acc | FALSE QC | missed | grounding | context | stable |",
             "|---|---|---|---|---|---|---|---|---|"]
     lines = [f"# Qualifying-context evaluation ({meta['mode']}, {meta['eval_version']})", "",
-             f"Fixtures: {', '.join(meta['fixture_versions'])}; runs per case: {meta['runs']}", "",
+             f"Fixtures: {', '.join(meta['fixture_versions'])}; runs per case: {meta['runs']}",
+             f"Prompt: {meta.get('prompt_version')} (sha256 {meta.get('prompt_sha256')}); "
+             f"model: {meta.get('model')}; temperature: {meta.get('temperature')}", "",
              f"**False qualifying contexts: {o['false_qualifying_context']}** "
              f"(cases: {', '.join(o['false_qualifying_context_cases']) or '-'})", "",
              *[f"- {k}: {o[k]}" for k in HEADLINE],
@@ -369,7 +504,8 @@ def render_markdown(meta: dict, s: dict) -> str:
              "## Known gap (family N)",
              f"- flagged: {s['enumeration_gaps']['flagged_cases']}; enumeration confirms no criterion for: "
              f"{s['enumeration_gaps']['confirmed']} ({s['enumeration_gaps']['note']})", "",
-             f"Failed cases: {', '.join(s['failed']) or 'none'}", ""]
+             f"Failed cases: {', '.join(s['failed']) or 'none'}", "",
+             *(_render_gates(s["gates"]) if "gates" in s else [])]
     return "\n".join(lines)
 
 
@@ -409,10 +545,14 @@ def main(argv=None) -> int:
     ap.add_argument("--replay", default="", help="replay file {\"responses\": {case_id: [raw, ...]}}")
     ap.add_argument("--cases", default="", help="comma-separated case ids (default: all)")
     ap.add_argument("--out", default="")
+    ap.add_argument("--prompt", default=DEFAULT_PROMPT, help="eval-only candidate prompt that produced the answers")
+    ap.add_argument("--model", default=REAL_CONFIG["model"])
+    ap.add_argument("--temperature", type=float, default=REAL_CONFIG["temperature"])
+    ap.add_argument("--max-tokens", type=int, default=REAL_CONFIG["max_tokens"])
     args = ap.parse_args(argv)
 
     if args.mode == "real":
-        print("qc real mode is DISABLED in this version: no candidate prompt, no OpenAI call. "
+        print("qc real mode is prepared but DISABLED in this version: no OpenAI call is made. "
               "Use --mode oracle or --mode replay.", file=sys.stderr)
         return 2
     paths = [Path(p) for p in args.fixture] or fixture_paths(args.which)
@@ -428,9 +568,19 @@ def main(argv=None) -> int:
         runs = max((len(responses.get(c["id"]) or []) for c in cases), default=0) or 1
     records = run_all(cases, responder, runs=runs)
     summary = summarize(records, cases)
+    summary["gates"] = evaluate_gates(records, args.mode, runs)
     meta = {"eval_version": EVAL_VERSION, "mode": args.mode, "runs": runs,
             "fixture_versions": [load_fixture(p)["fixture_version"] for p in paths],
-            "created_at": datetime.now(timezone.utc).isoformat()}
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            # oracle uses no prompt or model; replay records the DECLARED producer of the recorded answers
+            "prompt_version": None, "prompt_sha256": None, "user_template_sha256": None,
+            "model": None, "temperature": None, "max_tokens": None, "response_format": None}
+    if args.mode == "replay":
+        prompt = load_prompt(args.prompt)
+        meta.update({"prompt_version": prompt["version"], "prompt_sha256": prompt["sha256"],
+                     "user_template_sha256": prompt["user_template_sha256"], "model": args.model,
+                     "temperature": args.temperature, "max_tokens": args.max_tokens,
+                     "response_format": dict(REAL_CONFIG["response_format"])})
     report = render_markdown(meta, summary)
     if args.out:
         out = Path(args.out)

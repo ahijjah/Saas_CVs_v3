@@ -510,3 +510,273 @@ class TestPromptGuard:
     def test_no_production_prompt_contains_fixture_phrases(self):
         src = (BACKEND / "services" / "ai_service.py").read_text(encoding="utf-8")
         assert "qualifying_context" not in src
+
+
+# ── candidate_qc-1: eval-only prompt, leakage, contract, prepared request, gates ──
+
+import hashlib  # noqa: E402
+
+PROMPT_FILE = qe.PROMPT_DIR / "candidate_qc-1.txt"
+# byte-for-byte pins taken from commit f69328d (fixtures) and the production analysis module at that commit
+PINNED_SHA256 = {
+    BACKEND / "scripts" / "qc_eval_fixtures" / "qc_main_cases.json":
+        "c5fcd5024d9673217d0b1e8b8413d4628025932b86fcb97f56b96fc57f98317c",
+    BACKEND / "scripts" / "qc_eval_fixtures" / "qc_heldout_cases.json":
+        "d94a39f343e0185cf9d0cca664d1c744f52d5b66b6b32ac57edee22ed3a1b91f",
+    BACKEND / "services" / "ai_service.py":
+        "b1c4ba7b69d8a96060d7c3f345823bafd77602917cb21486f4b204f3e91f669c",
+}
+CONTRACT_LINE = '{"state": "identified" | "none" | "uncertain", "contexts": ["..."], "source": "analysis"}'
+# "experience" is the subject word of every requirement line; it reaches the fixture vocabulary only through the
+# S1 role "User Experience Designer", so the EXAMPLE content-word check allowlists it explicitly
+EXAMPLE_GENERIC = GENERIC | {"experience"}
+
+
+def prompt_text() -> str:
+    return PROMPT_FILE.read_text(encoding="utf-8")
+
+
+def prompt_examples(text: str) -> list[dict]:
+    """Example blocks: 'Example N' / one or more 'JD: ' lines / one 'Answer: ' JSON line."""
+    out, cur = [], None
+    for ln in text.splitlines():
+        if ln.startswith("Example "):
+            cur = {"name": ln.strip(), "jd": [], "answer": None}
+            out.append(cur)
+        elif cur is not None and ln.startswith("JD: "):
+            cur["jd"].append(ln[4:])
+        elif cur is not None and ln.startswith("Answer: "):
+            cur["answer"] = ln[8:]
+            cur = None
+    return out
+
+
+def _has_arabic(s: str) -> bool:
+    return any("؀" <= ch <= "ۿ" for ch in s)
+
+
+class TestCandidatePrompt:
+    def test_exists_and_loads_with_exact_sha(self):
+        assert PROMPT_FILE.is_file()
+        p = qe.load_prompt("candidate_qc-1")
+        assert p["version"] == "candidate_qc-1" and p["text"] == prompt_text()
+        assert p["sha256"] == hashlib.sha256(PROMPT_FILE.read_bytes()).hexdigest()
+        assert p["user_template_sha256"] == hashlib.sha256(qe.USER_TEMPLATE.encode()).hexdigest()
+
+    def test_no_fixture_phrase_leaks(self):
+        text = prompt_text()
+        assert qe.prompt_leaks(text, MAIN) == [] and qe.prompt_leaks(text, HELDOUT) == []
+        assert _phrase_overlaps({text}, s1_phrases()) == []
+
+    def test_example_vocabulary_shares_no_content_word_with_any_fixture(self):
+        exs = prompt_examples(prompt_text())
+        ex_words = {w for e in exs for ln in e["jd"] + json.loads(e["answer"])["contexts"] for w in qe.words(ln)}
+        fixture = {w for p in qe.fixture_phrases(MAIN) | qe.fixture_phrases(HELDOUT) | s1_phrases()
+                   for w in qe.words(p)}
+        assert ex_words & fixture - EXAMPLE_GENERIC == set()
+
+    def test_no_fixture_jd_line_or_answer_in_prompt(self):
+        pw = qe.words(prompt_text())
+        for c in ALL:
+            for ln in c["jd_lines"]:
+                core = qe.words(ln.lstrip("- "))
+                if len(core) >= 4:
+                    assert not qe._contains_run(pw, core), (c["id"], ln)
+
+    def test_exact_three_key_contract(self):
+        text = prompt_text()
+        assert CONTRACT_LINE in text
+        assert "exactly these three keys" in text and "No markdown, no explanation, no other keys." in text
+        for rule in ('"identified" -> contexts lists one or more phrases', '"none" -> contexts is []',
+                     '"source" is always "analysis"'):
+            assert rule in text
+
+    def test_examples_are_bilingual_and_cover_every_state(self):
+        exs = prompt_examples(prompt_text())
+        assert len(exs) >= 12 and all(e["jd"] and e["answer"] for e in exs)
+        ar = [e for e in exs if _has_arabic(" ".join(e["jd"]))]
+        en = [e for e in exs if not _has_arabic(" ".join(e["jd"]))]
+        assert len(ar) >= 3 and len(en) >= 6
+        assert {json.loads(e["answer"])["state"] for e in exs} == set(qe.STATES)
+        assert {json.loads(e["answer"])["state"] for e in ar} >= {"identified", "none"}
+
+    def test_examples_obey_the_harness_contract(self):
+        for e in prompt_examples(prompt_text()):
+            parsed, err = qe.parse_qc(e["answer"])
+            assert err is None, (e["name"], err)
+            jd = qe.JDText("\n".join(e["jd"]))
+            assert all(qe.grounded(jd, c) for c in parsed["contexts"]), e["name"]
+            n = len(parsed["contexts"])
+            assert {"identified": n >= 1, "none": n == 0, "uncertain": True}[parsed["state"]], e["name"]
+            if _has_arabic(" ".join(e["jd"])):
+                assert all(_has_arabic(c) for c in parsed["contexts"]), e["name"]
+
+    def test_design_rules_present(self):
+        text = prompt_text()
+        for marker in ("ATTACHMENT", "RESTRICTION", "CHECKABILITY", "WHERE NOT TO LOOK", "about us",
+                       "only part of the requirement", "preferably / ideally", "is preferred / an advantage",
+                       "combined with AND", "ONE context", "character-for-character", "Never translate"):
+            assert marker in text, marker
+
+
+class TestPreparedRequest:
+    def test_payload_matches_approved_config(self):
+        prompt = qe.load_prompt()
+        payload = qe.request_payload(BY_ID["QC-A1"], prompt)
+        assert set(payload) == {"model", "messages", "temperature", "max_tokens", "response_format"}
+        assert (payload["model"], payload["temperature"], payload["max_tokens"]) == ("gpt-4o-mini", 0.2, 200)
+        assert payload["response_format"] == {"type": "json_object"} and qe.REAL_CONFIG["runs"] == 5
+        assert payload["messages"][0] == {"role": "system", "content": prompt_text()}
+
+    @pytest.mark.parametrize("case", ALL, ids=lambda c: c["id"])
+    def test_model_sees_the_jd_only(self, case):
+        prompt = qe.load_prompt()
+        user = qe.request_payload(case, prompt)["messages"][1]
+        assert user == {"role": "user", "content": qe.USER_TEMPLATE.replace("{jd}", "\n".join(case["jd_lines"]))}
+        poisoned = {**case, "family": "ZZ", "description": "LEAK", "analysis_stub": {"relevant_roles": ["LEAK"]},
+                    "expected": {"state": "LEAK"}, "oracle": {"state": "LEAK"}, "decoys": ["LEAK"], "flags": ["LEAK"]}
+        assert qe.request_payload(poisoned, prompt) == qe.request_payload(case, prompt)
+        assert "LEAK" not in json.dumps(qe.request_payload(poisoned, prompt))
+
+    def test_braces_in_jd_are_not_template_fields(self):
+        case = {**BY_ID["QC-D1"], "jd_lines": ["- 3 years {jd} {x}"]}
+        assert qe.render_messages(case, "S")[1]["content"].endswith("<<<JD\n- 3 years {jd} {x}\nJD>>>")
+
+    def test_replay_meta_records_prompt_model_and_fixture(self, tmp_path):
+        replay = tmp_path / "r.json"
+        replay.write_text(json.dumps({"responses": {"QC-A1": [qc("identified", "banking sector")] * 5}}),
+                          encoding="utf-8")
+        assert qe.main(["--mode", "replay", "--replay", str(replay), "--cases", "QC-A1", "--set", "main",
+                        "--out", str(tmp_path / "o")]) == 0
+        meta = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))["meta"]
+        assert meta["prompt_version"] == "candidate_qc-1"
+        assert meta["prompt_sha256"] == hashlib.sha256(PROMPT_FILE.read_bytes()).hexdigest()
+        assert (meta["model"], meta["temperature"], meta["max_tokens"], meta["runs"]) == ("gpt-4o-mini", 0.2, 200, 5)
+        assert meta["response_format"] == {"type": "json_object"} and meta["fixture_versions"] == ["qc-main-1"]
+
+    def test_oracle_meta_claims_no_prompt_or_model(self, tmp_path):
+        assert qe.main(["--mode", "oracle", "--set", "main", "--out", str(tmp_path)]) == 0
+        res = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+        assert res["meta"]["prompt_version"] is None and res["meta"]["model"] is None
+        assert res["summary"]["gates"]["status"] == "not_applicable"
+
+    def test_real_mode_still_refuses_with_prompt_present(self, capsys):
+        assert PROMPT_FILE.is_file()
+        assert qe.main(["--mode", "real", "--set", "main", "--runs", "5"]) == 2
+        assert "DISABLED" in capsys.readouterr().err
+
+
+def gate_records(plan: dict, cases, runs: int = 5):
+    return qe.run_all(cases, qe.ScriptedResponder(plan), runs=runs)
+
+
+def _gate(g, split, grp, name):
+    return g["splits"][split][grp][name]
+
+
+class TestGates:
+    def test_oracle_never_claims_a_verdict(self):
+        g = qe.evaluate_gates(qe.run_all(MAIN, qe.OracleResponder(), runs=5), "oracle", 5)
+        assert g["status"] == "not_applicable" and "verdict" not in g
+
+    def test_perfect_model_outputs_pass_every_gate(self):
+        g = qe.evaluate_gates(gate_records({}, ALL), "replay", 5)
+        assert g["verdict"] == "pass" and "note" not in g
+        assert set(g["splits"]) == {"main", "heldout"} and g["cross"]["main_heldout_state_gap"]["value"] == 0.0
+        assert set(g["splits"]["main"]["split"]) == {n for n, _, _ in qe.SPLIT_GATES["main"]}
+        assert set(g["splits"]["heldout"]["hard"]) == {n for n, _, _ in qe.HARD_GATES}
+
+    def test_single_false_qualifying_context_fails_hard_gate(self):
+        plan = {"QC-E1": [qc("none")] * 4 + [qc("identified", "fast-paced environment")]}
+        g = qe.evaluate_gates(gate_records(plan, MAIN), "replay", 5)
+        r = _gate(g, "main", "hard", "false_qualifying_context")
+        assert (r["value"], r["pass"], g["verdict"]) == (1, False, "fail")
+
+    def test_arabic_false_qualifying_context_gate(self):
+        plan = {"QC-HO-G1": [qc("identified", "بيئة عمل محفزة ومرنة")]}
+        g = qe.evaluate_gates(gate_records(plan, HELDOUT, runs=1), "replay", 1)
+        assert _gate(g, "heldout", "hard", "arabic_false_qualifying_context") == {"value": 1, "op": "==",
+                                                                                 "threshold": 0, "pass": False}
+        assert "provisional" in g["note"]
+
+    def test_role_specific_identified_fails_hard_gate(self):
+        plan = {"QC-J1": [qc("identified", "banking sector", "Big Four firm")]}
+        g = qe.evaluate_gates(gate_records(plan, MAIN), "replay", 5)
+        assert _gate(g, "main", "hard", "role_specific_identified") == {"value": 5, "op": "==", "threshold": 0,
+                                                                        "pass": False}
+        assert _gate(g, "main", "hard", "false_qualifying_context")["value"] == 0
+
+    def test_grounding_and_invalid_output_gates(self):
+        plan = {"QC-A1": [qc("identified", "banking industry")], "QC-A2": ["{oops"]}
+        g = qe.evaluate_gates(gate_records(plan, MAIN), "replay", 5)
+        assert _gate(g, "main", "hard", "grounding_failures")["value"] == 5
+        assert _gate(g, "main", "hard", "invalid_outputs")["value"] == 5
+
+    def test_case_never_identified_is_flagged(self):
+        plan = {"QC-B3": [qc("uncertain", "railway projects")]}
+        g = qe.evaluate_gates(gate_records(plan, MAIN), "replay", 5)
+        r = _gate(g, "main", "split", "identified_cases_never_identified")
+        assert (r["value"], r["pass"]) == (1, False) and g["splits"]["main"]["never_identified_cases"] == ["QC-B3"]
+        assert _gate(g, "main", "split", "safe_miss_uncertain_rate")["value"] == round(5 / 95, 4)
+        assert _gate(g, "main", "hard", "false_qualifying_context")["pass"] is True
+
+    def test_rate_gates_and_thresholds(self):
+        # 2 of 95 expected-identified main runs missed as NONE (2.1%) passes; 6 (6.3%) fails the 5% gate
+        ok = {"QC-A1": [qc("none")] + [qc("identified", "banking sector")] * 4,
+              "QC-A2": [qc("none")] + [qc("identified", "telecommunications industry")] * 4}
+        g = qe.evaluate_gates(gate_records(ok, MAIN), "replay", 5)
+        r = _gate(g, "main", "split", "missed_qualifying_context_rate")
+        assert (r["value"], r["pass"]) == (round(2 / 95, 4), True)
+        assert _gate(g, "main", "split", "case_stability")["value"] == round(32 / 34, 4)
+        bad = {cid: [qc("none")] * 2 + [qc("identified", ctx)] * 3
+               for cid, ctx in (("QC-A1", "banking sector"), ("QC-A2", "telecommunications industry"),
+                                ("QC-A3", "hospitality sector"))}
+        g2 = qe.evaluate_gates(gate_records(bad, MAIN), "replay", 5)
+        r2 = _gate(g2, "main", "split", "missed_qualifying_context_rate")
+        assert (r2["value"], r2["pass"]) == (round(6 / 95, 4), False)
+        assert _gate(g2, "main", "split", "case_stability") == {"value": round(31 / 34, 4), "op": ">=",
+                                                                 "threshold": 0.9, "pass": True}
+        assert g2["verdict"] == "fail"
+        bad["QC-B1"] = [qc("none")] + [qc("identified", "oil and gas projects")] * 4
+        g3 = qe.evaluate_gates(gate_records(bad, MAIN), "replay", 5)
+        assert _gate(g3, "main", "split", "case_stability") == {"value": round(30 / 34, 4), "op": ">=",
+                                                                 "threshold": 0.9, "pass": False}
+
+    def test_arabic_english_gap_gate(self):
+        plan = {cid: [qc("none")] for cid in ("QC-F1", "QC-F2", "QC-F3")}
+        g = qe.evaluate_gates(gate_records(plan, MAIN), "replay", 5)
+        r = _gate(g, "main", "split", "arabic_english_state_gap")
+        assert r["value"] == round(1 - 6 / 9, 4) and r["pass"] is False
+
+    def test_main_heldout_gap_gate(self):
+        plan = {c["id"]: [qc("none")] for c in HELDOUT if c["expected"]["state"] == "identified"}
+        g = qe.evaluate_gates(gate_records(plan, ALL), "replay", 5)
+        assert g["cross"]["main_heldout_state_gap"]["pass"] is False
+        assert _gate(g, "heldout", "split", "identified_recall")["pass"] is False
+
+    def test_empty_denominator_is_not_a_pass(self):
+        g = qe.evaluate_gates(gate_records({}, [BY_ID["QC-D1"]]), "replay", 5)
+        assert _gate(g, "main", "split", "identified_precision")["pass"] is None
+        assert g["verdict"] == "incomplete"
+
+    def test_report_renders_gates(self):
+        recs = gate_records({}, MAIN)
+        s = qe.summarize(recs, MAIN)
+        s["gates"] = qe.evaluate_gates(recs, "replay", 5)
+        md = qe.render_markdown({"mode": "replay", "eval_version": qe.EVAL_VERSION, "fixture_versions": ["qc-main-1"],
+                                 "runs": 5, "prompt_version": "candidate_qc-1", "prompt_sha256": "x",
+                                 "model": "gpt-4o-mini", "temperature": 0.2}, s)
+        assert "verdict: **pass**" in md and "[main/hard] false_qualifying_context: 0 == 0 -> PASS" in md
+
+
+class TestPinnedBytes:
+    @pytest.mark.parametrize("path", list(PINNED_SHA256), ids=lambda p: p.name)
+    def test_unchanged_since_f69328d(self, path):
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == PINNED_SHA256[path]
+
+    def test_production_has_no_qualifying_context_and_no_candidate_reference(self):
+        src = (BACKEND / "services" / "ai_service.py").read_text(encoding="utf-8")
+        assert "qualifying_context" not in src and "candidate_qc" not in src
+        for path in (BACKEND / "services").rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            assert "candidate_qc" not in text and "qc_context_eval" not in text, path
