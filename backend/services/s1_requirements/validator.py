@@ -1,5 +1,5 @@
 """
-S1 deterministic validator for the AI classifier output (prompt s1-6, S1 1.5.0).
+S1 deterministic validator for the AI classifier output (prompt s1-6, S1 1.5.1).
 
 The AI may only: type the analysis_json target hints (role | function), judge
 their match (exact | equivalent | none), select verbatim JD spans (requirement

@@ -41,7 +41,7 @@ Gates (evaluate_gates)
 
 TUNING RULES: tune on the MAIN fixture only. The HELD-OUT fixture is SHA-pinned, run at most once per prompt
 version, and is permanently exposed after its first real run (it can never again be unseen validation). No
-fixture is edited after real output has been seen. Old s1-5.2 results are not evidence for s1-6.0.
+fixture is edited after real output has been seen. Old s1-5.2 / s1-6.0 results are not evidence for a later prompt version.
 
 Usage (later, after explicit approval):
   python scripts/s1_context_eval.py --out /tmp/s1ctx                                   # dry-run
@@ -81,7 +81,7 @@ FIXTURE_SHA256 = {
     "main": "cf5844a22092a43d296e227de317ac75c6919f7d77e21da618c3945b4f0ca975",
     "heldout": "fb917b610c0bd31c1932818655a3392469a827df74a02fc3344e7e288c78589c",
 }
-PINNED = {"prompt_version": "s1-6.0", "prompt_fingerprint": "5b4172f709b2", "s1_version": "1.5.0",
+PINNED = {"prompt_version": "s1-6.1", "prompt_fingerprint": "c3168587aeca", "s1_version": "1.5.1",
           "model": "gpt-4o-mini", "temperature": 0.0, "max_tokens": 4000}
 CLIENT_MAX_RETRIES = 0
 CLIENT_TIMEOUT_S = 120.0
@@ -341,6 +341,37 @@ def _ratio(n, d):
     return None if not d else round(n / d, 4)
 
 
+DIAGNOSTIC_FAMILIES = {                      # reporting only: never acceptance gates
+    "alternative_scope": {"alternative_scope", "role_specific"}, "softened_qualifier": {"preferred"},
+    "compound": {"compound"}, "or_phrase": {"or_phrase"}, "generic_environment": {"generic_environment"},
+    "and_multiple_contexts": {"two_and", "split", "separate_sentence"},
+}
+
+
+def _same_line(spec: dict) -> bool:
+    """A positive criterion whose gold contexts all sit on the line of its first requirement span."""
+    o, e = spec["oracle"], spec["expected"]
+    lines = [x["line"] for x in o.get("settings", [])] + [x["line"] for x in o.get("restrictions", [])
+                                                          if x["kind"] == "context"]
+    return e["polarity"] == "positive" and bool(lines) and set(lines) == {o["requirement_spans"][0]["line"]}
+
+
+def diagnostic_groups(records: list[dict], cases: list[dict]) -> dict:
+    """Criterion-run correctness (all checks) per diagnostic group. DIAGNOSTIC ONLY, never a gate."""
+    by_id = {c["id"]: c for c in cases}
+    groups = defaultdict(lambda: [0, 0])
+    for r in records:
+        c = by_id[r["case"]]
+        for spec, ch in zip(c["criteria"], r["checks"]):
+            names = [g for g, fams in DIAGNOSTIC_FAMILIES.items() if c["family"] in fams]
+            names += ["same_line_context"] if _same_line(spec) else []
+            names += ["arabic"] if c["lang"] == "ar" else []
+            for g in names:
+                groups[g][1] += 1
+                groups[g][0] += all(ch.values())
+    return {g: {"correct": k, "criterion_runs": n, "rate": _ratio(k, n)} for g, (k, n) in sorted(groups.items())}
+
+
 def summarize(records: list[dict], cases: list[dict], *, independence_failures: int = 0) -> dict:
     by_id = {c["id"]: c for c in cases}
     crit_runs = [(r, spec, o, ch) for r in records
@@ -408,6 +439,7 @@ def summarize(records: list[dict], cases: list[dict], *, independence_failures: 
         "repair_calls": sum(1 for r in records for c in r["calls"] if c["call"] == "repair"),
         "main_calls": sum(1 for r in records for c in r["calls"] if c["call"] == "main"),
         "by_family": {f: {"pass": p, "runs": n} for f, (p, n) in sorted(fam.items())},
+        "diagnostic_groups": diagnostic_groups(records, cases),
         "semantic_failures": [{"case": r["case"], "run": r["run"],
                                "criteria": [{"expected": spec["expected"]["settings"], "observed": o["settings"],
                                              "status": o["status"], "checks": ch}
@@ -451,6 +483,8 @@ def render_markdown(meta: dict, s: dict, gates: dict) -> str:
              *[f"- UNSAFE {x['case']} run {x['run']} repair={x['repair_used']}: lost {x['targets_lost']}, policy "
                f"{x['gold_policy']} -> {x['observed_policy']}" for x in s["target_policy"]["details"]], "",
              "## By family", *[f"- {f}: {v['pass']}/{v['runs']}" for f, v in s["by_family"].items()], "",
+             "## Diagnostic groups (reporting only, not gates)",
+             *[f"- {g}: {v['correct']}/{v['criterion_runs']}" for g, v in s["diagnostic_groups"].items()], "",
              "## Semantic failures",
              *[f"- {x['case']} run {x['run']}: {x['criteria']}" for x in s["semantic_failures"]], ""]
     return "\n".join(lines)

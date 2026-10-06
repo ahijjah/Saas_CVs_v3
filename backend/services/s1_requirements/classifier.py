@@ -104,13 +104,13 @@ For EVERY criterion return exactly one result. Never return a policy: it is comp
     "HR Manager" -> jd_span "Human Resources Manager": equivalent, alignment [{"hint": "HR", "jd": "Human Resources", "relation": "abbreviation"}, {"hint": "Manager", "jd": "Manager", "relation": "same"}], jd_extra [].
     "Hospital Pharmacist" -> "كصيدلي": none ("Hospital" has no counterpart). "inventory control" -> "controlling cold-storage inventory": none ("cold", "storage" are material). "laboratory testing" -> "laboratory equipment maintenance": none (adjacent function). "Marketing Manager" -> "Marketing Coordinator": none (different role level). "Translator" -> "working with the translation team": none (works with the target, does not hold it).
   - Copy whole words exactly as written. Arabic letters attached to the start of a word (ك "as", ب, ل, و, ف) are not qualifiers: the span may include them or start right after them.
-  - Never map to the duration, a context (section 5), the same employer, sector, project or industry, a transferable skill, general relevance, or text outside this criterion's requirement_spans.
+  - Never map to the duration, a context (section 5), the same employer, a transferable skill, general relevance, or text outside this criterion's requirement_spans. A phrase saying where the work was done (sector, industry, project, organisation, region) is never part of the target: it is a context (section 5).
   - An abbreviation is equivalent only when the requirement span itself makes its meaning unambiguous.
   - A phrase may be the jd_span of at most one hint; if two hints seem to match the same phrase, use "none" for both.
   - If you are not certain the meaning is the same, use "none". "none" is always acceptable; a wrong "equivalent" is not.
   - The hint text stays exactly as supplied whatever the match.
 
-4 RESTRICTIONS (criteria WITHOUT target_hints only; omit for criteria with target_hints; never return targets or settings for them):
+4 RESTRICTIONS — EVERY criterion WITHOUT target_hints MUST return "restrictions" (never "settings", never "targets"); criteria WITH target_hints never return it:
   "restrictions": EVERY phrase in the requirement statement that limits which experience counts, each as {"line": n, "text": "verbatim", "kind": "role" | "function" | "context" | "vague"}.
     role      a position the candidate must have held (e.g. "as a Laboratory Technician" -> "Laboratory Technician").
     function  work, a field or a discipline (e.g. "payroll administration experience" -> "payroll administration").
@@ -118,25 +118,29 @@ For EVERY criterion return exactly one result. Never return a policy: it is comp
     vague     "relevant", "related", "similar", "in the field" or the like WITHOUT saying relevant to what.
   Alternatives are separate restrictions ("as a Laboratory Technician or in laboratory testing" -> one role and one function).
   A role or function and a context are separate phrases that never overlap ("as a Laboratory Technician in public hospitals" -> role "Laboratory Technician" and context "public hospitals").
+  A context never replaces the role or function: keep every role/function restriction and add the context next to it ("4 years of tax experience in shipping companies" -> function "tax" and context "shipping companies"). An alternative introduced by "or" is its own role/function restriction, never part of a context.
   Return [] ONLY when the requirement asks for general, overall or professional experience with no restriction at all (e.g. "4 years of professional experience"). Leaving out a restriction silently broadens the requirement.
   Do not include the duration in a restriction.
 
-5 SETTINGS = EXPERIENCE CONTEXTS (criteria WITH target_hints: "settings"; criteria without target_hints: "context" restrictions, section 4).
-  A context is a phrase restricting WHERE or IN WHAT SETTING otherwise relevant past experience must have been gained: someone with the same role or function and enough years, gained outside it, would NOT meet the requirement. Kinds of context:
-    geographic scope      (e.g. "in the Nordic countries")
-    organisation type     (e.g. "in non-profit organisations", "in state-owned utilities")
-    sector or domain      (e.g. "telecommunications sector", "public hospitals")
-    project type          (e.g. "on railway projects")
-    work setting          (e.g. "pharmaceutical manufacturing plants")
-  "settings": a list of 0 to 5 contexts, each {"line": n, "text": "verbatim"}, INSIDE this criterion's requirement_spans; [] when the requirement has no context. Copy the phrase naming the context; a leading "in", "on", "within", "the", "في", "ضمن" or "لدى" may be included or left out; never include the role, the function or the duration.
+5 SETTINGS = EXPERIENCE CONTEXTS (criteria WITH target_hints: "settings"; criteria without target_hints: "context" restrictions, section 4). A context NEVER replaces a target, role or function: it is added to it.
+
+  STEP A — decide FIRST, in this order, for every phrase saying where experience was gained:
+  A1 PART DURATION: the phrase belongs to a part of the experience with its own duration ("7 years overall as a Chemist, including at least 2 years in Southeast Asia") -> NO context and NO ambiguity code; keep the whole statement in requirement_spans (section 6). The code records a compound requirement.
+  A2 ONE ALTERNATIVE: the phrase sits inside ONE alternative ("as a Librarian in law firms or in records management": "law firms" belongs to Librarian only; "as a Surveyor in mining companies or as a Cartographer") -> keep BOTH alternatives as targets / restrictions, give NO context, and report "ambiguous_context_scope". Never apply it to every alternative; never merge an alternative into it.
+  A3 SOFTENED: only the place is softened on a firm requirement ("minimum 5 years as a Pricing Analyst, preferably in pharmacy chains") -> NO context, report "ambiguous_context_scope". (When the WHOLE requirement is preferred — "Experience as R in X is preferred" — X IS its context: go to STEP B.)
+  A4 WORKING ENVIRONMENT: pace, culture, team or atmosphere is never a context, whatever the words ("in a dynamic, fast-paced environment", "multicultural team", "في بيئة عمل محفزة").
+  A5 NOT ABOUT PAST EXPERIENCE: About-us / company text ("We are a ... group"), the location of this vacancy ("Location: ...", "based in ..."), duties or responsibilities of this job, seniority, tools or technologies, the job title, and "multinational", "international" or "global" when they describe the hiring company or its team -> never a context. Never take a context from text that does not state this experience requirement.
+
+  STEP B — every OTHER phrase saying WHERE, in what sector or industry, organisation type, project type or geographic area the required experience must have been gained IS a context — also when it is in the SAME sentence as the role or function, right after it:
+    "Minimum 4 years as a Payroll Officer in the shipbuilding industry" -> target Payroll Officer, settings ["shipbuilding industry"].
+  Only words INSIDE the role/function title belong to the target ("Hospital" in "Hospital Pharmacist"); a phrase after it naming where the work was done is a context ("Hospital Pharmacist in community clinics" -> "community clinics").
+  Kinds: geographic scope ("in the Nordic countries"); organisation type ("in non-profit organisations", "in state-owned utilities"); sector or domain ("telecommunications sector", "public hospitals"); project type ("on railway projects"); physical work site ("pharmaceutical manufacturing plants").
+
+  STEP C — representation:
+  "settings": a list of 0 to 5 contexts, each {"line": n, "text": "verbatim"}, INSIDE this criterion's requirement_spans; [] when the requirement has no context. Copy the SHORTEST complete phrase naming the context (a leading "in", "on", "within", "the", "في", "ضمن" or "لدى" may be included or left out); never the role, the function, the duration or a whole sentence.
   - ONE contiguous restriction is ONE context, even when it names several things: "in state-owned utilities across the Nordic countries" is ONE context. Never split it.
   - Restrictions stated SEPARATELY are separate contexts, and ALL of them must hold for the same past job (e.g. "... in the telecommunications sector." and "All of this experience must have been gained in non-profit organisations." -> two contexts).
-  - "or" inside a context stays inside it: "in hospitals or clinics" is ONE context. Never split an "or".
-  - NEVER a context: the hiring company's name or description ("About us", "We are a ... group"); the location of this vacancy ("Location: ...", "based in ..."); duties or responsibilities of this job; seniority; tools or technologies; generic adjectives, culture or working environment ("dynamic", "fast-paced", "multicultural team", "challenging environment"); and "multinational", "international" or "global" when they describe the hiring company or its team rather than where the candidate's past experience was gained. Never take a context from text that does not state this experience requirement, or from the job title.
-  - Do not give a context that is already part of a target (e.g. "Hospital" in "Hospital Pharmacist").
-  - When a whole experience requirement is preferred ("Experience ... in X is preferred / an advantage"), X is still its context.
-  - AMBIGUOUS SCOPE: if a context restricts only some alternatives of the criterion (e.g. "as a Surveyor in mining companies or as a Cartographer"), or is only softened on a firm requirement ("minimum N years as R, preferably / ideally in X"), give NO context for it ("settings": [], or no "context" restriction) and report "ambiguous_context_scope". Never apply it to every alternative and never drop it silently.
-  - PART DURATION: if a context applies only to a part of the experience that has its own duration (e.g. "6 years overall, including 2 years in ..."), give NO context for it ("settings": [], or no "context" restriction) and do NOT report "ambiguous_context_scope" for this: keep the whole statement in requirement_spans (section 6); the code records it as a compound requirement.
+  - "or" between two places of the same kind stays in ONE context ("in hospitals or clinics"); "or" before another role or function is an alternative (A2), never part of a context.
 
 6 DURATION: null, or the id of the duration candidate inside this criterion's requirement_spans that states its minimum experience. Never compute or restate a number. If more than one candidate could be this criterion's minimum, return null and report "multiple_durations". If the statement sets several thresholds (e.g. an overall minimum and a minimum in one role), keep the whole statement in requirement_spans; the code records it as a compound requirement.
 
@@ -154,14 +158,17 @@ OUTPUT: JSON only, e.g.:
 {"criteria": [
  {"criterion_id": "...", "requirement_spans": [{"line": 7, "text": "verbatim"}],
   "targets": [{"hint": "T1", "type": "function", "match": "exact", "jd_span": null}],
-  "settings": [], "duration": "D1", "ambiguity": [], "note": "one sentence"},
+  "settings": [{"line": 7, "text": "verbatim context"}], "duration": "D1", "ambiguity": [], "note": "one sentence"},
+ {"criterion_id": "...", "requirement_spans": [{"line": 11, "text": "verbatim"}],
+  "restrictions": [{"line": 11, "text": "verbatim", "kind": "function"}, {"line": 11, "text": "verbatim", "kind": "context"}],
+  "duration": "D3", "ambiguity": [], "note": "one sentence"},
  {"criterion_id": "...", "requirement_spans": [{"line": 9, "text": "verbatim"}],
   "targets": [{"hint": "T1", "type": "role", "match": "equivalent", "jd_span": {"line": 9, "text": "verbatim phrase"},
                "alignment": [{"hint": "word", "jd": "verbatim word(s)", "relation": "translation"}], "jd_extra": []}],
-  "settings": [{"line": 9, "text": "verbatim context"}], "duration": "D2", "ambiguity": [], "note": "one sentence"},
- {"criterion_id": "...", "requirement_spans": [{"line": 11, "text": "verbatim"}],
-  "restrictions": [{"line": 11, "text": "verbatim", "kind": "function"}, {"line": 11, "text": "verbatim", "kind": "context"}],
-  "duration": "D3", "ambiguity": [], "note": "one sentence"}]}""" + _SECURITY_HARDENING_SUFFIX
+  "settings": [], "duration": "D2", "ambiguity": [], "note": "one sentence"},
+ {"criterion_id": "...", "requirement_spans": [{"line": 13, "text": "verbatim"}],
+  "targets": [{"hint": "T1", "type": "role", "match": "exact", "jd_span": null}, {"hint": "T2", "type": "role", "match": "exact", "jd_span": null}],
+  "settings": [], "duration": "D4", "ambiguity": ["ambiguous_context_scope"], "note": "one sentence"}]}""" + _SECURITY_HARDENING_SUFFIX
 
 
 def prompt_fingerprint() -> str:

@@ -109,7 +109,7 @@ def _span(line, start, text):
 class TestSchemaV3:
     def test_versions(self):
         assert (sc.S1_SCHEMA, sc.S1_VERSION, sc.S1_PROMPT_VERSION, sc.S1_INPUT_VERSION) == (
-            "s1_requirement_spec_v3", "1.5.0", "s1-6.0", "s1-in-1")
+            "s1_requirement_spec_v3", "1.5.1", "s1-6.1", "s1-in-1")
         assert sc.MAX_SETTINGS == 5
         assert "ambiguous_context_scope" in sc.AMBIGUITY_CODES
         assert sc.REASON_KINDS["ambiguous_context_scope"] == "ambiguity"            # business/ambiguity, not failure
@@ -804,18 +804,35 @@ class TestIndependence:
 class TestPromptS16:
     def test_semantics(self):
         p = clf.S1_SYSTEM_PROMPT
-        for frag in ("geographic scope", "organisation type", "sector or domain", "project type", "work setting",
+        for frag in ("geographic scope", "organisation type", "sector or domain", "project type", "physical work site",
                      "the location of this vacancy", "duties or responsibilities of this job",
                      "\"multinational\", \"international\" or \"global\" when they describe the hiring company",
-                     "\"dynamic\", \"fast-paced\", \"multicultural team\"", "ONE contiguous restriction is ONE context",
-                     "Never split an \"or\"", "ambiguous_context_scope", "\"settings\": a list of 0 to 5 contexts",
-                     "PART DURATION", "do NOT report \"ambiguous_context_scope\" for this",
+                     "\"in a dynamic, fast-paced environment\", \"multicultural team\"",
+                     "ONE contiguous restriction is ONE context", "Never split it", "ambiguous_context_scope",
+                     "\"settings\": a list of 0 to 5 contexts", "SHORTEST complete phrase",
+                     # s1-6.1: decisions BEFORE extraction, same-line contexts, target preservation
+                     "STEP A — decide FIRST", "A1 PART DURATION", "A2 ONE ALTERNATIVE", "A3 SOFTENED",
+                     "A4 WORKING ENVIRONMENT", "A5 NOT ABOUT PAST EXPERIENCE", "STEP B", "STEP C",
+                     "also when it is in the SAME sentence as the role or function",
+                     "Only words INSIDE the role/function title belong to the target",
+                     "A context NEVER replaces a target, role or function",
+                     "EVERY criterion WITHOUT target_hints MUST return \"restrictions\"",
+                     "never merge an alternative into it", "NO context and NO ambiguity code",
+                     "\"or\" before another role or function is an alternative",
+                     "\"ambiguity\": [\"ambiguous_context_scope\"]",
                      "Never for a part of the experience with its own duration (that is a compound requirement)"):
             assert frag in p, frag
-        scope_rule = next(ln for ln in p.splitlines() if ln.strip().startswith("- AMBIGUOUS SCOPE"))
-        assert "including" not in scope_rule and "overall" not in scope_rule     # compounds are not context ambiguity
-        assert "Never use the hiring company's name, a location" not in p
-        assert "a location" not in p
+        # decision order: every exception comes before the general extraction rule
+        order = [p.index(x) for x in ("A1 PART DURATION", "A2 ONE ALTERNATIVE", "A3 SOFTENED",
+                                      "A4 WORKING ENVIRONMENT", "A5 NOT ABOUT PAST EXPERIENCE", "STEP B —", "STEP C —")]
+        assert order == sorted(order)
+        for gone in ("Never use the hiring company's name, a location", "a location", "    work setting",
+                     "the same employer, sector, project or industry", "omit for criteria with target_hints",
+                     "Never split an \"or\""):
+            assert gone not in p, gone
+        # the FIRST hint-criterion output example carries a context; one example carries the scope code
+        out = p[p.index("OUTPUT:"):]
+        assert out.index('"settings": [{"line": 7') < out.index('"settings": []')
 
     def test_prompt_examples_avoid_the_p4_fixture_vocabulary(self):
         p = clf.S1_SYSTEM_PROMPT.lower()

@@ -200,3 +200,28 @@ offline by `tests/test_s1_p4b_rc1.py`):
    (gold derived from each criterion's oracle answer), reported separately, part of `pass`, and the hard gate
    `unsafe_target_policy_loss`. Re-scoring the real s1-6.0 MAIN records: 26 unsafe criterion-runs that had
    passed on context alone (CM02, CM05, CM09, CM15, CM21, CM30, CM38).
+
+## S1 s1-6.1 (P4b prompt tuning, RC2 + RC3) — implemented offline, NOT yet evaluated
+
+`S1_PROMPT_VERSION = s1-6.1`, `S1_VERSION = 1.5.1` (also covers the RC1 code), fingerprint `c3168587aeca`
+(full SHA256 `c3168587aeca8238cf996d54630c2067c35b92e453d337a022aa4a627dde93ee`). Schema, validator, repair and
+fixtures unchanged. Prompt changes:
+
+- §3: the "never map to … sector, project or industry" wording is replaced by "a phrase saying where the work
+  was done is never part of the target: it is a context".
+- §4: every hint-less criterion MUST return `restrictions`; a context never replaces a role/function; an "or"
+  alternative is its own role/function restriction.
+- §5 restructured: STEP A decisions FIRST (A1 part duration → no context, no code; A2 one alternative → keep
+  both alternatives, no context, `ambiguous_context_scope`; A3 softened → no context, code; whole-preferred
+  contrast; A4 working environment incl. Arabic; A5 not about past experience), then STEP B (every other
+  where/sector/organisation/project/region phrase is a context, also on the role's own line; title words vs
+  context), then STEP C (shortest complete phrase, never a whole sentence; contiguous = one; separate = AND;
+  "or" between places stays, "or" before a role/function is an alternative). "work setting" → "physical work
+  site".
+- Output examples: the first hint example carries a same-line context; a new example has
+  `"ambiguity": ["ambiguous_context_scope"]` with two targets and settings `[]`.
+
+Real MAIN acceptance (unchanged): hard = 0 (unsafe_target_policy_loss, outside spans, ungrounded, failed as
+none, unresolved view, independence); settings ≥ .85, false-none ≤ .05, false-context ≤ .10, stability ≥ .90,
+technical + validation failures ≤ .05. Family groups (alternative/scope, softened, compound, OR, generic
+environment, same-line, AND, Arabic) are reported as `diagnostic_groups` only, never gates.

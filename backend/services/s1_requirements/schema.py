@@ -35,10 +35,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 S1_SCHEMA = "s1_requirement_spec_v3"
-S1_VERSION = "1.5.0"                     # enumeration + parser + validator + assembly
+S1_VERSION = "1.5.1"                     # enumeration + parser + validator + assembly
 S1_INPUT_VERSION = "s1-in-1"             # unchanged by s1-6: the model input carries no qualifying context
 S1_PROMPT_CODE = "recruitment.experience_requirement_spec"
-S1_PROMPT_VERSION = "s1-6.0"
+S1_PROMPT_VERSION = "s1-6.1"
 MAX_SETTINGS = 5                         # experience contexts per criterion
 S1_MODEL = "gpt-4o-mini"
 S1_TEMPERATURE = 0.0

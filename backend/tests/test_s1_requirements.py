@@ -1101,14 +1101,15 @@ class TestStatementAnchor:
 
 class TestS12Versioning:
     def test_versions_and_fingerprint(self):
-        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-6.0", "1.5.0")
+        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-6.1", "1.5.1")
         assert (sc.S1_SCHEMA, sc.S1_INPUT_VERSION) == ("s1_requirement_spec_v3", "s1-in-1")
         # s1-6.0 was corrected before any evaluation (compound requirements are not ambiguous_context_scope):
         # af9f496563a4 -> 5b4172f709b2
-        assert clf.prompt_fingerprint() == "5b4172f709b2"
+        # s1-6.1 (P4b tuning after the real s1-6.0 MAIN run): 5b4172f709b2 -> c3168587aeca
+        assert clf.prompt_fingerprint() == "c3168587aeca"
         assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9", "c9b570d82f4e",
                                                 "faad01d30b5c", "a0ae492a27e4", "b2a063ab2947", "4f22dddb117e",
-                                                "af9f496563a4")
+                                                "af9f496563a4", "5b4172f709b2")
 
     def test_cache_identity_differs_from_s1_5_2(self, monkeypatch):
         # s1-6: old s1-5.2 cache entries (single setting) are unreachable
@@ -1167,11 +1168,11 @@ class TestS12Versioning:
                      "Return [] ONLY when the requirement asks for general", "silently broadens",
                      "compound requirement",
                      # s1-6 experience contexts
-                     "WHERE or IN WHAT SETTING otherwise relevant past experience must have been gained",
-                     "geographic scope", "organisation type", "sector or domain", "project type", "work setting",
+                     "every OTHER phrase saying WHERE, in what sector or industry, organisation type, project type",
+                     "geographic scope", "organisation type", "sector or domain", "project type", "physical work site",
                      "ONE contiguous restriction is ONE context", "ALL of them must hold for the same past job",
-                     "\"or\" inside a context stays inside it", "the location of this vacancy",
-                     "rather than where the candidate's past experience was gained", "\"multicultural team\"",
+                     "\"or\" between two places of the same kind stays in ONE context", "the location of this vacancy",
+                     "when they describe the hiring company or its team -> never a context", "\"multicultural team\"",
                      "report \"ambiguous_context_scope\"", "\"kind\": \"role\" | \"function\" | \"context\" | \"vague\"",
                      "A separate sentence that restricts where THIS experience must have been gained",
                      "\"settings\": [], \"duration\""):

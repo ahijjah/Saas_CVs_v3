@@ -53,7 +53,7 @@ class TestRecordedData:
                 m["client_max_retries"], m["fixture"]) == ("s1-6.0", "5b4172f709b2", "1.5.0", "gpt-4o-mini", 0.0, 0,
                                                             "main")
         assert m["fixture_sha256"] == ev.FIXTURE_SHA256["main"]
-        assert clf.prompt_fingerprint() == "5b4172f709b2"            # the prompt itself is unchanged
+        assert m["prompt_fingerprint"] != clf.prompt_fingerprint()   # recorded under s1-6.0; replay is code-only
 
     def test_replay_without_repair_change_is_faithful(self):
         """Records the merge fix does not touch replay to exactly the recorded observation."""

@@ -147,7 +147,7 @@ class TestPins:
         assert ev.PINNED == {"prompt_version": sc.S1_PROMPT_VERSION, "prompt_fingerprint": clf.prompt_fingerprint(),
                              "s1_version": sc.S1_VERSION, "model": sc.S1_MODEL, "temperature": clf.S1_TEMPERATURE,
                              "max_tokens": sc.S1_MAX_TOKENS}
-        assert ev.PINNED["prompt_version"] == "s1-6.0" and ev.PINNED["temperature"] == 0.0
+        assert ev.PINNED["prompt_version"] == "s1-6.1" and ev.PINNED["temperature"] == 0.0
         assert ev.CLIENT_MAX_RETRIES == 0 and ev.DEFAULT_RUNS == 5
 
     def test_changed_fixture_or_prompt_is_refused(self, tmp_path, monkeypatch):
@@ -348,3 +348,17 @@ class TestScoring:
             return req
         monkeypatch.setattr(ev.clf, "build_request", leaky)
         assert ev.independence_probe([MAIN_BY["CM01"]]) != []
+
+
+class TestDiagnosticGroups:
+    def test_groups_are_reported_not_gated(self):
+        recs = records_for(MAIN["cases"])
+        s = ev.summarize(recs, MAIN["cases"])
+        g = s["diagnostic_groups"]
+        assert set(g) == {"alternative_scope", "softened_qualifier", "compound", "or_phrase", "generic_environment",
+                          "and_multiple_contexts", "same_line_context", "arabic"}
+        assert all(v["rate"] == 1.0 for v in g.values())
+        assert g["same_line_context"]["criterion_runs"] >= 15 and g["arabic"]["criterion_runs"] == 9
+        gates = ev.evaluate_gates(s, "main")["gates"]
+        assert not any(k in gates for k in g)                       # diagnostics are never acceptance gates
+
