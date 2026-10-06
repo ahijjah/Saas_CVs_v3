@@ -137,6 +137,10 @@ from services.s1_requirements.schema import (
 
 MIN_SPAN_CHARS = 3
 MAX_MAPPING_WORDS = 12
+# P4b RC1: repair guidance only (the rule is unchanged: the context stays rejected until a requirement span holds it)
+CONTEXT_SPAN_GUIDANCE = ("If this context belongs to this criterion and comes from another JD sentence, add that "
+                         "sentence to requirement_spans (quote it verbatim) and keep the context; otherwise remove "
+                         "the context.")
 CONTEXT_ANCHOR_WINDOW = 3     # s1-6: a context sentence attaches only within 3 lines AFTER an anchored line
 
 # error scopes (see services.s1_requirements.repair for how each is merged)
@@ -758,7 +762,7 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
                     continue
                 if not _inside(sp, req_t):
                     add(ssc + (SCOPE_SPANS,), f"{w} settings[{j}]: {sp.text!r} is not inside one of this "
-                                              f"criterion's requirement_spans")
+                                              f"criterion's requirement_spans. {CONTEXT_SPAN_GUIDANCE}")
                     continue
                 if normalize(sp.text) in seen_s:
                     add(ssc, f"{w} settings[{j}]: duplicate context {sp.text!r}")
@@ -809,7 +813,9 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
                 if rsp is None:
                     continue
                 if not _inside(rsp, req_t):
-                    add(rsc, f"{rw}: {rsp.text!r} is not inside one of this criterion's requirement_spans")
+                    add(rsc + ((SCOPE_SPANS,) if r["kind"] == RESTRICTION_CONTEXT else ()),
+                        f"{rw}: {rsp.text!r} is not inside one of this criterion's requirement_spans"
+                        + (f". {CONTEXT_SPAN_GUIDANCE}" if r["kind"] == RESTRICTION_CONTEXT else ""))
                     continue
                 key = (normalize(rsp.text), r["kind"])
                 if key in seen_r:

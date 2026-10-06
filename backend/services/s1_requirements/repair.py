@@ -69,6 +69,15 @@ replaced by a context, never just removed; a repair that cannot keep them all is
 The only exception: when the merged answer reports ambiguous_context_scope, its contexts may be removed (that
 code keeps the criterion needs_confirmation with no S2 view, so removing them cannot broaden anything).
 
+P4b RC1 (hint-less criteria, _merge_hintless): a hint-less criterion has no "settings" by contract, so a main
+answer that put its contexts there is not authoritative in that FIELD, but its contexts still count: the merged
+answer never keeps the main "settings"; each main setting must reappear as a "context" restriction of the
+repair on the same line (same_context: the same phrase, a longer phrase containing it, or the phrase without a
+leading in / on / within / at / the / a / an / في / ضمن / لدى / داخل), otherwise the repair is not taken
+(fail closed). And a restriction list that ONLY the repair supplies (the main answer had no usable list) must
+name a role or function: a repair is never the sole source of a context-only, vague or total-experience
+(pure-duration) reading, so it can never silently turn a role/function criterion into one.
+
 s1-5.1 deterministic withdrawal (plan_withdrawal / apply_withdrawal), AFTER the
 one repair, only when the merged answer is still invalid: if every remaining
 error of a criterion belongs to ONE hint target's equivalent claim (scopes
@@ -88,7 +97,9 @@ from collections import Counter, defaultdict
 
 from services.s1_requirements.criteria import CriterionInput
 from services.s1_requirements.jd_text import exact_definition, normalize
-from services.s1_requirements.schema import AMB_AMBIGUOUS_CONTEXT_SCOPE, RESTRICTION_CONTEXT, RESTRICTION_KINDS
+from services.s1_requirements.schema import (
+    AMB_AMBIGUOUS_CONTEXT_SCOPE, RESTRICTION_CONTEXT, RESTRICTION_FUNCTION, RESTRICTION_KINDS, RESTRICTION_ROLE,
+)
 from services.s1_requirements.validator import (
     UNIT_PAIR, tokens,
     SCOPE_AMBIGUITY, SCOPE_BASIS, SCOPE_CRITERION, SCOPE_DURATION, SCOPE_RESPONSE, SCOPE_SETTING_PREFIX,
@@ -346,6 +357,52 @@ def contexts_preserved(main: list, rep: list, bad: set[int]) -> bool:
     return len(rep) >= len(main) - absorbed              # every other (invalid) context was replaced
 
 
+LEADING_FUNCTION_WORDS = frozenset({"in", "on", "within", "at", "the", "a", "an", "في", "ضمن", "لدى", "داخل"})
+
+
+def same_context(main_item, rep_item) -> bool:
+    """P4b RC1: does a repair context restriction carry the same context as a main (misplaced) setting? Same
+    line (when the main gives one) and either the repair phrase contains the main phrase as a contiguous word
+    run, or it is the main phrase minus leading function words only (closed list). Nothing else."""
+    if isinstance(main_item, str):
+        main_item = {"line": None, "text": main_item}
+    if not (isinstance(main_item, dict) and isinstance(rep_item, dict) and isinstance(main_item.get("text"), str)
+            and isinstance(rep_item.get("text"), str)):
+        return False
+    if main_item.get("line") is not None and main_item.get("line") != rep_item.get("line"):
+        return False
+    a, b = tokens(main_item["text"]), tokens(rep_item["text"])
+    if not a or not b:
+        return False
+    if any(b[i:i + len(a)] == a for i in range(len(b) - len(a) + 1)):
+        return True                                      # same phrase, or a longer one containing it
+    k = len(a) - len(b)
+    return k > 0 and a[k:] == b and all(w in LEADING_FUNCTION_WORDS for w in a[:k])
+
+
+def _names_target(rr: list) -> bool:
+    return any(isinstance(x, dict) and x.get("kind") in (RESTRICTION_ROLE, RESTRICTION_FUNCTION) for x in rr)
+
+
+def _merge_hintless(m: dict, r: dict, sc: set[str], scope_ambiguous: bool) -> tuple[list | None, bool]:
+    """P4b RC1: restrictions of a hint-less criterion whose main answer may also carry (invalid) settings.
+    -> (restrictions to use, taken_from_repair). When taken, the caller drops "settings"."""
+    sc = set(sc)
+    if isinstance(m.get("settings"), list) and m["settings"] and not isinstance(m.get("restrictions"), list):
+        sc.add(SCOPE_RESTRICTIONS)
+    rr, took = _merge_restrictions(m, r, sc, scope_ambiguous)
+    if not took:
+        return m.get("restrictions"), False
+    main_settings = [x for x in (m.get("settings") if isinstance(m.get("settings"), list) else [])
+                     if isinstance(x, (dict, str))]
+    if isinstance(m.get("setting"), dict):
+        main_settings.append(m["setting"])
+    rep_ctx = [x for x in rr if isinstance(x, dict) and x.get("kind") == RESTRICTION_CONTEXT]
+    if not scope_ambiguous and not all(any(same_context(s_, c) for c in rep_ctx) for s_ in main_settings):
+        return m.get("restrictions"), False              # a context the main answer stated would be lost
+    return rr, True
+
+
 def _merge_settings(m: dict, r: dict, sc: set[str], scope_ambiguous: bool) -> tuple[list | None, bool]:
     """-> (settings list to use, taken_from_repair). Never drops a context of the main answer."""
     ms = m.get("settings") if isinstance(m.get("settings"), list) else None
@@ -372,8 +429,9 @@ def _merge_restrictions(m: dict, r: dict, sc: set[str], scope_ambiguous: bool = 
     rr = r.get("restrictions") if isinstance(r.get("restrictions"), list) else None
     if rr is None:
         return m.get("restrictions"), False
-    if mr is None:                                       # the main list was unusable: nothing to preserve
-        return copy.deepcopy(rr), True
+    if mr is None:                                       # the main list was unusable: nothing to preserve, but
+        # P4b RC1: a repair is never the SOLE source of a context-only / vague / total-experience reading
+        return (copy.deepcopy(rr), True) if _names_target(rr) else (m.get("restrictions"), False)
     bad = {int(k[len(SCOPE_RESTRICTION_PREFIX) + 1:]) for k in sc
            if k.startswith(SCOPE_RESTRICTION_PREFIX) and k[len(SCOPE_RESTRICTION_PREFIX) + 1:].isdigit()}
     if SCOPE_RESTRICTIONS in sc and not bad:
@@ -454,7 +512,7 @@ def merge_repair(main_raw: str, repair_raw: str, scoped: list[ScopedError],
                 info["taken"].append({"criterion_id": cid, "field": f})
         amb_now = merged.get("ambiguity")
         scope_ambiguous = isinstance(amb_now, list) and AMB_AMBIGUOUS_CONTEXT_SCOPE in amb_now
-        if SCOPE_SETTINGS in sc or any(x.startswith(SCOPE_SETTING_PREFIX) for x in sc):
+        if hint_ids(c) and (SCOPE_SETTINGS in sc or any(x.startswith(SCOPE_SETTING_PREFIX) for x in sc)):
             merged["settings"], took = _merge_settings(m, r, sc, scope_ambiguous)
             if took:
                 merged.pop("setting", None)              # the v2 single-setting key is never carried over
@@ -514,10 +572,14 @@ def merge_repair(main_raw: str, repair_raw: str, scoped: list[ScopedError],
             if SCOPE_TARGETS_EXTRA in sc:     # targets are derived from restrictions: only the repair's own list
                 merged["targets"] = copy.deepcopy(r.get("targets"))
                 info["taken"].append({"criterion_id": cid, "field": "targets_extra"})
-            if SCOPE_RESTRICTIONS in sc or any(x.startswith(SCOPE_RESTRICTION_PREFIX) for x in sc):
-                merged["restrictions"], took = _merge_restrictions(m, r, sc, scope_ambiguous)
+            if (SCOPE_RESTRICTIONS in sc or any(x.startswith(SCOPE_RESTRICTION_PREFIX) for x in sc)
+                    or SCOPE_SETTINGS in sc or any(x.startswith(SCOPE_SETTING_PREFIX) for x in sc)):
+                merged["restrictions"], took = _merge_hintless(m, r, sc, scope_ambiguous)
                 info["taken" if took else "kept_main_restrictions"].append(
                     {"criterion_id": cid, "field": "restrictions"} if took else cid)
+                if took:                                 # P4b RC1: settings are never kept for a hint-less criterion
+                    merged.pop("settings", None)
+                    merged.pop("setting", None)
         if r != merged:
             info["discarded_changes"] += 1
         out.append(merged)

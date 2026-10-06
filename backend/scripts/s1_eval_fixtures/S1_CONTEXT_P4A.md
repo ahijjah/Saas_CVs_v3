@@ -181,3 +181,22 @@ sources and are never derived from each other; both fail closed in `s2_views`), 
 Tuning rules: tune on main only; never edit a fixture after seeing real output; run the held-out at most once per
 prompt version — **once used it is permanently exposed** and can never again be unseen validation; a held-out
 failure needs a new prompt version AND a new held-out set.
+
+## P4b RC1 implementation fixes (prompt s1-6.0 and both fixtures unchanged)
+
+Found by the real MAIN run (`p4b_main_recorded_regressions.json` holds 15 recorded main/repair outputs, replayed
+offline by `tests/test_s1_p4b_rc1.py`):
+
+1. **Hint-less repair merge** (`repair._merge_hintless`): a hint-less main answer's `settings` (invalid by
+   contract) are never kept; each must reappear as a `context` restriction of the repair (`same_context`: same
+   phrase, a longer phrase containing it, or the phrase minus leading in/on/within/at/the/a/an/في/ضمن/لدى/داخل);
+   a restriction list supplied ONLY by the repair must name a role or function (never a context-only, vague or
+   total-experience reading). Real effect on replay: 9 rejected-but-correct runs now pass (CM02, CM03, CM10,
+   CM21); 18 unsafe target-dropping repairs now fail closed (CM09, CM15, CM30, CM02, CM05).
+2. **Guidance** (`validator.CONTEXT_SPAN_GUIDANCE`): a context outside the requirement spans stays rejected;
+   the message now tells the repair to add its JD sentence to `requirement_spans` (a context restriction's
+   error now also opens `requirement_spans` to the repair, as a setting's already did). No span is added by code.
+3. **Harness** (`s1_context_eval.target_check`, `--rescore`): role/function target loss and policy downgrade
+   (gold derived from each criterion's oracle answer), reported separately, part of `pass`, and the hard gate
+   `unsafe_target_policy_loss`. Re-scoring the real s1-6.0 MAIN records: 26 unsafe criterion-runs that had
+   passed on context alone (CM02, CM05, CM09, CM15, CM21, CM30, CM38).

@@ -20,11 +20,19 @@ Scoring (per criterion): settings as a SET (order irrelevant: several contexts a
 canon_context (comparison form, leading in/on/within/at/the/a/an/في/ضمن/لدى/داخل dropped; nothing else), with
 one_of alternatives for Arabic attached letters; plus status and required reason codes.
 
+Target / policy preservation (P4b RC1), reported SEPARATELY from context accuracy and part of a run's pass:
+  the gold role/function targets and policy are derived from each criterion's labelled oracle answer (no
+  fixture change). A criterion-run loses its target when a gold role/function restriction has no observed
+  role/function restriction carrying it (same canonical word run, either direction; an Arabic proclitic may
+  precede), and its policy is downgraded when a role/function criterion comes out sector or pure_duration, or a
+  sector criterion comes out pure_duration. Repair-sourced losses are counted on their own.
+
 Gates (evaluate_gates)
   hard (must be 0)    setting outside the requirement spans; ungrounded setting; failed S1 artefact observed as
                       "no context" (failed runs record settings None, never []); an S2 view produced for an
-                      unresolved context; independence probe failure; false agreed / false agreed_none of the
-                      joint QC x S1 replay (reported "not_available" until the P4c agreement exists)
+                      unresolved context; independence probe failure; UNSAFE TARGET/POLICY LOSS (P4b RC1);
+                      false agreed / false agreed_none of the joint QC x S1 replay (reported "not_available"
+                      until the P4c agreement exists)
   accuracy            settings-set accuracy (main >= .85, held-out >= .80); false-none on positive context
                       criteria <= .05; false context on negative criteria <= .10; >= 90% of cases with identical
                       canonical settings in every run (stability, needs >= 2 runs); technical + validation
@@ -38,6 +46,7 @@ fixture is edited after real output has been seen. Old s1-5.2 results are not ev
 Usage (later, after explicit approval):
   python scripts/s1_context_eval.py --out /tmp/s1ctx                                   # dry-run
   python scripts/s1_context_eval.py --out /tmp/s1ctx --mode oracle --runs 1             # offline self-check
+  python scripts/s1_context_eval.py --out /tmp/s1re --rescore results.json              # re-score old records
   python scripts/s1_context_eval.py --out /tmp/s1ctx --mode real --runs 5 --confirm-real
   python scripts/s1_context_eval.py --out /tmp/s1ho --fixture heldout --mode real --runs 5 --confirm-real \\
       --allow-heldout
@@ -62,7 +71,8 @@ from services.s1_requirements import assemble as asm  # noqa: E402
 from services.s1_requirements import classifier as clf  # noqa: E402
 from services.s1_requirements import schema as sc  # noqa: E402
 from services.s1_requirements.criteria import enumerate_experience_criteria  # noqa: E402
-from services.s1_requirements.jd_text import JDText, normalize  # noqa: E402
+from services.s1_requirements.jd_text import JDText, locate_words, normalize, words  # noqa: E402
+from services.s1_requirements.validator import implied_policy  # noqa: E402
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "s1_eval_fixtures"
 FIXTURES = {"main": FIXTURE_DIR / "s1_ctx_main_cases.json", "heldout": FIXTURE_DIR / "s1_ctx_heldout_cases.json"}
@@ -209,7 +219,8 @@ def observe_criterion(art, jd: JDText) -> dict:
            "settings": None if failed else [s.text for s in art.settings],
            "setting_spans": [s.jd_span.to_dict() for s in art.settings],
            "requirement_spans": [s.to_dict() for s in art.requirement_spans],
-           "restrictions": art.audit.get("restrictions", []), "view": _view_code(art)}
+           "restrictions": art.audit.get("restrictions", []), "view": _view_code(art),
+           "targets": [{"text": t.text, "type": t.type, "provenance": t.provenance} for t in art.targets]}
     obs["outside_requirement"] = sum(not any(s.jd_span.within(r) for r in art.requirement_spans) for s in art.settings)
     obs["ungrounded"] = sum(jd.span_on_line(s.jd_span.line, s.text, boundaries=True) is None for s in art.settings)
     obs["failed_as_none"] = bool(failed and obs["settings"] is not None)
@@ -226,15 +237,57 @@ def observe(case: dict, out, raw: list) -> dict:
             "repair_merge": out.meta.get("repair_merge"), "error": out.meta.get("error")}
 
 
+TARGET_POLICIES = ("explicit_role", "functional", "mixed")
+
+
+def gold_targets(spec: dict) -> tuple[list[tuple[str, str]], str]:
+    """(role/function targets, policy) the labelled oracle answer of one criterion implies (no fixture field)."""
+    o = spec["oracle"]
+    if "restrictions" in o:                                   # hint-less: typed restrictions
+        rf = [(r["text"], r["kind"]) for r in o["restrictions"] if r["kind"] in ("role", "function")]
+        if rf:
+            return rf, implied_policy([k for _, k in rf])
+        return [], "sector" if any(r["kind"] == "context" for r in o["restrictions"]) else "pure_duration"
+    return [], implied_policy([t["type"] for t in o.get("targets") or []]) or "pure_duration"
+
+
+def _carries(gold: str, observed: str) -> bool:
+    a, b = words(gold), words(observed)
+    return bool(a and b) and bool(locate_words(a, b) or locate_words(b, a))
+
+
+def target_check(spec: dict, o: dict) -> dict:
+    """P4b RC1: role/function target and policy preservation of one ok criterion-run."""
+    gold_rf, gold_policy = gold_targets(spec)
+    observed = [(r["text"], r["kind"]) for r in o.get("restrictions") or [] if r.get("kind") in ("role", "function")]
+    observed += [(t["text"], t["type"]) for t in o.get("targets") or [] if (t["text"], t["type"]) not in observed]
+    lost = [g for g, _ in gold_rf if not any(_carries(g, x) for x, _ in observed)]
+    pol = o.get("policy")
+    downgraded = ((gold_policy in TARGET_POLICIES and pol in ("sector", "pure_duration"))
+                  or (gold_policy == "sector" and pol == "pure_duration"))
+    return {"targets_lost": lost, "policy_downgraded": bool(downgraded), "gold_policy": gold_policy,
+            "observed_policy": pol}
+
+
 def score(case: dict, obs: dict) -> dict:
-    per = []
+    per, tp = [], []
     for spec, o in zip(case["criteria"], obs["criteria"]):
         e = spec["expected"]
         ok_run = o["outcome"] == "ok"
+        t = target_check(spec, o) if ok_run else None
+        tp.append(t)
         per.append({"settings": ok_run and settings_match(e["settings"], o["settings"]),
                     "status": ok_run and o["status"] == e["status"],
-                    "reasons": ok_run and all(r in o["reasons"] for r in e.get("reasons_include", []))})
-    return {"checks": per, "pass": len(per) == len(case["criteria"]) and all(all(p.values()) for p in per)}
+                    "reasons": ok_run and all(r in o["reasons"] for r in e.get("reasons_include", [])),
+                    "targets": ok_run and not t["targets_lost"] and not t["policy_downgraded"]})
+    return {"checks": per, "target_policy": tp,
+            "pass": len(per) == len(case["criteria"]) and all(all(p.values()) for p in per)}
+
+
+def rescore(records: list[dict], cases: list[dict]) -> list[dict]:
+    """Re-score recorded runs with the current scoring (observations untouched; no model, no S1 call)."""
+    by_id = {c["id"]: c for c in cases}
+    return [{**r, **score(by_id[r["case"]], r)} for r in records]
 
 
 # ── independence probe (offline; the model input never depends on the qualifying context) ─────────────
@@ -310,7 +363,23 @@ def summarize(records: list[dict], cases: list[dict], *, independence_failures: 
     for r in records:
         fam[r["family"]][1] += 1
         fam[r["family"]][0] += bool(r["pass"])
+    tp_runs = [(r, spec, t) for r in records for spec, t in zip(by_id[r["case"]]["criteria"], r.get("target_policy")
+                                                                  or [None] * len(r["criteria"])) if t]
+    lost_runs = [(r, t) for r, _, t in tp_runs if t["targets_lost"]]
+    down_runs = [(r, t) for r, _, t in tp_runs if t["policy_downgraded"]]
+    unsafe = [(r, t) for r, _, t in tp_runs if t["targets_lost"] or t["policy_downgraded"]]
+    target_policy = {
+        "criterion_runs_checked": len(tp_runs),
+        "target_loss_runs": len(lost_runs), "policy_downgrade_runs": len(down_runs),
+        "repair_target_loss_runs": sum(1 for r, _ in unsafe if r.get("repair_used")),
+        "unsafe_runs": len(unsafe),
+        "target_accuracy": _ratio(len(tp_runs) - len(unsafe), len(tp_runs)),
+        "cases": sorted({r["case"] for r, _ in unsafe}),
+        "details": [{"case": r["case"], "run": r["run"], "repair_used": bool(r.get("repair_used")), **t}
+                    for r, t in unsafe],
+    }
     hard = {
+        "unsafe_target_policy_loss": len(unsafe),
         "setting_outside_requirement_spans": sum(o["outside_requirement"] for _, _, o, _ in crit_runs),
         "ungrounded_setting": sum(o["ungrounded"] for _, _, o, _ in crit_runs),
         "failed_artifact_treated_as_none": sum(o["failed_as_none"] for _, _, o, _ in crit_runs),
@@ -333,6 +402,7 @@ def summarize(records: list[dict], cases: list[dict], *, independence_failures: 
         "stability": _ratio(len(stable), len(multi)),
         "unstable_cases": sorted(set(multi) - set(stable)),
         "pass_runs": sum(1 for r in records if r["pass"]),
+        "target_policy": target_policy,
         "hard": hard,
         "joint_agreement_rate": "not_available",
         "repair_calls": sum(1 for r in records for c in r["calls"] if c["call"] == "repair"),
@@ -374,6 +444,12 @@ def render_markdown(meta: dict, s: dict, gates: dict) -> str:
                                           "failure_rate", "status_accuracy", "reason_accuracy",
                                           "joint_agreement_rate")],
              f"- outcomes {s['outcomes']}; calls main {s['main_calls']}, repair {s['repair_calls']}", "",
+             "## Target / policy preservation (separate from context accuracy)",
+             *[f"- {k}: {s['target_policy'][k]}" for k in ("criterion_runs_checked", "target_accuracy",
+                                                           "target_loss_runs", "policy_downgrade_runs",
+                                                           "repair_target_loss_runs", "unsafe_runs", "cases")],
+             *[f"- UNSAFE {x['case']} run {x['run']} repair={x['repair_used']}: lost {x['targets_lost']}, policy "
+               f"{x['gold_policy']} -> {x['observed_policy']}" for x in s["target_policy"]["details"]], "",
              "## By family", *[f"- {f}: {v['pass']}/{v['runs']}" for f, v in s["by_family"].items()], "",
              "## Semantic failures",
              *[f"- {x['case']} run {x['run']}: {x['criteria']}" for x in s["semantic_failures"]], ""]
@@ -402,9 +478,29 @@ def main(argv=None) -> int:
     ap.add_argument("--cases", default="", help="comma-separated case ids (default: all)")
     ap.add_argument("--confirm-real", action="store_true", help="required for --mode real (paid model calls)")
     ap.add_argument("--allow-heldout", action="store_true", help="required to run the held-out fixture for real")
+    ap.add_argument("--rescore", default="", help="re-score an existing results.json offline (no model, no S1 call)")
     args = ap.parse_args(argv)
 
     fixture, path = load_fixture(args.fixture)
+    if args.rescore:
+        old = json.loads(Path(args.rescore).read_text(encoding="utf-8"))
+        if old.get("meta", {}).get("fixture_sha256") != sha256_file(path):
+            print("REFUSED: the results were produced on another fixture version.")
+            return 2
+        records = rescore(old["records"], fixture["cases"])
+        summary = summarize(records, fixture["cases"],
+                            independence_failures=old.get("summary", {}).get("hard", {}).get("independence_failures", 0))
+        gates = evaluate_gates(summary, args.fixture)
+        meta = {**old["meta"], "rescored_at": datetime.now(timezone.utc).isoformat(), "rescored": True}
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "results.json").write_text(json.dumps({"meta": meta, "summary": summary, "gates": gates,
+                                                      "records": records}, ensure_ascii=False, indent=1),
+                                          encoding="utf-8")
+        report = render_markdown(meta, summary, gates)
+        (out / "report.md").write_text(report, encoding="utf-8")
+        print(report)
+        return 0
     only = {c for c in args.cases.split(",") if c}
     cases = [c for c in fixture["cases"] if not only or c["id"] in only]
     if args.mode == "real":
