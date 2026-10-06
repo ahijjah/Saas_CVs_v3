@@ -68,10 +68,10 @@ FIXTURE_DIR = Path(__file__).resolve().parent / "s1_eval_fixtures"
 FIXTURES = {"main": FIXTURE_DIR / "s1_ctx_main_cases.json", "heldout": FIXTURE_DIR / "s1_ctx_heldout_cases.json"}
 # SHA256 pins: finalised before ANY real call; a changed file is refused in real mode
 FIXTURE_SHA256 = {
-    "main": "c72803fbdddb45bd1c6ea45a4e8c949fdd9ea5742e20d0c511bdfd919954fc4b",
-    "heldout": "bb949d061ddcb4a5d0d6a0d10b6af6794d4279a4e3f28d0d44fc561d55b94165",
+    "main": "cf5844a22092a43d296e227de317ac75c6919f7d77e21da618c3945b4f0ca975",
+    "heldout": "fb917b610c0bd31c1932818655a3392469a827df74a02fc3344e7e288c78589c",
 }
-PINNED = {"prompt_version": "s1-6.0", "prompt_fingerprint": "af9f496563a4", "s1_version": "1.5.0",
+PINNED = {"prompt_version": "s1-6.0", "prompt_fingerprint": "5b4172f709b2", "s1_version": "1.5.0",
           "model": "gpt-4o-mini", "temperature": 0.0, "max_tokens": 4000}
 CLIENT_MAX_RETRIES = 0
 CLIENT_TIMEOUT_S = 120.0

@@ -237,7 +237,7 @@ class TestSafety:
         assert not (tmp_path / "d").exists()
         assert br.main(["--out", str(tmp_path / "o"), "--mode", "oracle", "--runs", "1", "--cases", "A1,B1"]) == 0
         res = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))
-        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "af9f496563a4"
+        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "5b4172f709b2"
         assert res["meta"]["temperature"] == 0.0 and res["meta"]["mode"] == "oracle"
         report = (tmp_path / "o" / "report.md").read_text(encoding="utf-8")
         for frag in ("## jd_asserted", "## Stability", "## Role/function confusion", "## Outcomes"):
@@ -257,7 +257,7 @@ class TestSafety:
 
     def test_s1_prompt_unchanged(self):
         assert (br.sc.S1_PROMPT_VERSION, br.sc.S1_VERSION, br.clf.prompt_fingerprint()) == (
-            "s1-6.0", "1.5.0", "af9f496563a4")
+            "s1-6.0", "1.5.0", "5b4172f709b2")
 
     def test_real_mode_needs_explicit_confirmation(self, tmp_path, monkeypatch):
         def boom():

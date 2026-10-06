@@ -79,7 +79,8 @@ class TestFixtures:
             cases = fx["cases"]
             assert sum(c["lang"] == "ar" for c in cases) >= 5 and sum(c["lang"] == "en" for c in cases) >= 15
             pol = [cr["expected"]["polarity"] for c in cases for cr in c["criteria"]]
-            assert pol.count("positive") >= 10 and pol.count("negative") >= 7 and pol.count("scope") >= 3
+            assert pol.count("positive") >= 10 and pol.count("negative") >= 7 and pol.count("scope") >= 2
+            assert pol.count("compound") >= 1
             exp = [cr["expected"]["settings"] for c in cases for cr in c["criteria"]]
             assert any(len(s) == 2 for s in exp)                                     # AND
             assert any(isinstance(x, str) and " or " in x for s in exp for x in s)   # OR inside one context
@@ -91,10 +92,14 @@ class TestFixtures:
             for cr in c["criteria"]:
                 e = cr["expected"]
                 assert set(e) == {"settings", "status", "reasons_include", "polarity"}, c["id"]
-                assert e["polarity"] in ("positive", "negative", "neutral", "scope")
+                assert e["polarity"] in ("positive", "negative", "neutral", "scope", "compound")
                 assert (e["polarity"] == "positive") == bool(e["settings"]), c["id"]
-                if e["polarity"] == "scope":
-                    assert "ambiguous_context_scope" in e["reasons_include"] and e["status"] == "needs_confirmation"
+                scope = "ambiguous_context_scope" in e["reasons_include"]
+                compound = "compound_requirement" in e["reasons_include"]
+                assert (e["polarity"] == "scope") == scope and (e["polarity"] == "compound") == compound, c["id"]
+                assert scope == ("ambiguous_context_scope" in cr["oracle"]["ambiguity"]), c["id"]
+                if scope or compound:
+                    assert e["status"] == "needs_confirmation" and e["settings"] == [], c["id"]
 
     def test_contiguous_and_split_pairs(self):
         assert MAIN_BY["CM41"]["criteria"][0]["expected"]["settings"] == [
@@ -104,9 +109,17 @@ class TestFixtures:
         assert HELD_BY["CX20"]["criteria"][0]["expected"]["settings"] == ["family vineyards in volcanic regions"]
 
     def test_compound_stays_blocked(self):
+        # pre-exposure correction: a compound requirement is NOT ambiguous_context_scope
         for c in (MAIN_BY["CM43"], HELD_BY["CX22"]):
-            e = c["criteria"][0]["expected"]
-            assert e["settings"] == [] and "compound_requirement" in e["reasons_include"]
+            cr = c["criteria"][0]
+            e = cr["expected"]
+            assert e == {"settings": [], "status": "needs_confirmation", "reasons_include": ["compound_requirement"],
+                         "polarity": "compound"}
+            assert cr["oracle"]["ambiguity"] == [] and cr["oracle"]["settings"] == []
+            (r,) = records_for([c])
+            (o,) = r["criteria"]
+            assert r["pass"] and o["reasons"] == ["compound_requirement"] and o["settings"] == []
+            assert o["view"] != "VIEW"
 
     @pytest.mark.parametrize("name", ["main", "heldout"])
     def test_oracle_scores_100_percent_and_offline_hard_gates_pass(self, name):

@@ -1156,19 +1156,16 @@
       ],
       "settings": [],
       "duration": "10 years",
-      "ambiguity": [
-       "ambiguous_context_scope"
-      ],
+      "ambiguity": [],
       "note": "labelled reference answer"
      },
      "expected": {
       "settings": [],
       "status": "needs_confirmation",
       "reasons_include": [
-       "compound_requirement",
-       "ambiguous_context_scope"
+       "compound_requirement"
       ],
-      "polarity": "scope"
+      "polarity": "compound"
      }
     }
    ]

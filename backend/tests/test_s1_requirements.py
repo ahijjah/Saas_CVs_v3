@@ -1103,9 +1103,12 @@ class TestS12Versioning:
     def test_versions_and_fingerprint(self):
         assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-6.0", "1.5.0")
         assert (sc.S1_SCHEMA, sc.S1_INPUT_VERSION) == ("s1_requirement_spec_v3", "s1-in-1")
-        assert clf.prompt_fingerprint() == "af9f496563a4"
+        # s1-6.0 was corrected before any evaluation (compound requirements are not ambiguous_context_scope):
+        # af9f496563a4 -> 5b4172f709b2
+        assert clf.prompt_fingerprint() == "5b4172f709b2"
         assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9", "c9b570d82f4e",
-                                                "faad01d30b5c", "a0ae492a27e4", "b2a063ab2947", "4f22dddb117e")
+                                                "faad01d30b5c", "a0ae492a27e4", "b2a063ab2947", "4f22dddb117e",
+                                                "af9f496563a4")
 
     def test_cache_identity_differs_from_s1_5_2(self, monkeypatch):
         # s1-6: old s1-5.2 cache entries (single setting) are unreachable

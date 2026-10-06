@@ -7,7 +7,7 @@ qualifying-context (QC) feature flag stays OFF; candidate_qc-1, its prompt and t
 
 | item | before | P4a |
 |---|---|---|
-| `S1_PROMPT_VERSION` | s1-5.2 (fingerprint `4f22dddb117e`) | **s1-6.0** (fingerprint `af9f496563a4`) |
+| `S1_PROMPT_VERSION` | s1-5.2 (fingerprint `4f22dddb117e`) | **s1-6.0** (fingerprint `5b4172f709b2`; `af9f496563a4` before the pre-evaluation correction below) |
 | `S1_VERSION` | 1.4.5 | **1.5.0** |
 | `S1_SCHEMA` | s1_requirement_spec_v2 | **s1_requirement_spec_v3** (a v2 object is never read as v3) |
 | `S1_INPUT_VERSION` | s1-in-1 | s1-in-1 (unchanged: the model input carries no qualifying context) |
@@ -29,8 +29,12 @@ Old s1-5.2 real results are **not** validation evidence for s1-6.0.
   is part of the requirement spans. Preferred wording follows candidate_qc-1: a whole preferred requirement keeps
   its context; a softened qualifier ("preferably / ideally in X") is ambiguous scope.
 - New ambiguity reason **`ambiguous_context_scope`** (kind ambiguity → needs_confirmation): a context exists but
-  restricts only some alternatives, only part of the experience (compound), or is softened. Settings stay `[]`;
-  `ambiguous_relevance` is no longer used for this.
+  it is unclear which target / alternative it applies to (it restricts only some alternatives), or it is softened.
+  Settings stay `[]`; `ambiguous_relevance` is no longer used for this.
+- **`compound_requirement` is a different reason** and the two are never coupled: a nested sub-duration
+  ("N years overall, including M years in X") is a requirement STRUCTURE the model cannot represent; the context
+  itself is not ambiguous. Result: settings `[]`, `compound_requirement` (deterministic, from the duration
+  parser), and NO `ambiguous_context_scope` unless a genuine alternative-scope ambiguity also exists.
 - Hint-less criteria: restriction wire kind `sector` was renamed **`context`** (a geographic or organisation-type
   restriction labelled "sector" invites the model to drop it). Several context restrictions are allowed (the old
   "one sector restriction" contract error is gone); contexts only → policy `sector` (basis "sector" now means
@@ -127,8 +131,8 @@ Offline oracle regression with the ported harness: **s1-boundary-7 45/45 pass, s
 
 | fixture | version | cases (criteria) | EN / AR | positive / negative / scope criteria | SHA256 |
 |---|---|---|---|---|---|
-| `s1_ctx_main_cases.json` (tuning) | s1-ctx-main-1 | 44 (45) | 35 / 9 | 28 / 13 / 4 | `c72803fbdddb45bd1c6ea45a4e8c949fdd9ea5742e20d0c511bdfd919954fc4b` |
-| `s1_ctx_heldout_cases.json` (sealed) | s1-ctx-heldout-1 | 23 (24) | 18 / 5 | 14 / 7 / 3 | `bb949d061ddcb4a5d0d6a0d10b6af6794d4279a4e3f28d0d44fc561d55b94165` |
+| `s1_ctx_main_cases.json` (tuning) | s1-ctx-main-1 | 44 (45) | 35 / 9 | 28 / 13 / 3 (+1 compound) | `cf5844a22092a43d296e227de317ac75c6919f7d77e21da618c3945b4f0ca975` |
+| `s1_ctx_heldout_cases.json` (sealed) | s1-ctx-heldout-1 | 23 (24) | 18 / 5 | 14 / 7 / 2 (+1 compound) | `fb917b610c0bd31c1932818655a3392469a827df74a02fc3344e7e288c78589c` |
 
 Families: geographic, multinational positive / negative, government / public sector, banking / financial,
 other sector, project type, organisation type, two AND contexts, OR inside one phrase, generic environment,
@@ -152,6 +156,27 @@ Gates (`evaluate_gates`):
   ≥ 90% of cases with identical canonical settings in every run; technical + validation failures ≤ 5%;
   old-boundary non-context fields no worse than the s1-5.2 record (boundary harness, separately).
 - informational: status / reason accuracy; joint QC/S1 agreement (soft .70, needs P4c).
+
+### Pre-exposure correction (compound vs context ambiguity)
+
+The first P4a commit (35d95b9) labelled the two compound cases as context ambiguity. Corrected before ANY model
+had seen either fixture (no real run of S1 s1-6.0 has ever been made; main and held-out are both unexposed):
+
+| case | before | after |
+|---|---|---|
+| CM43 (main) "8 years of overall experience as an Auditor, including at least 3 years in the GCC region" | oracle ambiguity `["ambiguous_context_scope"]`; expected reasons `[compound_requirement, ambiguous_context_scope]`; polarity `scope` | oracle ambiguity `[]`; expected reasons `[compound_requirement]`; polarity `compound` |
+| CX22 (held-out) "10 years of overall experience as a Ship Captain, including at least 4 years in Arctic waters" | same as above | same as above |
+
+Settings (`[]`) and status (`needs_confirmation`) are unchanged; no other fixture byte changed. SHA pins:
+main `c72803fb…54fc4b` → `{M[:8]}…{M[-6:]}`, held-out `bb949d06…b94165` → `{H[:8]}…{H[-6:]}`. The prompt's
+AMBIGUOUS SCOPE rule lost its compound example and gained a separate PART DURATION rule (settings `[]`, no
+`ambiguous_context_scope`, the code records `compound_requirement`), so the s1-6.0 fingerprint moved
+`af9f496563a4` → `5b4172f709b2` (the version label stays s1-6.0: it was never evaluated). Leakage and oracle
+validation were rerun on both fixtures (100%, all offline hard gates pass). Tests:
+`tests/test_s1_context_p4a.py::TestCompoundIsNotContextAmbiguity` (compound → `compound_requirement` only,
+settings `[]`; alternative-specific context → `ambiguous_context_scope` only; the two reasons come from separate
+sources and are never derived from each other; both fail closed in `s2_views`), the prompt contract in
+`TestPromptS16::test_semantics`, and the fixture label rules in `tests/test_s1_context_eval.py`.
 
 Tuning rules: tune on main only; never edit a fixture after seeing real output; run the held-out at most once per
 prompt version — **once used it is permanently exposed** and can never again be unseen validation; a held-out

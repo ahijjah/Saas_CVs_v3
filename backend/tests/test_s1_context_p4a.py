@@ -444,6 +444,79 @@ class TestRepairKeepsContexts:
             assert f"def {name}(" in src
 
 
+# ── compound_requirement vs ambiguous_context_scope (distinct reasons, never coupled) ──────────────────
+
+L_COMPOUND = "5 years of experience, including 2 years in the GCC"
+L_COMPOUND_ROLE = "Minimum 5 years of experience as an Internal Auditor, including 2 years in the GCC region"
+L_ALT = "Minimum 4 years as an Accountant in a Big Four firm or as an Internal Auditor"
+L_BOTH = "8 years of overall experience, including 3 years as an Accountant in a Big Four firm or as an Internal Auditor"
+
+
+def _compound_free():
+    a, jd, crits = job([], 5, ["Requirements", "- " + L_COMPOUND + "."])
+    _, out = classify(jd, a, resp(free_item(crits[0].criterion_id, [(2, L_COMPOUND)], [])))
+    return out.artifacts[0]
+
+
+def _compound_role():
+    a, jd, crits = job([AUD], 5, ["Requirements", "- " + L_COMPOUND_ROLE + "."])
+    _, out = classify(jd, a, resp(hint_item(crits[0].criterion_id, [(2, L_COMPOUND_ROLE)])))
+    return out.artifacts[0]
+
+
+def _alternative():
+    a, jd, crits = job(["Accountant", AUD], 4, ["Requirements", "- " + L_ALT + "."])
+    _, out = classify(jd, a, resp(hint_item(crits[0].criterion_id, [(2, L_ALT)], hints=2,
+                                            ambiguity=["ambiguous_context_scope"])))
+    return out.artifacts[0]
+
+
+class TestCompoundIsNotContextAmbiguity:
+    @pytest.mark.parametrize("make", [_compound_free, _compound_role])
+    def test_compound_requirement_only(self, make):
+        art = make()
+        assert art.spec_status == "needs_confirmation" and art.settings == ()
+        assert [r.code for r in art.reasons] == ["compound_requirement"]
+        assert "ambiguous_context_scope" not in [r.code for r in art.reasons]
+        assert art.required_years is None                         # N is never collapsed for a compound
+
+    def test_alternative_specific_context_is_ambiguous_scope_only(self):
+        art = _alternative()
+        assert art.spec_status == "needs_confirmation" and art.settings == ()
+        assert [(r.code, r.field) for r in art.reasons] == [("ambiguous_context_scope", "ai")]
+        assert "compound_requirement" not in [r.code for r in art.reasons]
+
+    def test_reasons_are_not_coupled(self):
+        # each reason comes from its own source: compound from the deterministic duration parser, the context
+        # scope only from the model's ambiguity report; both appear only when both genuinely apply
+        a, jd, crits = job(["Accountant", AUD], 8, ["Requirements", "- " + L_BOTH + "."])
+        _, out = classify(jd, a, resp(hint_item(crits[0].criterion_id, [(2, L_BOTH)], hints=2,
+                                                ambiguity=["ambiguous_context_scope"])))
+        art = out.artifacts[0]
+        assert sorted((r.code, r.field) for r in art.reasons) == [("ambiguous_context_scope", "ai"),
+                                                                  ("compound_requirement", "required_years")]
+        tree = ast.parse((BACKEND / "services" / "s1_requirements" / "assemble.py").read_text(encoding="utf-8"))
+        made = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "Reason"
+                and n.args and isinstance(n.args[0], ast.Name) and n.args[0].id == "AMB_AMBIGUOUS_CONTEXT_SCOPE"]
+        assert made == []                                         # assembly never derives the context-scope code
+        vsrc = (BACKEND / "services" / "s1_requirements" / "validator.py").read_text(encoding="utf-8")
+        assert "compound" not in vsrc.lower()                     # nor does the validator tie it to compounds
+
+    @pytest.mark.parametrize("make", [_compound_free, _compound_role, _alternative])
+    def test_both_fail_closed(self, make):
+        art = make()
+        for rr in (True, False):
+            with pytest.raises(asm.S1ViewError):
+                asm.s2_views(art, require_resolved=rr)                                # no resolution
+            with pytest.raises(asm.S1ViewError):
+                asm.s2_views(resolved(art, provenance="jd_verified"), require_resolved=rr)
+        with pytest.raises(asm.S1ViewError):
+            asm.s2_views(resolved(art, "GCC region"), require_resolved=True)       # still needs_confirmation
+        if any(r.code == "compound_requirement" for r in art.reasons):
+            with pytest.raises(asm.S1ViewError, match="compound requirement"):      # never, not even a preview
+                asm.s2_views(resolved(art, "GCC region"), require_resolved=False)
+
+
 # ── J. fail-closed S2 views ─────────────────────────────────────────────────
 
 def _art_one():
@@ -735,8 +808,12 @@ class TestPromptS16:
                      "the location of this vacancy", "duties or responsibilities of this job",
                      "\"multinational\", \"international\" or \"global\" when they describe the hiring company",
                      "\"dynamic\", \"fast-paced\", \"multicultural team\"", "ONE contiguous restriction is ONE context",
-                     "Never split an \"or\"", "ambiguous_context_scope", "\"settings\": a list of 0 to 5 contexts"):
+                     "Never split an \"or\"", "ambiguous_context_scope", "\"settings\": a list of 0 to 5 contexts",
+                     "PART DURATION", "do NOT report \"ambiguous_context_scope\" for this",
+                     "Never for a part of the experience with its own duration (that is a compound requirement)"):
             assert frag in p, frag
+        scope_rule = next(ln for ln in p.splitlines() if ln.strip().startswith("- AMBIGUOUS SCOPE"))
+        assert "including" not in scope_rule and "overall" not in scope_rule     # compounds are not context ambiguity
         assert "Never use the hiring company's name, a location" not in p
         assert "a location" not in p
 

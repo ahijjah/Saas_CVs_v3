@@ -130,10 +130,11 @@ AMB_AMBIGUOUS_RELEVANCE = "ambiguous_relevance"
 AMB_MULTIPLE_DURATIONS = "multiple_durations"
 AMB_CONFLICTING_REQUIREMENTS = "conflicting_requirements"
 AMB_REQUIREMENT_NOT_IN_JD = "requirement_not_in_jd"
-# s1-6: a context clearly exists, but its scope across the alternatives / parts of the requirement cannot be
-# represented (it restricts only one alternative, only part of the experience, or is only softened
-# "preferably / ideally in X"): settings stay [] and the criterion is needs_confirmation. Never
-# ambiguous_relevance for this case.
+# s1-6: a context clearly exists, but it is unclear which target / alternative of the requirement it applies to
+# (it restricts only one alternative, or is only softened "preferably / ideally in X"): settings stay [] and the
+# criterion is needs_confirmation. Never ambiguous_relevance for this case. Distinct from
+# compound_requirement (a nested sub-duration, e.g. "N years overall, including M years in X": the requirement
+# STRUCTURE cannot be represented; the context itself is not ambiguous): the two are never coupled.
 AMB_AMBIGUOUS_CONTEXT_SCOPE = "ambiguous_context_scope"
 AMBIGUITY_CODES = (AMB_AMBIGUOUS_RELEVANCE, AMB_MULTIPLE_DURATIONS,
                    AMB_CONFLICTING_REQUIREMENTS, AMB_REQUIREMENT_NOT_IN_JD, AMB_AMBIGUOUS_CONTEXT_SCOPE)
