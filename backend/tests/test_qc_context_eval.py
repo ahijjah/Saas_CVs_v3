@@ -804,9 +804,9 @@ class TestPinnedBytes:
                 continue          # the validated production service records its prompt version by design
             text = path.read_text(encoding="utf-8")
             assert "candidate_qc" not in text and "qc_context_eval" not in text, path
-        # phase P2: the ONLY production caller of the service is the criteria worker (behind its default-OFF
-        # flag); nothing else in services / workers / routers may use it
-        allowed = {BACKEND / "workers" / "criteria_worker.py"}
+        # phases P2/P3: the ONLY production callers are the criteria worker (behind its default-OFF flag) and
+        # the jobs router (recruiter review endpoints + details review status); nothing else may use it
+        allowed = {BACKEND / "workers" / "criteria_worker.py", BACKEND / "routers" / "jobs.py"}
         for sub in ("services", "workers", "routers"):
             for path in (BACKEND / sub).rglob("*.py"):
                 if service in path.parents or path in allowed:

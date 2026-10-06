@@ -128,7 +128,10 @@ class TestPinnedConfig:
                         lazy.setdefault(fn.name, set()).update(a.name for a in n.names)
         assert not {m for m in top if any(b in m for b in banned)}
         assert "openai" not in top and "config" not in top
-        assert lazy == {"make_client": {"openai", "config"}}
+        # P1: OpenAI only inside make_client; P3: the recruiter DB operation lazily imports the DB session
+        # helpers and the audit service (no model code)
+        assert lazy == {"make_client": {"openai", "config"},
+                        "_run": {"sqlalchemy", "database", "services.audit_service"}}
 
     def test_import_and_offline_validation_never_load_openai(self):
         code = ("import sys, json\n"

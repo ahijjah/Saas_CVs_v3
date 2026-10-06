@@ -1,7 +1,7 @@
 import json
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
@@ -90,6 +90,18 @@ class UpdateCriteriaContentRequest(BaseModel):
     other_requirements:   list[str] | None = None
 
 
+class EditQualifyingContextRequest(BaseModel):
+    state: str
+    contexts: list[Any] = []
+    # required; may be null — the qualifying context the recruiter last saw (optimistic concurrency)
+    expected_qualifying_context: dict[str, Any] | None
+
+
+class ConfirmQualifyingContextRequest(BaseModel):
+    # required — the automatic suggestion being confirmed, exactly as displayed
+    expected_qualifying_context: dict[str, Any] | None
+
+
 class UpdateJobMetadataRequest(BaseModel):
     title: str | None = None
     department: str | None = None
@@ -109,6 +121,12 @@ class UpdateJobMetadataRequest(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _qc_review_status(analysis_json: Any) -> dict:
+    """Recruiter-facing review state of the required experience context (missing is never 'none')."""
+    from services.qualifying_context.recruiter import review_status
+    return review_status(analysis_json)
+
 
 async def _get_tenant_info(tenant_id: str, db) -> dict:
     """Return tenant_type and any other fields needed for business logic."""
@@ -755,6 +773,7 @@ async def get_job_details(
         },
         "analysis": analysis_json,
         "original_analysis": original_analysis_json,
+        "qualifying_context_review": _qc_review_status(analysis_json),
     }
 
 
@@ -1141,8 +1160,10 @@ async def update_criteria_content(
     if not job_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
+    # FOR UPDATE: serialise with the criteria worker and the qualifying-context endpoints, so this
+    # read-modify-write can never restore an older qualifying_context over a recruiter confirmation/edit.
     criteria_row = await db.execute(
-        text("SELECT analysis_json FROM job_criteria WHERE job_id = :jid"),
+        text("SELECT analysis_json FROM job_criteria WHERE job_id = :jid FOR UPDATE"),
         {"jid": job_id},
     )
     existing = criteria_row.mappings().first()
@@ -1225,6 +1246,39 @@ async def update_criteria_content(
     )
     await db.commit()
     return {"success": True, "message": "Criteria content updated"}
+
+
+@router.put("/{job_id}/criteria/qualifying-context")
+async def edit_qualifying_context(
+    job_id: str,
+    body: EditQualifyingContextRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Recruiter sets the required experience context (identified + contexts, or none).
+    Admin and HR Manager only. Never touches original_analysis_json."""
+    from services.qualifying_context import recruiter as qc_recruiter
+    try:
+        return await qc_recruiter.edit_qualifying_context(
+            db, current_user, job_id, body.state, body.contexts, body.expected_qualifying_context)
+    except qc_recruiter.QCRecruiterError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.detail()) from exc
+
+
+@router.post("/{job_id}/criteria/qualifying-context/confirm")
+async def confirm_qualifying_context(
+    job_id: str,
+    body: ConfirmQualifyingContextRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Recruiter accepts the automatic suggestion unchanged. Admin and HR Manager only."""
+    from services.qualifying_context import recruiter as qc_recruiter
+    try:
+        return await qc_recruiter.confirm_qualifying_context(
+            db, current_user, job_id, body.expected_qualifying_context)
+    except qc_recruiter.QCRecruiterError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.detail()) from exc
 
 
 @router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)

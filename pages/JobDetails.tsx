@@ -6,6 +6,7 @@ import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus,
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
+import { QualifyingContextPanel } from '../components/QualifyingContextPanel';
 
 interface JobDetailsProps {
   jobId: string;
@@ -607,7 +608,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         );
         if (data) {
           const payload = Array.isArray(data) ? data[0] : data;
-          setDetails({ ...payload.details, analysis_json: payload.analysis, original_analysis_json: payload.original_analysis });
+          setDetails({ ...payload.details, analysis_json: payload.analysis, original_analysis_json: payload.original_analysis, qualifying_context_review: payload.qualifying_context_review });
         } else {
           throw new Error('No data received for this job ID.');
         }
@@ -688,7 +689,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         );
         if (data) {
           const payload = Array.isArray(data) ? data[0] : data;
-          setDetails({ ...payload.details, analysis_json: payload.analysis, original_analysis_json: payload.original_analysis });
+          setDetails({ ...payload.details, analysis_json: payload.analysis, original_analysis_json: payload.original_analysis, qualifying_context_review: payload.qualifying_context_review });
         }
       } catch { /* ignore transient polling errors */ }
       setCriteriaPolltick(t => t + 1); // always re-trigger effect
@@ -1103,7 +1104,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
       if (data) {
         const p = Array.isArray(data) ? data[0] : data;
-        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis });
+        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis, qualifying_context_review: p.qualifying_context_review });
       }
       setEditingMeta(false);
       addToast(t.metaSaved, 'success');
@@ -1142,7 +1143,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
       if (data) {
         const p = Array.isArray(data) ? data[0] : data;
-        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis });
+        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis, qualifying_context_review: p.qualifying_context_review });
       }
       setEditingControls(false);
       addToast(t.controlsSaved, 'success');
@@ -1199,7 +1200,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
       if (data) {
         const p = Array.isArray(data) ? data[0] : data;
-        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis });
+        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis, qualifying_context_review: p.qualifying_context_review });
       }
       setEditingCriteria(false);
       addToast(t.criteriaSaved, 'success');
@@ -1257,7 +1258,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
       if (data) {
         const p = Array.isArray(data) ? data[0] : data;
-        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis });
+        setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis, qualifying_context_review: p.qualifying_context_review });
       }
       setEditingKnockout(false);
       addToast((t as any).knockoutSaved, 'success');
@@ -1315,6 +1316,13 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const intakeBlocked = ['pending', 'processing', 'insufficient', 'failed', 'blocked'].includes(details.criteria_extraction_status || '');
 
   const analysis = details.analysis_json ?? undefined;
+  const reloadJobDetails = async () => {
+    const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
+    if (data) {
+      const p = Array.isArray(data) ? data[0] : data;
+      setDetails({ ...p.details, analysis_json: p.analysis, original_analysis_json: p.original_analysis, qualifying_context_review: p.qualifying_context_review });
+    }
+  };
   const metaValues = [details.job_client, details.job_type || 'Full-time', details.location || 'Remote', details.posted_date || '-', details.closing_date || '-'];
   const publicApplyUrl = `${window.location.origin}/apply/${details.job_code}`;
   const statusColorMap: Record<string, string> = {
@@ -2816,6 +2824,16 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                   <ul className="space-y-0.5">
                     {(analysis?.experience?.relevant_roles || []).map((r, i) => <li key={i} className="text-xs font-bold text-textMain">• {r}</li>)}
                   </ul>
+                  <QualifyingContextPanel
+                    jobId={(details as any).job_id}
+                    review={details.qualifying_context_review}
+                    stored={analysis?.experience?.qualifying_context}
+                    canEdit={canEdit}
+                    isAr={isAr}
+                    token={auth.token!}
+                    onReload={reloadJobDetails}
+                    addToast={addToast}
+                  />
                 </div>
                 <div className="bg-slate-50 rounded-xl p-4 border border-border">
                   <p className="text-[10px] font-black text-textMuted uppercase tracking-widest mb-2">{t.education}</p>

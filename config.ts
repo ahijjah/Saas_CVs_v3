@@ -65,6 +65,7 @@ export const WEBHOOK_CONFIG = {
   JOB_SETTINGS_BASE_URL:        `${API_BASE}/jobs`,
   UPDATE_JOB_URL:            `${API_BASE}/jobs`,
   UPDATE_CRITERIA_CONTENT_URL: `${API_BASE}/jobs`,  // append /{job_id}/criteria/content
+  QUALIFYING_CONTEXT_BASE_URL: `${API_BASE}/jobs`,  // append /{job_id}/criteria/qualifying-context[/confirm]
   // Duplicate submission logs (append /{job_id}/duplicate-logs)
   DUPLICATE_LOGS_BASE_URL:      `${API_BASE}/jobs`,
   // Duplicate CV file download (append /{job_id}/duplicate-logs/{log_id}/cv)

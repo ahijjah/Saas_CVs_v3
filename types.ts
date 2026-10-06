@@ -216,6 +216,32 @@ export interface Job {
   mixed_scoring_methods?: boolean;
 }
 
+// Required experience context (qualifying context). `source` "analysis" = automatic suggestion,
+// "recruiter" = reviewed by a recruiter. A missing object means "not assessed" — never "no restriction".
+export interface QualifyingContext {
+  state: 'identified' | 'none' | 'uncertain';
+  contexts: string[];
+  source: 'analysis' | 'recruiter';
+}
+
+export type QualifyingContextReviewStatus =
+  | 'not_assessed'
+  | 'assessment_failed'
+  | 'needs_confirmation'
+  | 'awaiting_confirmation'
+  | 'confirmed'
+  | 'edited';
+
+export interface QualifyingContextReview {
+  status: QualifyingContextReviewStatus;
+  can_confirm: boolean;
+  can_edit: boolean;
+  state: 'identified' | 'none' | 'uncertain' | null;
+  contexts: string[];
+  changed_by_name: string | null;
+  changed_at: string | null;
+}
+
 export interface AnalysisJson {
   skills: {
     required: string[];
@@ -225,6 +251,7 @@ export interface AnalysisJson {
     minimum_years: number;
     relevant_roles: string[];
     key_responsibilities: string[];
+    qualifying_context?: QualifyingContext | null;
   };
   education: {
     minimum_level: string;
@@ -247,6 +274,7 @@ export interface AnalysisJson {
 export interface JobDetails extends Job {
   description: string;
   analysis_json: AnalysisJson | null;
+  qualifying_context_review?: QualifyingContextReview;
   forwarding_email?: string;
   // Ingestion booleans (replaces forwarding_enabled/alias_enabled)
   receive_cv_via_forwarding_email?: boolean;

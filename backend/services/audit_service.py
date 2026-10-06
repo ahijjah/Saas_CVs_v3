@@ -30,8 +30,11 @@ async def log_action(
     resource_id: str | None = None,
     details: dict[str, Any] | None = None,
     ip_address: str | None = None,
+    *,
+    strict: bool = False,
 ) -> None:
-    """Insert one audit log row. Never raises on failure."""
+    """Insert one audit log row. Never raises on failure — unless ``strict=True``, in which case the error is
+    logged and re-raised so the caller can roll back a change that must not commit without its audit row."""
     try:
         await db.execute(
             text("""
@@ -55,3 +58,5 @@ async def log_action(
         )
     except Exception as exc:
         logger.warning("audit_service: failed to log action '%s': %s", action, exc)
+        if strict:
+            raise
