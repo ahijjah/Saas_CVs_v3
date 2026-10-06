@@ -7,7 +7,10 @@
 | P1 service (schema, strict parse, grounding, pinned runner, prompt copy) | done |
 | P2 criteria-worker integration + persistence | done; behind `system_config` key `scoring_v2.qualifying_context_analysis_enabled` (only exact `"true"` enables; missing row / error / other value = OFF) |
 | P3 recruiter review / confirm / edit (API, details review status, UI) | done; works whether or not the flag is on, UI hidden when `not_assessed` |
-| P4+ S1 agreement, S2 contexts, orchestration | not started |
+| P4a S1 s1-6.0 experience contexts (settings), fail-closed S2 views, independence tests, context eval harness + fixtures | done (offline only; no real S1 evaluation yet); see `scripts/s1_eval_fixtures/S1_CONTEXT_P4A.md` |
+| P4b real S1 s1-6.0 evaluation / freeze | not started (needs explicit approval) |
+| P4c deterministic QC x S1 agreement (`context_resolution`), stale rules, recruiter JD hash | not started |
+| P5 S2 multi-context, orchestration | not started |
 
 Production scoring (D-01 / `criteria_matcher` / F-01) does not read qualifying context.
 

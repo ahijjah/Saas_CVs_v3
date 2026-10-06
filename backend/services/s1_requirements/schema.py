@@ -1,5 +1,5 @@
 """
-S1 RequirementSpec foundation — artifact schema (s1_requirement_spec_v2).
+S1 RequirementSpec foundation — artifact schema (s1_requirement_spec_v3).
 
 SHADOW ONLY: nothing in production imports this package, nothing is persisted.
 
@@ -17,6 +17,15 @@ Status axes:
   contract   failed_validation (AI output still invalid after one repair)
   pending    enumerated, not yet classified
 These states carry no production scoring behaviour in this phase.
+
+s1-6 / v3 (P4a): ``setting: Setting | None`` became ``settings: tuple[Setting, ...]``: 0..MAX_SETTINGS
+experience CONTEXTS (where / in what setting otherwise relevant past experience must have been gained:
+geographic scope, organisation type, sector or domain, project type, work setting), each a verbatim JD span
+inside a requirement span, distinct, non-overlapping, ordered by JD occurrence; several entries mean AND on
+the SAME experience entry; one contiguous restriction is ONE entry and an "or" stays inside one entry.
+``context_resolution`` is the slot for the later deterministic agreement with the qualifying-context
+analysis (P4c, not implemented): S1 itself never sets it, and without a resolved one no S2 view exists.
+A v2 object is never read as v3.
 """
 from __future__ import annotations
 
@@ -25,11 +34,12 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-S1_SCHEMA = "s1_requirement_spec_v2"
-S1_VERSION = "1.4.5"                     # enumeration + parser + validator + assembly
-S1_INPUT_VERSION = "s1-in-1"
+S1_SCHEMA = "s1_requirement_spec_v3"
+S1_VERSION = "1.5.0"                     # enumeration + parser + validator + assembly
+S1_INPUT_VERSION = "s1-in-1"             # unchanged by s1-6: the model input carries no qualifying context
 S1_PROMPT_CODE = "recruitment.experience_requirement_spec"
-S1_PROMPT_VERSION = "s1-5.2"
+S1_PROMPT_VERSION = "s1-6.0"
+MAX_SETTINGS = 5                         # experience contexts per criterion
 S1_MODEL = "gpt-4o-mini"
 S1_TEMPERATURE = 0.0
 S1_MAX_TOKENS = 4000
@@ -49,7 +59,7 @@ MATCHES = (MATCH_EXACT, MATCH_EQUIVALENT, MATCH_NONE)
 
 # s1-4: how a criterion WITHOUT analysis targets restricts relevance (policy is derived from it)
 BASIS_TARGETS = "targets"                    # the requirement names roles/functions (JD-selected targets)
-BASIS_SECTOR = "sector"                      # only a sector/setting                    -> sector
+BASIS_SECTOR = "sector"                      # only context restrictions (s1-6)          -> sector
 BASIS_TOTAL_EXPERIENCE = "total_experience"  # total experience, no restriction        -> pure_duration
 BASIS_UNSPECIFIED = "unspecified"            # "relevant" but undefined -> pure_duration + ambiguous_relevance
 RELEVANCE_BASES = (BASIS_TARGETS, BASIS_SECTOR, BASIS_TOTAL_EXPERIENCE, BASIS_UNSPECIFIED)
@@ -58,9 +68,12 @@ RELEVANCE_BASES = (BASIS_TARGETS, BASIS_SECTOR, BASIS_TOTAL_EXPERIENCE, BASIS_UN
 # s1-5: typed restrictions (criteria WITHOUT analysis targets): every JD phrase limiting which experience counts
 RESTRICTION_ROLE = "role"
 RESTRICTION_FUNCTION = "function"
-RESTRICTION_SECTOR = "sector"
+# s1-6: the wire kind "sector" (industry / sector / environment) became "context": the shared experience-context
+# concept (geography, organisation type, sector/domain, project type, work setting). Renamed on the wire because
+# a geographic or organisation-type restriction labelled "sector" invites the model to drop it (= broadening).
+RESTRICTION_CONTEXT = "context"
 RESTRICTION_VAGUE = "vague"              # "relevant / related / similar / in the field" without saying what
-RESTRICTION_KINDS = (RESTRICTION_ROLE, RESTRICTION_FUNCTION, RESTRICTION_SECTOR, RESTRICTION_VAGUE)
+RESTRICTION_KINDS = (RESTRICTION_ROLE, RESTRICTION_FUNCTION, RESTRICTION_CONTEXT, RESTRICTION_VAGUE)
 
 # s1-5: word alignment of an "equivalent" mapping (one analysis-target word per pair)
 REL_SAME = "same"                        # identical word
@@ -117,8 +130,13 @@ AMB_AMBIGUOUS_RELEVANCE = "ambiguous_relevance"
 AMB_MULTIPLE_DURATIONS = "multiple_durations"
 AMB_CONFLICTING_REQUIREMENTS = "conflicting_requirements"
 AMB_REQUIREMENT_NOT_IN_JD = "requirement_not_in_jd"
+# s1-6: a context clearly exists, but its scope across the alternatives / parts of the requirement cannot be
+# represented (it restricts only one alternative, only part of the experience, or is only softened
+# "preferably / ideally in X"): settings stay [] and the criterion is needs_confirmation. Never
+# ambiguous_relevance for this case.
+AMB_AMBIGUOUS_CONTEXT_SCOPE = "ambiguous_context_scope"
 AMBIGUITY_CODES = (AMB_AMBIGUOUS_RELEVANCE, AMB_MULTIPLE_DURATIONS,
-                   AMB_CONFLICTING_REQUIREMENTS, AMB_REQUIREMENT_NOT_IN_JD)
+                   AMB_CONFLICTING_REQUIREMENTS, AMB_REQUIREMENT_NOT_IN_JD, AMB_AMBIGUOUS_CONTEXT_SCOPE)
 
 BIZ_TARGET_NOT_IN_JD = "target_not_in_jd"
 BIZ_N_NOT_IN_JD = "n_not_in_jd"
@@ -227,7 +245,7 @@ class Target:
 
 @dataclass(frozen=True)
 class Setting:
-    """Criterion-specific setting: always a verbatim JD span inside a requirement span."""
+    """One criterion-specific experience context: always a verbatim JD span inside a requirement span."""
     text: str
     provenance: str
     jd_span: Span
@@ -239,8 +257,98 @@ class Setting:
         return {"text": self.text, "provenance": self.provenance, "jd_span": self.jd_span.to_dict()}
 
     @classmethod
-    def from_dict(cls, d: dict | None) -> "Setting | None":
-        return None if d is None else cls(d["text"], d["provenance"], Span.from_dict(d["jd_span"]))
+    def from_dict(cls, d: dict) -> "Setting":
+        return cls(d["text"], d["provenance"], Span.from_dict(d["jd_span"]))
+
+
+def check_settings(settings: tuple[Setting, ...]) -> None:
+    """v3 invariants: at most MAX_SETTINGS, distinct, non-overlapping, ordered by JD occurrence."""
+    if len(settings) > MAX_SETTINGS:
+        raise ValueError(f"at most {MAX_SETTINGS} settings, got {len(settings)}")
+    keys = [(s.jd_span.line, s.jd_span.start, s.jd_span.end) for s in settings]
+    if keys != sorted(keys):
+        raise ValueError("settings must be ordered by JD occurrence")
+    for a, b in zip(settings, settings[1:]):
+        if a.jd_span.line == b.jd_span.line and b.jd_span.start < a.jd_span.end:
+            raise ValueError(f"settings {a.text!r} and {b.text!r} overlap")
+
+
+# ── context resolution (slot only; the P4c resolver does not exist yet) ─────────
+CONTEXT_RESOLVED = "resolved"
+CONTEXT_UNCONFIRMED = "unconfirmed"
+CONTEXT_STATUSES = (CONTEXT_RESOLVED, CONTEXT_UNCONFIRMED)
+CONTEXT_STATE_IDENTIFIED = "identified"
+CONTEXT_STATE_NONE = "none"
+RESOLVED_DETAILS = ("agreed", "agreed_none", "recruiter")
+UNCONFIRMED_DETAILS = ("disagreement", "uncertain", "unassessed", "qc_failed", "stale", "s1_unavailable")
+EFFECTIVE_PROVENANCES = (PROV_RECRUITER_EDITED, PROV_RECRUITER_CONFIRMED, PROV_JD_VERIFIED)
+
+
+@dataclass(frozen=True)
+class EffectiveContext:
+    state: str                          # identified | none
+    contexts: tuple[str, ...]           # verbatim; () iff none
+    provenance: str                     # recruiter_edited | recruiter_confirmed | jd_verified
+
+    def __post_init__(self):
+        if self.state not in (CONTEXT_STATE_IDENTIFIED, CONTEXT_STATE_NONE):
+            raise ValueError(f"unknown effective context state {self.state!r}")
+        if self.provenance not in EFFECTIVE_PROVENANCES:
+            raise ValueError(f"effective context provenance must be one of {list(EFFECTIVE_PROVENANCES)}")
+        if any(not isinstance(c, str) or not c.strip() for c in self.contexts):
+            raise ValueError("effective contexts must be non-blank strings")
+        if (self.state == CONTEXT_STATE_IDENTIFIED) != bool(self.contexts):
+            raise ValueError("identified needs at least one context; none has no contexts")
+
+    def to_dict(self) -> dict:
+        return {"state": self.state, "contexts": list(self.contexts), "provenance": self.provenance}
+
+    @classmethod
+    def from_dict(cls, d: dict | None) -> "EffectiveContext | None":
+        return None if d is None else cls(d["state"], tuple(d.get("contexts") or ()), d["provenance"])
+
+
+@dataclass(frozen=True)
+class ContextResolution:
+    """Outcome of the (future, P4c) deterministic agreement between the qualifying-context analysis and S1.
+    resolved <=> effective is set. S1 never creates one; ``record`` is audit only (never semantics)."""
+    status: str
+    detail: str
+    effective: EffectiveContext | None = None
+    record: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.status not in CONTEXT_STATUSES:
+            raise ValueError(f"unknown context resolution status {self.status!r}")
+        allowed = RESOLVED_DETAILS if self.status == CONTEXT_RESOLVED else UNCONFIRMED_DETAILS
+        if self.detail not in allowed:
+            raise ValueError(f"detail {self.detail!r} is not valid for status {self.status!r}")
+        if (self.status == CONTEXT_RESOLVED) != (self.effective is not None):
+            raise ValueError("a resolved context resolution has an effective context; an unconfirmed one has none")
+        e = self.effective
+        if e is not None:
+            if self.detail == "recruiter" and e.provenance == PROV_JD_VERIFIED:
+                raise ValueError("a recruiter resolution needs recruiter provenance")
+            if self.detail in ("agreed", "agreed_none") and e.provenance != PROV_JD_VERIFIED:
+                raise ValueError("an agreed resolution has provenance jd_verified")
+            if self.detail == "agreed" and e.state != CONTEXT_STATE_IDENTIFIED:
+                raise ValueError("agreed means identified")
+            if self.detail == "agreed_none" and e.state != CONTEXT_STATE_NONE:
+                raise ValueError("agreed_none means none")
+
+    def semantic_dict(self) -> dict:
+        return {"status": self.status, "detail": self.detail,
+                "effective": self.effective.to_dict() if self.effective else None}
+
+    def to_dict(self) -> dict:
+        return {**self.semantic_dict(), "record": dict(self.record)}
+
+    @classmethod
+    def from_dict(cls, d: dict | None) -> "ContextResolution | None":
+        if d is None:
+            return None
+        return cls(d["status"], d["detail"], EffectiveContext.from_dict(d.get("effective")),
+                   dict(d.get("record") or {}))
 
 
 @dataclass(frozen=True)
@@ -282,7 +390,7 @@ class S1Artifact:
     spec_status: str
     policy: str | None = None
     targets: tuple[Target, ...] = ()
-    setting: Setting | None = None
+    settings: tuple[Setting, ...] = ()       # s1-6: experience contexts (AND, same experience entry)
     required_years: RequiredYears | None = None
     reasons: tuple[Reason, ...] = ()
     retryable: bool = False
@@ -296,8 +404,10 @@ class S1Artifact:
     validation: dict = field(default_factory=lambda: {"errors": [], "repair_errors": []})
     audit: dict = field(default_factory=dict)
     schema: str = S1_SCHEMA
+    context_resolution: ContextResolution | None = None   # P4c slot; None = context unresolved (no S2 view)
 
     def __post_init__(self):
+        check_settings(self.settings)
         if self.spec_status not in STATUSES:
             raise ValueError(f"unknown S1 status {self.spec_status!r}")
         if self.policy is not None and self.policy not in S1_POLICIES:
@@ -321,9 +431,10 @@ class S1Artifact:
             "criterion_id": self.criterion_id, "display_text": self.display_text,
             "requirement_text": self.requirement_text, "policy": self.policy,
             "targets": [t.to_dict() for t in self.targets],
-            "setting": self.setting.to_dict() if self.setting else None,
+            "settings": [s.to_dict() for s in self.settings],
             "required_years": self.required_years.to_dict() if self.required_years else None,
             "spec_status": self.spec_status,
+            "context_resolution": self.context_resolution.semantic_dict() if self.context_resolution else None,
         }
 
     @property
@@ -341,7 +452,7 @@ class S1Artifact:
             "display_text": self.display_text, "requirement_text": self.requirement_text,
             "required": self.required, "policy": self.policy,
             "targets": [t.to_dict() for t in self.targets],
-            "setting": self.setting.to_dict() if self.setting else None,
+            "settings": [s.to_dict() for s in self.settings],
             "required_years": self.required_years.to_dict() if self.required_years else None,
             "spec_status": self.spec_status, "reasons": [r.to_dict() for r in self.reasons],
             "retryable": self.retryable, "input_hash": self.input_hash,
@@ -349,18 +460,21 @@ class S1Artifact:
             "model": self.model, "field_provenance": dict(self.field_provenance),
             "requirement_spans": [s.to_dict() for s in self.requirement_spans],
             "validation": dict(self.validation), "audit": dict(self.audit),
+            "context_resolution": self.context_resolution.to_dict() if self.context_resolution else None,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "S1Artifact":
-        if d.get("_schema") != S1_SCHEMA:
+        if d.get("_schema") != S1_SCHEMA:            # a v2 object ("setting") is never read as v3
             raise ValueError(f"not an {S1_SCHEMA} object")
+        if "setting" in d or not isinstance(d.get("settings", []), list):
+            raise ValueError(f"{S1_SCHEMA} carries a settings list, never a single setting")
         return cls(
             criterion_id=d["criterion_id"], job_id=d["job_id"], source_path=d["source_path"],
             display_text=d["display_text"], requirement_text=d["requirement_text"],
             required=bool(d["required"]), spec_status=d["spec_status"], policy=d.get("policy"),
             targets=tuple(Target.from_dict(t) for t in d.get("targets") or []),
-            setting=Setting.from_dict(d.get("setting")),
+            settings=tuple(Setting.from_dict(x) for x in d.get("settings") or []),
             required_years=RequiredYears.from_dict(d.get("required_years")),
             reasons=tuple(Reason.from_dict(r) for r in d.get("reasons") or []),
             retryable=bool(d.get("retryable")), input_hash=d.get("input_hash", ""),
@@ -368,4 +482,5 @@ class S1Artifact:
             prompt_fingerprint=d.get("prompt_fingerprint", ""), model=d.get("model", ""),
             field_provenance=dict(d.get("field_provenance") or {}),
             requirement_spans=tuple(Span.from_dict(s) for s in d.get("requirement_spans") or []),
-            validation=dict(d.get("validation") or {}), audit=dict(d.get("audit") or {}))
+            validation=dict(d.get("validation") or {}), audit=dict(d.get("audit") or {}),
+            context_resolution=ContextResolution.from_dict(d.get("context_resolution")))

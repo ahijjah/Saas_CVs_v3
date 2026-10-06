@@ -1,9 +1,9 @@
 """
-S1 deterministic validator for the AI classifier output (prompt s1-5, S1 1.4.0).
+S1 deterministic validator for the AI classifier output (prompt s1-6, S1 1.5.0).
 
 The AI may only: type the analysis_json target hints (role | function), judge
 their match (exact | equivalent | none), select verbatim JD spans (requirement
-spans, targets for hint-less criteria, a criterion-specific setting, a hint's
+spans, targets for hint-less criteria, criterion-specific experience contexts, a hint's
 equivalent wording), state the relevance basis of a hint-less criterion,
 choose a duration candidate id and report ambiguity codes. Everything it
 returns is verified here; nothing is coerced. The POLICY is never taken from
@@ -28,8 +28,14 @@ Rules
       it must lie inside one of the criterion's requirement spans. The hint text
       itself is never replaced by the mapped span.
   R5  hint-less criteria: no targets (derived from restrictions, see below).
-  R6  setting: null or {"line", "text"} verbatim JD span inside one of the
-      criterion's requirement spans. No free text, no analysis_json source.
+  R6  settings (s1-6, hint criteria): a list of 0..MAX_SETTINGS experience contexts,
+      each {"line", "text"}: a verbatim JD span inside one of the criterion's
+      requirement spans, not overlapping the selected duration or a verbatim hint
+      match; distinct (normalised text) and pairwise non-overlapping; kept in JD
+      order. A single "setting" key (the v2 wire form) is an error, never
+      silently ignored (that would drop a context = broaden). ambiguous_context_scope
+      is reported only with settings [] (no context restrictions for hint-less
+      criteria). Several entries = AND on the same experience entry.
   R7  duration: null or a duration candidate id that lies inside one of the
       criterion's requirement spans; only for criteria with years.
 
@@ -38,12 +44,14 @@ Rules
                      role + function -> mixed. relevance_basis must be absent
                      or "targets".
     hint-less criteria (s1-5) return typed "restrictions" (verbatim spans inside
-    the requirement spans; kind role | function | sector | vague) and NO targets
-    or setting; the relevance basis is derived, never claimed:
+    the requirement spans; kind role | function | context | vague) and NO targets
+    or settings; the relevance basis is derived, never claimed:
       role/function restrictions -> JD-derived targets (type = kind, jd_asserted,
-                                    J1..); policy from their types; a single
-                                    sector restriction becomes their setting
-      else one sector restriction -> setting; policy sector
+                                    J1..); policy from their types; every
+                                    context restriction becomes one of their
+                                    settings (s1-6: several allowed, AND)
+      else context restriction(s) -> settings; policy sector (basis "sector":
+                                    context-only relevance, any context kind)
       else vague restriction      -> pure_duration + ambiguous_relevance
                                     (needs_confirmation; added by the assembler)
       else no restriction         -> total experience; pure_duration
@@ -63,7 +71,7 @@ Rules
   s1-2 target-mapping guards (span/string checks only; semantic equivalence is
   the AI's judgment, audited, never decided here):
   V-M8   a mapped jd_span has at most 12 words and does not overlap the selected
-         duration span or the setting span.
+         duration span or any context (settings) span.
   V-M9   mapped jd_spans of different hints do not overlap.
   V-M10  a mapped jd_span does not overlap another hint's verbatim match inside
          the criterion's requirement spans.
@@ -85,7 +93,7 @@ Rules
          verbatim hint match, a mapped jd_span or a JD-selected target) or is the
          line immediately after an anchored requirement span (wrapped bullet).
          Restriction anchor (s1-5): ONLY when none of the criterion's spans has
-         an evidence anchor, a role/function/sector restriction span anchors its
+         an evidence anchor, a role/function/context restriction span anchors its
          line (hint-less criteria always have years, so no duration ->
          n_not_in_jd: never resolves on its own).
          Statement anchor: ONLY when none of the criterion's spans contains any
@@ -97,6 +105,16 @@ Rules
          always have years. Only explicit recruiter authority can resolve it.
          The marker is never an anchor next to other anchors, so it cannot be
          used to add About-us/context lines to an anchored requirement.
+         Context anchor (s1-6): a span holding one of the criterion's validated
+         contexts anchors its own line ONLY when it comes AFTER an already
+         anchored line of the criterion, at most CONTEXT_ANCHOR_WINDOW lines
+         later, so a separate sentence restricting where this experience was
+         gained ("All such experience must have been gained in ...") can be
+         attached; a context line never anchors on its own, never continues onto
+         the next line, and text BEFORE the requirement (About-us, headings) can
+         never be attached this way. Whether the phrase really restricts this
+         experience (and is not About-us, vacancy-location or new-job-duty text)
+         is the model's audited judgment, measured by the context evaluation.
 """
 from __future__ import annotations
 
@@ -108,22 +126,26 @@ from services.s1_requirements.criteria import CriterionInput
 from services.s1_requirements.durations import DurationMatch
 from services.s1_requirements.jd_text import JDText, acronym_key, exact_definition, locate_words, normalize, words
 from services.s1_requirements.schema import (
-    AMB_AMBIGUOUS_RELEVANCE, AMB_REQUIREMENT_NOT_IN_JD, AMBIGUITY_CODES, BASIS_SECTOR, BASIS_TARGETS,
+    AMB_AMBIGUOUS_CONTEXT_SCOPE, AMB_AMBIGUOUS_RELEVANCE, AMB_REQUIREMENT_NOT_IN_JD, AMBIGUITY_CODES, BASIS_SECTOR,
+    BASIS_TARGETS, MAX_SETTINGS,
     BASIS_TOTAL_EXPERIENCE, BASIS_UNSPECIFIED, MATCH_EQUIVALENT, MATCH_EXACT, MATCH_NONE, MATCHES,
     POLICY_EXPLICIT_ROLE, POLICY_FUNCTIONAL, POLICY_MIXED, POLICY_PURE_DURATION, POLICY_SECTOR,
     RELEVANCE_BASES, TARGET_FUNCTION, TARGET_ROLE, TARGET_TYPES, Span,
     ALIGN_RELATIONS, EXTRA_MATERIAL, JD_EXTRA_KINDS, REL_ABBREVIATION, REL_FORM, REL_SAME, REL_TRANSLATION,
-    RESTRICTION_FUNCTION, RESTRICTION_KINDS, RESTRICTION_ROLE, RESTRICTION_SECTOR, RESTRICTION_VAGUE,
+    RESTRICTION_CONTEXT, RESTRICTION_FUNCTION, RESTRICTION_KINDS, RESTRICTION_ROLE, RESTRICTION_VAGUE,
 )
 
 MIN_SPAN_CHARS = 3
 MAX_MAPPING_WORDS = 12
+CONTEXT_ANCHOR_WINDOW = 3     # s1-6: a context sentence attaches only within 3 lines AFTER an anchored line
 
 # error scopes (see services.s1_requirements.repair for how each is merged)
 SCOPE_RESPONSE = "response"
 SCOPE_CRITERION = "criterion"
 SCOPE_SPANS = "requirement_spans"
-SCOPE_SETTING = "setting"
+SCOPE_SETTINGS = "settings"                      # the settings list as a whole (missing / not a list / too many /
+                                                 # overlapping / legacy "setting" key / with ambiguous_context_scope)
+SCOPE_SETTING_PREFIX = "setting:"                # setting:S0 (one setting, by index in the raw list)
 SCOPE_DURATION = "duration"
 SCOPE_AMBIGUITY = "ambiguity"
 SCOPE_BASIS = "relevance_basis"
@@ -155,7 +177,7 @@ class ParsedTarget:
 @dataclass(frozen=True)
 class ParsedRestriction:
     text: str
-    kind: str                         # role | function | sector | vague
+    kind: str                         # role | function | context | vague
     span: Span
 
 
@@ -165,7 +187,7 @@ class ParsedCriterion:
     policy: str                        # DERIVED (never the model's)
     requirement_spans: tuple[Span, ...]
     targets: tuple[ParsedTarget, ...]
-    setting: Span | None
+    settings: tuple[Span, ...]         # s1-6: experience contexts, JD order (AND)
     duration_id: str | None
     ambiguity: tuple[str, ...]
     note: str = ""
@@ -271,7 +293,7 @@ def _tscope(key: str, *fields: str) -> tuple[str, ...] | str:
 
 
 def _mapping_errors(c: CriterionInput, targets: list[ParsedTarget], req: tuple[Span, ...], jd: JDText,
-                    dur_span: Span | None, setting: Span | None, w: str) -> list[tuple[tuple[str, ...], str]]:
+                    dur_span: Span | None, settings: tuple[Span, ...], w: str) -> list[tuple[tuple[str, ...], str]]:
     errs: list[tuple[tuple[str, ...], str]] = []
     hints = hint_ids(c)
     verbatim = {hid: [s for s in jd.find(text) if any(s.within(r) for r in req)] for hid, text in hints.items()}
@@ -286,8 +308,9 @@ def _mapping_errors(c: CriterionInput, targets: list[ParsedTarget], req: tuple[S
                              f"the role/function"))
         if dur_span is not None and _overlap(sp, dur_span):
             errs.append((sc, f"{tw}: a mapping must not include the duration {dur_span.text!r}"))
-        if setting is not None and _overlap(sp, setting):
-            errs.append((sc, f"{tw}: a mapping must not include the setting {setting.text!r}"))
+        for setting in settings:
+            if _overlap(sp, setting):
+                errs.append((sc, f"{tw}: a mapping must not include the context {setting.text!r}"))
         if _proper_subphrase(mt, ht):
             errs.append((sem, f"{tw}: drops words of the target {hints[hid]!r}; that is not the same role/function: "
                               f"use null"))
@@ -543,7 +566,8 @@ def _names_role_twice(letters: str, unaccounted: list[str]) -> bool:
 
 
 def _anchor_errors(req: tuple[Span, ...], anchors: list[Span], marked: list[Span],
-                   w: str, restriction_anchors: list[Span] = ()) -> tuple[list[str], str]:
+                   w: str, restriction_anchors: list[Span] = (), contexts: tuple[Span, ...] = ()
+                   ) -> tuple[list[str], str]:
     """Evidence anchors first. Only when NO span has one: typed restriction spans (criteria without analysis
     targets), then the experience_requirement marker. Neither can add a context line next to an anchored
     requirement, and neither can resolve on its own (no duration -> n_not_in_jd / no target evidence)."""
@@ -558,8 +582,12 @@ def _anchor_errors(req: tuple[Span, ...], anchors: list[Span], marked: list[Span
         if len(marked) > 1:
             return [f"{w}: at most one requirement span may be marked experience_requirement"], ANCHOR_EVIDENCE
         anchored_lines, kind = {marked[0].line}, ANCHOR_STATEMENT
+    # s1-6 context anchor: only AFTER an already anchored line (within CONTEXT_ANCHOR_WINDOW lines); never a
+    # continuation source. Text before the requirement (About-us, headers) can therefore never be attached.
+    context_lines = {r.line for r in req if any(c.within(r) for c in contexts)
+                     and any(0 < r.line - a <= CONTEXT_ANCHOR_WINDOW for a in anchored_lines)}
     for r in req:
-        if r.line in anchored_lines or (r.line - 1) in anchored_lines:
+        if r.line in anchored_lines or (r.line - 1) in anchored_lines or r.line in context_lines:
             continue
         errs.append(f"{w} requirement span {r.text!r} (line {r.line}) contains no anchor (the selected duration, "
                     f"a target or its mapped phrase) and does not continue an anchored line. Choose one: (1) quote "
@@ -704,15 +732,43 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
                                      f"found {k}: keep ONE object for {hid} with one type, one match and, if "
                                      f"equivalent, one complete alignment")
 
-        # R6 setting
-        setting = None
-        so = it.get("setting")
-        if so is not None:
-            setting = span(so, f"{w} setting", (SCOPE_SETTING,))
-            if setting is not None and not _inside(setting, req_t):
-                add((SCOPE_SETTING, SCOPE_SPANS), f"{w} setting: {setting.text!r} is not inside one of this "
-                                                  f"criterion's requirement_spans")
-                setting = None
+        # R6 settings (s1-6): experience contexts of a hint criterion (spans checked here, duration below)
+        settings: list[Span] = []
+        s_index: list[int] = []                    # position of each parsed setting in the raw list
+        if it.get("setting") is not None:
+            add((SCOPE_SETTINGS,), f"{w}: give experience contexts as a \"settings\" list (one object per context, "
+                                   f"[] if none), never a single \"setting\"")
+        so = it.get("settings")
+        if hints:
+            if so is None:                         # absent = no context (as a missing v2 "setting" was null)
+                so = []
+            elif not isinstance(so, list):
+                add((SCOPE_SETTINGS,), f"{w}: settings must be a list of the experience contexts of this criterion "
+                                       f"([] if none)")
+                so = []
+            elif len(so) > MAX_SETTINGS:
+                add((SCOPE_SETTINGS,), f"{w}: at most {MAX_SETTINGS} settings (got {len(so)}); one contiguous "
+                                       f"restriction is ONE context")
+                so = []
+            seen_s: set[str] = set()
+            for j, obj in enumerate(so):
+                ssc = (f"{SCOPE_SETTING_PREFIX}S{j}",)
+                sp = span(obj, f"{w} settings[{j}]", ssc)
+                if sp is None:
+                    continue
+                if not _inside(sp, req_t):
+                    add(ssc + (SCOPE_SPANS,), f"{w} settings[{j}]: {sp.text!r} is not inside one of this "
+                                              f"criterion's requirement_spans")
+                    continue
+                if normalize(sp.text) in seen_s:
+                    add(ssc, f"{w} settings[{j}]: duplicate context {sp.text!r}")
+                    continue
+                seen_s.add(normalize(sp.text))
+                settings.append(sp)
+                s_index.append(j)
+        elif so not in (None, []):
+            add((SCOPE_SETTINGS,), f"{w}: for criteria without target_hints the contexts are \"context\" "
+                                   f"restrictions; return no settings")
 
         # R7 duration
         dur = it.get("duration")
@@ -731,7 +787,7 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
                         f"requirement_spans")
                     dur = None
 
-        # s1-5 typed restrictions (criteria WITHOUT analysis targets) -> targets / setting / basis (derived)
+        # s1-5 typed restrictions (criteria WITHOUT analysis targets) -> targets / settings / basis (derived)
         restrictions: list[ParsedRestriction] = []
         r_index: list[int] = []                    # position of each parsed restriction in the raw list
         rl = it.get("restrictions")
@@ -762,20 +818,51 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
                 seen_r.add(key)
                 restrictions.append(ParsedRestriction(rsp.text, r["kind"], rsp))
                 r_index.append(j)
-            if so is not None:
-                add((SCOPE_SETTING,), f"{w}: for criteria without target_hints the setting comes from a sector "
-                                      f"restriction; return setting null")
-                setting = None
         rf = [r for r in restrictions if r.kind in (RESTRICTION_ROLE, RESTRICTION_FUNCTION)]
-        sec = [r for r in restrictions if r.kind == RESTRICTION_SECTOR]
+        sec = [r for r in restrictions if r.kind == RESTRICTION_CONTEXT]
         vag = [r for r in restrictions if r.kind == RESTRICTION_VAGUE]
-        if not hints and len(sec) > 1:
-            add((SCOPE_RESTRICTIONS,) + tuple(f"{SCOPE_RESTRICTION_PREFIX}R{j}" for j in range(len(rl or []))),
-                f"{w}: give one sector restriction per requirement (got {[r.text for r in sec]})")
         if not hints:
+            all_r = tuple(f"{SCOPE_RESTRICTION_PREFIX}R{j}" for j in range(len(rl or [])))
+            if len(sec) > MAX_SETTINGS:
+                add((SCOPE_RESTRICTIONS,) + all_r,
+                    f"{w}: at most {MAX_SETTINGS} context restrictions (got {len(sec)}); one contiguous restriction "
+                    f"is ONE context")
+            ridx = dict(zip(map(id, restrictions), r_index))
+            for a_i, a in enumerate(sec):
+                for b in sec[a_i + 1:]:
+                    if _overlap(a.span, b.span):
+                        add((f"{SCOPE_RESTRICTION_PREFIX}R{ridx[id(a)]}", f"{SCOPE_RESTRICTION_PREFIX}R{ridx[id(b)]}"),
+                            f"{w}: context restrictions {a.text!r} and {b.text!r} overlap; one contiguous "
+                            f"restriction is ONE context")
+                for o in rf:
+                    if _overlap(a.span, o.span):
+                        add((f"{SCOPE_RESTRICTION_PREFIX}R{ridx[id(a)]}", f"{SCOPE_RESTRICTION_PREFIX}R{ridx[id(o)]}"),
+                            f"{w}: the context {a.text!r} overlaps the {o.kind} restriction {o.text!r}; give the "
+                            f"role/function and the context as separate phrases")
             targets = [ParsedTarget(r.text, r.kind, span=r.span) for r in rf]
-            if len(sec) == 1:
-                setting = sec[0].span
+            settings = [r.span for r in sec]
+            s_index = []
+            if sec and AMB_AMBIGUOUS_CONTEXT_SCOPE in amb:
+                add((SCOPE_RESTRICTIONS, SCOPE_AMBIGUITY) + all_r,
+                    f"{w}: {AMB_AMBIGUOUS_CONTEXT_SCOPE} means the context cannot be applied to the whole "
+                    f"requirement: give no context restriction for it, or drop the code")
+        else:
+            for a_i in range(len(settings)):
+                for b_i in range(a_i + 1, len(settings)):
+                    if _overlap(settings[a_i], settings[b_i]):
+                        add((SCOPE_SETTINGS,), f"{w}: settings {settings[a_i].text!r} and {settings[b_i].text!r} "
+                                               f"overlap; one contiguous restriction is ONE context")
+            for sp, j in zip(settings, s_index):
+                for text in hints.values():
+                    if any(_overlap(sp, v) for v in jd.find(text) if _inside(v, req_t)):
+                        add((f"{SCOPE_SETTING_PREFIX}S{j}",),
+                            f"{w} settings[{j}]: {sp.text!r} overlaps the target {text!r}; a context is never part "
+                            f"of a target (e.g. \"Hospital\" in \"Hospital Pharmacist\")")
+            if settings and AMB_AMBIGUOUS_CONTEXT_SCOPE in amb:
+                add((SCOPE_SETTINGS, SCOPE_AMBIGUITY),
+                    f"{w}: {AMB_AMBIGUOUS_CONTEXT_SCOPE} means the context cannot be applied to the whole "
+                    f"requirement: return settings [], or drop the code")
+        settings_t = tuple(sorted(settings, key=lambda x: (x.line, x.start, x.end)))
 
         # policy derivation (never the model's policy; s1-5: never the model's relevance basis either)
         types = [t.type for t in targets]
@@ -791,7 +878,7 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
             else:
                 basis, policy, derivation = BASIS_TOTAL_EXPERIENCE, POLICY_PURE_DURATION, POLICY_FROM_BASIS
             if policy == POLICY_PURE_DURATION and not c.has_years:
-                add((SCOPE_RESTRICTIONS,), f"{w}: a requirement without role/function/sector restrictions needs a "
+                add((SCOPE_RESTRICTIONS,), f"{w}: a requirement without role/function/context restrictions needs a "
                                            f"years requirement")
 
         # s1-2 mapping guards, s1-3 match rules and requirement-span anchoring
@@ -799,7 +886,7 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
         if dur is not None:
             dl, dm = durations[dur]
             dur_span = Span(dl, dm.start, dm.end, dm.text)
-        for scopes, msg in _mapping_errors(c, targets, req_t, jd, dur_span, setting, w):
+        for scopes, msg in _mapping_errors(c, targets, req_t, jd, dur_span, settings_t, w):
             add(scopes, msg, Issue(_scope_target(scopes), UNIT_SPAN, "mapping"))
         for scopes, msg in _match_errors(c, targets, req_t, jd, list(amb), w, bad_span):
             add(scopes, msg, Issue(_scope_target(scopes), UNIT_MATCH, "match"))
@@ -818,18 +905,22 @@ def validate_response(raw: str, jd: JDText, criteria: list[CriterionInput],
                 if _overlap(r.span, dur_span):
                     add((f"{SCOPE_RESTRICTION_PREFIX}R{j}",), f"{w} restrictions[{j}]: {r.text!r} must not include "
                                                                f"the duration {dur_span.text!r}")
+            for j, sp in zip(s_index, settings):
+                if _overlap(sp, dur_span):
+                    add((f"{SCOPE_SETTING_PREFIX}S{j}",), f"{w} settings[{j}]: {sp.text!r} must not include the "
+                                                          f"duration {dur_span.text!r}")
         anchors = [s for s in (dur_span,) if s is not None]
         anchors += [t.span for t in targets if t.span is not None and t.hint_id]
         anchors += [s for text in hints.values() for s in jd.find(text) if _inside(s, req_t)]
         r_anchors = [r.span for r in restrictions if r.kind != RESTRICTION_VAGUE]
-        anchor_errs, anchor_kind = _anchor_errors(req_t, anchors, marked, w, r_anchors)
+        anchor_errs, anchor_kind = _anchor_errors(req_t, anchors, marked, w, r_anchors, settings_t)
         statement_anchored = anchor_kind != ANCHOR_EVIDENCE
         for msg in anchor_errs:
             add((SCOPE_SPANS,), msg)
 
         note = it.get("note") if isinstance(it.get("note"), str) else ""
         if len(E) == n_err and policy is not None:
-            results[cid] = ParsedCriterion(cid, policy, req_t, tuple(targets), setting, dur, tuple(amb), note,
+            results[cid] = ParsedCriterion(cid, policy, req_t, tuple(targets), settings_t, dur, tuple(amb), note,
                                            statement_anchored, basis, derivation, model_policy,
                                            tuple(restrictions), anchor_kind)
         elif len(E) == n_err:                                # defensive: no derivable policy

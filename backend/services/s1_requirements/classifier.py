@@ -12,6 +12,9 @@ Input to the model (no candidate data, no job title, no domain_knowledge):
   display_text ("... in a relevant role (...)") is NOT sent (s1-4): it biased
   target typing; it stays unchanged in the recruiter-facing artifact.
   The model returns no policy: it is derived deterministically (validator).
+  s1-6: the qualifying-context analysis (the experience qualifying-context object,
+  its audit record, recruiter decisions on it) is NEVER read or sent: S1 is an
+  independent reading of the JD; the agreement happens after S1.
 
 Call flow (all-or-nothing per job; technical failures are never business states):
   no experience criteria             -> no call, no artifacts
@@ -20,7 +23,8 @@ Call flow (all-or-nothing per job; technical failures are never business states)
   finish_reason == "length"          -> failed_technical output_truncated (not cached)
   invalid -> ONE repair call with the exact (scoped) violations; only the failed
              fields/targets are merged from it into the main answer
-             (services.s1_requirements.repair), then the merge is re-validated:
+             (services.s1_requirements.repair; s1-6: a repair can never drop a
+             context), then the merge is re-validated:
       over budget / exception / length -> failed_technical (as above)
       merged answer still invalid      -> failed_validation validation_failed (cached)
   valid                              -> per criterion resolved | needs_confirmation
@@ -67,7 +71,7 @@ INPUT (JSON): "jd_lines" (line number + verbatim text), "duration_candidates" (i
 
 For EVERY criterion return exactly one result. Never return a policy: it is computed from your answers.
 
-1 REQUIREMENT_SPANS: the JD sentence(s) or bullet(s) that state THIS experience requirement, as [{"line": n, "text": "verbatim"}]. Quote the whole requirement statement; if it continues on the next line, quote each line. Never quote company descriptions, "about us", duties/responsibilities, other requirements (education, skills, licences, languages) or headings. If the JD does not state this requirement, return [] and report "requirement_not_in_jd".
+1 REQUIREMENT_SPANS: the JD sentence(s) or bullet(s) that state THIS experience requirement, as [{"line": n, "text": "verbatim"}]. Quote the whole requirement statement; if it continues on the next line, quote each line. A separate sentence that restricts where THIS experience must have been gained (e.g. "All of this experience must have been gained in non-profit organisations.") is part of the requirement: quote it too and give its context (section 5). Never quote company descriptions, "about us", the location of this vacancy, duties/responsibilities of this job, other requirements (education, skills, licences, languages) or headings, even when they name a place, a sector or a kind of organisation. If the JD does not state this requirement, return [] and report "requirement_not_in_jd".
   Mark a span {"line": n, "text": "verbatim", "experience_requirement": true} ONLY when the quoted text itself states this experience requirement but contains neither its duration, nor a hint word for word, nor a phrase you map (e.g. "Experience in physiotherapy is preferred."). Never mark company descriptions or context (e.g. "We are a leading logistics group."). Such a criterion stays unconfirmed: never add a jd_span just to anchor a span.
   Match "none" for a target is NOT "requirement_not_in_jd": "none" means this supplied target is not stated (or equivalent) in the JD wording; "requirement_not_in_jd" means the JD states no such EXPERIENCE requirement at all. If the hint is a specific role but the JD only asks for experience in its field (e.g. hint "Physiotherapist", JD "Experience in physiotherapy is preferred."), the target is "none" and the requirement span stays, marked "experience_requirement": true.
 
@@ -100,28 +104,44 @@ For EVERY criterion return exactly one result. Never return a policy: it is comp
     "HR Manager" -> jd_span "Human Resources Manager": equivalent, alignment [{"hint": "HR", "jd": "Human Resources", "relation": "abbreviation"}, {"hint": "Manager", "jd": "Manager", "relation": "same"}], jd_extra [].
     "Hospital Pharmacist" -> "كصيدلي": none ("Hospital" has no counterpart). "inventory control" -> "controlling cold-storage inventory": none ("cold", "storage" are material). "laboratory testing" -> "laboratory equipment maintenance": none (adjacent function). "Marketing Manager" -> "Marketing Coordinator": none (different role level). "Translator" -> "working with the translation team": none (works with the target, does not hold it).
   - Copy whole words exactly as written. Arabic letters attached to the start of a word (ك "as", ب, ل, و, ف) are not qualifiers: the span may include them or start right after them.
-  - Never map to the duration, the setting, the same employer, sector, project or industry, a transferable skill, general relevance, or text outside this criterion's requirement_spans.
+  - Never map to the duration, a context (section 5), the same employer, sector, project or industry, a transferable skill, general relevance, or text outside this criterion's requirement_spans.
   - An abbreviation is equivalent only when the requirement span itself makes its meaning unambiguous.
   - A phrase may be the jd_span of at most one hint; if two hints seem to match the same phrase, use "none" for both.
   - If you are not certain the meaning is the same, use "none". "none" is always acceptable; a wrong "equivalent" is not.
   - The hint text stays exactly as supplied whatever the match.
 
-4 RESTRICTIONS (criteria WITHOUT target_hints only; omit for criteria with target_hints; never return targets or a setting for them):
-  "restrictions": EVERY phrase in the requirement statement that limits which experience counts, each as {"line": n, "text": "verbatim", "kind": "role" | "function" | "sector" | "vague"}.
+4 RESTRICTIONS (criteria WITHOUT target_hints only; omit for criteria with target_hints; never return targets or settings for them):
+  "restrictions": EVERY phrase in the requirement statement that limits which experience counts, each as {"line": n, "text": "verbatim", "kind": "role" | "function" | "context" | "vague"}.
     role      a position the candidate must have held (e.g. "as a Laboratory Technician" -> "Laboratory Technician").
     function  work, a field or a discipline (e.g. "payroll administration experience" -> "payroll administration").
-    sector    an industry, sector or environment (e.g. "in the telecommunications sector" -> "telecommunications sector").
+    context   WHERE or IN WHAT SETTING the experience must have been gained, exactly as defined in section 5 (e.g. "in the telecommunications sector" -> "telecommunications sector"). Every rule of section 5 applies.
     vague     "relevant", "related", "similar", "in the field" or the like WITHOUT saying relevant to what.
   Alternatives are separate restrictions ("as a Laboratory Technician or in laboratory testing" -> one role and one function).
+  A role or function and a context are separate phrases that never overlap ("as a Laboratory Technician in public hospitals" -> role "Laboratory Technician" and context "public hospitals").
   Return [] ONLY when the requirement asks for general, overall or professional experience with no restriction at all (e.g. "4 years of professional experience"). Leaving out a restriction silently broadens the requirement.
   Do not include the duration in a restriction.
 
-5 SETTING (criteria WITH target_hints only): null, or the shortest complete verbatim phrase INSIDE this criterion's requirement_spans that restricts WHERE the experience must have been gained (industry, sector, project type or environment, e.g. "pharmaceutical manufacturing plants", "telecommunications sector", "public hospitals"). Never take it from other JD text or the job title. Never use the hiring company's name, a location, seniority, tools or generic adjectives ("dynamic", "fast-paced", "multinational"). Do not extract a setting that is already part of a target (e.g. "Hospital" in "Hospital Pharmacist"). If the setting does not clearly apply to EVERY alternative of the criterion, return null and report "ambiguous_relevance". (For criteria without target_hints the setting is a sector restriction.)
+5 SETTINGS = EXPERIENCE CONTEXTS (criteria WITH target_hints: "settings"; criteria without target_hints: "context" restrictions, section 4).
+  A context is a phrase restricting WHERE or IN WHAT SETTING otherwise relevant past experience must have been gained: someone with the same role or function and enough years, gained outside it, would NOT meet the requirement. Kinds of context:
+    geographic scope      (e.g. "in the Nordic countries")
+    organisation type     (e.g. "in non-profit organisations", "in state-owned utilities")
+    sector or domain      (e.g. "telecommunications sector", "public hospitals")
+    project type          (e.g. "on railway projects")
+    work setting          (e.g. "pharmaceutical manufacturing plants")
+  "settings": a list of 0 to 5 contexts, each {"line": n, "text": "verbatim"}, INSIDE this criterion's requirement_spans; [] when the requirement has no context. Copy the phrase naming the context; a leading "in", "on", "within", "the", "في", "ضمن" or "لدى" may be included or left out; never include the role, the function or the duration.
+  - ONE contiguous restriction is ONE context, even when it names several things: "in state-owned utilities across the Nordic countries" is ONE context. Never split it.
+  - Restrictions stated SEPARATELY are separate contexts, and ALL of them must hold for the same past job (e.g. "... in the telecommunications sector." and "All of this experience must have been gained in non-profit organisations." -> two contexts).
+  - "or" inside a context stays inside it: "in hospitals or clinics" is ONE context. Never split an "or".
+  - NEVER a context: the hiring company's name or description ("About us", "We are a ... group"); the location of this vacancy ("Location: ...", "based in ..."); duties or responsibilities of this job; seniority; tools or technologies; generic adjectives, culture or working environment ("dynamic", "fast-paced", "multicultural team", "challenging environment"); and "multinational", "international" or "global" when they describe the hiring company or its team rather than where the candidate's past experience was gained. Never take a context from text that does not state this experience requirement, or from the job title.
+  - Do not give a context that is already part of a target (e.g. "Hospital" in "Hospital Pharmacist").
+  - When a whole experience requirement is preferred ("Experience ... in X is preferred / an advantage"), X is still its context.
+  - AMBIGUOUS SCOPE: if a context restricts only some alternatives of the criterion (e.g. "as a Surveyor in mining companies or as a Cartographer"), only part of the experience (e.g. "6 years overall, including 2 years in ..."), or is only softened on a firm requirement ("minimum N years as R, preferably / ideally in X"), give NO context for it ("settings": [], or no "context" restriction) and report "ambiguous_context_scope". Never apply it to every alternative and never drop it silently.
 
 6 DURATION: null, or the id of the duration candidate inside this criterion's requirement_spans that states its minimum experience. Never compute or restate a number. If more than one candidate could be this criterion's minimum, return null and report "multiple_durations". If the statement sets several thresholds (e.g. an overall minimum and a minimum in one role), keep the whole statement in requirement_spans; the code records it as a compound requirement.
 
 7 AMBIGUITY: [] or any of:
-  "ambiguous_relevance"       what counts as relevant, a target's type, a target embedded in a longer qualified phrase, or the setting's scope is unclear;
+  "ambiguous_relevance"       what counts as relevant, a target's type, or a target embedded in a longer qualified phrase is unclear;
+  "ambiguous_context_scope"   a context exists but does not apply to the whole requirement (section 5); then it is not given as a context;
   "multiple_durations"        more than one duration could be this criterion's minimum;
   "conflicting_requirements"  the JD itself states this experience requirement in materially different ways (e.g. a different minimum, or a different role, in two places). A hint that differs from the JD wording is NOT a conflict: that is match "none";
   "requirement_not_in_jd"     the JD does not state this requirement (then requirement_spans is []).
@@ -133,13 +153,13 @@ OUTPUT: JSON only, e.g.:
 {"criteria": [
  {"criterion_id": "...", "requirement_spans": [{"line": 7, "text": "verbatim"}],
   "targets": [{"hint": "T1", "type": "function", "match": "exact", "jd_span": null}],
-  "setting": null, "duration": "D1", "ambiguity": [], "note": "one sentence"},
+  "settings": [], "duration": "D1", "ambiguity": [], "note": "one sentence"},
  {"criterion_id": "...", "requirement_spans": [{"line": 9, "text": "verbatim"}],
   "targets": [{"hint": "T1", "type": "role", "match": "equivalent", "jd_span": {"line": 9, "text": "verbatim phrase"},
                "alignment": [{"hint": "word", "jd": "verbatim word(s)", "relation": "translation"}], "jd_extra": []}],
-  "setting": null, "duration": "D2", "ambiguity": [], "note": "one sentence"},
+  "settings": [{"line": 9, "text": "verbatim context"}], "duration": "D2", "ambiguity": [], "note": "one sentence"},
  {"criterion_id": "...", "requirement_spans": [{"line": 11, "text": "verbatim"}],
-  "restrictions": [{"line": 11, "text": "verbatim", "kind": "function"}],
+  "restrictions": [{"line": 11, "text": "verbatim", "kind": "function"}, {"line": 11, "text": "verbatim", "kind": "context"}],
   "duration": "D3", "ambiguity": [], "note": "one sentence"}]}""" + _SECURITY_HARDENING_SUFFIX
 
 
@@ -207,7 +227,8 @@ def repair_note(errors: list[str], pair_guidance: list[str] = ()) -> str:
             "exactly one result for every criterion. ONLY the fields, targets and restrictions named in these "
             "errors will be taken from your new answer; everything else is kept exactly as in your previous "
             "answer, so fix these and change nothing else. Quote JD text verbatim and never add, drop or rewrite "
-            "targets. A jd_span is only for match \"equivalent\" (the SAME role/function in different wording, "
+            "targets. Never drop a context (settings or a \"context\" restriction): that would broaden the "
+            "requirement. A jd_span is only for match \"equivalent\" (the SAME role/function in different wording, "
             "with an alignment accounting for every word); when in doubt use match \"none\". Never drop a "
             "restriction: that would broaden the requirement. Exactly ONE object per hint id. Relations: "
             "same = letter for letter the same word; form = the same word in another grammatical form of the "
@@ -249,7 +270,7 @@ def _serialise_parsed(results: dict[str, ParsedCriterion]) -> dict:
                                    for r in p.restrictions],
                   "anchor_kind": p.anchor_kind, "withdrawn": [dict(x) for x in p.withdrawn],
                   "normalized": [dict(x) for x in p.normalized],
-                  "setting": p.setting.to_dict() if p.setting else None, "duration": p.duration_id,
+                  "settings": [x.to_dict() for x in p.settings], "duration": p.duration_id,
                   "ambiguity": list(p.ambiguity), "note": p.note,
                   "statement_anchored": p.statement_anchored, "relevance_basis": p.relevance_basis,
                   "policy_derivation": p.policy_derivation, "model_policy": p.model_policy}
@@ -264,7 +285,7 @@ def _deserialise_parsed(d: dict) -> dict[str, ParsedCriterion]:
         tuple(ParsedTarget(t["text"], t["type"], t.get("hint_id"), Span.from_dict(t.get("span")), t.get("match"),
                            tuple(t.get("alignment") or ()), tuple(t.get("jd_extra") or ()))
               for t in p["targets"]),
-        Span.from_dict(p.get("setting")), p.get("duration"), tuple(p.get("ambiguity") or ()), p.get("note", ""),
+        tuple(Span.from_dict(x) for x in p.get("settings") or ()), p.get("duration"), tuple(p.get("ambiguity") or ()), p.get("note", ""),
         bool(p.get("statement_anchored")), p.get("relevance_basis"), p.get("policy_derivation", "from_types"),
         p.get("model_policy"),
         tuple(ParsedRestriction(r["text"], r["kind"], Span.from_dict(r["span"])) for r in p.get("restrictions") or ()),

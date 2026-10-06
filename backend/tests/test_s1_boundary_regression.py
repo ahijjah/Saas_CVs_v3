@@ -68,7 +68,7 @@ class TestFixture:
     def test_labels_are_complete(self):
         for c in CASES:
             e = c["expected"]
-            for k in ("policy", "targets", "setting", "duration", "ambiguity", "status"):
+            for k in ("policy", "targets", "settings", "duration", "ambiguity", "status"):      # s1-6 adapter
                 assert k in e, (c["id"], k)
             hints = c["analysis"]["relevant_roles"]
             assert [t["text"] for t in e["targets"] if "mapped" in t] == hints, c["id"]
@@ -237,7 +237,7 @@ class TestSafety:
         assert not (tmp_path / "d").exists()
         assert br.main(["--out", str(tmp_path / "o"), "--mode", "oracle", "--runs", "1", "--cases", "A1,B1"]) == 0
         res = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))
-        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "4f22dddb117e"
+        assert res["summary"]["pass_runs"] == 2 and res["meta"]["prompt_fingerprint"] == "af9f496563a4"
         assert res["meta"]["temperature"] == 0.0 and res["meta"]["mode"] == "oracle"
         report = (tmp_path / "o" / "report.md").read_text(encoding="utf-8")
         for frag in ("## jd_asserted", "## Stability", "## Role/function confusion", "## Outcomes"):
@@ -257,7 +257,21 @@ class TestSafety:
 
     def test_s1_prompt_unchanged(self):
         assert (br.sc.S1_PROMPT_VERSION, br.sc.S1_VERSION, br.clf.prompt_fingerprint()) == (
-            "s1-5.2", "1.4.5", "4f22dddb117e")
+            "s1-6.0", "1.5.0", "af9f496563a4")
+
+    def test_real_mode_needs_explicit_confirmation(self, tmp_path, monkeypatch):
+        def boom():
+            raise AssertionError("real client created")
+        monkeypatch.setattr(br.llm_call, "create_client", boom)
+        assert br.main(["--out", str(tmp_path / "r"), "--mode", "real", "--runs", "1", "--cases", "A1"]) == 2
+        assert not (tmp_path / "r").exists()
+
+    def test_legacy_fixture_files_unchanged_and_adapted_in_memory(self):
+        raw = json.loads(br.FIXTURE.read_text(encoding="utf-8"))
+        assert raw["fixture_version"] == "s1-boundary-7"
+        assert any("setting" in c["expected"] for c in raw["cases"])          # file still in the s1-5 shape
+        assert all("setting" not in c["expected"] and isinstance(c["expected"]["settings"], list) for c in CASES)
+        assert all(r["kind"] != "sector" for c in CASES for r in c["oracle"].get("restrictions") or [])
 
 
 # ── s1-3: diagnostics, held-out set, prompt independence ───────────────────
@@ -278,8 +292,8 @@ def fixture_phrases(cases) -> set[str]:
                 out.add(t["jd_span"]["text"])
             if "text" in t:
                 out.add(t["text"])
-        if c["oracle"].get("setting"):
-            out.add(c["oracle"]["setting"]["text"])
+        for st in c["oracle"].get("settings") or []:
+            out.add(st["text"])
     return out
 
 
@@ -456,13 +470,14 @@ ALL_BY_ID = {**BY_ID, **{c["id"]: c for c in HELDOUT}}
 
 
 def _variants(case):
-    s = case["expected"]["setting"]
-    return s["one_of"] if isinstance(s, dict) else ([] if s is None else [s])
+    st = case["expected"]["settings"]                     # s1-6 adapter: [] or [one label]
+    assert len(st) <= 1
+    return [] if not st else (st[0]["one_of"] if isinstance(st[0], dict) else [st[0]])
 
 
 def _with_setting(case, text):
     d = json.loads(br.oracle_response(case))
-    d["criteria"][0]["setting"] = None if text is None else {"line": 2, "text": text}
+    d["criteria"][0]["settings"] = [] if text is None else [{"line": 2, "text": text}]
     return json.dumps(d, ensure_ascii=False)
 
 
@@ -483,12 +498,13 @@ class TestTargetSettingFamily:
             c = ALL_BY_ID[cid]
             assert len(c["analysis"]["relevant_roles"]) == 1 and len(c["expected"]["targets"]) == 1
             assert c["expected"]["status"] == "resolved" and c["oracle"]["targets"][0]["match"] == "exact"
-        assert BY_ID["M3"]["expected"]["setting"] == "oil and gas projects"            # M3 unchanged
+        assert BY_ID["M3"]["expected"]["settings"] == ["oil and gas projects"]          # M3 unchanged
 
     def test_setting_variants_are_only_faithful_verbatim_spans(self):
-        for c in [c for c in CASES + HELDOUT if isinstance(c["expected"]["setting"], dict)]:
-            canonical = (c["oracle"].get("setting") or {}).get("text") or next(
-                r["text"] for r in c["oracle"]["restrictions"] if r["kind"] == "sector")
+        for c in [c for c in CASES + HELDOUT if c["expected"]["settings"]
+                  and isinstance(c["expected"]["settings"][0], dict)]:
+            canonical = ((c["oracle"].get("settings") or [{}])[0]).get("text") or next(
+                r["text"] for r in c["oracle"]["restrictions"] if r["kind"] == "context")
             vs = _variants(c)
             assert vs[0] == canonical and len(set(vs)) == len(vs), c["id"]
             for v in vs:
@@ -508,10 +524,10 @@ class TestTargetSettingFamily:
         for v in _variants(case):
             assert _score_one(case, _with_setting(case, v))["pass"], v
         missing = _score_one(case, _with_setting(case, None))
-        assert missing["outcome"] == "ok" and not missing["checks"]["setting"] and not missing["pass"]
+        assert missing["outcome"] == "ok" and not missing["checks"]["settings"] and not missing["pass"]
         other = "experience" if not re.search(r"[؀-ۿ]", case["jd_lines"][1]) else "خبرة"
         wrong = _score_one(case, _with_setting(case, other))
-        assert wrong["outcome"] == "ok" and not wrong["checks"]["setting"]
+        assert wrong["outcome"] == "ok" and not wrong["checks"]["settings"]
 
     @pytest.mark.parametrize("cid, invented", [
         ("M7", "Project Manager"), ("M8", "database administration"), ("M9", "fast-paced environment"),
@@ -520,11 +536,12 @@ class TestTargetSettingFamily:
     def test_null_setting_controls_reject_an_invented_setting(self, cid, invented):
         case = ALL_BY_ID[cid]
         r = _score_one(case, _with_setting(case, invented))
-        assert not r["pass"] and (r["outcome"] != "ok" or not r["checks"]["setting"])
+        # s1-6: a context overlapping the target (e.g. "Project Manager") is now rejected by the validator itself
+        assert not r.get("pass") and (r["outcome"] != "ok" or not r["checks"]["settings"])
 
     def test_m1_variants(self):
         for v in _variants(BY_ID["M1"]):
-            raw = with_oracle("M1", restrictions=[{"line": 2, "text": v, "kind": "sector"}])
+            raw = with_oracle("M1", restrictions=[{"line": 2, "text": v, "kind": "context"}])
             assert _score_one(BY_ID["M1"], raw)["pass"], v
         raw = with_oracle("M1", restrictions=[])
         assert not _score_one(BY_ID["M1"], raw)["pass"]                      # a missing sector still fails

@@ -20,6 +20,13 @@ Scoring separates three error classes per run:
 
 Output: <out>/results.json (meta, summary, per-run records incl. raw model content) and <out>/report.md.
 
+s1-6 (P4a): the fixture files are unchanged (s1-boundary-7 / s1-heldout-6, written for the single-setting
+contract); load_cases() adapts them to the s1-6 wire and label shape (adapt_legacy_case): a hint criterion's
+oracle "setting" becomes "settings" ([] / [setting]), restriction kind "sector" becomes "context", and the
+expected "setting" label becomes an expected "settings" list. Meaning is unchanged. Old real s1-5.2 results are
+NOT validation evidence for s1-6.0; the dedicated context evaluation is scripts/s1_context_eval.py.
+Real mode needs --confirm-real (no model call is ever made without it).
+
 Usage (later, on the server):
   python scripts/s1_boundary_regression.py --out /tmp/s1_boundary                       # dry-run budget
   python scripts/s1_boundary_regression.py --out /tmp/s1_boundary --mode oracle         # offline check
@@ -48,16 +55,40 @@ from services.s1_requirements.validator import implied_policy  # noqa: E402
 
 FIXTURE = Path(__file__).resolve().parent / "s1_eval_fixtures" / "s1_boundary_cases.json"
 PRICE_IN, PRICE_OUT = 0.15, 0.60          # gpt-4o-mini USD per 1M tokens (ASSUMPTION; override with flags)
-FIELDS = ("policy", "types", "provenance", "mapping", "setting", "duration", "ambiguity", "status", "spans",
+FIELDS = ("policy", "types", "provenance", "mapping", "settings", "duration", "ambiguity", "status", "spans",
           "anchor", "reasons")
 STABILITY_FIELDS = ("policy", "types", "mapping_offered", "duration", "ambiguity")
 
 
 # ── fixture ──────────────────────────────────────────────────────────────────
 
+def adapt_legacy_case(case: dict) -> dict:
+    """s1-6 wire/label adapter for the pre-s1-6 fixtures (a copy; the fixture file is never changed).
+    Cases already written for s1-6 ("settings" labels) are returned unchanged."""
+    c = json.loads(json.dumps(case, ensure_ascii=False))
+    o, e = c["oracle"], c["expected"]
+    if "setting" in o:
+        st = o.pop("setting")
+        if c["analysis"].get("relevant_roles"):
+            o["settings"] = [] if st is None else [st]
+        elif st is not None:
+            o["setting"] = st                                  # hint-less criteria must still reject it
+    for r in o.get("restrictions") or []:
+        if r.get("kind") == "sector":
+            r["kind"] = "context"
+    if "setting" in e and "settings" not in e:
+        st = e.pop("setting")
+        e["settings"] = [] if st is None else [st]
+    for alt in e.get("alternatives", []):
+        if "setting" in alt:
+            st = alt.pop("setting")
+            alt["settings"] = [] if st is None else [st]
+    return c
+
+
 def load_cases(path: Path = FIXTURE, only: set[str] | None = None) -> list[dict]:
     cases = json.loads(path.read_text(encoding="utf-8"))["cases"]
-    return [c for c in cases if not only or c["id"] in only]
+    return [adapt_legacy_case(c) for c in cases if not only or c["id"] in only]
 
 
 def case_job_id(case: dict) -> str:
@@ -189,7 +220,7 @@ def observe(case: dict, out, raw: list = ()) -> dict:
                     for t in art.targets],
         "mapping_offered": sorted(m["target_id"] for m in art.audit.get("target_mappings", [])),
         "mappings": art.audit.get("target_mappings", []),
-        "setting": art.setting.text if art.setting else None,
+        "settings": [x.text for x in art.settings],
         "duration": duration_ids(case).get(ai.get("duration")) if ai.get("duration") else None,
         # effective ambiguity: AI-reported codes plus derived ones (relevance_basis unspecified)
         "ambiguity": sorted({r.code for r in art.reasons if r.kind == sc.KIND_AMBIGUITY}),
@@ -212,6 +243,19 @@ def _eq(expected, actual) -> bool:
     if isinstance(expected, str) and isinstance(actual, str):
         return normalize(expected) == normalize(actual)
     return expected == actual
+
+
+def settings_eq(expected: list, actual: list) -> bool:
+    """s1-6: the expected settings (each a string or {"one_of": [...]}) match the observed ones as a SET: same
+    size and a one-to-one assignment (order is irrelevant: several contexts are AND)."""
+    if not isinstance(expected, list) or not isinstance(actual, list) or len(expected) != len(actual):
+        return False
+
+    def assign(i: int, free: list) -> bool:
+        if i == len(expected):
+            return True
+        return any(_eq(expected[i], a) and assign(i + 1, free[:k] + free[k + 1:]) for k, a in enumerate(free))
+    return assign(0, list(actual))
 
 
 def _same_target(exp_text: str, act_text: str) -> bool:
@@ -240,7 +284,8 @@ def field_checks(exp: dict, obs: dict) -> dict[str, bool]:
         "provenance": same_count and all(a is not None and a["provenance"] == e["provenance"] for e, a in pairs),
         "mapping": all(a is not None and (a["provenance"] == sc.PROV_JD_ASSERTED) == e["mapped"]
                        for e, a in pairs if "mapped" in e),
-        "setting": _eq(exp["setting"], obs["setting"]),
+        "settings": (any(settings_eq(x, obs["settings"]) for x in exp["settings"]["one_of"])
+                     if isinstance(exp["settings"], dict) else settings_eq(exp["settings"], obs["settings"])),
         "duration": _eq(exp["duration"], obs["duration"]),
         "ambiguity": _eq(exp["ambiguity"], obs["ambiguity"]),
         "status": _eq(exp["status"], obs["status"]),
@@ -466,7 +511,12 @@ def main(argv=None) -> int:
     ap.add_argument("--fixture", default=str(FIXTURE))
     ap.add_argument("--price-in", type=float, default=PRICE_IN)
     ap.add_argument("--price-out", type=float, default=PRICE_OUT)
+    ap.add_argument("--confirm-real", action="store_true",
+                    help="required for --mode real (makes paid model calls)")
     args = ap.parse_args(argv)
+    if args.mode == "real" and not args.confirm_real:
+        print("REFUSED: --mode real makes real model calls; pass --confirm-real explicitly.")
+        return 2
 
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
     cases = load_cases(Path(args.fixture), {c for c in args.cases.split(",") if c} or None)

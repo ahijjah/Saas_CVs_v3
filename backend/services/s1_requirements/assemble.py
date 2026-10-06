@@ -25,8 +25,10 @@ Field authority (see schema.py):
                   JD value (jd_asserted) + n_mismatch; no JD span -> hint
                   (original_ai) + n_not_in_jd. The AI never supplies N: it only
                   picks a candidate span id; the number comes from the parser.
-  setting         verbatim JD span inside a requirement span (jd_asserted) only;
-                  never domain_knowledge or any analysis_json field
+  settings        s1-6: experience contexts, each a verbatim JD span inside a
+                  requirement span (jd_asserted) only, JD order, AND; never
+                  domain_knowledge, never any analysis_json field and never the
+                  qualifying-context analysis (S1 is an independent reading)
   policy / type   s1_interpreted; the policy is DERIVED (validator) from the target type labels or,
                   for criteria without analysis targets, from relevance_basis (never the model's policy);
                   audit.policy_derivation = from_types | relevance_basis; relevance_basis "unspecified"
@@ -41,6 +43,19 @@ function targets) sharing criterion_id, spec_version, N, setting and text.
 No S2 call and no S2 result combination happens here. A compound requirement
 or an unverified equivalence has no view at all, even with
 require_resolved=False.
+
+s1-6 FAIL-CLOSED CONTEXT GATE (P4a), independent of require_resolved:
+  no context_resolution                    -> S1ViewError context_unresolved
+  context_resolution not resolved          -> S1ViewError context_unconfirmed
+  more than one effective context          -> S1ViewError multi_context_unsupported
+                                              (S2 / RequirementSpec take one setting)
+  ambiguous_context_scope without recruiter
+  provenance on the resolution             -> S1ViewError context_scope_ambiguous
+The view's setting comes ONLY from context_resolution.effective, never from
+art.settings (S1's own reading is evidence for the agreement, not the
+authority). A sector view needs exactly one effective context; a
+pure-duration view never carries one. S1 never creates a context_resolution
+(the deterministic agreement is P4c), so S1 artefacts have no S2 view yet.
 """
 from __future__ import annotations
 
@@ -59,14 +74,23 @@ from services.s1_requirements.schema import (
     PROV_JD_ASSERTED, PROV_JD_VERIFIED, PROV_ORIGINAL_AI, PROV_S1_INTERPRETED, RECRUITER_FIELDS,
     RECRUITER_PROVENANCES, REASON_KINDS, RETRYABLE_REASONS, STATUS_FAILED_TECHNICAL,
     STATUS_FAILED_VALIDATION, STATUS_NEEDS_CONFIRMATION, STATUS_PENDING, STATUS_RESOLVED, TARGET_FUNCTION,
+    AMB_AMBIGUOUS_CONTEXT_SCOPE, CONTEXT_RESOLVED, PROV_RECRUITER_CONFIRMED, PROV_RECRUITER_EDITED,
     TARGET_ROLE, KIND_TECHNICAL, REASON_VALIDATION_FAILED, Reason, RequiredYears, S1Artifact, Setting, Span,
     Target,
 )
 from services.s1_requirements.validator import ParsedCriterion, tokens
 
 
+VIEW_CONTEXT_UNRESOLVED = "context_unresolved"
+VIEW_CONTEXT_UNCONFIRMED = "context_unconfirmed"
+VIEW_MULTI_CONTEXT_UNSUPPORTED = "multi_context_unsupported"
+VIEW_CONTEXT_SCOPE_AMBIGUOUS = "context_scope_ambiguous"
+
+
 class S1ViewError(ValueError):
-    pass
+    def __init__(self, message: str, code: str | None = None):
+        super().__init__(message)
+        self.code = code
 
 
 def check_recruiter_fields(recruiter_fields: Mapping[str, str] | None) -> dict[str, str]:
@@ -199,7 +223,7 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
             reasons.append(Reason(BIZ_N_MISMATCH, "required_years",
                                   f"JD {line_m[1].text!r} = {line_m[1].years} years; analysis hint {c.min_years}"))
 
-    setting = Setting(pc.setting.text, PROV_JD_ASSERTED, pc.setting) if pc.setting else None
+    settings = tuple(Setting(sp.text, PROV_JD_ASSERTED, sp) for sp in pc.settings)
 
     fully_recruiter = bool(gov) and (("targets" in gov) or not c.target_hints) and \
         (("required_years" in gov) or not c.has_years)
@@ -223,7 +247,7 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
         "target_types": PROV_S1_INTERPRETED if targets else None,
         "targets": tprov,
         "required_years": ry.provenance if ry else None,
-        "setting": setting.provenance if setting else None,
+        "settings": PROV_JD_ASSERTED if settings else None,
         "requirement_text": rt_prov,
         "display_text": gov.get("targets") or gov.get("required_years") or PROV_ORIGINAL_AI,
     }
@@ -270,7 +294,7 @@ def assemble_artifact(c: CriterionInput, pc: ParsedCriterion, jd: JDText,
                 status == STATUS_RESOLVED and "targets" not in gov):
             raise ValueError(f"criterion {c.criterion_id}: a withdrawn equivalent claim cannot establish a target")
     return S1Artifact(requirement_text=requirement_text, spec_status=status, policy=pc.policy,
-                      targets=tuple(targets), setting=setting, required_years=ry, reasons=tuple(reasons),
+                      targets=tuple(targets), settings=settings, required_years=ry, reasons=tuple(reasons),
                       field_provenance=field_provenance, requirement_spans=req,
                       validation=validation or {"errors": [], "repair_errors": []}, audit=audit,
                       **_base(c, run))
@@ -339,10 +363,33 @@ def _unverified_detail(pt, a: dict) -> str:
     return f"{pt.text!r} ~ {pt.span.text!r} ({'; '.join(parts)})"
 
 
+def _context_gate(art: S1Artifact) -> str | None:
+    """The ONE effective context of a view (None = effective "none"), or S1ViewError. Fail closed."""
+    cr = art.context_resolution
+    if cr is None:
+        raise S1ViewError(f"criterion {art.criterion_id}: qualifying context not resolved; no S2 view",
+                          VIEW_CONTEXT_UNRESOLVED)
+    if cr.status != CONTEXT_RESOLVED or cr.effective is None:
+        raise S1ViewError(f"criterion {art.criterion_id}: qualifying context {cr.status} ({cr.detail}); no S2 view",
+                          VIEW_CONTEXT_UNCONFIRMED)
+    contexts = cr.effective.contexts
+    if len(contexts) > 1:
+        # several AND contexts cannot be represented by one RequirementSpec.setting: never flattened, never dropped
+        raise S1ViewError(f"criterion {art.criterion_id}: {len(contexts)} contexts; S2 takes one setting",
+                          VIEW_MULTI_CONTEXT_UNSUPPORTED)
+    if any(r.code == AMB_AMBIGUOUS_CONTEXT_SCOPE for r in art.reasons) and \
+            cr.effective.provenance not in (PROV_RECRUITER_EDITED, PROV_RECRUITER_CONFIRMED):
+        # S1 saw a context it could not scope: only an explicit recruiter decision may stand in for it
+        raise S1ViewError(f"criterion {art.criterion_id}: context scope is ambiguous; no S2 view",
+                          VIEW_CONTEXT_SCOPE_AMBIGUOUS)
+    return contexts[0] if contexts else None
+
+
 def s2_views(art: S1Artifact, *, require_resolved: bool = True) -> list[RequirementSpec]:
     """Deterministic RequirementSpec views of one artifact (no S2 execution).
 
-    sector: the setting span is the S2 target (targets=(setting,), setting=None)."""
+    The context gate (module docstring) applies whatever require_resolved says. sector: the ONE effective
+    context is the S2 target (targets=(context,), setting=None)."""
     allowed = (STATUS_RESOLVED,) if require_resolved else (STATUS_RESOLVED, STATUS_NEEDS_CONFIRMATION)
     if any(r.code == BIZ_COMPOUND_REQUIREMENT for r in art.reasons):
         # one RequirementSpec has one N: a compound requirement has no faithful S2 view yet
@@ -350,9 +397,9 @@ def s2_views(art: S1Artifact, *, require_resolved: bool = True) -> list[Requirem
     if any(r.code == BIZ_EQUIVALENCE_UNVERIFIED for r in art.reasons):
         # s1-5.2: an unverified equivalence must never become experience evidence, not even in a preview
         raise S1ViewError(f"criterion {art.criterion_id}: unverified equivalence has no S2 view")
+    setting = _context_gate(art)
     if art.spec_status not in allowed:
         raise S1ViewError(f"criterion {art.criterion_id}: no S2 view for status {art.spec_status!r}")
-    setting = art.setting.text if art.setting else None
     roles = tuple(t for t in art.targets if t.type == TARGET_ROLE)
     funcs = tuple(t for t in art.targets if t.type == TARGET_FUNCTION)
     if art.policy == POLICY_EXPLICIT_ROLE:
@@ -362,7 +409,13 @@ def s2_views(art: S1Artifact, *, require_resolved: bool = True) -> list[Requirem
     if art.policy == POLICY_MIXED:
         return [_tv(art, POLICY_EXPLICIT_ROLE, roles, setting), _tv(art, POLICY_FUNCTIONAL, funcs, setting)]
     if art.policy == POLICY_SECTOR:
-        return [_view(art, POLICY_SECTOR, (art.setting.text,), (art.setting.jd_span.text,), None)]
+        if setting is None:
+            raise S1ViewError(f"criterion {art.criterion_id}: a sector criterion needs exactly one effective context")
+        return [_view(art, POLICY_SECTOR, (setting,), (setting,), None)]
     if art.policy == POLICY_PURE_DURATION:
+        if setting is not None:
+            # a context cannot ride on a pure-duration view (it would be silently dropped): fail closed
+            raise S1ViewError(f"criterion {art.criterion_id}: a context cannot be represented on a pure-duration "
+                              f"criterion")
         return [_view(art, POLICY_PURE_DURATION, (), (), None)]
     raise S1ViewError(f"criterion {art.criterion_id}: unsupported policy {art.policy!r}")

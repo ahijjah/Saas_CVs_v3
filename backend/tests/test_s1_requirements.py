@@ -4,6 +4,7 @@ no database). All JD texts here are SYNTHETIC; the JOB-2026-0031 case uses the
 real D-01 criterion text / analysis_json shape with a synthetic JD.
 """
 import asyncio
+import dataclasses
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -104,7 +105,11 @@ def with_match(raw, jd, analysis, job_id):
     """Test-only legacy fill for outputs written before the current contract (explicit values are kept):
     ``match`` on hint targets (pre-s1-3): jd_span -> equivalent; hint verbatim in a requirement span -> exact
     (none when the criterion reports ambiguous_relevance, i.e. the embedded case); otherwise none.
-    ``relevance_basis`` on hint-less criteria (pre-s1-4) from their old model policy (LEGACY_BASIS)."""
+    ``relevance_basis`` on hint-less criteria (pre-s1-4) from their old model policy (LEGACY_BASIS).
+    s1-6 wire adapter (pre-s1-6 outputs, only when the item has no "settings" key): a hint criterion's single
+    ``setting`` becomes ``settings`` ([] for null, [setting] otherwise, unchanged content); restriction kind
+    "sector" is the s1-6 wire kind "context". Semantics are unchanged; tests of the s1-6 wire contract itself
+    write "settings" explicitly and are therefore never adapted."""
     try:
         data = json.loads(raw)
     except (TypeError, ValueError):
@@ -131,10 +136,19 @@ def with_match(raw, jd, analysis, job_id):
                   for t in it.pop("targets", None) or [] if isinstance(t, dict) and "line" in t]
             st = it.pop("setting", None)
             if isinstance(st, dict) and basis in ("targets", "sector"):
-                rs.append({"line": st["line"], "text": st["text"], "kind": "sector"})
+                rs.append({"line": st["line"], "text": st["text"], "kind": "context"})
             if basis == "unspecified" and _vague_restriction(it):
                 rs.append(_vague_restriction(it))
             it["restrictions"] = rs
+        if "settings" not in it:                     # s1-6 wire adapter (see docstring)
+            st = it.pop("setting", None)
+            if hints:
+                it["settings"] = [] if st is None else [st]
+            elif st is not None:
+                it["setting"] = st                   # kept: hint-less criteria must still reject it
+            for r in it.get("restrictions") or []:
+                if isinstance(r, dict) and r.get("kind") == "sector":
+                    r["kind"] = "context"
         req = [j.span_on_line(sp.get("line"), sp.get("text", "")) for sp in it.get("requirement_spans") or []
                if isinstance(sp, dict)]
         req = [r for r in req if r is not None]
@@ -159,6 +173,31 @@ def classify(jd, analysis, *responses, job_id="J1", **kw):
                  for r in responses]
     client = FakeClient(*responses)
     return client, run(clf.classify_job(job_id, jd, analysis, client=client, **kw))
+
+
+# ── s1-6 / P4a: S2 views are fail-closed on the qualifying context ──────────
+
+def with_resolution(art, *contexts, provenance="recruiter_confirmed"):
+    """P4c STAND-IN for view-shape tests: an EXPLICIT, test-written context resolution (recruiter provenance),
+    never derived from art.settings. S1 itself never creates one, so without it no view exists."""
+    eff = sc.EffectiveContext("identified" if contexts else "none", tuple(contexts), provenance)
+    detail = "recruiter" if provenance != "jd_verified" else ("agreed" if contexts else "agreed_none")
+    return dataclasses.replace(art, context_resolution=sc.ContextResolution("resolved", detail, eff))
+
+
+def views(art, *contexts, require_resolved=True, provenance="recruiter_confirmed"):
+    """The S1 artefact alone has NO view (context_unresolved, also for a permissive caller); the views of the
+    same artefact once an explicit resolution with these effective contexts is attached."""
+    assert art.context_resolution is None
+    for rr in (True, False):
+        with pytest.raises(asm.S1ViewError) as e:
+            asm.s2_views(art, require_resolved=rr)
+        assert e.value.code in (asm.VIEW_CONTEXT_UNRESOLVED, None)      # None: an earlier hard block
+    return asm.s2_views(with_resolution(art, *contexts, provenance=provenance), require_resolved=require_resolved)
+
+
+def setting_texts(art):
+    return [x.text for x in art.settings]
 
 
 # ── JOB-2026-0031 fixture (real D-01 criterion, synthetic JD) ───────────────
@@ -209,13 +248,15 @@ class TestJob2026_0031:
         assert all(t.jd_span.line == 6 for t in art.targets)
         assert art.required_years.value == 5 and art.required_years.provenance == "jd_verified"
         assert art.required_years.jd_span.text == "5 years"
-        assert art.setting is None                                # domain_knowledge is never a setting
+        assert art.settings == ()                                 # domain_knowledge is never a context
         assert art.requirement_text == JOB31_REQ
-        (view,) = asm.s2_views(art)                               # ONE homogeneous S2 view
+        assert art.context_resolution is None                     # S1 never resolves the qualifying context
+        (view,) = views(art)                                      # ONE homogeneous S2 view (explicit resolution)
         assert view == RequirementSpec(
             policy="explicit_role", required_years=5.0,
             targets=("Construction Project Manager", "Assistant Project Manager"), setting=None,
-            spec_version=art.spec_version, criterion_id=cid, criterion_text=JOB31_REQ,
+            # s1-6: the spec version covers the effective context, so it is the RESOLVED artefact's
+            spec_version=with_resolution(art).spec_version, criterion_id=cid, criterion_text=JOB31_REQ,
             source_spans=("Construction Project Manager", "Assistant Project Manager"))
         # no candidate evaluation: the request carries JD + criteria only
         payload = json.loads(client.requests[0]["messages"][1]["content"].split("\n", 1)[1])
@@ -228,7 +269,7 @@ class TestJob2026_0031:
         from services.s2_experience.masking import mask_threshold
         cid = job31_cid()
         _, out = classify(JOB31_JD, JOB31_ANALYSIS, ai(job31_ok(cid)), job_id="JOB-2026-0031")
-        (view,) = asm.s2_views(out.artifacts[0])
+        (view,) = views(out.artifacts[0])
         assert mask_threshold(view.criterion_text) == (
             "Minimum [N] years of experience as a Construction Project Manager or Assistant Project Manager")
 
@@ -416,7 +457,7 @@ class TestPolicies:
         (art,) = out.artifacts
         assert art.spec_status == "resolved" and art.policy == "functional"
         assert {t.type for t in art.targets} == {"function"}
-        (v,) = asm.s2_views(art)
+        (v,) = views(art)
         assert (v.policy, v.targets, v.required_years) == ("functional", ("Quantity Surveying", "Cost Estimation"), 4)
 
     def test_mixed_groups_into_two_homogeneous_views(self):
@@ -431,12 +472,15 @@ class TestPolicies:
         (art,) = out.artifacts
         assert art.spec_status == "resolved"
         assert [(t.target_id, t.provenance) for t in art.targets] == [("J1", "jd_asserted"), ("J2", "jd_asserted")]
-        role, func = asm.s2_views(art)
+        assert setting_texts(art) == ["energy sector"]
+        # the view's setting is the EFFECTIVE context of the (explicit) resolution, never art.settings
+        role, func = views(art, "energy sector")
         assert (role.policy, role.targets, func.policy, func.targets) == (
             "explicit_role", ("Procurement Officer",), "functional", ("contract management",))
+        art_r = with_resolution(art, "energy sector")
         for v in (role, func):                                   # shared identity / N / setting / text
             assert (v.criterion_id, v.spec_version, v.required_years, v.setting, v.criterion_text) == (
-                cid, art.spec_version, 3, "energy sector", line)
+                cid, art_r.spec_version, 3, "energy sector", line)
 
     def test_pure_duration(self):
         jd = "- 3+ years of professional experience"
@@ -445,7 +489,7 @@ class TestPolicies:
                                                  duration="D1")))
         (art,) = out.artifacts
         assert art.spec_status == "resolved" and art.required_years.parsed["bound"] == "at_least"
-        (v,) = asm.s2_views(art)
+        (v,) = views(art)
         assert (v.policy, v.targets, v.setting, v.required_years) == ("pure_duration", (), None, 3)
 
     def test_sector(self):
@@ -455,10 +499,12 @@ class TestPolicies:
         _, out = classify(jd, a, ai(res(cid, "sector", [(1, jd[2:])], setting={"line": 1, "text": "banking sector"},
                                         duration="D1")))
         (art,) = out.artifacts
-        assert art.spec_status == "resolved" and art.setting.text == "banking sector"
-        (v,) = asm.s2_views(art)
+        assert art.spec_status == "resolved" and setting_texts(art) == ["banking sector"]
+        (v,) = views(art, "banking sector")
         assert (v.policy, v.targets, v.setting, v.source_spans) == ("sector", ("banking sector",), None,
                                                                     ("banking sector",))
+        with pytest.raises(asm.S1ViewError):                      # a sector view never exists without its context
+            asm.s2_views(with_resolution(art))
 
     def test_role_only_criteria_have_no_years(self):
         a = {"experience": {"minimum_years": 0, "relevant_roles": ["Registered Nurse"]}}
@@ -467,7 +513,7 @@ class TestPolicies:
         _, out = classify(jd, a, ai(res(cid, "explicit_role", [(1, jd[2:])], [{"hint": "T1", "type": "role"}])))
         (art,) = out.artifacts
         assert art.spec_status == "resolved" and art.required_years is None and art.required is False
-        (v,) = asm.s2_views(art)
+        (v,) = views(art)
         assert v.required_years is None
 
 
@@ -486,8 +532,8 @@ class TestAuthority:
         t2 = art.targets[1]
         assert (t2.text, t2.provenance, t2.jd_span) == ("Assistant Project Manager", "original_ai", None)
         with pytest.raises(asm.S1ViewError):
-            asm.s2_views(art)
-        (v,) = asm.s2_views(art, require_resolved=False)
+            asm.s2_views(with_resolution(art))
+        (v,) = views(art, require_resolved=False)
         assert v.targets[1] == "Assistant Project Manager"
 
     def test_n_mismatch_and_n_not_in_jd(self):
@@ -513,21 +559,22 @@ class TestAuthority:
         ok = res(cid, "explicit_role", [(2, req)], [{"hint": "T1", "type": "role", "jd_span": None}],
                  setting={"line": 2, "text": "oil and gas projects"}, duration="D1")
         _, out = classify(jd, a, ai(ok))
-        assert out.artifacts[0].setting.text == "oil and gas projects"
-        assert out.artifacts[0].field_provenance["setting"] == "jd_asserted"
-        # an About-us line cannot be added as a requirement span to obtain a setting (V-anchor)
+        assert setting_texts(out.artifacts[0]) == ["oil and gas projects"]
+        assert out.artifacts[0].field_provenance["settings"] == "jd_asserted"
+        # an About-us line cannot be added as a requirement span to obtain a context (V-anchor; s1-6: a context
+        # sentence attaches only AFTER an anchored line)
         about = res(cid, "explicit_role", [(2, req), (1, "We build oil and gas plants")],
                     [{"hint": "T1", "type": "role"}], setting={"line": 1, "text": "oil and gas plants"},
                     duration="D1")
         _, out = classify(jd, a, ai(about), ai(about))
         assert out.artifacts[0].spec_status == "failed_validation"
         assert any("contains no anchor" in e for e in out.validation["errors"])
-        bad = job31_ok(job31_cid(), setting={"line": 3, "text": "commercial construction"})   # outside its spans
+        bad = job31_ok(job31_cid(), settings=[{"line": 3, "text": "commercial construction"}])   # outside its spans
         val = validate_response(ai(bad), JDText(JOB31_JD), enumerate_experience_criteria("JOB-2026-0031",
                                 JOB31_ANALYSIS), {did: (ln, m) for did, ln, m in JDText(JOB31_JD).durations()})
-        assert not val.ok and any("setting" in e and "not inside" in e for e in val.errors)
+        assert not val.ok and any("settings[0]" in e and "not inside" in e for e in val.errors)
         cid = job31_cid()
-        free = job31_ok(cid, setting="construction")                                 # free text
+        free = job31_ok(cid, settings=["construction"])                              # free text
         _, out = classify(JOB31_JD, JOB31_ANALYSIS, ai(free), ai(free), job_id="JOB-2026-0031")
         assert out.artifacts[0].spec_status == "failed_validation"
 
@@ -535,7 +582,7 @@ class TestAuthority:
         cid = job31_cid()
         client, out = classify(JOB31_JD, JOB31_ANALYSIS, ai(job31_ok(cid)), job_id="JOB-2026-0031")
         art = out.artifacts[0]
-        assert art.setting is None and art.field_provenance["setting"] is None
+        assert art.settings == () and art.field_provenance["settings"] is None
         sent = client.requests[0]["messages"][1]["content"]
         assert "domain_knowledge" not in sent and "commercial construction\"" not in sent
         # a setting not in the JD at all (e.g. copied from domain_knowledge) is rejected
@@ -638,7 +685,7 @@ class TestTargetProvenance:
         assert [(t.text, t.provenance, t.jd_span.text, t.jd_span.line) for t in art.targets] == [
             ("Construction Project Manager", "jd_asserted", "كمدير مشروع إنشائي", 2),
             ("Assistant Project Manager", "jd_asserted", "مساعد مدير مشروع", 2)]   # text unchanged
-        (v,) = asm.s2_views(art)
+        (v,) = views(art)
         assert v.targets == ("Construction Project Manager", "Assistant Project Manager")
         assert v.source_spans == ("كمدير مشروع إنشائي", "مساعد مدير مشروع")
 
@@ -881,7 +928,7 @@ class TestS12ValidatorGuards:
         out = run_case(["Site Supervisor"], "Minimum 5 years as a site foreman on oil and gas projects",
                        maps=["site foreman on oil and gas projects"],
                        setting={"line": 2, "text": "oil and gas projects"})
-        assert rejected(out, "must not include the setting")
+        assert rejected(out, "must not include the context")
 
     def test_v_m10_mapping_cannot_take_another_hints_text(self):
         line = "Minimum 5 years as a Construction Project Manager or Assistant PM"
@@ -899,7 +946,7 @@ class TestS12ValidatorGuards:
         out = run_case(["Site Engineer"], "Minimum 5 years of experience as a Site Engineer on",
                        extra_lines=["  oil and gas projects"], setting={"line": 3, "text": "oil and gas projects"})
         art = out.artifacts[0]
-        assert art.spec_status == "resolved" and art.setting.text == "oil and gas projects"
+        assert art.spec_status == "resolved" and setting_texts(art) == ["oil and gas projects"]
         assert [s.line for s in art.requirement_spans] == [2, 3]
 
     def test_v_anchor_rejects_unanchored_lines(self):
@@ -974,7 +1021,7 @@ class TestStatementAnchor:
         out = _stmt([], jd, [(3, "Experience in the banking sector is preferred", True)], years=3,
                     policy="sector", setting={"line": 3, "text": "banking sector"})
         art = out.artifacts[0]
-        assert out.status == "ok" and art.setting.text == "banking sector" and art.policy == "sector"
+        assert out.status == "ok" and setting_texts(art) == ["banking sector"] and art.policy == "sector"
         assert codes(out) == ["n_not_in_jd"] and art.spec_status == "needs_confirmation"
         assert art.audit["requirement_anchor"] == "restriction"          # s1-5: the sector restriction anchors
 
@@ -1047,17 +1094,27 @@ class TestStatementAnchor:
         jd = JDText("Experience in nursing is preferred.")
         sp = jd.span_on_line(1, "Experience in nursing is preferred")
         pc = ParsedCriterion(c.criterion_id, "functional", (sp,), (ParsedTarget("Nursing", "function", "T1"),),
-                             None, None, (), "", statement_anchored=True)
+                             (), None, (), "", statement_anchored=True)
         with pytest.raises(ValueError, match="cannot resolve"):
             asm.assemble_artifact(c, pc, jd, {}, run={})
 
 
 class TestS12Versioning:
     def test_versions_and_fingerprint(self):
-        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-5.2", "1.4.5")
-        assert clf.prompt_fingerprint() == "4f22dddb117e"
+        assert (sc.S1_PROMPT_VERSION, sc.S1_VERSION) == ("s1-6.0", "1.5.0")
+        assert (sc.S1_SCHEMA, sc.S1_INPUT_VERSION) == ("s1_requirement_spec_v3", "s1-in-1")
+        assert clf.prompt_fingerprint() == "af9f496563a4"
         assert clf.prompt_fingerprint() not in ("af51355222e5", "e04beaeee3a2", "e64eb1a979e9", "c9b570d82f4e",
-                                                "faad01d30b5c", "a0ae492a27e4", "b2a063ab2947")
+                                                "faad01d30b5c", "a0ae492a27e4", "b2a063ab2947", "4f22dddb117e")
+
+    def test_cache_identity_differs_from_s1_5_2(self, monkeypatch):
+        # s1-6: old s1-5.2 cache entries (single setting) are unreachable
+        req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
+        k = clf.s1_cache_key(req)
+        monkeypatch.setattr(clf, "S1_PROMPT_VERSION", "s1-5.2")
+        monkeypatch.setattr(clf, "S1_VERSION", "1.4.5")
+        monkeypatch.setattr(clf, "prompt_fingerprint", lambda: "4f22dddb117e")
+        assert clf.s1_cache_key(req) != k
 
     def test_cache_identity_differs_from_s1_5_1(self, monkeypatch):
         req = clf.build_request(JDText(JOB31_JD), enumerate_experience_criteria("J", JOB31_ANALYSIS))
@@ -1094,7 +1151,7 @@ class TestS12Versioning:
     def test_prompt_contract(self):
         p = clf.S1_SYSTEM_PROMPT
         for frag in ("SUBSTANTIALLY THE SAME", "\"none\" is always acceptable", "attached to the start of a word",
-                     "report \"ambiguous_relevance\"", "shortest complete verbatim phrase",
+                     "report \"ambiguous_relevance\"",
                      "\"match\": \"exact\" | \"equivalent\" | \"none\"",
                      "absent, broader, narrower, adjacent, related, compatible, qualifier-changing, or uncertain",
                      "Never return a policy", "she is a <target>", "Nothing in the input tells you the type",
@@ -1105,10 +1162,22 @@ class TestS12Versioning:
                      "A hint word with no JD counterpart means the JD phrase drops it",
                      "4 RESTRICTIONS", "EVERY phrase in the requirement statement that limits",
                      "Return [] ONLY when the requirement asks for general", "silently broadens",
-                     "compound requirement"):
+                     "compound requirement",
+                     # s1-6 experience contexts
+                     "WHERE or IN WHAT SETTING otherwise relevant past experience must have been gained",
+                     "geographic scope", "organisation type", "sector or domain", "project type", "work setting",
+                     "ONE contiguous restriction is ONE context", "ALL of them must hold for the same past job",
+                     "\"or\" inside a context stays inside it", "the location of this vacancy",
+                     "rather than where the candidate's past experience was gained", "\"multicultural team\"",
+                     "report \"ambiguous_context_scope\"", "\"kind\": \"role\" | \"function\" | \"context\" | \"vague\"",
+                     "A separate sentence that restricts where THIS experience must have been gained",
+                     "\"settings\": [], \"duration\""):
             assert frag in p, frag
         for gone in ("SHORTEST verbatim phrase", "MAY set jd_span", "display_text", "relevant role",
-                     "RELEVANCE_BASIS", "\"total_experience\"", "relevance_basis"):
+                     "RELEVANCE_BASIS", "\"total_experience\"", "relevance_basis",
+                     # s1-6: categorical location / "multinational" exclusions and the single setting are gone
+                     "a location, seniority", "\"fast-paced\", \"multinational\")", "5 SETTING (", "\"setting\": null",
+                     "or the setting's scope is unclear", "\"kind\": \"role\" | \"function\" | \"sector\""):
             assert gone not in p, gone
 
 
@@ -1274,13 +1343,13 @@ class TestS14PolicyDerivation:
     @pytest.mark.parametrize("line, restr, policy, basis, status, codes_, setting", [
         ("3-5 years of experience in procurement", [("procurement", "function")], "functional", "targets",
          "resolved", [], None),
-        ("Minimum 3 years of experience in the telecom sector", [("telecom sector", "sector")], "sector", "sector",
+        ("Minimum 3 years of experience in the telecom sector", [("telecom sector", "context")], "sector", "sector",
          "resolved", [], "telecom sector"),
         ("Minimum 3 years of professional experience", [], "pure_duration", "total_experience", "resolved", [], None),
         ("Minimum 3 years of relevant experience", [("relevant", "vague")], "pure_duration", "unspecified",
          "needs_confirmation", ["ambiguous_relevance"], None),
         ("Minimum 3 years as a Data Analyst in the telecom sector",
-         [("Data Analyst", "role"), ("telecom sector", "sector")], "explicit_role", "targets", "resolved", [],
+         [("Data Analyst", "role"), ("telecom sector", "context")], "explicit_role", "targets", "resolved", [],
          "telecom sector"),
         ("Minimum 3 years of relevant experience as a Data Analyst", [("relevant", "vague"), ("Data Analyst", "role")],
          "explicit_role", "targets", "resolved", [], None),
@@ -1294,11 +1363,11 @@ class TestS14PolicyDerivation:
         art = out.artifacts[0]
         assert (art.policy, art.audit["ai"]["relevance_basis"], art.spec_status, [r.code for r in art.reasons]) == (
             policy, basis, status, codes_)
-        assert (art.setting.text if art.setting else None) == setting
+        assert setting_texts(art) == ([setting] if setting else [])
         if basis == "unspecified":
             assert art.reasons[0].field == "relevance_basis"
             with pytest.raises(asm.S1ViewError):
-                asm.s2_views(art)                        # never a trusted pure-duration requirement
+                asm.s2_views(with_resolution(art), require_resolved=True)   # never a trusted pure-duration req.
 
     def test_total_experience_is_never_a_model_claim(self):
         # an s1-4 style relevance_basis claim is ignored; an omitted restriction list is an error, not "general"
@@ -1318,9 +1387,18 @@ class TestS14PolicyDerivation:
         ({"restrictions": [{"line": 2, "text": "3 years as a Payroll Officer", "kind": "role"}]},
          "must not include the duration"),
         ({"targets": [{"line": 2, "text": "Payroll Officer", "type": "role"}]}, "return restrictions, not targets"),
-        ({"setting": {"line": 2, "text": "payroll administration"}}, "setting comes from a sector restriction"),
-        ({"restrictions": [{"line": 2, "text": "Payroll Officer", "kind": "sector"},
-                           {"line": 2, "text": "payroll administration", "kind": "sector"}]}, "one sector restriction"),
+        ({"setting": {"line": 2, "text": "payroll administration"}}, "never a single \"setting\""),
+        ({"settings": [{"line": 2, "text": "payroll administration"}]}, "are \"context\" restrictions"),
+        # s1-6: the wire kind "sector" is gone ("context"); several contexts are allowed but never overlapping
+        ({"restrictions": [{"line": 2, "text": "Payroll Officer", "kind": "sector"}]}, "kind"),
+        ({"restrictions": [{"line": 2, "text": "Payroll Officer", "kind": "role"},
+                           {"line": 2, "text": "payroll administration", "kind": "context"},
+                           {"line": 2, "text": "administration", "kind": "context"}]}, "context restrictions"),
+        ({"restrictions": [{"line": 2, "text": "Payroll Officer", "kind": "role"},
+                           {"line": 2, "text": "Payroll", "kind": "context"}]}, "overlaps the role restriction"),
+        ({"restrictions": [{"line": 2, "text": "Payroll Officer", "kind": "role"},
+                           {"line": 2, "text": "payroll administration", "kind": "context"}],
+          "ambiguity": ["ambiguous_context_scope"]}, "ambiguous_context_scope means"),
     ])
     def test_restriction_structure_is_strict(self, over, frag):
         a, jd, crits = _job([], 3, MIXED_JD)
@@ -1887,7 +1965,7 @@ class TestValidator:
         ({"ambiguity": ["unsure"]}, "ambiguity must be"),
         ({"restrictions": [{"line": 6, "text": "Assistant Project Manager", "kind": "role"}]},
          "restrictions apply only to criteria without target_hints"),
-        ({"setting": "construction"}, "setting: must be an object"),
+        ({"setting": "construction"}, "settings[0]: must be an object"),    # s1-6 wire adapter: [setting]
     ])
     def test_rejections(self, over, frag):
         v = _validate([job31_ok(job31_cid(), **over)])
@@ -2038,9 +2116,12 @@ class TestDeterminism:
                                                {"line": 1, "text": "contract management", "type": "function"}],
                 duration="D1")
         art = classify(jd, YEARS_ONLY, ai(r))[1].artifacts[0]
-        v1, v2 = asm.s2_views(art), asm.s2_views(art)
+        v1, v2 = views(art), views(art)
         assert v1 == v2 and [v.policy for v in v1] == ["explicit_role", "functional"]
-        assert asm.s2_views(sc.S1Artifact.from_dict(art.to_dict())) == v1
+        assert views(sc.S1Artifact.from_dict(art.to_dict())) == v1
+        # the resolution survives the round trip (and keeps the view identical)
+        r = with_resolution(art)
+        assert asm.s2_views(sc.S1Artifact.from_dict(r.to_dict())) == v1
 
 
 # ── 27 isolation ────────────────────────────────────────────────────────────
@@ -2362,11 +2443,11 @@ class TestS151Withdrawal:
         durs = {d: (ln, m) for d, ln, m in j.durations()}
         rec = ({"hint": "T1", "type": "role", "withdrawn_claim": {}, "errors": []},)
         mapped = ParsedTarget("Accountant", "role", "T1", j.span_on_line(2, "كمحاسب"), "equivalent")
-        pc = ParsedCriterion(c.criterion_id, "explicit_role", req, (mapped,), None, "D1", (), "", withdrawn=rec)
+        pc = ParsedCriterion(c.criterion_id, "explicit_role", req, (mapped,), (), "D1", (), "", withdrawn=rec)
         with pytest.raises(ValueError, match="withdrawn equivalent claim"):
             asm.assemble_artifact(c, pc, j, durs, run={})
         plain = ParsedTarget("Accountant", "role", "T1", None, "none")
-        ok = asm.assemble_artifact(c, ParsedCriterion(c.criterion_id, "explicit_role", req, (plain,), None, "D1",
+        ok = asm.assemble_artifact(c, ParsedCriterion(c.criterion_id, "explicit_role", req, (plain,), (), "D1",
                                                       (), "", withdrawn=rec), j, durs, run={})
         assert ok.spec_status == "needs_confirmation" and ok.audit["alignment_withdrawn"] is True
 
@@ -2443,7 +2524,7 @@ class TestS152FormNotTrustBearing:
         assert [t.provenance for t in art.targets] == ["jd_asserted"] and art.spec_status == "resolved"
         (m,) = art.audit["target_mappings"]
         assert m["used"] is True and m["trust"] == "trust_bearing" and m["relations"] == rels
-        assert len(asm.s2_views(art)) == 1                                      # unchanged: a scoring view
+        assert len(views(art)) == 1                                      # unchanged: a scoring view
 
     def test_d_genuine_exact_phrase_stays_jd_verified(self):
         out = run_case(["database administration"], "Minimum 4 years of experience in database administration",
@@ -2465,10 +2546,11 @@ class TestS152FormNotTrustBearing:
                             [("database", "databases", FO), ("administration", "administering", FO)], years=4)
         with pytest.raises(asm.S1ViewError, match="unverified equivalence"):
             asm.s2_views(art, require_resolved=False)
-        # contrast: an ordinary needs_confirmation artifact still has a permissive preview view
+        # contrast: an ordinary needs_confirmation artifact has a permissive preview view only once its qualifying
+        # context is resolved (s1-6: never on its own)
         plain = run_case(["database administration"], "Minimum 4 years of experience in database support",
                          years=4, types=["function"]).artifacts[0]
-        assert plain.spec_status == "needs_confirmation" and asm.s2_views(plain, require_resolved=False)
+        assert plain.spec_status == "needs_confirmation" and views(plain, require_resolved=False)
 
     def test_f_genuine_none_keeps_target_not_in_jd(self):
         out = run_case(["database administration"], "Minimum 4 years of experience in database support",
@@ -2486,7 +2568,7 @@ class TestS152FormNotTrustBearing:
         assert sc.REASON_KINDS["equivalence_unverified"] == "business"
         assert sc.Reason("equivalence_unverified", "targets.T1", "x").to_dict() == {
             "code": "equivalence_unverified", "kind": "business", "field": "targets.T1", "detail": "x"}
-        assert sc.S1_SCHEMA == "s1_requirement_spec_v2"                         # no public schema bump
+        assert sc.S1_SCHEMA == "s1_requirement_spec_v3"          # s1-5.2 kept v2; s1-6 (settings) bumped to v3
 
     def test_artifact_roundtrip_keeps_candidate(self):
         art = _classify_eqv("database administration", "Minimum 4 years of experience administering databases",
@@ -2653,7 +2735,7 @@ class TestS1521PairMerge:
     def test_m_translation_trust_unchanged(self):
         _, out, _ = _b1(B1_OK[:2] + [("Manager", "مدير", SA)], B1_OK)
         (m,) = out.artifacts[0].audit["target_mappings"]
-        assert m["trust"] == "trust_bearing" and m["used"] is True and len(asm.s2_views(out.artifacts[0])) == 1
+        assert m["trust"] == "trust_bearing" and m["used"] is True and len(views(out.artifacts[0])) == 1
 
 
 def _alignment_was_withdrawn(out):
@@ -2878,7 +2960,7 @@ class TestS1522Normalization:
         art = out.artifacts[0]
         assert len(client.requests) == 1 and out.meta["outcome"] == "normalized" and not out.meta["repair_used"]
         assert [t.provenance for t in art.targets] == ["jd_asserted"] and art.spec_status == "resolved"   # J
-        assert art.targets[0].jd_span.text == narrowed and len(asm.s2_views(art)) == 1
+        assert art.targets[0].jd_span.text == narrowed and len(views(art)) == 1
         (rec,) = art.audit["span_normalizations"]                                                         # K
         assert art.audit["span_normalized"] is True and rec["reason"] == "duplicate_representation"
         assert (rec["original_span"], rec["normalized_span"]) == ("Project Manager (P.M.)", narrowed)
@@ -2951,7 +3033,7 @@ class TestS15221PostRepairNormalization:
         assert any("is not word for word" in e for e in out.validation["errors"])     # main was invalid
         assert out.meta["outcome"] == "repaired_normalized" and "alignment_withdrawn" not in out.meta
         assert [t.provenance for t in art.targets] == ["jd_asserted"] and art.spec_status == "resolved"
-        assert art.targets[0].jd_span.text == "P.M." and len(asm.s2_views(art)) == 1
+        assert art.targets[0].jd_span.text == "P.M." and len(views(art)) == 1
         assert art.audit["alignment_withdrawn"] is False
         (rec,) = art.audit["span_normalizations"]
         assert rec == {"criterion_id": art.criterion_id, "hint": "T1", "original_span": "Project Manager (P.M.)",

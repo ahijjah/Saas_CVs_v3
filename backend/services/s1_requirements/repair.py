@@ -12,8 +12,12 @@ self-consistent.
 Merge rules per criterion (scopes come from validator.ScopedError):
   no error in the main answer      -> main item kept untouched
   "criterion" (missing/duplicate)  -> repair item taken
-  requirement_spans / setting / duration / ambiguity / relevance_basis
+  requirement_spans / duration / ambiguity / relevance_basis
                                    -> that field taken from the repair
+  settings / setting:Sk (s1-6)     -> the repair's settings list ONLY if no context
+                                      of the main answer disappears (see
+                                      contexts_preserved); otherwise the main list
+                                      is kept (and the merge stays invalid)
   target:Tn (hint target, whole)   -> that hint's target object taken from the
                                       repair (missing/duplicate hint)
   target:Tn:<field>                -> ONLY that field of that hint target taken
@@ -35,6 +39,10 @@ Merge rules per criterion (scopes come from validator.ScopedError):
                                       main answer is still present: a repair can
                                       fix a restriction but never broaden the
                                       requirement (e.g. into total experience);
+                                      s1-6: in addition no context restriction of
+                                      the main answer may disappear
+                                      (contexts_preserved) and a main entry of
+                                      unknown kind must reappear with its text;
                                       otherwise the main list is kept
   "response" (unparseable / malformed main answer, unknown criterion id)
                                    -> the repair answer is taken as a whole
@@ -51,6 +59,15 @@ s1-5.2.1 material lock: a jd_extra word the MAIN answer marked "material" can
 never be relabelled, removed, paired or hidden by a new jd_span in the merged
 target (any merge path); the only accepted change is giving up (match none).
 Otherwise the main target is kept. The merged answer is always re-validated.
+
+s1-6 context preservation (contexts_preserved): dropping a context broadens the requirement, so a repair list
+is taken only when (a) every error-free main context is still present (same line and normalised text) or lies
+inside a repair context on the same line (a merge into one contiguous phrase), and (b) the repair has at least
+as many contexts as the main answer minus the main contexts (valid or not) absorbed that way. A main context that
+was itself invalid (not verbatim, outside the requirement spans, overlapping) therefore still has to be
+replaced by a context, never just removed; a repair that cannot keep them all is not taken (fail closed).
+The only exception: when the merged answer reports ambiguous_context_scope, its contexts may be removed (that
+code keeps the criterion needs_confirmation with no S2 view, so removing them cannot broaden anything).
 
 s1-5.1 deterministic withdrawal (plan_withdrawal / apply_withdrawal), AFTER the
 one repair, only when the merged answer is still invalid: if every remaining
@@ -71,15 +88,16 @@ from collections import Counter, defaultdict
 
 from services.s1_requirements.criteria import CriterionInput
 from services.s1_requirements.jd_text import exact_definition, normalize
-from services.s1_requirements.schema import RESTRICTION_KINDS
+from services.s1_requirements.schema import AMB_AMBIGUOUS_CONTEXT_SCOPE, RESTRICTION_CONTEXT, RESTRICTION_KINDS
 from services.s1_requirements.validator import (
     UNIT_PAIR, tokens,
-    SCOPE_AMBIGUITY, SCOPE_BASIS, SCOPE_CRITERION, SCOPE_DURATION, SCOPE_RESPONSE, SCOPE_SETTING, SCOPE_SPANS,
+    SCOPE_AMBIGUITY, SCOPE_BASIS, SCOPE_CRITERION, SCOPE_DURATION, SCOPE_RESPONSE, SCOPE_SETTING_PREFIX,
+    SCOPE_SETTINGS, SCOPE_SPANS,
     SCOPE_RESTRICTION_PREFIX, SCOPE_RESTRICTIONS, SCOPE_TARGET_PREFIX, SCOPE_TARGETS_EXTRA,
     ScopedError, hint_ids,
 )
 
-FIELD_SCOPES = (SCOPE_SPANS, SCOPE_SETTING, SCOPE_DURATION, SCOPE_AMBIGUITY, SCOPE_BASIS)
+FIELD_SCOPES = (SCOPE_SPANS, SCOPE_DURATION, SCOPE_AMBIGUITY, SCOPE_BASIS)
 
 
 def _items(raw: str) -> dict[str, dict] | None:
@@ -296,7 +314,59 @@ def _hint_target(item: dict, hid: str) -> dict | None:
     return None
 
 
-def _merge_restrictions(m: dict, r: dict, sc: set[str]) -> tuple[list | None, bool]:
+def _ctx_key(x) -> tuple | None:
+    if not isinstance(x, dict) or not isinstance(x.get("text"), str):
+        return None
+    return (x.get("line"), normalize(x["text"]))
+
+
+def _inside_text(small: tuple, big: tuple) -> bool:
+    """same line and the small context's words are a contiguous run of the big one's (word-bounded)."""
+    if small is None or big is None or small[0] != big[0]:
+        return False
+    a, b = tokens(small[1]), tokens(big[1])
+    n = len(a)
+    return 0 < n <= len(b) and any(b[i:i + n] == a for i in range(len(b) - n + 1))
+
+
+def contexts_preserved(main: list, rep: list, bad: set[int]) -> bool:
+    """s1-6: may the repair's context list replace the main one without dropping a context? ``main`` and ``rep``
+    are raw context objects ({"line", "text", ...}); ``bad`` are indices of main entries that failed validation."""
+    rep_keys = [_ctx_key(x) for x in rep]
+    absorbed = 0
+    for j, x in enumerate(main):
+        k = _ctx_key(x)
+        if k is not None and k in rep_keys:
+            continue                                     # kept as it was
+        if k is not None and any(_inside_text(k, rk) for rk in rep_keys if rk is not None):
+            absorbed += 1                                # merged into one contiguous repair context
+            continue
+        if j not in bad:
+            return False                                 # an error-free context disappeared
+    return len(rep) >= len(main) - absorbed              # every other (invalid) context was replaced
+
+
+def _merge_settings(m: dict, r: dict, sc: set[str], scope_ambiguous: bool) -> tuple[list | None, bool]:
+    """-> (settings list to use, taken_from_repair). Never drops a context of the main answer."""
+    ms = m.get("settings") if isinstance(m.get("settings"), list) else None
+    rs = r.get("settings") if isinstance(r.get("settings"), list) else None
+    if rs is None:
+        return m.get("settings"), False
+    if ms is None:
+        legacy = m.get("setting")
+        if not isinstance(legacy, dict):                 # the main list was unusable: nothing to preserve
+            return copy.deepcopy(rs), True
+        ms = [legacy]                                    # a v2 single setting is still a context to keep
+    bad = {int(k[len(SCOPE_SETTING_PREFIX) + 1:]) for k in sc
+           if k.startswith(SCOPE_SETTING_PREFIX) and k[len(SCOPE_SETTING_PREFIX) + 1:].isdigit()}
+    if SCOPE_SETTINGS in sc:
+        bad = set(range(len(ms)))
+    if scope_ambiguous or contexts_preserved(ms, rs, bad):
+        return copy.deepcopy(rs), True
+    return ms, False
+
+
+def _merge_restrictions(m: dict, r: dict, sc: set[str], scope_ambiguous: bool = False) -> tuple[list | None, bool]:
     """-> (list to use, taken_from_repair)."""
     mr = m.get("restrictions") if isinstance(m.get("restrictions"), list) else None
     rr = r.get("restrictions") if isinstance(r.get("restrictions"), list) else None
@@ -314,8 +384,20 @@ def _merge_restrictions(m: dict, r: dict, sc: set[str]) -> tuple[list | None, bo
     # never repaired into [] (= total experience), even when every main item was malformed
     kinds_main = {x.get("kind") for x in mr if isinstance(x, dict) and x.get("kind") in RESTRICTION_KINDS}
     kinds_rep = {x.get("kind") for x in rr if isinstance(x, dict)}
+    # s1-6: a main entry of unknown kind (it may have been meant as a context) must reappear with the same text
+    # (any kind); context entries must be preserved as contexts (contexts_preserved)
+    rep_text = {_ctx_key(x) for x in rr}
+    unknown = [_ctx_key(x) for x in mr if isinstance(x, dict) and x.get("kind") not in RESTRICTION_KINDS]
+    main_ctx = [(j, x) for j, x in enumerate(mr) if isinstance(x, dict) and x.get("kind") == RESTRICTION_CONTEXT]
+    ctx_ok = all(k is None or k in rep_text for k in unknown) and contexts_preserved(
+        [x for _, x in main_ctx], [x for x in rr if isinstance(x, dict) and x.get("kind") == RESTRICTION_CONTEXT],
+        {i for i, (j, _) in enumerate(main_ctx) if j in bad})
+    if scope_ambiguous:                                  # contexts may go (needs_confirmation, no S2 view)
+        kinds_main.discard(RESTRICTION_CONTEXT)
+        keep = [k for k in keep if k is None or k[2] != RESTRICTION_CONTEXT]
+        ctx_ok = True
     if (all(k in have for k in keep if k is not None) and kinds_main <= kinds_rep
-            and (rr or not mr)):
+            and (rr or not mr) and ctx_ok):
         return copy.deepcopy(rr), True
     return mr, False
 
@@ -370,6 +452,15 @@ def merge_repair(main_raw: str, repair_raw: str, scoped: list[ScopedError],
             if f in sc:
                 merged[f] = copy.deepcopy(r.get(f))
                 info["taken"].append({"criterion_id": cid, "field": f})
+        amb_now = merged.get("ambiguity")
+        scope_ambiguous = isinstance(amb_now, list) and AMB_AMBIGUOUS_CONTEXT_SCOPE in amb_now
+        if SCOPE_SETTINGS in sc or any(x.startswith(SCOPE_SETTING_PREFIX) for x in sc):
+            merged["settings"], took = _merge_settings(m, r, sc, scope_ambiguous)
+            if took:
+                merged.pop("setting", None)              # the v2 single-setting key is never carried over
+                info["taken"].append({"criterion_id": cid, "field": "settings"})
+            else:
+                info.setdefault("kept_main_settings", []).append(cid)
         tscopes = [s[len(SCOPE_TARGET_PREFIX):] for s in sc if s.startswith(SCOPE_TARGET_PREFIX)]
         tkeys = {k for k in tscopes if ":" not in k}
         tfields: dict[str, set[str]] = defaultdict(set)
@@ -424,7 +515,7 @@ def merge_repair(main_raw: str, repair_raw: str, scoped: list[ScopedError],
                 merged["targets"] = copy.deepcopy(r.get("targets"))
                 info["taken"].append({"criterion_id": cid, "field": "targets_extra"})
             if SCOPE_RESTRICTIONS in sc or any(x.startswith(SCOPE_RESTRICTION_PREFIX) for x in sc):
-                merged["restrictions"], took = _merge_restrictions(m, r, sc)
+                merged["restrictions"], took = _merge_restrictions(m, r, sc, scope_ambiguous)
                 info["taken" if took else "kept_main_restrictions"].append(
                     {"criterion_id": cid, "field": "restrictions"} if took else cid)
         if r != merged:

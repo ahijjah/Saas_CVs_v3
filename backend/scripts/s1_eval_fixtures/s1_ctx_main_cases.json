@@ -1,0 +1,2274 @@
+{
+ "_comment": "SYNTHETIC P4 context cases for S1 s1-6 (experience contexts). No candidate, CV, application or personal data. 'criteria' follow the enumeration order of the case analysis; each has the labelled reference answer ('oracle', duration as candidate TEXT) and the labels scored ('expected': settings as a SET, leading in/on/within/at/the/a/an/في/ضمن/لدى/داخل ignored; one_of for Arabic attached letters). Preferred wording follows candidate_qc-1: a whole preferred requirement keeps its context; a softened qualifier on a firm requirement is ambiguous_context_scope. TUNING SET.",
+ "fixture_version": "s1-ctx-main-1",
+ "cases": [
+  {
+   "id": "CM01",
+   "family": "geographic",
+   "lang": "en",
+   "description": "geographic context on a role",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Internal Auditor"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as an Internal Auditor in the GCC region."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years of experience as an Internal Auditor in the GCC region"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "GCC region"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "GCC region"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM02",
+   "family": "geographic",
+   "lang": "en",
+   "description": "geographic context, hint-less function",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 4 years of procurement experience within Saudi Arabia."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "At least 4 years of procurement experience within Saudi Arabia"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "procurement",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "Saudi Arabia",
+        "kind": "context"
+       }
+      ],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "Saudi Arabia"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM03",
+   "family": "geographic",
+   "lang": "ar",
+   "description": "Arabic geographic context",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 5 سنوات في المراجعة الداخلية في دول مجلس التعاون الخليجي."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة لا تقل عن 5 سنوات في المراجعة الداخلية في دول مجلس التعاون الخليجي"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "المراجعة الداخلية",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "دول مجلس التعاون الخليجي",
+        "kind": "context"
+       }
+      ],
+      "duration": "5 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "دول مجلس التعاون الخليجي"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM04",
+   "family": "multinational_positive",
+   "lang": "en",
+   "description": "multinational organisations as organisation type",
+   "analysis": {
+    "minimum_years": 6,
+    "relevant_roles": [
+     "Finance Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 6 years as a Finance Manager in multinational organisations."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 6 years as a Finance Manager in multinational organisations"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "multinational organisations"
+       }
+      ],
+      "duration": "6 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "multinational organisations"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM05",
+   "family": "multinational_positive",
+   "lang": "en",
+   "description": "multinational companies, hint-less",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of HR administration experience gained in multinational companies."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "At least 3 years of HR administration experience gained in multinational companies"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "HR administration",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "multinational companies",
+        "kind": "context"
+       }
+      ],
+      "duration": "3 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "multinational companies"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM06",
+   "family": "multinational_negative",
+   "lang": "en",
+   "description": "multinational describes the employer (About-us)",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Finance Manager"
+    ]
+   },
+   "jd_lines": [
+    "We are a multinational group with offices in 12 countries.",
+    "Requirements",
+    "- Minimum 4 years as a Finance Manager."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 3,
+        "text": "Minimum 4 years as a Finance Manager"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM07",
+   "family": "multinational_negative",
+   "lang": "en",
+   "description": "multinational describes the hiring team",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Payroll Specialist"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Payroll Specialist.",
+    "- Ability to work within our multinational team."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Payroll Specialist"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM08",
+   "family": "government",
+   "lang": "en",
+   "description": "government entities",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Procurement Officer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a Procurement Officer in government entities."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years as a Procurement Officer in government entities"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "government entities"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "government entities"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM09",
+   "family": "government",
+   "lang": "en",
+   "description": "public sector, hint-less",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 5 years of legal experience in the public sector."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "5 years of legal experience in the public sector"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "legal",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "public sector",
+        "kind": "context"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "public sector"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM10",
+   "family": "government",
+   "lang": "ar",
+   "description": "Arabic public sector",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات في الشؤون القانونية في القطاع الحكومي."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 4 سنوات في الشؤون القانونية في القطاع الحكومي"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "الشؤون القانونية",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "القطاع الحكومي",
+        "kind": "context"
+       }
+      ],
+      "duration": "4 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "القطاع الحكومي"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM11",
+   "family": "banking",
+   "lang": "en",
+   "description": "banking sector",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Credit Analyst"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a Credit Analyst in the banking sector."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years as a Credit Analyst in the banking sector"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "banking sector"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "banking sector"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM12",
+   "family": "banking",
+   "lang": "en",
+   "description": "Islamic banking institutions",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Compliance Officer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years as a Compliance Officer in Islamic banking institutions."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "At least 3 years as a Compliance Officer in Islamic banking institutions"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "Islamic banking institutions"
+       }
+      ],
+      "duration": "3 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "Islamic banking institutions"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM13",
+   "family": "banking",
+   "lang": "ar",
+   "description": "Arabic financial institutions with لدى",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات في إدارة المخاطر لدى المؤسسات المالية."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 3 سنوات في إدارة المخاطر لدى المؤسسات المالية"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "إدارة المخاطر",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "المؤسسات المالية",
+        "kind": "context"
+       }
+      ],
+      "duration": "3 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "المؤسسات المالية"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM14",
+   "family": "sector",
+   "lang": "en",
+   "description": "industry",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Quality Engineer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Quality Engineer in the automotive industry."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Quality Engineer in the automotive industry"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "automotive industry"
+       }
+      ],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "automotive industry"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM15",
+   "family": "sector",
+   "lang": "en",
+   "description": "sector, hint-less",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 3+ years of supply chain experience in the FMCG sector."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "3+ years of supply chain experience in the FMCG sector"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "supply chain",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "FMCG sector",
+        "kind": "context"
+       }
+      ],
+      "duration": "3+ years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "FMCG sector"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM16",
+   "family": "project_type",
+   "lang": "en",
+   "description": "project type",
+   "analysis": {
+    "minimum_years": 7,
+    "relevant_roles": [
+     "Site Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 7 years as a Site Manager on infrastructure projects."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 7 years as a Site Manager on infrastructure projects"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "infrastructure projects"
+       }
+      ],
+      "duration": "7 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "infrastructure projects"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM17",
+   "family": "project_type",
+   "lang": "en",
+   "description": "project type 2",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Planning Engineer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 5 years as a Planning Engineer on airport projects."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "At least 5 years as a Planning Engineer on airport projects"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "airport projects"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "airport projects"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM18",
+   "family": "organisation_type",
+   "lang": "en",
+   "description": "organisation type",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Accountant"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years as an Accountant in Big Four audit firms."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 3 years as an Accountant in Big Four audit firms"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "Big Four audit firms"
+       }
+      ],
+      "duration": "3 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "Big Four audit firms"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM19",
+   "family": "organisation_type",
+   "lang": "en",
+   "description": "organisation type, hint-less",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 4 years of fundraising experience in non-governmental organisations."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "4 years of fundraising experience in non-governmental organisations"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "fundraising",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "non-governmental organisations",
+        "kind": "context"
+       }
+      ],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "non-governmental organisations"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM20",
+   "family": "two_and",
+   "lang": "en",
+   "description": "two AND contexts, second in a separate sentence",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Internal Auditor"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as an Internal Auditor in government entities.",
+    "- Bachelor's degree in Accounting.",
+    "- All of this experience must have been gained in the GCC region."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years as an Internal Auditor in government entities"
+       },
+       {
+        "line": 4,
+        "text": "All of this experience must have been gained in the GCC region"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "government entities"
+       },
+       {
+        "line": 4,
+        "text": "GCC region"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "government entities",
+       "GCC region"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM21",
+   "family": "two_and",
+   "lang": "en",
+   "description": "two AND contexts, hint-less, next line",
+   "analysis": {
+    "minimum_years": 6,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 6 years of project controls experience on infrastructure projects.",
+    "- The experience must have been gained with government entities."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 6 years of project controls experience on infrastructure projects"
+       },
+       {
+        "line": 3,
+        "text": "The experience must have been gained with government entities"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "project controls",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "infrastructure projects",
+        "kind": "context"
+       },
+       {
+        "line": 3,
+        "text": "government entities",
+        "kind": "context"
+       }
+      ],
+      "duration": "6 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "infrastructure projects",
+       "government entities"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM22",
+   "family": "or_phrase",
+   "lang": "en",
+   "description": "OR inside one context",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Claims Officer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Claims Officer in banks or insurance companies."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Claims Officer in banks or insurance companies"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "banks or insurance companies"
+       }
+      ],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "banks or insurance companies"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM23",
+   "family": "or_phrase",
+   "lang": "ar",
+   "description": "Arabic OR inside one context",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 5 سنوات في الصيانة في المستشفيات أو المراكز الطبية."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 5 سنوات في الصيانة في المستشفيات أو المراكز الطبية"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "الصيانة",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "المستشفيات أو المراكز الطبية",
+        "kind": "context"
+       }
+      ],
+      "duration": "5 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "المستشفيات أو المراكز الطبية"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM24",
+   "family": "generic_environment",
+   "lang": "en",
+   "description": "pace adjectives",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Sales Executive"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Sales Executive in a fast-paced, dynamic environment."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Sales Executive in a fast-paced, dynamic environment"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM25",
+   "family": "generic_environment",
+   "lang": "en",
+   "description": "working-style environment",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Customer Service Agent"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years as a Customer Service Agent in a high-pressure, customer-focused environment."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "At least 3 years as a Customer Service Agent in a high-pressure, customer-focused environment"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "3 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM26",
+   "family": "generic_environment",
+   "lang": "ar",
+   "description": "Arabic dynamic environment",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات في المبيعات في بيئة عمل ديناميكية."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 3 سنوات في المبيعات في بيئة عمل ديناميكية"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "المبيعات",
+        "kind": "function"
+       }
+      ],
+      "duration": "3 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM27",
+   "family": "about_us",
+   "lang": "en",
+   "description": "About-us names sector and region",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Risk Analyst"
+    ]
+   },
+   "jd_lines": [
+    "About us: a leading Islamic bank operating across the GCC.",
+    "Requirements",
+    "- Minimum 5 years as a Risk Analyst."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 3,
+        "text": "Minimum 5 years as a Risk Analyst"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM28",
+   "family": "about_us",
+   "lang": "ar",
+   "description": "Arabic About-us",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "من نحن: شركة رائدة في قطاع البناء في المملكة.",
+    "المتطلبات",
+    "- خبرة 4 سنوات في المحاسبة."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 3,
+        "text": "خبرة 4 سنوات في المحاسبة"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 3,
+        "text": "المحاسبة",
+        "kind": "function"
+       }
+      ],
+      "duration": "4 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM29",
+   "family": "new_job_duty",
+   "lang": "en",
+   "description": "duty names a client type",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Internal Auditor"
+    ]
+   },
+   "jd_lines": [
+    "Responsibilities",
+    "- Audit government entities across the region.",
+    "Requirements",
+    "- Minimum 5 years as an Internal Auditor."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 4,
+        "text": "Minimum 5 years as an Internal Auditor"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM30",
+   "family": "new_job_duty",
+   "lang": "en",
+   "description": "duty names a project type",
+   "analysis": {
+    "minimum_years": 6,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Responsibilities",
+    "- Manage infrastructure projects for our clients.",
+    "Requirements",
+    "- At least 6 years of project management experience."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 4,
+        "text": "At least 6 years of project management experience"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 4,
+        "text": "project management",
+        "kind": "function"
+       }
+      ],
+      "duration": "6 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM31",
+   "family": "job_location",
+   "lang": "en",
+   "description": "vacancy location before requirements",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Marketing Specialist"
+    ]
+   },
+   "jd_lines": [
+    "Location: Dubai, UAE",
+    "Requirements",
+    "- Minimum 3 years as a Marketing Specialist."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 3,
+        "text": "Minimum 3 years as a Marketing Specialist"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "3 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM32",
+   "family": "job_location",
+   "lang": "en",
+   "description": "vacancy location right after the requirement",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Logistics Coordinator"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Logistics Coordinator.",
+    "- This role is based in Doha, Qatar."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Logistics Coordinator"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM33",
+   "family": "preferred",
+   "lang": "en",
+   "description": "whole experience requirement preferred",
+   "analysis": {
+    "minimum_years": 0,
+    "relevant_roles": [
+     "Medical Coder"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Experience as a Medical Coder in private hospitals is preferred."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Experience as a Medical Coder in private hospitals is preferred"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "private hospitals"
+       }
+      ],
+      "duration": null,
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "private hospitals"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM34",
+   "family": "preferred",
+   "lang": "en",
+   "description": "softened qualifier on a firm requirement",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Tax Advisor"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a Tax Advisor, preferably within the energy sector."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years as a Tax Advisor, preferably within the energy sector"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "5 years",
+      "ambiguity": [
+       "ambiguous_context_scope"
+      ],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "needs_confirmation",
+      "reasons_include": [
+       "ambiguous_context_scope"
+      ],
+      "polarity": "scope"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM35",
+   "family": "separate_sentence",
+   "lang": "en",
+   "description": "context sentence two lines below",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Treasury Analyst"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Treasury Analyst.",
+    "- Knowledge of IFRS.",
+    "- Treasury experience must have been gained in listed companies."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Treasury Analyst"
+       },
+       {
+        "line": 4,
+        "text": "Treasury experience must have been gained in listed companies"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 4,
+        "text": "listed companies"
+       }
+      ],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "listed companies"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM36",
+   "family": "role_specific",
+   "lang": "en",
+   "description": "context on one role-only criterion",
+   "analysis": {
+    "minimum_years": 0,
+    "relevant_roles": [
+     "Structural Engineer",
+     "Draftsperson"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Experience as a Structural Engineer on high-rise projects is required.",
+    "- Experience as a Draftsperson is an advantage."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Experience as a Structural Engineer on high-rise projects is required"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "high-rise projects"
+       }
+      ],
+      "duration": null,
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "high-rise projects"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    },
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 3,
+        "text": "Experience as a Draftsperson is an advantage"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": null,
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM37",
+   "family": "alternative_scope",
+   "lang": "en",
+   "description": "context on one alternative only",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Loan Officer",
+     "Credit Controller"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a Loan Officer in microfinance institutions or as a Credit Controller."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years as a Loan Officer in microfinance institutions or as a Credit Controller"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       },
+       {
+        "hint": "T2",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "5 years",
+      "ambiguity": [
+       "ambiguous_context_scope"
+      ],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "needs_confirmation",
+      "reasons_include": [
+       "ambiguous_context_scope"
+      ],
+      "polarity": "scope"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM38",
+   "family": "alternative_scope",
+   "lang": "ar",
+   "description": "Arabic context on one alternative only",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات كمحاسب في البنوك أو في التدقيق الداخلي."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 4 سنوات كمحاسب في البنوك أو في التدقيق الداخلي"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "محاسب",
+        "kind": "role"
+       },
+       {
+        "line": 2,
+        "text": "التدقيق الداخلي",
+        "kind": "function"
+       }
+      ],
+      "duration": "4 سنوات",
+      "ambiguity": [
+       "ambiguous_context_scope"
+      ],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "needs_confirmation",
+      "reasons_include": [
+       "ambiguous_context_scope"
+      ],
+      "polarity": "scope"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM39",
+   "family": "arabic_prefix",
+   "lang": "ar",
+   "description": "attached ب before the context",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات في الائتمان بالقطاع المصرفي."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 3 سنوات في الائتمان بالقطاع المصرفي"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "الائتمان",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "بالقطاع المصرفي",
+        "kind": "context"
+       }
+      ],
+      "duration": "3 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       {
+        "one_of": [
+         "بالقطاع المصرفي",
+         "القطاع المصرفي"
+        ]
+       }
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM40",
+   "family": "arabic_prefix",
+   "lang": "ar",
+   "description": "standalone لدى before the context",
+   "analysis": {
+    "minimum_years": 6,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 6 سنوات في المشتريات لدى الجهات الحكومية."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 6 سنوات في المشتريات لدى الجهات الحكومية"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "المشتريات",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "الجهات الحكومية",
+        "kind": "context"
+       }
+      ],
+      "duration": "6 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "الجهات الحكومية"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM41",
+   "family": "contiguous",
+   "lang": "en",
+   "description": "one contiguous restriction stays one context",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Shariah Auditor"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a Shariah Auditor in Islamic banking institutions in the GCC region."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years as a Shariah Auditor in Islamic banking institutions in the GCC region"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "Islamic banking institutions in the GCC region"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "Islamic banking institutions in the GCC region"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM42",
+   "family": "split",
+   "lang": "en",
+   "description": "the same two restrictions stated separately",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Shariah Auditor"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a Shariah Auditor in Islamic banking institutions.",
+    "- This experience must be in the GCC region."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years as a Shariah Auditor in Islamic banking institutions"
+       },
+       {
+        "line": 3,
+        "text": "This experience must be in the GCC region"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "Islamic banking institutions"
+       },
+       {
+        "line": 3,
+        "text": "GCC region"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "Islamic banking institutions",
+       "GCC region"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM43",
+   "family": "compound",
+   "lang": "en",
+   "description": "overall + part in a context",
+   "analysis": {
+    "minimum_years": 8,
+    "relevant_roles": [
+     "Auditor"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 8 years of overall experience as an Auditor, including at least 3 years in the GCC region."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "8 years of overall experience as an Auditor, including at least 3 years in the GCC region"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "8 years",
+      "ambiguity": [
+       "ambiguous_context_scope"
+      ],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "needs_confirmation",
+      "reasons_include": [
+       "compound_requirement",
+       "ambiguous_context_scope"
+      ],
+      "polarity": "scope"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CM44",
+   "family": "tools",
+   "lang": "en",
+   "description": "tools are not a context",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Data Engineer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Data Engineer using Azure cloud tools."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Data Engineer using Azure cloud tools"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  }
+ ]
+}
