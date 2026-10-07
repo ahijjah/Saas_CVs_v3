@@ -24,9 +24,15 @@ S1V4_SCHEMA = "s1_requirement_spec_v4"
 S1V4_VERSION = "2.0.0"
 S1A_INPUT_VERSION = "s1a-in-1"
 S1B_INPUT_VERSION = "s1b-in-1"
-S1A_PROMPT_VERSION = "s1a-1.0"          # prompt NOT implemented yet (Step 2)
+S1A_PROMPT_VERSION = "s1a-1.0"          # Pass A prompt: services/s1_two_pass/prompts/s1a-1.0.txt (pinned SHA)
 S1B_PROMPT_VERSION = "s1b-1.0"          # prompt NOT implemented yet (Step 3)
-PROMPT_PENDING = "pending"               # fingerprint placeholder until the prompts exist
+PROMPT_PENDING = "pending"               # fingerprint placeholder until the Pass B prompt exists
+
+# Pass A model call (same pinned settings as the v3 S1 call; one main call + at most one repair call)
+S1A_PROMPT_CODE = "recruitment.experience_target_pass"
+S1A_MODEL = "gpt-4o-mini"
+S1A_TEMPERATURE = 0.0
+S1A_MAX_TOKENS = 4000
 
 # ── Pass A: target basis (required, explicit; never inferred from an empty list) ────────────────────────────
 BASIS_TARGETS = "targets"                       # one or more role/function targets

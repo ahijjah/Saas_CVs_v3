@@ -1130,9 +1130,9 @@ class TestIsolation:
         hits = []
         for sub in ("services", "workers", "routers", "api"):
             for p in (BACKEND / sub).rglob("*.py") if (BACKEND / sub).exists() else []:
-                # shadow-only packages (S0 itself, S4/S5, S2, S1) may use S0
-                if ("s0_experience" in p.parts or "s2_experience" in p.parts
-                        or "s1_requirements" in p.parts or p.name == "experience_accounting.py"):
+                # shadow-only packages (S0 itself, S4/S5, S2, S1 v3 and two-pass) may use S0
+                if ("s0_experience" in p.parts or "s2_experience" in p.parts or "s1_requirements" in p.parts
+                        or "s1_two_pass" in p.parts or p.name == "experience_accounting.py"):
                     continue
                 if "s0_experience" in p.read_text(encoding="utf-8"):
                     hits.append(str(p))

@@ -229,7 +229,7 @@ class TestPassA:
         a, jd, cid = role_job()
         v = validate_a(jd, enumerate_experience_criteria("J1", a), resp(hinted(cid, [(2, L_ROLE)], **{key: value})))
         assert not v.ok and v.results == {}
-        assert any(f"never returns {key!r}" in e for e in v.errors)
+        assert any(f"remove the key {key!r}" in e for e in v.errors)
 
     def test_empty_forbidden_lists_are_tolerated(self):
         a, jd, cid = role_job()
@@ -242,7 +242,7 @@ class TestPassA:
         raw = resp(free(crits[0].criterion_id, [(2, L_SETTING)], [(2, "government entities", kind)],
                         basis="setting_only"))
         v = validate_a(jd, crits, raw)
-        assert not v.ok and any("a context is never a target" in e for e in v.errors)
+        assert not v.ok and any(f"kind {kind!r} is not allowed" in e for e in v.errors)
 
     @pytest.mark.parametrize("basis", [None, "", "pure_duration", "none"])
     def test_target_basis_required(self, basis):

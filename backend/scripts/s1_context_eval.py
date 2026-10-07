@@ -50,6 +50,9 @@ Usage (later, after explicit approval):
   python scripts/s1_context_eval.py --out /tmp/s1ctx --mode real --runs 5 --confirm-real
   python scripts/s1_context_eval.py --out /tmp/s1ho --fixture heldout --mode real --runs 5 --confirm-real \\
       --allow-heldout
+
+Two-pass Step 2: --stage pass_a hands every other argument to scripts/s1_pass_a_eval.py (the Pass A-only
+evaluation on the MAIN fixture; no held-out); --stage combined (default) is this harness unchanged.
 """
 from __future__ import annotations
 
@@ -504,6 +507,17 @@ def check_pins(fixture_name: str, path: Path) -> list[str]:
 
 
 def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--stage" in argv:                       # two-pass Step 2: the Pass A-only evaluation (s1_pass_a_eval.py)
+        i = argv.index("--stage")
+        stage = argv[i + 1] if i + 1 < len(argv) else ""
+        if stage not in ("combined", "pass_a"):
+            print("REFUSED: --stage must be 'combined' or 'pass_a'")
+            return 2
+        argv = argv[:i] + argv[i + 2:]
+        if stage == "pass_a":
+            import s1_pass_a_eval
+            return s1_pass_a_eval.main(argv)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
     ap.add_argument("--fixture", choices=tuple(FIXTURES), default="main")
