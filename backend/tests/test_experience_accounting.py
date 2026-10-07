@@ -570,8 +570,8 @@ class TestNotWiredIntoScoring:
             root = os.path.join(backend, sub)
             for dirpath, _, files in os.walk(root):
                 parts = dirpath.split(os.sep)
-                if "s2_experience" in parts or "s1_requirements" in parts:   # shadow-only S2/S1 may use it
-                    continue
+                if "s2_experience" in parts or "s1_requirements" in parts or "s1_two_pass" in parts:
+                    continue                                    # shadow-only S2/S1 (v3 and two-pass) may use it
                 for f in files:
                     if f.endswith(".py") and f != "experience_accounting.py":
                         with open(os.path.join(dirpath, f), encoding="utf-8") as fh:
