@@ -13,6 +13,10 @@ Validation = the frozen s1-5.x target / restriction / span / duration / mapping 
 (services.s1_requirements.validator, reused unchanged) PLUS:
   - no "settings" / "setting" / "contexts" / "context_spans" / "target_gap", restriction kinds role / function /
     vague only, and no ambiguous_context_scope: Pass A never reads contexts;
+  - "names_role_or_work" (s1a-1.2) is a required boolean: the model's own judgement whether the statement names a
+    role or work. Criteria WITHOUT hints: true <=> a role/function restriction and target_basis "targets"; any
+    disagreement is one repair-scoped error (names_role_or_work + target_basis + restrictions, reconsidered
+    together; nothing is inferred). Criteria WITH hints: audit only (hints govern targets and basis);
   - "target_basis" is required and must match the typed restrictions:
       hinted criterion                     -> "targets"
       role/function restriction(s)         -> "targets"
@@ -95,6 +99,7 @@ def pass_a_cache_key(req: PassARequest, *, prompt_fingerprint: str | None = None
 class PassACriterion:
     parsed: ParsedCriterion          # s1-5.x parse (settings always ())
     target_basis: str
+    names_role_or_work: bool | None = None    # s1a-1.2: the model's own judgement (audit for hinted criteria)
 
 
 @dataclass
@@ -106,6 +111,16 @@ class PassAValidation:
 
 
 SCOPE_TARGET_BASIS = "target_basis"
+SCOPE_NAMES_ROLE_OR_WORK = "names_role_or_work"
+FIELD_NAMES_ROLE_OR_WORK = "names_role_or_work"
+# s1a-1.2 (Option D): the model's structured judgement must agree with its restrictions / target_basis. Code only
+# compares AI outputs; on disagreement the model reconsiders all three together, nothing is inferred or prescribed.
+NRW_REQUIRED_MESSAGE = 'names_role_or_work is required for every criterion: true or false (a JSON boolean)'
+NRW_DISAGREE_MESSAGE = ('names_role_or_work, the restrictions and target_basis disagree. Re-read the requirement '
+                        'statement and decide the three together: names_role_or_work true means it names a role or '
+                        'work, returned as role/function restrictions with target_basis "targets"; false means it names '
+                        'no role and no work, with no role/function restriction and target_basis "unspecified", '
+                        '"total_experience" or "setting_only".')
 # s1a-1.1 forensics (CM09/CM19): a mismatch message must never prescribe a basis computed from the model's own
 # (possibly mislabelled) restrictions; it sends the model back to the requirement statement instead.
 BASIS_HINTED_MESSAGE = 'a criterion with target_hints always has target_basis "targets"'
@@ -148,6 +163,7 @@ def validate_pass_a(raw: str, jd: JDText, criteria: list[CriterionInput],
         return PassAValidation(False, [e.message], scoped=[e])
     by_id = {c.criterion_id: c for c in criteria}
     basis: dict[str, str] = {}
+    nrw: dict[str, bool] = {}
     flagged: set[str] = set()                   # criteria with a Pass A shape error: repaired as a whole
     for it in items:
         if not isinstance(it, dict):
@@ -169,6 +185,10 @@ def validate_pass_a(raw: str, jd: JDText, criteria: list[CriterionInput],
         if isinstance(amb, list) and any(a not in PASS_A_AMBIGUITY_CODES for a in amb if isinstance(a, str)):
             own.append(ScopedError(cid, (SCOPE_AMBIGUITY,), f"{w}: ambiguity codes are only "
                                                             f"{list(PASS_A_AMBIGUITY_CODES)}"))
+        if not isinstance(it.get(FIELD_NAMES_ROLE_OR_WORK), bool):
+            own.append(ScopedError(cid, (SCOPE_NAMES_ROLE_OR_WORK,), f"{w}: {NRW_REQUIRED_MESSAGE}"))
+        elif cid in by_id:
+            nrw[cid] = it[FIELD_NAMES_ROLE_OR_WORK]
         b = it.get("target_basis")
         if b not in TARGET_BASES:
             own.append(ScopedError(cid, (SCOPE_TARGET_BASIS,), f"{w}: target_basis is required: one of "
@@ -194,13 +214,22 @@ def validate_pass_a(raw: str, jd: JDText, criteria: list[CriterionInput],
             if hinted:      # the basis follows from the FIXED hints, never from the model's own restrictions
                 own.append(ScopedError(cid, (SCOPE_TARGET_BASIS,), f"criterion {cid}: {BASIS_HINTED_MESSAGE}"))
             else:           # never prescribe a basis derived from restrictions that may themselves be wrong
-                own.append(ScopedError(cid, (SCOPE_TARGET_BASIS, SCOPE_RESTRICTIONS),
+                own.append(ScopedError(cid, (SCOPE_TARGET_BASIS, SCOPE_RESTRICTIONS, SCOPE_NAMES_ROLE_OR_WORK),
                                        f"criterion {cid}: target_basis {b!r} and the restrictions disagree. "
                                        f"{BASIS_REREAD_MESSAGE}"))
             continue
+        n = nrw.get(cid)
+        if n is None:
+            continue                            # missing / non-boolean: already an error
+        # Option D agreement (criteria WITHOUT hints only; with hints the fixed hints govern targets and basis and
+        # the judgement is audit only, never a reason to change or drop a hint target)
+        if not hinted and n != (b == BASIS_TARGETS and bool(rf)):
+            own.append(ScopedError(cid, (SCOPE_NAMES_ROLE_OR_WORK, SCOPE_TARGET_BASIS, SCOPE_RESTRICTIONS),
+                                   f"criterion {cid}: {NRW_DISAGREE_MESSAGE}"))
+            continue
         if b == BASIS_SETTING_ONLY:
             pc = replace(pc, policy=POLICY_SECTOR, relevance_basis="sector")
-        results[cid] = PassACriterion(pc, b)
+        results[cid] = PassACriterion(pc, b, n)
     scoped = own + _repair_safe(list(v.scoped), flagged)
     errors = [e.message for e in own] + list(v.errors)
     ok = not errors and len(results) == len(criteria)

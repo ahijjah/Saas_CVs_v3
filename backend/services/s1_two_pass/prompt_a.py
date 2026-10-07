@@ -3,11 +3,14 @@ Pass A prompt (the experience TARGET pass): pinned, byte/SHA-verified text files
 
   s1a-1.0  the s1-5.2 target/restriction contract with every qualifying-context instruction removed and a required
            target_basis. Kept for audit/replay of its real MAIN run; never edited.
-  s1a-1.1  (current) after the s1a-1.0 MAIN forensics: phrases saying where / for whom / under what circumstances
+  s1a-1.1  after the s1a-1.0 MAIN forensics: phrases saying where / for whom / under what circumstances
            are never a restriction of any kind (never vague, function or role, never inside a quoted target);
            vague narrowed to "relevant / related / similar / in the field"; "<X> experience", "experience in
            <X>", "خبرة ... في <X>" name the work X; setting_only only when no role or work is named; the "if unsure,
            a function" rule removed; the closing no-hints OUTPUT example has a function target.
+  s1a-1.2  (current) Option D: s1a-1.1 plus ONE required boolean "names_role_or_work" (section 1a, before targets /
+           restrictions in every OUTPUT example): the model's own judgement whether the statement names a role or
+           work; checked for agreement with restrictions / target_basis by pass_a.validate_pass_a.
 The files end with the shared security hardening suffix (byte-identical to the one the v3 S1 prompt appends;
 checked by a test, never imported here). Loading verifies the SHA-256 on every call; a changed file is an
 integrity error, never a silently different prompt.
@@ -23,6 +26,7 @@ PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
 PROMPT_SHA256 = {
     "s1a-1.0": "4caabb71429c0cc1ac997986c2a6c95775b06f4f7acebcb7025e27757f74bf36",
     "s1a-1.1": "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11",
+    "s1a-1.2": "f7ec01e2816744322205a889e2834270a30decea625a84355fa47c70e416afd3",
 }
 S1A_PROMPT_PATH = PROMPT_DIR / f"{S1A_PROMPT_VERSION}.txt"
 S1A_PROMPT_SHA256 = PROMPT_SHA256[S1A_PROMPT_VERSION]

@@ -113,13 +113,18 @@ class TestFixture:
         assert ev.pass_a_gold(spec(R("function", "context")), [])["basis"] == "targets"
         assert ev.pass_a_gold(spec(R("role", "function")), [])["policy"] == "mixed"
         assert ev.pass_a_gold(spec(R("vague", "context")), []) == {"targets": [], "basis": "unspecified",
-                                                                   "policy": "pure_duration"}
-        assert ev.pass_a_gold(spec(R("context")), []) == {"targets": [], "basis": "setting_only", "policy": "sector"}
+                                                                   "policy": "pure_duration",
+                                                                   "names_role_or_work": False}
+        assert ev.pass_a_gold(spec(R("context")), []) == {"targets": [], "basis": "setting_only", "policy": "sector",
+                                                          "names_role_or_work": False}
         assert ev.pass_a_gold(spec(R()), []) == {"targets": [], "basis": "total_experience",
-                                                 "policy": "pure_duration"}
+                                                 "policy": "pure_duration", "names_role_or_work": False}
         hinted = {"targets": [{"hint": "T1", "type": "role"}, {"hint": "T2", "type": "function"}]}
         assert ev.pass_a_gold(spec(hinted), ["A", "b"]) == {"targets": [("A", "role"), ("b", "function")],
-                                                            "basis": "targets", "policy": "mixed"}
+                                                            "basis": "targets", "policy": "mixed",
+                                                            "names_role_or_work": True}
+        # MAIN gold for names_role_or_work is derived (true exactly when the gold basis is targets)
+        assert ev.pass_a_gold(spec(R("function", "context")), [])["names_role_or_work"] is True
 
     def test_oracle_answers_carry_no_context(self):
         for c in MAIN["cases"]:
@@ -152,7 +157,7 @@ class TestOracle:
     def test_cli_oracle_writes_results(self, tmp_path):
         assert ev.main(["--out", str(tmp_path / "o"), "--mode", "oracle", "--runs", "2"]) == 0
         data = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))
-        assert data["meta"]["stage"] == "pass_a" and data["meta"]["prompt_version"] == "s1a-1.1"
+        assert data["meta"]["stage"] == "pass_a" and data["meta"]["prompt_version"] == "s1a-1.2"
         assert data["meta"]["fixture_sha256"] == ctx.FIXTURE_SHA256["main"]
         assert data["gates"]["all_decided_pass"] is True
         assert (tmp_path / "o" / "report.md").read_text(encoding="utf-8").startswith("# S1 Pass A")
@@ -168,13 +173,16 @@ def _rec(case, run, criteria, golds, *, job="ok"):
             "gold": golds, "pass": all(c["ok"] and c["targets"] and c["policy"] and c["basis"] for c in checks)}
 
 
-GF = {"targets": [("payroll administration", "function")], "basis": "targets", "policy": "functional"}
-GR = {"targets": [("Internal Auditor", "role")], "basis": "targets", "policy": "explicit_role"}
-GS = {"targets": [], "basis": "setting_only", "policy": "sector"}
+GF = {"targets": [("payroll administration", "function")], "basis": "targets", "policy": "functional",
+      "names_role_or_work": True}
+GR = {"targets": [("Internal Auditor", "role")], "basis": "targets", "policy": "explicit_role",
+      "names_role_or_work": True}
+GS = {"targets": [], "basis": "setting_only", "policy": "sector", "names_role_or_work": False}
 
 
-def O(basis, policy, *targets, outcome="ok"):
-    return {"outcome": outcome, "basis": basis, "policy": policy,
+def O(basis, policy, *targets, outcome="ok", nrw=None):
+    return {"criterion_id": "c", "outcome": outcome, "basis": basis, "policy": policy,
+            "names_role_or_work": None if outcome != "ok" else (basis == "targets" if nrw is None else nrw),
             "targets": None if outcome != "ok" else [{"text": t, "type": k} for t, k in targets]}
 
 
@@ -212,8 +220,8 @@ class TestMetricArithmetic:
 
     def test_failed_runs_are_never_unsafe_and_never_scored(self):
         c = ev.check(GF, FAIL)
-        assert c == {"ok": False, "targets": False, "policy": False, "basis": False, "unsafe": False,
-                     "targets_lost": [], "policy_downgraded": False, "expanded": []}
+        assert c == {"ok": False, "targets": False, "policy": False, "basis": False, "names_role_or_work": False,
+                     "unsafe": False, "targets_lost": [], "policy_downgraded": False, "expanded": []}
         s = ev.summarize([_rec("X", 1, [FAIL], [GF], job="failed")])
         assert s["target_accuracy"] is None and s["failure_rate"] == 1.0
         assert ev.evaluate_gates(s)["gates"]["target_accuracy"] is False
@@ -253,18 +261,21 @@ class TestMetricArithmetic:
         ("target_accuracy", 0.95, True), ("target_accuracy", 0.9499, False),
         ("policy_accuracy", 0.95, True), ("policy_accuracy", 0.9499, False),
         ("target_basis_accuracy", 0.95, True), ("target_basis_accuracy", 0.9499, False),
+        ("names_role_or_work_accuracy", 0.95, True), ("names_role_or_work_accuracy", 0.9499, False),
         ("stability", 0.95, True), ("stability", 0.9499, False),
         ("failure_rate", 0.05, True), ("failure_rate", 0.0501, False),
     ])
     def test_threshold_boundaries(self, metric, value, ok):
         s = {"hard": {"unsafe_target_policy_loss": 0, "independence_failures": 0}, "target_accuracy": 1.0,
-             "policy_accuracy": 1.0, "target_basis_accuracy": 1.0, "stability": 1.0, "failure_rate": 0.0}
+             "policy_accuracy": 1.0, "target_basis_accuracy": 1.0, "names_role_or_work_accuracy": 1.0,
+             "stability": 1.0, "failure_rate": 0.0}
         s[metric] = value
         assert ev.evaluate_gates(s)["gates"][metric] is ok
 
     def test_hard_gates(self):
         s = {"hard": {"unsafe_target_policy_loss": 1, "independence_failures": 0}, "target_accuracy": 1.0,
-             "policy_accuracy": 1.0, "target_basis_accuracy": 1.0, "stability": 1.0, "failure_rate": 0.0}
+             "policy_accuracy": 1.0, "target_basis_accuracy": 1.0, "names_role_or_work_accuracy": 1.0,
+             "stability": 1.0, "failure_rate": 0.0}
         g = ev.evaluate_gates(s)
         assert g["gates"]["hard:unsafe_target_policy_loss"] is False and g["all_decided_pass"] is False
         s["hard"] = {"unsafe_target_policy_loss": 0, "independence_failures": 2}
@@ -286,6 +297,7 @@ class TestScriptedMutations:
         def drop(it):
             it["restrictions"] = [r for r in it["restrictions"] if r["kind"] != "function"]
             it["target_basis"] = "total_experience"
+            it["names_role_or_work"] = False          # a CONSISTENT wrong answer (validates; the gate catches it)
         recs = records_for([c], {c["id"]: [[_answer(c, drop)]]})
         s = ev.summarize(recs)
         assert s["hard"]["unsafe_target_policy_loss"] == 1 and s["failure_rate"] == 0.0
@@ -347,7 +359,7 @@ class TestGuards:
         assert "pins do not match" in capsys.readouterr().out
 
     def test_fixture_sha_mismatch_refuses(self, monkeypatch):
-        monkeypatch.setitem(ctx.FIXTURE_SHA256, "main", "0" * 64)
+        monkeypatch.setitem(ev.FIXTURE_SHA256, "main", "0" * 64)
         assert any("sha256" in p for p in ev.check_pins(MAIN_PATH))
 
     def test_dry_run_and_oracle_never_build_a_real_client(self, tmp_path, monkeypatch):
@@ -363,9 +375,9 @@ class TestGuards:
             ctx.main(["--stage", "pass_a", "--out", str(tmp_path / "h"), "--allow-heldout"])
 
     def test_pinned_values(self):
-        assert ev.PINNED == {"prompt_version": "s1a-1.1", "prompt_fingerprint": "952299303431",
-                             "prompt_sha256": "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11",
+        assert ev.PINNED == {"prompt_version": "s1a-1.2", "prompt_fingerprint": "f7ec01e28167",
+                             "prompt_sha256": "f7ec01e2816744322205a889e2834270a30decea625a84355fa47c70e416afd3",
                              "s1_version": "2.0.0", "model": "gpt-4o-mini", "temperature": 0.0, "max_tokens": 4000}
         assert ev.THRESHOLDS == {"target_accuracy": 0.95, "policy_accuracy": 0.95, "target_basis_accuracy": 0.95,
-                                 "stability": 0.95, "failure_rate": 0.05}
+                                 "names_role_or_work_accuracy": 0.95, "stability": 0.95, "failure_rate": 0.05}
         assert ctx.CLIENT_MAX_RETRIES == 0
