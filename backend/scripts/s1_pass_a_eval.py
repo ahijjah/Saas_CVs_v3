@@ -1,5 +1,5 @@
 """
-S1 two-pass PASS A evaluation (Step 2): the target pass ONLY (prompt s1a-1.0), against the existing P4 MAIN
+S1 two-pass PASS A evaluation (Step 2): the target pass ONLY (current prompt, s1a-1.1), against the existing P4 MAIN
 context fixture (scripts/s1_eval_fixtures/s1_ctx_main_cases.json, unchanged) and its labelled oracle answers.
 
 Read-only harness: no database, no production wiring, no candidate data, no Pass B. Every case is ONE job; all of
@@ -26,11 +26,16 @@ Metrics (criterion-runs; accuracies over runs that produced a reading, failures 
   stability             share of cases whose per-criterion signature (outcome, basis, policy, typed targets) is
                         identical in every run (needs >= 2 runs, else undecided)
   failure_rate          (failed_validation + failed_technical) criterion-runs / all criterion-runs
+Diagnostic (reporting only, never a gate):
+  target_expansion      an observed target that carries a gold target but quotes materially more words than it
+                        (e.g. the gold function followed by where / for whom words). Extra words that are only a
+                        closed list of leading prepositions / articles, an Arabic proclitic or "experience" / "خبرة"
+                        do not count. Such a target hides a context inside the target text.
 Gates: hard unsafe_target_policy_loss == 0 and independence_failures == 0; target, policy and basis accuracy
 >= 0.95; stability >= 0.95; failure_rate <= 0.05.
 
 Modes: dry-run (default; no client), oracle (scripted labelled answers), real (refused unless --confirm-real and
-all pins match: s1a-1.0 prompt SHA + fingerprint, S1 v4 version, model, temperature, max tokens, MAIN fixture
+all pins match: Pass A prompt version + SHA + fingerprint, S1 v4 version, model, temperature, max tokens, MAIN fixture
 SHA; client max_retries=0). The held-out fixture is NOT available to this harness.
 
 Usage (later, after explicit approval):
@@ -64,8 +69,8 @@ from services.s1_two_pass import prompt_a  # noqa: E402
 from services.s1_two_pass import schema as v4  # noqa: E402
 
 FIXTURE = "main"                                   # the only fixture this harness accepts
-PINNED = {"prompt_version": "s1a-1.0", "prompt_fingerprint": "4caabb71429c",
-          "prompt_sha256": "4caabb71429c0cc1ac997986c2a6c95775b06f4f7acebcb7025e27757f74bf36",
+PINNED = {"prompt_version": "s1a-1.1", "prompt_fingerprint": "952299303431",
+          "prompt_sha256": "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11",
           "s1_version": "2.0.0", "model": "gpt-4o-mini", "temperature": 0.0, "max_tokens": 4000}
 THRESHOLDS = {"target_accuracy": 0.95, "policy_accuracy": 0.95, "target_basis_accuracy": 0.95,
               "stability": 0.95, "failure_rate": 0.05}
@@ -170,17 +175,41 @@ def _targets_equal(gold: list[tuple[str, str]], obs: list[dict]) -> bool:
     return assign(0, list(obs))
 
 
+IGNORABLE_EXTRA = frozenset(ctx.LEADING_WORDS) | {"of", "experience", "خبرة", "خبرات"}
+
+
+def expansion(gold_text: str, observed_text: str) -> list[str]:
+    """Material words an observed target adds around a gold target it carries ([] if none / not carried)."""
+    g, o = ctx.words(gold_text), ctx.words(observed_text)
+    hits = ctx.locate_words(g, o)
+    if not g or not hits:
+        return []
+    i, _residue = hits[0]
+    extra = o[:i] + o[i + len(g):]
+    return [w for w in extra if w not in IGNORABLE_EXTRA]
+
+
+def target_expansions(gold: dict, o: dict) -> list[dict]:
+    out = []
+    for g, _ in gold["targets"]:
+        for t in o.get("targets") or []:
+            extra = expansion(g, t["text"])
+            if extra:
+                out.append({"gold": g, "observed": t["text"], "extra_words": extra})
+    return out
+
+
 def check(gold: dict, o: dict) -> dict:
     """Per criterion-run checks; failed runs score nothing and are never unsafe (counted as failures)."""
     if o["outcome"] != "ok":
         return {"ok": False, "targets": False, "policy": False, "basis": False, "unsafe": False,
-                "targets_lost": [], "policy_downgraded": False}
+                "targets_lost": [], "policy_downgraded": False, "expanded": []}
     lost = [g for g, _ in gold["targets"] if not any(ctx._carries(g, t["text"]) for t in o["targets"])]
     gp, op = gold["policy"], o["policy"]
     down = (gp in TARGET_POLICIES and op in ("sector", "pure_duration")) or (gp == "sector" and op == "pure_duration")
     return {"ok": True, "targets": _targets_equal(gold["targets"], o["targets"]), "policy": op == gp,
             "basis": o["basis"] == gold["basis"], "unsafe": bool(lost or down), "targets_lost": lost,
-            "policy_downgraded": bool(down)}
+            "policy_downgraded": bool(down), "expanded": target_expansions(gold, o)}
 
 
 def score(case: dict, obs: dict) -> dict:
@@ -222,6 +251,12 @@ def summarize(records: list[dict], *, independence_failures: int = 0) -> dict:
         "unstable_cases": sorted(set(multi) - set(stable)),
         "gold_basis_distribution": dict(sorted(gold_bases.items())),
         "hard": {"unsafe_target_policy_loss": len(unsafe), "independence_failures": independence_failures},
+        "target_expansion": {                                  # DIAGNOSTIC ONLY: never part of a gate
+            "criterion_runs": sum(1 for _, c in runs if c.get("expanded")),
+            "rate": ctx._ratio(sum(1 for c in ok if c.get("expanded")), len(ok)),
+            "cases": sorted({r["case"] for r, c in runs if c.get("expanded")}),
+            "details": [{"case": r["case"], "run": r["run"], **x} for r, c in runs for x in c.get("expanded", [])],
+        },
         "unsafe": [{"case": r["case"], "run": r["run"], "repair_used": r.get("repair_used"),
                     "targets_lost": c["targets_lost"], "policy_downgraded": c["policy_downgraded"]}
                    for r, c in unsafe],
@@ -261,6 +296,10 @@ def render_markdown(meta: dict, s: dict, gates: dict) -> str:
         f"- outcomes {s['outcomes']}; calls main {s['main_calls']}, repair {s['repair_calls']}",
         f"- hard {s['hard']}", "",
         "## Unsafe target / policy loss", *[f"- {x}" for x in s["unsafe"]], "",
+        "## Target expansion (diagnostic only, not a gate)",
+        f"- criterion-runs {s['target_expansion']['criterion_runs']}, rate {s['target_expansion']['rate']}, "
+        f"cases {s['target_expansion']['cases']}",
+        *[f"- {x}" for x in s["target_expansion"]["details"]], "",
         "## Failures", *[f"- {x}" for x in s["failures"]], "",
         "## Misses", *[f"- {x}" for x in s["misses"]], ""])
 

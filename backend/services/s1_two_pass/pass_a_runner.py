@@ -1,8 +1,8 @@
 """
-PASS A runner: the model call of the experience TARGET pass (prompt s1a-1.0). SHADOW ONLY: nothing in production
+PASS A runner: the model call of the experience TARGET pass (prompt s1a-1.1). SHADOW ONLY: nothing in production
 imports it, and it never runs unless a caller passes (or lets it build) a client.
 
-  build_pass_a_messages(req)      -> [system = pinned s1a-1.0, user = "INPUT:\n" + canonical payload]
+  build_pass_a_messages(req)      -> [system = pinned s1a-1.1, user = "INPUT:\n" + canonical payload]
   build_pass_a_call(req, model)   -> the full chat-completion arguments (pure; no client)
   await run_pass_a(jd, criteria, client=..., cache=...)          -> PassAOutcome
   await run_pass_a_job(job_id, jd_text, analysis_json, client=...) -> PassAJobResult (frozen targets | failures)
@@ -17,8 +17,8 @@ Pass A additions:
   target_basis   taken from the repair only where the repair was asked for it (scope target_basis), or where the
                  merge took the criterion / its restrictions from the repair (the basis must follow the list).
   F6             a repair is never the sole source of a no-target reading: after the merge, a criterion without
-                 target hints whose basis is total_experience / setting_only must carry the SAME basis in the main
-                 answer, and a non-empty main restriction list never ends up []. Otherwise the job fails
+                 target hints whose basis is total_experience / setting_only / unspecified must carry the SAME basis
+                 in the main answer, and a non-empty main restriction list never ends up []. Otherwise the job fails
                  validation (fail closed; never a no-target reading).
   repair note    built only from repair-safe messages (pass_a._repair_safe): no context vocabulary reaches the
                  model.
@@ -50,7 +50,7 @@ from services.s1_two_pass.pass_a import (
 )
 from services.s1_two_pass.prompt_a import S1A_PROMPT_SHA256, load_pass_a_prompt, pass_a_prompt_fingerprint
 from services.s1_two_pass.schema import (
-    ABSENT_BASES, S1A_MAX_TOKENS, S1A_MODEL, S1A_PROMPT_CODE, S1A_PROMPT_VERSION, S1A_TEMPERATURE, S1ArtifactV4,
+    ABSENT_BASES, BASIS_UNSPECIFIED, S1A_MAX_TOKENS, S1A_MODEL, S1A_PROMPT_CODE, S1A_PROMPT_VERSION, S1A_TEMPERATURE, S1ArtifactV4,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,9 @@ logger = logging.getLogger(__name__)
 S1A_MAX_INPUT_TOKENS = llm_call.MAX_INPUT_TOKENS
 CACHEABLE = frozenset({None, REASON_VALIDATION_FAILED, REASON_EXCEEDS_MODEL_CONTEXT})
 F6_ERROR = "a repair is never the sole source of a no-target reading"
+# F6 (strengthened after the s1a-1.0 MAIN forensics, CM09): every reading without a role/function target counts,
+# unspecified included; a repair alone can never introduce any of them
+NO_TARGET_BASES = ABSENT_BASES + (BASIS_UNSPECIFIED,)
 
 
 class PassACache(Protocol):
@@ -157,7 +160,7 @@ def merge_pass_a(main_raw: str, repair_raw: str, val: PassAValidation, criteria:
         if hint_ids(by_id[cid]):
             continue
         fb, mb = g.get("target_basis"), (m or {}).get("target_basis")
-        if fb in ABSENT_BASES and fb != mb:
+        if fb in NO_TARGET_BASES and fb != mb:
             violations.append(f"criterion {cid}: {F6_ERROR} (target_basis {fb!r} only in the repair)")
         mr, gr = (m or {}).get("restrictions"), g.get("restrictions")
         if isinstance(mr, list) and mr and isinstance(gr, list) and not gr:

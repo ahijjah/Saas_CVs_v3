@@ -106,6 +106,13 @@ class PassAValidation:
 
 
 SCOPE_TARGET_BASIS = "target_basis"
+# s1a-1.1 forensics (CM09/CM19): a mismatch message must never prescribe a basis computed from the model's own
+# (possibly mislabelled) restrictions; it sends the model back to the requirement statement instead.
+BASIS_HINTED_MESSAGE = 'a criterion with target_hints always has target_basis "targets"'
+BASIS_REREAD_MESSAGE = ('Re-read the requirement statement and decide whether it names a role or work (what the '
+                        'experience is of). If it does, return each as a role or function restriction, quoting only '
+                        'the role or work words, and target_basis "targets". Only when it names no role and no work '
+                        'at all may target_basis be "unspecified", "total_experience" or "setting_only".')
 NEUTRAL_FIX = "return only role, function or vague restrictions, quoting only the words that name the role or the work"
 _CONTEXT_WORDS = ("context", "setting", "sector")
 
@@ -184,10 +191,12 @@ def validate_pass_a(raw: str, jd: JDText, criteria: list[CriterionInput],
         else:
             want = (BASIS_TOTAL_EXPERIENCE, BASIS_SETTING_ONLY)
         if b not in want:
-            sc = (SCOPE_TARGET_BASIS,) if hinted else (SCOPE_TARGET_BASIS, SCOPE_RESTRICTIONS)
-            own.append(ScopedError(cid, sc, f"criterion {cid}: target_basis {b!r} does not match the returned "
-                                            f"targets/restrictions (expected one of {list(want)}); a target basis "
-                                            f"is never inferred from an empty list"))
+            if hinted:      # the basis follows from the FIXED hints, never from the model's own restrictions
+                own.append(ScopedError(cid, (SCOPE_TARGET_BASIS,), f"criterion {cid}: {BASIS_HINTED_MESSAGE}"))
+            else:           # never prescribe a basis derived from restrictions that may themselves be wrong
+                own.append(ScopedError(cid, (SCOPE_TARGET_BASIS, SCOPE_RESTRICTIONS),
+                                       f"criterion {cid}: target_basis {b!r} and the restrictions disagree. "
+                                       f"{BASIS_REREAD_MESSAGE}"))
             continue
         if b == BASIS_SETTING_ONLY:
             pc = replace(pc, policy=POLICY_SECTOR, relevance_basis="sector")

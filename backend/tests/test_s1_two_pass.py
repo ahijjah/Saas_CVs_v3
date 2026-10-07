@@ -130,7 +130,7 @@ class TestSchemaV4:
     def test_versions_and_vocabulary(self):
         assert (sc.S1V4_SCHEMA, sc.S1V4_VERSION) == ("s1_requirement_spec_v4", "2.0.0")
         assert (sc.S1A_INPUT_VERSION, sc.S1B_INPUT_VERSION) == ("s1a-in-1", "s1b-in-1")
-        assert (sc.S1A_PROMPT_VERSION, sc.S1B_PROMPT_VERSION, sc.PROMPT_PENDING) == ("s1a-1.0", "s1b-1.0", "pending")
+        assert (sc.S1A_PROMPT_VERSION, sc.S1B_PROMPT_VERSION, sc.PROMPT_PENDING) == ("s1a-1.1", "s1b-1.0", "pending")
         assert sc.TARGET_BASES == ("targets", "total_experience", "setting_only", "unspecified")
         assert sc.PASS_A_RESTRICTION_KINDS == ("role", "function", "vague")
         assert sc.CONTEXT_SCOPES == ("all", "one_alternative", "part_duration", "softened")
@@ -271,7 +271,10 @@ class TestPassA:
         v = validate_a(jd, crits, resp(free(crits[0].criterion_id, [(2, line)], restr, basis=basis)))
         assert v.ok is ok, v.errors
         if not ok:
-            assert any("never inferred from an empty list" in e for e in v.errors)
+            # s1a-1.1: never a basis prescribed from the model's own restrictions
+            assert any("and the restrictions disagree" in e and "Re-read the requirement statement" in e
+                       for e in v.errors)
+            assert not any("expected one of" in e for e in v.errors)
 
     def test_hinted_basis_is_targets_only(self):
         a, jd, cid = role_job()
