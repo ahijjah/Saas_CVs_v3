@@ -1,5 +1,5 @@
 """
-S1 two-pass Step 2 — Pass A (s1a-1.2, the experience TARGET pass; s1a-1.0 / s1a-1.1 kept for audit): prompt integrity and leakage, request
+S1 two-pass Step 2 — Pass A (s1a-1.1, the experience TARGET pass; s1a-1.0 kept for audit): prompt integrity and leakage, request
 construction, cache / fingerprint / version identity, validator behaviour for the real wire, the one-repair
 orchestration with F6, and the independence of Pass A from the qualifying-context analysis.
 Offline only: a scripted fake client, no OpenAI, no network, no database. All JDs SYNTHETIC.
@@ -65,7 +65,6 @@ def hinted(cid, spans, *, hints=1, types=None, basis="targets", duration="D1", a
     it = {"criterion_id": cid, "requirement_spans": [{"line": ln, "text": t} for ln, t in spans],
           "targets": [{"hint": f"T{i}", "type": types[i - 1], "match": "exact", "jd_span": None}
                       for i in range(1, hints + 1)],
-          "names_role_or_work": basis == "targets",          # s1a-1.2: consistent by default
           "target_basis": basis, "duration": duration, "ambiguity": list(ambiguity), "note": "n"}
     it.update(over)
     return it
@@ -74,7 +73,6 @@ def hinted(cid, spans, *, hints=1, types=None, basis="targets", duration="D1", a
 def free(cid, spans, restrictions, *, basis, duration="D1", ambiguity=(), **over):
     it = {"criterion_id": cid, "requirement_spans": [{"line": ln, "text": t} for ln, t in spans],
           "restrictions": [{"line": ln, "text": t, "kind": k} for ln, t, k in restrictions],
-          "names_role_or_work": basis == "targets",          # s1a-1.2: consistent by default
           "target_basis": basis, "duration": duration, "ambiguity": list(ambiguity), "note": "n"}
     it.update(over)
     return it
@@ -103,11 +101,11 @@ L_COMPOUND = "Minimum 5 years of experience as an Internal Auditor, including 2 
 
 class TestPromptIdentity:
     def test_version_file_and_pinned_sha(self):
-        assert sc.S1A_PROMPT_VERSION == "s1a-1.2" and prompt_a.S1A_PROMPT_PATH.name == "s1a-1.2.txt"
+        assert sc.S1A_PROMPT_VERSION == "s1a-1.1" and prompt_a.S1A_PROMPT_PATH.name == "s1a-1.1.txt"
         raw = prompt_a.S1A_PROMPT_PATH.read_bytes()
         assert hashlib.sha256(raw).hexdigest() == prompt_a.S1A_PROMPT_SHA256 == (
-            "f7ec01e2816744322205a889e2834270a30decea625a84355fa47c70e416afd3")
-        assert prompt_a.pass_a_prompt_fingerprint() == "f7ec01e28167"
+            "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11")
+        assert prompt_a.pass_a_prompt_fingerprint() == "952299303431"
         assert PROMPT == raw.decode("utf-8")
 
     def test_s1a_1_0_kept_unchanged_for_audit(self):
@@ -115,12 +113,13 @@ class TestPromptIdentity:
         assert hashlib.sha256(old.read_bytes()).hexdigest() == prompt_a.PROMPT_SHA256["s1a-1.0"] == (
             "4caabb71429c0cc1ac997986c2a6c95775b06f4f7acebcb7025e27757f74bf36")
         assert prompt_a.load_pass_a_prompt("s1a-1.0") == old.read_text(encoding="utf-8") != PROMPT
+        # s1a-1.2 (withdrawn Option D) stays pinned for audit only; every pinned file still matches its hash
         assert set(prompt_a.PROMPT_SHA256) == {"s1a-1.0", "s1a-1.1", "s1a-1.2"}
         for v, sha in prompt_a.PROMPT_SHA256.items():
             assert hashlib.sha256((prompt_a.PROMPT_DIR / f"{v}.txt").read_bytes()).hexdigest() == sha, v
 
     def test_tampered_prompt_is_an_integrity_error(self, tmp_path, monkeypatch):
-        bad = tmp_path / "s1a-1.2.txt"
+        bad = tmp_path / "s1a-1.1.txt"
         bad.write_text(PROMPT + " ", encoding="utf-8")
         monkeypatch.setattr(prompt_a, "S1A_PROMPT_PATH", bad)
         with pytest.raises(prompt_a.PromptIntegrityError):
@@ -161,7 +160,7 @@ class TestPromptLeakage:
     def test_only_trace_of_where_is_setting_only(self):
         # the "where" notion appears only to define setting_only and to exclude where-words from targets
         body = PROMPT[:PROMPT.index("SECURITY RULES")]
-        assert body.count("setting_only") == 4          # the trace, section 1a, its definition, the "never" example
+        assert body.count("setting_only") == 3          # the trace, its definition and the "never" example
         assert "Do not quote or describe that limit." in body
         assert "never return it as a target, a restriction, an ambiguity or any other field" in body
 
@@ -264,7 +263,7 @@ class TestRequest:
         m = res.outcome.meta
         assert m["request_token_upper_bound"] > len(PROMPT.encode("utf-8"))
         assert (m["prompt_version"], m["prompt_fingerprint"], m["prompt_sha256"]) == (
-            "s1a-1.2", "f7ec01e28167", prompt_a.S1A_PROMPT_SHA256)
+            "s1a-1.1", "952299303431", prompt_a.S1A_PROMPT_SHA256)
 
 
 # ── D. cache / fingerprint / version identity ───────────────────────────────
@@ -277,7 +276,7 @@ class TestCacheIdentity:
     def test_key_components(self, monkeypatch):
         a, jd, crits, req = self._setup()
         k = pa.pass_a_cache_key(req)
-        assert k == pa.pass_a_cache_key(req, prompt_fingerprint="f7ec01e28167", model="gpt-4o-mini")
+        assert k == pa.pass_a_cache_key(req, prompt_fingerprint="952299303431", model="gpt-4o-mini")
         assert k != pa.pass_a_cache_key(req, prompt_fingerprint="000000000000")
         assert k != pa.pass_a_cache_key(req, model="other")
         monkeypatch.setattr(pa, "S1A_PROMPT_VERSION", "s1a-9.9")
@@ -605,7 +604,7 @@ class TestIntegration:
         _, res = pass_a_job(a, jd, resp(hinted(crits[0].criterion_id, [(2, L_ROLE)])))
         assert res.frozen[0].artefact.prompt_version == ""        # the frozen v3 artefact is not the run record
         failed = pass_a_job(a, jd, RuntimeError("x"))[1].failed[0]
-        assert failed.versions["pass_a"]["prompt_version"] == "s1a-1.2"
+        assert failed.versions["pass_a"]["prompt_version"] == "s1a-1.1"
         assert failed.versions["pass_a"]["reason"] == "ai_unavailable"
 
 

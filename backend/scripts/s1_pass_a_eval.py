@@ -1,6 +1,8 @@
 """
-S1 two-pass PASS A evaluation (Step 2): the target pass ONLY (current prompt, s1a-1.2), against the existing P4 MAIN
-context fixture (scripts/s1_eval_fixtures/s1_ctx_main_cases.json, unchanged) and its labelled oracle answers.
+S1 two-pass PASS A evaluation (Step 2): the target pass ONLY (current prompt s1a-1.1, a BASELINE CANDIDATE, not an
+approved version; s1a-1.2 was withdrawn, see scripts/s1_eval_results/pass_a/PASS_A_EVAL_LOG.md), against the
+existing P4 MAIN context fixture (scripts/s1_eval_fixtures/s1_ctx_main_cases.json, unchanged) and its labelled
+oracle answers.
 
 Read-only harness: no database, no production wiring, no candidate data, no Pass B. Every case is ONE job; all of
 its enumerated experience criteria go through services.s1_two_pass.pass_a_runner.run_pass_a_job (prompt,
@@ -26,19 +28,17 @@ Metrics (criterion-runs; accuracies over runs that produced a reading, failures 
   stability             share of cases whose per-criterion signature (outcome, basis, policy, typed targets) is
                         identical in every run (needs >= 2 runs, else undecided)
   failure_rate          (failed_validation + failed_technical) criterion-runs / all criterion-runs
-  names_role_or_work_accuracy (s1a-1.2) the model's structured judgement == gold (MAIN: true exactly when the gold
-                        basis is targets; target-basis fixture: its explicit gold)
-  nrw_disagreement_rate criterion-runs whose FIRST answer contradicted its own names_role_or_work (reported only)
-  repair_rate           jobs that needed the repair call (reported only)
+  repair_rate           jobs that needed the repair call (reported only, never a gate)
 Fixtures: --fixture main (default) or --fixture target_basis (scripts/s1_eval_fixtures/s1a_target_basis_cases.json,
-44 Option D cases with explicit gold; SHA-pinned). Held-out fixtures are not selectable.
+44 cases with explicit gold; SHA-pinned; its names_role_or_work gold is a fixture field only and is not scored).
+Held-out fixtures are not selectable.
 Diagnostic (reporting only, never a gate):
   target_expansion      an observed target that carries a gold target but quotes materially more words than it
                         (e.g. the gold function followed by where / for whom words). Extra words that are only a
                         closed list of leading prepositions / articles, an Arabic proclitic or "experience" / "خبرة"
                         do not count. Such a target hides a context inside the target text.
 Gates: hard unsafe_target_policy_loss == 0 and independence_failures == 0; target, policy and basis accuracy
->= 0.95; names_role_or_work_accuracy >= 0.95; stability >= 0.95; failure_rate <= 0.05.
+>= 0.95; stability >= 0.95; failure_rate <= 0.05.
 
 Modes: dry-run (default; no client), oracle (scripted labelled answers), real (refused unless --confirm-real and
 all pins match: Pass A prompt version + SHA + fingerprint, S1 v4 version, model, temperature, max tokens, MAIN fixture
@@ -80,11 +80,11 @@ FIXTURES = {"main": ctx.FIXTURES["main"],
             "target_basis": ctx.FIXTURE_DIR / "s1a_target_basis_cases.json"}
 FIXTURE_SHA256 = {"main": ctx.FIXTURE_SHA256["main"],
                   "target_basis": "02a452bba2de4374f394db5a9d4d11065ab80f70749f3337be5550007d304293"}
-PINNED = {"prompt_version": "s1a-1.2", "prompt_fingerprint": "f7ec01e28167",
-          "prompt_sha256": "f7ec01e2816744322205a889e2834270a30decea625a84355fa47c70e416afd3",
+PINNED = {"prompt_version": "s1a-1.1", "prompt_fingerprint": "952299303431",
+          "prompt_sha256": "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11",
           "s1_version": "2.0.0", "model": "gpt-4o-mini", "temperature": 0.0, "max_tokens": 4000}
 THRESHOLDS = {"target_accuracy": 0.95, "policy_accuracy": 0.95, "target_basis_accuracy": 0.95,
-              "names_role_or_work_accuracy": 0.95, "stability": 0.95, "failure_rate": 0.05}
+              "stability": 0.95, "failure_rate": 0.05}
 DEFAULT_RUNS = 5
 TARGET_POLICIES = ("explicit_role", "functional", "mixed")
 CONTEXT_AMBIGUITY = "ambiguous_context_scope"
@@ -101,13 +101,12 @@ def pass_a_gold(spec: dict, hints: list[str]) -> dict:
     if "gold" in spec:                                           # explicit gold (target-basis fixture)
         g = spec["gold"]
         return {"targets": [(t["text"], t["kind"]) for t in g["targets"]], "basis": g["target_basis"],
-                "policy": g["policy"], "names_role_or_work": g["names_role_or_work"]}
+                "policy": g["policy"]}
     o = spec["oracle"]
     if "restrictions" not in o:                                  # hinted criterion
         types = [t["type"] for t in o.get("targets") or []]
         targets = [(h, t) for h, t in zip(hints, types)]
-        return {"targets": targets, "basis": "targets", "policy": implied_policy(types) or "pure_duration",
-                "names_role_or_work": True}
+        return {"targets": targets, "basis": "targets", "policy": implied_policy(types) or "pure_duration"}
     rs = o["restrictions"]
     rf = [(r["text"], r["kind"]) for r in rs if r["kind"] in ("role", "function")]
     if rf:
@@ -118,7 +117,7 @@ def pass_a_gold(spec: dict, hints: list[str]) -> dict:
         basis, policy = "setting_only", "sector"
     else:
         basis, policy = "total_experience", "pure_duration"
-    return {"targets": rf, "basis": basis, "policy": policy, "names_role_or_work": basis == "targets"}
+    return {"targets": rf, "basis": basis, "policy": policy}
 
 
 def case_golds(case: dict) -> list[dict]:
@@ -147,10 +146,7 @@ def pass_a_oracle_item(spec: dict, gold: dict) -> dict:
     o["requirement_spans"] = [s for s in o.get("requirement_spans") or []
                               if s["line"] == first or s["line"] in anchors or s["line"] not in ctx_only]
     o["target_basis"] = gold["basis"]
-    out = {k: v for k, v in o.items() if k == "requirement_spans"}
-    out["names_role_or_work"] = gold["names_role_or_work"]           # s1a-1.2: given before targets/restrictions
-    out.update({k: v for k, v in o.items() if k != "requirement_spans"})
-    return out
+    return o
 
 
 def oracle_response(case: dict) -> str:
@@ -170,10 +166,8 @@ def oracle_response(case: dict) -> str:
 def observe(case: dict, res, sink: list) -> dict:
     crit = []
     if res.status == "ok":
-        results = res.outcome.validation.results
         for f in res.frozen:
             crit.append({"criterion_id": f.criterion.criterion_id, "outcome": "ok", "basis": f.frame.target_basis,
-                         "names_role_or_work": results[f.criterion.criterion_id].names_role_or_work,
                          "policy": f.artefact.policy, "status": f.artefact.spec_status,
                          "reasons": [r.code for r in f.artefact.reasons],
                          "targets": [{"text": t.text, "type": t.type} for t in f.frame.targets]})
@@ -181,14 +175,13 @@ def observe(case: dict, res, sink: list) -> dict:
         for a in res.failed:
             crit.append({"criterion_id": a.criterion_id,
                          "outcome": "technical" if a.spec_status == "failed_technical" else "validation",
-                         "basis": None, "names_role_or_work": None, "policy": None, "status": a.spec_status,
+                         "basis": None, "policy": None, "status": a.spec_status,
                          "reasons": [r.code for r in a.reasons], "targets": None})
     meta = res.outcome.meta if res.outcome else {}
     return {"job_outcome": res.status, "reason": res.outcome.reason if res.outcome else None, "criteria": crit,
             "calls": [{k: c.get(k) for k in ("call", "model", "temperature", "max_tokens", "finish_reason")}
                       for c in sink],
             "raw": sink, "repair_used": bool(meta.get("repair_used")), "outcome_detail": meta.get("outcome"),
-            "nrw_disagreements": list(meta.get("nrw_disagreements") or []),
             "errors": res.outcome.errors if res.outcome else None}
 
 
@@ -229,33 +222,27 @@ def target_expansions(gold: dict, o: dict) -> list[dict]:
 def check(gold: dict, o: dict) -> dict:
     """Per criterion-run checks; failed runs score nothing and are never unsafe (counted as failures)."""
     if o["outcome"] != "ok":
-        return {"ok": False, "targets": False, "policy": False, "basis": False, "names_role_or_work": False,
-                "unsafe": False, "targets_lost": [], "policy_downgraded": False, "expanded": []}
+        return {"ok": False, "targets": False, "policy": False, "basis": False, "unsafe": False,
+                "targets_lost": [], "policy_downgraded": False, "expanded": []}
     lost = [g for g, _ in gold["targets"] if not any(ctx._carries(g, t["text"]) for t in o["targets"])]
     gp, op = gold["policy"], o["policy"]
     down = (gp in TARGET_POLICIES and op in ("sector", "pure_duration")) or (gp == "sector" and op == "pure_duration")
     return {"ok": True, "targets": _targets_equal(gold["targets"], o["targets"]), "policy": op == gp,
-            "basis": o["basis"] == gold["basis"],
-            "names_role_or_work": o.get("names_role_or_work") is gold["names_role_or_work"],
-            "unsafe": bool(lost or down), "targets_lost": lost,
+            "basis": o["basis"] == gold["basis"], "unsafe": bool(lost or down), "targets_lost": lost,
             "policy_downgraded": bool(down), "expanded": target_expansions(gold, o)}
 
 
 def score(case: dict, obs: dict) -> dict:
     golds = case_golds(case)
     checks = [check(g, o) for g, o in zip(golds, obs["criteria"])]
-    disagreed = set(obs.get("nrw_disagreements") or [])
-    for c, o in zip(checks, obs["criteria"]):
-        c["nrw_disagreement"] = o["criterion_id"] in disagreed      # first answer contradicted its own judgement
-    return {"checks": checks, "gold": [{"targets": g["targets"], "basis": g["basis"], "policy": g["policy"],
-                                        "names_role_or_work": g["names_role_or_work"]} for g in golds],
+    return {"checks": checks, "gold": [{"targets": g["targets"], "basis": g["basis"], "policy": g["policy"]}
+                                       for g in golds],
             "pass": len(checks) == len(golds) and all(c["ok"] and c["targets"] and c["policy"] and c["basis"]
-                                                      and c["names_role_or_work"] and not c["unsafe"]
-                                                      for c in checks)}
+                                                      and not c["unsafe"] for c in checks)}
 
 
 def _signature(rec: dict) -> tuple:
-    return tuple((o["outcome"], o["basis"], o.get("names_role_or_work"), o["policy"],
+    return tuple((o["outcome"], o["basis"], o["policy"],
                   None if o["targets"] is None else tuple(sorted((" ".join(ctx.words(t["text"])), t["type"])
                                                                  for t in o["targets"])))
                  for o in rec["criteria"])
@@ -280,8 +267,6 @@ def summarize(records: list[dict], *, independence_failures: int = 0) -> dict:
         "target_accuracy": ctx._ratio(sum(c["targets"] for c in ok), len(ok)),
         "policy_accuracy": ctx._ratio(sum(c["policy"] for c in ok), len(ok)),
         "target_basis_accuracy": ctx._ratio(sum(c["basis"] for c in ok), len(ok)),
-        "names_role_or_work_accuracy": ctx._ratio(sum(c["names_role_or_work"] for c in ok), len(ok)),
-        "nrw_disagreement_rate": ctx._ratio(sum(1 for _, c in runs if c.get("nrw_disagreement")), len(runs)),
         "repair_rate": ctx._ratio(sum(1 for r in records if r.get("repair_used")), len(records)),
         "stability": ctx._ratio(len(stable), len(multi)),
         "unstable_cases": sorted(set(multi) - set(stable)),
@@ -300,18 +285,17 @@ def summarize(records: list[dict], *, independence_failures: int = 0) -> dict:
         "main_calls": sum(1 for r in records for c in r["calls"] if c["call"] == "main"),
         "failures": [{"case": r["case"], "run": r["run"], "reason": r.get("reason")}
                      for r in records if r["job_outcome"] == "failed"],
-        "misses": [{"case": r["case"], "run": r["run"], "gold": g,
-                    "observed": {k: o.get(k) for k in ("names_role_or_work", "basis", "policy", "targets")},
-                    "checks": {k: c[k] for k in ("names_role_or_work", "targets", "policy", "basis", "unsafe")}}
+        "misses": [{"case": r["case"], "run": r["run"], "gold": g, "observed": {k: o[k] for k in
+                                                                               ("basis", "policy", "targets")},
+                    "checks": {k: c[k] for k in ("targets", "policy", "basis", "unsafe")}}
                    for r in records for g, o, c in zip(r["gold"], r["criteria"], r["checks"])
-                   if c["ok"] and not (c["targets"] and c["policy"] and c["basis"] and c["names_role_or_work"]
-                                       and not c["unsafe"])],
+                   if c["ok"] and not (c["targets"] and c["policy"] and c["basis"] and not c["unsafe"])],
     }
 
 
 def evaluate_gates(s: dict) -> dict:
     res = {f"hard:{k}": v == 0 for k, v in s["hard"].items()}
-    for k in ("target_accuracy", "policy_accuracy", "target_basis_accuracy", "names_role_or_work_accuracy"):
+    for k in ("target_accuracy", "policy_accuracy", "target_basis_accuracy"):
         res[k] = s[k] is not None and s[k] >= THRESHOLDS[k]
     res["stability"] = None if s["stability"] is None else s["stability"] >= THRESHOLDS["stability"]
     res["failure_rate"] = s["failure_rate"] is not None and s["failure_rate"] <= THRESHOLDS["failure_rate"]
@@ -328,9 +312,8 @@ def render_markdown(meta: dict, s: dict, gates: dict) -> str:
         "## Gates", *[f"- {k}: {v}" for k, v in gates["gates"].items()],
         f"- all decided gates pass: {gates['all_decided_pass']} (undecided: {gates['undecided']})", "",
         "## Metrics",
-        *[f"- {k}: {s[k]}" for k in ("target_accuracy", "policy_accuracy", "target_basis_accuracy",
-                                     "names_role_or_work_accuracy", "stability", "failure_rate", "nrw_disagreement_rate",
-                                     "repair_rate", "unstable_cases", "gold_basis_distribution")],
+        *[f"- {k}: {s[k]}" for k in ("target_accuracy", "policy_accuracy", "target_basis_accuracy", "stability",
+                                     "failure_rate", "repair_rate", "unstable_cases", "gold_basis_distribution")],
         f"- outcomes {s['outcomes']}; calls main {s['main_calls']}, repair {s['repair_calls']}",
         f"- hard {s['hard']}", "",
         "## Unsafe target / policy loss", *[f"- {x}" for x in s["unsafe"]], "",

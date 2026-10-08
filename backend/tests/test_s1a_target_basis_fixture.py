@@ -220,15 +220,11 @@ class TestOracleReplay:
         analysis = {"experience": copy.deepcopy(c["analysis"])}
         (crit,) = enumerate_experience_criteria("BASIS", analysis)
         durs = {m.text: did for did, _, m in JDText(jd).durations()}
-        # s1a-1.2 needs names_role_or_work in the wire; the committed fixture's oracle predates it, so the gold value
-        # is injected here (the fixture itself is never modified)
-        o = {**copy.deepcopy(c["oracle"]), "criterion_id": crit.criterion_id,
-             "names_role_or_work": c["gold"]["names_role_or_work"]}
+        o = {**copy.deepcopy(c["oracle"]), "criterion_id": crit.criterion_id}
         o["duration"] = durs[o["duration"]]
         client = _Client(json.dumps({"criteria": [o]}, ensure_ascii=False))
         res = run(pr.run_pass_a_job("BASIS", jd, analysis, client=client))
         assert res.status == "ok" and res.outcome.meta["calls"] == 1 and not res.outcome.meta["repair_used"]
-        assert res.outcome.validation.results[crit.criterion_id].names_role_or_work is c["gold"]["names_role_or_work"]
         (f,) = res.frozen
         g = c["gold"]
         assert f.frame.target_basis == g["target_basis"]
@@ -255,7 +251,9 @@ class TestNoLeakage:
         assert not {statement(c).lower() for c in CASES} & texts
 
     def test_only_the_evaluation_harness_references_it(self):
-        # Option D (s1a-1.2): the Pass A harness evaluates it; no service / production code reads it
+        # the Pass A harness evaluates it (--fixture target_basis); no service / production code reads it
         for p in (BACKEND / "services").rglob("*.py"):
             assert "s1a_target_basis_cases" not in p.read_text(encoding="utf-8"), p
         assert "s1a_target_basis_cases" in (BACKEND / "scripts" / "s1_pass_a_eval.py").read_text(encoding="utf-8")
+        # the fixture's names_role_or_work gold is a fixture field only: the active prompt never asks for it
+        assert "names_role_or_work" not in prompt_a.load_pass_a_prompt()

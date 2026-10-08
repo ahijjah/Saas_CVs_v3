@@ -29,7 +29,7 @@ ctx = ev.ctx
 
 MAIN = json.loads((SCRIPTS / "s1_eval_fixtures" / "s1_ctx_main_cases.json").read_text(encoding="utf-8"))
 BY = {c["id"]: c for c in MAIN["cases"]}
-PROMPT = prompt_a.load_pass_a_prompt("s1a-1.1")      # the s1a-1.1 corrections (s1a-1.2 builds on them)
+PROMPT = prompt_a.load_pass_a_prompt()
 OLD = prompt_a.load_pass_a_prompt("s1a-1.0")
 
 
@@ -77,11 +77,7 @@ def R(line, text, kind):
 
 
 def item(case_id, line, restrictions, basis):
-    # recorded s1a-1.0 answers predate names_role_or_work; replayed with the value CONSISTENT with their own
-    # restrictions/basis so these regressions keep testing what they were written for (s1a-1.2 contradictions are
-    # covered in test_s1_pass_a_nrw.py)
-    return {"requirement_spans": span(case_id, line), "names_role_or_work": basis == "targets",
-            "restrictions": restrictions, "target_basis": basis,
+    return {"requirement_spans": span(case_id, line), "restrictions": restrictions, "target_basis": basis,
             "duration": "D1", "ambiguity": []}
 
 
@@ -189,7 +185,7 @@ class TestRepairMessage:
         (e,) = [x for x in v.scoped if "target_basis" in x.scopes]
         assert "expected one of" not in e.message and "unspecified']" not in e.message
         assert pa.BASIS_REREAD_MESSAGE in e.message and "and the restrictions disagree" in e.message
-        assert set(e.scopes) == {"target_basis", "restrictions", "names_role_or_work"}      # s1a-1.2
+        assert set(e.scopes) == {"target_basis", "restrictions"}
 
     def test_hinted_mismatch_message(self):
         case = BY["CM01"]
@@ -316,8 +312,8 @@ class TestExpansionDiagnostic:
         for cid, text in (("CM13", "إدارة المخاطر لدى المؤسسات المالية"), ("CM39", "الائتمان بالقطاع المصرفي"),
                           ("CM40", "المشتريات لدى الجهات الحكومية")):
             g = ev.case_golds(BY[cid])
-            o = [{"criterion_id": "c", "outcome": "ok", "basis": "targets", "policy": "functional",
-                  "names_role_or_work": True, "targets": [{"text": text, "type": "function"}]}]
+            o = [{"outcome": "ok", "basis": "targets", "policy": "functional",
+                  "targets": [{"text": text, "type": "function"}]}]
             ch = [ev.check(x, y) for x, y in zip(g, o)]
             recs.append({"case": cid, "run": 1, "job_outcome": "ok", "criteria": o, "checks": ch, "gold": g,
                          "calls": [], "repair_used": False, "pass": True})
@@ -338,7 +334,7 @@ class TestExpansionDiagnostic:
         s = ev.summarize(recs)
         assert s["target_expansion"] == {"criterion_runs": 0, "rate": 0.0, "cases": [], "details": []}
 
-    def test_harness_pins_the_current_prompt(self):
-        assert ev.PINNED["prompt_version"] == prompt_a.S1A_PROMPT_VERSION == "s1a-1.2"
-        assert ev.PINNED["prompt_sha256"] == prompt_a.PROMPT_SHA256["s1a-1.2"]
+    def test_harness_pins_the_new_prompt(self):
+        assert ev.PINNED["prompt_version"] == "s1a-1.1"
+        assert ev.PINNED["prompt_sha256"] == prompt_a.PROMPT_SHA256["s1a-1.1"]
         assert ev.check_pins(SCRIPTS / "s1_eval_fixtures" / "s1_ctx_main_cases.json") == []

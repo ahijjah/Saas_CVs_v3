@@ -1,8 +1,8 @@
 """
-PASS A runner: the model call of the experience TARGET pass (prompt s1a-1.2). SHADOW ONLY: nothing in production
+PASS A runner: the model call of the experience TARGET pass (prompt s1a-1.1). SHADOW ONLY: nothing in production
 imports it, and it never runs unless a caller passes (or lets it build) a client.
 
-  build_pass_a_messages(req)      -> [system = pinned s1a-1.2, user = "INPUT:\n" + canonical payload]
+  build_pass_a_messages(req)      -> [system = pinned s1a-1.1, user = "INPUT:\n" + canonical payload]
   build_pass_a_call(req, model)   -> the full chat-completion arguments (pure; no client)
   await run_pass_a(jd, criteria, client=..., cache=...)          -> PassAOutcome
   await run_pass_a_job(job_id, jd_text, analysis_json, client=...) -> PassAJobResult (frozen targets | failures)
@@ -20,9 +20,6 @@ Pass A additions:
                  target hints whose basis is total_experience / setting_only / unspecified must carry the SAME basis
                  in the main answer, and a non-empty main restriction list never ends up []. Otherwise the job fails
                  validation (fail closed; never a no-target reading).
-  names_role_or_work (s1a-1.2)  taken from the repair together with target_basis / restrictions; a disagreement
-                 with them is a validation error like any other (one repair, then fail closed); the first answer's
-                 disagreements are recorded in meta["nrw_disagreements"] (audit / evaluation only).
   repair note    built only from repair-safe messages (pass_a._repair_safe): no context vocabulary reaches the
                  model.
 Failures follow the v3 reasons: ai_unavailable / output_truncated / exceeds_model_context / internal_error
@@ -49,8 +46,7 @@ from services.s1_requirements.schema import (
 from services.s1_requirements.validator import SCOPE_CRITERION, hint_ids
 from services.s1_two_pass.assemble import FrozenTarget, failed_v4, freeze_targets, split_recruiter_fields
 from services.s1_two_pass.pass_a import (
-    FIELD_NAMES_ROLE_OR_WORK, NRW_DISAGREE_MESSAGE, SCOPE_NAMES_ROLE_OR_WORK, SCOPE_TARGET_BASIS, PassARequest,
-    PassAValidation, build_pass_a_request, pass_a_cache_key, validate_pass_a,
+    SCOPE_TARGET_BASIS, PassARequest, PassAValidation, build_pass_a_request, pass_a_cache_key, validate_pass_a,
 )
 from services.s1_two_pass.prompt_a import S1A_PROMPT_SHA256, load_pass_a_prompt, pass_a_prompt_fingerprint
 from services.s1_two_pass.schema import (
@@ -156,18 +152,11 @@ def merge_pass_a(main_raw: str, repair_raw: str, val: PassAValidation, criteria:
             continue
         cid = g["criterion_id"]
         m, r = main.get(cid), rep.get(cid)
-        sc = scopes.get(cid, set())
-        follows = (SCOPE_TARGET_BASIS in sc or (cid, "restrictions") in taken)
+        follows = (SCOPE_TARGET_BASIS in scopes.get(cid, set()) or (cid, "restrictions") in taken)
         if follows and r is not None and info.get("mode") == "scoped" and (cid, "criterion") not in taken:
             if "target_basis" in r:
                 g["target_basis"] = copy.deepcopy(r["target_basis"])
                 info["taken"].append({"criterion_id": cid, "field": "target_basis"})
-        # s1a-1.2: the judgement is taken from the repair exactly when it was in scope or when the basis /
-        # restrictions it must agree with came from the repair (they are reconsidered together)
-        if ((SCOPE_NAMES_ROLE_OR_WORK in sc or follows) and r is not None and info.get("mode") == "scoped"
-                and (cid, "criterion") not in taken and FIELD_NAMES_ROLE_OR_WORK in r):
-            g[FIELD_NAMES_ROLE_OR_WORK] = copy.deepcopy(r[FIELD_NAMES_ROLE_OR_WORK])
-            info["taken"].append({"criterion_id": cid, "field": FIELD_NAMES_ROLE_OR_WORK})
         if hint_ids(by_id[cid]):
             continue
         fb, mb = g.get("target_basis"), (m or {}).get("target_basis")
@@ -231,9 +220,6 @@ async def _run(req: PassARequest, client, model: str, meta: dict) -> dict:
         if finish == "length":
             return out(REASON_OUTPUT_TRUNCATED)
         val = validate_pass_a(raw, jd, crits, durs)
-        # s1a-1.2 audit: criteria whose FIRST answer contradicted its own names_role_or_work judgement
-        meta["nrw_disagreements"] = sorted({e.criterion_id for e in val.scoped
-                                            if NRW_DISAGREE_MESSAGE in e.message and e.criterion_id})
         outcome = "validated"
         normalized: list[dict] = []
         if not val.ok:

@@ -94,9 +94,6 @@ def freeze_targets(c: CriterionInput, pa: PassACriterion, jd: JDText, durations:
                    recruiter_fields: dict) -> FrozenTarget:
     pc = replace(pa.parsed, settings=())
     art = assemble_artifact(c, pc, jd, durations, run=run, recruiter_fields=recruiter_fields)
-    # s1a-1.2: the model's names_role_or_work judgement is AUDIT ONLY here (never semantics; hints and recruiter
-    # fields keep governing targets and basis)
-    art = replace(art, audit={**art.audit, "names_role_or_work": pa.names_role_or_work})
     dur = None
     if pc.duration_id and pc.duration_id in durations:
         ln, m = durations[pc.duration_id]

@@ -3,14 +3,16 @@ Pass A prompt (the experience TARGET pass): pinned, byte/SHA-verified text files
 
   s1a-1.0  the s1-5.2 target/restriction contract with every qualifying-context instruction removed and a required
            target_basis. Kept for audit/replay of its real MAIN run; never edited.
-  s1a-1.1  after the s1a-1.0 MAIN forensics: phrases saying where / for whom / under what circumstances
-           are never a restriction of any kind (never vague, function or role, never inside a quoted target);
-           vague narrowed to "relevant / related / similar / in the field"; "<X> experience", "experience in
-           <X>", "خبرة ... في <X>" name the work X; setting_only only when no role or work is named; the "if unsure,
-           a function" rule removed; the closing no-hints OUTPUT example has a function target.
-  s1a-1.2  (current) Option D: s1a-1.1 plus ONE required boolean "names_role_or_work" (section 1a, before targets /
-           restrictions in every OUTPUT example): the model's own judgement whether the statement names a role or
-           work; checked for agreement with restrictions / target_basis by pass_a.validate_pass_a.
+  s1a-1.1  CURRENT, a BASELINE CANDIDATE, NOT an approved version (its MAIN hard gate missed by 1/225: one no-target
+           reading, which strict F5 blocks downstream). After the s1a-1.0 MAIN forensics: phrases saying where /
+           for whom / under what circumstances are never a restriction of any kind (never vague, function or role,
+           never inside a quoted target); vague narrowed to "relevant / related / similar / in the field";
+           "<X> experience", "experience in <X>", "خبرة ... في <X>" name the work X; setting_only only when no role
+           or work is named; the "if unsure, a function" rule removed; the closing no-hints OUTPUT example has a
+           function target.
+  s1a-1.2  WITHDRAWN (audit only; never active, loadable only by explicit version): Option D, s1a-1.1 plus a required
+           boolean "names_role_or_work". Its real MAIN run regressed (unsafe loss 1 -> 9, failures 0 -> 5, repairs
+           0 -> 66); see scripts/s1_eval_results/pass_a/PASS_A_EVAL_LOG.md. No runtime code reads that field.
 The files end with the shared security hardening suffix (byte-identical to the one the v3 S1 prompt appends;
 checked by a test, never imported here). Loading verifies the SHA-256 on every call; a changed file is an
 integrity error, never a silently different prompt.
