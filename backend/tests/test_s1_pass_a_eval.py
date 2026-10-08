@@ -359,8 +359,11 @@ class TestGuards:
         assert ctx.main(["--stage", "pass_a", "--out", str(tmp_path / "d")]) == 0
         assert '"stage": "pass_a"' in capsys.readouterr().out
         assert ctx.main(["--stage", "pass_b", "--out", str(tmp_path / "x")]) == 2
+        # S1-A-1.3: --allow-heldout exists only for the Pass A target-basis held-out set; the v3 held-out fixture is
+        # still unreachable through the stage switch, and the flag alone is a plain MAIN dry run
         with pytest.raises(SystemExit):
-            ctx.main(["--stage", "pass_a", "--out", str(tmp_path / "h"), "--allow-heldout"])
+            ctx.main(["--stage", "pass_a", "--out", str(tmp_path / "h"), "--fixture", "heldout", "--allow-heldout"])
+        assert ctx.main(["--stage", "pass_a", "--out", str(tmp_path / "m"), "--allow-heldout"]) == 0
 
     def test_pinned_values(self):
         assert ev.PINNED == {"prompt_version": "s1a-1.3", "prompt_fingerprint": "0cf68cadc53d",

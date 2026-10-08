@@ -33,7 +33,10 @@ Fixtures: --fixture main (default) or --fixture target_basis (scripts/s1_eval_fi
 s1a-basis-2: the 44 s1a-basis-1 cases with the same gold, the s1a-1.3 oracle answers adding where_evidence to the 10
 setting_only cases; SHA-pinned; its names_role_or_work gold is a fixture field only and is not scored). The
 s1a-basis-1 file stays byte for byte (ARCHIVED_FIXTURES) for the reproducibility of the s1a-1.1 runs; it is not
-selectable. The v3 held-out fixtures are not selectable.
+selectable. --fixture target_basis_heldout (s1a_target_basis_heldout_cases.json, s1a-basis-heldout-1, 52 cases,
+SHA-pinned) is the S1-A-1.3 HELD-OUT set: written after prompt s1a-1.3 was fixed, expected classifications frozen,
+never used for tuning; a real run is refused without --allow-heldout and is meant to run once, only after the
+s1a-1.3 MAIN regression passes. The v3 held-out fixtures are not selectable.
 Reporting only (never a gate; S1-A-1.3):
   basis_confusion        gold target_basis x observed target_basis (failed runs as "failed_<kind>")
   by_gold_basis / by_language / by_group   the accuracies, unsafe and failure counts per slice (en / ar)
@@ -89,9 +92,12 @@ from services.s1_two_pass import schema as v4  # noqa: E402
 FIXTURE = "main"                                   # default fixture
 # the fixtures this harness accepts (never a held-out file): MAIN context cases and the Option D target-basis set
 FIXTURES = {"main": ctx.FIXTURES["main"],
-            "target_basis": ctx.FIXTURE_DIR / "s1a_target_basis_cases_v2.json"}
+            "target_basis": ctx.FIXTURE_DIR / "s1a_target_basis_cases_v2.json",
+            "target_basis_heldout": ctx.FIXTURE_DIR / "s1a_target_basis_heldout_cases.json"}
 FIXTURE_SHA256 = {"main": ctx.FIXTURE_SHA256["main"],
-                  "target_basis": "2daadcb18350dc908fb48ab6081c8ba2fda010f78c2fbb9c55233f780d2ea3e0"}
+                  "target_basis": "2daadcb18350dc908fb48ab6081c8ba2fda010f78c2fbb9c55233f780d2ea3e0",
+                  "target_basis_heldout": "81e607d183a186bf1d153a534bdd92898a7cb247f5ad3378cf4b109fc95f7018"}
+HELDOUT_FIXTURES = ("target_basis_heldout",)          # a real run needs --allow-heldout
 # earlier fixture versions, byte for byte, for the reproducibility of recorded runs (never selectable)
 ARCHIVED_FIXTURES = {"target_basis@s1a-basis-1": (ctx.FIXTURE_DIR / "s1a_target_basis_cases.json",
                                                   "02a452bba2de4374f394db5a9d4d11065ab80f70749f3337be5550007d304293")}
@@ -483,11 +489,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
     ap.add_argument("--fixture", choices=tuple(FIXTURES), default=FIXTURE,
-                    help="MAIN context cases or the Option D target-basis set (never a held-out fixture)")
+                    help="MAIN context cases, the target-basis development set or the S1-A-1.3 target-basis "
+                         "held-out set (real run only with --allow-heldout)")
     ap.add_argument("--mode", choices=("dry-run", "oracle", "real"), default="dry-run")
     ap.add_argument("--runs", type=int, default=DEFAULT_RUNS)
     ap.add_argument("--cases", default="", help="comma-separated case ids (default: all)")
     ap.add_argument("--confirm-real", action="store_true", help="required for --mode real (paid model calls)")
+    ap.add_argument("--allow-heldout", action="store_true",
+                    help="required to run the held-out fixture for real (single use, after MAIN passes)")
     args = ap.parse_args(argv)
 
     path = FIXTURES[args.fixture]
@@ -497,6 +506,10 @@ def main(argv=None) -> int:
     if args.mode == "real":
         if not args.confirm_real:
             print("REFUSED: --mode real makes real model calls; pass --confirm-real explicitly.")
+            return 2
+        if args.fixture in HELDOUT_FIXTURES and not args.allow_heldout:
+            print("REFUSED: the held-out fixture is single-use (only after the MAIN regression passes); pass "
+                  "--allow-heldout explicitly.")
             return 2
         problems = check_pins(path, args.fixture)
         if problems:

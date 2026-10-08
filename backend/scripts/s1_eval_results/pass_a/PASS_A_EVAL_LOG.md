@@ -122,3 +122,14 @@ stability 0.9545) and zero unsafe loss:
 ```
 python3 scripts/s1_pass_a_eval.py --out <dir>/s1a13_main --fixture main --mode real --runs 5 --confirm-real
 ```
+
+Stage D — the S1-A-1.3 target-basis HELD-OUT set (only if Stage C passes; run once; never used for tuning):
+`s1a_target_basis_heldout_cases.json` (s1a-basis-heldout-1, sha256
+`81e607d183a186bf1d153a534bdd92898a7cb247f5ad3378cf4b109fc95f7018`), 52 cases (26 English / 26 Arabic):
+functional, role, setting-only, combined function/role + where, unrestricted, vague, ambiguous wording, adjective
+forms. Written after prompt s1a-1.3 was fixed and committed (8ef8e4c), expected classifications frozen before any
+run; the harness refuses a real run without `--allow-heldout`. Report its results independently of Stages B / C.
+
+```
+python3 scripts/s1_pass_a_eval.py --out <dir>/s1a13_heldout --fixture target_basis_heldout --mode real --runs 5 --confirm-real --allow-heldout
+```

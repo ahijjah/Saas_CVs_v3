@@ -310,13 +310,15 @@ class TestHarness:
         assert "repair_rate" in (SCRIPTS / "s1_pass_a_eval.py").read_text(encoding="utf-8")
 
     def test_fixture_choice_cli_and_no_heldout(self, tmp_path):
-        assert set(ev.FIXTURES) == {"main", "target_basis"}
+        # S1-A-1.3 adds its own guarded held-out set (tests/test_s1a13_heldout_fixture.py); the v3 ones stay out
+        assert set(ev.FIXTURES) == {"main", "target_basis", "target_basis_heldout"}
         # the s1a-1.1 target-basis fixture is archived byte for byte (reproducibility), never selectable
         path, sha = ev.ARCHIVED_FIXTURES["target_basis@s1a-basis-1"]
         assert sha == TARGET_BASIS_FIXTURE and hashlib.sha256(path.read_bytes()).hexdigest() == TARGET_BASIS_FIXTURE
         assert hashlib.sha256(ev.FIXTURES["target_basis"].read_bytes()).hexdigest() == ev.FIXTURE_SHA256["target_basis"]
         assert ev.FIXTURE_SHA256["target_basis"] == TARGET_BASIS_V2
-        assert not any("heldout" in str(p) for p in ev.FIXTURES.values())
+        assert [k for k, p in ev.FIXTURES.items() if "heldout" in str(p)] == ["target_basis_heldout"]
+        assert not any(p.name in ("s1_ctx_heldout_cases.json", "s1_heldout_cases.json") for p in ev.FIXTURES.values())
         assert ev.main(["--out", str(tmp_path / "o"), "--fixture", "target_basis", "--mode", "oracle",
                         "--runs", "1"]) == 0
         meta = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))["meta"]
