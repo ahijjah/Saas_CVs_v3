@@ -152,7 +152,7 @@ class TestOracle:
     def test_cli_oracle_writes_results(self, tmp_path):
         assert ev.main(["--out", str(tmp_path / "o"), "--mode", "oracle", "--runs", "2"]) == 0
         data = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))
-        assert data["meta"]["stage"] == "pass_a" and data["meta"]["prompt_version"] == "s1a-1.3"
+        assert data["meta"]["stage"] == "pass_a" and data["meta"]["prompt_version"] == "s1a-1.4"
         assert data["meta"]["fixture_sha256"] == ctx.FIXTURE_SHA256["main"]
         assert data["gates"]["all_decided_pass"] is True
         assert (tmp_path / "o" / "report.md").read_text(encoding="utf-8").startswith("# S1 Pass A")
@@ -366,8 +366,8 @@ class TestGuards:
         assert ctx.main(["--stage", "pass_a", "--out", str(tmp_path / "m"), "--allow-heldout"]) == 0
 
     def test_pinned_values(self):
-        assert ev.PINNED == {"prompt_version": "s1a-1.3", "prompt_fingerprint": "0cf68cadc53d",
-                             "prompt_sha256": "0cf68cadc53d05e8e26c75bb94d2ea279f91dcbb65d8663f17b9052f4c98656d",
+        assert ev.PINNED == {"prompt_version": "s1a-1.4", "prompt_fingerprint": "1cc53afc9e79",
+                             "prompt_sha256": "1cc53afc9e79e2137ed85c5569f9a07a348350367153ed0396190dbe58613de3",
                              "s1_version": "2.0.0", "model": "gpt-4o-mini", "temperature": 0.0, "max_tokens": 4000}
         assert ev.THRESHOLDS == {"target_accuracy": 0.95, "policy_accuracy": 0.95, "target_basis_accuracy": 0.95,
                                  "stability": 0.95, "failure_rate": 0.05}

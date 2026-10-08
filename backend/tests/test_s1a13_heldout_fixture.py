@@ -132,7 +132,7 @@ class TestIndependence:
     def test_statements_and_phrases_not_in_dev_fixtures_or_prompts(self):
         dev = " ".join(json.dumps(json.loads((FIX / n).read_text(encoding="utf-8")), ensure_ascii=False)
                        for n in DEV).lower()
-        prompts = " ".join(prompt_a.load_pass_a_prompt(v) for v in ("s1a-1.1", "s1a-1.3")).lower()
+        prompts = " ".join(prompt_a.load_pass_a_prompt(v) for v in ("s1a-1.1", "s1a-1.3", "s1a-1.4")).lower()
         for c in CASES:
             phrases = [statement(c)] + [t["text"] for t in c["gold"]["targets"]] + [
                 w["text"] for w in c["oracle"].get("where_evidence", [])]

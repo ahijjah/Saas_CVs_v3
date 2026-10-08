@@ -2,7 +2,7 @@
 Pass A corrections after the s1a-1.0 real MAIN forensics (prompt s1a-1.1, repair message, F6, expansion
 diagnostic). The recorded s1a-1.0 answers of the failing MAIN cases (CM09, CM10, CM19, CM21, CM23, CM26, CM30;
 expansion shapes CM13, CM38-CM40) are replayed through the CURRENT code with a scripted client.
-Since S1-A-1.3 the current prompt is s1a-1.3: the prompt and repair-message assertions of this file pin s1a-1.1
+Since S1-A-1.3 the current prompt is no longer s1a-1.1 (now s1a-1.4): the prompt and repair-message assertions of this file pin s1a-1.1
 EXPLICITLY (loaded / run by version under its own contract); the recorded replays run through the current code.
 Offline only: no model call, no network, no database; the held-out fixture is never read.
 """
@@ -341,8 +341,8 @@ class TestExpansionDiagnostic:
         assert s["target_expansion"] == {"criterion_runs": 0, "rate": 0.0, "cases": [], "details": []}
 
     def test_harness_pins_the_current_prompt(self):
-        # since S1-A-1.3 the harness pins s1a-1.3; s1a-1.1 stays pinned in the prompt module for replay
-        assert ev.PINNED["prompt_version"] == "s1a-1.3"
-        assert ev.PINNED["prompt_sha256"] == prompt_a.PROMPT_SHA256["s1a-1.3"]
+        # the harness pins the current prompt (s1a-1.4); s1a-1.1 stays pinned in the prompt module for replay
+        assert ev.PINNED["prompt_version"] == "s1a-1.4"
+        assert ev.PINNED["prompt_sha256"] == prompt_a.PROMPT_SHA256["s1a-1.4"]
         assert prompt_a.PROMPT_SHA256["s1a-1.1"] == "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11"
         assert ev.check_pins(SCRIPTS / "s1_eval_fixtures" / "s1_ctx_main_cases.json") == []

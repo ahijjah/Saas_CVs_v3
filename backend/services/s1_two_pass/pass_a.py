@@ -160,6 +160,7 @@ class PassAContract:
 CONTRACTS = {
     "s1a-1.1": PassAContract("s1a-1.1", False, BASIS_REREAD_MESSAGE),
     "s1a-1.3": PassAContract("s1a-1.3", True, BASIS_NEUTRAL_MESSAGE),
+    "s1a-1.4": PassAContract("s1a-1.4", True, BASIS_NEUTRAL_MESSAGE),      # S1-A-1.4: prompt only, same rules
 }
 
 

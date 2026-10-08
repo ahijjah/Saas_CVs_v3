@@ -1,6 +1,6 @@
 """
-S1 two-pass PASS A evaluation (Step 2): the target pass ONLY (current prompt s1a-1.3, a CANDIDATE pending real
-evaluation; s1a-1.1 is the baseline candidate it is compared with, s1a-1.2 was withdrawn, see
+S1 two-pass PASS A evaluation (Step 2): the target pass ONLY (current prompt s1a-1.4, a CANDIDATE pending real
+evaluation; s1a-1.1 and s1a-1.3 are the baselines it is compared with, s1a-1.2 was withdrawn, see
 scripts/s1_eval_results/pass_a/PASS_A_EVAL_LOG.md), against the existing P4 MAIN context fixture
 (scripts/s1_eval_fixtures/s1_ctx_main_cases.json, unchanged) and its labelled oracle answers.
 
@@ -101,8 +101,8 @@ HELDOUT_FIXTURES = ("target_basis_heldout",)          # a real run needs --allow
 # earlier fixture versions, byte for byte, for the reproducibility of recorded runs (never selectable)
 ARCHIVED_FIXTURES = {"target_basis@s1a-basis-1": (ctx.FIXTURE_DIR / "s1a_target_basis_cases.json",
                                                   "02a452bba2de4374f394db5a9d4d11065ab80f70749f3337be5550007d304293")}
-PINNED = {"prompt_version": "s1a-1.3", "prompt_fingerprint": "0cf68cadc53d",
-          "prompt_sha256": "0cf68cadc53d05e8e26c75bb94d2ea279f91dcbb65d8663f17b9052f4c98656d",
+PINNED = {"prompt_version": "s1a-1.4", "prompt_fingerprint": "1cc53afc9e79",
+          "prompt_sha256": "1cc53afc9e79e2137ed85c5569f9a07a348350367153ed0396190dbe58613de3",
           "s1_version": "2.0.0", "model": "gpt-4o-mini", "temperature": 0.0, "max_tokens": 4000}
 THRESHOLDS = {"target_accuracy": 0.95, "policy_accuracy": 0.95, "target_basis_accuracy": 0.95,
               "stability": 0.95, "failure_rate": 0.05}

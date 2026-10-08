@@ -296,7 +296,7 @@ class TestFixtureV2:
 # ── no leakage into the prompt or from existing fixtures ────────────────────
 
 class TestNoLeakage:
-    @pytest.mark.parametrize("version", [None, "s1a-1.1"])
+    @pytest.mark.parametrize("version", [None, "s1a-1.1", "s1a-1.3"])
     def test_statements_not_in_the_prompt(self, version):
         p = prompt_a.load_pass_a_prompt(version).lower()
         for c in CASES:

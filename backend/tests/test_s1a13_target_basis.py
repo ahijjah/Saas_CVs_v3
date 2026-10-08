@@ -41,7 +41,7 @@ ev = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ev)
 ctx = ev.ctx
 
-PROMPT = prompt_a.load_pass_a_prompt()
+PROMPT = prompt_a.load_pass_a_prompt("s1a-1.3")      # the s1a-1.3 prompt checks below pin it by version
 C11, C13 = pa.CONTRACTS["s1a-1.1"], pa.CONTRACTS["s1a-1.3"]
 
 # SYNTHETIC statements (not fixture wording)
@@ -566,7 +566,10 @@ class TestPromptS1a13:
     def test_pinned(self):
         assert prompt_a.PROMPT_SHA256["s1a-1.3"] == (
             "0cf68cadc53d05e8e26c75bb94d2ea279f91dcbb65d8663f17b9052f4c98656d")
-        assert pa.pass_a_contract() is C13 and C13.where_evidence
+        assert pa.pass_a_contract("s1a-1.3") is C13 and C13.where_evidence
+        # s1a-1.4 changed the prompt only: the current contract has the s1a-1.3 rules
+        cur = pa.pass_a_contract()
+        assert (cur.where_evidence, cur.basis_message) == (C13.where_evidence, C13.basis_message)
 
     def test_only_the_conflicting_rules_changed(self):
         p11 = prompt_a.load_pass_a_prompt("s1a-1.1")

@@ -24,8 +24,9 @@ S1V4_SCHEMA = "s1_requirement_spec_v4"
 S1V4_VERSION = "2.0.0"
 S1A_INPUT_VERSION = "s1a-in-1"
 S1B_INPUT_VERSION = "s1b-in-1"
-S1A_PROMPT_VERSION = "s1a-1.3"          # Pass A prompt: services/s1_two_pass/prompts/s1a-1.3.txt (pinned SHA;
-                                         # s1a-1.1 kept runnable for exact replay, s1a-1.0 / s1a-1.2 audit only)
+S1A_PROMPT_VERSION = "s1a-1.4"          # Pass A prompt: services/s1_two_pass/prompts/s1a-1.4.txt (pinned SHA;
+                                         # s1a-1.1 / s1a-1.3 kept runnable for exact replay, s1a-1.0 / s1a-1.2 audit
+                                         # only)
 S1B_PROMPT_VERSION = "s1b-1.0"          # prompt NOT implemented yet (Step 3)
 PROMPT_PENDING = "pending"               # fingerprint placeholder until the Pass B prompt exists
 

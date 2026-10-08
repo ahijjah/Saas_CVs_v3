@@ -12,7 +12,7 @@ Verifies, offline only (scripted clients, no model call, no network, no database
   6. the harness keeps the frozen target-basis fixture infrastructure and repair_rate (reported only), with the
      s1a-1.1 gate set and the zero-unsafe hard gate unchanged;
   7. the three recorded MAIN result files and the withdrawn s1a-1.2 prompt are preserved for audit (SHA-pinned).
-Since S1-A-1.3 the ACTIVE prompt is s1a-1.3; s1a-1.1 stays pinned and runnable by explicit version under its own
+Since S1-A-1.3 the ACTIVE prompt is no longer s1a-1.1 (now s1a-1.4); s1a-1.1 stays pinned and runnable by explicit version under its own
 contract (pass_a.CONTRACTS["s1a-1.1"]), so points 1 and 4 now verify s1a-1.1 BY VERSION: its prompt bytes, request
 bytes and cache identity, and the exact replay of its recorded MAIN runs.
 """
@@ -112,7 +112,7 @@ S1A_11_FILE = prompt_a.PROMPT_DIR / "s1a-1.1.txt"
 
 class TestS1a11Pinned:
     def test_version_file_and_hash(self):
-        assert sc.S1A_PROMPT_VERSION == "s1a-1.3"                     # S1-A-1.3: no longer the active prompt
+        assert sc.S1A_PROMPT_VERSION == "s1a-1.4"                     # s1a-1.1 is no longer the active prompt
         assert prompt_a.PROMPT_SHA256["s1a-1.1"] == prompt_a.pass_a_prompt_sha256("s1a-1.1") == S1A_11
         assert hashlib.sha256(S1A_11_FILE.read_bytes()).hexdigest() == S1A_11
         assert prompt_a.pass_a_prompt_fingerprint("s1a-1.1") == "952299303431"
@@ -126,14 +126,14 @@ class TestS1a11Pinned:
         req = pa.build_pass_a_request(JDText(jd), crits)
         assert req.input_hash == CM30_INPUT_HASH                     # the request payload is unchanged by S1-A-1.3
         assert pa.pass_a_cache_key(req, prompt_version="s1a-1.1") == CM30_CACHE_KEY
-        assert pa.pass_a_cache_key(req) != CM30_CACHE_KEY             # the s1a-1.3 key is another key
+        assert pa.pass_a_cache_key(req) != CM30_CACHE_KEY             # the current key is another key
         call = pr.build_pass_a_call(req, prompt_version="s1a-1.1")
         assert hashlib.sha256(json.dumps(call, sort_keys=True, ensure_ascii=False).encode()).hexdigest() == CM30_CALL_SHA
         assert call["messages"][0]["content"].encode("utf-8") == S1A_11_FILE.read_bytes()
 
     def test_harness_pins(self):
         assert (ev.PINNED["prompt_version"], ev.PINNED["prompt_fingerprint"], ev.PINNED["prompt_sha256"]) == (
-            "s1a-1.3", "0cf68cadc53d", prompt_a.PROMPT_SHA256["s1a-1.3"])
+            "s1a-1.4", "1cc53afc9e79", prompt_a.PROMPT_SHA256["s1a-1.4"])
         assert ev.check_pins(ev.FIXTURES["main"], "main") == []
         assert ev.check_pins(ev.FIXTURES["target_basis"], "target_basis") == []
 
@@ -274,7 +274,7 @@ class TestHarness:
     @pytest.mark.parametrize("fixture,version", [("main", None), ("target_basis", None), ("main", "s1a-1.1"),
                                                  ("target_basis@s1a-basis-1", "s1a-1.1")])
     def test_oracle_scores_perfectly(self, fixture, version):
-        # current: MAIN + s1a-basis-2 under s1a-1.3; replay: MAIN + the archived s1a-basis-1 under s1a-1.1
+        # current: MAIN + s1a-basis-2 under s1a-1.4; replay: MAIN + the archived s1a-basis-1 under s1a-1.1
         path = ev.FIXTURES[fixture] if fixture in ev.FIXTURES else ev.ARCHIVED_FIXTURES[fixture][0]
         cases = json.loads(path.read_text(encoding="utf-8"))["cases"]
         recs = run(ev.run_all(cases, runs=2, client_for=lambda c: ctx.ScriptedClient(ev.oracle_response(c)),
@@ -323,7 +323,7 @@ class TestHarness:
                         "--runs", "1"]) == 0
         meta = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))["meta"]
         assert (meta["fixture"], meta["prompt_version"], meta["fixture_sha256"]) == (
-            "target_basis", "s1a-1.3", TARGET_BASIS_V2)
+            "target_basis", "s1a-1.4", TARGET_BASIS_V2)
         with pytest.raises(SystemExit):
             ev.main(["--out", str(tmp_path / "h"), "--fixture", "heldout"])
 
@@ -349,7 +349,8 @@ class TestAudit:
     def test_log_states_each_status(self):
         log = (RESULTS / "PASS_A_EVAL_LOG.md").read_text(encoding="utf-8")
         assert "**s1a-1.1 — BASELINE CANDIDATE, NOT AN APPROVED VERSION (superseded as the active prompt" in log
-        assert "**s1a-1.3 — CURRENT ACTIVE PROMPT. CANDIDATE PENDING REAL EVALUATION (Stage B)" in log
+        assert "**s1a-1.3 — FAILED STAGE B (superseded as the active prompt by s1a-1.4)" in log
+        assert "**s1a-1.4 — CURRENT ACTIVE PROMPT. CANDIDATE PENDING REAL EVALUATION (Stage B)" in log
         assert "**s1a-1.2 (Option D) — WITHDRAWN.**" in log and "**s1a-1.0 — FAILED.**" in log
         for name, (sha, *_rest) in RECORDED.items():
             assert name in log and sha in log, name

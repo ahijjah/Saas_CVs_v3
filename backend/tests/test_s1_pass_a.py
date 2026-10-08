@@ -1,5 +1,5 @@
 """
-S1 two-pass Step 2 — Pass A (s1a-1.3, the experience TARGET pass; s1a-1.1 runnable for replay, s1a-1.0 / s1a-1.2 kept for
+S1 two-pass Step 2 — Pass A (s1a-1.4, the experience TARGET pass; s1a-1.1 / s1a-1.3 runnable for replay, s1a-1.0 / s1a-1.2 kept for
 audit): prompt integrity and leakage, request
 construction, cache / fingerprint / version identity, validator behaviour for the real wire, the one-repair
 orchestration with F6, and the independence of Pass A from the qualifying-context analysis.
@@ -30,6 +30,7 @@ PKG = BACKEND / "services" / "s1_two_pass"
 PROMPT = prompt_a.load_pass_a_prompt()
 PROMPT_11 = prompt_a.load_pass_a_prompt("s1a-1.1")
 S1A_13 = "0cf68cadc53d05e8e26c75bb94d2ea279f91dcbb65d8663f17b9052f4c98656d"
+S1A_14 = "1cc53afc9e79e2137ed85c5569f9a07a348350367153ed0396190dbe58613de3"
 
 
 class FakeClient:
@@ -104,10 +105,12 @@ L_COMPOUND = "Minimum 5 years of experience as an Internal Auditor, including 2 
 
 class TestPromptIdentity:
     def test_version_file_and_pinned_sha(self):
-        assert sc.S1A_PROMPT_VERSION == "s1a-1.3" and prompt_a.S1A_PROMPT_PATH.name == "s1a-1.3.txt"
+        assert sc.S1A_PROMPT_VERSION == "s1a-1.4" and prompt_a.S1A_PROMPT_PATH.name == "s1a-1.4.txt"
         raw = prompt_a.S1A_PROMPT_PATH.read_bytes()
-        assert hashlib.sha256(raw).hexdigest() == prompt_a.S1A_PROMPT_SHA256 == S1A_13
-        assert prompt_a.pass_a_prompt_fingerprint() == "0cf68cadc53d"
+        assert hashlib.sha256(raw).hexdigest() == prompt_a.S1A_PROMPT_SHA256 == S1A_14
+        assert prompt_a.pass_a_prompt_fingerprint() == "1cc53afc9e79"
+        # s1a-1.3 (failed Stage B) stays pinned and loadable by explicit version (replay / comparison)
+        assert prompt_a.pass_a_prompt_sha256("s1a-1.3") == S1A_13 and prompt_a.load_pass_a_prompt("s1a-1.3") != PROMPT
         assert PROMPT == raw.decode("utf-8")
         # s1a-1.1 stays pinned and loadable by explicit version (replay / comparison)
         assert prompt_a.pass_a_prompt_sha256("s1a-1.1") == (
@@ -120,7 +123,7 @@ class TestPromptIdentity:
             "4caabb71429c0cc1ac997986c2a6c95775b06f4f7acebcb7025e27757f74bf36")
         assert prompt_a.load_pass_a_prompt("s1a-1.0") == old.read_text(encoding="utf-8") != PROMPT
         # s1a-1.2 (withdrawn Option D) stays pinned for audit only; every pinned file still matches its hash
-        assert set(prompt_a.PROMPT_SHA256) == {"s1a-1.0", "s1a-1.1", "s1a-1.2", "s1a-1.3"}
+        assert set(prompt_a.PROMPT_SHA256) == {"s1a-1.0", "s1a-1.1", "s1a-1.2", "s1a-1.3", "s1a-1.4"}
         for v, sha in prompt_a.PROMPT_SHA256.items():
             assert hashlib.sha256((prompt_a.PROMPT_DIR / f"{v}.txt").read_bytes()).hexdigest() == sha, v
 
@@ -148,7 +151,7 @@ class TestPromptIdentity:
 
 # ── B. prompt leakage: no qualifying-context interpretation ──────────────────
 
-# s1a-1.3 names "sector" / "industry" ONLY to define a where limit (the evidence of setting_only); every other
+# s1a-1.3 / s1a-1.4 name "sector" / "industry" ONLY to define a where limit (the evidence of setting_only); every other
 # qualifying-context word stays banned, and s1a-1.1 still passes the full list
 WHERE_WORDS = [r"\bsector", r"industr"]
 BANNED = [r"\bsettings?\b", r"context", r"geograph", r"\bregion", r"countr", r"organi[sz]ation",
@@ -285,7 +288,7 @@ class TestRequest:
         m = res.outcome.meta
         assert m["request_token_upper_bound"] > len(PROMPT.encode("utf-8"))
         assert (m["prompt_version"], m["prompt_fingerprint"], m["prompt_sha256"]) == (
-            "s1a-1.3", "0cf68cadc53d", prompt_a.S1A_PROMPT_SHA256)
+            "s1a-1.4", "1cc53afc9e79", prompt_a.S1A_PROMPT_SHA256)
 
 
 # ── D. cache / fingerprint / version identity ───────────────────────────────
@@ -298,8 +301,9 @@ class TestCacheIdentity:
     def test_key_components(self, monkeypatch):
         a, jd, crits, req = self._setup()
         k = pa.pass_a_cache_key(req)
-        assert k == pa.pass_a_cache_key(req, prompt_fingerprint="0cf68cadc53d", model="gpt-4o-mini")
-        assert k == pa.pass_a_cache_key(req, prompt_version="s1a-1.3")
+        assert k == pa.pass_a_cache_key(req, prompt_fingerprint="1cc53afc9e79", model="gpt-4o-mini")
+        assert k == pa.pass_a_cache_key(req, prompt_version="s1a-1.4")
+        assert k != pa.pass_a_cache_key(req, prompt_version="s1a-1.3")          # another prompt, another key
         assert k != pa.pass_a_cache_key(req, prompt_version="s1a-1.1")          # another prompt, another key
         assert k != pa.pass_a_cache_key(req, prompt_fingerprint="000000000000")
         assert k != pa.pass_a_cache_key(req, model="other")
@@ -629,7 +633,7 @@ class TestIntegration:
         _, res = pass_a_job(a, jd, resp(hinted(crits[0].criterion_id, [(2, L_ROLE)])))
         assert res.frozen[0].artefact.prompt_version == ""        # the frozen v3 artefact is not the run record
         failed = pass_a_job(a, jd, RuntimeError("x"))[1].failed[0]
-        assert failed.versions["pass_a"]["prompt_version"] == "s1a-1.3"
+        assert failed.versions["pass_a"]["prompt_version"] == "s1a-1.4"
         assert failed.versions["pass_a"]["reason"] == "ai_unavailable"
 
 

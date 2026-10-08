@@ -131,7 +131,7 @@ class TestSchemaV4:
     def test_versions_and_vocabulary(self):
         assert (sc.S1V4_SCHEMA, sc.S1V4_VERSION) == ("s1_requirement_spec_v4", "2.0.0")
         assert (sc.S1A_INPUT_VERSION, sc.S1B_INPUT_VERSION) == ("s1a-in-1", "s1b-in-1")
-        assert (sc.S1A_PROMPT_VERSION, sc.S1B_PROMPT_VERSION, sc.PROMPT_PENDING) == ("s1a-1.3", "s1b-1.0", "pending")
+        assert (sc.S1A_PROMPT_VERSION, sc.S1B_PROMPT_VERSION, sc.PROMPT_PENDING) == ("s1a-1.4", "s1b-1.0", "pending")
         assert sc.TARGET_BASES == ("targets", "total_experience", "setting_only", "unspecified")
         assert sc.PASS_A_RESTRICTION_KINDS == ("role", "function", "vague")
         assert sc.CONTEXT_SCOPES == ("all", "one_alternative", "part_duration", "softened")

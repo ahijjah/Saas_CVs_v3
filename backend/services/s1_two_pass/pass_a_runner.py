@@ -1,7 +1,7 @@
 """
-PASS A runner: the model call of the experience TARGET pass (prompt s1a-1.3; s1a-1.1 runnable by explicit version for
-exact replay). SHADOW ONLY: nothing in production imports it, and it never runs unless a caller passes (or lets it
-build) a client.
+PASS A runner: the model call of the experience TARGET pass (prompt s1a-1.4; s1a-1.1 / s1a-1.3 runnable by explicit
+version for exact replay). SHADOW ONLY: nothing in production imports it, and it never runs unless a caller passes
+(or lets it build) a client.
 
   build_pass_a_messages(req)      -> [system = pinned prompt, user = "INPUT:\n" + canonical payload]
   build_pass_a_call(req, model)   -> the full chat-completion arguments (pure; no client)
