@@ -1,8 +1,9 @@
 """
-PASS A runner: the model call of the experience TARGET pass (prompt s1a-1.1). SHADOW ONLY: nothing in production
-imports it, and it never runs unless a caller passes (or lets it build) a client.
+PASS A runner: the model call of the experience TARGET pass (prompt s1a-1.3; s1a-1.1 runnable by explicit version for
+exact replay). SHADOW ONLY: nothing in production imports it, and it never runs unless a caller passes (or lets it
+build) a client.
 
-  build_pass_a_messages(req)      -> [system = pinned s1a-1.1, user = "INPUT:\n" + canonical payload]
+  build_pass_a_messages(req)      -> [system = pinned prompt, user = "INPUT:\n" + canonical payload]
   build_pass_a_call(req, model)   -> the full chat-completion arguments (pure; no client)
   await run_pass_a(jd, criteria, client=..., cache=...)          -> PassAOutcome
   await run_pass_a_job(job_id, jd_text, analysis_json, client=...) -> PassAJobResult (frozen targets | failures)
@@ -22,6 +23,12 @@ Pass A additions:
                  validation (fail closed; never a no-target reading).
   repair note    built only from repair-safe messages (pass_a._repair_safe): no context vocabulary reaches the
                  model.
+s1a-1.3 contract additions (pass_a.CONTRACTS; every call of a run uses the contract of its prompt version):
+  where_evidence follows the basis: taken from the repair where the repair was asked for it (scope where_evidence)
+                 or where the basis was taken from the repair; otherwise the main answer's is kept.
+  where guard    a repair never turns words the main answer gave as where_evidence into a role or function: after
+                 the merge, a role / function restriction overlapping a main where_evidence span fails validation
+                 (fail closed; outcome where_guard_rejected). F6 and the restriction locks are unchanged.
 Failures follow the v3 reasons: ai_unavailable / output_truncated / exceeds_model_context / internal_error
 (technical) and validation_failed (contract). A failure is never "no target" (F1, assemble.failed_v4).
 """
@@ -35,7 +42,7 @@ from typing import Any, Mapping, Protocol
 
 from services.s0_experience import llm_call
 from services.s1_requirements.criteria import CriterionInput, enumerate_experience_criteria
-from services.s1_requirements.jd_text import JDText
+from services.s1_requirements.jd_text import JDText, normalize
 from services.s1_requirements.repair import (
     apply_withdrawal, merge_repair, normalize_duplicate_representations, pair_repair_guidance, plan_withdrawal,
 )
@@ -46,9 +53,10 @@ from services.s1_requirements.schema import (
 from services.s1_requirements.validator import SCOPE_CRITERION, hint_ids
 from services.s1_two_pass.assemble import FrozenTarget, failed_v4, freeze_targets, split_recruiter_fields
 from services.s1_two_pass.pass_a import (
-    SCOPE_TARGET_BASIS, PassARequest, PassAValidation, build_pass_a_request, pass_a_cache_key, validate_pass_a,
+    FIELD_WHERE_EVIDENCE, SCOPE_TARGET_BASIS, SCOPE_WHERE_EVIDENCE, PassAContract, PassARequest, PassAValidation,
+    build_pass_a_request, pass_a_cache_key, pass_a_contract, validate_pass_a,
 )
-from services.s1_two_pass.prompt_a import S1A_PROMPT_SHA256, load_pass_a_prompt, pass_a_prompt_fingerprint
+from services.s1_two_pass.prompt_a import load_pass_a_prompt, pass_a_prompt_fingerprint, pass_a_prompt_sha256
 from services.s1_two_pass.schema import (
     ABSENT_BASES, BASIS_UNSPECIFIED, S1A_MAX_TOKENS, S1A_MODEL, S1A_PROMPT_CODE, S1A_PROMPT_VERSION, S1A_TEMPERATURE, S1ArtifactV4,
 )
@@ -61,6 +69,7 @@ F6_ERROR = "a repair is never the sole source of a no-target reading"
 # F6 (strengthened after the s1a-1.0 MAIN forensics, CM09): every reading without a role/function target counts,
 # unspecified included; a repair alone can never introduce any of them
 NO_TARGET_BASES = ABSENT_BASES + (BASIS_UNSPECIFIED,)
+WHERE_GUARD_ERROR = "a repair never turns words the main answer gave as where_evidence into a role or function"
 
 
 class PassACache(Protocol):
@@ -79,16 +88,23 @@ class InMemoryPassACache:
         self.store[key] = value
 
 
-def build_pass_a_messages(req: PassARequest) -> list[dict]:
-    return [{"role": "system", "content": load_pass_a_prompt()}, {"role": "user", "content": req.user_message}]
+def build_pass_a_messages(req: PassARequest, prompt_version: str | None = None) -> list[dict]:
+    return [{"role": "system", "content": load_pass_a_prompt(prompt_version)},
+            {"role": "user", "content": req.user_message}]
 
 
-def build_pass_a_call(req: PassARequest, model: str = S1A_MODEL) -> dict:
-    return {"model": model, "messages": build_pass_a_messages(req), "temperature": S1A_TEMPERATURE,
+def build_pass_a_call(req: PassARequest, model: str = S1A_MODEL, prompt_version: str | None = None) -> dict:
+    return {"model": model, "messages": build_pass_a_messages(req, prompt_version), "temperature": S1A_TEMPERATURE,
             "max_tokens": S1A_MAX_TOKENS, "response_format": {"type": "json_object"}}
 
 
-def pass_a_repair_note(errors: list[str], pair_guidance: list[str] = ()) -> str:
+BASIS_AGREE = "target_basis is required and must agree with your targets/restrictions."
+BASIS_AGREE_WHERE = "target_basis is required and must agree with your targets, restrictions and where_evidence."
+
+
+def pass_a_repair_note(errors: list[str], pair_guidance: list[str] = (), *,
+                       contract: PassAContract | None = None) -> str:
+    k = pass_a_contract() if contract is None else contract
     pairs = ("\nPair-level repair:\n- " + "\n- ".join(pair_guidance)) if pair_guidance else ""
     return ("Some fields of your previous JSON violate the rules below. Return the COMPLETE JSON again with "
             "exactly one result for every criterion. ONLY the fields, targets and restrictions named in these "
@@ -97,7 +113,7 @@ def pass_a_repair_note(errors: list[str], pair_guidance: list[str] = ()) -> str:
             "targets. A jd_span is only for match \"equivalent\" (the SAME role/function in different wording, "
             "with an alignment accounting for every word); when in doubt use match \"none\". Never drop a "
             "restriction: that would broaden the requirement. Restriction kinds are role, function or vague only. "
-            "target_basis is required and must agree with your targets/restrictions. Exactly ONE object per hint "
+            + (BASIS_AGREE_WHERE if k.where_evidence else BASIS_AGREE) + " Exactly ONE object per hint "
             "id. Relations: same = letter for letter the same word; form = the same word in another grammatical "
             "form of the same language (plural, verb/noun form), never a synonym; translation = EVERY pair "
             "between two languages; abbreviation = acronym and expansion. Never return a policy:\n- "
@@ -130,9 +146,39 @@ def _items(raw: str | None) -> dict[str, dict]:
     return out
 
 
-def merge_pass_a(main_raw: str, repair_raw: str, val: PassAValidation, criteria: list[CriterionInput]
-                 ) -> tuple[str, dict, list[str]]:
-    """Frozen scoped merge + target_basis rule + F6. -> (merged raw, merge info, F6 violations)."""
+def _raw_overlap(jd: JDText | None, a: dict, b: dict) -> bool:
+    """Do two raw {line, text} spans overlap? Located in the JD when possible, else by normalised containment."""
+    ta, tb, line = a.get("text"), b.get("text"), a.get("line")
+    if not (isinstance(ta, str) and isinstance(tb, str)) or line != b.get("line"):
+        return False
+    if jd is not None and isinstance(line, int):
+        sa, sb = jd.span_on_line(line, ta, boundaries=True), jd.span_on_line(line, tb, boundaries=True)
+        if sa is not None and sb is not None:
+            return sa.start < sb.end and sb.start < sa.end
+    na, nb = normalize(ta), normalize(tb)
+    return bool(na and nb) and (na in nb or nb in na)
+
+
+def _where_guard(cid: str, m: dict | None, g: dict, jd: JDText | None) -> str | None:
+    mw = (m or {}).get(FIELD_WHERE_EVIDENCE)
+    rl = g.get("restrictions")
+    if not isinstance(mw, list) or not isinstance(rl, list):
+        return None
+    for r in rl:
+        if not (isinstance(r, dict) and r.get("kind") in ("role", "function")):
+            continue
+        for x in mw:
+            if isinstance(x, dict) and _raw_overlap(jd, x, r):
+                return (f"criterion {cid}: {WHERE_GUARD_ERROR} ({r.get('kind')} {r.get('text')!r} overlaps the main "
+                        f"where_evidence {x.get('text')!r})")
+    return None
+
+
+def merge_pass_a(main_raw: str, repair_raw: str, val: PassAValidation, criteria: list[CriterionInput], *,
+                 jd: JDText | None = None, contract: PassAContract | None = None) -> tuple[str, dict, list[str]]:
+    """Frozen scoped merge + target_basis rule + F6 (+ s1a-1.3: where_evidence follows the basis, where guard).
+    -> (merged raw, merge info, violations: F6 first, then where guard)."""
+    k = pass_a_contract() if contract is None else contract
     merged_raw, info = merge_repair(main_raw, repair_raw, val.scoped, criteria)
     main, rep = _items(main_raw), _items(repair_raw)
     try:
@@ -145,6 +191,7 @@ def merge_pass_a(main_raw: str, repair_raw: str, val: PassAValidation, criteria:
             scopes.setdefault(e.criterion_id, set()).update(e.scopes)
     taken = {(t.get("criterion_id"), t.get("field")) for t in info.get("taken", [])}
     violations: list[str] = []
+    guarded: list[str] = []
     items = data.get("criteria") if isinstance(data, dict) and isinstance(data.get("criteria"), list) else []
     by_id = {c.criterion_id: c for c in criteria}
     for g in items:
@@ -153,10 +200,19 @@ def merge_pass_a(main_raw: str, repair_raw: str, val: PassAValidation, criteria:
         cid = g["criterion_id"]
         m, r = main.get(cid), rep.get(cid)
         follows = (SCOPE_TARGET_BASIS in scopes.get(cid, set()) or (cid, "restrictions") in taken)
-        if follows and r is not None and info.get("mode") == "scoped" and (cid, "criterion") not in taken:
+        partial = r is not None and info.get("mode") == "scoped" and (cid, "criterion") not in taken
+        basis_taken = False
+        if follows and partial:
             if "target_basis" in r:
                 g["target_basis"] = copy.deepcopy(r["target_basis"])
                 info["taken"].append({"criterion_id": cid, "field": "target_basis"})
+                basis_taken = True
+        if k.where_evidence and partial and (SCOPE_WHERE_EVIDENCE in scopes.get(cid, set()) or basis_taken):
+            if FIELD_WHERE_EVIDENCE in r:           # the evidence always follows the basis it supports
+                g[FIELD_WHERE_EVIDENCE] = copy.deepcopy(r[FIELD_WHERE_EVIDENCE])
+            else:
+                g.pop(FIELD_WHERE_EVIDENCE, None)
+            info["taken"].append({"criterion_id": cid, "field": FIELD_WHERE_EVIDENCE})
         if hint_ids(by_id[cid]):
             continue
         fb, mb = g.get("target_basis"), (m or {}).get("target_basis")
@@ -165,8 +221,14 @@ def merge_pass_a(main_raw: str, repair_raw: str, val: PassAValidation, criteria:
         mr, gr = (m or {}).get("restrictions"), g.get("restrictions")
         if isinstance(mr, list) and mr and isinstance(gr, list) and not gr:
             violations.append(f"criterion {cid}: {F6_ERROR} (a non-empty restriction list became [])")
+        if k.where_evidence:
+            gv = _where_guard(cid, m, g, jd)
+            if gv:
+                guarded.append(gv)
     info["f6_violations"] = list(violations)
-    return json.dumps({"criteria": items}, ensure_ascii=False), info, violations
+    if k.where_evidence:
+        info["where_guard_violations"] = list(guarded)
+    return json.dumps({"criteria": items}, ensure_ascii=False), info, violations + guarded
 
 
 def _annotate(val: PassAValidation, meta: dict) -> PassAValidation:
@@ -186,9 +248,11 @@ def _annotate(val: PassAValidation, meta: dict) -> PassAValidation:
     return replace(val, results=results)
 
 
-def _base_meta(req: PassARequest, model: str) -> dict:
-    return {"prompt_code": S1A_PROMPT_CODE, "prompt_version": S1A_PROMPT_VERSION,
-            "prompt_fingerprint": pass_a_prompt_fingerprint(), "prompt_sha256": S1A_PROMPT_SHA256,
+def _base_meta(req: PassARequest, model: str, prompt_version: str | None = None) -> dict:
+    return {"prompt_code": S1A_PROMPT_CODE,
+            "prompt_version": S1A_PROMPT_VERSION if prompt_version is None else prompt_version,
+            "prompt_fingerprint": pass_a_prompt_fingerprint(prompt_version),
+            "prompt_sha256": pass_a_prompt_sha256(prompt_version),
             "model": model, "temperature": S1A_TEMPERATURE, "max_output_tokens": S1A_MAX_TOKENS,
             "max_input_tokens": S1A_MAX_INPUT_TOKENS, "token_count_method": llm_call.TOKEN_COUNT_METHOD,
             "input_hash": req.input_hash, "request_token_upper_bound": None,
@@ -201,12 +265,13 @@ async def _call(client, model: str, messages: list[dict], meta: dict, kind: str)
                                         max_tokens=S1A_MAX_TOKENS, call_log=meta["call_log"], kind=kind)
 
 
-async def _run(req: PassARequest, client, model: str, meta: dict) -> dict:
+async def _run(req: PassARequest, client, model: str, meta: dict, prompt_version: str | None = None) -> dict:
     def out(reason, raw=None, errors=(), repair_errors=()):
         return {"reason": reason, "raw": raw, "meta": meta,
                 "errors": {"errors": list(errors), "repair_errors": list(repair_errors)}}
 
-    messages = build_pass_a_messages(req)
+    k = pass_a_contract(prompt_version)
+    messages = build_pass_a_messages(req, prompt_version)
     meta["request_token_upper_bound"] = llm_call.request_token_upper_bound(messages)
     if meta["request_token_upper_bound"] > S1A_MAX_INPUT_TOKENS:
         return out(REASON_EXCEEDS_MODEL_CONTEXT)
@@ -219,7 +284,7 @@ async def _run(req: PassARequest, client, model: str, meta: dict) -> dict:
         meta["calls"] = 1
         if finish == "length":
             return out(REASON_OUTPUT_TRUNCATED)
-        val = validate_pass_a(raw, jd, crits, durs)
+        val = validate_pass_a(raw, jd, crits, durs, contract=k)
         outcome = "validated"
         normalized: list[dict] = []
         if not val.ok:
@@ -227,13 +292,13 @@ async def _run(req: PassARequest, client, model: str, meta: dict) -> dict:
             normalized = [{**r, "stage": "pre_repair", "claim_source": "main"} for r in normalized]
             if normalized:
                 main_errors = list(val.errors)
-                raw, val = narrowed, validate_pass_a(narrowed, jd, crits, durs)
+                raw, val = narrowed, validate_pass_a(narrowed, jd, crits, durs, contract=k)
                 meta["span_normalized"] = normalized
                 if val.ok:
                     first_errors, outcome = main_errors, "normalized"
         if not val.ok:
             first_errors, main_val, main_raw = list(val.errors), val, raw
-            note = pass_a_repair_note([e.message for e in val.scoped], pair_repair_guidance(val.scoped))
+            note = pass_a_repair_note([e.message for e in val.scoped], pair_repair_guidance(val.scoped), contract=k)
             repair_messages = messages + [{"role": "assistant", "content": raw}, {"role": "user", "content": note}]
             meta["repair_request_token_upper_bound"] = llm_call.request_token_upper_bound(repair_messages)
             if meta["repair_request_token_upper_bound"] > S1A_MAX_INPUT_TOKENS:
@@ -245,21 +310,22 @@ async def _run(req: PassARequest, client, model: str, meta: dict) -> dict:
             if finish == "length":
                 return out(REASON_OUTPUT_TRUNCATED, errors=first_errors)
             try:
-                merged, meta["repair_merge"], f6 = merge_pass_a(main_raw, rep_raw, main_val, crits)
+                merged, meta["repair_merge"], f6 = merge_pass_a(main_raw, rep_raw, main_val, crits, jd=jd, contract=k)
             except Exception as exc:            # deterministic merge failed = bug, never an AI outage
                 logger.exception("Pass A repair merge failed")
                 meta["error"] = f"{type(exc).__name__}: {exc}"[:300]
                 return out(REASON_INTERNAL_ERROR, errors=first_errors)
             if f6:
-                meta["outcome"] = "f6_rejected"
+                meta["outcome"] = ("f6_rejected" if meta["repair_merge"].get("f6_violations")
+                                   else "where_guard_rejected")
                 return out(REASON_VALIDATION_FAILED, errors=first_errors, repair_errors=f6)
-            val = validate_pass_a(merged, jd, crits, durs)
+            val = validate_pass_a(merged, jd, crits, durs, contract=k)
             outcome = "repaired"
             if not val.ok:
                 narrowed, post = normalize_duplicate_representations(val.scoped, merged, crits)
                 if post:
                     post = [{**r, "stage": "post_repair"} for r in post]
-                    merged, val = narrowed, validate_pass_a(narrowed, jd, crits, durs)
+                    merged, val = narrowed, validate_pass_a(narrowed, jd, crits, durs, contract=k)
                     normalized = normalized + post
                     meta["span_normalized"] = normalized
                     if val.ok:
@@ -268,7 +334,7 @@ async def _run(req: PassARequest, client, model: str, meta: dict) -> dict:
                 plan = plan_withdrawal(val.scoped, merged, crits)
                 if plan:
                     narrowed, withdrawn = apply_withdrawal(merged, plan)
-                    wval = validate_pass_a(narrowed, jd, crits, durs)
+                    wval = validate_pass_a(narrowed, jd, crits, durs, contract=k)
                     if wval.ok:
                         merged, val, outcome = narrowed, wval, "repaired_withdrawn"
                         meta["alignment_withdrawn"] = [{"criterion_id": cid, **w} for cid, w in withdrawn.items()]
@@ -285,20 +351,23 @@ async def _run(req: PassARequest, client, model: str, meta: dict) -> dict:
 
 
 async def run_pass_a(jd: JDText, criteria: list[CriterionInput], *, client: Any = None, model: str = S1A_MODEL,
-                     cache: PassACache | None = None) -> PassAOutcome:
+                     cache: PassACache | None = None, prompt_version: str | None = None) -> PassAOutcome:
+    """prompt_version None = the current prompt; an explicit runnable version (e.g. "s1a-1.1") runs under its own
+    pinned prompt and contract (exact replay / comparison)."""
+    k = pass_a_contract(prompt_version)
     req = build_pass_a_request(jd, criteria)
-    key = pass_a_cache_key(req, model=model)
+    key = pass_a_cache_key(req, model=model, prompt_version=prompt_version)
     stored = cache.get(key) if cache is not None else None
     if stored is not None:
         res = copy.deepcopy(stored)
         res["meta"] = {**res["meta"], "cache_hit": True}
     else:
-        res = await _run(req, client, model, _base_meta(req, model))
+        res = await _run(req, client, model, _base_meta(req, model, prompt_version), prompt_version)
         if cache is not None and res["reason"] in CACHEABLE:
             cache.set(key, copy.deepcopy(res))
     val = None
     if res["reason"] is None:
-        val = validate_pass_a(res["raw"], jd, criteria, req.durations)     # deterministic; also after a cache hit
+        val = validate_pass_a(res["raw"], jd, criteria, req.durations, contract=k)   # deterministic; also cached
         if not val.ok:                                                    # cannot happen unless a rule changed
             res["meta"]["error"] = "final answer no longer validates"
             return PassAOutcome(REASON_INTERNAL_ERROR, None, val, res["meta"], key, res["errors"])
@@ -330,7 +399,8 @@ def run_record(outcome: PassAOutcome) -> dict:
 
 async def run_pass_a_job(job_id: str, jd_text: str, analysis_json: dict | None, *, client: Any = None,
                          model: str = S1A_MODEL, cache: PassACache | None = None,
-                         recruiter_fields: Mapping[str, str] | None = None) -> PassAJobResult:
+                         recruiter_fields: Mapping[str, str] | None = None,
+                         prompt_version: str | None = None) -> PassAJobResult:
     """Pass A for one job: frozen targets for every criterion, or one target_failed artefact per criterion (F1).
     Reads only the S1 inputs of analysis_json (criteria enumeration); never any qualifying-context field."""
     rf, _ = split_recruiter_fields(recruiter_fields)
@@ -338,7 +408,7 @@ async def run_pass_a_job(job_id: str, jd_text: str, analysis_json: dict | None, 
     if not criteria:
         return PassAJobResult(str(job_id), None)
     jd = JDText(jd_text)
-    outcome = await run_pass_a(jd, criteria, client=client, model=model, cache=cache)
+    outcome = await run_pass_a(jd, criteria, client=client, model=model, cache=cache, prompt_version=prompt_version)
     run = run_record(outcome)
     if not outcome.ok:
         validation = {**outcome.errors}
@@ -352,4 +422,4 @@ async def run_pass_a_job(job_id: str, jd_text: str, analysis_json: dict | None, 
 
 
 __all__ = ["run_pass_a", "run_pass_a_job", "build_pass_a_messages", "build_pass_a_call", "pass_a_repair_note",
-           "merge_pass_a", "InMemoryPassACache", "PassAOutcome", "PassAJobResult", "F6_ERROR"]
+           "merge_pass_a", "InMemoryPassACache", "PassAOutcome", "PassAJobResult", "F6_ERROR", "WHERE_GUARD_ERROR"]

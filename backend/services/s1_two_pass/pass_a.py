@@ -7,6 +7,7 @@ Wire (per criterion):
    "targets": [{hint, type, match, jd_span, alignment?, jd_extra?}]           # criteria WITH target hints
    | "restrictions": [{line, text, kind: "role" | "function" | "vague"}],    # criteria WITHOUT target hints
    "target_basis": "targets" | "total_experience" | "setting_only" | "unspecified",
+   "where_evidence": [{line, text}],                                         # s1a-1.3, criteria WITHOUT hints
    "duration": "Dn" | null, "ambiguity": [...], "note"}
 
 Validation = the frozen s1-5.x target / restriction / span / duration / mapping / alignment / anchor rules
@@ -19,6 +20,19 @@ Validation = the frozen s1-5.x target / restriction / span / duration / mapping 
       only vague restriction(s)            -> "unspecified"
       no restriction                       -> "total_experience" | "setting_only"
     so a no-target reading is always DECLARED, never inferred from an empty list (F2).
+Every prompt version is validated, repaired and merged under its OWN contract (CONTRACTS), so a recorded run
+replays exactly under the version that produced it. s1a-1.1 is the contract above. s1a-1.3 adds "where_evidence",
+the verbatim words of a where / for whom limit (a place, sector, industry, kind of employer or client):
+  - REQUIRED exactly when target_basis is "setting_only", [] (or absent) for every other basis and for hinted
+    criteria: setting_only is never an unanchored declaration;
+  - structural checks only: a list of at most MAX_SETTINGS verbatim spans (whole words, Arabic proclitics as in
+    every span), pairwise distinct and non-overlapping, inside the criterion's requirement_spans, overlapping
+    neither the duration nor any restriction (the same words are never both WHAT and WHERE);
+  - the basis follows from the typed answer: hinted -> targets; role/function -> targets; else where_evidence ->
+    setting_only (a vague word may accompany it); else vague -> unspecified; else total_experience. The check
+    runs on the raw answer, so a disagreement is reported even when another field is also invalid;
+  - audit evidence only: never interpreted, never a target or a setting, never part of the Pass B input; kept on
+    the parsed result (PassACriterion.where_evidence -> TargetFrame.where_evidence) for the later reconciliation.
 Errors carry repair scopes; v3 messages that talk about contexts are never shown to the model (_repair_safe).
 The request carries no qualifying-context data, no recruiter decision and no analysis field other than the
 target hints and the years (S1 independence).
@@ -33,11 +47,11 @@ from services.s1_requirements.durations import DurationMatch
 from services.s1_requirements.jd_text import JDText
 from services.s1_requirements.schema import (
     AMB_AMBIGUOUS_RELEVANCE, AMB_CONFLICTING_REQUIREMENTS, AMB_MULTIPLE_DURATIONS, AMB_REQUIREMENT_NOT_IN_JD,
-    POLICY_SECTOR, canonical, sha256,
+    MAX_SETTINGS, POLICY_SECTOR, Span, canonical, sha256,
 )
 from services.s1_requirements.validator import (
     SCOPE_AMBIGUITY, SCOPE_CRITERION, SCOPE_RESPONSE, SCOPE_RESTRICTIONS, SCOPE_SETTING_PREFIX, SCOPE_SETTINGS, ParsedCriterion,
-    ScopedError, hint_ids, validate_response,
+    ScopedError, _inside, _overlap, _span, hint_ids, validate_response,
 )
 from services.s1_two_pass.schema import (
     BASIS_SETTING_ONLY, BASIS_TARGETS, BASIS_TOTAL_EXPERIENCE, BASIS_UNSPECIFIED, PASS_A_RESTRICTION_KINDS,
@@ -86,15 +100,18 @@ def build_pass_a_request(jd: JDText, criteria: list[CriterionInput]) -> PassAReq
     return PassARequest(payload, jd, criteria, durs)
 
 
-def pass_a_cache_key(req: PassARequest, *, prompt_fingerprint: str | None = None, model: str = S1A_MODEL) -> str:
-    fp = pass_a_prompt_fingerprint() if prompt_fingerprint is None else prompt_fingerprint
-    return sha256(f"s1a|{S1V4_VERSION}|{req.input_hash}|{S1A_PROMPT_VERSION}:{fp}|{model}")
+def pass_a_cache_key(req: PassARequest, *, prompt_fingerprint: str | None = None, model: str = S1A_MODEL,
+                     prompt_version: str | None = None) -> str:
+    version = S1A_PROMPT_VERSION if prompt_version is None else prompt_version
+    fp = pass_a_prompt_fingerprint(prompt_version) if prompt_fingerprint is None else prompt_fingerprint
+    return sha256(f"s1a|{S1V4_VERSION}|{req.input_hash}|{version}:{fp}|{model}")
 
 
 @dataclass(frozen=True)
 class PassACriterion:
     parsed: ParsedCriterion          # s1-5.x parse (settings always ())
     target_basis: str
+    where_evidence: tuple[Span, ...] = ()    # s1a-1.3: verbatim where words of a setting_only reading (audit only)
 
 
 @dataclass
@@ -113,8 +130,129 @@ BASIS_REREAD_MESSAGE = ('Re-read the requirement statement and decide whether it
                         'experience is of). If it does, return each as a role or function restriction, quoting only '
                         'the role or work words, and target_basis "targets". Only when it names no role and no work '
                         'at all may target_basis be "unspecified", "total_experience" or "setting_only".')
+# s1a-1.3 (S1-A-1.3 review): the same disagreement message, neutral across all four bases. It never prescribes one
+# reading (the s1a-1.1 message offered only the role / function fix, which turned mislabelled where words into
+# functions) and names the evidence each basis needs.
+BASIS_NEUTRAL_MESSAGE = ('Re-read the requirement statement and give the one reading it supports, with restrictions '
+                         'and where_evidence that agree with it: "targets" when it names a role or work (each as a '
+                         'role or function restriction quoting only those words; where_evidence []); "setting_only" '
+                         'when it names no role and no work but requires the experience to have been gained in a '
+                         'particular place, sector or industry, or for a particular kind of employer or client (no '
+                         'role or function restriction; those where words quoted in where_evidence); "unspecified" '
+                         'when it names no role, no work and no such limit and only asks for relevant, related or '
+                         'similar experience (that word as a vague restriction; where_evidence []); '
+                         '"total_experience" when it names none of these (restrictions [], where_evidence []).')
 NEUTRAL_FIX = "return only role, function or vague restrictions, quoting only the words that name the role or the work"
 _CONTEXT_WORDS = ("context", "setting", "sector")
+
+SCOPE_WHERE_EVIDENCE = "where_evidence"
+FIELD_WHERE_EVIDENCE = "where_evidence"
+
+
+@dataclass(frozen=True)
+class PassAContract:
+    """The version-specific Pass A wire rules (validation, repair message, merge)."""
+    prompt_version: str
+    where_evidence: bool            # s1a-1.3: where_evidence required exactly for setting_only (audit evidence)
+    basis_message: str              # repair instruction for a target_basis / restriction disagreement
+
+
+CONTRACTS = {
+    "s1a-1.1": PassAContract("s1a-1.1", False, BASIS_REREAD_MESSAGE),
+    "s1a-1.3": PassAContract("s1a-1.3", True, BASIS_NEUTRAL_MESSAGE),
+}
+
+
+def pass_a_contract(version: str | None = None) -> PassAContract:
+    """The contract of the current prompt (default) or of a runnable earlier version (exact replay)."""
+    v = S1A_PROMPT_VERSION if version is None else version
+    if v not in CONTRACTS:
+        raise ValueError(f"Pass A prompt {v!r} has no runnable contract (audit only)")
+    return CONTRACTS[v]
+
+
+def _expected_basis(c: CriterionInput, it: dict, has_where: bool) -> str:
+    """s1a-1.3: the basis the typed answer supports (raw kinds, so a disagreement is never masked by another
+    error of the same answer)."""
+    if hint_ids(c):
+        return BASIS_TARGETS
+    rl = it.get("restrictions")
+    kinds = {r.get("kind") for r in rl if isinstance(r, dict)} if isinstance(rl, list) else set()
+    if kinds & {"role", "function"}:
+        return BASIS_TARGETS
+    if has_where:
+        return BASIS_SETTING_ONLY
+    if "vague" in kinds:
+        return BASIS_UNSPECIFIED
+    return BASIS_TOTAL_EXPERIENCE
+
+
+def _where_checks(it: dict, c: CriterionInput, b, jd: JDText, contract: PassAContract,
+                  own: list[ScopedError]) -> tuple[list[Span], bool]:
+    """s1a-1.3 checks that need only the raw answer: shape, verbatim spans, count, pairwise overlap, and the basis /
+    restriction / where_evidence agreement. -> (located where spans, basis disagreement reported)."""
+    cid, w = c.criterion_id, f"criterion {c.criterion_id}"
+    we = it.get(FIELD_WHERE_EVIDENCE)
+    we = [] if we is None else we
+    if not isinstance(we, list):
+        own.append(ScopedError(cid, (SCOPE_WHERE_EVIDENCE,), f'{w}: where_evidence must be a list of {{"line", '
+                                                              f'"text"}} ([] unless target_basis is "setting_only")'))
+    has_where = bool(we)
+    want = _expected_basis(c, it, has_where)
+    disagree = b in TARGET_BASES and b != want
+    if disagree and hint_ids(c):
+        own.append(ScopedError(cid, (SCOPE_TARGET_BASIS,), f"{w}: {BASIS_HINTED_MESSAGE}"))
+    elif disagree:
+        own.append(ScopedError(cid, (SCOPE_TARGET_BASIS, SCOPE_RESTRICTIONS, SCOPE_WHERE_EVIDENCE),
+                               f"{w}: target_basis {b!r}, the restrictions and where_evidence disagree. "
+                               f"{contract.basis_message}"))
+    elif has_where and want == BASIS_TARGETS:
+        own.append(ScopedError(cid, (SCOPE_WHERE_EVIDENCE,), (
+            f"{w}: a criterion with target_hints has no where_evidence: return []" if hint_ids(c) else
+            f'{w}: the restrictions name a role or work, so target_basis is "targets" and where_evidence is []: a '
+            f'where or for whom limit never changes a role or work target')))
+    spans: list[Span] = []
+    if not isinstance(we, list):
+        return spans, disagree
+    if len(we) > MAX_SETTINGS:
+        own.append(ScopedError(cid, (SCOPE_WHERE_EVIDENCE,), f"{w}: at most {MAX_SETTINGS} where_evidence spans "
+                                                              f"(got {len(we)})"))
+    for j, x in enumerate(we):
+        errs: list[str] = []
+        sp = _span(jd, x, f"{w} where_evidence[{j}]", errs)
+        own.extend(ScopedError(cid, (SCOPE_WHERE_EVIDENCE,), m) for m in errs)
+        if sp is None:
+            continue
+        for o in spans:
+            if _overlap(sp, o):
+                own.append(ScopedError(cid, (SCOPE_WHERE_EVIDENCE,), f"{w}: where_evidence {o.text!r} and "
+                                                                      f"{sp.text!r} overlap; quote each limit once"))
+        spans.append(sp)
+    return spans, disagree
+
+
+def _where_span_errors(pc: ParsedCriterion, spans: list[Span], durations: dict, contract: PassAContract
+                       ) -> list[ScopedError]:
+    """s1a-1.3 checks against the parsed criterion: inside the requirement spans, never the duration, never the
+    words of a restriction."""
+    cid, out = pc.criterion_id, []
+    dur = None
+    if pc.duration_id and pc.duration_id in durations:
+        dl, dm = durations[pc.duration_id]
+        dur = Span(dl, dm.start, dm.end, dm.text)
+    for sp in spans:
+        w = f"criterion {cid} where_evidence {sp.text!r}"
+        if not _inside(sp, pc.requirement_spans):
+            out.append(ScopedError(cid, (SCOPE_WHERE_EVIDENCE,), f"{w} is not inside one of this criterion's "
+                                                                  f"requirement_spans"))
+        if dur is not None and _overlap(sp, dur):
+            out.append(ScopedError(cid, (SCOPE_WHERE_EVIDENCE,), f"{w} must not include the duration {dur.text!r}"))
+        for r in pc.restrictions:
+            if _overlap(sp, r.span):
+                out.append(ScopedError(cid, (SCOPE_TARGET_BASIS, SCOPE_RESTRICTIONS, SCOPE_WHERE_EVIDENCE),
+                                       f"{w} overlaps the {r.kind} restriction {r.text!r}: the same words are never "
+                                       f"both what and where. {contract.basis_message}"))
+    return out
 
 
 def _repair_safe(v3_scoped: list[ScopedError], flagged: set[str]) -> list[ScopedError]:
@@ -135,7 +273,9 @@ def _repair_safe(v3_scoped: list[ScopedError], flagged: set[str]) -> list[Scoped
 
 
 def validate_pass_a(raw: str, jd: JDText, criteria: list[CriterionInput],
-                    durations: dict[str, tuple[int, DurationMatch]]) -> PassAValidation:
+                    durations: dict[str, tuple[int, DurationMatch]], *,
+                    contract: PassAContract | None = None) -> PassAValidation:
+    ct = pass_a_contract() if contract is None else contract
     own: list[ScopedError] = []
     try:
         data = json.loads(raw)
@@ -149,6 +289,8 @@ def validate_pass_a(raw: str, jd: JDText, criteria: list[CriterionInput],
     by_id = {c.criterion_id: c for c in criteria}
     basis: dict[str, str] = {}
     flagged: set[str] = set()                   # criteria with a Pass A shape error: repaired as a whole
+    where: dict[str, list[Span]] = {}           # s1a-1.3: located where_evidence spans
+    disagreed: set[str] = set()                 # s1a-1.3: basis disagreement already reported (raw answer)
     for it in items:
         if not isinstance(it, dict):
             continue
@@ -175,11 +317,24 @@ def validate_pass_a(raw: str, jd: JDText, criteria: list[CriterionInput],
                                                                f"{list(TARGET_BASES)}"))
         elif cid in by_id:
             basis[cid] = b
+        if ct.where_evidence and cid in by_id and cid not in where:
+            where[cid], bad = _where_checks(it, by_id[cid], b, jd, ct, own)
+            if bad:
+                disagreed.add(cid)
     v = validate_response(raw, jd, criteria, durations)
     results: dict[str, PassACriterion] = {}
     for cid, pc in v.results.items():
         b, c = basis.get(cid), by_id[cid]
         if b is None:
+            continue
+        if ct.where_evidence:                   # s1a-1.3: agreement already checked on the raw answer
+            span_errs = _where_span_errors(pc, where.get(cid, []), durations, ct)
+            own.extend(span_errs)
+            if span_errs or cid in disagreed:
+                continue
+            if b == BASIS_SETTING_ONLY:
+                pc = replace(pc, policy=POLICY_SECTOR, relevance_basis="sector")
+            results[cid] = PassACriterion(pc, b, tuple(where.get(cid, ())))
             continue
         hinted = bool(hint_ids(c))
         rf = [r for r in pc.restrictions if r.kind in ("role", "function")]

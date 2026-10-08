@@ -1,5 +1,6 @@
 """
-S1 two-pass Step 2 — Pass A (s1a-1.1, the experience TARGET pass; s1a-1.0 kept for audit): prompt integrity and leakage, request
+S1 two-pass Step 2 — Pass A (s1a-1.3, the experience TARGET pass; s1a-1.1 runnable for replay, s1a-1.0 / s1a-1.2 kept for
+audit): prompt integrity and leakage, request
 construction, cache / fingerprint / version identity, validator behaviour for the real wire, the one-repair
 orchestration with F6, and the independence of Pass A from the qualifying-context analysis.
 Offline only: a scripted fake client, no OpenAI, no network, no database. All JDs SYNTHETIC.
@@ -27,6 +28,8 @@ from services.s1_two_pass import schema as sc
 BACKEND = Path(__file__).resolve().parent.parent
 PKG = BACKEND / "services" / "s1_two_pass"
 PROMPT = prompt_a.load_pass_a_prompt()
+PROMPT_11 = prompt_a.load_pass_a_prompt("s1a-1.1")
+S1A_13 = "0cf68cadc53d05e8e26c75bb94d2ea279f91dcbb65d8663f17b9052f4c98656d"
 
 
 class FakeClient:
@@ -101,12 +104,15 @@ L_COMPOUND = "Minimum 5 years of experience as an Internal Auditor, including 2 
 
 class TestPromptIdentity:
     def test_version_file_and_pinned_sha(self):
-        assert sc.S1A_PROMPT_VERSION == "s1a-1.1" and prompt_a.S1A_PROMPT_PATH.name == "s1a-1.1.txt"
+        assert sc.S1A_PROMPT_VERSION == "s1a-1.3" and prompt_a.S1A_PROMPT_PATH.name == "s1a-1.3.txt"
         raw = prompt_a.S1A_PROMPT_PATH.read_bytes()
-        assert hashlib.sha256(raw).hexdigest() == prompt_a.S1A_PROMPT_SHA256 == (
-            "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11")
-        assert prompt_a.pass_a_prompt_fingerprint() == "952299303431"
+        assert hashlib.sha256(raw).hexdigest() == prompt_a.S1A_PROMPT_SHA256 == S1A_13
+        assert prompt_a.pass_a_prompt_fingerprint() == "0cf68cadc53d"
         assert PROMPT == raw.decode("utf-8")
+        # s1a-1.1 stays pinned and loadable by explicit version (replay / comparison)
+        assert prompt_a.pass_a_prompt_sha256("s1a-1.1") == (
+            "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11")
+        assert prompt_a.pass_a_prompt_fingerprint("s1a-1.1") == "952299303431" and PROMPT_11 != PROMPT
 
     def test_s1a_1_0_kept_unchanged_for_audit(self):
         old = prompt_a.PROMPT_DIR / "s1a-1.0.txt"
@@ -114,7 +120,7 @@ class TestPromptIdentity:
             "4caabb71429c0cc1ac997986c2a6c95775b06f4f7acebcb7025e27757f74bf36")
         assert prompt_a.load_pass_a_prompt("s1a-1.0") == old.read_text(encoding="utf-8") != PROMPT
         # s1a-1.2 (withdrawn Option D) stays pinned for audit only; every pinned file still matches its hash
-        assert set(prompt_a.PROMPT_SHA256) == {"s1a-1.0", "s1a-1.1", "s1a-1.2"}
+        assert set(prompt_a.PROMPT_SHA256) == {"s1a-1.0", "s1a-1.1", "s1a-1.2", "s1a-1.3"}
         for v, sha in prompt_a.PROMPT_SHA256.items():
             assert hashlib.sha256((prompt_a.PROMPT_DIR / f"{v}.txt").read_bytes()).hexdigest() == sha, v
 
@@ -142,8 +148,11 @@ class TestPromptIdentity:
 
 # ── B. prompt leakage: no qualifying-context interpretation ──────────────────
 
-BANNED = [r"\bsettings?\b", r"\bsector", r"context", r"geograph", r"\bregion", r"countr", r"organi[sz]ation",
-          r"industr", r"environment", r"qualifying", r"\bscope", r"multinational", r"government", r"infrastructure",
+# s1a-1.3 names "sector" / "industry" ONLY to define a where limit (the evidence of setting_only); every other
+# qualifying-context word stays banned, and s1a-1.1 still passes the full list
+WHERE_WORDS = [r"\bsector", r"industr"]
+BANNED = [r"\bsettings?\b", r"context", r"geograph", r"\bregion", r"countr", r"organi[sz]ation",
+          r"environment", r"qualifying", r"\bscope", r"multinational", r"government", r"infrastructure",
           r"\bgcc\b", r"locat", r"project type", r"\bsetting\"", r"ambiguous_context_scope", r"compound_requirement"]
 
 
@@ -152,17 +161,28 @@ class TestPromptLeakage:
     def test_no_context_vocabulary(self, pattern):
         assert not re.search(pattern, PROMPT, flags=re.IGNORECASE), pattern
 
+    @pytest.mark.parametrize("pattern", BANNED + WHERE_WORDS)
+    def test_s1a_1_1_has_no_context_vocabulary(self, pattern):
+        assert not re.search(pattern, PROMPT_11, flags=re.IGNORECASE), pattern
+
+    def test_where_words_only_define_a_where_limit(self):
+        body = PROMPT[:PROMPT.index("SECURITY RULES")]
+        hits = [ln for ln in body.splitlines() if any(re.search(w, ln, flags=re.IGNORECASE) for w in WHERE_WORDS)]
+        assert hits and all("where" in ln.lower() or '"setting_only"' in ln for ln in hits)
+
     def test_no_context_fields_or_kinds_in_the_wire(self):
         for frag in ('"setting"', '"settings"', '"contexts"', '"context_spans"', '"target_gap"', '"sector"',
                      '"context"', '"kind": "sector"', '"kind": "context"'):
             assert frag not in PROMPT, frag
 
-    def test_only_trace_of_where_is_setting_only(self):
-        # the "where" notion appears only to define setting_only and to exclude where-words from targets
+    def test_where_is_only_the_evidence_of_setting_only(self):
+        # s1a-1.3: a where limit is never a target / restriction / ambiguity; it is quoted only as the evidence of a
+        # setting_only reading (s1a-1.1 forbade quoting it at all, leaving setting_only without evidence)
         body = PROMPT[:PROMPT.index("SECURITY RULES")]
-        assert body.count("setting_only") == 3          # the trace, its definition and the "never" example
-        assert "Do not quote or describe that limit." in body
-        assert "never return it as a target, a restriction, an ambiguity or any other field" in body
+        assert "Do not quote or describe that limit." not in body and "Do not quote or describe that limit." in PROMPT_11
+        assert "is never a target, a restriction or an ambiguity" in body and "In every other case you ignore it." in body
+        assert 'REQUIRED for "setting_only" and ONLY for it' in body
+        assert "Decide the basis from the role and work words ONLY." not in body       # the s1a-1.1 contradiction
 
     def test_target_basis_contract(self):
         sec = PROMPT[PROMPT.index("5 TARGET_BASIS"):PROMPT.index("6 DURATION")]
@@ -172,7 +192,9 @@ class TestPromptLeakage:
         assert '"kind": "role" | "function" | "vague"' in PROMPT
         assert "These three are the only kinds." in PROMPT
         out = PROMPT[PROMPT.index("OUTPUT:"):]
-        assert out.count('"target_basis"') == 4 and '"target_basis": "total_experience"' not in out
+        assert out.count('"target_basis"') == 5 and '"target_basis": "total_experience"' not in out
+        assert '"target_basis": "setting_only", "where_evidence": [{"line": 13' in out
+        assert '"target_basis": "unspecified", "where_evidence": []' in out
 
     def test_sections_in_order(self):
         heads = ["1 REQUIREMENT_SPANS", "2 TARGETS", "3 MATCH, JD_SPAN and ALIGNMENT", "4 RESTRICTIONS",
@@ -263,7 +285,7 @@ class TestRequest:
         m = res.outcome.meta
         assert m["request_token_upper_bound"] > len(PROMPT.encode("utf-8"))
         assert (m["prompt_version"], m["prompt_fingerprint"], m["prompt_sha256"]) == (
-            "s1a-1.1", "952299303431", prompt_a.S1A_PROMPT_SHA256)
+            "s1a-1.3", "0cf68cadc53d", prompt_a.S1A_PROMPT_SHA256)
 
 
 # ── D. cache / fingerprint / version identity ───────────────────────────────
@@ -276,7 +298,9 @@ class TestCacheIdentity:
     def test_key_components(self, monkeypatch):
         a, jd, crits, req = self._setup()
         k = pa.pass_a_cache_key(req)
-        assert k == pa.pass_a_cache_key(req, prompt_fingerprint="952299303431", model="gpt-4o-mini")
+        assert k == pa.pass_a_cache_key(req, prompt_fingerprint="0cf68cadc53d", model="gpt-4o-mini")
+        assert k == pa.pass_a_cache_key(req, prompt_version="s1a-1.3")
+        assert k != pa.pass_a_cache_key(req, prompt_version="s1a-1.1")          # another prompt, another key
         assert k != pa.pass_a_cache_key(req, prompt_fingerprint="000000000000")
         assert k != pa.pass_a_cache_key(req, model="other")
         monkeypatch.setattr(pa, "S1A_PROMPT_VERSION", "s1a-9.9")
@@ -356,10 +380,11 @@ class TestFamilies:
 
     def test_setting_only(self):
         a, jd, crits = job([], 4, ["Requirements", "- " + L_WHERE + "."])
-        f = _only(pass_a_job(a, jd, resp(free(crits[0].criterion_id, [(2, L_WHERE)], [],
-                                               basis="setting_only")))[1])
+        f = _only(pass_a_job(a, jd, resp(free(crits[0].criterion_id, [(2, L_WHERE)], [], basis="setting_only",
+                                               where_evidence=[{"line": 2, "text": "public hospitals"}])))[1])
         assert f.frame.target_basis == "setting_only" and f.artefact.policy == "sector"
-        assert f.artefact.settings == () and f.frame.targets == ()      # Pass A never extracts the setting
+        assert f.artefact.settings == () and f.frame.targets == ()      # Pass A never extracts a setting
+        assert [w.text for w in f.frame.where_evidence] == ["public hospitals"]   # audit evidence only
 
     def test_unspecified(self):
         a, jd, crits = job([], 4, ["Requirements", "- " + L_VAGUE + "."])
@@ -604,7 +629,7 @@ class TestIntegration:
         _, res = pass_a_job(a, jd, resp(hinted(crits[0].criterion_id, [(2, L_ROLE)])))
         assert res.frozen[0].artefact.prompt_version == ""        # the frozen v3 artefact is not the run record
         failed = pass_a_job(a, jd, RuntimeError("x"))[1].failed[0]
-        assert failed.versions["pass_a"]["prompt_version"] == "s1a-1.1"
+        assert failed.versions["pass_a"]["prompt_version"] == "s1a-1.3"
         assert failed.versions["pass_a"]["reason"] == "ai_unavailable"
 
 
@@ -649,10 +674,12 @@ class TestIndependence:
 
     def test_entry_points_take_no_qc_parameter(self):
         import inspect
-        assert list(inspect.signature(pr.run_pass_a).parameters) == ["jd", "criteria", "client", "model", "cache"]
+        # prompt_version selects a pinned prompt and its contract (replay); it is never a qualifying context
+        assert list(inspect.signature(pr.run_pass_a).parameters) == ["jd", "criteria", "client", "model", "cache",
+                                                                     "prompt_version"]
         assert list(inspect.signature(pr.run_pass_a_job).parameters) == [
-            "job_id", "jd_text", "analysis_json", "client", "model", "cache", "recruiter_fields"]
-        assert list(inspect.signature(pr.build_pass_a_messages).parameters) == ["req"]
+            "job_id", "jd_text", "analysis_json", "client", "model", "cache", "recruiter_fields", "prompt_version"]
+        assert list(inspect.signature(pr.build_pass_a_messages).parameters) == ["req", "prompt_version"]
 
     @pytest.mark.parametrize("fname,allowed_extra", [
         ("prompt_a.py", set()),

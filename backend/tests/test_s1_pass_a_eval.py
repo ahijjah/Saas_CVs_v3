@@ -152,7 +152,7 @@ class TestOracle:
     def test_cli_oracle_writes_results(self, tmp_path):
         assert ev.main(["--out", str(tmp_path / "o"), "--mode", "oracle", "--runs", "2"]) == 0
         data = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))
-        assert data["meta"]["stage"] == "pass_a" and data["meta"]["prompt_version"] == "s1a-1.1"
+        assert data["meta"]["stage"] == "pass_a" and data["meta"]["prompt_version"] == "s1a-1.3"
         assert data["meta"]["fixture_sha256"] == ctx.FIXTURE_SHA256["main"]
         assert data["gates"]["all_decided_pass"] is True
         assert (tmp_path / "o" / "report.md").read_text(encoding="utf-8").startswith("# S1 Pass A")
@@ -213,7 +213,7 @@ class TestMetricArithmetic:
     def test_failed_runs_are_never_unsafe_and_never_scored(self):
         c = ev.check(GF, FAIL)
         assert c == {"ok": False, "targets": False, "policy": False, "basis": False, "unsafe": False,
-                     "targets_lost": [], "policy_downgraded": False, "expanded": []}
+                     "targets_lost": [], "policy_downgraded": False, "expanded": [], "sector_to_function": False}
         s = ev.summarize([_rec("X", 1, [FAIL], [GF], job="failed")])
         assert s["target_accuracy"] is None and s["failure_rate"] == 1.0
         assert ev.evaluate_gates(s)["gates"]["target_accuracy"] is False
@@ -363,8 +363,8 @@ class TestGuards:
             ctx.main(["--stage", "pass_a", "--out", str(tmp_path / "h"), "--allow-heldout"])
 
     def test_pinned_values(self):
-        assert ev.PINNED == {"prompt_version": "s1a-1.1", "prompt_fingerprint": "952299303431",
-                             "prompt_sha256": "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11",
+        assert ev.PINNED == {"prompt_version": "s1a-1.3", "prompt_fingerprint": "0cf68cadc53d",
+                             "prompt_sha256": "0cf68cadc53d05e8e26c75bb94d2ea279f91dcbb65d8663f17b9052f4c98656d",
                              "s1_version": "2.0.0", "model": "gpt-4o-mini", "temperature": 0.0, "max_tokens": 4000}
         assert ev.THRESHOLDS == {"target_accuracy": 0.95, "policy_accuracy": 0.95, "target_basis_accuracy": 0.95,
                                  "stability": 0.95, "failure_rate": 0.05}

@@ -1,0 +1,1913 @@
+{
+ "_comment": "SYNTHETIC labelled offline cases for the Option D 'names_role_or_work' evaluation of S1 Pass A (target pass). No candidate, CV, application or personal data. One hint-less experience criterion per case. 'gold.names_role_or_work' is true exactly when the requirement names a role or a work/function target (target_basis 'targets'); total-experience, vague ('unspecified') and setting-only requirements are false. Business semantics follow the existing s1-boundary N/O/Q/M cases (professional/overall experience = total_experience; 'relevant' = vague; a sector/place = setting_only; a generic working atmosphere is not a setting). 'oracle' is the labelled Pass A answer (duration as candidate TEXT). 'contrast_with' links intentionally similar wordings whose correct answer differs. TUNING/DESIGN SET for Option D; not a held-out set. s1a-basis-2 (S1-A-1.3): the same 44 cases, jd lines, analyses and gold as s1a-basis-1 (sha256 02a452bb..., kept byte for byte); the only change is the s1a-1.3 output contract in the labelled oracle answers: the 10 setting_only answers carry where_evidence, the verbatim words of the where limit. No other oracle answer changes (where_evidence [] is the default).",
+ "fixture_version": "s1a-basis-2",
+ "cases": [
+  {
+   "id": "BE01",
+   "group": "total_professional",
+   "lang": "en",
+   "contrast_with": [
+    "BE11"
+   ],
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of professional experience."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "total_experience",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'professional' only says the experience is paid/professional; no role, no work, no place is named (boundary N1 semantics)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of professional experience"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "total_experience",
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE02",
+   "group": "total_professional",
+   "lang": "en",
+   "contrast_with": [],
+   "analysis": {
+    "minimum_years": 7,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 7 years of overall experience."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "total_experience",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'overall' sums all experience; nothing restricts what or where."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 7 years of overall experience"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "total_experience",
+    "duration": "7 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE03",
+   "group": "total_professional",
+   "lang": "en",
+   "contrast_with": [
+    "BE21"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 4 years of prior work experience."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "total_experience",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'prior work experience' is any earlier employment; 'work' here is generic, not a field of work."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "4 years of prior work experience"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "total_experience",
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE04",
+   "group": "total_professional",
+   "lang": "en",
+   "contrast_with": [
+    "BE12"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience in a fast-paced, dynamic environment."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "total_experience",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "A generic working atmosphere is neither work nor a setting (boundary M9 semantics), so this is general experience."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience in a fast-paced, dynamic environment"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "total_experience",
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE05",
+   "group": "vague",
+   "lang": "en",
+   "contrast_with": [
+    "BE21"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of relevant experience."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "unspecified",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'relevant' without saying relevant to what names no work (boundary O1 semantics)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of relevant experience"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "relevant",
+      "kind": "vague"
+     }
+    ],
+    "target_basis": "unspecified",
+    "duration": "4 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE06",
+   "group": "vague",
+   "lang": "en",
+   "contrast_with": [
+    "BE22"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of related experience in the field."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "unspecified",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'related ... in the field' is the closed vague wording; still no named work."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years of related experience in the field"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "related",
+      "kind": "vague"
+     }
+    ],
+    "target_basis": "unspecified",
+    "duration": "3 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE07",
+   "group": "setting_only",
+   "lang": "en",
+   "contrast_with": [
+    "BE13"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 3 years of experience in the hospitality sector."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "setting_only",
+    "targets": [],
+    "policy": "sector",
+    "rationale": "Only WHERE the experience was gained (a sector); no role or work (boundary M1 semantics)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "3 years of experience in the hospitality sector"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "setting_only",
+    "where_evidence": [
+     {
+      "line": 2,
+      "text": "the hospitality sector"
+     }
+    ],
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE08",
+   "group": "setting_only",
+   "lang": "en",
+   "contrast_with": [
+    "BE14"
+   ],
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 5 years of experience in the aviation industry."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "setting_only",
+    "targets": [],
+    "policy": "sector",
+    "rationale": "An industry is a place/kind of employer, not work."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 5 years of experience in the aviation industry"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "setting_only",
+    "where_evidence": [
+     {
+      "line": 2,
+      "text": "the aviation industry"
+     }
+    ],
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE09",
+   "group": "setting_only",
+   "lang": "en",
+   "contrast_with": [
+    "BE19"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience in schools."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "setting_only",
+    "targets": [],
+    "policy": "sector",
+    "rationale": "'schools' says where (a kind of employer); it does not say what the person did."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience in schools"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "setting_only",
+    "where_evidence": [
+     {
+      "line": 2,
+      "text": "schools"
+     }
+    ],
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE10",
+   "group": "experience_in_x",
+   "lang": "en",
+   "contrast_with": [
+    "BE09"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 4 years of experience in recruitment."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "recruitment",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'experience in <X>' where X = recruitment is an activity; same shape as the setting-only BE09."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "4 years of experience in recruitment"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "recruitment",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE11",
+   "group": "x_experience",
+   "lang": "en",
+   "contrast_with": [
+    "BE01"
+   ],
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of tax advisory experience."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "tax advisory",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'<X> experience': X = tax advisory is the work."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of tax advisory experience"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "tax advisory",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE12",
+   "group": "x_experience",
+   "lang": "en",
+   "contrast_with": [
+    "BE06",
+    "BE04"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 3 years of field service experience."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "field service",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'field service' is a line of work; contrast with the vague 'in the field'."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "3 years of field service experience"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "field service",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE13",
+   "group": "x_experience",
+   "lang": "en",
+   "contrast_with": [
+    "BE07"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 4 years of warehouse operations experience."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "warehouse operations",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'<X> experience' where X names an activity."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 4 years of warehouse operations experience"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "warehouse operations",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE14",
+   "group": "x_experience",
+   "lang": "en",
+   "contrast_with": [
+    "BE08",
+    "BE05"
+   ],
+   "analysis": {
+    "minimum_years": 6,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 6 years of compliance-related experience."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "compliance",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'<X>-related experience': unlike bare 'related', it says related to what (compliance)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "6 years of compliance-related experience"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "compliance",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "6 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE15",
+   "group": "experience_in_x",
+   "lang": "en",
+   "contrast_with": [
+    "BE16"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience in insurance underwriting."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "insurance underwriting",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'experience in <X>' where X is an activity (underwriting); contrast with 'in the insurance sector'."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience in insurance underwriting"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "insurance underwriting",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE16",
+   "group": "setting_only",
+   "lang": "en",
+   "contrast_with": [
+    "BE15"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience in the insurance sector."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "setting_only",
+    "targets": [],
+    "policy": "sector",
+    "rationale": "Same wording shape as BE15, but X is a sector: only where."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience in the insurance sector"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "setting_only",
+    "where_evidence": [
+     {
+      "line": 2,
+      "text": "the insurance sector"
+     }
+    ],
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE17",
+   "group": "experience_in_x",
+   "lang": "en",
+   "contrast_with": [
+    "BE18"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience in construction supervision."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "construction supervision",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "Supervision of construction is the work."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years of experience in construction supervision"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "construction supervision",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE18",
+   "group": "setting_only",
+   "lang": "en",
+   "contrast_with": [
+    "BE17"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience in the construction industry."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "setting_only",
+    "targets": [],
+    "policy": "sector",
+    "rationale": "Same shape as BE17; the construction industry is only the place."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years of experience in the construction industry"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "setting_only",
+    "where_evidence": [
+     {
+      "line": 2,
+      "text": "the construction industry"
+     }
+    ],
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE19",
+   "group": "role",
+   "lang": "en",
+   "contrast_with": [
+    "BE09"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as a teacher."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "teacher",
+      "kind": "role"
+     }
+    ],
+    "policy": "explicit_role",
+    "rationale": "'as a <title>' names a position held; contrast with 'in schools'."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience as a teacher"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "teacher",
+      "kind": "role"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE20",
+   "group": "role",
+   "lang": "en",
+   "contrast_with": [],
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 5 years of experience as a Civil Engineer."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "Civil Engineer",
+      "kind": "role"
+     }
+    ],
+    "policy": "explicit_role",
+    "rationale": "A job title held by the candidate."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "5 years of experience as a Civil Engineer"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "Civil Engineer",
+      "kind": "role"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE21",
+   "group": "experience_in_x",
+   "lang": "en",
+   "contrast_with": [
+    "BE03",
+    "BE05"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 4 years of prior experience in network engineering."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "network engineering",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'prior' is generic but 'in network engineering' names the work; contrast with BE03/BE05."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "4 years of prior experience in network engineering"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "network engineering",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BE22",
+   "group": "role",
+   "lang": "en",
+   "contrast_with": [
+    "BE06"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience as an Event Coordinator."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "Event Coordinator",
+      "kind": "role"
+     }
+    ],
+    "policy": "explicit_role",
+    "rationale": "A role title; contrast with the vague 'in the field' (BE06)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years of experience as an Event Coordinator"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "Event Coordinator",
+      "kind": "role"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA01",
+   "group": "total_professional",
+   "lang": "ar",
+   "contrast_with": [
+    "BA11"
+   ],
+   "analysis": {
+    "minimum_years": 6,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة مهنية لا تقل عن 6 سنوات."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "total_experience",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'خبرة مهنية' = professional experience: no work and no place (boundary N2 semantics)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة مهنية لا تقل عن 6 سنوات"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "total_experience",
+    "duration": "6 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA02",
+   "group": "total_professional",
+   "lang": "ar",
+   "contrast_with": [],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة عملية لا تقل عن 4 سنوات."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "total_experience",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'خبرة عملية' = practical/work experience in general."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة عملية لا تقل عن 4 سنوات"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "total_experience",
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA03",
+   "group": "total_professional",
+   "lang": "ar",
+   "contrast_with": [],
+   "analysis": {
+    "minimum_years": 8,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة إجمالية لا تقل عن 8 سنوات."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "total_experience",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'إجمالية' = total; nothing restricts what or where."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة إجمالية لا تقل عن 8 سنوات"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "total_experience",
+    "duration": "8 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA04",
+   "group": "total_professional",
+   "lang": "ar",
+   "contrast_with": [
+    "BA10"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات في بيئة عمل سريعة."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "total_experience",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'في بيئة عمل سريعة' = in a fast-paced work environment: generic atmosphere, neither work nor setting (M9 semantics)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 3 سنوات في بيئة عمل سريعة"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "total_experience",
+    "duration": "3 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA05",
+   "group": "vague",
+   "lang": "ar",
+   "contrast_with": [
+    "BA14"
+   ],
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة ذات صلة لا تقل عن 5 سنوات."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "unspecified",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'ذات صلة' = relevant, without saying relevant to what (O1 semantics)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة ذات صلة لا تقل عن 5 سنوات"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "ذات صلة",
+      "kind": "vague"
+     }
+    ],
+    "target_basis": "unspecified",
+    "duration": "5 سنوات",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA06",
+   "group": "vague",
+   "lang": "ar",
+   "contrast_with": [],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة مماثلة لا تقل عن 3 سنوات."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "unspecified",
+    "targets": [],
+    "policy": "pure_duration",
+    "rationale": "'مماثلة' = similar, without saying similar to what."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة مماثلة لا تقل عن 3 سنوات"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "مماثلة",
+      "kind": "vague"
+     }
+    ],
+    "target_basis": "unspecified",
+    "duration": "3 سنوات",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA07",
+   "group": "setting_only",
+   "lang": "ar",
+   "contrast_with": [
+    "BA12"
+   ],
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 5 سنوات في القطاع المصرفي."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "setting_only",
+    "targets": [],
+    "policy": "sector",
+    "rationale": "'في القطاع المصرفي' = in the banking sector: only where (M1 semantics); contrast with BA12."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 5 سنوات في القطاع المصرفي"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "setting_only",
+    "where_evidence": [
+     {
+      "line": 2,
+      "text": "القطاع المصرفي"
+     }
+    ],
+    "duration": "5 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA08",
+   "group": "setting_only",
+   "lang": "ar",
+   "contrast_with": [
+    "BA13"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 4 سنوات في القطاع الصحي."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "setting_only",
+    "targets": [],
+    "policy": "sector",
+    "rationale": "'في القطاع الصحي' = in the health sector: a place, not work."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة لا تقل عن 4 سنوات في القطاع الصحي"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "setting_only",
+    "where_evidence": [
+     {
+      "line": 2,
+      "text": "القطاع الصحي"
+     }
+    ],
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA09",
+   "group": "setting_only",
+   "lang": "ar",
+   "contrast_with": [
+    "BA18"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات في المدارس."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "setting_only",
+    "targets": [],
+    "policy": "sector",
+    "rationale": "'في المدارس' = in schools: where only; contrast with the role 'كمعلم' (BA18)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 4 سنوات في المدارس"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "setting_only",
+    "where_evidence": [
+     {
+      "line": 2,
+      "text": "المدارس"
+     }
+    ],
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA10",
+   "group": "setting_only",
+   "lang": "ar",
+   "contrast_with": [
+    "BA04"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات في بيئة المستشفيات."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "setting_only",
+    "targets": [],
+    "policy": "sector",
+    "rationale": "'في بيئة المستشفيات' = in a hospital environment: a kind of place, unlike the generic BA04."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 3 سنوات في بيئة المستشفيات"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "setting_only",
+    "where_evidence": [
+     {
+      "line": 2,
+      "text": "بيئة المستشفيات"
+     }
+    ],
+    "duration": "3 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA11",
+   "group": "ar_khibra_fi_work",
+   "lang": "ar",
+   "contrast_with": [
+    "BA01"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات في الموارد البشرية."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "الموارد البشرية",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'في الموارد البشرية' = in human resources: a field of work."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 4 سنوات في الموارد البشرية"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "الموارد البشرية",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA12",
+   "group": "ar_khibra_fi_work",
+   "lang": "ar",
+   "contrast_with": [
+    "BA07"
+   ],
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 5 سنوات في العمليات المصرفية."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "العمليات المصرفية",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'في العمليات المصرفية' = in banking operations: the work, although it shares the word 'banking' with BA07."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 5 سنوات في العمليات المصرفية"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "العمليات المصرفية",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "5 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA13",
+   "group": "ar_khibra_fi_work",
+   "lang": "ar",
+   "contrast_with": [
+    "BA08"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 4 سنوات في التمريض."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "التمريض",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'في التمريض' = in nursing: work, not the health sector of BA08."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة لا تقل عن 4 سنوات في التمريض"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "التمريض",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA14",
+   "group": "ar_khibra_fi_work",
+   "lang": "ar",
+   "contrast_with": [
+    "BA05"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات في مجال الأمن السيبراني."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "الأمن السيبراني",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'في مجال الأمن السيبراني' = in the field of cybersecurity: 'مجال' (field) followed by the named work; contrast with vague BA05."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 3 سنوات في مجال الأمن السيبراني"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "الأمن السيبراني",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "3 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA15",
+   "group": "ar_khibra_fi_work",
+   "lang": "ar",
+   "contrast_with": [
+    "BA16"
+   ],
+   "analysis": {
+    "minimum_years": 6,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 6 سنوات في إدارة العقود."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "إدارة العقود",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'في إدارة العقود' = in contract administration: an activity."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 6 سنوات في إدارة العقود"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "إدارة العقود",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "6 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA16",
+   "group": "setting_only",
+   "lang": "ar",
+   "contrast_with": [
+    "BA15"
+   ],
+   "analysis": {
+    "minimum_years": 6,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 6 سنوات في شركات المقاولات."
+   ],
+   "gold": {
+    "names_role_or_work": false,
+    "target_basis": "setting_only",
+    "targets": [],
+    "policy": "sector",
+    "rationale": "'في شركات المقاولات' = in contracting companies: a kind of employer, not the activity of BA15."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 6 سنوات في شركات المقاولات"
+     }
+    ],
+    "restrictions": [],
+    "target_basis": "setting_only",
+    "where_evidence": [
+     {
+      "line": 2,
+      "text": "شركات المقاولات"
+     }
+    ],
+    "duration": "6 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA17",
+   "group": "ar_khibra_fi_work",
+   "lang": "ar",
+   "contrast_with": [],
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 5 سنوات في خدمة العملاء."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "خدمة العملاء",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'في خدمة العملاء' = in customer service: work."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 5 سنوات في خدمة العملاء"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "خدمة العملاء",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "5 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA18",
+   "group": "role",
+   "lang": "ar",
+   "contrast_with": [
+    "BA09"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات كمعلم."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "معلم",
+      "kind": "role"
+     }
+    ],
+    "policy": "explicit_role",
+    "rationale": "'كمعلم' = as a teacher (attached ك): a position held; contrast with 'في المدارس'."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 4 سنوات كمعلم"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "معلم",
+      "kind": "role"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA19",
+   "group": "role",
+   "lang": "ar",
+   "contrast_with": [],
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 5 سنوات كمهندس مدني."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "مهندس مدني",
+      "kind": "role"
+     }
+    ],
+    "policy": "explicit_role",
+    "rationale": "'كمهندس مدني' = as a civil engineer."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة لا تقل عن 5 سنوات كمهندس مدني"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "مهندس مدني",
+      "kind": "role"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "5 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA20",
+   "group": "role",
+   "lang": "ar",
+   "contrast_with": [
+    "BA10"
+   ],
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات كممرض في المستشفيات."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "ممرض",
+      "kind": "role"
+     }
+    ],
+    "policy": "explicit_role",
+    "rationale": "'كممرض' = as a nurse is the role; 'في المستشفيات' (in hospitals) is only the place and is not part of the target."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 3 سنوات كممرض في المستشفيات"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "ممرض",
+      "kind": "role"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "3 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA21",
+   "group": "x_experience",
+   "lang": "ar",
+   "contrast_with": [
+    "BA01"
+   ],
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة محاسبية لا تقل عن 4 سنوات."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "محاسبية",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'خبرة محاسبية' = accounting experience: the adjective names the work, unlike 'خبرة مهنية' (BA01)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة محاسبية لا تقل عن 4 سنوات"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "محاسبية",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  },
+  {
+   "id": "BA22",
+   "group": "x_experience",
+   "lang": "ar",
+   "contrast_with": [
+    "BA02"
+   ],
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة إدارية لا تقل عن 5 سنوات."
+   ],
+   "gold": {
+    "names_role_or_work": true,
+    "target_basis": "targets",
+    "targets": [
+     {
+      "text": "إدارية",
+      "kind": "function"
+     }
+    ],
+    "policy": "functional",
+    "rationale": "'خبرة إدارية' = administrative experience: names a kind of work, unlike 'خبرة عملية' (BA02)."
+   },
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة إدارية لا تقل عن 5 سنوات"
+     }
+    ],
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "إدارية",
+      "kind": "function"
+     }
+    ],
+    "target_basis": "targets",
+    "duration": "5 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   }
+  }
+ ]
+}

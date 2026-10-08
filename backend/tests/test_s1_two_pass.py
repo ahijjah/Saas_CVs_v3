@@ -38,6 +38,7 @@ L_SOFT = "Minimum 4 years as an Internal Auditor, preferably within the energy s
 L_COMPOUND = "5 years of experience, including 2 years in the GCC"
 L_GAP = "Minimum 4 years of project management experience"
 L_VAGUE = "Minimum 4 years of relevant experience"
+W_SETTING = [{"line": 2, "text": "government entities"}]      # s1a-1.3: the where_evidence of a setting_only reading
 
 
 # ── scripted builders ────────────────────────────────────────────────────────
@@ -130,7 +131,7 @@ class TestSchemaV4:
     def test_versions_and_vocabulary(self):
         assert (sc.S1V4_SCHEMA, sc.S1V4_VERSION) == ("s1_requirement_spec_v4", "2.0.0")
         assert (sc.S1A_INPUT_VERSION, sc.S1B_INPUT_VERSION) == ("s1a-in-1", "s1b-in-1")
-        assert (sc.S1A_PROMPT_VERSION, sc.S1B_PROMPT_VERSION, sc.PROMPT_PENDING) == ("s1a-1.1", "s1b-1.0", "pending")
+        assert (sc.S1A_PROMPT_VERSION, sc.S1B_PROMPT_VERSION, sc.PROMPT_PENDING) == ("s1a-1.3", "s1b-1.0", "pending")
         assert sc.TARGET_BASES == ("targets", "total_experience", "setting_only", "unspecified")
         assert sc.PASS_A_RESTRICTION_KINDS == ("role", "function", "vague")
         assert sc.CONTEXT_SCOPES == ("all", "one_alternative", "part_duration", "softened")
@@ -255,24 +256,29 @@ class TestPassA:
         v = validate_a(jd, enumerate_experience_criteria("J1", a), resp(item))
         assert not v.ok and any("target_basis is required" in e for e in v.errors)
 
-    @pytest.mark.parametrize("line,restr,basis,ok", [
-        (L_FUNC, [(2, "internal audit", "function")], "targets", True),
-        (L_FUNC, [(2, "internal audit", "function")], "total_experience", False),
-        (L_FUNC, [(2, "internal audit", "function")], "setting_only", False),
-        (L_VAGUE, [(2, "relevant", "vague")], "unspecified", True),
-        (L_VAGUE, [(2, "relevant", "vague")], "total_experience", False),
-        (L_TOTAL, [], "total_experience", True),
-        (L_SETTING, [], "setting_only", True),
-        (L_TOTAL, [], "targets", False),            # F2: an empty list never implies a basis, in either direction
-        (L_TOTAL, [], "unspecified", False),
+    @pytest.mark.parametrize("line,restr,basis,where,ok", [
+        (L_FUNC, [(2, "internal audit", "function")], "targets", [], True),
+        (L_FUNC, [(2, "internal audit", "function")], "total_experience", [], False),
+        (L_FUNC, [(2, "internal audit", "function")], "setting_only", [], False),
+        (L_FUNC, [(2, "internal audit", "function")], "setting_only", W_SETTING, False),   # work named: targets
+        (L_VAGUE, [(2, "relevant", "vague")], "unspecified", [], True),
+        (L_VAGUE, [(2, "relevant", "vague")], "total_experience", [], False),
+        (L_TOTAL, [], "total_experience", [], True),
+        (L_SETTING, [], "setting_only", W_SETTING, True),
+        (L_SETTING, [], "setting_only", [], False),          # s1a-1.3: setting_only is never unanchored
+        (L_SETTING, [], "total_experience", W_SETTING, False),
+        (L_SETTING, [], "unspecified", W_SETTING, False),
+        (L_TOTAL, [], "targets", [], False),            # F2: an empty list never implies a basis, in either direction
+        (L_TOTAL, [], "unspecified", [], False),
     ])
-    def test_basis_must_match_the_typed_restrictions(self, line, restr, basis, ok):
+    def test_basis_must_match_the_typed_restrictions(self, line, restr, basis, where, ok):
         a, jd, crits = job([], 4, ["Requirements", "- " + line + "."])
-        v = validate_a(jd, crits, resp(free(crits[0].criterion_id, [(2, line)], restr, basis=basis)))
+        v = validate_a(jd, crits, resp(free(crits[0].criterion_id, [(2, line)], restr, basis=basis,
+                                            where_evidence=where)))
         assert v.ok is ok, v.errors
         if not ok:
-            # s1a-1.1: never a basis prescribed from the model's own restrictions
-            assert any("and the restrictions disagree" in e and "Re-read the requirement statement" in e
+            # never a basis prescribed from the model's own restrictions (s1a-1.3: the neutral four-way message)
+            assert any("the restrictions and where_evidence disagree" in e and pa.BASIS_NEUTRAL_MESSAGE in e
                        for e in v.errors)
             assert not any("expected one of" in e for e in v.errors)
 
@@ -284,9 +290,11 @@ class TestPassA:
 
     def test_setting_only_derives_sector(self):
         a, jd, crits = job([], 4, ["Requirements", "- " + L_SETTING + "."])
-        v = validate_a(jd, crits, resp(free(crits[0].criterion_id, [(2, L_SETTING)], [], basis="setting_only")))
+        v = validate_a(jd, crits, resp(free(crits[0].criterion_id, [(2, L_SETTING)], [], basis="setting_only",
+                                            where_evidence=W_SETTING)))
         r = v.results[crits[0].criterion_id]
         assert r.parsed.policy == "sector" and r.parsed.relevance_basis == "sector"
+        assert [w.text for w in r.where_evidence] == ["government entities"] and r.parsed.settings == ()
 
     def test_job_is_all_or_nothing(self):
         a, jd, crits = job([AUD], 4, ["Requirements", "- " + L_ALT + ".", "- " + L_TOTAL + "."])
@@ -388,7 +396,7 @@ class TestPassB:
     def test_no_targets_means_empty_applies_to(self):
         a, jd, crits = job([], 4, ["Requirements", "- " + L_SETTING + "."])
         cid = crits[0].criterion_id
-        ra = resp(free(cid, [(2, L_SETTING)], [], basis="setting_only"))
+        ra = resp(free(cid, [(2, L_SETTING)], [], basis="setting_only", where_evidence=W_SETTING))
         assert validate_b(a, jd, ra, resp(ctx_item(cid, [ctx(2, "government entities", applies_to=())]))).ok
         v = validate_b(a, jd, ra, resp(ctx_item(cid, [ctx(2, "government entities")])))
         assert not v.ok and any("unknown target ids" in e or "must be []" in e for e in v.errors)
@@ -549,7 +557,7 @@ class TestFailClosed:
     def test_f3_corroborated_setting_only(self):
         a, jd, crits = job([], 4, ["Requirements", "- " + L_SETTING + "."])
         cid = crits[0].criterion_id
-        art = only(two_pass(a, jd, resp(free(cid, [(2, L_SETTING)], [], basis="setting_only")),
+        art = only(two_pass(a, jd, resp(free(cid, [(2, L_SETTING)], [], basis="setting_only", where_evidence=W_SETTING)),
                             resp(ctx_item(cid, [ctx(2, "government entities", applies_to=())])),
                             absent_policy="corroborated"))
         assert (art.spec_status, art.target_state, art.policy) == ("resolved", "target_absent_corroborated", "sector")
@@ -561,7 +569,7 @@ class TestFailClosed:
         a, jd, crits = job([], 4, ["Requirements", "- " + L_SETTING + "."])
         cid = crits[0].criterion_id
         for b in (ctx_item(cid), ctx_item(cid, [ctx(2, "government entities", "softened", ())])):
-            art = only(two_pass(a, jd, resp(free(cid, [(2, L_SETTING)], [], basis="setting_only")), resp(b),
+            art = only(two_pass(a, jd, resp(free(cid, [(2, L_SETTING)], [], basis="setting_only", where_evidence=W_SETTING)), resp(b),
                                 absent_policy="corroborated"))
             assert "context_structure_conflict" in {x.code for x in art.reasons}
             assert art.target_state == "target_absent_claimed" and art.spec_status == "needs_confirmation"
@@ -794,7 +802,7 @@ class TestViews:
     def test_sector_needs_an_effective_context(self):
         a, jd, crits = job([], 4, ["Requirements", "- " + L_SETTING + "."])
         cid = crits[0].criterion_id
-        art = only(two_pass(a, jd, resp(free(cid, [(2, L_SETTING)], [], basis="setting_only")),
+        art = only(two_pass(a, jd, resp(free(cid, [(2, L_SETTING)], [], basis="setting_only", where_evidence=W_SETTING)),
                             resp(ctx_item(cid, [ctx(2, "government entities", applies_to=())])),
                             absent_policy="corroborated"))
         rec = resolve(art, qc_analysis(a, jd, "none", source="recruiter", provenance="recruiter_edited"), jd)
@@ -914,10 +922,12 @@ class TestIndependence:
     def test_entry_points_take_no_qc_parameter(self):
         assert list(inspect.signature(pa.build_pass_a_request).parameters) == ["jd", "criteria"]
         assert list(inspect.signature(pb.build_pass_b_request).parameters) == ["jd", "frames"]
-        assert list(inspect.signature(pa.validate_pass_a).parameters) == ["raw", "jd", "criteria", "durations"]
+        # contract: the pinned Pass A version's wire rules (replay), never a qualifying context
+        assert list(inspect.signature(pa.validate_pass_a).parameters) == ["raw", "jd", "criteria", "durations",
+                                                                          "contract"]
         assert list(inspect.signature(pb.validate_pass_b).parameters) == ["raw", "jd", "frames"]
         assert [f.name for f in dataclasses.fields(pb.TargetFrame)] == [
-            "criterion_id", "target_basis", "targets", "requirement_spans", "duration_span"]
+            "criterion_id", "target_basis", "targets", "requirement_spans", "duration_span", "where_evidence"]
 
     @pytest.mark.parametrize("fname", ["__init__.py", "schema.py", "pass_a.py", "pass_b.py", "assemble.py"])
     def test_static_guard(self, fname):

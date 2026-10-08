@@ -36,7 +36,8 @@ target_basis accuracy ≥ 0.95, stability ≥ 0.95, failure rate ≤ 0.05.
 - **s1a-1.0 — FAILED.** "Where" phrases had no slot after the context kinds were removed (CM09, CM10, CM19,
   CM21); `<X> experience` read as general experience (CM23, CM26, CM30); the repair message prescribed a basis
   derived from mislabelled restrictions. Corrected in s1a-1.1.
-- **s1a-1.1 — CURRENT ACTIVE PROMPT. BASELINE CANDIDATE, NOT AN APPROVED VERSION.** The hard gate missed by
+- **s1a-1.1 — BASELINE CANDIDATE, NOT AN APPROVED VERSION (superseded as the active prompt by s1a-1.3).**
+  Kept runnable by explicit version under its own contract for exact replay. MAIN: the hard gate missed by
   1/225: CM30 run 5 returned `restrictions: []`, `total_experience` for "At least 6 years of project management
   experience" (its own note named the work). Diagnosed as residual run-to-run nondeterminism. This reading is
   fail-closed downstream: strict F5 makes it `target_absent_claimed` (needs confirmation, no S2 view). Pass B's
@@ -61,11 +62,63 @@ target_basis accuracy ≥ 0.95, stability ≥ 0.95, failure rate ≤ 0.05.
   audit. Lesson for any future structured field: a judgement emitted before the evidence it summarises can bias
   that evidence, and a consistency check cannot see a wrong answer that agrees with itself.
 
-## Next evaluation (not yet run)
+## s1a-1.1 target-basis run (S1-A-1.1 / S1-A-1.3 review)
 
-s1a-1.1 against the target-basis fixture (44 cases, 22 without a role/work target), the first measurement of
-over-targeting on legitimate total-experience / setting-only statements that MAIN cannot measure:
+s1a-1.1 against the target-basis fixture (`s1a_target_basis_cases.json`, s1a-basis-1, sha256 `02a452bb…`, 44 cases,
+22 without a role/work target), 5 runs, run on the VPS. Its `results.json` is NOT in this repository (not uploaded);
+the figures below are the ones reported by the operator:
+
+| Metric | s1a-1.1 |
+|---|---|
+| target accuracy | 0.9764 (207/212) |
+| policy accuracy | 0.7783 (165/212) |
+| target_basis accuracy | 0.6604 (140/212) |
+| stability | 0.9091 (40/44) |
+| failure rate | 0.0364 (8/220) |
+| **unsafe target/policy loss (hard gate)** | **47** |
+
+Root causes (S1-A-1.3 review, code-level; the per-run attribution needs the results file):
+- the prompt told the model to ignore exactly the words that distinguish `setting_only` from `total_experience`
+  ("Decide the basis from the role and work words ONLY. Words that say where or for whom never change it";
+  setting_only "Do not quote or describe that limit"; total_experience no longer excluded a where limit;
+  "experience in <X>" always named work, "never restrictions []");
+- `setting_only` was the only basis with no evidence slot: `[]` + `total_experience` and a where phrase typed
+  `vague` + `unspecified` were both valid answers and both unsafe (sector -> pure_duration); the arithmetic of
+  the reported totals bounds the setting_only downgrades at >= 42 of 50 runs;
+- the repair could never reach a correct setting_only once the main answer typed the where phrase (restriction
+  locks + F6); its only "successful" repair turned the workplace into a function (BA16);
+- `vague` had been dropped from the definition of a restriction ("names WHAT"), so relevant/related answers
+  slid to `total_experience`; the Arabic adjective form ("خبرة إدارية") had no rule (BA22).
+
+- **s1a-1.3 — CURRENT ACTIVE PROMPT. CANDIDATE PENDING REAL EVALUATION (Stage B), NOT AN APPROVED VERSION.**
+  Prompt `prompts/s1a-1.3.txt` (sha256 `0cf68cadc53d05e8e26c75bb94d2ea279f91dcbb65d8663f17b9052f4c98656d`):
+  WHAT before WHERE; X in "experience in <X>" is work only when it is an activity / discipline / field of work;
+  a place / sector / industry / kind of employer or client is a where limit, quoted verbatim in the new
+  `where_evidence` field exactly when it is the only limit (`setting_only`); vague restored; total_experience
+  limits neither work nor where; the Arabic "خبرة" + adjective rule; one setting_only and one unspecified
+  OUTPUT example (wording outside every fixture). Contract `pass_a.CONTRACTS["s1a-1.3"]`: where_evidence
+  required exactly for setting_only (structural checks only), the basis derived from the raw typed answer, the
+  neutral four-way repair message, where_evidence follows the basis in the merge, and the where guard (a repair
+  never turns a main where_evidence span into a role / function). F6 and the restriction locks unchanged.
+  Evaluation fixture `s1a_target_basis_cases_v2.json` (s1a-basis-2, sha256 `2daadcb1…`): same cases and gold,
+  where_evidence added to the 10 setting_only oracle answers. Offline: oracle 1.0 on MAIN and s1a-basis-2; the
+  recorded s1a-1.1 MAIN runs replay exactly (220/220) under the s1a-1.1 contract.
+  Unsafe readings that structural validation cannot prevent (a self-consistent answer): a where-only reading
+  that omits a named role / work (`setting_only` + evidence, or `[]` + `total_experience`); a sector phrase typed
+  as a function (narrowing, reported as `sector_to_function`); an adjective function read as general experience.
+  They are measured by the unchanged unsafe gate and blocked downstream by strict F5 (no S2 view).
+
+## Next evaluations (not yet run; each only after the previous one passes)
+
+Stage B — s1a-1.3 against the target-basis fixture (s1a-basis-2), every gate including zero unsafe loss:
 
 ```
-python3 scripts/s1_pass_a_eval.py --out <dir>/s1a11_basis --fixture target_basis --mode real --runs 5 --confirm-real
+python3 scripts/s1_pass_a_eval.py --out <dir>/s1a13_basis --fixture target_basis --mode real --runs 5 --confirm-real
+```
+
+Stage C — MAIN (only if Stage B passes): no metric below the s1a-1.1 MAIN baseline (0.9956 / 0.9956 / 0.9956,
+stability 0.9545) and zero unsafe loss:
+
+```
+python3 scripts/s1_pass_a_eval.py --out <dir>/s1a13_main --fixture main --mode real --runs 5 --confirm-real
 ```

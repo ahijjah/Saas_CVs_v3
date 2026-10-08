@@ -12,6 +12,9 @@ Verifies, offline only (scripted clients, no model call, no network, no database
   6. the harness keeps the frozen target-basis fixture infrastructure and repair_rate (reported only), with the
      s1a-1.1 gate set and the zero-unsafe hard gate unchanged;
   7. the three recorded MAIN result files and the withdrawn s1a-1.2 prompt are preserved for audit (SHA-pinned).
+Since S1-A-1.3 the ACTIVE prompt is s1a-1.3; s1a-1.1 stays pinned and runnable by explicit version under its own
+contract (pass_a.CONTRACTS["s1a-1.1"]), so points 1 and 4 now verify s1a-1.1 BY VERSION: its prompt bytes, request
+bytes and cache identity, and the exact replay of its recorded MAIN runs.
 """
 import ast
 import asyncio
@@ -46,6 +49,7 @@ ctx = ev.ctx
 S1A_11 = "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11"
 S1A_12 = "f7ec01e2816744322205a889e2834270a30decea625a84355fa47c70e416afd3"
 TARGET_BASIS_FIXTURE = "02a452bba2de4374f394db5a9d4d11065ab80f70749f3337be5550007d304293"
+TARGET_BASIS_V2 = "2daadcb18350dc908fb48ab6081c8ba2fda010f78c2fbb9c55233f780d2ea3e0"
 # pinned from the s1a-1.1 commit (b0fa6eb) for MAIN case CM30
 CM30_INPUT_HASH = "86bd6b6012e176afa19b55820f6bb5cacc21fac3ca1f00e8574bf71353f4c426"
 CM30_CACHE_KEY = "e8b167ddf7d0fe45aac5594d6064b01a42fcd2247ba9f6056462e3159d3b2f6b"
@@ -101,28 +105,35 @@ def cm30_answer(**extra):
     return case, jd, a, json.dumps({"criteria": [it]})
 
 
-# ── 1. active prompt and request identity are exactly s1a-1.1 ───────────────
+# ── 1. s1a-1.1 prompt and request identity, by explicit version ─────────────
 
-class TestActivePrompt:
+S1A_11_FILE = prompt_a.PROMPT_DIR / "s1a-1.1.txt"
+
+
+class TestS1a11Pinned:
     def test_version_file_and_hash(self):
-        assert sc.S1A_PROMPT_VERSION == "s1a-1.1" and prompt_a.S1A_PROMPT_PATH.name == "s1a-1.1.txt"
-        assert prompt_a.S1A_PROMPT_SHA256 == prompt_a.PROMPT_SHA256["s1a-1.1"] == S1A_11
-        assert hashlib.sha256(prompt_a.S1A_PROMPT_PATH.read_bytes()).hexdigest() == S1A_11
-        assert prompt_a.pass_a_prompt_fingerprint() == "952299303431"
-        assert NRW not in prompt_a.load_pass_a_prompt()
+        assert sc.S1A_PROMPT_VERSION == "s1a-1.3"                     # S1-A-1.3: no longer the active prompt
+        assert prompt_a.PROMPT_SHA256["s1a-1.1"] == prompt_a.pass_a_prompt_sha256("s1a-1.1") == S1A_11
+        assert hashlib.sha256(S1A_11_FILE.read_bytes()).hexdigest() == S1A_11
+        assert prompt_a.pass_a_prompt_fingerprint("s1a-1.1") == "952299303431"
+        assert prompt_a.load_pass_a_prompt("s1a-1.1").encode("utf-8") == S1A_11_FILE.read_bytes()
+        assert NRW not in prompt_a.load_pass_a_prompt("s1a-1.1") and NRW not in prompt_a.load_pass_a_prompt()
+        assert pa.pass_a_contract("s1a-1.1") == pa.CONTRACTS["s1a-1.1"] and not pa.CONTRACTS["s1a-1.1"].where_evidence
+        assert pa.CONTRACTS["s1a-1.1"].basis_message == pa.BASIS_REREAD_MESSAGE
 
     def test_request_bytes_and_cache_key_match_the_s1a_1_1_commit(self):
         case, jd, a, crits = main_job("CM30")
         req = pa.build_pass_a_request(JDText(jd), crits)
-        assert req.input_hash == CM30_INPUT_HASH
-        assert pa.pass_a_cache_key(req) == CM30_CACHE_KEY
-        call = pr.build_pass_a_call(req)
+        assert req.input_hash == CM30_INPUT_HASH                     # the request payload is unchanged by S1-A-1.3
+        assert pa.pass_a_cache_key(req, prompt_version="s1a-1.1") == CM30_CACHE_KEY
+        assert pa.pass_a_cache_key(req) != CM30_CACHE_KEY             # the s1a-1.3 key is another key
+        call = pr.build_pass_a_call(req, prompt_version="s1a-1.1")
         assert hashlib.sha256(json.dumps(call, sort_keys=True, ensure_ascii=False).encode()).hexdigest() == CM30_CALL_SHA
-        assert call["messages"][0]["content"].encode("utf-8") == prompt_a.S1A_PROMPT_PATH.read_bytes()
+        assert call["messages"][0]["content"].encode("utf-8") == S1A_11_FILE.read_bytes()
 
-    def test_harness_pins_s1a_1_1(self):
+    def test_harness_pins(self):
         assert (ev.PINNED["prompt_version"], ev.PINNED["prompt_fingerprint"], ev.PINNED["prompt_sha256"]) == (
-            "s1a-1.1", "952299303431", S1A_11)
+            "s1a-1.3", "0cf68cadc53d", prompt_a.PROMPT_SHA256["s1a-1.3"])
         assert ev.check_pins(ev.FIXTURES["main"], "main") == []
         assert ev.check_pins(ev.FIXTURES["target_basis"], "target_basis") == []
 
@@ -145,8 +156,9 @@ class TestNoRuntimeDependency:
                                                                                     ast.Constant))]
         assert NRW not in "\n".join(ast.unparse(n) for n in code)
 
-    def test_interfaces_are_back_to_s1a_1_1(self):
-        assert [f.name for f in dataclasses.fields(pa.PassACriterion)] == ["parsed", "target_basis"]
+    def test_interfaces_carry_no_withdrawn_field(self):
+        # S1-A-1.3 added where_evidence (audit evidence), nothing of Option D
+        assert [f.name for f in dataclasses.fields(pa.PassACriterion)] == ["parsed", "target_basis", "where_evidence"]
         for attr in ("SCOPE_NAMES_ROLE_OR_WORK", "FIELD_NAMES_ROLE_OR_WORK", "NRW_REQUIRED_MESSAGE",
                      "NRW_DISAGREE_MESSAGE"):
             assert not hasattr(pa, attr), attr
@@ -202,7 +214,9 @@ class TestRecordedReplay:
         records = []
         for r in d["records"]:
             case = MAIN_BY[r["case"]]
-            obs = run(ev.run_case(case, ctx.ScriptedClient(*[c["content"] for c in r["raw"]])))
+            obs = run(ev.run_case(case, ctx.ScriptedClient(*[c["content"] for c in r["raw"]]), "s1a-1.1"))
+            # S1-A-1.3 observes where_evidence too; s1a-1.1 never produces it
+            assert all(o.pop("where_evidence") in ([], None) for o in obs["criteria"])
             assert obs["criteria"] == r["criteria"], (r["case"], r["run"])
             assert obs["repair_used"] == r["repair_used"] and len(obs["calls"]) == len(r["calls"])
             records.append({"case": r["case"], "family": r["family"], "lang": r["lang"], "run": r["run"], **obs,
@@ -257,10 +271,14 @@ class TestFailClosed:
 # ── 6. harness: frozen fixture infrastructure kept, gates unchanged ─────────
 
 class TestHarness:
-    @pytest.mark.parametrize("fixture", ["main", "target_basis"])
-    def test_oracle_scores_perfectly(self, fixture):
-        cases = MAIN["cases"] if fixture == "main" else TB["cases"]
-        recs = run(ev.run_all(cases, runs=2, client_for=lambda c: ctx.ScriptedClient(ev.oracle_response(c))))
+    @pytest.mark.parametrize("fixture,version", [("main", None), ("target_basis", None), ("main", "s1a-1.1"),
+                                                 ("target_basis@s1a-basis-1", "s1a-1.1")])
+    def test_oracle_scores_perfectly(self, fixture, version):
+        # current: MAIN + s1a-basis-2 under s1a-1.3; replay: MAIN + the archived s1a-basis-1 under s1a-1.1
+        path = ev.FIXTURES[fixture] if fixture in ev.FIXTURES else ev.ARCHIVED_FIXTURES[fixture][0]
+        cases = json.loads(path.read_text(encoding="utf-8"))["cases"]
+        recs = run(ev.run_all(cases, runs=2, client_for=lambda c: ctx.ScriptedClient(ev.oracle_response(c)),
+                              prompt_version=version))
         s = ev.summarize(recs)
         for k in ("target_accuracy", "policy_accuracy", "target_basis_accuracy", "stability"):
             assert s[k] == 1.0, k
@@ -293,14 +311,17 @@ class TestHarness:
 
     def test_fixture_choice_cli_and_no_heldout(self, tmp_path):
         assert set(ev.FIXTURES) == {"main", "target_basis"}
-        assert ev.FIXTURE_SHA256["target_basis"] == TARGET_BASIS_FIXTURE
-        assert hashlib.sha256(ev.FIXTURES["target_basis"].read_bytes()).hexdigest() == TARGET_BASIS_FIXTURE
+        # the s1a-1.1 target-basis fixture is archived byte for byte (reproducibility), never selectable
+        path, sha = ev.ARCHIVED_FIXTURES["target_basis@s1a-basis-1"]
+        assert sha == TARGET_BASIS_FIXTURE and hashlib.sha256(path.read_bytes()).hexdigest() == TARGET_BASIS_FIXTURE
+        assert hashlib.sha256(ev.FIXTURES["target_basis"].read_bytes()).hexdigest() == ev.FIXTURE_SHA256["target_basis"]
+        assert ev.FIXTURE_SHA256["target_basis"] == TARGET_BASIS_V2
         assert not any("heldout" in str(p) for p in ev.FIXTURES.values())
         assert ev.main(["--out", str(tmp_path / "o"), "--fixture", "target_basis", "--mode", "oracle",
                         "--runs", "1"]) == 0
         meta = json.loads((tmp_path / "o" / "results.json").read_text(encoding="utf-8"))["meta"]
         assert (meta["fixture"], meta["prompt_version"], meta["fixture_sha256"]) == (
-            "target_basis", "s1a-1.1", TARGET_BASIS_FIXTURE)
+            "target_basis", "s1a-1.3", TARGET_BASIS_V2)
         with pytest.raises(SystemExit):
             ev.main(["--out", str(tmp_path / "h"), "--fixture", "heldout"])
 
@@ -325,7 +346,8 @@ class TestAudit:
 
     def test_log_states_each_status(self):
         log = (RESULTS / "PASS_A_EVAL_LOG.md").read_text(encoding="utf-8")
-        assert "**s1a-1.1 — CURRENT ACTIVE PROMPT. BASELINE CANDIDATE, NOT AN APPROVED VERSION.**" in log
+        assert "**s1a-1.1 — BASELINE CANDIDATE, NOT AN APPROVED VERSION (superseded as the active prompt" in log
+        assert "**s1a-1.3 — CURRENT ACTIVE PROMPT. CANDIDATE PENDING REAL EVALUATION (Stage B)" in log
         assert "**s1a-1.2 (Option D) — WITHDRAWN.**" in log and "**s1a-1.0 — FAILED.**" in log
         for name, (sha, *_rest) in RECORDED.items():
             assert name in log and sha in log, name
@@ -333,9 +355,10 @@ class TestAudit:
     def test_withdrawn_prompt_kept_loadable_only_by_explicit_version(self):
         p12 = prompt_a.load_pass_a_prompt("s1a-1.2")
         assert hashlib.sha256(p12.encode("utf-8")).hexdigest() == prompt_a.PROMPT_SHA256["s1a-1.2"] == S1A_12
-        assert p12 != prompt_a.load_pass_a_prompt()
+        assert p12 != prompt_a.load_pass_a_prompt() and p12 != prompt_a.load_pass_a_prompt("s1a-1.1")
         start, end = p12.index("\n\n1a NAMES_ROLE_OR_WORK"), p12.index("\n\n2 TARGETS")
-        assert (p12[:start] + p12[end:]).replace('"names_role_or_work": true, ', "") == prompt_a.load_pass_a_prompt()
+        assert (p12[:start] + p12[end:]).replace('"names_role_or_work": true, ', "") == (
+            prompt_a.load_pass_a_prompt("s1a-1.1"))
 
     def test_no_production_code_reads_the_results_directory(self):
         # docstrings may point a reader at the log; no code (outside tests) may reference the directory

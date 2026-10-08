@@ -52,6 +52,9 @@ class TargetFrame:
     targets: tuple[Target, ...]
     requirement_spans: tuple[Span, ...]
     duration_span: Span | None = None
+    # s1a-1.3 audit evidence of a setting_only reading (verbatim where words), kept for the later Pass A / Pass B
+    # reconciliation. NEVER part of the Pass B input (to_payload): the context pass reads WHERE independently.
+    where_evidence: tuple[Span, ...] = ()
 
     def target_ids(self) -> tuple[str, ...]:
         return tuple(t.target_id for t in self.targets)

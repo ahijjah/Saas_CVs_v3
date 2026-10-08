@@ -98,7 +98,8 @@ def freeze_targets(c: CriterionInput, pa: PassACriterion, jd: JDText, durations:
     if pc.duration_id and pc.duration_id in durations:
         ln, m = durations[pc.duration_id]
         dur = Span(ln, m.start, m.end, m.text)
-    return FrozenTarget(c, art, TargetFrame(c.criterion_id, pa.target_basis, art.targets, art.requirement_spans, dur))
+    return FrozenTarget(c, art, TargetFrame(c.criterion_id, pa.target_basis, art.targets, art.requirement_spans, dur,
+                                            pa.where_evidence))
 
 
 def _v4_reasons(reasons) -> list[ReasonV4]:

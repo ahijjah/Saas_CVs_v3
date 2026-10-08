@@ -2,9 +2,12 @@
 Offline validation of the Option D evaluation fixture (scripts/s1_eval_fixtures/s1a_target_basis_cases.json):
 schema, gold consistency, balanced English/Arabic coverage of names_role_or_work true/false and of the
 targets / total_experience / setting_only (/ unspecified) bases, difficult contrasts, deterministic loading and
-fingerprint. The labelled Pass A oracle answer of every case is replayed through the CURRENT Pass A validator and
-assembly with a scripted client to prove gold and deterministic code agree. No model call, no network, no
-database; the held-out fixtures are never read; Pass A itself is unchanged (no names_role_or_work field yet).
+fingerprint. The labelled Pass A oracle answer of every case is replayed through the Pass A validator and assembly
+with a scripted client to prove gold and deterministic code agree. No model call, no network, no database; the
+held-out fixtures are never read.
+S1-A-1.3: s1a-basis-1 (this file, frozen byte for byte) holds the s1a-1.1 oracle answers and replays under the
+s1a-1.1 contract; s1a-basis-2 (s1a_target_basis_cases_v2.json) is the same cases and gold with the s1a-1.3 output
+contract (where_evidence on the 10 setting_only oracle answers) and replays under the CURRENT contract.
 """
 import asyncio
 import copy
@@ -29,6 +32,8 @@ FIX = BACKEND / "scripts" / "s1_eval_fixtures"
 PATH = FIX / "s1a_target_basis_cases.json"
 FIXTURE_SHA256 = "02a452bba2de4374f394db5a9d4d11065ab80f70749f3337be5550007d304293"
 FIXTURE_VERSION = "s1a-basis-1"
+PATH_V2 = FIX / "s1a_target_basis_cases_v2.json"
+FIXTURE_V2_SHA256 = "2daadcb18350dc908fb48ab6081c8ba2fda010f78c2fbb9c55233f780d2ea3e0"
 # existing fixtures this one must leave untouched (held-out files are deliberately not listed or read)
 UNCHANGED = {"s1_ctx_main_cases.json": "cf5844a22092a43d296e227de317ac75c6919f7d77e21da618c3945b4f0ca975",
              "s1_boundary_cases.json": "2f9dace9b884430772e8eb9c3cc108f16d2c815b459d62c11b2ec3621f47e6c0"}
@@ -212,31 +217,88 @@ class TestCoverage:
 
 # ── gold agrees with the deterministic Pass A code (scripted, offline) ─────
 
+def _replay(c, prompt_version=None):
+    jd = "\n".join(c["jd_lines"])
+    analysis = {"experience": copy.deepcopy(c["analysis"])}
+    (crit,) = enumerate_experience_criteria("BASIS", analysis)
+    durs = {m.text: did for did, _, m in JDText(jd).durations()}
+    o = {**copy.deepcopy(c["oracle"]), "criterion_id": crit.criterion_id}
+    o["duration"] = durs[o["duration"]]
+    client = _Client(json.dumps({"criteria": [o]}, ensure_ascii=False))
+    return run(pr.run_pass_a_job("BASIS", jd, analysis, client=client, prompt_version=prompt_version))
+
+
 class TestOracleReplay:
     @pytest.mark.parametrize("cid", sorted(BY))
-    def test_current_pass_a_reproduces_gold(self, cid):
+    def test_s1a_1_1_reproduces_gold(self, cid):
+        # s1a-basis-1 holds the s1a-1.1 oracle answers: they replay under the s1a-1.1 contract unchanged
         c = BY[cid]
-        jd = "\n".join(c["jd_lines"])
-        analysis = {"experience": copy.deepcopy(c["analysis"])}
-        (crit,) = enumerate_experience_criteria("BASIS", analysis)
-        durs = {m.text: did for did, _, m in JDText(jd).durations()}
-        o = {**copy.deepcopy(c["oracle"]), "criterion_id": crit.criterion_id}
-        o["duration"] = durs[o["duration"]]
-        client = _Client(json.dumps({"criteria": [o]}, ensure_ascii=False))
-        res = run(pr.run_pass_a_job("BASIS", jd, analysis, client=client))
+        res = _replay(c, "s1a-1.1")
         assert res.status == "ok" and res.outcome.meta["calls"] == 1 and not res.outcome.meta["repair_used"]
         (f,) = res.frozen
         g = c["gold"]
         assert f.frame.target_basis == g["target_basis"]
         assert f.artefact.policy == g["policy"]
         assert [(t.text, t.type) for t in f.frame.targets] == [(t["text"], t["kind"]) for t in g["targets"]]
+        assert f.frame.where_evidence == ()
+
+    @pytest.mark.parametrize("cid", sorted(c["id"] for c in CASES if c["gold"]["target_basis"] == "setting_only"))
+    def test_current_contract_rejects_the_unanchored_s1a_1_1_setting_only(self, cid):
+        # the s1a-1.3 contract: a setting_only answer without where_evidence is never accepted as it stands
+        res = _replay(BY[cid])
+        assert res.status == "failed" and res.outcome.meta["repair_used"]
+        assert any("where_evidence" in e for e in res.outcome.errors["errors"])
+
+
+# ── s1a-basis-2: the same cases and gold, the s1a-1.3 output contract ───────
+
+FX2 = json.loads(PATH_V2.read_text(encoding="utf-8"))
+BY2 = {c["id"]: c for c in FX2["cases"]}
+
+
+class TestFixtureV2:
+    def test_fingerprint_and_version(self):
+        assert hashlib.sha256(PATH_V2.read_bytes()).hexdigest() == FIXTURE_V2_SHA256
+        assert FX2["fixture_version"] == "s1a-basis-2" and set(FX2) == {"_comment", "fixture_version", "cases"}
+        assert "s1a-basis-1" in FX2["_comment"] and "where_evidence" in FX2["_comment"]
+
+    def test_only_the_output_contract_changed(self):
+        assert [c["id"] for c in FX2["cases"]] == [c["id"] for c in CASES]
+        for c1 in CASES:
+            stmt = statement(c1)
+            c2 = copy.deepcopy(BY2[c1["id"]])
+            o2 = c2.pop("oracle")
+            c1 = copy.deepcopy(c1)
+            o1 = c1.pop("oracle")
+            assert c1 == c2                                         # gold, jd lines, analysis, groups unchanged
+            w = o2.pop("where_evidence", None)
+            assert o1 == o2
+            if c1["gold"]["target_basis"] == "setting_only":
+                assert w and len(w) == 1 and w[0]["line"] == 2 and w[0]["text"] in stmt
+                assert list(BY2[c1["id"]]["oracle"]).index("where_evidence") == list(o1).index("target_basis") + 1
+            else:
+                assert w is None
+
+    @pytest.mark.parametrize("cid", sorted(BY2))
+    def test_current_pass_a_reproduces_gold(self, cid):
+        c = BY2[cid]
+        res = _replay(c)
+        assert res.status == "ok" and res.outcome.meta["calls"] == 1 and not res.outcome.meta["repair_used"]
+        (f,) = res.frozen
+        g = c["gold"]
+        assert f.frame.target_basis == g["target_basis"]
+        assert f.artefact.policy == g["policy"]
+        assert [(t.text, t.type) for t in f.frame.targets] == [(t["text"], t["kind"]) for t in g["targets"]]
+        assert [w.text for w in f.frame.where_evidence] == [w["text"] for w in c["oracle"].get("where_evidence", [])]
+        assert f.artefact.settings == ()                    # evidence only: never a setting of the artefact
 
 
 # ── no leakage into the prompt or from existing fixtures ────────────────────
 
 class TestNoLeakage:
-    def test_statements_not_in_the_prompt(self):
-        p = prompt_a.load_pass_a_prompt().lower()
+    @pytest.mark.parametrize("version", [None, "s1a-1.1"])
+    def test_statements_not_in_the_prompt(self, version):
+        p = prompt_a.load_pass_a_prompt(version).lower()
         for c in CASES:
             assert statement(c).lower() not in p, c["id"]
             for t in c["gold"]["targets"]:
@@ -255,5 +317,10 @@ class TestNoLeakage:
         for p in (BACKEND / "services").rglob("*.py"):
             assert "s1a_target_basis_cases" not in p.read_text(encoding="utf-8"), p
         assert "s1a_target_basis_cases" in (BACKEND / "scripts" / "s1_pass_a_eval.py").read_text(encoding="utf-8")
+        # s1a-1.3 where_evidence examples are not fixture where phrases
+        p13 = prompt_a.load_pass_a_prompt().lower()
+        for c in FX2["cases"]:
+            for w in c["oracle"].get("where_evidence", []):
+                assert w["text"].lower() not in p13, (c["id"], w["text"])
         # the fixture's names_role_or_work gold is a fixture field only: the active prompt never asks for it
         assert "names_role_or_work" not in prompt_a.load_pass_a_prompt()

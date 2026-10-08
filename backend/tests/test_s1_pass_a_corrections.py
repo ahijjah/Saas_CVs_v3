@@ -2,6 +2,8 @@
 Pass A corrections after the s1a-1.0 real MAIN forensics (prompt s1a-1.1, repair message, F6, expansion
 diagnostic). The recorded s1a-1.0 answers of the failing MAIN cases (CM09, CM10, CM19, CM21, CM23, CM26, CM30;
 expansion shapes CM13, CM38-CM40) are replayed through the CURRENT code with a scripted client.
+Since S1-A-1.3 the current prompt is s1a-1.3: the prompt and repair-message assertions of this file pin s1a-1.1
+EXPLICITLY (loaded / run by version under its own contract); the recorded replays run through the current code.
 Offline only: no model call, no network, no database; the held-out fixture is never read.
 """
 import asyncio
@@ -29,8 +31,9 @@ ctx = ev.ctx
 
 MAIN = json.loads((SCRIPTS / "s1_eval_fixtures" / "s1_ctx_main_cases.json").read_text(encoding="utf-8"))
 BY = {c["id"]: c for c in MAIN["cases"]}
-PROMPT = prompt_a.load_pass_a_prompt()
+PROMPT = prompt_a.load_pass_a_prompt("s1a-1.1")          # the s1a-1.1 corrections, pinned by version
 OLD = prompt_a.load_pass_a_prompt("s1a-1.0")
+C11 = pa.CONTRACTS["s1a-1.1"]
 
 
 class FakeClient:
@@ -61,10 +64,11 @@ def answer(case_id, *items):
                                     for c, it in zip(crits, items)]}, ensure_ascii=False)
 
 
-def pass_a(case_id, *raws):
+def pass_a(case_id, *raws, prompt_version=None):
     case = BY[case_id]
     client = FakeClient(*raws)
-    res = run(pr.run_pass_a_job(ctx.case_job_id(case), ctx.case_jd(case), ctx.case_analysis(case), client=client))
+    res = run(pr.run_pass_a_job(ctx.case_job_id(case), ctx.case_jd(case), ctx.case_analysis(case), client=client,
+                                prompt_version=prompt_version))
     return client, res
 
 
@@ -181,7 +185,8 @@ class TestRepairMessage:
         case = BY["CM09"]
         crits = ctx.case_criteria(case)
         jd = ctx.JDText(ctx.case_jd(case))
-        v = pa.validate_pass_a(answer("CM09", CM09_MAIN), jd, crits, pa.build_pass_a_request(jd, crits).durations)
+        v = pa.validate_pass_a(answer("CM09", CM09_MAIN), jd, crits, pa.build_pass_a_request(jd, crits).durations,
+                               contract=C11)
         (e,) = [x for x in v.scoped if "target_basis" in x.scopes]
         assert "expected one of" not in e.message and "unspecified']" not in e.message
         assert pa.BASIS_REREAD_MESSAGE in e.message and "and the restrictions disagree" in e.message
@@ -198,9 +203,10 @@ class TestRepairMessage:
         assert not any("Re-read" in e for e in v.errors)
 
     def test_the_note_sent_to_the_model(self):
-        client, _ = pass_a("CM19", answer("CM19", CM19_MAIN), answer("CM19", CM19_REP2))
+        client, _ = pass_a("CM19", answer("CM19", CM19_MAIN), answer("CM19", CM19_REP2), prompt_version="s1a-1.1")
         n = note(client)
         assert pa.BASIS_REREAD_MESSAGE in n and "expected one of" not in n
+        assert client.requests[0]["messages"][0]["content"] == PROMPT          # the pinned s1a-1.1 prompt was sent
 
 
 # ── 3. F6 strengthened + recorded failure replays ───────────────────────────
@@ -334,7 +340,9 @@ class TestExpansionDiagnostic:
         s = ev.summarize(recs)
         assert s["target_expansion"] == {"criterion_runs": 0, "rate": 0.0, "cases": [], "details": []}
 
-    def test_harness_pins_the_new_prompt(self):
-        assert ev.PINNED["prompt_version"] == "s1a-1.1"
-        assert ev.PINNED["prompt_sha256"] == prompt_a.PROMPT_SHA256["s1a-1.1"]
+    def test_harness_pins_the_current_prompt(self):
+        # since S1-A-1.3 the harness pins s1a-1.3; s1a-1.1 stays pinned in the prompt module for replay
+        assert ev.PINNED["prompt_version"] == "s1a-1.3"
+        assert ev.PINNED["prompt_sha256"] == prompt_a.PROMPT_SHA256["s1a-1.3"]
+        assert prompt_a.PROMPT_SHA256["s1a-1.1"] == "952299303431f68d62b9544d6897baa488855c37c22d0fd2890789b15d463e11"
         assert ev.check_pins(SCRIPTS / "s1_eval_fixtures" / "s1_ctx_main_cases.json") == []
