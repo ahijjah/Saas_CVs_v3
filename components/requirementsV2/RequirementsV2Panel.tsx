@@ -4,11 +4,12 @@ import {
   describeApiError, draftFromServer, equalizeCategory, findItem, isDirty, removeItem, setAlternatives, setCategoryWeight,
   setExperience, setImportance, setItemWeight, setText, toPayload, validateDraft, categoryTotal, ApiProblem,
 } from '../../utils/requirementsV2';
+import { Choice, threeWayMerge } from '../../utils/requirementsMerge';
 import type { RequirementsApi, RequirementsView } from '../../services/requirementsV2Api';
 import { fmt, STRINGS } from './i18n';
 import { CategoryCard, ItemInfo, RowActions } from './CategoryCard';
 import {
-  ClassificationPanel, ComparisonView, ConflictBanner, EvaluationUnavailable, IssuesBox, PreferredOnlyCard, ReadinessCard,
+  ClassificationPanel, ComparisonView, ConflictResolver, EvaluationUnavailable, IssuesBox, PreferredOnlyCard, ReadinessCard,
   SimilarityPanel, btnPrimary, btnSecondary,
 } from './Panels';
 
@@ -41,7 +42,9 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const [busy, setBusy] = useState<Busy>('load');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [problem, setProblem] = useState<ApiProblem | null>(null);  // last refused save / action
-  const [conflict, setConflict] = useState<{ current: RequirementsView; rebased: boolean } | null>(null);
+  const [conflict, setConflict] = useState<{ current: RequirementsView } | null>(null);
+  const [choices, setChoices] = useState<Record<string, Choice | undefined>>({});
+  const [mergedNotice, setMergedNotice] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
   const [status, setStatus] = useState('');
   const [normalizeNote, setNormalizeNote] = useState<string | null>(null);
@@ -57,7 +60,7 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const apply = useCallback((v: RequirementsView) => {
     const d = draftFromServer(v.requirements);
     setView(v); setDraft(d); setBase(d); setBaseRevision(v.revision);
-    setConflict(null); setProblem(null); setFallback(null); setNormalizeNote(null);
+    setConflict(null); setChoices({}); setMergedNotice(false); setProblem(null); setFallback(null); setNormalizeNote(null);
   }, []);
 
   const load = useCallback(async () => {
@@ -83,7 +86,8 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   // ── helpers ────────────────────────────────────────────────────────────────
   const fmtDate = (d: string) => { const x = new Date(d); return isNaN(x.getTime()) ? '—' : x.toLocaleDateString(isAr ? 'ar' : 'en-GB'); };
   const who = (id: string) => (resolveUser && resolveUser(id)) || (currentUserId && id === currentUserId ? (isAr ? 'أنت' : 'you') : (isAr ? 'مستخدم آخر' : 'another user'));
-  const textOf = (id: string) => (draft ? findItem(draft, id)?.item.text || '' : '');
+  // The warning lists describe the SAVED version, so they name items by their saved wording (not the unsaved draft's).
+  const textOf = (id: string) => (base ? findItem(base, id)?.item.text : undefined) || (draft ? findItem(draft, id)?.item.text || '' : '');
   const goTo = (elId: string) => {
     const el = document.getElementById(elId);
     if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); (el as HTMLElement).focus({ preventScroll: true }); }
@@ -102,14 +106,24 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   };
   const dirtyCat = (c: CategoryKey) => !!(draft && base && JSON.stringify(toPayload(draft).categories[c]) !== JSON.stringify(toPayload(base).categories[c]));
 
-  const staleKeys = useMemo(() => {
-    if (!conflict || !draft) return new Set<string>();
-    const ids = new Set<string>();
-    for (const c of CATEGORIES) for (const i of conflict.current.requirements.categories[c].items) ids.add(i.id);
+  // Items the draft changed relative to the SAVED version it started from (wording, Required/Preferred, structure, removal):
+  // the warnings, acknowledgments and confirmations shown for them describe the saved version, not the draft.
+  const changedIds = useMemo(() => {
     const out = new Set<string>();
-    for (const c of CATEGORIES) for (const i of draft[c].items) if (i.id && !ids.has(i.id)) out.add(i.key);
+    if (!draft || !base) return out;
+    for (const c of CATEGORIES) {
+      for (const b of base[c].items) {
+        const f = findItem(draft, b.key);
+        if (!b.id) continue;
+        if (!f || f.item.text !== b.text || f.item.importance !== b.importance
+            || JSON.stringify(f.item.alternatives) !== JSON.stringify(b.alternatives) || JSON.stringify(f.item.experience) !== JSON.stringify(b.experience)) out.add(b.id);
+      }
+    }
     return out;
-  }, [conflict, draft]);
+  }, [draft, base]);
+
+  const theirsDraft = useMemo(() => (conflict ? draftFromServer(conflict.current.requirements) : null), [conflict]);
+  const analysis = useMemo(() => (conflict && draft && base && theirsDraft ? threeWayMerge(base, draft, theirsDraft) : null), [conflict, draft, base, theirsDraft]);
 
   const serverIssueFor = (c: CategoryKey | null, itemId: string | null) =>
     (problem?.issues ?? []).filter(x => (itemId ? x.item_id === itemId : !x.item_id && x.category === c));
@@ -122,17 +136,14 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     const srv = item.id ? serverIssueFor(null, item.id).map(x => (s as any)[`reason_${x.code}`] || x.message) : [];
     return {
       edited: !!ch && ch.kind !== 'same', isNew: !item.id,
-      structureState: dirtyItemStructure(item) ? null : (st?.state ?? null), structureRecord: st?.record ?? null,
+      structureState: st?.state ?? null, structureRecord: st?.record ?? null,
       classification: item.id ? (view?.classification_warnings ?? []).filter(w => w.item_id === item.id) : [],
-      similar: item.id ? (view?.similarity_warnings ?? []).filter(w => w.items.some(x => x.item_id === item.id)).map(w => ({
-        id: w.id, kind: w.kind, differences: w.differences, other: w.items.find(x => x.item_id !== item.id)!, label: '' })) : [],
-      issues: [...new Set([...itemLocalIssues, ...srv])], stale: staleKeys.has(item.key),
+      similar: item.id ? (view?.similarity_warnings ?? []).filter(w => w.items.some(x => x.item_id === item.id)).map(w => {
+        const other = w.items.find(x => x.item_id !== item.id)!;
+        return { id: w.id, kind: w.kind, differences: w.differences, other, label: '', stale: changedIds.has(item.id as string) || changedIds.has(other.item_id) };
+      }) : [],
+      issues: [...new Set([...itemLocalIssues, ...srv])], changedInDraft: !!item.id && changedIds.has(item.id),
     };
-  };
-  const dirtyItemStructure = (item: DraftItem) => {
-    if (!base || !item.id) return false;
-    const b = findItem(base, item.id)?.item;
-    return !!b && (b.text !== item.text || JSON.stringify(b.alternatives) !== JSON.stringify(item.alternatives) || JSON.stringify(b.experience) !== JSON.stringify(item.experience));
   };
 
   // ── draft edits (always explicit; no automatic redistribution) ─────────────
@@ -157,7 +168,7 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const handleProblem = async (e: any, fromSave: boolean) => {
     const p = describeApiError(e);
     if (p.status === 409 && p.code === 'requirements_revision_conflict' && p.current) {
-      if (fromSave && dirty) { setConflict({ current: p.current as RequirementsView, rebased: false }); setProblem(null); return; }
+      if (fromSave && dirty) { setConflict({ current: p.current as RequirementsView }); setChoices({}); setProblem(null); return; }
       apply(p.current as RequirementsView);                      // nothing of the recruiter's would be lost
       toast(s.conflictTitle, 'info');
       return;
@@ -188,11 +199,13 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   }
 
   const discard = () => { if (base) { setDraft(base); setProblem(null); setFallback(null); setNormalizeNote(null); } };
-  const keepDraft = () => {
-    if (!conflict) return;
-    const latest = conflict.current;
-    setView(latest); setBase(draftFromServer(latest.requirements)); setBaseRevision(latest.revision);
-    setConflict({ current: latest, rebased: true });
+  // Resolution never saves anything: it builds the merged draft from the recruiter's explicit choices and rebases the
+  // comparison point onto the latest saved version, so the next save is checked against that revision.
+  const applyMerge = () => {
+    if (!conflict || !analysis || !theirsDraft) return;
+    const merged = analysis.build(choices);
+    setDraft(merged); setBase(theirsDraft); setBaseRevision(conflict.current.revision); setView(conflict.current);
+    setConflict(null); setChoices({}); setProblem(null); setMergedNotice(true); say(s.mergedNotice);
   };
   const discardForLatest = () => {
     if (!conflict) return;
@@ -251,21 +264,23 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
 
       <EvaluationUnavailable s={s} />
 
-      {conflict && <ConflictBanner s={s} latestRevision={conflict.current.revision} staleCount={staleKeys.size} rebased={conflict.rebased} onKeep={keepDraft} onDiscard={discardForLatest} />}
+      {conflict && analysis && <ConflictResolver s={s} latestRevision={conflict.current.revision} analysis={analysis} choices={choices}
+                                                  onChoose={(k, c) => setChoices(prev => ({ ...prev, [k]: c }))} onApply={applyMerge} onDiscard={discardForLatest} />}
+      {mergedNotice && !conflict && <p role="status" className="rounded-xl border border-green-300 bg-green-50 p-3 text-xs text-green-900" data-testid="merged-notice">{s.mergedNotice}</p>}
       <IssuesBox s={s} tone="red" testId="server-issues" title={s.serverIssues} items={serverListed} />
       {problemOther && <p role="alert" className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-900" data-testid="problem">{problemOther}</p>}
 
-      <ReadinessCard s={s} view={view} goToCategory={goToCategory} goToItem={goToItem} />
+      <ReadinessCard s={s} view={view} goToCategory={goToCategory} goToItem={goToItem} dirty={dirty} />
       {dirty && localIssues.length > 0 && (
         <IssuesBox s={s} tone="amber" testId="local-issues" title={s.localIssues} hint={s.localIssuesHint}
                    items={dedupeIssues(localIssues).map(i => ({ text: issueText(i), onGo: i.itemKey ? () => goToItem(i.itemKey as string) : i.category ? () => goToCategory(i.category as string) : undefined }))} />
       )}
 
-      <ClassificationPanel s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} textOf={textOf} fmtDate={fmtDate} who={who}
+      <ClassificationPanel dirty={dirty} changedIds={changedIds} s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} textOf={textOf} fmtDate={fmtDate} who={who}
                            onAck={(id) => runAction(() => apiRef.current.acknowledge(jobId, baseRevision, id))} goToItem={goToItem} />
-      <PreferredOnlyCard s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} fmtDate={fmtDate} who={who}
+      <PreferredOnlyCard dirty={dirty} s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} fmtDate={fmtDate} who={who}
                          onConfirm={() => runAction(() => apiRef.current.confirmNoScore(jobId, baseRevision))} />
-      <SimilarityPanel s={s} view={view} textOf={textOf} goToItem={goToItem} />
+      <SimilarityPanel dirty={dirty} changedIds={changedIds} s={s} view={view} textOf={textOf} goToItem={goToItem} />
 
       <div className="bg-white rounded-2xl border border-border shadow-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">
         <p className={`text-sm font-bold ${totalOk ? 'text-success' : 'text-error'}`} data-testid="category-total">

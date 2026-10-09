@@ -2930,6 +2930,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       </div>
       {/* Right column — Evaluation Weights ────────────────────────────────── */}
       <div className="space-y-6">
+        {/* The legacy evaluation-weights card has nothing to show for a requirements-v2 job (the editor owns weights). */}
+        {!isRequirementsV2 && (
         <div className="bg-white rounded-2xl border border-border shadow-sm p-6 lg:sticky lg:top-20">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
@@ -2995,6 +2997,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             </div>
           )}
         </div>
+        )}
       </div>
 
       </div>

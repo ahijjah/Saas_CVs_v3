@@ -24,9 +24,9 @@ export interface ItemInfo {
   structureState: 'original' | 'confirmed' | 'corrected' | 'entered' | 'needs_review' | null;
   structureRecord: { kind: string; user_id: string; recorded_at: string } | null;
   classification: RequirementsView['classification_warnings'];
-  similar: { id: string; kind: string; differences: string[]; other: { item_id: string; category: string }; label: string }[];
+  similar: { id: string; kind: string; differences: string[]; other: { item_id: string; category: string }; label: string; stale: boolean }[];
   issues: string[];                        // already-translated messages for this item
-  stale: boolean;                          // the latest server version no longer contains this item
+  changedInDraft: boolean;                 // this item's wording / classification / structure differs from the SAVED version
 }
 
 interface ItemRowProps {
@@ -57,7 +57,7 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, category, s, isAr, canEdit, can
 
   return (
     <li id={`req-item-${k}`} tabIndex={-1}
-        className={`rounded-xl border p-3 bg-white scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${info.stale || info.issues.length ? 'border-error' : 'border-border'}`}>
+        className={`rounded-xl border p-3 bg-white scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${info.issues.length ? 'border-error' : 'border-border'}`}>
       <div className="flex flex-wrap items-center gap-1.5 mb-2">
         {item.origin === 'from_responsibilities' && (
           <Badge tone="blue"><BriefcaseIcon width={12} height={12} />{s.fromResponsibilities}</Badge>
@@ -68,6 +68,7 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, category, s, isAr, canEdit, can
         {info.structureState === 'needs_review' && <Badge tone="red"><WarnIcon width={12} height={12} />{s.structureNeedsReview}</Badge>}
         {(info.structureState === 'confirmed' || info.structureState === 'corrected' || info.structureState === 'entered') &&
           <Badge tone="green">{s.structureOk}</Badge>}
+        {info.changedInDraft && info.structureState && info.structureState !== 'original' && <Badge tone="amber" title={s.itemEditedSaved}>{s.savedBadge}</Badge>}
       </div>
 
       <div className="flex flex-col sm:flex-row gap-2 sm:items-start">
@@ -94,11 +95,11 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, category, s, isAr, canEdit, can
           {info.issues.map((m, n) => <li key={n} className="flex gap-1"><WarnIcon width={12} height={12} className="mt-0.5 shrink-0" /><span>{m}</span></li>)}
         </ul>
       )}
-      {info.stale && <p className="mt-2 text-xs text-error" role="alert">{s.conflictStale}</p>}
 
       {/* structure review: always visible, never hidden inside the details */}
       {info.structureState === 'needs_review' && (
-        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3" role="group" aria-label={s.structureReviewTitle}>
+        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3" role="group" aria-label={s.structureReviewTitle} data-saved-only={info.changedInDraft ? 'true' : undefined}>
+          {info.changedInDraft && <p className="text-[11px] font-black text-amber-900 mb-1">{s.savedBadge}: {s.itemEditedSaved}</p>}
           <p className="text-xs font-black text-amber-900">{s.structureReviewTitle}</p>
           <p className="text-xs text-amber-900 mt-1">{s.structureReviewBody}</p>
           <StructureSummary item={item} s={s} />
@@ -116,20 +117,24 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, category, s, isAr, canEdit, can
         <p className="mt-2 text-xs text-textMuted">
           {fmt({ confirmed: s.structureConfirmed, corrected: s.structureCorrected, entered: s.structureEntered }[info.structureState] || '',
             { name: who(info.structureRecord.user_id), date: fmtDate(info.structureRecord.recorded_at) })}
+          {info.changedInDraft && <span className="block font-bold text-amber-900" data-testid="structure-saved-only">{s.structureSavedOnly}</span>}
         </p>
       )}
 
       {classificationOpen.map(w => (
-        <p key={w.id} className="mt-2 text-xs text-amber-800 flex gap-1"><WarnIcon width={12} height={12} className="mt-0.5 shrink-0" />
-          <span>{w.state === 'acknowledged' ? s.stateAcknowledged : s.stateUnresolved}: {s.classificationWhy}</span></p>
+        <p key={w.id} className={`mt-2 text-xs flex gap-1 ${info.changedInDraft ? 'text-textMuted border border-dashed border-amber-400 rounded p-1' : 'text-amber-800'}`} data-saved-only={info.changedInDraft ? 'true' : undefined}>
+          <WarnIcon width={12} height={12} className="mt-0.5 shrink-0" />
+          <span>{info.changedInDraft && <strong className="text-amber-900">{s.savedBadge}: </strong>}{w.state === 'acknowledged' ? s.stateAcknowledged : s.stateUnresolved}: {s.classificationWhy}
+            {info.changedInDraft && <em className="block not-italic text-amber-900">{w.state === 'acknowledged' ? s.ackSavedOnly : s.itemEditedSaved}</em>}</span></p>
       ))}
 
       {info.similar.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1.5" aria-label={s.similarityTitle}>
           {info.similar.map(w => (
             <li key={w.id}>
-              <button type="button" onClick={() => actions.goToItem(w.other.item_id)} className="text-[11px] font-bold px-2 py-1 rounded-lg border border-border bg-slate-50 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-                {w.kind === 'possible_duplicate' ? s.possibleDuplicate : s.similarRequirement} → {s.goToItem}
+              <button type="button" onClick={() => actions.goToItem(w.other.item_id)} data-saved-only={w.stale ? 'true' : undefined}
+                      className={`text-[11px] font-bold px-2 py-1 rounded-lg border bg-slate-50 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${w.stale ? 'border-dashed border-amber-400 text-textMuted' : 'border-border'}`}>
+                {w.kind === 'possible_duplicate' ? s.possibleDuplicate : s.similarRequirement}{w.stale ? ` (${s.similarSaved})` : ''} → {s.goToItem}
               </button>
             </li>
           ))}

@@ -290,58 +290,228 @@ describe('preferred-only jobs', () => {
   });
 });
 
-describe('revision conflicts', () => {
-  const latest = () => { const d = weightedDoc(); d.categories.skills.items[0].text = 'Python (someone else)'; return makeView(d, { revision: 4 }); };
+describe('revision conflicts: three-way comparison and explicit resolution', () => {
+  const edited = (fn: (d: ReturnType<typeof weightedDoc>) => void, rev = 4) => { const d = weightedDoc(); fn(d); return makeView(d, { revision: rev }); };
+  const conflictOn = (api: any, latest: RequirementsView) =>
+    api.save.mockRejectedValueOnce(apiError(409, { code: 'requirements_revision_conflict', message: 'changed', current: latest }));
+  const resolver = () => screen.getByTestId('conflict');
 
-  it('keeps the draft, explains, and offers explicit choices', async () => {
+  it('separate-field edits are combined: nothing to decide, Apply does not save, the next save is checked against the latest revision', async () => {
     const { ui, api } = await setup(makeView());
-    await ui.type(textboxOf('Python'), ' mine');
-    api.save.mockRejectedValueOnce(apiError(409, { code: 'requirements_revision_conflict', message: 'changed', current: latest() }));
+    await ui.type(textboxOf('Python'), ' (mine)');                                           // I edit Python
+    conflictOn(api, edited(d => { d.categories.skills.items[2].text = 'Docker (theirs)'; }));  // they edited Docker
     await ui.click(screen.getByTestId('save'));
-    const banner = await screen.findByTestId('conflict');
-    expect(banner.textContent).toContain(S.conflictTitle); expect(banner.textContent).toContain('4');
-    expect(screen.getByDisplayValue('Python mine')).toBeTruthy();                      // draft kept
-    expect(api.save).toHaveBeenCalledTimes(1);                                          // nothing was retried / overwritten
-    expect((screen.getByTestId('save') as HTMLButtonElement).disabled).toBe(false);
-  });
-  it('"keep my draft" rebases onto the latest revision only after an explicit click, then saves with that revision', async () => {
-    const { ui, api } = await setup(makeView());
-    await ui.type(textboxOf('Python'), ' mine');
-    api.save.mockRejectedValueOnce(apiError(409, { code: 'requirements_revision_conflict', message: 'changed', current: latest() }));
-    await ui.click(screen.getByTestId('save'));
-    await ui.click(await screen.findByRole('button', { name: S.conflictKeep }));
-    expect(screen.getByTestId('conflict').textContent).toContain(S.conflictRebased);
-    expect(screen.getByDisplayValue('Python mine')).toBeTruthy();
+    await screen.findByTestId('conflict');
+    expect(within(resolver()).getByText(S.noClashes)).toBeTruthy();
+    expect(within(screen.getByTestId('merge-summary')).getByText(/Kept from your draft: 1/)).toBeTruthy();
+    expect(within(screen.getByTestId('merge-summary')).getByText(/Taken from the latest saved version: 1/)).toBeTruthy();
+    expect(screen.getByDisplayValue('Python (mine)')).toBeTruthy();                           // draft untouched until Apply
+    await ui.click(screen.getByTestId('apply-merge'));
+    expect(api.save).toHaveBeenCalledTimes(1);                                                // applying never saves or resubmits
+    expect(screen.queryByTestId('conflict')).toBeNull();
+    expect(screen.getByDisplayValue('Python (mine)')).toBeTruthy(); expect(screen.getByDisplayValue('Docker (theirs)')).toBeTruthy();
+    expect(screen.getByTestId('merged-notice').textContent).toContain(S.mergedNotice);
     await ui.click(screen.getByTestId('save'));
     await waitFor(() => expect(api.save).toHaveBeenCalledTimes(2));
-    expect(api.save.mock.calls[1][1]).toBe(4);
+    expect(api.save.mock.calls[1][1]).toBe(4);                                                // revision checking stays active
+    const items = api.save.mock.calls[1][2].categories.skills.items;
+    expect(items.map((i: any) => i.text)).toEqual(['Python (mine)', 'SQL or PostgreSQL', 'Docker (theirs)']);
   });
+
+  it('a conflicting field needs an explicit choice; the three versions are shown; Apply stays disabled until chosen', async () => {
+    const { ui, api } = await setup(makeView());
+    await ui.type(textboxOf('Python'), ' mine');
+    conflictOn(api, edited(d => { d.categories.skills.items[0].text = 'Python theirs'; }));
+    await ui.click(screen.getByTestId('save'));
+    const box = await screen.findByTestId('conflict');
+    const fs = within(box).getByRole('group', { name: /Python.*wording/ });
+    expect(within(fs).getAllByRole('columnheader').map(h => h.textContent)).toEqual([S.colOriginal, S.colMine, S.colLatest]);
+    expect(within(fs).getAllByRole('cell').map(c => c.textContent)).toEqual(['Python', 'Python mine', 'Python theirs']);
+    expect((screen.getByTestId('apply-merge') as HTMLButtonElement).disabled).toBe(true);
+    expect(within(box).getByText(new RegExp(S.chooseAll))).toBeTruthy();
+    await ui.click(within(fs).getByRole('radio', { name: S.useLatest }));
+    expect((screen.getByTestId('apply-merge') as HTMLButtonElement).disabled).toBe(false);
+    await ui.click(screen.getByTestId('apply-merge'));
+    expect(screen.getByDisplayValue('Python theirs')).toBeTruthy(); expect(screen.queryByDisplayValue('Python mine')).toBeNull();
+    expect(api.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('"use my draft" keeps my value for that conflict only; other fields still merge', async () => {
+    const { ui, api } = await setup(makeView());
+    await ui.type(textboxOf('Python'), ' mine');
+    await ui.type(textboxOf('Docker'), ' mine');
+    conflictOn(api, edited(d => { d.categories.skills.items[0].text = 'Python theirs'; d.categories.skills.items[2].text = 'Docker theirs'; }));
+    await ui.click(screen.getByTestId('save'));
+    const box = await screen.findByTestId('conflict');
+    await ui.click(within(within(box).getByRole('group', { name: /Python/ })).getByRole('radio', { name: S.useMine }));
+    await ui.click(within(within(box).getByRole('group', { name: /Docker/ })).getByRole('radio', { name: S.useLatest }));
+    await ui.click(screen.getByTestId('apply-merge'));
+    expect(screen.getByDisplayValue('Python mine')).toBeTruthy(); expect(screen.getByDisplayValue('Docker theirs')).toBeTruthy();
+  });
+
+  it('category weight conflicts are explicit too; a one-sided change is merged silently', async () => {
+    const { ui, api } = await setup(makeView());
+    const w = within(card('Skills')).getByLabelText(S.categoryWeight);
+    await ui.clear(w); await ui.type(w, '55');
+    conflictOn(api, edited(d => { d.categories.skills.weight = 70; d.categories.experience.weight = 30; }));
+    await ui.click(screen.getByTestId('save'));
+    const box = await screen.findByTestId('conflict');
+    expect(box.querySelectorAll('fieldset')).toHaveLength(1);                                // Experience weight changed only upstream
+    await ui.click(within(within(box).getByRole('group', { name: /Skills/ })).getByRole('radio', { name: S.useMine }));
+    await ui.click(screen.getByTestId('apply-merge'));
+    expect((within(card('Skills')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('55');
+    expect((within(card('Experience')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('30');
+  });
+
+  it('I deleted an item that was changed in the latest version: explicit choice (delete it / keep the latest)', async () => {
+    const { ui, api } = await setup(makeView());
+    await ui.click(within(document.getElementById('req-item-req_docker')!).getByRole('button', { name: new RegExp(S.deleteItem) }));
+    conflictOn(api, edited(d => { d.categories.skills.items[2].text = 'Docker (edited upstream)'; }));
+    await ui.click(screen.getByTestId('save'));
+    const box = await screen.findByTestId('conflict');
+    expect(within(box).getByText(S.conflictDeletedByMe)).toBeTruthy();
+    const fs = within(box).getByRole('group', { name: /Docker/ });
+    expect(within(fs).getAllByRole('cell').map(c => c.textContent)).toEqual(['Docker (Preferred)', S.deletedValue, 'Docker (edited upstream) (Preferred)']);
+    await ui.click(within(fs).getByRole('radio', { name: S.choiceKeepLatest }));
+    await ui.click(screen.getByTestId('apply-merge'));
+    expect(screen.getByDisplayValue('Docker (edited upstream)')).toBeTruthy();
+    expect(api.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('I changed an item that was deleted in the latest version: keeping mine re-adds it as a new item; accepting drops it', async () => {
+    const run = async (choice: string) => {
+      const { ui, api, unmount } = await setup(makeView());
+      await ui.type(textboxOf('Docker'), ' (mine)');
+      conflictOn(api, edited(d => { d.categories.skills.items.splice(2, 1); }));
+      await ui.click(screen.getByTestId('save'));
+      const box = await screen.findByTestId('conflict');
+      expect(within(box).getByText(S.conflictDeletedInLatest)).toBeTruthy();
+      await ui.click(within(within(box).getByRole('group', { name: /Docker/ })).getByRole('radio', { name: choice }));
+      await ui.click(screen.getByTestId('apply-merge'));
+      return { ui, api, unmount };
+    };
+    let r = await run(S.choiceKeepMine);
+    expect(screen.getByDisplayValue('Docker (mine)')).toBeTruthy();
+    await r.ui.click(screen.getByTestId('save'));
+    await waitFor(() => expect(r.api.save).toHaveBeenCalledTimes(2));
+    const sent = r.api.save.mock.calls[1][2].categories.skills.items.find((i: any) => i.text === 'Docker (mine)');
+    expect('id' in sent).toBe(false);                                                         // the deleted id is never sent again
+    r.unmount();
+    r = await run(S.choiceAcceptDeletion);
+    expect(screen.queryByDisplayValue('Docker (mine)')).toBeNull();
+  });
+
+  it('a second conflict after resolving is detected again (revision checking stays active)', async () => {
+    const { ui, api } = await setup(makeView());
+    await ui.type(textboxOf('Python'), ' mine');
+    conflictOn(api, edited(d => { d.categories.skills.items[2].text = 'Docker v4'; }, 4));
+    await ui.click(screen.getByTestId('save'));
+    await screen.findByTestId('conflict');
+    await ui.click(screen.getByTestId('apply-merge'));
+    conflictOn(api, edited(d => { d.categories.skills.items[2].text = 'Docker v5'; }, 5));    // someone saved again meanwhile
+    await ui.click(screen.getByTestId('save'));
+    expect(api.save.mock.calls[1][1]).toBe(4);
+    const box = await screen.findByTestId('conflict');
+    expect(box.textContent).toContain('5');
+    expect(screen.getByDisplayValue('Python mine')).toBeTruthy();
+    expect(api.save).toHaveBeenCalledTimes(2);                                                // nothing was resubmitted by itself
+  });
+
   it('"discard my draft" asks for confirmation before replacing it', async () => {
     const confirmFn = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
     const { ui, api } = await setup(makeView(), { confirmFn });
     await ui.type(textboxOf('Python'), ' mine');
-    api.save.mockRejectedValueOnce(apiError(409, { code: 'requirements_revision_conflict', message: 'changed', current: latest() }));
+    conflictOn(api, edited(d => { d.categories.skills.items[0].text = 'Python (someone else)'; }));
     await ui.click(screen.getByTestId('save'));
-    await ui.click(await screen.findByRole('button', { name: S.conflictDiscard }));
-    expect(screen.getByDisplayValue('Python mine')).toBeTruthy();                       // declined: still there
-    await ui.click(screen.getByRole('button', { name: S.conflictDiscard }));
+    await screen.findByTestId('conflict');
+    await ui.click(screen.getByTestId('discard-for-latest'));
+    expect(screen.getByDisplayValue('Python mine')).toBeTruthy();                             // declined: still there
+    await ui.click(screen.getByTestId('discard-for-latest'));
     expect(screen.getByDisplayValue('Python (someone else)')).toBeTruthy();
     expect(screen.queryByTestId('conflict')).toBeNull();
   });
-  it('flags a draft item that the latest version no longer contains', async () => {
+
+  it('is operable by keyboard: radios by arrow keys, Apply by Enter', async () => {
     const { ui, api } = await setup(makeView());
-    await ui.type(textboxOf('Docker'), '!');
-    const d = weightedDoc(); d.categories.skills.items = d.categories.skills.items.filter(i => i.id !== 'req_docker');
-    api.save.mockRejectedValueOnce(apiError(409, { code: 'requirements_revision_conflict', message: 'changed', current: makeView(d, { revision: 5 }) }));
+    await ui.type(textboxOf('Python'), ' mine');
+    conflictOn(api, edited(d => { d.categories.skills.items[0].text = 'Python theirs'; }));
     await ui.click(screen.getByTestId('save'));
-    await screen.findByTestId('conflict');
-    expect(within(document.getElementById('req-item-req_docker')!).getByRole('alert').textContent).toBe(S.conflictStale);
+    const fs = within(await screen.findByTestId('conflict')).getByRole('group', { name: /Python/ });
+    const [mine, latest] = within(fs).getAllByRole('radio');
+    mine.focus(); await ui.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(latest); expect((latest as HTMLInputElement).checked).toBe(true);
+    const apply = screen.getByTestId('apply-merge') as HTMLButtonElement;
+    apply.focus(); await ui.keyboard('{Enter}');
+    expect(screen.getByDisplayValue('Python theirs')).toBeTruthy(); expect(api.save).toHaveBeenCalledTimes(1);
   });
+
   it('an action refused for a stale revision reloads the latest (there is no draft to lose)', async () => {
     const { ui, api } = await setup(warningView());
-    api.acknowledge.mockRejectedValueOnce(apiError(409, { code: 'requirements_revision_conflict', message: 'changed', current: latest() }));
+    api.acknowledge.mockRejectedValueOnce(apiError(409, { code: 'requirements_revision_conflict', message: 'changed', current: edited(d => { d.categories.skills.items[0].text = 'Python (someone else)'; }) }));
     await ui.click(within(screen.getByTestId('classification')).getByRole('button', { name: S.acknowledge }));
     await waitFor(() => expect(screen.getByDisplayValue('Python (someone else)')).toBeTruthy());
+  });
+});
+
+describe('warnings are labelled as referring to the saved version while a draft differs', () => {
+  it('no labels while the draft equals the saved version', async () => {
+    await setup(warningView());
+    for (const id of ['readiness-stale', 'classification-saved-note', 'similarity-saved-note']) expect(screen.queryByTestId(id)).toBeNull();
+    expect(screen.getByTestId('readiness').textContent).toContain(S.readiness);
+  });
+  it('a draft change labels readiness, the classification list and the similarity list as the saved version', async () => {
+    const { ui } = await setup(warningView());
+    await ui.type(textboxOf('Python'), '!');
+    expect(screen.getByTestId('readiness-stale').textContent).toBe(S.readinessSavedNote);
+    expect(screen.getByTestId('readiness').textContent).toContain(S.readinessSavedTitle);
+    expect(screen.getByTestId('classification-saved-note').textContent).toBe(S.savedNoteWarnings);
+    expect(screen.getByTestId('similarity-saved-note').textContent).toBe(S.savedNoteWarnings);
+    expect(screen.getByTestId('readiness-state').textContent).toBe(S.state_needs_classification_review);   // still the saved state
+  });
+  it('per-item chips: only items the draft changed are marked, and an acknowledgment is not presented as verifying the edit', async () => {
+    const view = warningView();
+    view.classification_warnings[0] = { ...view.classification_warnings[0], state: 'acknowledged', acknowledgment: { user_id: 'u-9', acknowledged_at: '2026-03-03T10:00:00+00:00' } };
+    const { ui } = await setup(view);
+    const docker = document.getElementById('req-item-req_docker')!, sql = document.getElementById('req-item-req_sql')!;
+    expect(docker.querySelector('[data-saved-only]')).toBeNull();
+    await ui.type(textboxOf('Docker'), ' 2');
+    expect(docker.querySelectorAll('[data-saved-only="true"]').length).toBeGreaterThan(0);
+    expect(docker.textContent).toContain(S.ackSavedOnly);
+    expect(docker.textContent).toContain(S.savedBadge);
+    // the duplicate chip on the OTHER item of the pair refers to the saved version as well
+    expect(within(sql).getByRole('button', { name: new RegExp(`${S.possibleDuplicate} \\(${S.similarSaved}\\)`) })).toBeTruthy();
+    const classRow = within(screen.getByTestId('classification')).getByTestId('warning-item-edited');
+    expect(classRow.textContent).toContain(S.itemEditedSaved);
+    // the lists name the item by its SAVED wording, not by the unsaved edit
+    expect(within(screen.getByTestId('classification')).getByRole('button', { name: 'Docker' })).toBeTruthy();
+    expect(within(screen.getByTestId('classification')).queryByRole('button', { name: 'Docker 2' })).toBeNull();
+    expect(screen.getByTestId('classification').textContent).toContain(S.ackSavedOnly);
+    // an item the draft did not touch is not marked
+    expect(document.getElementById('req-item-req_py')!.querySelector('[data-saved-only]')).toBeNull();
+    await ui.click(screen.getByRole('button', { name: S.discard }));
+    expect(screen.queryByTestId('warning-item-edited')).toBeNull();
+    expect(screen.queryByTestId('classification-saved-note')).toBeNull();
+  });
+  it('structure confirmation and preferred-only confirmation are shown as applying to the saved version', async () => {
+    const view = structureView();
+    view.structure_review.items[1] = { item_id: 'req_exp', category: 'experience', state: 'confirmed', record: { kind: 'confirmed', user_id: 'u-9', recorded_at: '2026-03-03T10:00:00+00:00' } };
+    view.structure_review.needs_review_item_ids = [];
+    const { ui } = await setup(view);
+    await ui.type(textboxOf('7 years as a Maintenance Planner'), '!');
+    expect(screen.getByTestId('structure-saved-only').textContent).toBe(S.structureSavedOnly);
+  });
+  it('preferred-only confirmation note appears only while a draft exists', async () => {
+    const { ui } = await setup(preferredOnlyView(true));
+    expect(screen.queryByTestId('preferred-only-saved-note')).toBeNull();
+    await ui.type(textboxOf('Docker is a plus'), '!');
+    expect(screen.getByTestId('preferred-only-saved-note').textContent).toBe(S.preferredOnlySavedOnly);
+  });
+  it('a needs-review structure banner is marked as the saved version when the item is edited', async () => {
+    const { ui } = await setup(structureView());
+    await ui.type(textboxOf('7 years as a Maintenance Planner'), '!');
+    const row = document.getElementById('req-item-req_exp')!;
+    expect(row.querySelector('[data-saved-only="true"]')).toBeTruthy();
+    expect(row.textContent).toContain(S.itemEditedSaved);
   });
 });
 
