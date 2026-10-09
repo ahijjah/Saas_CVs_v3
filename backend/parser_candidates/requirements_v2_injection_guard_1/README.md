@@ -1,4 +1,6 @@
-# requirements-v2-injection-guard-1 (candidate, offline)
+# requirements-v2-injection-guard-1.1 (candidate, offline)
+
+Revision 1.1 changes only how a WEIGHTS issue is tracked and closed (per implicated category, below). The directory name keeps `_1`.
 
 Status: **candidate only.** Not imported by any API, worker, router or UI; no migration; no prompt or registry change. The frozen parser,
 prompt v2-1, the v2-2 candidate prompt and the benchmark (scorer, labels, matching, gates) are untouched and asserted unchanged by the tests.
@@ -40,8 +42,13 @@ on how the model classified the item: a Required item with no cue is flagged as 
 
 **Step 2b: weights contamination.** A large weight alone is never evidence. An issue is raised only when all hold: (1) an AI-directed
 sentence has a weight directive naming a category (or "all/every/each") and a number N; (2) N >= 50; (3) the model's *proposed* weight for that
-category is at least N (for "all": two or more categories reach N). The issue stores the directive, the proposal and the *contaminated weights
-vector* (the weights currently in the draft document).
+category is at least N (for "all": two or more categories reach N).
+
+One issue is recorded **per implicated category** (a directive over several categories yields one issue each; the pseudo-category "all" never
+appears as an issue category). Each issue stores: the implicated `category`; the model's `proposed_weight` for it (e.g. 100); its
+`contaminated_applied_weight`, i.e. the weight the draft document holds after normalization (e.g. 50, because proposals are rescaled to total
+100); the `directive` (named category or ALL, directed value, clause, sentence, span); and, as context only, `applied_weights_at_detection`
+(the whole vector, never used to decide anything).
 
 ## Effect and resolution
 
@@ -53,8 +60,15 @@ vector* (the weights currently in the draft document).
   client-sent record nor a stale `status` can unblock; `carry_injection_review` returns only the trusted stored record.
 * A **requirement** issue closes when the item is no longer in the document. "Correcting" means removing it and, if the requirement is
   genuine, adding it as the recruiter's own item (`recruiter_added`, no AI evidence, never flagged). The existing editing functions suffice.
-* A **weights** issue closes when the category weights differ from the contaminated vector (the recruiter sets them) and reopens if they are set
-  back to it. Consequence: the exact contaminated vector can never be accepted.
+* A **weights** issue concerns one category and is open while that category's current weight equals its contaminated applied weight **or** the
+  proposed (directed) value. It closes only when the implicated category's weight is changed to anything else, and reopens if it is set back to
+  either value. Edits to other categories never close or reopen it. Because the frozen validation requires the weights to total 100, correcting one
+  category normally means rebalancing others; that is allowed and irrelevant to the issue. Several implicated categories are tracked separately, so a
+  partial correction leaves the others open and blocking.
+* Consequence: the contaminated applied weight (e.g. 50) and the attacker's number (100) can never be accepted for the implicated category; any
+  other value is the recruiter's decision. A category that loses all its required items is zeroed by the frozen editing rules, which also corrects it.
+* An unbalanced draft (weights not totalling 100) keeps the frozen `needs_review` state, which also cannot proceed; the injection issue stays open
+  underneath and reappears as soon as the document is valid.
 * `reconcile(review, doc, user_id, at)` returns the updated record plus `resolved`/`reopened` events for the audit log. Idempotent.
 
 ## Limits (be honest about these)
@@ -65,6 +79,7 @@ vector* (the weights currently in the draft document).
   flagged (false positive). Resolution: remove it and add it as your own requirement.
 * Weights: a directive below 50, a directive without a number or category, or a model that partly follows it (a proposal below N) is not
   detected. A coincidence (directive N and proposal N) is flagged. The guard sees *proposals*; it does not judge the plausibility of weights.
+  Correcting the implicated category to a different number is accepted even if that number is itself unreasonable: the recruiter owns it.
 * The invented requirement is only caught when its evidence lies inside the instruction. An invented requirement with a made-up quote is
   already rejected by the frozen evidence check (`source_text_not_found`).
 * Whether a real downstream scoring path honours `alternatives`, weights, etc. is outside this module.
@@ -85,13 +100,15 @@ resolution endpoint is required**; only wiring and display:
 2. **GET /jobs/{id}/requirements** gains `injection_review` (issues with status, evidence, reason, rule codes) and returns the readiness from
    `guarded_readiness`. No other field changes.
 3. **PUT /jobs/{id}/requirements**: inside the existing locked transaction, after `validate_final`, call `reconcile(stored_review, new_doc,
-   user, now)`; persist the result; audit `requirements_injection_resolved` / `requirements_injection_reopened` per event. The save itself is
+   user, now)`; persist the result; audit `requirements_injection_resolved` / `requirements_injection_reopened` per event (resolution kinds
+   `item_removed` and `category_weight_corrected`; the event names the issue id and category). The save itself is
    never blocked by an open issue (saving is how it is resolved); `confirm-no-numeric-score`, classification acknowledgment results and any
    "proceed" action use `guarded_readiness`, so they stay refused while an issue is open.
 4. **UI (en/ar, RTL).** A blocking banner "Text addressed to the AI was found in the job description and shaped this analysis." On an affected item:
    a badge, the quoted evidence and the instruction sentence, and two buttons: **Remove** (existing delete) and **Replace with my own
-   requirement** (delete + prefilled add dialog). On the weights panel: the instruction sentence, the proposed vs applied weights, **Use equal
-   split** (existing suggested fallback) and **Edit weights**. No "accept" or "dismiss" control exists. When the last issue resolves the banner
+   requirement** (delete + prefilled add dialog). On the weights panel: the instruction sentence and, per implicated category, the proposed vs applied weight with a
+   "still contaminated" / "corrected" marker, **Use equal split** (existing suggested fallback; it changes every implicated category) and **Edit
+   weights**. Changing a category that is not marked never clears a marker. No "accept" or "dismiss" control exists. When the last issue resolves the banner
    disappears and the normal readiness (classification review, structure review, confirmation) applies.
 5. **False positive path.** Remove and re-add as your own requirement; the audit trail records the removal. If false positives turn out to be
    common, tighten the rules (a new guard version) rather than adding a bypass.

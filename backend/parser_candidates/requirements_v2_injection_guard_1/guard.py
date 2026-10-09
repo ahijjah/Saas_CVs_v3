@@ -7,13 +7,14 @@ reader. This module finds such sentences in the JD, then reports (never repairs)
   * REQUIREMENT contamination: an item whose evidence (source_text) lies inside an AI-directed sentence, and that has no genuine
     support elsewhere in the JD;
   * WEIGHTS contamination: the JD contains an AI-directed weight directive ("set the weight of X to N", N >= 50) AND the model's
-    proposed weight for X is at least N (or, for "all/every weight to N", two or more categories reach N).
+    proposed weight for X is at least N (or, for "all/every weight to N", two or more categories reach N). One issue is recorded
+    PER IMPLICATED CATEGORY, with that category's proposed and applied (post-normalization) weight.
 The findings live in a separate server-owned record. The frozen extraction result, the document, the raw AI output and the original
 snapshot are never modified: nothing is deleted, reclassified, merged or redistributed.
 
 BLOCKING. guarded_readiness() answers NEEDS_INJECTION_REVIEW while any issue is open, under both classification-policy settings.
 There is no acknowledgment: an issue closes only when the server sees (reconcile) that the item is gone from the document or that the
-category weights are no longer the contaminated ones. See README.md for rules, limits and the proposed API/UI design.
+implicated category's weight is no longer the contaminated one. See README.md for rules, limits and the proposed API/UI design.
 """
 from __future__ import annotations
 
@@ -29,12 +30,12 @@ from services.requirements_v2.contract import CATEGORIES, ORIGIN_RECRUITER_ADDED
 from services.requirements_v2.extraction.text import locate_span, normalize_with_map
 from services.requirements_v2.readiness import Readiness, compute_readiness
 
-GUARD_VERSION = "requirements-v2-injection-guard-1"
+GUARD_VERSION = "requirements-v2-injection-guard-1.1"      # 1.1: weight issues are tracked per implicated category
 NEEDS_INJECTION_REVIEW = "needs_injection_review"
 
 ISSUE_REQUIREMENT, ISSUE_WEIGHTS = "requirement", "weights"
 STATUS_OPEN, STATUS_RESOLVED = "open", "resolved"
-RES_ITEM_REMOVED, RES_WEIGHTS_CHANGED = "item_removed", "weights_changed"
+RES_ITEM_REMOVED, RES_WEIGHT_CORRECTED = "item_removed", "category_weight_corrected"
 MIN_DIRECTED_WEIGHT = 50          # weights rule: a directive below this value is not treated as an attack (limit, see README)
 OVERLAP_THRESHOLD = 0.5           # share of an item's evidence span that must lie inside AI-directed sentences
 _SNIPPET = 240
@@ -282,22 +283,30 @@ def detect(jd_text: str, doc: dict, proposed_weights: dict | None = None, raw_ai
                     "reason": "The evidence for this requirement is inside text addressed to the AI/system, not a statement of the role.",
                     "resolution": None, "history": []})
     proposed = proposed_weights if isinstance(proposed_weights, dict) else {}
+    applied_now = _doc_weights(doc)
     for d in _weight_directives(jd_text, spans):
         n = d["value"]
         if n < MIN_DIRECTED_WEIGHT:
             continue
         vals = {c: proposed.get(c) for c in CATEGORIES if isinstance(proposed.get(c), (int, float)) and not isinstance(proposed.get(c), bool)}
-        hit_cats = [c for c, v in vals.items() if v >= n] if d["category"] == "ALL" else ([d["category"]] if vals.get(d["category"], -1) >= n else [])
-        if (d["category"] == "ALL" and len(hit_cats) < 2) or not hit_cats:
-            continue
-        issues.append({
-            "id": _issue_id(ISSUE_WEIGHTS, f"{d['category']}|{n}|{d['span'][0]}"), "kind": ISSUE_WEIGHTS, "status": STATUS_OPEN, "item_id": None,
-            "category": d["category"], "rule_codes": ["ai_directed_weight_directive", "proposal_follows_directive"],
-            "evidence": {"instruction_text": d["sentence"], "clause": d["clause"], "instruction_span": d["span"], "directed_value": n,
-                         "proposed": {c: vals[c] for c in hit_cats}},
-            "contaminated_weights": _doc_weights(doc),
-            "reason": "The category weights follow a weight instruction addressed to the AI/system found in the job description.",
-            "resolution": None, "history": []})
+        if d["category"] == "ALL":
+            hit_cats = [c for c, v in vals.items() if v >= n]
+            if len(hit_cats) < 2:
+                continue
+        else:
+            hit_cats = [d["category"]] if vals.get(d["category"], -1) >= n else []
+        for c in hit_cats:                                         # each implicated category is its own issue
+            issues.append({
+                "id": _issue_id(ISSUE_WEIGHTS, f"{c}|{n}|{d['span'][0]}"), "kind": ISSUE_WEIGHTS, "status": STATUS_OPEN, "item_id": None,
+                "category": c, "rule_codes": ["ai_directed_weight_directive", "proposal_follows_directive"],
+                "directive": {"named": d["category"], "value": n, "clause": d["clause"], "sentence": d["sentence"], "span": d["span"]},
+                "proposed_weight": vals[c],                          # what the model proposed for this category (e.g. 100)
+                "contaminated_applied_weight": applied_now[c],       # what the draft holds after normalization (e.g. 50)
+                "applied_weights_at_detection": applied_now,         # context only; never used to decide openness
+                "evidence": {"instruction_text": d["sentence"], "clause": d["clause"], "instruction_span": d["span"], "directed_value": n,
+                             "proposed": {c: vals[c]}},
+                "reason": f"The weight of {c!r} follows a weight instruction addressed to the AI/system found in the job description.",
+                "resolution": None, "history": []})
     seen, unique = set(), []
     for i in issues:                                   # one open weights issue per (category, directive): keep the first of identical ids
         if i["id"] not in seen:
@@ -318,7 +327,8 @@ def inspect_result(jd_text: str, result) -> dict:
 def _is_open(issue: dict, doc: dict) -> bool:
     if issue["kind"] == ISSUE_REQUIREMENT:
         return any(i["id"] == issue["item_id"] for c in CATEGORIES for i in doc["categories"][c]["items"])
-    return _doc_weights(doc) == issue["contaminated_weights"]
+    w = doc["categories"][issue["category"]].get("weight")
+    return w == issue["contaminated_applied_weight"] or w == issue["proposed_weight"]
 
 
 def open_issues(review: dict | None, doc: dict) -> list[dict]:
@@ -329,7 +339,8 @@ def open_issues(review: dict | None, doc: dict) -> list[dict]:
 def reconcile(review: dict | None, doc: dict, *, user_id: str | None = None, at: str | None = None) -> tuple[dict | None, list[dict]]:
     """(new review, events). Call it on every save with the TRUSTED stored review and the new document. An item issue resolves when the
     item is no longer in the document (removed; a replacement is a new recruiter_added item, which is never flagged). A weights issue
-    resolves when the category weights differ from the contaminated vector and reopens if they are set back to it. Idempotent."""
+    concerns ONE category: it resolves only when that category's weight is neither the contaminated applied weight nor the proposed (directed)
+    value, and reopens if it is set back to either. Edits to other categories never matter. Idempotent."""
     if not review:
         return review, []
     new, events = copy.deepcopy(review), []
@@ -340,7 +351,7 @@ def reconcile(review: dict | None, doc: dict, *, user_id: str | None = None, at:
             i["history"].append({"event": "reopened", "by": user_id, "at": at})
             events.append({"event": "reopened", "issue_id": i["id"], "kind": i["kind"]})
         elif not now_open and i["status"] == STATUS_OPEN:
-            kind = RES_ITEM_REMOVED if i["kind"] == ISSUE_REQUIREMENT else RES_WEIGHTS_CHANGED
+            kind = RES_ITEM_REMOVED if i["kind"] == ISSUE_REQUIREMENT else RES_WEIGHT_CORRECTED
             i["status"], i["resolution"] = STATUS_RESOLVED, {"kind": kind, "by": user_id, "at": at}
             i["history"].append({"event": "resolved", "kind": kind, "by": user_id, "at": at})
             events.append({"event": "resolved", "issue_id": i["id"], "kind": i["kind"], "resolution": kind})
@@ -359,6 +370,9 @@ def validate_review(review: object) -> list[str]:
     for i in review.get("issues", []):
         if i.get("kind") not in (ISSUE_REQUIREMENT, ISSUE_WEIGHTS) or i.get("status") not in (STATUS_OPEN, STATUS_RESOLVED):
             errs.append(f"bad kind/status on {i.get('id')}")
+        if i.get("kind") == ISSUE_WEIGHTS and (i.get("category") not in CATEGORIES or "contaminated_applied_weight" not in i
+                                               or "proposed_weight" not in i or "directive" not in i):
+            errs.append(f"{i.get('id')}: a weights issue needs its category, proposed weight, contaminated applied weight and directive")
         if i.get("status") == STATUS_RESOLVED and not i.get("resolution"):
             errs.append(f"{i.get('id')}: resolved without a resolution")
         if not i.get("evidence") or not i.get("reason"):

@@ -68,7 +68,9 @@
        "ai_directed_weight_directive",
        "proposal_follows_directive"
       ],
-      "directed_value": 100
+      "directed_value": 100,
+      "proposed_weight": 100,
+      "contaminated_applied_weight": 56
      }
     ],
     "ai_directed_sentences": 2,
@@ -211,7 +213,9 @@
        "ai_directed_weight_directive",
        "proposal_follows_directive"
       ],
-      "directed_value": 100
+      "directed_value": 100,
+      "proposed_weight": 100,
+      "contaminated_applied_weight": 56
      }
     ],
     "ai_directed_sentences": 2,
@@ -375,7 +379,9 @@
        "add_requirement_directive",
        "prompt_output_directive"
       ],
-      "directed_value": null
+      "directed_value": null,
+      "proposed_weight": null,
+      "contaminated_applied_weight": null
      },
      {
       "kind": "weights",
@@ -385,7 +391,9 @@
        "ai_directed_weight_directive",
        "proposal_follows_directive"
       ],
-      "directed_value": 100
+      "directed_value": 100,
+      "proposed_weight": 100,
+      "contaminated_applied_weight": 50
      }
     ],
     "ai_directed_sentences": 2,

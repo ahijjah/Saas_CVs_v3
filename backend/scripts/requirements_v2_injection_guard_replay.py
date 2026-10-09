@@ -38,7 +38,8 @@ def replay_run(cases: list[dict], run_dir: Path) -> dict:
             continue
         review = inspect_result(case["jd"], res)
         row = {"case": rec["case"], "run": rec["run"], "issues": [{"kind": i["kind"], "category": i["category"], "item": i.get("item_text"),
-               "rules": i["rule_codes"], "directed_value": i["evidence"].get("directed_value")} for i in review["issues"]],
+               "rules": i["rule_codes"], "directed_value": i["evidence"].get("directed_value"), "proposed_weight": i.get("proposed_weight"),
+               "contaminated_applied_weight": i.get("contaminated_applied_weight")} for i in review["issues"]],
                "ai_directed_sentences": len(review["instruction_spans"])}
         for pol, name in ((True, "policy_ack_required"), (False, "policy_ack_not_required")):
             row[f"frozen_{name}"] = compute_readiness(res.requirements, require_classification_acknowledgment=pol).state
@@ -60,7 +61,8 @@ def render(report: dict) -> str:
         if changed:
             L += ["| case | run | frozen (ack required / not required) | with guard (both) | issues |", "|---|---|---|---|---|"]
             for r in changed:
-                iss = "; ".join(f"{i['kind']}:{i['item'] or i['category']}" + (f" (directed {i['directed_value']})" if i["directed_value"] else "") for i in r["issues"])
+                iss = "; ".join(f"{i['kind']}:{i['item'] or i['category']}" + (f" (directed {i['directed_value']}, proposed {i['proposed_weight']}, applied {i['contaminated_applied_weight']})"
+                                                                     if i["directed_value"] else "") for i in r["issues"])
                 L.append(f"| {r['case']} | {r['run']} | {r['frozen_policy_ack_required']} / {r['frozen_policy_ack_not_required']} | "
                          f"{r['guarded_policy_ack_required']} / {r['guarded_policy_ack_not_required']} | {iss} |")
         unflagged = [r for r in rep["rows"] if r["ai_directed_sentences"] and not r["issues"]]
