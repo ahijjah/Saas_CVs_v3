@@ -28,7 +28,7 @@ OFFLINE_EVAL_SCRIPTS = {"scripts/requirements_v2_extraction_eval.py", "scripts/_
                        "scripts/requirements_v2_extraction_compare.py",
                        "scripts/requirements_v2_injection_guard_replay.py",
                        "scripts/requirements_v2_split_or_guard_replay.py",
-                       "scripts/requirements_v2_warning_adapter_replay.py"}
+                       "scripts/requirements_v2_warning_adapter_replay.py", "scripts/requirements_v2_pipeline_replay.py"}
 PROMPT_FILE = BACKEND / "services" / "requirements_v2" / "extraction" / "prompts" / "criteria_extraction_v2-1.txt"
 
 
