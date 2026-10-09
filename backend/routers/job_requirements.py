@@ -4,6 +4,7 @@
   PUT  /jobs/{job_id}/requirements                                   save the edited requirements (revision-checked)
   POST /jobs/{job_id}/requirements/classification-warnings/acknowledge   accept ONE flagged classification
   POST /jobs/{job_id}/requirements/confirm-no-numeric-score          confirm a preferred-only job without a score
+  POST /jobs/{job_id}/requirements/structure-review/confirm          confirm one item's OR alternatives / experience
 
 Writes: admin and HR manager of the job's own tenant only. Legacy jobs answer 409 and are never touched. The legacy
 criteria endpoints (routers/jobs.py) are unchanged and still refuse v2 jobs; candidate evaluation of v2 jobs is still
@@ -33,6 +34,12 @@ class AcknowledgeWarningRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: StrictInt = Field(ge=0)
     warning_id: str
+
+
+class ConfirmStructureRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: StrictInt = Field(ge=0)
+    item_id: str
 
 
 class ConfirmNoScoreRequest(BaseModel):
@@ -76,5 +83,14 @@ async def confirm_no_numeric_score(job_id: str, body: ConfirmNoScoreRequest, cur
                                    db: Annotated[AsyncSession, Depends(get_db)]):
     try:
         return await api.confirm_no_score(db, current_user, job_id, body.expected_revision)
+    except api.ApiError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/structure-review/confirm")
+async def confirm_structure_review(job_id: str, body: ConfirmStructureRequest, current_user: CurrentUserDep,
+                                   db: Annotated[AsyncSession, Depends(get_db)]):
+    try:
+        return await api.confirm_structure_review(db, current_user, job_id, body.expected_revision, body.item_id)
     except api.ApiError as exc:
         raise _http(exc) from exc

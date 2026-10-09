@@ -24,13 +24,14 @@ Trust boundaries
 No automatic weight redistribution: the server stores the weights the recruiter sent if (and only if) validate_final
 accepts them; otherwise it answers 422 with the issues and stores nothing.
 
-UNRESOLVED STRUCTURE-EDIT BEHAVIOR (reported, not decided)
-  * Editing the wording of an item that carries OR alternatives or a structured experience (subject / min_years) keeps
-    the structured fields as they were; the server cannot tell whether the new wording and the structure still agree.
-    Such items are listed in `structure_unverified_item_ids` (derived from the original wording) and are NOT treated
-    as verified.
-  * Changing alternatives / experience through this API, supplying them on a new item, and moving an item to another
-    category are refused (422) until the business decides how they should work.
+STRUCTURED FIELDS (OR alternatives, experience subject / min_years) -- see services/requirements_v2/structure.py
+  * Recruiters may change them on existing items and supply them on new items; nothing is interpreted or normalised.
+  * Whether wording and structure still AGREE cannot be verified automatically and is never claimed. After a
+    wording-only edit the item needs structure review (readiness `needs_structure_review`) until a person confirms
+    the existing structure (POST .../structure-review/confirm) or corrects it. Saving the same structured values is
+    not a confirmation. The record (server-stamped user, time, wording + structure confirmed) is server-owned and
+    invalid after any later wording / structure change.
+  * Moving an item to another category is still refused (422): outside this stage.
 """
 from __future__ import annotations
 
@@ -47,11 +48,13 @@ from services.requirements_guard import is_requirements_v2
 from services.requirements_v2 import (
     CATEGORIES, POLICY_KEY, SCHEMA_VERSION, AcknowledgmentError, ConfirmationError, Issue,
     acknowledge_classification_warning, classification_status, collect_item_ids, compute_readiness,
-    confirm_no_numeric_score, edited_categories, make_item, new_item_id, parse_acknowledgment_policy,
-    reconcile_classification_review, validate_final, validate_structure,
+    StructureError, confirm_no_numeric_score, confirm_structure, edited_categories, make_item, new_item_id,
+    parse_acknowledgment_policy, reconcile_classification_review, reconcile_structure_review, record_structure_edits,
+    structure_status, validate_final, validate_structure,
 )
 from services.requirements_v2.acknowledgment import REVIEW_KEY, get_review
 from services.requirements_v2.contract import ORIGIN_RECRUITER_ADDED
+from services.requirements_v2.structure import STRUCTURE_KEY, get_block as get_structure_block
 
 EDIT_ROLES = ("admin", "hr_manager")                  # same rule as PUT /jobs/{id}/criteria/content
 
@@ -67,6 +70,8 @@ CODE_INVALID = "invalid_requirements"
 CODE_WARNING_NOT_FOUND = "classification_warning_not_found"
 CODE_WARNING_STATE = "classification_warning_not_acknowledgeable"
 CODE_NOT_CONFIRMABLE = "nothing_to_confirm"
+CODE_STRUCTURE_NOT_FOUND = "structure_item_not_found"
+CODE_STRUCTURE_STATE = "structure_not_confirmable"
 
 ACTION_SAVED = "requirements_saved"
 ACTION_ACKNOWLEDGED = "requirements_classification_acknowledged"
@@ -74,6 +79,9 @@ ACTION_ACK_INVALIDATED = "requirements_classification_ack_invalidated"
 ACTION_WARNING_RESOLVED = "requirements_classification_warning_resolved"
 ACTION_CONFIRMED = "requirements_preferred_only_confirmed"
 ACTION_CONFIRMATION_INVALIDATED = "requirements_preferred_only_confirmation_invalidated"
+ACTION_STRUCTURE_CONFIRMED = "requirements_structure_confirmed"
+ACTION_STRUCTURE_RECORDED = "requirements_structure_recorded"
+ACTION_STRUCTURE_INVALIDATED = "requirements_structure_confirmation_invalidated"
 
 WEIGHT_COLUMNS = {
     "skills": "weight_skills", "experience": "weight_experience", "education": "weight_education",
@@ -81,8 +89,8 @@ WEIGHT_COLUMNS = {
     "domain_knowledge": "weight_domain_knowledge", "other_requirements": "weight_other",
 }
 
-_DOC_INPUT_KEYS = frozenset({"schema_version", "categories", "scoring_confirmation", REVIEW_KEY})
-_SERVER_OWNED_DOC_KEYS = ("scoring_confirmation", REVIEW_KEY)
+_DOC_INPUT_KEYS = frozenset({"schema_version", "categories", "scoring_confirmation", REVIEW_KEY, STRUCTURE_KEY})
+_SERVER_OWNED_DOC_KEYS = ("scoring_confirmation", REVIEW_KEY, STRUCTURE_KEY)
 _ITEM_INPUT_KEYS = frozenset({"id", "text", "importance", "weight", "origin", "source_text", "alternatives", "experience"})
 _SERVER_OWNED_ITEM_KEYS = ("origin", "source_text")
 _STRUCTURED_KEYS = ("alternatives", "experience")
@@ -184,14 +192,14 @@ def build_incoming(stored: dict, client: Any, reserved_ids: set[str]) -> Incomin
                 raise bad("bad_item", "An item needs 'text' and 'importance'.", c)
             iid = raw.get("id")
             if iid is None:                                                    # a NEW item
-                if any(raw.get(k) is not None for k in _STRUCTURED_KEYS):
-                    raise bad("structured_field_edit_unsupported",
-                              "OR alternatives and structured experience cannot be supplied through this API yet.", c)
                 new_id = new_item_id(taken)
                 taken.add(new_id)
                 new_ids.append(new_id)
-                items.append(make_item(raw["text"], raw["importance"], item_id=new_id, weight=raw.get("weight"),
-                                       origin=ORIGIN_RECRUITER_ADDED, source_text=None))
+                new_item = make_item(raw["text"], raw["importance"], item_id=new_id, weight=raw.get("weight"),
+                                     origin=ORIGIN_RECRUITER_ADDED, source_text=None)
+                for k in _STRUCTURED_KEYS:                      # taken as given; the validator checks the shape
+                    new_item[k] = copy.deepcopy(raw.get(k))
+                items.append(new_item)
                 if raw.get("origin") not in (None, ORIGIN_RECRUITER_ADDED) or raw.get("source_text") is not None:
                     discarded.append(f"categories.{c}.items[{n}].origin/source_text")
                 continue
@@ -205,16 +213,14 @@ def build_incoming(stored: dict, client: Any, reserved_ids: set[str]) -> Incomin
             if prior_cat != c:
                 raise bad("item_category_change_unsupported",
                           "Moving an item to another category is not supported yet.", c, iid)
-            for k in _STRUCTURED_KEYS:
-                if k in raw and raw[k] != prior.get(k):
-                    raise bad("structured_field_edit_unsupported",
-                              "OR alternatives and structured experience cannot be changed through this API yet.",
-                              c, iid)
             for k in _SERVER_OWNED_ITEM_KEYS:
                 if k in raw and raw[k] != prior.get(k):
                     discarded.append(f"categories.{c}.items[{n}].{k}")
             item = copy.deepcopy(prior)
             item["text"], item["importance"], item["weight"] = raw["text"], raw["importance"], raw.get("weight")
+            for k in _STRUCTURED_KEYS:                          # absent = keep; present = the recruiter's value
+                if k in raw:
+                    item[k] = copy.deepcopy(raw[k])
             items.append(item)
         out_cats[c] = {"weight": cat["weight"], "items": items}
     doc = {"schema_version": SCHEMA_VERSION, "categories": out_cats, "scoring_confirmation": None}
@@ -240,10 +246,13 @@ def _item_changes(stored: dict, doc: dict) -> dict[str, list[str]]:
 
 
 def plan_save(stored: dict, client: Any, *, reserved_ids: set[str], retired_before: list[str],
-              original: dict) -> SavePlan:
+              original: dict, user_id: str = "", now: str = "") -> SavePlan:
     """Pure: everything a save does, short of I/O."""
     incoming = build_incoming(stored, client, reserved_ids)
     doc = _carry(stored, incoming.doc)
+    # structure edits made by THIS save are recorded by the server (never by the client); a wording-only change or
+    # the same structured values again records nothing, so it cannot settle a structure review.
+    doc, recorded = record_structure_edits(stored, doc, original, user_id=user_id, recorded_at=now)
     result = validate_final(doc)
     if not result.ok:
         raise invalid(list(result.errors))
@@ -251,6 +260,7 @@ def plan_save(stored: dict, client: Any, *, reserved_ids: set[str], retired_befo
     retired = sorted(set(retired_before) | (collect_item_ids(stored) - ids_after))
     changes = _item_changes(stored, doc)
     audits = _reconcile_audits(stored, incoming.doc, doc)
+    audits += [(ACTION_STRUCTURE_RECORDED, {"item_id": i, "kind": k}) for i, k in recorded]
     changed = doc != stored or retired != sorted(retired_before)
     if changed:
         audits.insert(0, (ACTION_SAVED, {
@@ -278,6 +288,12 @@ def _reconcile_audits(stored: dict, incoming: dict, carried: dict) -> list[tuple
             raise RuntimeError("classification review reconciliation is inconsistent")
         audits += [(ACTION_ACK_INVALIDATED, {"warning_id": w, "reason": r}) for w, r in report.invalidated]
         audits += [(ACTION_WARNING_RESOLVED, {"warning_id": w, "resolution": r}) for w, r in report.resolved]
+    prior_structure = get_structure_block(stored)
+    if prior_structure:
+        probe = copy.deepcopy(incoming)
+        probe[STRUCTURE_KEY] = copy.deepcopy(prior_structure)
+        report_s = reconcile_structure_review(probe)
+        audits += [(ACTION_STRUCTURE_INVALIDATED, {"item_id": i, "reason": r}) for i, r in report_s.invalidated]
     if stored.get("scoring_confirmation") is not None and carried.get("scoring_confirmation") is None:
         audits.append((ACTION_CONFIRMATION_INVALIDATED, {"reason": "items_changed"}))
     return audits
@@ -317,20 +333,30 @@ def warnings_view(doc: dict) -> list[dict]:
     return out
 
 
-def structure_unverified(original: dict | None, doc: dict) -> list[str]:
-    """Items that carry OR alternatives / structured experience AND whose wording differs from the original wording.
-    The structured fields were not re-checked against the new wording; they are reported, never treated as verified."""
-    if original is None:
-        return []
-    before = _index_items(original)
-    return sorted(i for i, (_, item) in _index_items(doc).items()
-                  if (item.get("alternatives") or item.get("experience")) and i in before
-                  and before[i][1]["text"] != item["text"])
+def structure_view(doc: dict, original: dict | None) -> dict:
+    """Every item that has structured fields, with how its structure was settled (or that it still needs review).
+    Nothing here claims that wording and structure agree: `original` means "as the AI read it, unedited"."""
+    st = structure_status(doc, original)
+    block = get_structure_block(doc) or {"records": []}
+    records = {r["item_id"]: r for r in block["records"]}
+    index = _index_items(doc)
+    items = []
+    for state in ("original", "confirmed", "corrected", "entered", "needs_review"):
+        for iid in getattr(st, state):
+            cat, it = index[iid]
+            rec = records.get(iid) if state in ("confirmed", "corrected", "entered") else None
+            items.append({"item_id": iid, "category": cat, "state": state, "alternatives": copy.deepcopy(it.get("alternatives")),
+                          "experience": copy.deepcopy(it.get("experience")),
+                          "record": ({"kind": rec["kind"], "user_id": rec["user_id"], "recorded_at": rec["recorded_at"]}
+                                     if rec else None)})
+    order = {i: n for n, i in enumerate(index)}
+    items.sort(key=lambda x: order[x["item_id"]])
+    return {"needs_review_item_ids": list(st.needs_review), "items": items}
 
 
 def build_view(*, job_id: str, revision: int | None, doc: dict, original: dict | None, policy: bool,
                editable: bool, discarded: list[str] | None = None) -> dict:
-    readiness = compute_readiness(doc, require_classification_acknowledgment=policy)
+    readiness = compute_readiness(doc, require_classification_acknowledgment=policy, original=original)
     conf = doc.get("scoring_confirmation")
     return {
         "job_id": str(job_id),
@@ -343,12 +369,13 @@ def build_view(*, job_id: str, revision: int | None, doc: dict, original: dict |
             "reasons": issues_payload(readiness.reasons),
             "open_warning_ids": list(readiness.open_warning_ids),
             "unresolved_warning_ids": list(readiness.unresolved_warning_ids),
+            "structure_review_item_ids": list(readiness.structure_review_item_ids),
         },
         "classification_warnings": warnings_view(doc),
         "classification_policy": {"key": POLICY_KEY, "require_acknowledgment": policy},
         "preferred_only_confirmation": ({"confirmed": True, "user_id": conf["user_id"],
                                          "confirmed_at": conf["confirmed_at"]} if conf else {"confirmed": False}),
-        "structure_unverified_item_ids": structure_unverified(original, doc),
+        "structure_review": structure_view(doc, original),
         "discarded_client_fields": list(discarded or []),
         "can_edit": editable,
     }
@@ -463,6 +490,8 @@ async def _mutate(db, user, job_id: str, expected_revision: int, work) -> dict:
         loaded = await _load(db, user, job_id, lock=True)
         if loaded.revision is None:
             raise ApiError(503, CODE_MIGRATION, "Requirements editing needs migration 107, which has not been applied.")
+        if loaded.original is None:
+            raise ApiError(409, CODE_ORIGINAL_MISSING, "The original analysis snapshot is missing; refusing to write.")
         policy = await load_policy(db)
         if loaded.revision != expected_revision:
             raise ApiError(409, CODE_REVISION_CONFLICT,
@@ -498,11 +527,9 @@ async def _mutate(db, user, job_id: str, expected_revision: int, work) -> dict:
 
 async def save_requirements(db, user, job_id: str, expected_revision: int, requirements: Any) -> dict:
     def work(loaded: Loaded, policy: bool, now: str) -> SavePlan:
-        if loaded.original is None:
-            raise ApiError(409, CODE_ORIGINAL_MISSING, "The original analysis snapshot is missing; refusing to save.")
         reserved = collect_item_ids(loaded.original) | set(loaded.retired)
         return plan_save(loaded.stored, requirements, reserved_ids=reserved, retired_before=loaded.retired,
-                         original=loaded.original)
+                         original=loaded.original, user_id=str(user.user_id), now=now)
     return await _mutate(db, user, job_id, expected_revision, work)
 
 
@@ -527,11 +554,30 @@ async def confirm_no_score(db, user, job_id: str, expected_revision: int) -> dic
     def work(loaded: Loaded, policy: bool, now: str) -> SavePlan:
         try:
             doc = confirm_no_numeric_score(loaded.stored, user_id=str(user.user_id), confirmed_at=now,
-                                           require_classification_acknowledgment=policy)
+                                           require_classification_acknowledgment=policy, original=loaded.original)
         except ConfirmationError as exc:
-            state = compute_readiness(loaded.stored, require_classification_acknowledgment=policy)
+            state = compute_readiness(loaded.stored, require_classification_acknowledgment=policy,
+                                      original=loaded.original)
             raise ApiError(409, CODE_NOT_CONFIRMABLE, str(exc), readiness_state=state.state,
                            reasons=issues_payload(state.reasons)) from exc
         audit = (ACTION_CONFIRMED, {"basis_hash": doc["scoring_confirmation"]["basis_hash"], "confirmed_at": now})
+        return SavePlan(doc, [audit], True, loaded.retired, [], [])
+    return await _mutate(db, user, job_id, expected_revision, work)
+
+
+async def confirm_structure_review(db, user, job_id: str, expected_revision: int, item_id: str) -> dict:
+    """The recruiter states that the item's CURRENT structure (OR alternatives / experience) still matches its CURRENT
+    wording. Nothing checks that statement; the record names who made it, when, and exactly what was confirmed."""
+    def work(loaded: Loaded, policy: bool, now: str) -> SavePlan:
+        try:
+            doc = confirm_structure(loaded.stored, item_id, user_id=str(user.user_id), confirmed_at=now,
+                                    original=loaded.original)
+        except StructureError as exc:
+            if exc.code == "unknown_item":
+                raise ApiError(404, CODE_STRUCTURE_NOT_FOUND, str(exc)) from exc
+            raise ApiError(409, CODE_STRUCTURE_STATE, str(exc), reason=exc.code) from exc
+        rec = next(r for r in doc[STRUCTURE_KEY]["records"] if r["item_id"] == item_id)
+        audit = (ACTION_STRUCTURE_CONFIRMED, {"item_id": item_id, "kind": rec["kind"], "basis_hash": rec["basis_hash"],
+                                              "basis": rec["basis"], "confirmed_at": now})
         return SavePlan(doc, [audit], True, loaded.retired, [], [])
     return await _mutate(db, user, job_id, expected_revision, work)

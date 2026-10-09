@@ -66,6 +66,8 @@ def _structure_issues(doc: Any) -> list[Issue]:
 
     from services.requirements_v2.acknowledgment import REVIEW_KEY, review_block_issues
     out.extend(review_block_issues(doc.get(REVIEW_KEY)))
+    from services.requirements_v2.structure import STRUCTURE_KEY, block_issues
+    out.extend(block_issues(doc.get(STRUCTURE_KEY)))
 
     conf = doc.get("scoring_confirmation")
     if conf is not None:
@@ -209,6 +211,11 @@ def validate_draft(doc: Any) -> ValidationResult:
         return ValidationResult(errors=(Issue(
             "acknowledgment_not_allowed_in_draft",
             "Acknowledgments are server-owned and cannot be part of an extraction draft."),))
+    from services.requirements_v2.structure import STRUCTURE_KEY
+    if (doc.get(STRUCTURE_KEY) or {}).get("records"):
+        return ValidationResult(errors=(Issue(
+            "structure_record_not_allowed_in_draft",
+            "Structure confirmations are server-owned and cannot be part of an extraction draft."),))
     review = _rule_issues(doc)
     if sum(count_items(doc)) == 0:
         review.append(Issue("no_items", "No requirements were found; the recruiter must add at least one."))

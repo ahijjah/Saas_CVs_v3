@@ -416,7 +416,8 @@ class TestAuthorization:
         assert paths == {
             (("GET",), "/jobs/{job_id}/requirements"), (("PUT",), "/jobs/{job_id}/requirements"),
             (("POST",), "/jobs/{job_id}/requirements/classification-warnings/acknowledge"),
-            (("POST",), "/jobs/{job_id}/requirements/confirm-no-numeric-score")}
+            (("POST",), "/jobs/{job_id}/requirements/confirm-no-numeric-score"),
+            (("POST",), "/jobs/{job_id}/requirements/structure-review/confirm")}
         assert router.router.dependencies, "the AI-recruitment module guard must protect these routes"
 
     def test_request_bodies_reject_extra_fields_and_non_integer_revisions(self):
@@ -784,70 +785,555 @@ class TestSaving:
         assert store.rows[JOB] == before and store.audit == [] and not store.lock.locked()
 
 
-# ══ structure edits that are NOT decided ════════════════════════════════════════════════════════════════════════
+# ══ structured requirements: experience subject / duration and OR alternatives ═════════════════════════════════
+
+EXP_TEXT = "4 years as a Maintenance Planner"
+ALT_TEXT = "SQL or PostgreSQL"
+
+
+def raw_struct(text, category="skills", importance="required", cue=None, alternatives=None, experience=None, source=None):
+    return category, {"text": text, "importance": importance, "importance_cue": cue, "source_text": source or text,
+                      "origin": "stated", "alternatives": alternatives, "experience": experience}
+
 
 def structured_job():
-    exp = {"text": "4 years as a Maintenance Planner", "importance": "required", "importance_cue": None,
-           "source_text": "4 years as a Maintenance Planner", "origin": "stated", "alternatives": None,
-           "experience": {"subject": "Maintenance Planner", "min_years": 4}}
-    alt = {"text": "SQL or PostgreSQL", "importance": "required", "importance_cue": None,
-           "source_text": "SQL or PostgreSQL", "origin": "stated", "alternatives": ["SQL", "PostgreSQL"], "experience": None}
     r = extract("Requirements:\n- 4 years as a Maintenance Planner\n- SQL or PostgreSQL\n",
-                ("experience", exp), ("skills", alt))
+                raw_struct(EXP_TEXT, "experience", experience={"subject": "Maintenance Planner", "min_years": 4}),
+                raw_struct(ALT_TEXT, alternatives=["SQL", "PostgreSQL"]))
     assert r.requirements, r.errors
     return r
 
 
-class TestUnresolvedStructureEdits:
+def preferred_structured_job(cue="is a plus"):
+    r = extract("Requirements:\n- Python is required\n- Docker or Podman is a plus\n",
+                raw_struct("Python"),
+                raw_struct("Docker or Podman", importance="preferred", cue=cue, alternatives=["Docker", "Podman"],
+                           source="Docker or Podman is a plus" if cue else "Docker or Podman"))
+    assert r.requirements, r.errors
+    return r
+
+
+def preferred_only_structured_job():
+    r = extract("Requirements:\n- Docker or Podman is a plus\n",
+                raw_struct("Docker or Podman", importance="preferred", cue="is a plus", alternatives=["Docker", "Podman"],
+                           source="Docker or Podman is a plus"))
+    assert r.requirements and compute_readiness(r.requirements, original=r.original).state == "needs_confirmation"
+    return r
+
+
+def stored_doc(store):
+    return store.rows[JOB]["analysis"]["requirements"]
+
+
+def struct_state(v, text_id):
+    return next(i["state"] for i in v["structure_review"]["items"] if i["item_id"] == text_id)
+
+
+def item_id(store, text):
+    return item(stored_doc(store), text)[1]["id"]
+
+
+class TestStructuredEditing:
 
     @pytest.mark.asyncio
-    async def test_a_wording_edit_keeps_the_structured_fields_and_flags_them_unverified(self, api):
+    async def test_an_unedited_structured_job_is_settled_by_the_original_and_ready(self, api):
+        store = Store()
+        seed(store, structured_job())
+        v = await view(api, store)
+        assert [(i["state"], i["record"]) for i in v["structure_review"]["items"]] == [("original", None)] * 2
+        assert v["structure_review"]["needs_review_item_ids"] == [] and v["readiness"]["state"] == "ready"
+
+    @pytest.mark.asyncio
+    async def test_a_wording_only_edit_needs_review_and_keeps_everything_else(self, api):
         store = Store()
         r = seed(store, structured_job())
+        before_original = copy.deepcopy(store.rows[JOB]["original_analysis"])
+        ids = ids_by_text(r.requirements)
         doc = client_doc(await view(api, store))
-        item(doc, "4 years as a Maintenance Planner")[1]["text"] = "7 years as a Maintenance Planner"
-        item(doc, "SQL or PostgreSQL")[1]["text"] = "Oracle"
+        item(doc, EXP_TEXT)[1]["text"] = "7 years as a Maintenance Planner"
         out = await save(api, store, doc, 0)
-        stored = store.rows[JOB]["analysis"]["requirements"]
-        assert item(stored, "7 years as a Maintenance Planner")[1]["experience"] == {"subject": "Maintenance Planner", "min_years": 4}
-        assert item(stored, "Oracle")[1]["alternatives"] == ["SQL", "PostgreSQL"]
-        ids = {item(stored, t)[1]["id"] for t in ("7 years as a Maintenance Planner", "Oracle")}
-        assert set(out["structure_unverified_item_ids"]) == ids                       # conflicting, not "verified"
+        stored = stored_doc(store)
+        _, exp = item(stored, "7 years as a Maintenance Planner")
+        assert exp["id"] == ids[EXP_TEXT] and exp["experience"] == {"subject": "Maintenance Planner", "min_years": 4}
+        assert (exp["origin"], exp["source_text"]) == ("stated", EXP_TEXT)                    # source wording kept
+        assert out["readiness"]["state"] == "needs_structure_review" and not out["readiness"]["can_proceed"]
+        assert out["readiness"]["structure_review_item_ids"] == [exp["id"]]
+        assert out["readiness"]["reasons"][0]["code"] == "structure_review_pending"
+        assert struct_state(out, exp["id"]) == "needs_review"
+        assert "structure_review" not in stored or stored["structure_review"]["records"] == []   # no record created
+        assert store.rows[JOB]["original_analysis"] == before_original
+        assert [a for a in store.actions() if "structure" in a] == []
 
     @pytest.mark.asyncio
-    async def test_unedited_wording_is_not_flagged(self, api):
+    async def test_saving_the_same_structured_values_again_is_not_a_confirmation(self, api):
         store = Store()
         seed(store, structured_job())
-        assert (await view(api, store))["structure_unverified_item_ids"] == []
+        doc = client_doc(await view(api, store))
+        item(doc, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        v1 = await save(api, store, doc, 0)
+        again = client_doc(v1)                                                                  # resubmit it all, unchanged
+        item(again, "SQL or Postgres")[1]["alternatives"] = ["SQL", "PostgreSQL"]               # same values, explicitly
+        v2 = await save(api, store, again, 1)
+        assert v2["changed"] is False and v2["readiness"]["state"] == "needs_structure_review"
+        again2 = client_doc(v2)
+        item(again2, "SQL or Postgres")[1]["text"] = "SQL or Postgres!"                         # another wording edit
+        v3 = await save(api, store, again2, 1)
+        assert v3["readiness"]["state"] == "needs_structure_review"
+        assert not store.audit_of("requirements_structure_recorded") and not store.audit_of("requirements_structure_confirmed")
 
     @pytest.mark.asyncio
-    async def test_changing_structured_fields_is_refused(self, api):
+    async def test_explicit_confirmation_is_recorded_with_user_time_and_what_was_confirmed(self, api):
+        store = Store()
+        seed(store, structured_job())
+        doc = client_doc(await view(api, store))
+        item(doc, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        v = await save(api, store, doc, 0)
+        iid = item_id(store, "SQL or Postgres")
+        who = user(uid="00000000-0000-0000-0000-0000000000c1")
+        out = await api.confirm_structure_review(store.session(), who, JOB, 1, iid)
+        assert out["revision"] == 2 and out["readiness"]["state"] == "ready"
+        assert struct_state(out, iid) == "confirmed"
+        (rec,) = [r for r in stored_doc(store)["structure_review"]["records"]]
+        assert (rec["item_id"], rec["kind"], rec["user_id"], rec["recorded_at"]) == (iid, "confirmed", who.user_id, NOW)
+        assert rec["basis"] == {"text": "SQL or Postgres", "alternatives": ["SQL", "PostgreSQL"], "experience": None}
+        ev = store.audit_of("requirements_structure_confirmed")[0]
+        assert ev["user_id"] == who.user_id and ev["details"]["basis"] == rec["basis"] and ev["details"]["item_id"] == iid
+        shown = next(i for i in out["structure_review"]["items"] if i["item_id"] == iid)
+        assert shown["record"] == {"kind": "confirmed", "user_id": who.user_id, "recorded_at": NOW}
+
+    @pytest.mark.asyncio
+    async def test_the_confirmation_request_has_no_user_or_time_fields(self):
+        router = importlib.import_module("routers.job_requirements")
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            router.ConfirmStructureRequest(expected_revision=0, item_id="req_x", user_id="u", confirmed_at="t")
+        assert router.ConfirmStructureRequest(expected_revision=0, item_id="req_x").item_id == "req_x"
+
+    @pytest.mark.asyncio
+    async def test_confirmation_is_refused_for_settled_unknown_unstructured_and_stale_requests(self, api):
+        store = Store()
+        r = seed(store, structured_job())
+        ids = ids_by_text(r.requirements)
+        await raises(api.confirm_structure_review(store.session(), user(), JOB, 0, ids[ALT_TEXT]), 409, "structure_not_confirmable")
+        await raises(api.confirm_structure_review(store.session(), user(), JOB, 0, "req_nope"), 404, "structure_item_not_found")
+        doc = client_doc(await view(api, store))
+        doc["categories"]["skills"]["items"].append({"text": "Go", "importance": "preferred", "weight": None})
+        item(doc, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        await save(api, store, doc, 0)
+        go = item_id(store, "Go")
+        exc = await raises(api.confirm_structure_review(store.session(), user(), JOB, 1, go), 409, "structure_not_confirmable")
+        assert exc.extra["reason"] == "no_structure"
+        await raises(api.confirm_structure_review(store.session(), user(), JOB, 0, ids[ALT_TEXT]), 409, "requirements_revision_conflict")
+        assert store.audit_of("requirements_structure_confirmed") == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("role", ["recruiter", "viewer", "super_admin"])
+    async def test_only_admin_and_hr_manager_may_confirm_and_other_tenants_see_nothing(self, api, role):
+        store = Store()
+        r = seed(store, structured_job())
+        iid = ids_by_text(r.requirements)[ALT_TEXT]
+        await raises(api.confirm_structure_review(store.session(), user(role=role), JOB, 0, iid), 403, "forbidden")
+        await raises(api.confirm_structure_review(store.session(), user(role="admin", tenant=T2), JOB, 0, iid), 404, "not_found")
+        await raises(api.confirm_structure_review(store.session(), user(), "legacy-id", 0, iid), 404, "not_found")
+        assert store.rows[JOB]["revision"] == 0 and store.audit == []
+
+    @pytest.mark.asyncio
+    async def test_a_legacy_job_cannot_be_confirmed(self, api):
+        store = Store()
+        seed(store, legacy=True)
+        await raises(api.confirm_structure_review(store.session(), user(), JOB, 0, "req_x"), 409, "not_requirements_v2")
+
+    @pytest.mark.asyncio
+    async def test_a_later_wording_or_structure_change_invalidates_the_confirmation(self, api):
+        store = Store()
+        seed(store, structured_job())
+        doc = client_doc(await view(api, store))
+        item(doc, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        await save(api, store, doc, 0)
+        iid = item_id(store, "SQL or Postgres")
+        v = await api.confirm_structure_review(store.session(), user(), JOB, 1, iid)
+        # wording changes again -> the confirmation no longer applies
+        doc = client_doc(v)
+        item(doc, "SQL or Postgres")[1]["text"] = "SQL or Postgres 15"
+        v = await save(api, store, doc, 2)
+        assert struct_state(v, iid) == "needs_review" and v["readiness"]["state"] == "needs_structure_review"
+        inv = store.audit_of("requirements_structure_confirmation_invalidated")
+        assert [(e["details"]["item_id"], e["details"]["reason"]) for e in inv] == [(iid, "item_changed")]
+        # confirm again, then change only the structure -> invalidated again, but the edit itself is a correction
+        v = await api.confirm_structure_review(store.session(), user(), JOB, 3, iid)
+        doc = client_doc(v)
+        item(doc, "SQL or Postgres 15")[1]["alternatives"] = ["SQL", "PostgreSQL", "MariaDB"]
+        v = await save(api, store, doc, 4)
+        assert struct_state(v, iid) == "corrected" and v["readiness"]["state"] == "ready"
+        assert len(store.audit_of("requirements_structure_confirmation_invalidated")) == 2
+
+    @pytest.mark.asyncio
+    async def test_reverting_the_wording_does_not_revive_an_invalidated_confirmation(self, api):
+        store = Store()
+        seed(store, structured_job())
+        doc = client_doc(await view(api, store))
+        item(doc, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        await save(api, store, doc, 0)
+        iid = item_id(store, "SQL or Postgres")
+        v = await api.confirm_structure_review(store.session(), user(), JOB, 1, iid)
+        doc = client_doc(v)
+        item(doc, "SQL or Postgres")[1]["text"] = "something else"
+        v = await save(api, store, doc, 2)
+        doc = client_doc(v)
+        item(doc, "something else")[1]["text"] = "SQL or Postgres"                              # back to the confirmed wording
+        v = await save(api, store, doc, 3)
+        assert struct_state(v, iid) == "needs_review"                                           # needs a fresh confirmation
+
+    @pytest.mark.asyncio
+    async def test_restoring_the_original_wording_exactly_settles_it_by_the_original(self, api):
+        store = Store()
+        seed(store, structured_job())
+        doc = client_doc(await view(api, store))
+        item(doc, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        v = await save(api, store, doc, 0)
+        assert v["readiness"]["state"] == "needs_structure_review"
+        doc = client_doc(v)
+        item(doc, "SQL or Postgres")[1]["text"] = ALT_TEXT
+        v = await save(api, store, doc, 1)
+        assert v["readiness"]["state"] == "ready" and v["edited_categories"]["skills"] is False
+
+    # ── experience subject / duration ────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_editing_the_experience_subject_and_duration_is_a_recorded_correction(self, api):
+        store = Store()
+        r = seed(store, structured_job())
+        iid = ids_by_text(r.requirements)[EXP_TEXT]
+        before_original = copy.deepcopy(store.rows[JOB]["original_analysis"])
+        doc = client_doc(await view(api, store))
+        item(doc, EXP_TEXT)[1]["text"] = "7 years as a Senior Maintenance Planner"
+        item(doc, "7 years as a Senior Maintenance Planner")[1]["experience"] = {"subject": "Senior Maintenance Planner", "min_years": 7}
+        who = user(uid="00000000-0000-0000-0000-0000000000c2")
+        out = await save(api, store, doc, 0, who)
+        _, e = item(stored_doc(store), "7 years as a Senior Maintenance Planner")
+        assert e["id"] == iid and e["experience"] == {"subject": "Senior Maintenance Planner", "min_years": 7}
+        assert (e["origin"], e["source_text"]) == ("stated", EXP_TEXT)
+        assert struct_state(out, iid) == "corrected" and out["readiness"]["state"] == "ready"
+        assert out["edited_categories"]["experience"] is True
+        assert store.rows[JOB]["original_analysis"] == before_original
+        assert out["original"]["categories"]["experience"]["items"][0]["experience"] == {"subject": "Maintenance Planner", "min_years": 4}
+        rec = stored_doc(store)["structure_review"]["records"][0]
+        assert (rec["kind"], rec["user_id"], rec["recorded_at"]) == ("corrected", who.user_id, NOW)
+        d = store.audit_of("requirements_structure_recorded")[0]["details"]
+        assert (d["item_id"], d["kind"], d["previous_revision"], d["revision"]) == (iid, "corrected", 0, 1)
+
+    @pytest.mark.asyncio
+    async def test_duration_or_subject_alone_may_be_cleared_but_not_both(self, api):
         store = Store()
         seed(store, structured_job())
         base = client_doc(await view(api, store))
-        d = copy.deepcopy(base); item(d, "4 years as a Maintenance Planner")[1]["experience"] = {"subject": "X", "min_years": 9}
-        await raises(save(api, store, d, 0), 422, "invalid_requirements")
-        d = copy.deepcopy(base); item(d, "SQL or PostgreSQL")[1]["alternatives"] = ["SQL"]
-        await raises(save(api, store, d, 0), 422, "invalid_requirements")
-        # sending them back unchanged (a UI round trip) is fine
-        out = await save(api, store, copy.deepcopy(base), 0)
-        assert out["changed"] is False
+        d = copy.deepcopy(base); item(d, EXP_TEXT)[1]["experience"] = {"subject": "Planner", "min_years": None}
+        assert (await save(api, store, d, 0))["readiness"]["state"] == "ready"
+        d = client_doc(await view(api, store)); item(d, EXP_TEXT)[1]["experience"] = {"subject": None, "min_years": 3}
+        assert (await save(api, store, d, 1))["revision"] == 2
+        for bad in ({"subject": None, "min_years": None}, {"subject": "x", "min_years": -1}, {"subject": "x"},
+                    {"subject": "x", "min_years": "4"}, {"subject": "", "min_years": 2}, "4 years", []):
+            d = client_doc(await view(api, store)); item(d, EXP_TEXT)[1]["experience"] = bad
+            exc = await raises(save(api, store, d, 2), 422, "invalid_requirements")
+            assert any(i["code"] == "bad_experience" for i in exc.extra["issues"]), bad
+        assert store.rows[JOB]["revision"] == 2
 
     @pytest.mark.asyncio
-    async def test_supplying_structure_on_a_new_item_or_moving_an_item_is_refused(self, api):
+    async def test_experience_cannot_be_attached_outside_the_experience_category(self, api):
         store = Store()
         seed(store, structured_job())
-        base = client_doc(await view(api, store))
-        d = copy.deepcopy(base)
-        d["categories"]["skills"]["items"].append({"text": "New", "importance": "preferred", "weight": None,
-                                                    "experience": {"subject": "x", "min_years": 1}})
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["experience"] = {"subject": "x", "min_years": 1}
         exc = await raises(save(api, store, d, 0), 422, "invalid_requirements")
-        assert exc.extra["issues"][0]["code"] == "structured_field_edit_unsupported"
-        d = copy.deepcopy(base)
+        assert exc.extra["issues"][0]["code"] == "experience_outside_experience_category"
+
+    # ── OR alternatives ──────────────────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_editing_or_alternatives_is_a_recorded_correction_and_never_reinterpreted(self, api):
+        store = Store()
+        r = seed(store, structured_job())
+        iid = ids_by_text(r.requirements)[ALT_TEXT]
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["alternatives"] = ["sql", "PostgreSQL", " MySQL "]                   # stored verbatim
+        out = await save(api, store, d, 0)
+        assert item(stored_doc(store), ALT_TEXT)[1]["alternatives"] == ["sql", "PostgreSQL", " MySQL "]
+        assert struct_state(out, iid) == "corrected" and out["readiness"]["state"] == "ready"
+        assert out["edited_categories"]["skills"] is True
+
+    @pytest.mark.asyncio
+    async def test_alternatives_need_two_entries_and_can_be_removed_or_added(self, api):
+        store = Store()
+        seed(store, structured_job())
+        for bad in (["only"], [], ["a", ""], ["a", 3], "a or b"):
+            d = client_doc(await view(api, store)); item(d, ALT_TEXT)[1]["alternatives"] = bad
+            exc = await raises(save(api, store, d, 0), 422, "invalid_requirements")
+            assert any(i["code"] == "bad_alternatives" for i in exc.extra["issues"]), bad
+        d = client_doc(await view(api, store)); item(d, ALT_TEXT)[1]["alternatives"] = None       # no structure any more
+        out = await save(api, store, d, 0)
+        assert out["structure_review"]["items"][0]["item_id"] != item_id(store, ALT_TEXT) and out["readiness"]["state"] == "ready"
+        d = client_doc(out); item(d, ALT_TEXT)[1]["alternatives"] = ["SQL", "PostgreSQL"]        # structure added to an item
+        out = await save(api, store, d, 1)
+        assert struct_state(out, item_id(store, ALT_TEXT)) == "original"                          # identical to the AI reading
+
+    @pytest.mark.asyncio
+    async def test_adding_alternatives_to_an_unstructured_item_is_a_correction(self, api):
+        store = Store()
+        r = seed(store, flagged_job(policy=False))
+        d = client_doc(await view(api, store))
+        item(d, "SQL")[1]["alternatives"] = ["SQL", "PostgreSQL"]
+        out = await save(api, store, d, 0)
+        assert struct_state(out, ids_by_text(r.requirements)["SQL"]) == "corrected"
+
+    # ── new structured items ────────────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_new_items_may_carry_alternatives_or_experience(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
+        d["categories"]["skills"]["items"].append({"text": "Docker or Podman", "importance": "preferred", "weight": None,
+                                                    "alternatives": ["Docker", "Podman"],
+                                                    "origin": "stated", "source_text": "invented"})
+        d["categories"]["experience"]["items"].append({"text": "2 years of QA", "importance": "required", "weight": 50,
+                                                        "experience": {"subject": "QA", "min_years": 2}})
+        item(d, EXP_TEXT)[1]["weight"] = 50
+        out = await save(api, store, d, 0)
+        _, alt = item(stored_doc(store), "Docker or Podman")
+        _, exp = item(stored_doc(store), "2 years of QA")
+        assert re.fullmatch(r"req_[0-9a-f]{12}", alt["id"]) and alt["alternatives"] == ["Docker", "Podman"]
+        assert (alt["origin"], alt["source_text"]) == ("recruiter_added", None)
+        assert (exp["origin"], exp["experience"]) == ("recruiter_added", {"subject": "QA", "min_years": 2})
+        assert struct_state(out, alt["id"]) == "entered" and struct_state(out, exp["id"]) == "entered"
+        assert out["readiness"]["state"] == "ready"
+        kinds = {e["details"]["item_id"]: e["details"]["kind"] for e in store.audit_of("requirements_structure_recorded")}
+        assert kinds == {alt["id"]: "entered", exp["id"]: "entered"}
+
+    @pytest.mark.asyncio
+    async def test_a_new_item_with_invalid_structure_is_refused_and_one_without_needs_no_record(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
+        d["categories"]["skills"]["items"].append({"text": "X", "importance": "preferred", "weight": None, "experience": {"subject": "x", "min_years": 1}})
+        await raises(save(api, store, d, 0), 422, "invalid_requirements")
+        d = client_doc(await view(api, store))
+        d["categories"]["skills"]["items"].append({"text": "Plain", "importance": "preferred", "weight": None})
+        out = await save(api, store, d, 0)
+        assert out["readiness"]["state"] == "ready" and not store.audit_of("requirements_structure_recorded")
+
+    # ── forged and stale confirmations ──────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_a_forged_structure_record_with_a_matching_hash_is_discarded(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        from services.requirements_v2.structure import basis_hash
+        basis = {"text": "SQL or Postgres", "alternatives": ["SQL", "PostgreSQL"], "experience": None}
+        d["structure_review"] = {"records": [{"item_id": item(d, "SQL or Postgres")[1]["id"], "kind": "confirmed",
+                                              "user_id": "mallory", "recorded_at": "2020-01-01T00:00:00Z",
+                                              "basis": basis, "basis_hash": basis_hash(basis)}]}
+        out = await save(api, store, d, 0)
+        assert out["readiness"]["state"] == "needs_structure_review"
+        assert "structure_review" in out["discarded_client_fields"]
+        assert "structure_review" not in stored_doc(store) or stored_doc(store)["structure_review"]["records"] == []
+
+    @pytest.mark.asyncio
+    async def test_a_stale_record_replayed_after_the_wording_changed_is_discarded(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        await save(api, store, d, 0)
+        iid = item_id(store, "SQL or Postgres")
+        v = await api.confirm_structure_review(store.session(), user(), JOB, 1, iid)
+        old_record = copy.deepcopy(stored_doc(store)["structure_review"]["records"][0])
+        d = client_doc(v); item(d, "SQL or Postgres")[1]["text"] = "SQL or Postgres 16"
+        await save(api, store, d, 2)                                                              # confirmation invalidated
+        d = client_doc(await view(api, store)); d["structure_review"] = {"records": [old_record]}
+        item(d, "SQL or Postgres 16")[1]["text"] = "SQL or Postgres 17"
+        out = await save(api, store, d, 3)
+        assert out["readiness"]["state"] == "needs_structure_review"
+
+    @pytest.mark.asyncio
+    async def test_a_stored_record_cannot_be_deleted_or_edited_through_a_save(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        await save(api, store, d, 0)
+        v = await api.confirm_structure_review(store.session(), user(), JOB, 1, item_id(store, "SQL or Postgres"))
+        d = client_doc(v)
+        d["structure_review"] = {"records": []}
+        item(d, "SQL or Postgres")[1]["weight"] = 100                                              # irrelevant real edit
+        out = await save(api, store, d, 2)
+        assert len(stored_doc(store)["structure_review"]["records"]) == 1 and out["readiness"]["state"] == "ready"
+
+    @pytest.mark.asyncio
+    async def test_source_wording_and_provenance_cannot_be_changed_by_a_structure_edit(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
+        it = item(d, EXP_TEXT)[1]
+        it["experience"] = {"subject": "Planner", "min_years": 9}
+        it["source_text"], it["origin"] = "rewritten", "recruiter_added"
+        out = await save(api, store, d, 0)
+        _, stored = item(stored_doc(store), EXP_TEXT)
+        assert (stored["source_text"], stored["origin"]) == (EXP_TEXT, "stated")
+        assert any(f.endswith(".source_text") for f in out["discarded_client_fields"])
+
+    # ── interaction with classification acknowledgments and the preferred-only confirmation ────────
+
+    @pytest.mark.asyncio
+    async def test_a_structure_edit_invalidates_the_classification_acknowledgment(self, api):
+        store = Store()
+        r = seed(store, preferred_structured_job(cue=None))
+        wid = f"{ids_by_text(r.requirements)['Docker or Podman']}:preferred_cue_missing"
+        v = await ack(api, store, wid, 0)
+        assert warning_state(v, wid) == "acknowledged" and v["readiness"]["state"] == "ready"
+        d = client_doc(v)
+        item(d, "Docker or Podman")[1]["alternatives"] = ["Docker", "Podman", "containerd"]
+        out = await save(api, store, d, 1)
+        assert warning_state(out, wid) == "unresolved" and out["readiness"]["state"] == "needs_classification_review"
+        inv = store.audit_of("requirements_classification_ack_invalidated")
+        assert [e["details"]["reason"] for e in inv] == ["item_or_evidence_changed"]
+
+    @pytest.mark.asyncio
+    async def test_a_wording_only_edit_invalidates_the_acknowledgment_and_needs_structure_review(self, api):
+        store = Store(policy="false")
+        r = seed(store, preferred_structured_job(cue=None))
+        wid = f"{ids_by_text(r.requirements)['Docker or Podman']}:preferred_cue_missing"
+        v = await ack(api, store, wid, 0)
+        d = client_doc(v)
+        item(d, "Docker or Podman")[1]["text"] = "Docker, Podman or similar"
+        out = await save(api, store, d, 1)
+        assert warning_state(out, wid) == "unresolved"
+        assert out["readiness"]["state"] == "needs_structure_review"          # blocks even when the policy is No
+
+    @pytest.mark.asyncio
+    async def test_classification_review_comes_before_structure_review_under_policy_yes(self, api):
+        store = Store()
+        r = seed(store, preferred_structured_job(cue=None))
+        d = client_doc(await view(api, store))
+        item(d, "Docker or Podman")[1]["text"] = "Docker, Podman or similar"
+        out = await save(api, store, d, 0)
+        assert out["readiness"]["state"] == "needs_classification_review"
+        assert out["readiness"]["structure_review_item_ids"]                   # still visible
+
+    @pytest.mark.asyncio
+    async def test_a_structure_edit_invalidates_the_preferred_only_confirmation(self, api):
+        store = Store()
+        seed(store, preferred_only_structured_job())
+        v = await api.confirm_no_score(store.session(), user(), JOB, 0)
+        assert v["readiness"]["state"] == "ready" and v["readiness"]["scoring_mode"] == "none"
+        d = client_doc(v)
+        item(d, "Docker or Podman")[1]["alternatives"] = ["Docker", "Podman", "LXC"]
+        out = await save(api, store, d, 1)
+        assert out["preferred_only_confirmation"] == {"confirmed": False}
+        assert out["readiness"]["state"] == "needs_confirmation"              # structure itself is settled (corrected)
+        assert len(store.audit_of("requirements_preferred_only_confirmation_invalidated")) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_preferred_only_job_cannot_be_confirmed_while_a_structure_review_is_pending(self, api):
+        store = Store()
+        seed(store, preferred_only_structured_job())
+        d = client_doc(await view(api, store))
+        item(d, "Docker or Podman")[1]["text"] = "Docker or Podman or LXC"
+        v = await save(api, store, d, 0)
+        assert v["readiness"]["state"] == "needs_structure_review"
+        exc = await raises(api.confirm_no_score(store.session(), user(), JOB, 1), 409, "nothing_to_confirm")
+        assert exc.extra["readiness_state"] == "needs_structure_review"
+        v = await api.confirm_structure_review(store.session(), user(), JOB, 1, item_id(store, "Docker or Podman or LXC"))
+        assert v["readiness"]["state"] == "needs_confirmation"
+        assert (await api.confirm_no_score(store.session(), user(), JOB, 2))["readiness"]["state"] == "ready"
+
+    @pytest.mark.asyncio
+    async def test_required_preferred_and_weight_rules_are_unchanged_by_structure_edits(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["alternatives"] = ["SQL", "PostgreSQL", "Oracle"]
+        item(d, ALT_TEXT)[1]["weight"] = 60                                  # required skills weights must still total 100
+        await raises(save(api, store, d, 0), 422, "invalid_requirements")
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["alternatives"] = ["SQL", "PostgreSQL", "Oracle"]
+        out = await save(api, store, d, 0)
+        _, a = item(out["requirements"], ALT_TEXT)
+        assert (a["importance"], a["weight"]) == ("required", 100)
+
+    @pytest.mark.asyncio
+    async def test_moving_an_item_between_categories_is_still_refused(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
         moved = d["categories"]["skills"]["items"].pop(0)
         d["categories"]["domain_knowledge"]["items"].append(moved)
         exc = await raises(save(api, store, d, 0), 422, "invalid_requirements")
         assert exc.extra["issues"][0]["code"] == "item_category_change_unsupported"
+
+    # ── concurrency and atomicity ───────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_two_concurrent_confirmations_at_one_revision_cannot_both_win(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        item(d, EXP_TEXT)[1]["text"] = "8 years as a Maintenance Planner"
+        await save(api, store, d, 0)
+        a, b = item_id(store, "SQL or Postgres"), item_id(store, "8 years as a Maintenance Planner")
+        res = await asyncio.gather(api.confirm_structure_review(store.session(), user(), JOB, 1, a),
+                                   api.confirm_structure_review(store.session(), user(), JOB, 1, b), return_exceptions=True)
+        assert sum(isinstance(r, dict) for r in res) == 1
+        assert sum(isinstance(r, api.ApiError) and r.code == "requirements_revision_conflict" for r in res) == 1
+        assert len(stored_doc(store)["structure_review"]["records"]) == 1 and store.rows[JOB]["revision"] == 2
+
+    @pytest.mark.asyncio
+    async def test_a_confirmation_racing_a_wording_edit_cannot_confirm_stale_wording(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        await save(api, store, d, 0)
+        iid = item_id(store, "SQL or Postgres")
+        edit = client_doc(await view(api, store)); item(edit, "SQL or Postgres")[1]["text"] = "SQL or Oracle"
+        res = await asyncio.gather(save(api, store, edit, 1),
+                                   api.confirm_structure_review(store.session(), user(), JOB, 1, iid), return_exceptions=True)
+        assert sum(isinstance(r, dict) for r in res) == 1
+        v = await view(api, store)
+        # whichever won, no record may describe wording that is not the stored wording
+        for r in stored_doc(store).get("structure_review", {"records": []})["records"]:
+            assert r["basis"]["text"] == item(stored_doc(store), r["basis"]["text"])[1]["text"]
+        assert v["revision"] == 2
+
+    @pytest.mark.asyncio
+    async def test_if_the_audit_row_cannot_be_written_the_confirmation_is_not_stored(self, api):
+        store = Store()
+        seed(store, structured_job())
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        await save(api, store, d, 0)
+        iid = item_id(store, "SQL or Postgres")
+        before = copy.deepcopy(store.rows[JOB])
+        store.fail_audit = True
+        with pytest.raises(RuntimeError):
+            await api.confirm_structure_review(store.session(), user(), JOB, 1, iid)
+        assert store.rows[JOB] == before and not store.lock.locked()
+
+    @pytest.mark.asyncio
+    async def test_the_original_snapshot_survives_every_structure_operation(self, api):
+        store = Store()
+        seed(store, structured_job())
+        before = copy.deepcopy(store.rows[JOB]["original_analysis"])
+        d = client_doc(await view(api, store))
+        item(d, ALT_TEXT)[1]["text"] = "SQL or Postgres"
+        item(d, EXP_TEXT)[1]["experience"] = {"subject": "Planner", "min_years": 2}
+        d["categories"]["skills"]["items"].append({"text": "New", "importance": "preferred", "weight": None, "alternatives": ["a", "b"]})
+        v = await save(api, store, d, 0)
+        await api.confirm_structure_review(store.session(), user(), JOB, 1, item_id(store, "SQL or Postgres"))
+        assert store.rows[JOB]["original_analysis"] == before
+        assert (await view(api, store))["original"]["categories"] == before["requirements"]["categories"]
 
 
 # ══ the classification-warning lifecycle through the API ════════════════════════════════════════════════════════

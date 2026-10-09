@@ -101,6 +101,24 @@ def set_text(doc: dict, item_id: str, text: str) -> dict:
     return out
 
 
+_UNSET = object()
+
+
+def set_structure(doc: dict, item_id: str, *, alternatives=_UNSET, experience=_UNSET) -> dict:
+    """Change the structured fields only (OR alternatives and / or experience subject + min_years). The wording,
+    provenance, source wording, classification and weight are untouched. Pass None to clear a field. Nothing is
+    interpreted or normalised, and nothing here records a confirmation: the structure review (structure.py) is
+    server-owned and is decided at save time."""
+    out = copy.deepcopy(doc)
+    category, idx = _locate(out, item_id)
+    item = out["categories"][category]["items"][idx]
+    if alternatives is not _UNSET:
+        item["alternatives"] = None if alternatives is None else list(alternatives)
+    if experience is not _UNSET:
+        item["experience"] = None if experience is None else dict(experience)
+    return out
+
+
 def set_item_weight(doc: dict, item_id: str, weight: int | None) -> dict:
     out = copy.deepcopy(doc)
     category, idx = _locate(out, item_id)

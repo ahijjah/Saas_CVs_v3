@@ -82,5 +82,19 @@ Policy: `system_config` key `job_analysis.require_classification_acknowledgment`
 only via `PUT /admin/platform-config/{key}` (super_admin); no tenant override. Read inside each request; a missing or
 unrecognised value means Yes.
 
-Refused until the business decides (422): changing OR alternatives / structured experience, giving them to a new item, moving an
-item between categories. A wording edit keeps the structured fields and lists the item in `structure_unverified_item_ids`.
+Moving an item between categories is still refused (422): outside the structure stage.
+
+## Structured requirements (OR alternatives, experience subject / duration)
+
+Recruiters may edit the structured fields of existing items and supply them on new items (`PUT .../requirements`); they are stored
+verbatim, never interpreted. Nobody and nothing verifies that wording and structure agree. An item with structure is **settled** when
+its (wording, alternatives, experience) equal the original AI analysis, or a person confirmed the current triple (`confirmed`), changed
+its structured fields in a save (`corrected`) or created it with structure (`entered`). Otherwise -- e.g. after a wording-only edit --
+readiness is `needs_structure_review` (blocks under either classification policy; classification review is evaluated first).
+Saving the same structured values again creates no record. `POST .../structure-review/confirm {expected_revision, item_id}` records
+the confirmation (server-stamped user and time, wording + structure confirmed). Records live in `document["structure_review"]`
+(server-owned, `carry_structure_review`), are pruned at the first save after the wording or structure changed (audit reason
+`item_changed` / `item_removed`) and never come back on their own. A structure change also invalidates the classification
+acknowledgment (it is part of the acknowledged item state) and the preferred-only confirmation (part of its basis hash).
+Audit actions: `requirements_structure_confirmed`, `requirements_structure_recorded`,
+`requirements_structure_confirmation_invalidated`.
