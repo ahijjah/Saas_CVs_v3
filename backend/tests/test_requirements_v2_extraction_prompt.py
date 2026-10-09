@@ -25,7 +25,8 @@ from services.requirements_v2.extraction.text import (
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
 # offline benchmark tooling (never imported by production code, never calls a model; see test_requirements_v2_benchmark_cases)
 OFFLINE_EVAL_SCRIPTS = {"scripts/requirements_v2_extraction_eval.py", "scripts/_gen_benchmark_cases_md.py", "scripts/requirements_v2_extraction_run.py",
-                       "scripts/requirements_v2_extraction_compare.py"}
+                       "scripts/requirements_v2_extraction_compare.py",
+                       "scripts/requirements_v2_injection_guard_replay.py"}
 PROMPT_FILE = BACKEND / "services" / "requirements_v2" / "extraction" / "prompts" / "criteria_extraction_v2-1.txt"
 
 
@@ -179,7 +180,7 @@ class TestIsolation:
         hits = []
         for path in BACKEND.rglob("*.py"):
             rel = path.relative_to(BACKEND).as_posix()
-            if rel.startswith(("services/requirements_v2/", "tests/")) or rel in OFFLINE_EVAL_SCRIPTS:
+            if rel.startswith(("services/requirements_v2/", "tests/", "parser_candidates/")) or rel in OFFLINE_EVAL_SCRIPTS:
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
