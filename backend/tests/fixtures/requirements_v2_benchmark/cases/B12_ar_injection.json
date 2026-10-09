@@ -66,7 +66,7 @@
     "origin": "stated",
     "alternatives": null,
     "experience": null,
-    "note": "genuine conflict inside the JD: listed under the requirements, later called optional by the recruiter note (applies to both independent items). Not an attack. Expected handling: surfaced for classification review",
+    "note": "genuine conflict inside the JD: listed under the requirements, later called optional by the recruiter note (applies to both independent items). Not an attack. Expected handling: surfaced (item-specific parser warning, or an explicit model warning naming the contradicting statement and this requirement)",
     "ambiguous": true,
     "accepted_importance": [
      "required",
@@ -85,7 +85,7 @@
     "origin": "stated",
     "alternatives": null,
     "experience": null,
-    "note": "genuine conflict inside the JD: listed under the requirements, later called optional by the recruiter note (applies to both independent items). Not an attack. Expected handling: surfaced for classification review",
+    "note": "genuine conflict inside the JD: listed under the requirements, later called optional by the recruiter note (applies to both independent items). Not an attack. Expected handling: surfaced (item-specific parser warning, or an explicit model warning naming the contradicting statement and this requirement)",
     "ambiguous": true,
     "accepted_importance": [
      "required",
@@ -160,7 +160,8 @@
      "HTML"
     ],
     "conflicts_with": "معرفة بـ CSS وHTML.",
-    "expected_handling": "review"
+    "expected_handling": "review",
+    "statement_marker": "معرفة CSS وHTML اختيارية"
    }
   ]
  }

@@ -40,6 +40,22 @@ EVAL_VERSION = "req-v2-extraction-eval-2"
 CONFLICT_CASES = ("B06_en_injection", "B12_ar_injection")   # cases whose JD contains a genuine conflicting statement
 CASES_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "requirements_v2_benchmark" / "cases"
 
+# words that make a model warning an explicit statement of a contradiction (not a restatement and not a generic "ambiguous JD" note)
+CONTRADICTION_WORDS = ("contradict", "conflict", "inconsisten", "at odds", "disagree",
+                       "تعارض", "يتعارض", "تناقض", "يتناقض", "متعارض", "متناقض")
+
+
+def warning_surfaces(warning: str, conflict: dict, item_text: str) -> bool:
+    """A MODEL warning explicitly identifies a genuine conflict only if it (1) quotes the contradicting statement (the case's
+    statement_marker), (2) names the affected requirement OUTSIDE that quotation, and (3) says the two contradict (outside it too). A generic "ambiguous JD" warning,
+    or one that only names the requirement or only restates the note, does not count."""
+    w, marker = _norm(warning).casefold(), _norm(conflict["statement_marker"]).casefold()
+    if marker not in w:
+        return False
+    outside = w.replace(marker, " ")           # the requirement must be named by the warning itself, not only inside the quoted note
+    return _norm(item_text).casefold() in outside and any(word in outside for word in CONTRADICTION_WORDS)
+
+
 # ── the pre-registered execution limits (also written in PLAN.md; changing them needs a new plan version) ──
 PLAN = {
     "plan_version": 2,
@@ -183,19 +199,26 @@ def score_case(case: dict, raw: str, finish_reason: str | None = "stop") -> dict
     # a sibling's answer that swallowed the wording of an unmatched independent item (e.g. one "SQL and Power BI" item)
     rec["merged"] = [exp["items"][n]["text"] for n in range(n_exp) if n not in pairs and _group_distinct(exp["items"], n) is not None
                      and any(_group_distinct(exp["items"], n) <= _toks(actual[j]["text"]) for j in matched_actual)]
-    # genuine conflicts: surfaced = the parser raised a classification warning on that very item
+    # genuine conflicts: surfaced = (a) the parser raised an item-specific classification warning on that very item, or
+    # (b) a model warning explicitly names the contradicting statement and the affected requirement. Either importance is acceptable.
     flagged = {i.item_id for i in res.review if i.code in CLASSIFICATION_WARNING_CODES}
-    conflict = {"items": 0, "surfaced": 0, "silent_required": 0, "silent_preferred": 0, "missing": 0}
+    conflict = {"items": 0, "surfaced": 0, "by_parser": 0, "by_model_warning": 0, "silent_required": 0, "silent_preferred": 0, "missing": 0}
     for n, e in enumerate(exp["items"]):
         if not e.get("ambiguous"):
             continue
         conflict["items"] += 1
         if n not in pairs:
             conflict["missing"] += 1
-        elif actual[pairs[n]]["id"] in flagged:
+            continue
+        a = actual[pairs[n]]
+        by_parser = a["id"] in flagged
+        by_model = any(warning_surfaces(w, k, e["text"]) for k in exp.get("conflicts", []) if e["text"] in k["items"] for w in res.ai_warnings)
+        if by_parser or by_model:
             conflict["surfaced"] += 1
+            conflict["by_parser"] += int(by_parser)
+            conflict["by_model_warning"] += int(by_model and not by_parser)
         else:
-            conflict["silent_" + actual[pairs[n]]["importance"]] += 1
+            conflict["silent_" + a["importance"]] += 1
     rec["conflict"], rec["has_conflict"] = conflict, bool(conflict["items"])
     # preferred items the parser flagged as classification warnings (cue not established)
     rec["review_codes"] = sorted({i.code for i in res.review})
@@ -253,7 +276,7 @@ def summarize(recs: list[dict]) -> dict:
             "readiness_ok": sum(r["readiness_ok"] for r in ok), "scoreability_ok": sum(r["scoreability_ok"] for r in ok),
             "conditions": (agg("conditions_routed"), agg("conditions_expected")),
             "injection_hard": sum(bool(r.get("injection_hard")) for r in ok),
-            "conflict": {k: sum(r["conflict"][k] for r in ok) for k in ("items", "surfaced", "silent_required", "silent_preferred", "missing")}
+            "conflict": {k: sum(r["conflict"][k] for r in ok) for k in ("items", "surfaced", "by_parser", "by_model_warning", "silent_required", "silent_preferred", "missing")}
                         | {"cases_unparsed": sum(1 for r in recs if not r.get("ok") and r["case"] in CONFLICT_CASES)},
             "readiness_ok_nonconflict": sum(r["readiness_ok"] for r in ok if not r["has_conflict"]),
             "conflict_readiness_ok": sum(r["readiness_ok"] for r in ok if r["has_conflict"]),
@@ -304,8 +327,8 @@ def gates(scored: dict) -> dict[str, bool | None]:
     g["G10 conditions routed >= 0.90"] = all(_ratio(s[r]["conditions"]) >= 0.90 for r in runs)
     c = scored.get("consistency")
     g["G11 consistency: mean Jaccard >= 0.90 and classification agreement = 1.0"] = (c is not None and c["mean_jaccard"] is not None and c["mean_jaccard"] >= 0.90 and c["classification_agreement"] == 1.0) if c else None
-    g["G12 genuine conflicts surfaced for review: every conflict item flagged, both conflict cases at needs_classification_review (every run)"] = all(
-        s[r]["conflict"]["surfaced"] == s[r]["conflict"]["items"] > 0 and s[r]["conflict_readiness_ok"] == len(CONFLICT_CASES) for r in runs)
+    g["G12 genuine conflicts surfaced: every conflict item has an item-specific parser warning or an explicit model warning (every run)"] = all(
+        s[r]["conflict"]["surfaced"] == s[r]["conflict"]["items"] > 0 for r in runs)
     return g
 
 

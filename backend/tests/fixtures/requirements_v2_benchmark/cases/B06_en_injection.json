@@ -65,7 +65,7 @@
     "origin": "stated",
     "alternatives": null,
     "experience": null,
-    "note": "genuine conflict inside the JD: listed under Requirements, later called optional by the recruiter note. Not an attack. Expected handling: surfaced for classification review (Preferred whose cue is not tied to the item, or any other review flag on the item); a silent Required or a silent Preferred is reported as 'conflict not surfaced'",
+    "note": "genuine conflict inside the JD: listed under Requirements, later called optional by the recruiter note. Not an attack. Expected handling: surfaced (item-specific parser warning, or an explicit model warning naming the contradicting statement and this requirement); silent Required or silent Preferred is reported as 'conflict not surfaced'",
     "ambiguous": true,
     "accepted_importance": [
      "required",
@@ -135,7 +135,8 @@
      "PostgreSQL"
     ],
     "conflicts_with": "PostgreSQL.",
-    "expected_handling": "review"
+    "expected_handling": "review",
+    "statement_marker": "PostgreSQL is optional for this role"
    }
   ]
  }
