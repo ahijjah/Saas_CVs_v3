@@ -1,8 +1,9 @@
 """
 Requirements v2: contract, validation, weight arithmetic, readiness and edit-tracking (stage 1).
 
-ISOLATED: pure functions over plain dicts. Not imported by any router, worker, prompt, scoring or intake path; no
-database, no model call, no configuration. Legacy job analysis is unaffected by this package.
+PURE: functions over plain dicts; no database, no model call, no configuration. The only production code that
+imports it is services/requirements_api.py (the editing / review API); no worker, prompt, scoring or intake path does.
+Legacy job analysis is unaffected by this package.
 """
 from services.requirements_v2.acknowledgment import (
     CLASSIFICATION_WARNING_CODES, POLICY_KEY, AcknowledgmentError, ClassificationStatus, ReconcileResult,
@@ -23,7 +24,7 @@ from services.requirements_v2.readiness import (
     ConfirmationError, Readiness, basis_hash, carry_confirmation, carry_server_owned, compute_readiness,
     confirm_no_numeric_score, is_preferred_only,
 )
-from services.requirements_v2.validation import validate_draft, validate_final
+from services.requirements_v2.validation import validate_draft, validate_final, validate_structure
 from services.requirements_v2.weights import (
     NormalizeResult, OverLimitError, apply_category_weights, equal_category_weights, equalize_category,
     equalize_weights, normalize_category_weights,
@@ -39,5 +40,5 @@ __all__ = [
     "edited_category_names", "empty_requirements", "equal_category_weights", "equalize_category",
     "equalize_weights", "is_preferred_only", "make_item", "new_item_id", "normalize_category_weights",
     "original_digest", "remove_item", "set_category_weight", "set_importance", "set_item_weight", "set_text",
-    "snapshot_original", "validate_draft", "validate_final",
+    "snapshot_original", "validate_draft", "validate_final", "validate_structure",
 ]

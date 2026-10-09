@@ -87,7 +87,12 @@ _FALSE = {"false", "no", "0", "off"}
 
 
 class AcknowledgmentError(ValueError):
-    """The warning cannot be acknowledged in the document's current state."""
+    """The warning cannot be acknowledged in the document's current state. `code` is stable and machine-readable
+    (unknown_warning | no_longer_applies | already_acknowledged | invalid_request) so that an API can map it."""
+
+    def __init__(self, message: str, code: str = "invalid_request"):
+        super().__init__(message)
+        self.code = code
 
 
 def parse_acknowledgment_policy(value: Any) -> bool:
@@ -270,12 +275,12 @@ def acknowledge_classification_warning(doc: dict, warning_id_: str, *, user_id: 
     block = get_review(doc)
     warning = next((w for w in (block or {}).get("warnings", []) if w["id"] == warning_id_), None)
     if warning is None:
-        raise AcknowledgmentError(f"unknown classification warning {warning_id_!r}")
+        raise AcknowledgmentError(f"unknown classification warning {warning_id_!r}", "unknown_warning")
     status = classification_status(doc)
     if warning_id_ in status.resolved or warning_id_ in status.inactive:
-        raise AcknowledgmentError("This warning no longer applies: the item was reclassified or removed.")
+        raise AcknowledgmentError("This warning no longer applies: the item was reclassified or removed.", "no_longer_applies")
     if warning_id_ in status.acknowledged:
-        raise AcknowledgmentError("This classification is already acknowledged.")
+        raise AcknowledgmentError("This classification is already acknowledged.", "already_acknowledged")
     category, item = find_item(doc, warning["item_id"])                      # open implies the item exists
     state = item_state(category, item)
     out = copy.deepcopy(doc)

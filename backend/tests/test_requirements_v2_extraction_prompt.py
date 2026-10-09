@@ -183,7 +183,10 @@ class TestIsolation:
                 names = ([a.name for a in node.names] if isinstance(node, ast.Import)
                          else [node.module or ""] + [f"{node.module}.{a.name}" for a in node.names]
                          if isinstance(node, ast.ImportFrom) else [])
-                if any(n == "services.requirements_v2" or n.startswith("services.requirements_v2.") for n in names):
+                # The extraction package stays unwired. (The editing API legitimately imports the rest of
+                # services.requirements_v2; test_requirements_v2_api pins exactly which module may.)
+                if any(n == "services.requirements_v2.extraction" or n.startswith("services.requirements_v2.extraction.")
+                       for n in names):
                     hits.append(rel)
         assert hits == []
 

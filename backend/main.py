@@ -11,6 +11,7 @@ from routers import (
     platform_secrets, public, saved_views, subscription_plans, tenant, workflow_policies,
 )
 from routers.bulk_upload import router as bulk_upload_router
+from routers.job_requirements import router as job_requirements_router
 from routers.candidate_tags import app_router as candidate_tags_app, tag_router as candidate_tags_tags
 from routers.communication import automation_router as communication_automation, comm_router as communication_comm, template_router as communication_templates
 from routers.platform_features import router as platform_features_router
@@ -46,6 +47,7 @@ app.include_router(public.router)           # no auth — must be before jobs/ap
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(jobs.router)
+app.include_router(job_requirements_router)
 app.include_router(applications.router)
 app.include_router(comments.router)
 app.include_router(interviews.router)

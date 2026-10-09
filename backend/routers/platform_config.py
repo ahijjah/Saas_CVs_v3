@@ -11,6 +11,10 @@ from database import get_db, set_rls_context
 
 router = APIRouter(prefix="/admin", tags=["platform-config"])
 
+# Platform-wide requirements-v2 setting (Yes = recruiters must acknowledge flagged classifications). Seeded by
+# migration 107; super_admin changes it here like any other key. There is no per-tenant override.
+REQUIREMENTS_POLICY_KEY = "job_analysis.require_classification_acknowledgment"
+
 VALID_TYPES = ("string", "number", "boolean", "json")
 VALID_CATEGORIES = ("scoring", "ai", "email", "queue", "subscription", "security", "general")
 
@@ -131,7 +135,7 @@ async def update_platform_config(
     await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     row = await db.execute(
-        text("SELECT key, type, editable FROM system_config WHERE key = :key"),
+        text("SELECT key, type, editable, value FROM system_config WHERE key = :key"),
         {"key": key},
     )
     existing = row.mappings().first()
@@ -142,15 +146,27 @@ async def update_platform_config(
 
     _validate_value_for_type(body.value, existing["type"])
 
-    await db.execute(
-        text("""
-            UPDATE system_config
-            SET value = :value, updated_at = now(), updated_by = CAST(:uid AS uuid)
-            WHERE key = :key
-        """),
-        {"value": body.value, "key": key, "uid": current_user.user_id},
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            text("""
+                UPDATE system_config
+                SET value = :value, updated_at = now(), updated_by = CAST(:uid AS uuid)
+                WHERE key = :key
+            """),
+            {"value": body.value, "key": key, "uid": current_user.user_id},
+        )
+        if key == REQUIREMENTS_POLICY_KEY:
+            # The setting is platform-wide and super_admin-only; the change is audited in the same transaction.
+            from services.audit_service import log_action
+            await log_action(
+                db, getattr(current_user, "tenant_id", None), current_user.user_id, getattr(current_user, "email", None),
+                "requirements_classification_policy_changed", resource_type="system_config", resource_id=key,
+                details={"key": key, "old_value": existing["value"], "new_value": body.value}, strict=True,
+            )
+        await db.commit()
+    except BaseException:
+        await db.rollback()
+        raise
 
     return {"success": True, "key": key, "value": body.value}
 

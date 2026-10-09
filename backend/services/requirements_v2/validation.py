@@ -189,6 +189,12 @@ def _confirmation_issues(doc: dict) -> list[Issue]:
     return []
 
 
+def validate_structure(doc: Any) -> tuple[Issue, ...]:
+    """Malformed-input problems only (no weight / state rules, no confirmation freshness). For a persistence layer
+    that must know whether a stored or incoming document can be read safely at all."""
+    return tuple(_structure_issues(doc))
+
+
 def validate_draft(doc: Any) -> ValidationResult:
     """Reviewable extraction draft: malformed input is an error, rule violations are review issues."""
     structure = _structure_issues(doc)

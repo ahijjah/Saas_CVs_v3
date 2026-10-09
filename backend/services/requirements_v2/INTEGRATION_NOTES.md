@@ -1,7 +1,8 @@
-# requirements-v2: rules for the future API / worker stage
+# requirements-v2: rules for the API / worker stages
 
-Nothing here is wired yet. The package is pure functions over plain dicts; these notes record what the code that
-calls it MUST do. Nothing in this file is implemented by routers, workers, migrations or the UI in the current stage.
+The package is pure functions over plain dicts. The editing / review API stage is implemented in
+`services/requirements_api.py` + `routers/job_requirements.py` (see "Editing API (implemented)" at the end). Workers,
+extraction wiring, job creation and the UI are NOT wired.
 
 ## Server-owned state
 
@@ -57,3 +58,29 @@ genuine -- never run it on unprocessed client input.
 
 Use the revision-checked, row-locked save described for the requirements document: two recruiters acknowledging or
 editing at once must not overwrite each other's block. `reconcile_classification_review` is idempotent.
+
+
+## Editing API (implemented in the API stage; migration 107 prepared, NOT applied)
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `GET /jobs/{id}/requirements` | any user with job access | current document, original snapshot, readiness, classification warnings, per-category Edited flags, `can_edit`; no lock, no write |
+| `PUT /jobs/{id}/requirements` | admin, HR manager of the job's tenant | body `{expected_revision, requirements}`; validated by `validate_final`; 422 with issues, nothing stored |
+| `POST .../classification-warnings/acknowledge` | same | body `{expected_revision, warning_id}`; user and time are server-stamped |
+| `POST .../confirm-no-numeric-score` | same | body `{expected_revision}` |
+
+Persistence: document in `job_criteria.analysis_json["requirements"]`; original in `original_analysis_json["requirements"]`
+(never written by the API); `requirements_revision` (+1 per write) and `requirements_retired_item_ids` (append-only) from
+migration 107; the seven `weight_*` columns are rewritten from the document in the same UPDATE. One transaction:
+`SELECT ... FOR UPDATE` -> access/role -> revision check -> UPDATE (guarded by `requirements_revision = :rev`) -> strict
+audit rows -> commit. Audit actions: `requirements_saved`, `requirements_classification_acknowledged`,
+`requirements_classification_ack_invalidated`, `requirements_classification_warning_resolved`,
+`requirements_preferred_only_confirmed`, `requirements_preferred_only_confirmation_invalidated`, and (platform config)
+`requirements_classification_policy_changed`.
+
+Policy: `system_config` key `job_analysis.require_classification_acknowledgment` (seeded `true` by 107), platform-wide, changed
+only via `PUT /admin/platform-config/{key}` (super_admin); no tenant override. Read inside each request; a missing or
+unrecognised value means Yes.
+
+Refused until the business decides (422): changing OR alternatives / structured experience, giving them to a new item, moving an
+item between categories. A wording edit keeps the structured fields and lists the item in `structure_unverified_item_ids`.

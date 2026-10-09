@@ -76,14 +76,19 @@ class TestPolicySetting:
     def test_missing_or_unrecognised_means_yes(self, value):
         assert parse_acknowledgment_policy(value) is True
 
-    def test_the_future_configuration_key_is_documented_and_not_wired(self):
+    def test_the_configuration_key_is_wired_only_where_the_api_stage_put_it(self):
+        """Wired by the editing-API stage: seeded by migration 107, audited when super_admin changes it
+        (routers/platform_config.py) and read by services/requirements_api.py (through POLICY_KEY). Nowhere else."""
         import pathlib
         assert ack_module.POLICY_KEY == "job_analysis.require_classification_acknowledgment"
         backend = pathlib.Path(__file__).resolve().parent.parent
+        allowed = {"routers/platform_config.py", "db/migrations/107_requirements_v2_revision.sql"}
+        found = set()
         for sub in ("routers", "workers", "db"):
             for path in (backend / sub).rglob("*"):
-                if path.suffix in (".py", ".sql"):
-                    assert "require_classification_acknowledgment" not in path.read_text(encoding="utf-8"), path
+                if path.suffix in (".py", ".sql") and "require_classification_acknowledgment" in path.read_text(encoding="utf-8"):
+                    found.add(path.relative_to(backend).as_posix())
+        assert found == allowed, found
 
 
 class TestOnlyClassificationWarnings:
