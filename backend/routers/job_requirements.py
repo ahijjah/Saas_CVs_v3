@@ -20,29 +20,54 @@ from auth.dependencies import CurrentUserDep
 from auth.module_guards import RequireAIRecruitment
 from database import get_db
 from services import requirements_api as api
+from services import requirements_pipeline as pipe
 
 router = APIRouter(prefix="/jobs/{job_id}/requirements", tags=["job-requirements"], dependencies=[RequireAIRecruitment])
 
 
-class SaveRequirementsRequest(BaseModel):
+class _ServerOwnedEcho(BaseModel):
+    """Fields a client may echo back from a GET (guard records, raw AI output, metadata, readiness, ...). They belong to the server: accepted so a
+    round-tripped view is not rejected, never read, and listed in `discarded_client_fields` as body.<name>."""
+    requirements_pipeline: Any = None
+    pipeline: Any = None
+    review_records: Any = None
+    raw_response: Any = None
+    raw_ai_output: Any = None
+    component_versions: Any = None
+    provenance: Any = None
+    readiness: Any = None
+    gates: Any = None
+    unresolved_issues: Any = None
+    normalized_warnings: Any = None
+    informational: Any = None
+    original: Any = None
+    original_digest: Any = None
+    extraction: Any = None
+
+    def discarded(self) -> list[str]:
+        return [k for k in pipe.CLIENT_FORBIDDEN_KEYS if getattr(self, k, None) is not None]
+
+
+class SaveRequirementsRequest(_ServerOwnedEcho):
     model_config = ConfigDict(extra="forbid")
     expected_revision: StrictInt = Field(ge=0)         # the revision the recruiter was looking at
     requirements: dict[str, Any]
 
 
-class AcknowledgeWarningRequest(BaseModel):
+class AcknowledgeWarningRequest(_ServerOwnedEcho):
     model_config = ConfigDict(extra="forbid")
     expected_revision: StrictInt = Field(ge=0)
     warning_id: str
+    gate: str = "classification"                       # "classification" | "conflict"; every other gate answers 409 (no acknowledgment exists)
 
 
-class ConfirmStructureRequest(BaseModel):
+class ConfirmStructureRequest(_ServerOwnedEcho):
     model_config = ConfigDict(extra="forbid")
     expected_revision: StrictInt = Field(ge=0)
     item_id: str
 
 
-class ConfirmNoScoreRequest(BaseModel):
+class ConfirmNoScoreRequest(_ServerOwnedEcho):
     model_config = ConfigDict(extra="forbid")
     expected_revision: StrictInt = Field(ge=0)
 
@@ -63,7 +88,7 @@ async def get_requirements(job_id: str, current_user: CurrentUserDep, db: Annota
 async def save_requirements(job_id: str, body: SaveRequirementsRequest, current_user: CurrentUserDep,
                             db: Annotated[AsyncSession, Depends(get_db)]):
     try:
-        return await api.save_requirements(db, current_user, job_id, body.expected_revision, body.requirements)
+        return await api.save_requirements(db, current_user, job_id, body.expected_revision, body.requirements, client_discarded=body.discarded())
     except api.ApiError as exc:
         raise _http(exc) from exc
 
@@ -73,7 +98,7 @@ async def acknowledge_classification_warning(job_id: str, body: AcknowledgeWarni
                                              current_user: CurrentUserDep,
                                              db: Annotated[AsyncSession, Depends(get_db)]):
     try:
-        return await api.acknowledge_warning(db, current_user, job_id, body.expected_revision, body.warning_id)
+        return await api.acknowledge_warning(db, current_user, job_id, body.expected_revision, body.warning_id, body.gate, client_discarded=body.discarded())
     except api.ApiError as exc:
         raise _http(exc) from exc
 
@@ -82,7 +107,7 @@ async def acknowledge_classification_warning(job_id: str, body: AcknowledgeWarni
 async def confirm_no_numeric_score(job_id: str, body: ConfirmNoScoreRequest, current_user: CurrentUserDep,
                                    db: Annotated[AsyncSession, Depends(get_db)]):
     try:
-        return await api.confirm_no_score(db, current_user, job_id, body.expected_revision)
+        return await api.confirm_no_score(db, current_user, job_id, body.expected_revision, client_discarded=body.discarded())
     except api.ApiError as exc:
         raise _http(exc) from exc
 
@@ -91,6 +116,6 @@ async def confirm_no_numeric_score(job_id: str, body: ConfirmNoScoreRequest, cur
 async def confirm_structure_review(job_id: str, body: ConfirmStructureRequest, current_user: CurrentUserDep,
                                    db: Annotated[AsyncSession, Depends(get_db)]):
     try:
-        return await api.confirm_structure_review(db, current_user, job_id, body.expected_revision, body.item_id)
+        return await api.confirm_structure_review(db, current_user, job_id, body.expected_revision, body.item_id, client_discarded=body.discarded())
     except api.ApiError as exc:
         raise _http(exc) from exc

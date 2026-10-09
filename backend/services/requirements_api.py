@@ -21,6 +21,10 @@ Trust boundaries
   * The saved document is rebuilt as carry_server_owned(STORED, incoming) from the locked row, never from the request.
   * The original snapshot (original_analysis_json) is never written here.
 
+PIPELINE (services/requirements_pipeline, see its README): when analysis_json carries a server-owned `requirements_pipeline` record, readiness, issues
+and the injection / split-OR / model-conflict gates are recomputed from it and the CURRENT document on every call; saves reconcile the record in the same
+UPDATE; injection and split-OR cannot be acknowledged. Without a record the view says so explicitly (readiness.guarded = false) and nothing is invented.
+
 No automatic weight redistribution: the server stores the weights the recruiter sent if (and only if) validate_final
 accepts them; otherwise it answers 422 with the issues and stores nothing.
 
@@ -44,6 +48,7 @@ from typing import Any
 
 from sqlalchemy import text
 
+from services import requirements_pipeline as pipe
 from services.requirements_guard import is_requirements_v2
 from services.requirements_v2 import (
     CATEGORIES, POLICY_KEY, SCHEMA_VERSION, AcknowledgmentError, ConfirmationError, Issue,
@@ -74,6 +79,10 @@ CODE_WARNING_STATE = "classification_warning_not_acknowledgeable"
 CODE_NOT_CONFIRMABLE = "nothing_to_confirm"
 CODE_STRUCTURE_NOT_FOUND = "structure_item_not_found"
 CODE_STRUCTURE_STATE = "structure_not_confirmable"
+CODE_PIPELINE_RECORD_INVALID = "pipeline_record_invalid"
+CODE_PIPELINE_MISSING = "pipeline_data_missing"
+CODE_GATE_NOT_ACKNOWLEDGEABLE = "gate_not_acknowledgeable"
+CODE_UNKNOWN_GATE = "unknown_gate"
 
 ACTION_SAVED = "requirements_saved"
 ACTION_ACKNOWLEDGED = "requirements_classification_acknowledged"
@@ -84,6 +93,10 @@ ACTION_CONFIRMATION_INVALIDATED = "requirements_preferred_only_confirmation_inva
 ACTION_STRUCTURE_CONFIRMED = "requirements_structure_confirmed"
 ACTION_STRUCTURE_RECORDED = "requirements_structure_recorded"
 ACTION_STRUCTURE_INVALIDATED = "requirements_structure_confirmation_invalidated"
+ACTION_CONFLICT_ACKNOWLEDGED = "requirements_conflict_acknowledged"
+# guard / adapter events from the pipeline reconcile are audited as requirements_<component>_<event>
+# (requirements_injection_guard_resolved, requirements_injection_guard_reopened, requirements_split_or_guard_resolved,
+#  requirements_warning_adapter_resolved, requirements_warning_adapter_acknowledgment_invalidated, ...)
 
 WEIGHT_COLUMNS = {
     "skills": "weight_skills", "experience": "weight_experience", "education": "weight_education",
@@ -91,8 +104,8 @@ WEIGHT_COLUMNS = {
     "domain_knowledge": "weight_domain_knowledge", "other_requirements": "weight_other",
 }
 
-_DOC_INPUT_KEYS = frozenset({"schema_version", "categories", "scoring_confirmation", REVIEW_KEY, STRUCTURE_KEY})
-_SERVER_OWNED_DOC_KEYS = ("scoring_confirmation", REVIEW_KEY, STRUCTURE_KEY)
+_SERVER_OWNED_DOC_KEYS = ("scoring_confirmation", REVIEW_KEY, STRUCTURE_KEY, *pipe.CLIENT_FORBIDDEN_KEYS)     # accepted, discarded, listed
+_DOC_INPUT_KEYS = frozenset({"schema_version", "categories", *_SERVER_OWNED_DOC_KEYS})
 _ITEM_INPUT_KEYS = frozenset({"id", "text", "importance", "weight", "origin", "source_text", "alternatives", "experience"})
 _SERVER_OWNED_ITEM_KEYS = ("origin", "source_text")
 _STRUCTURED_KEYS = ("alternatives", "experience")
@@ -237,6 +250,11 @@ class SavePlan:
     retired: list[str]
     new_item_ids: list[str]
     discarded: list[str]
+    record: dict | None = None                         # the pipeline record to store (None = the job has none / keep as stored)
+
+
+def _pipeline_audits(events: list[dict]) -> list[tuple[str, dict]]:
+    return [(f"requirements_{e['component']}_{e['event']}", {k: v for k, v in e.items() if k not in ("component", "event")}) for e in events]
 
 
 def _item_changes(stored: dict, doc: dict) -> dict[str, list[str]]:
@@ -248,7 +266,8 @@ def _item_changes(stored: dict, doc: dict) -> dict[str, list[str]]:
 
 
 def plan_save(stored: dict, client: Any, *, reserved_ids: set[str], retired_before: list[str],
-              original: dict, user_id: str = "", now: str = "") -> SavePlan:
+              original: dict, user_id: str = "", now: str = "", record: dict | None = None,
+              body_discarded: list[str] | None = None) -> SavePlan:
     """Pure: everything a save does, short of I/O."""
     incoming = build_incoming(stored, client, reserved_ids)
     doc = _carry(stored, incoming.doc)
@@ -263,14 +282,22 @@ def plan_save(stored: dict, client: Any, *, reserved_ids: set[str], retired_befo
     changes = _item_changes(stored, doc)
     audits = _reconcile_audits(stored, incoming.doc, doc)
     audits += [(ACTION_STRUCTURE_RECORDED, {"item_id": i, "kind": k}) for i, k in recorded]
-    changed = doc != stored or retired != sorted(retired_before)
+    new_record = None
+    if record is not None:                         # guard records follow the document the server is about to store (never the client's)
+        records, events = pipe.reconcile_records(record["review_records"], doc, user_id=user_id, at=now)
+        new_record = pipe.with_records(record, records)
+        audits += _pipeline_audits(events)
+        if new_record == record:
+            new_record = None
+    changed = doc != stored or retired != sorted(retired_before) or new_record is not None
+    discarded = list(incoming.discarded) + [f"body.{k}" for k in (body_discarded or [])]
     if changed:
         audits.insert(0, (ACTION_SAVED, {
             **changes, "edited_categories": [c for c, f in edited_categories(original, doc).items() if f],
             "category_weights_changed": [c for c in CATEGORIES
                                          if doc["categories"][c]["weight"] != stored["categories"][c]["weight"]],
-            "discarded_client_fields": incoming.discarded}))
-    return SavePlan(doc, audits, changed, retired, incoming.new_item_ids, incoming.discarded)
+            "discarded_client_fields": discarded}))
+    return SavePlan(doc, audits, changed, retired, incoming.new_item_ids, discarded, new_record)
 
 
 def _carry(stored: dict, incoming: dict) -> dict:
@@ -356,23 +383,88 @@ def structure_view(doc: dict, original: dict | None) -> dict:
     return {"needs_review_item_ids": list(st.needs_review), "items": items}
 
 
+PIPELINE_OK, PIPELINE_UNAVAILABLE, PIPELINE_INVALID = "ok", "unavailable", "invalid_record"
+_MSG_UNAVAILABLE = ("This job has no pipeline record (it was created without the guarded extraction pipeline). The readiness shown is the frozen "
+                    "readiness only: the injection, split-OR and model-conflict checks have NOT been applied (readiness.guarded is false). "
+                    "The original analysis snapshot is under `original`. No provenance is claimed.")
+_MSG_INVALID = ("The stored pipeline record failed its integrity check; the job cannot proceed and cannot be changed until it is repaired. "
+                "The requirements and the original snapshot are still readable.")
+
+
+@dataclass
+class PipelineContext:
+    status: str
+    record: dict | None = None
+    errors: list[str] = field(default_factory=list)
+    state: dict | None = None                          # evaluated pipeline state (only when status == ok)
+
+
+def pipeline_context(record: Any, doc: dict, original: dict | None, policy: bool) -> PipelineContext:
+    """Everything derived is recomputed here from (stored record, current document, original snapshot, policy); nothing stored is trusted for it."""
+    if record is None:
+        return PipelineContext(PIPELINE_UNAVAILABLE)
+    errors = pipe.verify_record(record, original)
+    if errors:
+        return PipelineContext(PIPELINE_INVALID, record if isinstance(record, dict) else None, errors)
+    state = pipe.evaluate(pipe.assemble_state(record, doc, original), require_classification_acknowledgment=policy)
+    return PipelineContext(PIPELINE_OK, record, [], state)
+
+
+def _pipeline_block(ctx: PipelineContext, include_raw: bool) -> dict:
+    out: dict = {"status": ctx.status, "available": ctx.status == PIPELINE_OK, "errors": list(ctx.errors)}
+    if ctx.status == PIPELINE_UNAVAILABLE:
+        out["message"] = _MSG_UNAVAILABLE
+        return out
+    if ctx.status == PIPELINE_INVALID:
+        out["message"] = _MSG_INVALID
+        return out
+    rec = ctx.record
+    raw = rec["raw_response"]
+    out.update(contract_version=pipe.CONTRACT_VERSION, record_version=rec["record_version"], component_versions=copy.deepcopy(rec["component_versions"]),
+               provenance=copy.deepcopy(rec["provenance"]), job_description_sha256=rec["job_description_sha256"],
+               raw_response={"sha256": raw.get("sha256"), "finish_reason": raw.get("finish_reason"),
+                             "bytes": len(raw["text"].encode("utf-8")) if isinstance(raw.get("text"), str) else None})
+    if include_raw:                                     # editors only: the AI's raw text and parsed output, exactly as stored
+        out["raw_response"]["text"] = raw.get("text")
+        out["raw_ai_output"] = copy.deepcopy(rec["raw_ai_output"])
+    return out
+
+
 def build_view(*, job_id: str, revision: int | None, doc: dict, original: dict | None, policy: bool,
-               editable: bool, discarded: list[str] | None = None) -> dict:
+               editable: bool, discarded: list[str] | None = None, pipeline_record: Any = None) -> dict:
     readiness = compute_readiness(doc, require_classification_acknowledgment=policy, original=original)
     conf = doc.get("scoring_confirmation")
+    ctx = pipeline_context(pipeline_record, doc, original, policy)
+    ready_view = {
+        "state": readiness.state, "scoring_mode": readiness.scoring_mode, "can_proceed": readiness.can_proceed,
+        "reasons": issues_payload(readiness.reasons),
+        "open_warning_ids": list(readiness.open_warning_ids),
+        "unresolved_warning_ids": list(readiness.unresolved_warning_ids),
+        "structure_review_item_ids": list(readiness.structure_review_item_ids),
+        "guarded": False, "basis": "frozen_only",
+    }
+    if ctx.status == PIPELINE_OK:
+        pr = ctx.state["readiness"]
+        ready_view.update(state=pr["state"], scoring_mode=pr["scoring_mode"], can_proceed=pr["can_proceed"], reasons=pr["reasons"],
+                          guarded=True, basis="pipeline", by_policy=pr["by_policy"])
+    elif ctx.status == PIPELINE_INVALID:
+        ready_view.update(state=pipe.STATE_RECORD_INVALID, scoring_mode=None, can_proceed=False, basis="pipeline_record_invalid",
+                          reasons=[{"code": "pipeline_record_invalid", "message": _MSG_INVALID, "category": None, "item_id": None}])
+    state = ctx.state or {}
     return {
         "job_id": str(job_id),
         "revision": revision,
         "requirements": _public(doc),
         "original": _public(original) if original is not None else None,
         "edited_categories": edited_categories(original, doc) if original is not None else None,
-        "readiness": {
-            "state": readiness.state, "scoring_mode": readiness.scoring_mode, "can_proceed": readiness.can_proceed,
-            "reasons": issues_payload(readiness.reasons),
-            "open_warning_ids": list(readiness.open_warning_ids),
-            "unresolved_warning_ids": list(readiness.unresolved_warning_ids),
-            "structure_review_item_ids": list(readiness.structure_review_item_ids),
-        },
+        "readiness": ready_view,
+        "pipeline": _pipeline_block(ctx, editable),
+        # null (not []) without a usable pipeline record: an empty list would claim "no issues"
+        "unresolved_issues": state.get("unresolved_issues"),
+        "gates": state.get("gates"),
+        "normalized_warnings": state.get("normalized_warnings"),
+        "informational": ({"generic_model_notes": state["informational"]["generic_model_notes"],
+                           "parser_review": state["informational"]["parser_review"]} if state else None),
         "classification_warnings": warnings_view(doc),
         "classification_policy": {"key": POLICY_KEY, "require_acknowledgment": policy},
         "preferred_only_confirmation": ({"confirmed": True, "user_id": conf["user_id"],
@@ -437,6 +529,7 @@ class Loaded:
     retired: list[str]
     marker: Any = None                  # job_criteria.requirements_schema_version (NULL = not set / column absent)
     retired_column_present: bool = True
+    pipeline_record: Any = None         # analysis_json["requirements_pipeline"] as stored (None = the job has none)
 
 
 async def load_policy(db) -> bool:
@@ -479,7 +572,8 @@ async def _load(db, user, job_id: str, *, lock: bool) -> Loaded:
     retired = [x for x in retired_raw if isinstance(x, str)] if isinstance(retired_raw, list) else []
     revision = row["requirements_revision"]
     return Loaded(analysis, stored, original, int(revision) if revision is not None else None, retired,
-                  marker=row["requirements_schema_version"], retired_column_present=retired_raw is not None)
+                  marker=row["requirements_schema_version"], retired_column_present=retired_raw is not None,
+                  pipeline_record=analysis.get(pipe.STORAGE_KEY))
 
 
 async def get_requirements(db, user, job_id: str) -> dict:
@@ -487,10 +581,11 @@ async def get_requirements(db, user, job_id: str) -> dict:
     loaded = await _load(db, user, job_id, lock=False)
     policy = await load_policy(db)
     return build_view(job_id=job_id, revision=loaded.revision if loaded.revision is not None else 0,
-                      doc=loaded.stored, original=loaded.original, policy=policy, editable=can_edit(user.role))
+                      doc=loaded.stored, original=loaded.original, policy=policy, editable=can_edit(user.role),
+                      pipeline_record=loaded.pipeline_record)
 
 
-async def _mutate(db, user, job_id: str, expected_revision: int, work) -> dict:
+async def _mutate(db, user, job_id: str, expected_revision: int, work, client_discarded: list[str] | None = None) -> dict:
     """The common write transaction. work(loaded, policy, now) -> (new_doc, audits, retired, discarded)."""
     from services.audit_service import log_action
     ensure_can_edit(user.role)
@@ -509,16 +604,23 @@ async def _mutate(db, user, job_id: str, expected_revision: int, work) -> dict:
         if loaded.original is None:
             raise ApiError(409, CODE_ORIGINAL_MISSING, "The original analysis snapshot is missing; refusing to write.")
         policy = await load_policy(db)
+        if loaded.pipeline_record is not None:
+            problems = pipe.verify_record(loaded.pipeline_record, loaded.original)
+            if problems:                                       # fail closed: never fall back to unguarded behaviour for a record that exists
+                raise ApiError(409, CODE_PIPELINE_RECORD_INVALID, _MSG_INVALID, errors=problems)
         if loaded.revision != expected_revision:
             raise ApiError(409, CODE_REVISION_CONFLICT,
                            "The requirements were changed by someone else. Reload and try again.",
                            current=build_view(job_id=job_id, revision=loaded.revision, doc=loaded.stored,
-                                              original=loaded.original, policy=policy, editable=True))
+                                              original=loaded.original, policy=policy, editable=True,
+                                              pipeline_record=loaded.pipeline_record))
         plan: SavePlan = work(loaded, policy, _now())
         revision = loaded.revision
         if plan.changed:
             analysis = copy.deepcopy(loaded.analysis)
             analysis["requirements"] = plan.doc
+            if plan.record is not None:
+                analysis[pipe.STORAGE_KEY] = plan.record      # next to, never instead of, the single editable document
             params = {"aj": json.dumps(analysis, ensure_ascii=False), "retired": json.dumps(plan.retired),
                       "uid": str(user.user_id), "jid": str(job_id), "rev": loaded.revision,
                       **{f"w_{c}": plan.doc["categories"][c]["weight"] for c in CATEGORIES}}
@@ -536,38 +638,62 @@ async def _mutate(db, user, job_id: str, expected_revision: int, work) -> dict:
         await db.rollback()
         raise
     view = build_view(job_id=job_id, revision=revision, doc=plan.doc, original=loaded.original, policy=policy,
-                      editable=True, discarded=plan.discarded)
+                      editable=True, discarded=plan.discarded + [f"body.{k}" for k in (client_discarded or [])],
+                      pipeline_record=plan.record if plan.record is not None else loaded.pipeline_record)
     view["changed"] = plan.changed
     return view
 
 
-async def save_requirements(db, user, job_id: str, expected_revision: int, requirements: Any) -> dict:
+async def save_requirements(db, user, job_id: str, expected_revision: int, requirements: Any,
+                            client_discarded: list[str] | None = None) -> dict:
+    """Invalid structure or weights: 422 and nothing is written (validate_final, unchanged). A valid document is saved even while review blockers
+    (injection, split-OR, classification, conflict, structure, confirmation) are unresolved; readiness.can_proceed then stays false."""
     def work(loaded: Loaded, policy: bool, now: str) -> SavePlan:
         reserved = collect_item_ids(loaded.original) | set(loaded.retired)
         return plan_save(loaded.stored, requirements, reserved_ids=reserved, retired_before=loaded.retired,
-                         original=loaded.original, user_id=str(user.user_id), now=now)
-    return await _mutate(db, user, job_id, expected_revision, work)
+                         original=loaded.original, user_id=str(user.user_id), now=now, record=loaded.pipeline_record)
+    return await _mutate(db, user, job_id, expected_revision, work, client_discarded)
 
 
-async def acknowledge_warning(db, user, job_id: str, expected_revision: int, warning_id: str) -> dict:
+async def acknowledge_warning(db, user, job_id: str, expected_revision: int, warning_id: str, gate: str = "classification",
+                              client_discarded: list[str] | None = None) -> dict:
+    """Acknowledge ONE classification warning (frozen lifecycle) or ONE model importance-conflict warning (pipeline lifecycle). Injection, split-OR and
+    every other gate have no acknowledgment, under either policy."""
     def work(loaded: Loaded, policy: bool, now: str) -> SavePlan:
+        if gate in pipe.NOT_ACKNOWLEDGEABLE_GATES:
+            raise ApiError(409, CODE_GATE_NOT_ACKNOWLEDGEABLE, f"The {gate} gate cannot be acknowledged; correct the requirements instead.", gate=gate)
+        if gate not in ("classification", "conflict"):
+            raise ApiError(422, CODE_UNKNOWN_GATE, f"Unknown gate {gate!r}.", gate=gate)
         try:
-            doc = acknowledge_classification_warning(loaded.stored, warning_id, user_id=str(user.user_id),
-                                                     acknowledged_at=now)
+            if gate == "classification":
+                doc = acknowledge_classification_warning(loaded.stored, warning_id, user_id=str(user.user_id), acknowledged_at=now)
+                ack = next(a for a in doc[REVIEW_KEY]["acknowledgments"] if a["warning_id"] == warning_id)
+                audit = (ACTION_ACKNOWLEDGED, {"warning_id": warning_id, "code": ack["code"], "item_id": ack["item_id"],
+                                               "item_state_hash": ack["item_state_hash"],
+                                               "evidence_hash": ack["evidence_hash"], "acknowledged_at": now})
+                return SavePlan(doc, [audit], True, loaded.retired, [], [])
+            if loaded.pipeline_record is None:
+                raise ApiError(409, CODE_PIPELINE_MISSING, "This job has no pipeline record, so there is no model conflict to acknowledge.")
+            records = pipe.acknowledge_gate(loaded.pipeline_record["review_records"], loaded.stored, "conflict", warning_id,
+                                            user_id=str(user.user_id), at=now)
         except AcknowledgmentError as exc:
             if exc.code == "unknown_warning":
                 raise ApiError(404, CODE_WARNING_NOT_FOUND, str(exc)) from exc
             raise ApiError(409, CODE_WARNING_STATE, str(exc), reason=exc.code) from exc
-        ack = next(a for a in doc[REVIEW_KEY]["acknowledgments"] if a["warning_id"] == warning_id)
-        audit = (ACTION_ACKNOWLEDGED, {"warning_id": warning_id, "code": ack["code"], "item_id": ack["item_id"],
-                                       "item_state_hash": ack["item_state_hash"],
-                                       "evidence_hash": ack["evidence_hash"], "acknowledged_at": now})
-        return SavePlan(doc, [audit], True, loaded.retired, [], [])
-    return await _mutate(db, user, job_id, expected_revision, work)
+        ack = next(a for a in records["model_warnings"]["acknowledgments"] if a["warning_id"] == warning_id)
+        audit = (ACTION_CONFLICT_ACKNOWLEDGED, {"warning_id": warning_id, "item_id": ack["item_id"], "item_state_hash": ack["item_state_hash"],
+                                                "evidence_hash": ack["evidence_hash"], "acknowledged_at": now})
+        return SavePlan(loaded.stored, [audit], True, loaded.retired, [], [], pipe.with_records(loaded.pipeline_record, records))
+    return await _mutate(db, user, job_id, expected_revision, work, client_discarded)
 
 
-async def confirm_no_score(db, user, job_id: str, expected_revision: int) -> dict:
+async def confirm_no_score(db, user, job_id: str, expected_revision: int, client_discarded: list[str] | None = None) -> dict:
     def work(loaded: Loaded, policy: bool, now: str) -> SavePlan:
+        ctx = pipeline_context(loaded.pipeline_record, loaded.stored, loaded.original, policy)
+        if ctx.status == PIPELINE_OK and ctx.state["readiness"]["state"] != "needs_confirmation":
+            # an open injection / split-OR / (policy Yes) classification or conflict review keeps the confirmation out of reach
+            raise ApiError(409, CODE_NOT_CONFIRMABLE, "Nothing to confirm yet: the requirements are not waiting for this confirmation.",
+                           readiness_state=ctx.state["readiness"]["state"], reasons=ctx.state["readiness"]["reasons"])
         try:
             doc = confirm_no_numeric_score(loaded.stored, user_id=str(user.user_id), confirmed_at=now,
                                            require_classification_acknowledgment=policy, original=loaded.original)
@@ -578,10 +704,11 @@ async def confirm_no_score(db, user, job_id: str, expected_revision: int) -> dic
                            reasons=issues_payload(state.reasons)) from exc
         audit = (ACTION_CONFIRMED, {"basis_hash": doc["scoring_confirmation"]["basis_hash"], "confirmed_at": now})
         return SavePlan(doc, [audit], True, loaded.retired, [], [])
-    return await _mutate(db, user, job_id, expected_revision, work)
+    return await _mutate(db, user, job_id, expected_revision, work, client_discarded)
 
 
-async def confirm_structure_review(db, user, job_id: str, expected_revision: int, item_id: str) -> dict:
+async def confirm_structure_review(db, user, job_id: str, expected_revision: int, item_id: str,
+                                   client_discarded: list[str] | None = None) -> dict:
     """The recruiter states that the item's CURRENT structure (OR alternatives / experience) still matches its CURRENT
     wording. Nothing checks that statement; the record names who made it, when, and exactly what was confirmed."""
     def work(loaded: Loaded, policy: bool, now: str) -> SavePlan:
@@ -596,4 +723,4 @@ async def confirm_structure_review(db, user, job_id: str, expected_revision: int
         audit = (ACTION_STRUCTURE_CONFIRMED, {"item_id": item_id, "kind": rec["kind"], "basis_hash": rec["basis_hash"],
                                               "basis": rec["basis"], "confirmed_at": now})
         return SavePlan(doc, [audit], True, loaded.retired, [], [])
-    return await _mutate(db, user, job_id, expected_revision, work)
+    return await _mutate(db, user, job_id, expected_revision, work, client_discarded)

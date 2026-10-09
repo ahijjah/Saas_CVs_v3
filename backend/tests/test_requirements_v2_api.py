@@ -1668,7 +1668,7 @@ class TestLegacyAndGuards:
         offenders = []
         for path in BACKEND.rglob("*.py"):
             rel = path.relative_to(BACKEND).as_posix()
-            if rel.startswith(("tests/", "services/requirements_v2/", "parser_candidates/", "venv")) or "/site-packages/" in rel:
+            if rel.startswith(("tests/", "services/requirements_v2/", "services/requirements_pipeline/", "parser_candidates/", "venv")) or "/site-packages/" in rel:
                 continue
             if rel in {"scripts/requirements_v2_extraction_eval.py", "scripts/_gen_benchmark_cases_md.py", "scripts/requirements_v2_extraction_run.py",
                   "scripts/requirements_v2_extraction_compare.py",
