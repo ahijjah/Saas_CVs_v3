@@ -1,0 +1,188 @@
+{
+ "id": "B07_ar_accountant",
+ "language": "ar",
+ "title": "محاسب أول",
+ "tags": [
+  "headings_required_preferred",
+  "experience_years",
+  "alternatives",
+  "responsibilities",
+  "mandatory_certification",
+  "employment_conditions",
+  "informational"
+ ],
+ "job_metadata": {
+  "title": "محاسب أول"
+ },
+ "jd": "محاسب أول\n\nنبذة عن الشركة: شركة الأفق للتجارة شركة سعودية تعمل في قطاع المواد الغذائية.\n\nالمهام:\n- إعداد القوائم المالية الشهرية والسنوية.\n- مطابقة الحسابات البنكية.\n- مراجعة فواتير الموردين.\n\nالمتطلبات:\n- بكالوريوس في المحاسبة أو التمويل.\n- خبرة لا تقل عن 3 سنوات في المحاسبة.\n- شهادة CPA أو SOCPA إلزامية.\n- إجادة برنامج Excel.\n- الدقة في العمل.\n\nيفضل:\n- خبرة في نظام SAP.\n- شهادة ماجستير.\n\nالشروط: الراتب بالريال السعودي، والعمل في مدينة الرياض بدوام كامل. نوفر تأمينًا طبيًا وإجازة سنوية.\n",
+ "expected": {
+  "scoreability": "scoreable",
+  "readiness": "ready",
+  "review_codes": [],
+  "category_weights_hint": {
+   "skills": 15,
+   "experience": 40,
+   "education": 15,
+   "certifications": 20,
+   "soft_skills": 10,
+   "domain_knowledge": 0,
+   "other_requirements": 0
+  },
+  "items": [
+   {
+    "category": "experience",
+    "text": "إعداد القوائم المالية الشهرية والسنوية",
+    "importance": "required",
+    "cue": null,
+    "evidence": "إعداد القوائم المالية الشهرية والسنوية.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "مطابقة الحسابات البنكية",
+    "importance": "required",
+    "cue": null,
+    "evidence": "مطابقة الحسابات البنكية.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "مراجعة فواتير الموردين",
+    "importance": "required",
+    "cue": null,
+    "evidence": "مراجعة فواتير الموردين.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "education",
+    "text": "بكالوريوس في المحاسبة أو التمويل",
+    "importance": "required",
+    "cue": null,
+    "evidence": "بكالوريوس في المحاسبة أو التمويل.",
+    "origin": "stated",
+    "alternatives": [
+     "المحاسبة",
+     "التمويل"
+    ],
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "خبرة لا تقل عن 3 سنوات في المحاسبة",
+    "importance": "required",
+    "cue": null,
+    "evidence": "خبرة لا تقل عن 3 سنوات في المحاسبة.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": {
+     "subject": "المحاسبة",
+     "min_years": 3
+    }
+   },
+   {
+    "category": "certifications",
+    "text": "شهادة CPA أو SOCPA",
+    "importance": "required",
+    "cue": null,
+    "evidence": "شهادة CPA أو SOCPA إلزامية.",
+    "origin": "stated",
+    "alternatives": [
+     "CPA",
+     "SOCPA"
+    ],
+    "experience": null,
+    "note": "'إلزامية' must stay Required"
+   },
+   {
+    "category": "skills",
+    "text": "إجادة برنامج Excel",
+    "importance": "required",
+    "cue": null,
+    "evidence": "إجادة برنامج Excel.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "soft_skills",
+    "text": "الدقة في العمل",
+    "importance": "required",
+    "cue": null,
+    "evidence": "الدقة في العمل.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "soft_skills",
+     "skills"
+    ]
+   },
+   {
+    "category": "skills",
+    "text": "خبرة في نظام SAP",
+    "importance": "preferred",
+    "cue": "يفضل",
+    "evidence": "خبرة في نظام SAP.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "skills",
+     "experience"
+    ]
+   },
+   {
+    "category": "education",
+    "text": "شهادة ماجستير",
+    "importance": "preferred",
+    "cue": "يفضل",
+    "evidence": "شهادة ماجستير.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "education",
+     "certifications"
+    ]
+   }
+  ],
+  "conditions": [
+   {
+    "list": "non_scoreable_requirements",
+    "category": "salary",
+    "evidence": "الراتب بالريال السعودي",
+    "text": "الراتب بالريال السعودي"
+   },
+   {
+    "list": "non_scoreable_requirements",
+    "category": "location",
+    "evidence": "العمل في مدينة الرياض بدوام كامل",
+    "text": "العمل في الرياض بدوام كامل"
+   },
+   {
+    "list": "informational_items",
+    "category": "company_description",
+    "evidence": "شركة الأفق للتجارة شركة سعودية تعمل في قطاع المواد الغذائية.",
+    "text": "وصف الشركة"
+   },
+   {
+    "list": "informational_items",
+    "category": "benefits",
+    "evidence": "نوفر تأمينًا طبيًا وإجازة سنوية.",
+    "text": "المزايا"
+   }
+  ],
+  "must_not_extract": [
+   "الريال",
+   "الرياض",
+   "تأمينًا طبيًا"
+  ],
+  "model_warnings_expected": false
+ }
+}
