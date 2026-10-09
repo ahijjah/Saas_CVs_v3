@@ -1,0 +1,142 @@
+{
+  "_comment": "SYNTHETIC fixture: the job description is invented and `ai_response` is hand-written to look like a model answer. It is not the output of any real model call.",
+  "language": "ar",
+  "job_metadata": {
+    "title": "محاسب أول"
+  },
+  "jd": "محاسب أول\n\nنبذة عن الشركة: شركة الأفق للتجارة شركة رائدة في مجال التوزيع.\n\nالمهام:\n- إعداد القوائم المالية الشهرية والسنوية.\n- مطابقة الحسابات البنكية ومتابعة الذمم.\n\nالمتطلبات:\n- خبرة لا تقل عن ٣ سنوات في المحاسبة.\n- بكالوريوس في المحاسبة أو الإدارة المالية.\n- إجادة برنامج Excel ونظام SAP.\n- العمل ضمن فريق والقدرة على تحمّل الضغط.\n\nويُفضَّل: شهادة CPA.\n\nالمطلوب أن يكون المتقدم من سكان عمّان.",
+  "ai_response": {
+    "scoreability": {
+      "status": "scoreable",
+      "reason": ""
+    },
+    "categories": {
+      "skills": [
+        {
+          "text": "إجادة برنامج Excel",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "إجادة برنامج Excel ونظام SAP",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        },
+        {
+          "text": "إجادة نظام SAP",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "إجادة  برنامج  Excel ونظام SAP",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "experience": [
+        {
+          "text": "خبرة لا تقل عن ٣ سنوات في المحاسبة",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "خبرة لا تقل عن ٣ سنوات في المحاسبة",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": {
+            "subject": "المحاسبة",
+            "min_years": 3
+          }
+        },
+        {
+          "text": "إعداد القوائم المالية الشهرية والسنوية",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "إعـــداد القوائم المالية الشهرية والسنوية",
+          "origin": "from_responsibilities",
+          "alternatives": null,
+          "experience": null
+        },
+        {
+          "text": "مطابقة الحسابات البنكية ومتابعة الذمم",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "مطابقة الحسابات البنكية ومتابعة الذمم",
+          "origin": "from_responsibilities",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "education": [
+        {
+          "text": "بكالوريوس في المحاسبة أو الإدارة المالية",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "بكالوريوس في المحاسبة أو الإدارة المالية",
+          "origin": "stated",
+          "alternatives": [
+            "المحاسبة",
+            "الإدارة المالية"
+          ],
+          "experience": null
+        }
+      ],
+      "certifications": [
+        {
+          "text": "شهادة CPA",
+          "importance": "preferred",
+          "importance_cue": "ويُفضَّل",
+          "source_text": "ويُفضَّل: شهادة CPA",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "soft_skills": [
+        {
+          "text": "العمل ضمن فريق",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "العمل ضمن فريق والقدرة على تحمّل الضغط",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        },
+        {
+          "text": "القدرة على تحمّل الضغط",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "العمل ضمن فريق والقدرة على تحمّل الضغط",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "domain_knowledge": [],
+      "other_requirements": []
+    },
+    "category_weights": {
+      "skills": 25,
+      "experience": 40,
+      "education": 15,
+      "certifications": 10,
+      "soft_skills": 10,
+      "domain_knowledge": 0,
+      "other_requirements": 0
+    },
+    "non_scoreable_requirements": [
+      {
+        "text": "أن يكون المتقدم من سكان عمّان",
+        "category": "location",
+        "reason": "شرط إقامة",
+        "source_text": "المطلوب أن يكون المتقدم من سكان عمّان."
+      }
+    ],
+    "post_hiring_conditions": [],
+    "informational_items": [
+      {
+        "text": "شركة رائدة في مجال التوزيع",
+        "category": "company_description",
+        "reason": "وصف الشركة",
+        "source_text": "شركة الأفق للتجارة شركة رائدة في مجال التوزيع."
+      }
+    ],
+    "warnings": []
+  }
+}
