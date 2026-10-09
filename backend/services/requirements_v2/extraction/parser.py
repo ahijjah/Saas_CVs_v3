@@ -9,8 +9,12 @@ What code does:
   * stores each item's source wording as the EXACT slice of the job description that the AI quoted (found after
     whitespace / case / Arabic-diacritic normalization); a quotation that is not in the job description is not stored
     (source_text None) and is reported
-  * enforces the agreed importance rule: an item is preferred only if the AI cites words that really occur in the job
-    description; otherwise it is Required and the downgrade is reported (the AI's original answer stays in raw_ai_output)
+  * importance: the AI's classification is PRESERVED. Unspecified or invalid importance defaults to Required (reported).
+    A Preferred item is checked, never changed: the cue the AI cites must be given, must occur in the job description AND
+    must be tied to this item (inside the item's own wording, or in the heading that governs it). Anything less puts an
+    item-specific "Needs review" warning on the item; a cue that merely exists elsewhere in the job description is not
+    proof that it applies here. Preferred items carry no weight, so a flagged item stays out of the numeric score until
+    the recruiter confirms or changes it.
   * gives required items equal whole-number weights (100 // n, remainder in list order); over-limit categories keep
     every item, leave those weights unset and are reported
   * normalizes the AI's category weights (explicit, proportional); an unusable proposal applies NOTHING and is reported
@@ -37,7 +41,9 @@ from services.requirements_v2.contract import (
     ORIGIN_FROM_RESPONSIBILITIES, ORIGIN_STATED, SCHEMA_VERSION, Issue, is_int, make_item, new_item_id,
 )
 from services.requirements_v2.extraction.prompt import PROMPT_CODE, PROMPT_SHA256, PROMPT_VERSION
-from services.requirements_v2.extraction.text import contains_phrase, locate_quote, numbers_in
+from services.requirements_v2.extraction.text import (
+    contains_phrase, cue_relationship, locate_quote, locate_span, numbers_in,
+)
 from services.requirements_v2.readiness import Readiness, compute_readiness
 from services.requirements_v2.validation import validate_draft
 from services.requirements_v2.weights import (
@@ -52,6 +58,12 @@ SCOREABILITY_STATUSES = ("scoreable", "open_broad", "insufficient")
 CONDITION_LISTS = ("non_scoreable_requirements", "post_hiring_conditions", "informational_items")
 _ITEM_FIELDS = {"text", "importance", "importance_cue", "source_text", "origin", "alternatives", "experience"}
 _QUOTE_PREVIEW = 80
+
+NEEDS_REVIEW = "Needs review: "
+CUE_MISSING = "preferred_cue_missing"
+CUE_NOT_IN_JD = "preferred_cue_not_in_job_description"
+CUE_NOT_LINKED = "preferred_cue_not_linked_to_item"
+IMPORTANCE_CUE_REVIEW_CODES = (CUE_MISSING, CUE_NOT_IN_JD, CUE_NOT_LINKED)
 
 
 @dataclass(frozen=True)
@@ -76,6 +88,15 @@ class ExtractionResult:
     @property
     def ok(self) -> bool:
         return self.status == STATUS_DRAFT
+
+    @property
+    def item_review(self) -> dict[str, tuple[Issue, ...]]:
+        """Review issues that belong to one item, keyed by item id (what the recruiter must look at per item)."""
+        grouped: dict[str, list[Issue]] = {}
+        for issue in self.review:
+            if issue.item_id:
+                grouped.setdefault(issue.item_id, []).append(issue)
+        return {k: tuple(v) for k, v in grouped.items()}
 
     @property
     def analysis(self) -> dict | None:
@@ -114,8 +135,8 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
     """One AI item -> one requirements-v2 item, or None (recorded in `unmapped`) when no item can be built."""
     where = f"{category}[{position}]"
 
-    def note(code: str, message: str, item_id: str | None = None) -> None:
-        review.append(Issue(code, f"{where}: {message}", category=category, item_id=item_id))
+    def note(code: str, message: str, item_id: str | None = None, prefix: str = "") -> None:
+        review.append(Issue(code, f"{prefix}{where}: {message}", category=category, item_id=item_id))
 
     plain_string = isinstance(raw, str)
     if plain_string:
@@ -140,12 +161,13 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
 
     # source wording: the job description's own characters
     claimed = raw.get("source_text")
-    source = None
+    source, span = None, None
     if claimed is None or (isinstance(claimed, str) and not claimed.strip()):
         if not plain_string:
             note("source_text_missing", "no source wording was given", iid)
     else:
-        source = locate_quote(jd, claimed) if isinstance(claimed, str) else None
+        span = locate_span(jd, claimed) if isinstance(claimed, str) else None
+        source = jd[span[0]:span[1]] if span else None
         if source is None:
             note("source_text_not_found",
                  f"the quoted wording was not found in the job description: \"{_preview(claimed)}\"", iid)
@@ -157,13 +179,10 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
     if declared_norm == IMPORTANCE_REQUIRED:
         pass
     elif declared_norm == IMPORTANCE_PREFERRED:
-        cue = raw.get("importance_cue")
-        if isinstance(cue, str) and cue.strip() and contains_phrase(jd, cue):
-            importance = IMPORTANCE_PREFERRED
-        else:
-            note("preferred_not_supported_by_job_description",
-                 "classified preferred by the AI without wording in the job description that makes it optional "
-                 f"(cue: {_preview(cue)}); set to required", iid)
+        importance = IMPORTANCE_PREFERRED                  # the AI's classification is kept; support is only checked
+        problem = _cue_problem(raw.get("importance_cue"), jd, span)
+        if problem:
+            note(problem[0], problem[1], iid, prefix=NEEDS_REVIEW)
     elif declared is None and not plain_string:
         note("importance_missing_defaulted_required", "no importance was given; set to required", iid)
     elif not plain_string:
@@ -196,6 +215,25 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
 
     return make_item(text.strip(), importance, item_id=iid, origin=origin, source_text=source,
                      alternatives=alternatives, experience=experience)
+
+
+def _cue_problem(cue: Any, jd: str, span: tuple[int, int] | None) -> tuple[str, str] | None:
+    """Why a Preferred classification is not established by the job description, or None when it is."""
+    if not isinstance(cue, str) or not cue.strip():
+        return (CUE_MISSING, "classified Preferred by the AI but no cue (the job description's own optional / "
+                             "advantage wording) was given; confirm it is Preferred or change it to Required")
+    if not contains_phrase(jd, cue):
+        return (CUE_NOT_IN_JD, f"classified Preferred on the cue \"{_preview(cue)}\", which does not appear in the "
+                               "job description; confirm it is Preferred or change it to Required")
+    if span is None:
+        return (CUE_NOT_LINKED, f"the cue \"{_preview(cue)}\" is in the job description but this item's source "
+                                "wording was not found, so the cue cannot be tied to it; confirm it is Preferred or "
+                                "change it to Required")
+    if cue_relationship(jd, span, cue) is None:
+        return (CUE_NOT_LINKED, f"the cue \"{_preview(cue)}\" appears in the job description but not in this item's "
+                                "own wording or in the heading above it, so it may belong to another requirement; "
+                                "confirm it is Preferred or change it to Required")
+    return None
 
 
 def _convert_experience(raw: Any, category: str, evidence: Any, note: Callable, iid: str) -> dict | None:

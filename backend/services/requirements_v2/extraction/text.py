@@ -45,8 +45,8 @@ def normalize(text: str) -> str:
     return normalize_with_map(text)[0]
 
 
-def locate_quote(jd_text: str, quote: str) -> str | None:
-    """The exact slice of `jd_text` that `quote` refers to (first occurrence), or None when it is not in the text."""
+def locate_span(jd_text: str, quote: str) -> tuple[int, int] | None:
+    """(start, end) in `jd_text` of the first occurrence of `quote`, or None when it is not in the text."""
     if not isinstance(jd_text, str) or not isinstance(quote, str):
         return None
     wanted = normalize(quote)
@@ -56,8 +56,13 @@ def locate_quote(jd_text: str, quote: str) -> str | None:
     start = haystack.find(wanted)
     if start < 0:
         return None
-    first, last = origin[start], origin[start + len(wanted) - 1]
-    return jd_text[first:last + 1]
+    return origin[start], origin[start + len(wanted) - 1] + 1
+
+
+def locate_quote(jd_text: str, quote: str) -> str | None:
+    """The exact slice of `jd_text` that `quote` refers to (first occurrence), or None when it is not in the text."""
+    span = locate_span(jd_text, quote)
+    return None if span is None else jd_text[span[0]:span[1]]
 
 
 def contains_phrase(jd_text: str, phrase: str) -> bool:
@@ -79,3 +84,52 @@ def numbers_in(text: str) -> set[int]:
     found = {int(m) for m in _NUMBER_RE.findall(t)}
     found |= {_EN_NUMBERS[w] for w in _WORD_RE.findall(t) if w in _EN_NUMBERS}
     return found
+
+
+# ── does a preferred-cue apply to a given item? ───────────────────────────────
+
+_BULLET_RE = re.compile(r"^\s*(?:[-*•·–—▪●◦‣]|\(?[0-9٠-٩۰-۹]+[.)\-]|\(?[A-Za-z][.)])\s*")
+_SENTENCE_END = (".", "!", "?", "؟", "。")
+_HEADING_MAX_WORDS = 6
+
+
+def _is_heading_line(line: str, next_line: str) -> bool:
+    """A section heading: a non-bullet line that ends with a colon, or a short non-sentence line that introduces a
+    bulleted / numbered list (the next non-empty line is a list entry). A short line followed by plain text is not
+    treated as a heading: it may be an item itself."""
+    stripped = line.strip()
+    if not stripped or _BULLET_RE.match(stripped):
+        return False
+    if stripped.endswith((":", "\uff1a")):
+        return True
+    return (len(stripped.split()) <= _HEADING_MAX_WORDS and not stripped.endswith(_SENTENCE_END)
+            and bool(_BULLET_RE.match(next_line.strip())))
+
+
+def cue_relationship(jd_text: str, span: tuple[int, int], cue: str) -> str | None:
+    """How `cue` is tied to the item whose wording occupies `span` of the job description:
+
+      "inline"   the cue is inside the item's own wording ("LinkedIn Recruiter is a plus")
+      "heading"  the cue is in the same line before the item ("Preferred: Docker"), or in the NEAREST heading above it
+                 ("Nice to have:" followed by the list the item belongs to)
+      None       not established: the cue may exist elsewhere in the job description (another requirement's wording,
+                 another section's heading), which is not proof that it applies to this item.
+    """
+    start, end = span
+    if contains_phrase(jd_text[start:end], cue):
+        return "inline"
+    line_start = jd_text.rfind("\n", 0, start) + 1
+    if contains_phrase(jd_text[line_start:start], cue):
+        return "heading"
+    line_end = jd_text.find("\n", end)
+    below = jd_text[line_start:len(jd_text) if line_end < 0 else line_end]       # the item's own line
+    cursor = line_start
+    while cursor > 0:
+        prev_start = jd_text.rfind("\n", 0, cursor - 1) + 1
+        line = jd_text[prev_start:cursor - 1]
+        cursor = prev_start
+        if _is_heading_line(line, below):
+            return "heading" if contains_phrase(line, cue) else None
+        if line.strip():
+            below = line
+    return None

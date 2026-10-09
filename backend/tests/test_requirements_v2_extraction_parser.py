@@ -277,12 +277,17 @@ class TestImportance:
         assert [i["importance"] for i in items(r, "skills")] == ["preferred", "preferred"]
         assert "preferred_not_supported_by_job_description" not in codes(r)
 
-    @pytest.mark.parametrize("cue", [None, "", "  ", "optional", 5, ["a plus"]])
-    def test_preferred_without_a_cue_in_the_jd_becomes_required_with_a_warning(self, cue):
-        r = parse({"skills": [it("Docker", "Nice to have: Docker", "preferred", cue)]}, JD_IMP)
-        assert items(r, "skills")[0]["importance"] == "required" and items(r, "skills")[0]["weight"] == 100
-        assert "preferred_not_supported_by_job_description" in codes(r)
-        assert r.raw_ai_output["categories"]["skills"][0]["importance"] == "preferred"       # the AI answer is kept
+    @pytest.mark.parametrize("cue,code", [(None, "preferred_cue_missing"), ("", "preferred_cue_missing"),
+                                          ("  ", "preferred_cue_missing"), (5, "preferred_cue_missing"),
+                                          (["a plus"], "preferred_cue_missing"),
+                                          ("optional", "preferred_cue_not_in_job_description")])
+    def test_preferred_without_a_usable_cue_is_preserved_and_flagged_for_review(self, cue, code):
+        """The AI's Preferred classification is never changed because its cue is missing or unverifiable."""
+        r = parse({"skills": [it("Docker", "Nice to have: Docker", "preferred", cue)]}, JD_IMP, weights=None)
+        item = items(r, "skills")[0]
+        assert item["importance"] == "preferred" and item["weight"] is None
+        assert codes(r) == [code] and r.item_review[item["id"]][0].message.startswith("Needs review: ")
+        assert r.raw_ai_output["categories"]["skills"][0]["importance_cue"] == cue          # the AI answer is kept
 
     @pytest.mark.parametrize("value", [None, "must", "mandatory", "", 3, "Required "])
     def test_missing_or_unknown_importance_defaults_to_required(self, value):
