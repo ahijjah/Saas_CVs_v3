@@ -615,29 +615,63 @@ class TestBeforeMigrations:
                 await ensure_job_evaluable(db, JOB2, "x")
 
     @pytest.mark.asyncio
-    async def test_one_missing_107_column_fails_loudly_and_rolls_back(self, pg, api):
-        """Not reachable by applying the migration file (it is one transaction), but a hand-made partial state must
-        not corrupt anything: the statement fails and the whole write rolls back."""
+    @pytest.mark.parametrize("missing", ["requirements_retired_item_ids", "requirements_revision", "both"])
+    async def test_a_missing_107_column_is_a_clear_503_before_any_write(self, pg, api, missing):
+        """A hand-made partial state (the migration file itself is one transaction): refuse up front, change nothing."""
         pg.seed(flagged_job(policy=False))
-        pg.q("ALTER TABLE job_criteria DROP COLUMN requirements_retired_item_ids")
-        before = pg.q("SELECT analysis_json, weight_skills, requirements_revision FROM job_criteria")
-        doc = client_doc(await call(pg, api.get_requirements, user(), JOB))
+        r = flagged_job()
+        for col in (["requirements_retired_item_ids", "requirements_revision"] if missing == "both" else [missing]):
+            pg.q(f"ALTER TABLE job_criteria DROP COLUMN {col}")
+        before = pg.q("SELECT analysis_json, weight_skills FROM job_criteria")
+        v = await call(pg, api.get_requirements, user(), JOB)                      # reads keep working
+        doc = client_doc(v)
         item(doc, "SQL")[1]["text"] = "SQL 2"
-        with pytest.raises(Exception) as ei:
-            await call(pg, api.save_requirements, user(), JOB, 0, doc)
-        assert "requirements_retired_item_ids" in str(ei.value)                      # an undefined-column error, not silence
-        assert pg.q("SELECT analysis_json, weight_skills, requirements_revision FROM job_criteria") == before
+        wid = f"{ids_by_text(r.requirements)['Docker']}:preferred_cue_missing"
+        for coro in (call(pg, api.save_requirements, user(), JOB, 0, doc), call(pg, api.acknowledge_warning, user(), JOB, 0, wid),
+                     call(pg, api.confirm_no_score, user(), JOB, 0), call(pg, api.confirm_structure_review, user(), JOB, 0, "req_x")):
+            await raises(coro, 503, "requirements_migration_missing")
+        assert pg.q("SELECT analysis_json, weight_skills FROM job_criteria") == before
         assert pg.q("SELECT count(*) FROM audit_logs") == [(0,)]
+        assert pg.q("SELECT job_id FROM job_criteria WHERE job_id = %s FOR UPDATE NOWAIT", (JOB,))      # lock released
 
     @pytest.mark.asyncio
-    async def test_a_zero_weight_save_for_a_job_without_the_marker_is_rejected_by_the_database(self, pg, api):
-        """A job recognised as v2 only by its analysis shape (marker NULL) cannot store the all-zero weights of a
-        preferred-only document: migration 106 allows a zero total only when the marker is set."""
-        import sqlalchemy.exc
-        pg.seed(preferred_only_job(), shape_only=True, weights=[100, 0, 0, 0, 0, 0, 0])   # the DB cannot hold zeros without the marker
+    async def test_a_v2_shaped_job_without_the_marker_is_refused_for_every_write(self, pg, api):
+        """Marker NULL after migration 106+107: reads and scoring safeguards work, writes are a clear 409, and the
+        marker is NOT set silently."""
+        pg.seed(flagged_job(policy=False), shape_only=True)
+        r = flagged_job()
         before = pg.row()
+        v = await call(pg, api.get_requirements, user(), JOB)
+        assert v["revision"] == 0 and v["readiness"]["state"] == "needs_classification_review"
+        doc = client_doc(v)
+        item(doc, "SQL")[1]["text"] = "SQL 2"
+        wid = f"{ids_by_text(r.requirements)['Docker']}:preferred_cue_missing"
+        for coro in (call(pg, api.save_requirements, user(), JOB, 0, doc), call(pg, api.acknowledge_warning, user(), JOB, 0, wid),
+                     call(pg, api.confirm_no_score, user(), JOB, 0), call(pg, api.confirm_structure_review, user(), JOB, 0, "req_x")):
+            exc = await raises(coro, 409, "requirements_schema_marker_missing")
+            assert "not set" in exc.message
+        assert pg.row() == before and pg.audit() == []
+        assert pg.q("SELECT requirements_schema_version FROM job_criteria") == [(None,)]               # not set implicitly
+        assert pg.q("SELECT job_id FROM job_criteria WHERE job_id = %s FOR UPDATE NOWAIT", (JOB,))
+        from services.requirements_guard import UnsupportedEvaluationError, ensure_job_evaluable, ensure_job_legacy
+        for entry in (ensure_job_evaluable, ensure_job_legacy):                                          # safeguards intact
+            async with pg.session() as db:
+                with pytest.raises(UnsupportedEvaluationError):
+                    await entry(db, JOB, "test")
+
+    @pytest.mark.asyncio
+    async def test_a_preferred_only_shaped_job_without_the_marker_gets_the_same_clear_409(self, pg, api):
+        pg.seed(preferred_only_job(), shape_only=True, weights=[100, 0, 0, 0, 0, 0, 0])
+        before = pg.row()
+        await raises(call(pg, api.confirm_no_score, user(), JOB, 0), 409, "requirements_schema_marker_missing")
+        assert pg.row() == before and pg.audit() == []
+
+    @pytest.mark.asyncio
+    async def test_marked_v2_and_legacy_jobs_are_unaffected_by_the_new_checks(self, pg, api):
+        pg.seed(flagged_job(policy=False))
+        pg.seed(flagged_job(), job=JOB2, legacy=True)
         doc = client_doc(await call(pg, api.get_requirements, user(), JOB))
         item(doc, "SQL")[1]["text"] = "SQL 2"
-        with pytest.raises(sqlalchemy.exc.DBAPIError, match="weights_sum_100"):
-            await call(pg, api.save_requirements, user(), JOB, 0, doc)
-        assert pg.row() == before and pg.audit() == []
+        assert (await call(pg, api.save_requirements, user(), JOB, 0, doc))["revision"] == 1
+        await raises(call(pg, api.get_requirements, user(), JOB2), 409, "not_requirements_v2")
+        await raises(call(pg, api.save_requirements, user(), JOB2, 0, doc), 409, "not_requirements_v2")

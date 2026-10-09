@@ -66,6 +66,7 @@ CODE_STORED_INVALID = "stored_requirements_invalid"
 CODE_ORIGINAL_MISSING = "original_snapshot_missing"
 CODE_REVISION_CONFLICT = "requirements_revision_conflict"
 CODE_MIGRATION = "requirements_migration_missing"
+CODE_MARKER_MISSING = "requirements_schema_marker_missing"
 CODE_INVALID = "invalid_requirements"
 CODE_WARNING_NOT_FOUND = "classification_warning_not_found"
 CODE_WARNING_STATE = "classification_warning_not_acknowledgeable"
@@ -430,6 +431,8 @@ class Loaded:
     original: dict | None
     revision: int | None
     retired: list[str]
+    marker: Any = None                  # job_criteria.requirements_schema_version (NULL = not set / column absent)
+    retired_column_present: bool = True
 
 
 async def load_policy(db) -> bool:
@@ -468,10 +471,11 @@ async def _load(db, user, job_id: str, *, lock: bool) -> Loaded:
     original = original_analysis.get("requirements") if isinstance(original_analysis, dict) else None
     if not isinstance(original, dict) or validate_structure(original):
         original = None
-    retired = _json(row["requirements_retired_item_ids"])
-    retired = [x for x in retired if isinstance(x, str)] if isinstance(retired, list) else []
+    retired_raw = _json(row["requirements_retired_item_ids"])
+    retired = [x for x in retired_raw if isinstance(x, str)] if isinstance(retired_raw, list) else []
     revision = row["requirements_revision"]
-    return Loaded(analysis, stored, original, int(revision) if revision is not None else None, retired)
+    return Loaded(analysis, stored, original, int(revision) if revision is not None else None, retired,
+                  marker=row["requirements_schema_version"], retired_column_present=retired_raw is not None)
 
 
 async def get_requirements(db, user, job_id: str) -> dict:
@@ -488,8 +492,16 @@ async def _mutate(db, user, job_id: str, expected_revision: int, work) -> dict:
     ensure_can_edit(user.role)
     try:
         loaded = await _load(db, user, job_id, lock=True)
-        if loaded.revision is None:
-            raise ApiError(503, CODE_MIGRATION, "Requirements editing needs migration 107, which has not been applied.")
+        if loaded.revision is None or not loaded.retired_column_present:
+            # Both migration-107 columns are NOT NULL, so NULL here means the column does not exist. Refuse before any write.
+            raise ApiError(503, CODE_MIGRATION, "Requirements editing needs migration 107 "
+                                                "(requirements_revision, requirements_retired_item_ids), which has not been applied.")
+        if loaded.marker is None or loaded.marker == "":
+            # Recognised as v2 by the analysis shape only. The marker is never set implicitly: migration 106's weight
+            # constraint depends on it, and setting it is a job-creation concern, not an edit.
+            raise ApiError(409, CODE_MARKER_MISSING, "This job's analysis is requirements-v2 but job_criteria."
+                                                     "requirements_schema_version is not set; it cannot be edited until "
+                                                     "the marker is set.")
         if loaded.original is None:
             raise ApiError(409, CODE_ORIGINAL_MISSING, "The original analysis snapshot is missing; refusing to write.")
         policy = await load_policy(db)
