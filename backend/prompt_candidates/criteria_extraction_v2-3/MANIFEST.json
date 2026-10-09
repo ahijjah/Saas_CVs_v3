@@ -1,0 +1,14 @@
+{
+ "prompt_code": "criteria_extraction_v2",
+ "version": "criteria_extraction_v2-3",
+ "file": "criteria_extraction_v2-3.txt",
+ "sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+ "base_version": "criteria_extraction_v2-2",
+ "base_sha256": "40ea678b65a5782da3f74f1c0b52f4dbeb10cc369f78efd25f1e38827ff48dda",
+ "v2_1_sha256": "f2017d2879554935baa5d0d4f51d53fa0600e18858cc875d4a791c5ac0678b04",
+ "frozen_baseline_commit": "059c56b",
+ "scope": "OR/AND item structure and routing of conditions/information only; omission, category assignment, importance, weights, conflicts and injection handling are unchanged",
+ "status": "offline candidate: not registered, not activated, not wired into the executor, not run against any model",
+ "evidence_level": "prompt-contract consistency only (text, schema guidance and examples checked offline against the real parser, the split-OR guard and a routing checker); no evidence of real-model compliance",
+ "created": "2026-10-09"
+}
