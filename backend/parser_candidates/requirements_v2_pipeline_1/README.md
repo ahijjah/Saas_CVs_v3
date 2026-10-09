@@ -66,25 +66,39 @@ problems = validate_state(state, jd_text=None)                                  
 
 ## Replay of the 48 stored responses
 
-`python scripts/requirements_v2_pipeline_replay.py --out benchmark_results/requirements_v2/pipeline_replay` → `REPORT.md`, `report.json`. Readiness and unresolved issues per call and policy are reported separately from the official gates, which are recomputed by the frozen scorer and compared with the saved `results.json` (identical). The pipeline's readiness is not a benchmark score.
+`python scripts/requirements_v2_pipeline_replay.py --out benchmark_results/requirements_v2/pipeline_replay` → `REPORT.md`, `report.json`. Each prompt's totals cover both runs (run1 + run2 = 24 calls per prompt, 48 in all). Readiness and unresolved issues per call and policy are reported separately from the official gates, which are recomputed by the frozen scorer and compared with the saved `results.json` (identical). The pipeline's readiness is not a benchmark score.
+
+## Agreed decisions carried forward (not open)
+
+* **Who may correct or acknowledge:** tenant admins and HR managers (the existing `can_edit` / `ensure_can_edit` rule), subject to the existing job access check (job of the caller's own tenant; another tenant's job answers 404). No new role is introduced.
+* **No acknowledgment bypass** for injection and split-OR issues, under either policy. They are cleared only by correcting the document (remove the item; correct the contaminated category weight; keep one item with the full alternatives or remove the split items).
+* **The original AI output and the original snapshot are preserved** and never edited: `raw_response`, `raw_ai_output`, `original`, `original_digest` are set once by `extract`. The existing job-level `original_analysis_json` stays the source of the snapshot.
 
 ## Integration steps (not done)
 
-1. **Storage**: persist the state (JSON) next to the existing requirements-v2 record, or split: document + `review_records` + `raw_response` + `original`. `readiness`, `gates`, `unresolved_issues`, `normalized_warnings`, `informational` need not be stored (recomputed); if stored they are display caches. No migration is needed if the existing JSON column holds the state (decision below).
-2. **Worker**: after the model call, feed the raw text and finish_reason to `extract(...)` instead of `parse_response`; record the real prompt version/sha in `extraction_prompt`; persist the state.
-3. **GET**: return the state with `evaluate(state, policy=<admin setting read at request time>)` so a policy change takes effect without re-extraction.
-4. **PUT / save**: authenticate and authorize, load the stored state, call `reconcile(stored, body["requirements"], user_id, now, require_classification_acknowledgment=<admin setting>)`, ignore every other field of the body, persist the new state, append the returned events to the audit log. Reject the save only for transport errors; an unblocked save is whatever `readiness` says.
-5. **Acknowledge endpoint**: `POST .../acknowledge {gate: "classification"|"conflict", warning_id}` → `acknowledge(...)`; map `PipelineError.code` to 409/422.
-6. **Structure / confirmation endpoints**: `confirm_structure`, `confirm_no_numeric_score` (409 on `not_ready_for_confirmation`).
-7. **Proceed gate**: wherever a requirements-v2 record may be used for scoring, require `evaluate(state)["readiness"]["can_proceed"]` for the current policy.
-8. **UI**: show `unresolved_issues` grouped by gate in precedence order with `resolution_options`; injection and split-OR issues have no acknowledge button (edit or remove the item; correct the category weight); classification / conflict show an acknowledge action only when `blocks_when_ack_required`; list `normalized_warnings` and `informational` (similarity, generic notes) as read-only; show `raw_response` / `original` for comparison.
-9. **Tests to add at that point**: the API-level equivalents of `tests/test_requirements_v2_pipeline.py` (forged body, stale body, role checks, policy flip).
+The existing endpoints in `routers/job_requirements.py` and `services/requirements_api.py` (`_mutate`, `plan_save`, `acknowledge_warning`, `confirm_no_score`, `confirm_structure_review`) keep their transaction skeleton unchanged. The pipeline replaces the pure planning step and adds the guard records; it does not change who may write or how the write is protected.
+
+1. **Storage.** The guard records (`review_records`), `raw_response` and the pipeline `component_versions` are server-owned data of the job's requirements. They need a home next to the existing document (decision below). `readiness`, `gates`, `unresolved_issues`, `normalized_warnings` and `informational` are derived on every read and need not be stored.
+2. **Worker.** After the model call, pass the raw text and `finish_reason` to `extract(...)` instead of `parse_response`, record the real prompt `{version, sha256}`, and persist the state in the same way the analysis is persisted today.
+3. **GET.** Return the stored state evaluated with `evaluate(state, require_classification_acknowledgment=<admin setting read at request time>)`, so a policy change takes effect without a new extraction.
+4. **PUT (save).** Keep the whole existing transaction:
+   * `ensure_can_edit(role)` (admin / HR manager), then `_load(..., lock=True)`: tenant row-level-security context, job access check, **`SELECT ... FOR UPDATE` row lock**, v2 / marker / original / migration-column checks;
+   * **`expected_revision` check** (409 with the current view on mismatch) and the revision-checked `UPDATE`;
+   * **audit entries written in the same transaction** with `strict=True`; any failure rolls everything back.
+   Inside it, replace `plan_save` by the pipeline reconcile: build the incoming document exactly as today (`build_incoming`: unknown/server-owned client fields discarded, ids reserved), then `reconcile(stored, incoming_doc, user_id, now, require_classification_acknowledgment=policy)`. Ignore every other field of the request body.
+   * **`validate_final` is preserved unchanged.** A document with invalid structure or weights is refused with **422 (`CODE_INVALID`) and nothing is written**: no document, no record, no audit, no revision bump. The pipeline's `validation` gate is only the read-side view of the same check; it must not become a different rule.
+   * **A valid document with unresolved review blockers is saved** (200, revision + 1, audit written) like any other valid edit. Injection, split-OR, classification, conflict, structure and confirmation issues do **not** make a save fail; they make `readiness.can_proceed` false. Saving incomplete review work in several steps must stay possible.
+   * Audit: the existing `saved` / `structure_recorded` / `warning_resolved` / `acknowledgment_invalidated` / `structure_invalidated` / `confirmation_invalidated` actions stay; the events returned by `reconcile` (component `injection_guard`, `split_or_guard`, `warning_adapter`) are added as new audit actions in the same transaction. Names of the new actions are an implementation detail to settle with the audit schema.
+5. **Acknowledge endpoint.** Same transaction skeleton; body `{expected_revision, gate: "classification"|"conflict", warning_id}`; call pipeline `acknowledge`; `not_acknowledgeable` / `unknown_gate` → 409, unknown warning → 404 (as today).
+6. **Structure / confirmation endpoints.** `confirm_structure`, `confirm_no_numeric_score` through the same skeleton (409 on `not_ready_for_confirmation`).
+7. **Proceed gate.** A requirements-v2 job may be used for scoring only if `evaluate(state)["readiness"]["can_proceed"]` is true for the current policy; this is a separate check from saving (candidate evaluation of v2 jobs is still refused by `services/requirements_guard.py` today and stays so until that gate is wired).
+8. **UI.** Show `unresolved_issues` grouped by gate in precedence order with `resolution_options`; injection and split-OR issues have no acknowledge control; classification / conflict show an acknowledge action only when `blocks_when_ack_required`; list `normalized_warnings` and `informational` as read-only; keep the original/draft comparison. A saved-but-blocked document shows its blockers and a disabled proceed action.
+9. **Tests to add at that point:** API-level equivalents of `tests/test_requirements_v2_pipeline.py` (forged body, stale body, 422 with no write, valid-with-blockers saves, role/tenant checks, revision conflict, policy flip, audit rollback).
 
 ## Unresolved decisions
 
-* Where the state lives (existing column vs. new storage → possible migration) and the role allowed to acknowledge.
-* Whether injection / split-OR false positives need an escape path (today a recruiter must edit or remove the item; there is deliberately no acknowledgment).
+* Where the guard records and raw response live (existing JSON column vs. new storage → possible migration) and their retention (`raw_response` may contain personal data if real job descriptions do).
+* Whether injection / split-OR false positives need an additional escape path beyond editing or removing the item (today none, deliberately).
 * Position of the conflict gate (currently after the frozen classification review, both policy-governed).
-* The frozen parser pins prompt v2-1 for its own bookkeeping; the real prompt is recorded by the caller. Prompt v2-2 is not activated or registered, and there is no held-out benchmark set yet for either the prompt or the guards (all detection rules were developed against the 12 benchmark JDs).
-* Performance/size: the state is about 25 KB per extraction; the raw text is stored in full.
-* Retention of `raw_response` (may contain personal data if real JDs contain any).
+* The frozen parser pins prompt v2-1 for its own bookkeeping; the real prompt is recorded by the caller. Prompt v2-2 is not registered or activated, and there is no held-out benchmark set yet for the prompt or the guards (the detection rules were developed against the 12 benchmark job descriptions).
+* Names of the new audit actions.

@@ -1,5 +1,5 @@
 """
-Offline replay of ALL stored model responses (v2-1 baseline 24 + v2-2 run1 24) through the candidate pipeline's single entry point.
+Offline replay of ALL stored model responses (24 calls per prompt = 12 job descriptions x 2 runs, run1 + run2; 48 in all) through the candidate pipeline's single entry point.
 Reports, per call and for BOTH classification-policy settings: pipeline readiness, the open gates and the unresolved issues, whether the frozen readiness alone
 would have been "ready", contract validity and raw/original integrity. The official benchmark gates are recomputed by the frozen scorer from the same answers and
 compared with the saved results.json: they are a separate section and are not affected by anything the pipeline reports. No model, network or database.
@@ -95,12 +95,12 @@ def summarize(rows: list[dict]) -> dict:
 
 def render(report: dict) -> str:
     L = [f"# Pipeline replay ({PIPELINE_VERSION})", "",
-         "Candidate readiness and unresolved issues for every stored response (48), reported under BOTH classification-policy settings. This is a readiness report, "
+         "Candidate readiness and unresolved issues for every stored response (48 = 2 prompts x 24 calls; each prompt's 24 calls are the 12 job descriptions x run1 + run2), reported under BOTH classification-policy settings. This is a readiness report, "
          "NOT a benchmark result: the official gates (last line of each section) are recomputed from the same answers by the frozen scorer, compared with the saved "
          "`results.json`, and are unchanged. 'Newly blocked' = the frozen readiness alone says `ready`, the pipeline does not.", ""]
     for name, rep in report.items():
         rows, s = rep["rows"], rep["summary"]
-        L += [f"## {name}", "", f"Calls replayed: {len(rows)} (unusable skipped: {rep['skipped']}); parsed: {sum(r['parsed'] for r in rows)}; contract problems: {s['contract_problems']}; "
+        L += [f"## {name}", "", f"Calls replayed: {len(rows)} = both runs (run1 + run2) of the 12 job descriptions (unusable skipped: {rep['skipped']}); parsed: {sum(r['parsed'] for r in rows)}; contract problems: {s['contract_problems']}; "
               f"raw/original/draft not intact: {s['raw_or_original_not_intact']}", ""]
         for pol in ("ack_required", "ack_not_required"):
             p = s[pol]

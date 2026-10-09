@@ -1,10 +1,10 @@
 # Pipeline replay (requirements-v2-pipeline-1)
 
-Candidate readiness and unresolved issues for every stored response (48), reported under BOTH classification-policy settings. This is a readiness report, NOT a benchmark result: the official gates (last line of each section) are recomputed from the same answers by the frozen scorer, compared with the saved `results.json`, and are unchanged. 'Newly blocked' = the frozen readiness alone says `ready`, the pipeline does not.
+Candidate readiness and unresolved issues for every stored response (48 = 2 prompts x 24 calls; each prompt's 24 calls are the 12 job descriptions x run1 + run2), reported under BOTH classification-policy settings. This is a readiness report, NOT a benchmark result: the official gates (last line of each section) are recomputed from the same answers by the frozen scorer, compared with the saved `results.json`, and are unchanged. 'Newly blocked' = the frozen readiness alone says `ready`, the pipeline does not.
 
 ## v2-1 baseline
 
-Calls replayed: 24 (unusable skipped: 0); parsed: 24; contract problems: 0; raw/original/draft not intact: 0
+Calls replayed: 24 = both runs (run1 + run2) of the 12 job descriptions (unusable skipped: 0); parsed: 24; contract problems: 0; raw/original/draft not intact: 0
 
 **Policy Yes (acknowledgment required)** — pipeline states: {'ready': 8, 'needs_classification_review': 3, 'needs_items': 6, 'needs_injection_review': 2, 'needs_split_or_review': 5}; frozen-only states: {'ready': 14, 'needs_classification_review': 4, 'needs_items': 6}; frozen ready but pipeline blocked: 6; blocking issues by kind: {'classification:preferred_cue_not_linked_to_item': 9, 'no_items:no_items': 6, 'injection:injection_weights': 2, 'split_or:split_or_requirement': 7, 'conflict:model_importance_conflict': 1, 'confirmation:preferred_only_unconfirmed': 2}
 
@@ -42,7 +42,7 @@ Identical to the saved results.json: yes
 
 ## v2-2 candidate
 
-Calls replayed: 24 (unusable skipped: 0); parsed: 24; contract problems: 0; raw/original/draft not intact: 0
+Calls replayed: 24 = both runs (run1 + run2) of the 12 job descriptions (unusable skipped: 0); parsed: 24; contract problems: 0; raw/original/draft not intact: 0
 
 **Policy Yes (acknowledgment required)** — pipeline states: {'ready': 10, 'needs_split_or_review': 3, 'needs_confirmation': 4, 'needs_items': 4, 'needs_injection_review': 1, 'needs_classification_review': 2}; frozen-only states: {'ready': 12, 'needs_confirmation': 4, 'needs_items': 4, 'needs_classification_review': 4}; frozen ready but pipeline blocked: 2; blocking issues by kind: {'split_or:split_or_requirement': 4, 'confirmation:preferred_only_unconfirmed': 4, 'no_items:no_items': 4, 'injection:injection_requirement': 1, 'injection:injection_weights': 1, 'classification:preferred_cue_not_linked_to_item': 4, 'classification:preferred_cue_missing': 1, 'conflict:model_importance_conflict': 2}
 
