@@ -1357,6 +1357,9 @@ class CriteriaMatchEngine:
         -------
         MatchResult
         """
+        from services.requirements_guard import assert_legacy_component
+        assert_legacy_component(component="CriteriaMatchEngine.match", analysis_json=criteria, job_id=job_id or None)
+
         if not isinstance(criteria, dict):
             criteria = {}
 

@@ -60,6 +60,15 @@ from services.scoring_method import (  # noqa: E402
 )
 
 
+from services.requirements_guard import (  # noqa: E402
+    STOPPED_REASON as UNSUPPORTED_STOPPED_REASON,
+    UnsupportedEvaluationError,
+    assert_job_evaluable,
+    assert_legacy_component,
+    ensure_job_evaluable,
+)
+
+
 class ScoringPathError(RuntimeError):
     """Deterministic scoring (D-01 + F-01) is enabled but failed technically.
 
@@ -70,6 +79,8 @@ class ScoringPathError(RuntimeError):
 
 
 def _stop_reason_for(exc: BaseException) -> str:
+    if isinstance(exc, UnsupportedEvaluationError):
+        return UNSUPPORTED_STOPPED_REASON
     return "scoring_failed" if isinstance(exc, ScoringPathError) else "processing_error"
 
 
@@ -288,6 +299,11 @@ async def _score_cv_async(
                 {"aid": application_id},
             )
             await db.commit()
+
+            # ── Requirements-v2 guard (before any file work, gatekeeper, matcher or LLM call) ──
+            # A requirements-v2 job must never enter the legacy evaluation pipeline: refuse with an explicit,
+            # permanent reason (no zero score, no legacy fallback, no Celery retry).
+            await ensure_job_evaluable(db, job_id, "score_cv_task")
 
             # ── Step 1: File read + optional DOCX→PDF conversion ─────────────
             logger.info("[%s] Reading file: %s", application_id, file_path)
@@ -658,6 +674,12 @@ async def _score_cv_async(
             criteria = criteria_row.mappings().first()
             if not criteria:
                 raise RuntimeError(f"No criteria found for job {job_id}")
+            assert_job_evaluable(
+                entry="score_cv_task.criteria",
+                marker=criteria.get("requirements_schema_version"),
+                analysis_json=criteria.get("analysis_json"),
+                job_id=str(job_id),
+            )
 
             weights = {
                 "weight_skills":           criteria["weight_skills"],
@@ -715,6 +737,7 @@ async def _score_cv_async(
                 semantic_threshold=gk_params["semantic_threshold"],
                 skill_threshold=gk_params["skill_fuzzy_threshold"],
                 min_skill_ratio=gk_params["min_skill_ratio"],
+                requirements_schema_version=criteria.get("requirements_schema_version"),
             )
 
             # ── Bilingual dual-threshold auto-reject policy ───────────────────
@@ -1184,8 +1207,12 @@ async def _score_cv_async(
                     "soft_skills":        list(criteria.get("soft_skills") or []),
                     "domain_knowledge":   list(criteria.get("domain_knowledge") or []),
                     "other_requirements": list(criteria.get("other_requirements") or []),
+                    "requirements_schema_version": criteria.get("requirements_schema_version"),
                     **weights,
                 }
+                # The legacy LLM scorer reads the legacy keys only: refuse a requirements-v2 job explicitly.
+                assert_legacy_component(component="score_cv", marker=criteria_dict["requirements_schema_version"],
+                                        analysis_json=_analysis_json, job_id=str(job_id))
                 gatekeeper_context = {
                     "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
                     "matched_skills":          gatekeeper_result.matched_skills,
@@ -1642,6 +1669,14 @@ async def _score_cv_async(
                     "[%s] Knockout analysis failed (non-critical): %s",
                     application_id, ko_exc,
                 )
+
+    except UnsupportedEvaluationError as exc:
+        # Permanent refusal (requirements-v2 job): record the explicit reason and DO NOT re-raise, so Celery
+        # does not retry. Nothing was scored.
+        logger.error("[%s] Evaluation refused: %s", application_id, exc)
+        if not _scoring_committed:
+            await _mark_failed(application_id, str(exc), stopped_reason=UNSUPPORTED_STOPPED_REASON)
+        return
 
     except Exception as exc:
         # Session context manager has already rolled back and closed the

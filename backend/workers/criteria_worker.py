@@ -230,8 +230,27 @@ async def _extract_async(job_id: str, description: str, Session, job_metadata: d
 
     settings = get_settings()
 
+    from services.requirements_guard import UnsupportedEvaluationError, ensure_job_legacy
+
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
+        # Requirements-v2 jobs are never (re)analysed by the legacy extraction: it would overwrite them with the
+        # legacy format. Mark the run failed with an explicit reason; no model call, no retry.
+        try:
+            await ensure_job_legacy(db, job_id, "criteria_worker.legacy_extraction")
+        except UnsupportedEvaluationError as exc:
+            await db.execute(
+                text("""
+                    UPDATE job_criteria
+                    SET criteria_extraction_status = 'failed',
+                        criteria_extraction_error  = :err
+                    WHERE job_id = :jid
+                """),
+                {"err": exc.message[:2000], "jid": job_id},
+            )
+            await db.commit()
+            logger.error("[job:%s] %s", job_id, exc.message)
+            return
         await db.execute(
             text("""
                 UPDATE job_criteria

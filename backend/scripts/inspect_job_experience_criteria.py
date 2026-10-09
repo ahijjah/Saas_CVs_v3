@@ -49,6 +49,9 @@ import sys
 import textwrap
 from typing import Any
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from services.requirements_guard import IS_V2_SQL  # noqa: E402  (requirements-v2 jobs are skipped explicitly)
+
 MIN_TEXT_CHARS = 800          # same default as the S2 evaluation sample
 EXPERIENCE_HINT = re.compile(
     r"experience|years?|yrs|track record|background in|worked|exposure|سنوات|سنة|خبرة|خبرات", re.I)
@@ -68,6 +71,7 @@ SELECT j.job_id::text AS job_id, j.job_code, j.title, j.status, j.created_at,
          WHERE a.job_id = j.job_id) AS apps_scored
 FROM jobs j
 LEFT JOIN job_criteria jc ON jc.job_id = j.job_id
+WHERE NOT COALESCE(""" + IS_V2_SQL + """, FALSE)      -- requirements-v2 jobs are skipped explicitly (legacy-shape report)
 ORDER BY j.job_code NULLS LAST, j.created_at
 """
 

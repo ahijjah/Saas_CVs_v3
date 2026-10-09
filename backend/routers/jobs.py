@@ -122,6 +122,15 @@ class UpdateJobMetadataRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+async def _reject_requirements_v2(db, job_id: str, action: str) -> None:
+    """409 when the job uses the requirements-v2 format: the legacy criteria endpoints must not touch it."""
+    from services.requirements_guard import UnsupportedEvaluationError, ensure_job_legacy
+    try:
+        await ensure_job_legacy(db, job_id, action)
+    except UnsupportedEvaluationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+
+
 def _qc_review_status(analysis_json: Any) -> dict:
     """Recruiter-facing review state of the required experience context (missing is never 'none')."""
     from services.qualifying_context.recruiter import review_status
@@ -900,6 +909,8 @@ async def update_criteria(
     if not job_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
+    await _reject_requirements_v2(db, job_id, "PUT /jobs/{id}/criteria")
+
     existing_row = await db.execute(
         text("""
             SELECT weight_skills, weight_experience, weight_education,
@@ -1160,6 +1171,8 @@ async def update_criteria_content(
     if not job_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
+    await _reject_requirements_v2(db, job_id, "PUT /jobs/{id}/criteria/content")
+
     # FOR UPDATE: serialise with the criteria worker and the qualifying-context endpoints, so this
     # read-modify-write can never restore an older qualifying_context over a recruiter confirmation/edit.
     criteria_row = await db.execute(
@@ -1258,6 +1271,8 @@ async def edit_qualifying_context(
     """Recruiter sets the required experience context (identified + contexts, or none).
     Admin and HR Manager only. Never touches original_analysis_json."""
     from services.qualifying_context import recruiter as qc_recruiter
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+    await _reject_requirements_v2(db, job_id, "PUT /jobs/{id}/criteria/qualifying-context")
     try:
         return await qc_recruiter.edit_qualifying_context(
             db, current_user, job_id, body.state, body.contexts, body.expected_qualifying_context)
@@ -1274,6 +1289,8 @@ async def confirm_qualifying_context(
 ):
     """Recruiter accepts the automatic suggestion unchanged. Admin and HR Manager only."""
     from services.qualifying_context import recruiter as qc_recruiter
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+    await _reject_requirements_v2(db, job_id, "POST /jobs/{id}/criteria/qualifying-context/confirm")
     try:
         return await qc_recruiter.confirm_qualifying_context(
             db, current_user, job_id, body.expected_qualifying_context)
@@ -1308,6 +1325,7 @@ async def retry_criteria_extraction(
     job = row.mappings().first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    await _reject_requirements_v2(db, job_id, "POST /jobs/{id}/criteria/retry")
 
     cfg_row = await db.execute(
         text("SELECT value FROM system_config WHERE key = 'criteria_extraction_max_retries'"),

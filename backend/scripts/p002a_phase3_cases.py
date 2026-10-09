@@ -89,8 +89,14 @@ async def load_case(db: ReadOnlyDB, application_id: str) -> dict | None:
         "SELECT extracted_text FROM application_files WHERE application_id = $1 "
         "ORDER BY length(coalesce(extracted_text, '')) DESC LIMIT 1", application_id)
     crit = await db.fetchrow(
-        "SELECT analysis_json FROM job_criteria WHERE job_id = $1", app["job_id"])
+        "SELECT analysis_json, to_jsonb(job_criteria) ->> 'requirements_schema_version' AS requirements_schema_version "
+        "FROM job_criteria WHERE job_id = $1", app["job_id"])
     if not text_row or not crit:
+        return None
+    from services.requirements_guard import is_requirements_v2
+    if is_requirements_v2(crit["requirements_schema_version"], _json(crit["analysis_json"])):
+        print(f"SKIPPED requirements-v2 job {app['job_id']}: the legacy phase-3 cases do not support it",
+              file=sys.stderr)
         return None
     return {"job_id": str(app["job_id"]), "text": text_row["extracted_text"] or "",
             "analysis_json": _json(crit["analysis_json"])}

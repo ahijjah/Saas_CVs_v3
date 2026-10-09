@@ -46,6 +46,9 @@ import sys
 from collections import Counter
 from typing import Any
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from services.requirements_guard import IS_V2_SQL  # noqa: E402  (requirements-v2 jobs are skipped explicitly)
+
 POLICIES = ("explicit_role", "functional", "sector", "pure_duration", "UNKNOWN")
 SEMANTIC = ("explicit_role", "functional", "sector")
 
@@ -54,6 +57,7 @@ SELECT j.job_id::text AS job_id, j.job_code, j.title, j.status,
        jc.analysis_json, jc.criteria_extraction_status
 FROM jobs j
 LEFT JOIN job_criteria jc ON jc.job_id = j.job_id
+WHERE NOT COALESCE(""" + IS_V2_SQL + """, FALSE)      -- requirements-v2 jobs are skipped explicitly (legacy-shape report)
 ORDER BY j.job_code NULLS LAST, j.created_at
 """
 

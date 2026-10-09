@@ -533,6 +533,40 @@ async def process_cv_intake(
             error_message=job_limit_check.get("message", "Job applicant limit reached"),
         )
 
+    # ── Step 4b-0: requirements-v2 jobs cannot be evaluated yet ───────────────
+    # Refused with an explicit reason before anything is stored or queued (never silently scored as zero).
+    from services.requirements_guard import UnsupportedEvaluationError, ensure_job_evaluable
+    try:
+        await ensure_job_evaluable(db, job_id, f"intake:{intake_method}")
+    except UnsupportedEvaluationError as unsupported:
+        log_id = await _safe_log(
+            db,
+            tenant_id=tenant_id,
+            job_id=job_id,
+            intake_method=intake_method,
+            status="REJECTED",
+            candidate_email=candidate_email,
+            candidate_name=candidate_name,
+            original_filename=original_filename,
+            file_hash=file_hash,
+            file_size_bytes=len(content),
+            mime_type=content_type,
+            error_message=unsupported.message,
+            source_identifier=source_identifier,
+            source_message_id=source_message_id,
+            sender_email=sender_email,
+            recipient_email=recipient_email,
+            subject=subject,
+            processing_started_at=started,
+            received_at=received,
+        )
+        await db.commit()
+        return IntakeResult(
+            status="INTAKE_BLOCKED",
+            intake_log_id=log_id,
+            error_message=unsupported.message,
+        )
+
     # ── Step 4b: criteria analysis gate ──────────────────────────────────────
     _INTAKE_BLOCKING_STATUSES = frozenset({"pending", "processing", "insufficient", "blocked"})
     criteria_status_row = await db.execute(

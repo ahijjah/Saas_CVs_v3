@@ -1579,9 +1579,11 @@ async def upload_cv(
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
 
     if result.status == "INTAKE_BLOCKED":
+        from services.requirements_guard import REASON_CODE
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="CV intake is disabled because the job analysis is not completed.",
+            detail=(result.error_message if (result.error_message or "").startswith(REASON_CODE)
+                    else "CV intake is disabled because the job analysis is not completed."),
         )
     if result.status == "DUPLICATE_APPLICATION":
         raise HTTPException(
@@ -1692,6 +1694,13 @@ async def score_pending_uploads(
     )
     if not job_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    # Requirements-v2 jobs cannot be evaluated yet: refuse BEFORE claiming any pending CV.
+    from services.requirements_guard import UnsupportedEvaluationError, ensure_job_evaluable
+    try:
+        await ensure_job_evaluable(db, body.job_id, "score-pending")
+    except UnsupportedEvaluationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
 
     batch_id = str(uuid.uuid4())
 

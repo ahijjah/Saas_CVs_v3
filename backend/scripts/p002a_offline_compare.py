@@ -153,6 +153,11 @@ async def load_case(db: ReadOnlyDB, application_id, job_id) -> dict | None:
     crit = await db.fetchrow("SELECT * FROM job_criteria WHERE job_id = $1", job_id)
     if not text_row or not crit:
         return None
+    from services.requirements_guard import is_requirements_v2
+    if is_requirements_v2(dict(crit).get("requirements_schema_version"), _json(crit["analysis_json"])):
+        print(f"SKIPPED requirements-v2 job {job_id}: the legacy offline comparison does not support it",
+              file=sys.stderr)
+        return None
     weights = {k: crit[k] or 0 for k in (
         "weight_skills", "weight_experience", "weight_education", "weight_certifications",
         "weight_soft_skills", "weight_domain_knowledge", "weight_other")}

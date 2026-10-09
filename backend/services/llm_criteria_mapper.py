@@ -1502,6 +1502,9 @@ class LLMCriteriaMapper:
         CriteriaMappingResponseError when the response has no usable
         assessment structure (P0-01: never an all-ABSENT placeholder).
         """
+        from services.requirements_guard import assert_legacy_component
+        assert_legacy_component(component="LLMCriteriaMapper.assess", analysis_json=analysis_json, job_id=job_id)
+
         t0 = time.monotonic()
 
         # Load prompt from DB; apply mandatory security hardening

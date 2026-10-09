@@ -473,17 +473,22 @@ async def import_batch(
 
     from services.bulk_upload_import_service import run_batch_import
 
-    summary = await run_batch_import(
-        db               = db,
-        batch_id         = batch_id,
-        tenant_id        = current_user.tenant_id,
-        job_id           = batch["job_id"],
-        user_id          = current_user.user_id,
-        user_name        = getattr(current_user, "full_name", None),
-        user_email       = getattr(current_user, "email", None),
-        include_warnings = include_warning_rows,
-        settings         = settings,
-    )
+    from services.requirements_guard import UnsupportedEvaluationError
+
+    try:
+        summary = await run_batch_import(
+            db               = db,
+            batch_id         = batch_id,
+            tenant_id        = current_user.tenant_id,
+            job_id           = batch["job_id"],
+            user_id          = current_user.user_id,
+            user_name        = getattr(current_user, "full_name", None),
+            user_email       = getattr(current_user, "email", None),
+            include_warnings = include_warning_rows,
+            settings         = settings,
+        )
+    except UnsupportedEvaluationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     return summary
 
 

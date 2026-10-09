@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncpg
 from services.llm_criteria_mapper import _flatten_criteria
+from services.requirements_guard import IS_V2_SQL
 
 async def main():
     # Connect to database
@@ -49,6 +50,7 @@ async def main():
             FROM cv_analyzer.job_criteria jc
             JOIN cv_analyzer.jobs j ON jc.job_id = j.job_id
             WHERE jc.analysis_json IS NOT NULL
+              AND NOT """ + IS_V2_SQL + """      -- requirements-v2 jobs are skipped explicitly
             ORDER BY jc.created_at DESC
             LIMIT 100
         """)
@@ -70,6 +72,7 @@ async def main():
                 JOIN cv_analyzer.job_criteria jc ON j.job_id = jc.job_id
                 WHERE a.candidate_name ILIKE %s
                 AND jc.analysis_json IS NOT NULL
+                AND NOT """ + IS_V2_SQL + """      -- requirements-v2 jobs are skipped explicitly
             """, f"%{candidate}%")
 
             if rows:

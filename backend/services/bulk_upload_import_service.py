@@ -349,6 +349,11 @@ async def run_batch_import(
         update_bulk_upload_row_status,
     )
     from database import set_rls_context
+    from services.requirements_guard import ensure_job_evaluable
+
+    # Requirements-v2 jobs cannot be evaluated yet. Raises UnsupportedEvaluationError BEFORE the batch changes
+    # state, creates an application or enqueues scoring; the router answers 409.
+    await ensure_job_evaluable(db, job_id, "bulk_import")
 
     # ── Load batch metadata ───────────────────────────────────────────────────
     batch = await get_bulk_upload_batch(db, batch_id)

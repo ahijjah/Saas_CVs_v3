@@ -46,6 +46,7 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
+from services.requirements_guard import IS_V2_SQL
 from services.deterministic_scoring import (
     DeterministicScoringConfig,
     DeterministicScoringEngine,
@@ -213,12 +214,32 @@ def _process_row(
 
 # ── Pending row query helpers ─────────────────────────────────────────────────
 
+# Requirements-v2 jobs are skipped EXPLICITLY: this backfill re-scores with the legacy deterministic engine and the
+# legacy weights, which is not valid for them. The predicate is appended to every selection below.
+_LEGACY_JOBS_ONLY = (
+    "\n              AND NOT EXISTS (SELECT 1 FROM applications a2 "
+    "JOIN job_criteria jc ON jc.job_id = a2.job_id "
+    "WHERE a2.application_id = application_scores.application_id AND " + IS_V2_SQL + ")"
+)
+
+
+def _count_requirements_v2_skipped(conn) -> int:
+    """Rows that WOULD be backfilled but belong to requirements-v2 jobs (reported, never touched)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM application_scores "
+            "WHERE llm_match_results_json IS NOT NULL AND EXISTS (SELECT 1 FROM applications a2 "
+            "JOIN job_criteria jc ON jc.job_id = a2.job_id "
+            "WHERE a2.application_id = application_scores.application_id AND " + IS_V2_SQL + ")"
+        )
+        return cur.fetchone()["n"]
+
 def _count_pending(conn, *, recalculate: bool = False) -> int:
     extra = "" if recalculate else "\n              AND det_final_score IS NULL"
     with conn.cursor() as cur:
         cur.execute(
             f"SELECT COUNT(*) AS n FROM application_scores "
-            f"WHERE llm_match_results_json IS NOT NULL{extra}"
+            f"WHERE llm_match_results_json IS NOT NULL{extra}{_LEGACY_JOBS_ONLY}"
         )
         return cur.fetchone()["n"]
 
@@ -238,7 +259,7 @@ def _fetch_pending_ids(conn, limit: int | None, *, recalculate: bool = False) ->
     with conn.cursor() as cur:
         sql = (
             f"SELECT application_id FROM application_scores "
-            f"WHERE llm_match_results_json IS NOT NULL{det_guard} "
+            f"WHERE llm_match_results_json IS NOT NULL{det_guard}{_LEGACY_JOBS_ONLY} "
             f"ORDER BY created_at ASC"
         )
         if limit is not None:
@@ -267,7 +288,7 @@ def _fetch_row(conn, application_id: str, *, recalculate: bool = False) -> dict[
             SELECT llm_match_results_json, weights_snapshot
             FROM application_scores
             WHERE application_id = %s
-              {where_extra}
+              {where_extra}{_LEGACY_JOBS_ONLY}
             """,
             (application_id,),
         )
@@ -339,6 +360,10 @@ def run_backfill(
             cfg.preferred_weight,
             cfg.enable_required_absent_floor,
         )
+
+        v2_skipped = _count_requirements_v2_skipped(conn)
+        if v2_skipped:
+            logger.warning("Skipping %d row(s) that belong to requirements-v2 jobs.", v2_skipped)
 
         # Count and announce
         total_pending = _count_pending(conn, recalculate=recalculate)
@@ -440,6 +465,7 @@ def run_backfill(
         print(f"  skipped    = {rows_skipped}")
         print(f"  failed     = {rows_failed}")
         print(f"  rerouted   = {rows_rerouted}  (soft_skill criteria moved to soft_skills dimension)")
+        print(f"  skipped_requirements_v2 = {v2_skipped}  (rows of requirements-v2 jobs are never backfilled)")
         print(f"  elapsed    = {elapsed:.1f}s")
 
         if rows_failed > 0:
