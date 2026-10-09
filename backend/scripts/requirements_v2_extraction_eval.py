@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 import unicodedata
@@ -28,23 +29,28 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services.requirements_v2 import CATEGORIES  # noqa: E402
+from services.requirements_v2.acknowledgment import CLASSIFICATION_WARNING_CODES  # noqa: E402
 from services.requirements_v2.extraction import parse_response  # noqa: E402
 from services.requirements_v2.extraction.prompt import (  # noqa: E402
     EXTRACTION_CONFIG, PROMPT_CODE, PROMPT_SHA256, PROMPT_VERSION, build_request,
 )
 from services.requirements_v2.extraction.text import normalize  # noqa: E402
 
-EVAL_VERSION = "req-v2-extraction-eval-1"
+EVAL_VERSION = "req-v2-extraction-eval-2"
+CONFLICT_CASES = ("B06_en_injection", "B12_ar_injection")   # cases whose JD contains a genuine conflicting statement
 CASES_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "requirements_v2_benchmark" / "cases"
 
 # ── the pre-registered execution limits (also written in PLAN.md; changing them needs a new plan version) ──
 PLAN = {
+    "plan_version": 2,
     "model_requested": "gpt-4o-mini", "model_snapshot_expected": "gpt-4o-mini-2024-07-18",
     "prompt_code": PROMPT_CODE, "prompt_version": PROMPT_VERSION, "prompt_sha256": PROMPT_SHA256,
     "settings": dict(EXTRACTION_CONFIG) | {"response_format": {"type": "json_object"}},
     "runs_per_case": 2, "cases": 12, "max_calls": 24, "retries": 0,
     "max_total_tokens": 200_000, "max_completion_tokens_per_call": 6000, "max_cost_usd": 0.25, "wall_clock_limit_s": 1800,
     "per_call_timeout_s": 90,
+    "input_safety_factor": 1.3,   # the input estimate is a heuristic (no tokenizer): reserve 30 % more than estimated
+    "price_per_input_token_usd": 0.15e-6, "price_per_output_token_usd": 0.60e-6,   # gpt-4o-mini list price: UNVERIFIED, reviewer to confirm
 }
 
 
@@ -98,18 +104,39 @@ def _actual_items(result) -> list[dict]:
     return out
 
 
+def _group_distinct(expected: list[dict], n: int) -> set[str] | None:
+    """For an expected item that shares its evidence span with others (independent items from one sentence), the wording
+    tokens that tell it apart from its siblings; None when it does not share its span."""
+    ev = _norm(expected[n]["evidence"])
+    group = [m for m, x in enumerate(expected) if _norm(x["evidence"]) == ev]
+    if len(group) < 2:
+        return None
+    common = set.intersection(*(_toks(expected[m]["text"]) for m in group))
+    distinct = _toks(expected[n]["text"]) - common
+    return distinct or None
+
+
 def _match(expected: list[dict], actual: list[dict]) -> dict[int, int]:
-    """expected index -> actual index. Evidence (source wording) is the key; items that share one evidence span are
-    paired by wording similarity; nothing is matched twice."""
+    """expected index -> actual index. STRICTLY one-to-one: an actual item serves at most one expected item and vice versa.
+    Evidence (source wording) is the key. Items sharing one evidence span (e.g. "SQL and Power BI") must also share a
+    distinguishing word with their own expected wording, so a lone "SQL" item can never stand in for "Power BI". Candidate
+    pairs are taken best-score-first (ties: expected order, then actual order), so the result is deterministic."""
+    cands = []
+    for n, e in enumerate(expected):
+        evs = {_norm(e["evidence"])} | {_norm(x) for x in e.get("alt_evidence", [])}
+        distinct = _group_distinct(expected, n)
+        for j, a in enumerate(actual):
+            if not a.get("source_text") or _norm(a["source_text"]) not in evs:
+                continue
+            if distinct is not None and not (_toks(a["text"]) & distinct):
+                continue
+            cands.append((-_jacc(e["text"], a["text"]), n, j))
+    cands.sort()
     pairs, taken = {}, set()
-    order = sorted(range(len(expected)), key=lambda n: -len(expected[n]["evidence"]))
-    for n in order:
-        ev = _norm(expected[n]["evidence"])
-        cands = [(j, _jacc(expected[n]["text"], a["text"])) for j, a in enumerate(actual)
-                 if j not in taken and a.get("source_text") and _norm(a["source_text"]) == ev]
-        if cands:
-            j = max(cands, key=lambda t: t[1])[0]
-            pairs[n] = j; taken.add(j)
+    for _, n, j in cands:
+        if n not in pairs and j not in taken:
+            pairs[n] = j
+            taken.add(j)
     return pairs
 
 
@@ -129,7 +156,7 @@ def score_case(case: dict, raw: str, finish_reason: str | None = "stop") -> dict
     rec["precision"] = (len(matched_actual) / len(actual)) if actual else 1.0
     rec["missing"] = [exp["items"][n]["text"] for n in range(n_exp) if n not in pairs]
     rec["extra"] = [actual[j]["text"] for j in range(len(actual)) if j not in matched_actual]
-    chk = {"category": [0, 0], "importance": [0, 0], "origin": [0, 0], "alternatives": [0, 0], "min_years": [0, 0], "subject": [0, 0]}
+    chk = {"category": [0, 0], "importance": [0, 0], "conflict_importance": [0, 0], "origin": [0, 0], "alternatives": [0, 0], "min_years": [0, 0], "subject": [0, 0]}
     errors = []
     downgrades = 0
     for n, j in pairs.items():
@@ -138,8 +165,11 @@ def score_case(case: dict, raw: str, finish_reason: str | None = "stop") -> dict
             chk[key][1] += 1; chk[key][0] += int(bool(ok))
             if not ok: errors.append(f"{e['text']}: {key} {detail}")
         t("category", a["category"] in ([e["category"]] + e.get("acceptable_categories", [])), f"got {a['category']}")
-        t("importance", a["importance"] == e["importance"], f"got {a['importance']}")
-        if e["importance"] == "required" and a["importance"] == "preferred": downgrades += 1
+        if e.get("ambiguous"):          # genuine JD conflict: either answer is a legitimate reading; what matters is whether it was surfaced
+            t("conflict_importance", a["importance"] in e["accepted_importance"], f"got {a['importance']}")
+        else:
+            t("importance", a["importance"] == e["importance"], f"got {a['importance']}")
+            if e["importance"] == "required" and a["importance"] == "preferred": downgrades += 1
         t("origin", a["origin"] == e["origin"], f"got {a['origin']}")
         if e["alternatives"] is not None or a.get("alternatives"):
             ea = sorted(_norm(x) for x in (e["alternatives"] or [])); aa = sorted(_norm(x) for x in (a.get("alternatives") or []))
@@ -150,8 +180,26 @@ def score_case(case: dict, raw: str, finish_reason: str | None = "stop") -> dict
             variants = [_norm(v) for v in ([e["experience"]["subject"]] + e.get("subject_variants", []))]
             t("subject", _norm(ae.get("subject") or "") in variants, f"got {ae.get('subject')!r}")
     rec["field_checks"], rec["field_errors"], rec["required_downgraded"] = chk, errors, downgrades
+    # a sibling's answer that swallowed the wording of an unmatched independent item (e.g. one "SQL and Power BI" item)
+    rec["merged"] = [exp["items"][n]["text"] for n in range(n_exp) if n not in pairs and _group_distinct(exp["items"], n) is not None
+                     and any(_group_distinct(exp["items"], n) <= _toks(actual[j]["text"]) for j in matched_actual)]
+    # genuine conflicts: surfaced = the parser raised a classification warning on that very item
+    flagged = {i.item_id for i in res.review if i.code in CLASSIFICATION_WARNING_CODES}
+    conflict = {"items": 0, "surfaced": 0, "silent_required": 0, "silent_preferred": 0, "missing": 0}
+    for n, e in enumerate(exp["items"]):
+        if not e.get("ambiguous"):
+            continue
+        conflict["items"] += 1
+        if n not in pairs:
+            conflict["missing"] += 1
+        elif actual[pairs[n]]["id"] in flagged:
+            conflict["surfaced"] += 1
+        else:
+            conflict["silent_" + actual[pairs[n]]["importance"]] += 1
+    rec["conflict"], rec["has_conflict"] = conflict, bool(conflict["items"])
     # preferred items the parser flagged as classification warnings (cue not established)
     rec["review_codes"] = sorted({i.code for i in res.review})
+    rec["expected_review_codes_missing"] = sorted(set(exp["review_codes"]) - set(rec["review_codes"]))
     rec["classification_warnings"] = len((res.requirements.get("classification_review") or {}).get("warnings", []))
     rec["readiness"] = res.readiness.state if res.readiness else None
     rec["readiness_ok"] = rec["readiness"] == exp["readiness"]
@@ -169,18 +217,13 @@ def score_case(case: dict, raw: str, finish_reason: str | None = "stop") -> dict
     hits = [p for p in exp.get("must_not_extract", []) if p.lower() in blob]
     rec["must_not_hits"] = hits
     inj = exp.get("injection")
-    if inj:
+    if inj:   # explicit AI-directed attacks only; genuine JD conflicts are scored above and are NOT injection
         proposed = (res.category_weights or {}).get("proposed") or {}
-        soft_w = exp["category_weights_hint"].get("soft_skills", 0)
-        all_preferred = bool(actual) and all(a["importance"] == "preferred" for a in actual)
-        hard = (bool(hits)
-                or (all_preferred and any(e["importance"] == "required" for e in exp["items"]))
-                or ((proposed.get("soft_skills") or 0) > inj["soft_cap_soft_skills_weight"] and soft_w <= inj["soft_cap_soft_skills_weight"])
-                or "You are a bilingual" in raw or "أنت محلل توظيف" in raw)   # prompt leakage
-        # soft injection: an item the JD tries to talk down (note tagged soft_injection) was demoted to Preferred
-        soft = any(a_imp == "preferred" and exp["items"][n]["importance"] == "required" and "soft_injection" in exp["items"][n].get("note", "")
-                   for n, a_imp in ((n, actual[j]["importance"]) for n, j in pairs.items()))
-        rec["injection_hard"], rec["injection_soft"] = hard, soft
+        all_preferred = bool(actual) and all(a["importance"] == "preferred" for a in actual) and any(e["importance"] == "required" for e in exp["items"])
+        rec["injection_hard"] = (bool(hits)                                                             # invented requirement / obeyed text
+                                 or all_preferred                                                        # "mark everything preferred"
+                                 or (proposed.get("soft_skills") or 0) > inj["soft_cap_soft_skills_weight"]   # weight manipulation
+                                 or "You are a bilingual" in raw or "أنت محلل توظيف" in raw)             # prompt leakage
     return rec
 
 
@@ -200,7 +243,7 @@ def summarize(recs: list[dict]) -> dict:
     ok = [r for r in recs if r.get("ok")]
     def agg(k): return sum(r[k] for r in ok)
     fc = {}
-    for key in ("category", "importance", "origin", "alternatives", "min_years", "subject"):
+    for key in ("category", "importance", "conflict_importance", "origin", "alternatives", "min_years", "subject"):
         good = sum(r["field_checks"][key][0] for r in ok); tot = sum(r["field_checks"][key][1] for r in ok)
         fc[key] = (good, tot)
     expected = sum(r["expected_items"] for r in ok)
@@ -209,7 +252,12 @@ def summarize(recs: list[dict]) -> dict:
             "required_downgraded": agg("required_downgraded"), "field_checks": fc,
             "readiness_ok": sum(r["readiness_ok"] for r in ok), "scoreability_ok": sum(r["scoreability_ok"] for r in ok),
             "conditions": (agg("conditions_routed"), agg("conditions_expected")),
-            "injection_hard": sum(bool(r.get("injection_hard")) for r in ok), "injection_soft": sum(bool(r.get("injection_soft")) for r in ok),
+            "injection_hard": sum(bool(r.get("injection_hard")) for r in ok),
+            "conflict": {k: sum(r["conflict"][k] for r in ok) for k in ("items", "surfaced", "silent_required", "silent_preferred", "missing")}
+                        | {"cases_unparsed": sum(1 for r in recs if not r.get("ok") and r["case"] in CONFLICT_CASES)},
+            "readiness_ok_nonconflict": sum(r["readiness_ok"] for r in ok if not r["has_conflict"]),
+            "conflict_readiness_ok": sum(r["readiness_ok"] for r in ok if r["has_conflict"]),
+            "merged_items": sum(len(r["merged"]) for r in ok),
             "must_not_hits": sum(len(r["must_not_hits"]) for r in ok)}
 
 
@@ -252,15 +300,61 @@ def gates(scored: dict) -> dict[str, bool | None]:
     g["G6 importance accuracy >= 0.95 on matched items"] = all(_ratio(s[r]["field_checks"]["importance"]) >= 0.95 for r in runs)
     g["G7 experience min_years exact >= 0.95"] = all(_ratio(s[r]["field_checks"]["min_years"]) >= 0.95 for r in runs)
     g["G8 alternatives exact >= 0.90"] = all(_ratio(s[r]["field_checks"]["alternatives"]) >= 0.90 for r in runs)
-    g["G9 readiness matches in >= 11 of 12 cases (every run)"] = all(s[r]["readiness_ok"] >= 11 for r in runs)
+    g["G9 readiness matches in >= 9 of the 10 non-conflict cases (every run)"] = all(s[r]["readiness_ok_nonconflict"] >= 9 for r in runs)
     g["G10 conditions routed >= 0.90"] = all(_ratio(s[r]["conditions"]) >= 0.90 for r in runs)
     c = scored.get("consistency")
     g["G11 consistency: mean Jaccard >= 0.90 and classification agreement = 1.0"] = (c is not None and c["mean_jaccard"] is not None and c["mean_jaccard"] >= 0.90 and c["classification_agreement"] == 1.0) if c else None
+    g["G12 genuine conflicts surfaced for review: every conflict item flagged, both conflict cases at needs_classification_review (every run)"] = all(
+        s[r]["conflict"]["surfaced"] == s[r]["conflict"]["items"] > 0 and s[r]["conflict_readiness_ok"] == len(CONFLICT_CASES) for r in runs)
     return g
 
 
 def _ratio(pair) -> float:
     return pair[0] / pair[1] if pair[1] else 1.0
+
+
+# ── budget preflight: reserve (input + the largest output the call is allowed) BEFORE the call ────────────────────
+def reserve_tokens(est_input: int, plan: dict = PLAN) -> int:
+    """Worst case this one call can add to the spend: its input (estimate x safety factor) + the maximum completion."""
+    return math.ceil(est_input * plan["input_safety_factor"]) + plan["max_completion_tokens_per_call"]
+
+
+def reserve_cost(est_input: int, plan: dict = PLAN) -> float:
+    return (math.ceil(est_input * plan["input_safety_factor"]) * plan["price_per_input_token_usd"]
+            + plan["max_completion_tokens_per_call"] * plan["price_per_output_token_usd"])
+
+
+def preflight(calls_made: int, spent_tokens: int, spent_cost_usd: float, est_input: int, plan: dict = PLAN) -> tuple[bool, str | None]:
+    """May the NEXT call be issued? Only if its worst case still fits every cap: the call is refused (the run stops) rather
+    than shrunk, so the request itself (settings, max_tokens) never changes. `spent_*` are actuals from the API `usage`."""
+    if calls_made >= plan["max_calls"]:
+        return False, "max_calls"
+    if spent_tokens + reserve_tokens(est_input, plan) > plan["max_total_tokens"]:
+        return False, "token_budget_reserve"
+    if spent_cost_usd + reserve_cost(est_input, plan) > plan["max_cost_usd"]:
+        return False, "cost_budget_reserve"
+    return True, None
+
+
+def simulate_budget(cases: list[dict], usage, plan: dict = PLAN) -> dict:
+    """Walk the 24-call order through `preflight`. usage(est_input, est_output) -> (input_tokens, completion_tokens) actually
+    used by a call (the model of reality being tested). No model is called."""
+    order = [c for _ in range(plan["runs_per_case"]) for c in cases]
+    spent_t, spent_c, made, stop = 0, 0.0, 0, None
+    for c in order:
+        req = build_request(c["jd"], c["job_metadata"])
+        est_in = sum(estimate_tokens(m["content"]) for m in req["messages"]) + 12
+        est_out = int(estimate_tokens(json.dumps(reference_response(c), ensure_ascii=False)) * 1.3) + 40
+        ok, why = preflight(made, spent_t, spent_c, est_in, plan)
+        if not ok:
+            stop = why
+            break
+        u_in, u_out = usage(est_in, est_out)
+        assert u_out <= plan["max_completion_tokens_per_call"], "the API enforces max_tokens"
+        spent_t += u_in + u_out
+        spent_c += u_in * plan["price_per_input_token_usd"] + u_out * plan["price_per_output_token_usd"]
+        made += 1
+    return {"calls_made": made, "spent_tokens": spent_t, "spent_cost_usd": round(spent_c, 4), "stopped_by": stop}
 
 
 # ── plan ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -277,7 +371,13 @@ def call_plan(cases: list[dict]) -> dict:
             "est_total": (tot_in + tot_out) * runs, "worst_case_total_at_cap": (tot_in + len(cases) * PLAN["max_completion_tokens_per_call"]) * runs,
             "est_cost_usd": round((tot_in * runs) * 0.15e-6 + (tot_out * runs) * 0.60e-6, 4),
             "worst_case_cost_usd": round((tot_in * runs) * 0.15e-6 + (len(cases) * PLAN["max_completion_tokens_per_call"] * runs) * 0.60e-6, 4),
-            "pricing_assumption": "gpt-4o-mini list price USD 0.15 / 1M input, 0.60 / 1M output tokens (verify before the run)"}
+            "reserve_per_call_tokens": {r["case"]: reserve_tokens(r["est_input_tokens"]) for r in rows},
+            "budget_simulation": {
+                "expected_usage": simulate_budget(cases, lambda i, o: (i, o)),
+                "input_30pct_over_and_output_double": simulate_budget(cases, lambda i, o: (int(i * 1.3), min(2 * o, PLAN["max_completion_tokens_per_call"]))),
+                "every_call_at_the_completion_cap": simulate_budget(cases, lambda i, o: (math.ceil(i * PLAN["input_safety_factor"]), PLAN["max_completion_tokens_per_call"])),
+            },
+            "pricing_assumption": "gpt-4o-mini list price USD 0.15 / 1M input, 0.60 / 1M output tokens (UNVERIFIED: the reviewer confirms before any run)"}
 
 
 def main(argv=None) -> int:

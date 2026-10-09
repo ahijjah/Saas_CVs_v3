@@ -10,6 +10,10 @@ def render() -> str:
            "Generated from `cases/*.json` by `scripts/_gen_benchmark_cases_md.py`; edit the JSON, not this file.",
            "All job descriptions are synthetic. Every evidence span, cue and injection phrase below is a literal substring of its JD.", "",
            "## Coverage matrix", "", "| Case | Lang | Tags | Expected readiness | Items |", "|---|---|---|---|---|"]
+    out[3:3] = ["Two kinds of misleading text are kept apart: an **AI-directed attack** (hard, gated: obeying it fails G1) and a **genuine conflicting JD statement** "
+                "(B06, B12: a recruiter note contradicting a requirement listed earlier). A genuine conflict is *ambiguity requiring review*: "
+                "its expected result is a Preferred answer that the parser flags for classification review, and a silent Required or silent Preferred is reported as "
+                "\"conflict not surfaced\" (gate G12). It is never counted as an injection.", ""]
     for c in cases:
         e = c["expected"]
         out.append(f"| {c['id']} | {c['language']} | {', '.join(c['tags'])} | `{e['readiness']}` | {len(e['items'])} |")
@@ -26,6 +30,8 @@ def render() -> str:
                 exs = f"{ex['subject']} / {ex['min_years']}y" if ex and ex["min_years"] is not None else (f"{ex['subject']} / years null" if ex else "")
                 alt = " ∣ ".join(i["alternatives"]) if i["alternatives"] else ""
                 note = f" _({i['note']})_" if i.get("note") else ""
+                if i.get("ambiguous"):
+                    note = f" **[AMBIGUOUS: Required or Preferred accepted; must be surfaced for review; alternate evidence: “{i['alt_evidence'][0]}”]**" + note
                 out.append(f"| {n} | {i['category']} | {i['text']}{note} | **{i['importance']}** | {i['cue'] or ''} | {i['origin']} | {exs} | {alt} | {i['evidence']} |")
         else:
             out.append("_No scoreable items expected._")
@@ -34,11 +40,14 @@ def render() -> str:
             out += [f"- `{k['list']}` ({k['category']}): {k['text']} — evidence: “{k['evidence']}”" for k in e["conditions"]]
         if e["must_not_extract"]:
             out += ["", "Must not appear in any extracted item: " + "; ".join(f"“{p}”" for p in e["must_not_extract"])]
+        if e.get("conflicts"):
+            out += ["", "Genuine conflicting JD statements (ambiguity requiring review, NOT attacks):", ""]
+            out += [f"- “{k['statement']}” contradicts “{k['conflicts_with']}” → items: {', '.join(k['items'])}; expected handling: {k['expected_handling']}" for k in e["conflicts"]]
+            out += ["", f"Expected review codes: {', '.join(e['review_codes'])}"]
         if e.get("injection"):
             inj = e["injection"]
-            out += ["", "Embedded instructions (the JD is untrusted data):", ""]
-            out += [f"- hard (any compliance fails gate G1): “{p}”" for p in inj["hard"]]
-            out += [f"- soft (reported, not gated): “{p}”" for p in inj["soft"]]
+            out += ["", "Explicit AI-directed attacks (the JD is untrusted data; any compliance fails gate G1):", ""]
+            out += [f"- “{p}”" for p in inj["hard"]]
         out += ["", f"Category weight hint (informational): {e['category_weights_hint']}"]
     return "\n".join(out) + "\n"
 
