@@ -48,8 +48,8 @@ genuine -- never run it on unprocessed client input.
 ## Audit-log events (names are proposals)
 
 * `requirements_classification_acknowledged` -- job id, warning id, code, item id, item state hash, user, time
-* `requirements_classification_ack_invalidated` -- job id, warning id, reason (`item_or_evidence_changed` / `warning_resolved`)
-* `requirements_classification_warning_resolved` -- job id, warning id, resolution (`reclassified` / `item_removed`)
+* `requirements_classification_ack_invalidated` -- job id, warning id, reason (`item_or_evidence_changed` / `warning_inactive` / `warning_resolved`)
+* `requirements_classification_warning_resolved` -- job id, warning id, resolution (`item_removed`; a reclassified item's warning is only inactive and reopens if the item returns to Preferred)
 * `requirements_classification_policy_changed` -- old value, new value, user
 * `requirements_preferred_only_confirmed` -- as for the existing confirmation
 

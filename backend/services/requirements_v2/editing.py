@@ -11,6 +11,9 @@ Rules enforced here:
     structured experience subject/duration; nothing structured is discarded or rewritten on a text edit.
   - Ids are stable; new items get a fresh code-generated id. Pass `reserved_ids` (for example the ids of the original
     analysis and of deleted items, see contract.collect_item_ids) to add_item so those ids can never be reused.
+  - Classification warnings follow the items: set_importance and remove_item reconcile the (server-owned) review block
+    in the returned document, so an acknowledgment is dropped the moment its item stops being Preferred and a
+    Required -> Preferred round trip starts again without it (the warning reopens; see acknowledgment.py).
 The confirmation is left as it is: whether it survives is decided at save time by readiness.carry_confirmation.
 """
 from __future__ import annotations
@@ -18,6 +21,8 @@ from __future__ import annotations
 import copy
 
 from typing import Iterable
+
+from services.requirements_v2.acknowledgment import get_review, reconcile_classification_review
 
 from services.requirements_v2.contract import (
     CATEGORIES, IMPORTANCE_PREFERRED, IMPORTANCE_REQUIRED, IMPORTANCES, ORIGIN_RECRUITER_ADDED,
@@ -41,6 +46,10 @@ def _zero_weight_if_no_required(doc: dict, category: str) -> None:
     cat = doc["categories"][category]
     if not any(i["importance"] == IMPORTANCE_REQUIRED for i in cat["items"]):
         cat["weight"] = 0
+
+
+def _reconcile_review(doc: dict) -> dict:
+    return reconcile_classification_review(doc).doc if get_review(doc) else doc
 
 
 def add_item(doc: dict, category: str, text: str, importance: str, *, origin: str = ORIGIN_RECRUITER_ADDED,
@@ -68,7 +77,7 @@ def remove_item(doc: dict, item_id: str) -> dict:
     category, idx = _locate(out, item_id)
     del out["categories"][category]["items"][idx]
     _zero_weight_if_no_required(out, category)
-    return out
+    return _reconcile_review(out)
 
 
 def set_importance(doc: dict, item_id: str, importance: str) -> dict:
@@ -81,7 +90,7 @@ def set_importance(doc: dict, item_id: str, importance: str) -> dict:
         item["importance"] = importance
         item["weight"] = None                      # preferred: no weight; new required: unweighted until set
         _zero_weight_if_no_required(out, category)
-    return out
+    return _reconcile_review(out)
 
 
 def set_text(doc: dict, item_id: str, text: str) -> dict:

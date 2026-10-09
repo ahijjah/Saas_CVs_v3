@@ -10,8 +10,21 @@ Policy (an explicit argument of compute_readiness, never read from anywhere in t
       an unresolved classification warning keeps the job from being ready (state needs_classification_review)
   require_classification_acknowledgment = False
       warnings stay visible (Readiness.open_warning_ids) but do not block
-  A warning is RESOLVED by the recruiter in one of two ways: correct the classification (the item is no longer
+  A warning is SETTLED by the recruiter in one of two ways: correct the classification (the item is no longer
   Preferred, or is removed), or explicitly ACCEPT that flagged classification (acknowledge_classification_warning).
+
+  Lifecycle of a warning (it describes ONE item's Preferred classification):
+    active     the item exists and is Preferred. Unresolved until validly acknowledged.
+    inactive   the item is Required (or otherwise not Preferred): there is no Preferred classification to warn about.
+               Any acknowledgment is dropped at that moment (reconcile). The warning is KEPT, so:
+    reopened   if the same item returns to Preferred, the warning is active again. Its evidence (the cue and source
+               wording the extraction could not establish) is stored with the warning and cannot become verified
+               inside this module, so it "remains unverified" and the warning is reassessed as open. The old
+               acknowledgment is NEVER restored: under policy Yes a fresh acknowledgment is required; under policy No
+               the warning is visible and does not block.
+    resolved   the item was removed (item ids are never reused). Permanent.
+  Re-verifying evidence against the job description is a server-side re-extraction concern: a later stage would
+  replace or resolve the stored warning; nothing here pretends to do it.
   Acknowledging never changes the item: a Preferred item keeps weight None, carries no weight and contributes nothing
   to a numerical score, before and after acknowledgment.
 
@@ -61,8 +74,7 @@ CUE_NOT_LINKED = "preferred_cue_not_linked_to_item"
 CLASSIFICATION_WARNING_CODES = (CUE_MISSING, CUE_NOT_IN_JD, CUE_NOT_LINKED)
 
 STATUS_OPEN = "open"
-STATUS_RESOLVED = "resolved"
-RESOLVED_RECLASSIFIED = "reclassified"
+STATUS_RESOLVED = "resolved"                 # stored only when the item was removed
 RESOLVED_ITEM_REMOVED = "item_removed"
 
 WARNING_KEYS = frozenset({"id", "code", "item_id", "category", "status", "resolution", "message", "evidence"})
@@ -152,7 +164,7 @@ def review_block_issues(block: Any) -> list[Issue]:
               and isinstance(w["item_id"], str) and w["category"] in CATEGORIES
               and w["id"] == warning_id(w["item_id"], w["code"]) and w["status"] in (STATUS_OPEN, STATUS_RESOLVED)
               and ((w["status"] == STATUS_OPEN and w["resolution"] is None)
-                   or (w["status"] == STATUS_RESOLVED and w["resolution"] in (RESOLVED_RECLASSIFIED, RESOLVED_ITEM_REMOVED)))
+                   or (w["status"] == STATUS_RESOLVED and w["resolution"] == RESOLVED_ITEM_REMOVED))
               and isinstance(w["message"], str)
               and isinstance(w["evidence"], dict) and set(w["evidence"]) == EVIDENCE_KEYS
               and w["evidence"]["code"] == w["code"]
@@ -186,11 +198,14 @@ def review_block_issues(block: Any) -> list[Issue]:
 
 @dataclass(frozen=True)
 class ClassificationStatus:
-    """Warning ids by state. `open` = still applies to a Preferred item; `acknowledged` = open with a valid
-    acknowledgment; `unresolved` = open without one (this is what the policy can turn into a blocker)."""
+    """Warning ids by state. `open` = active: the item is Preferred; `acknowledged` = open with a valid
+    acknowledgment; `unresolved` = open without one (this is what the policy can turn into a blocker);
+    `inactive` = the item is Required now (the warning reopens if it returns to Preferred); `resolved` = the item was
+    removed (permanent)."""
     open: tuple[str, ...] = ()
     acknowledged: tuple[str, ...] = ()
     unresolved: tuple[str, ...] = ()
+    inactive: tuple[str, ...] = ()
     resolved: tuple[str, ...] = ()
     stale_acknowledgments: tuple[str, ...] = ()
 
@@ -218,12 +233,12 @@ def classification_status(doc: Any) -> ClassificationStatus:
     block = get_review(doc)
     if not block:
         return ClassificationStatus()
-    open_, acknowledged, unresolved, resolved, stale = [], [], [], [], []
+    open_, acknowledged, unresolved, inactive, resolved, stale = [], [], [], [], [], []
     for w in block["warnings"]:
         found = find_item(doc, w["item_id"])
         ack = _ack_for(block, w["id"])
         if w["status"] == STATUS_RESOLVED or found is None or found[1]["importance"] != IMPORTANCE_PREFERRED:
-            resolved.append(w["id"])
+            (resolved if (w["status"] == STATUS_RESOLVED or found is None) else inactive).append(w["id"])
             if ack is not None:
                 stale.append(w["id"])
             continue
@@ -234,7 +249,8 @@ def classification_status(doc: Any) -> ClassificationStatus:
             unresolved.append(w["id"])
             if ack is not None:
                 stale.append(w["id"])
-    return ClassificationStatus(tuple(open_), tuple(acknowledged), tuple(unresolved), tuple(resolved), tuple(stale))
+    return ClassificationStatus(tuple(open_), tuple(acknowledged), tuple(unresolved), tuple(inactive),
+                                tuple(resolved), tuple(stale))
 
 
 def unresolved_warnings(doc: Any) -> list[dict]:
@@ -256,7 +272,7 @@ def acknowledge_classification_warning(doc: dict, warning_id_: str, *, user_id: 
     if warning is None:
         raise AcknowledgmentError(f"unknown classification warning {warning_id_!r}")
     status = classification_status(doc)
-    if warning_id_ in status.resolved:
+    if warning_id_ in status.resolved or warning_id_ in status.inactive:
         raise AcknowledgmentError("This warning no longer applies: the item was reclassified or removed.")
     if warning_id_ in status.acknowledged:
         raise AcknowledgmentError("This classification is already acknowledged.")
@@ -278,15 +294,19 @@ def acknowledge_classification_warning(doc: dict, warning_id_: str, *, user_id: 
 @dataclass(frozen=True)
 class ReconcileResult:
     doc: dict
-    resolved: tuple[tuple[str, str], ...] = ()          # (warning id, resolution) newly resolved
+    resolved: tuple[tuple[str, str], ...] = ()          # (warning id, resolution) newly resolved (item removed)
     invalidated: tuple[tuple[str, str], ...] = ()       # (warning id, reason) acknowledgments removed -> audit these
 
 
 def reconcile_classification_review(doc: dict) -> ReconcileResult:
-    """Bring the stored review block in line with the items: warnings whose item was reclassified or removed become
-    RESOLVED (permanently: flipping the item back to Preferred later is the recruiter's own decision and does not
-    reopen it), and acknowledgments that no longer match the item or the evidence, or whose warning is resolved, are
-    removed. Reports every change so that the caller can write the audit log."""
+    """Bring the stored review block in line with the items.
+
+      * a warning whose item was REMOVED becomes resolved (permanent: item ids are never reused);
+      * a warning whose item is no longer Preferred stays stored but INACTIVE, and is reassessed as open the moment the
+        item is Preferred again (its stored evidence is still unverified);
+      * an acknowledgment is removed when it no longer matches the item or the evidence, and whenever its warning is
+        inactive or resolved, so that an old acceptance can never come back by itself.
+    Everything removed is reported (`invalidated`, with a reason) so that the caller can write the audit log."""
     out = copy.deepcopy(doc)
     block = get_review(out)
     if not block:
@@ -294,16 +314,9 @@ def reconcile_classification_review(doc: dict) -> ReconcileResult:
     resolved: list[tuple[str, str]] = []
     invalidated: list[tuple[str, str]] = []
     for w in block["warnings"]:
-        if w["status"] == STATUS_RESOLVED:
-            continue
-        found = find_item(out, w["item_id"])
-        if found is None:
+        if w["status"] == STATUS_OPEN and find_item(out, w["item_id"]) is None:
             w["status"], w["resolution"] = STATUS_RESOLVED, RESOLVED_ITEM_REMOVED
-        elif found[1]["importance"] != IMPORTANCE_PREFERRED:
-            w["status"], w["resolution"] = STATUS_RESOLVED, RESOLVED_RECLASSIFIED
-        else:
-            continue
-        resolved.append((w["id"], w["resolution"]))
+            resolved.append((w["id"], RESOLVED_ITEM_REMOVED))
     kept = []
     by_id = {w["id"]: w for w in block["warnings"]}
     for a in block["acknowledgments"]:
@@ -311,6 +324,8 @@ def reconcile_classification_review(doc: dict) -> ReconcileResult:
         found = find_item(out, w["item_id"]) if w else None
         if w is None or w["status"] == STATUS_RESOLVED or found is None:
             invalidated.append((a["warning_id"], "warning_resolved"))
+        elif found[1]["importance"] != IMPORTANCE_PREFERRED:
+            invalidated.append((a["warning_id"], "warning_inactive"))
         elif not _ack_is_valid(a, w, *found):
             invalidated.append((a["warning_id"], "item_or_evidence_changed"))
         else:

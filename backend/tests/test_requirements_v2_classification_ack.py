@@ -258,12 +258,12 @@ class TestAcknowledging:
 
 class TestCorrecting:
 
-    def test_reclassifying_to_required_resolves_the_warning(self):
+    def test_reclassifying_to_required_makes_the_warning_inactive(self):
         doc = flagged_job().requirements
         from services.requirements_v2 import equalize_category
         doc = equalize_category(set_importance(doc, ids_by_text(doc)["Docker"], "required"), "skills")
         status = classification_status(doc)
-        assert wid(doc, "Docker", "preferred_cue_missing") in status.resolved
+        assert wid(doc, "Docker", "preferred_cue_missing") in status.inactive and status.resolved == ()
         assert len(status.unresolved) == 1 and compute_readiness(doc).state == "needs_classification_review"
 
     def test_correcting_every_flagged_item_makes_the_job_ready_after_equalizing(self):
@@ -292,16 +292,19 @@ class TestCorrecting:
                                                  user_id="u", acknowledged_at=NOW)
         assert compute_readiness(doc).state == "ready"
 
-    def test_reconcile_marks_resolution_permanently_so_flipping_back_does_not_reopen(self):
+    def test_reconcile_only_resolves_a_warning_permanently_when_its_item_is_removed(self):
         doc = flagged_job().requirements
         docker = ids_by_text(doc)["Docker"]
         corrected = reconcile_classification_review(set_importance(doc, docker, "required"))
-        assert corrected.resolved == ((f"{docker}:preferred_cue_missing", "reclassified"),)
-        flipped_back = set_importance(corrected.doc, docker, "preferred")       # the recruiter's own decision
-        status = classification_status(flipped_back)
-        assert f"{docker}:preferred_cue_missing" in status.resolved and len(status.unresolved) == 1
-        removed = reconcile_classification_review(remove_item(doc, docker))
+        assert corrected.resolved == ()                                          # reclassified: inactive, not resolved
+        stored = next(w for w in corrected.doc["classification_review"]["warnings"] if w["item_id"] == docker)
+        assert stored["status"] == "open" and stored["resolution"] is None       # kept, so it can reopen
+        raw = copy.deepcopy(doc)                                                   # item deleted outside remove_item
+        raw["categories"]["skills"]["items"] = [i for i in raw["categories"]["skills"]["items"] if i["id"] != docker]
+        removed = reconcile_classification_review(raw)
         assert removed.resolved == ((f"{docker}:preferred_cue_missing", "item_removed"),)
+        assert classification_status(remove_item(doc, docker)).resolved == (f"{docker}:preferred_cue_missing",)
+        assert classification_status(removed.doc).resolved == (f"{docker}:preferred_cue_missing",)
 
 
 # ══ invalidation ══════════════════════════════════════════════════════════════
@@ -329,15 +332,12 @@ class TestInvalidation:
         doc = set_text(doc, ids_by_text(doc)["Docker"], "Docker ")
         assert compute_readiness(doc).state == "needs_classification_review"
 
-    def test_changing_the_classification_drops_the_acceptance_and_changing_it_back_does_not_restore_it(self):
+    def test_changing_the_classification_drops_the_acceptance(self):
         doc = acked_job()
         docker = ids_by_text(doc)["Docker"]
-        changed = reconcile_classification_review(set_importance(doc, docker, "required")).doc
+        changed = set_importance(doc, docker, "required")
         assert [a["item_id"] for a in changed["classification_review"]["acknowledgments"]] == [ids_by_text(doc)["Kubernetes"]]
-        back = set_importance(changed, docker, "preferred")             # the recruiter's own decision, made after correcting
-        assert f"{docker}:preferred_cue_missing" in classification_status(back).resolved          # sticky: not reopened
-        assert docker not in [a["item_id"] for a in back["classification_review"]["acknowledgments"]]   # old acceptance gone
-        assert compute_readiness(back).state == "ready"                                 # Kubernetes' acceptance still holds
+        assert f"{docker}:preferred_cue_missing" in classification_status(changed).inactive
 
     def test_changing_structured_data_or_category_invalidates(self):
         doc = acked_job()
@@ -377,11 +377,15 @@ class TestInvalidation:
         again = reconcile_classification_review(result.doc)
         assert again.invalidated == () and again.resolved == () and again.doc == result.doc
 
-    def test_reconcile_drops_the_acknowledgment_of_a_resolved_warning(self):
+    def test_reconcile_reports_why_an_acknowledgment_was_dropped(self):
         doc = acked_job()
         docker = ids_by_text(doc)["Docker"]
-        result = reconcile_classification_review(set_importance(doc, docker, "required"))
-        assert (f"{docker}:preferred_cue_missing", "warning_resolved") in result.invalidated
+        raw_required = copy.deepcopy(doc)                                         # reclassified without the helper
+        next(i for i in raw_required["categories"]["skills"]["items"] if i["id"] == docker)["importance"] = "required"
+        assert (f"{docker}:preferred_cue_missing", "warning_inactive") in reconcile_classification_review(raw_required).invalidated
+        raw_removed = copy.deepcopy(doc)
+        raw_removed["categories"]["skills"]["items"] = [i for i in raw_removed["categories"]["skills"]["items"] if i["id"] != docker]
+        assert (f"{docker}:preferred_cue_missing", "warning_resolved") in reconcile_classification_review(raw_removed).invalidated
 
     def test_stale_acknowledgments_never_count_even_without_reconcile(self):
         doc = acked_job()
@@ -573,3 +577,209 @@ class TestPreferredStaysUnweighted:
         next(i for i in forced["categories"]["skills"]["items"] if i["text"] == "Docker")["weight"] = 10
         assert "preferred_item_has_weight" in validate_final(forced).codes()
         assert compute_readiness(forced).state == "needs_review"
+
+
+# ══ Preferred -> Required -> Preferred: the warning reopens, the old acknowledgment does not come back ════════
+
+LANG = {
+    "english": ("Requirements:\n- Python is required\n- Docker\n", "Python is required", "Python", "Docker"),
+    "arabic": ("المتطلبات:\n- بايثون مطلوبة\n- Docker\n", "بايثون مطلوبة", "بايثون", "Docker"),
+}
+LANGUAGES = pytest.mark.parametrize("lang", list(LANG))
+POLICIES = pytest.mark.parametrize("policy", [True, False], ids=["policy-yes", "policy-no"])
+
+
+def single_warning_job(lang):
+    jd, required_source, required_text, flagged = LANG[lang]
+    r = extract(jd, raw_item(required_text, required_source), raw_item(flagged, flagged, "preferred", None))
+    assert [w["code"] for w in r.requirements["classification_review"]["warnings"]] == ["preferred_cue_missing"]
+    return r.requirements, ids_by_text(r.requirements)[flagged], flagged
+
+
+def to_required(doc, item_id):
+    from services.requirements_v2 import equalize_category
+    return equalize_category(set_importance(doc, item_id, "required"), "skills")
+
+
+def back_to_preferred(doc, item_id):
+    from services.requirements_v2 import equalize_category
+    return equalize_category(set_importance(doc, item_id, "preferred"), "skills")
+
+
+class TestReclassificationRoundTrip:
+
+    @LANGUAGES
+    @POLICIES
+    def test_without_prior_acknowledgment_the_warning_reopens(self, lang, policy):
+        doc, item_id, text = single_warning_job(lang)
+        warning = f"{item_id}:preferred_cue_missing"
+        flagged = compute_readiness(doc, require_classification_acknowledgment=policy)
+        assert flagged.state == ("needs_classification_review" if policy else "ready")
+
+        required = to_required(doc, item_id)                                      # Preferred -> Required
+        status = classification_status(required)
+        assert status.inactive == (warning,) and status.open == () and status.unresolved == ()
+        assert compute_readiness(required, require_classification_acknowledgment=policy).state == "ready"
+        assert compute_readiness(required, require_classification_acknowledgment=policy).open_warning_ids == ()
+
+        back = back_to_preferred(required, item_id)                               # Required -> Preferred
+        status = classification_status(back)
+        assert status.open == status.unresolved == (warning,) and status.inactive == ()
+        state = compute_readiness(back, require_classification_acknowledgment=policy)
+        if policy:
+            assert state.state == "needs_classification_review" and [i.item_id for i in state.reasons] == [item_id]
+        else:
+            assert state.state == "ready" and state.can_proceed
+            assert state.open_warning_ids == state.unresolved_warning_ids == (warning,)     # visible, not blocking
+
+    @LANGUAGES
+    @POLICIES
+    def test_with_prior_acknowledgment_the_old_one_is_not_restored(self, lang, policy):
+        doc, item_id, text = single_warning_job(lang)
+        warning = f"{item_id}:preferred_cue_missing"
+        acked = acknowledge_classification_warning(doc, warning, user_id="user-1", acknowledged_at=NOW)
+        assert compute_readiness(acked, require_classification_acknowledgment=policy).state == "ready"
+        assert classification_status(acked).acknowledged == (warning,)
+
+        required = to_required(acked, item_id)                                    # Preferred -> Required
+        assert required["classification_review"]["acknowledgments"] == []         # dropped at once, not parked
+        assert classification_status(required).inactive == (warning,)
+        assert compute_readiness(required, require_classification_acknowledgment=policy).state == "ready"
+
+        back = back_to_preferred(required, item_id)                               # Required -> Preferred
+        status = classification_status(back)
+        assert status.acknowledged == () and status.unresolved == (warning,)      # NOT restored automatically
+        assert back["classification_review"]["acknowledgments"] == []
+        state = compute_readiness(back, require_classification_acknowledgment=policy)
+        if policy:
+            assert state.state == "needs_classification_review"                   # fresh acknowledgment required
+        else:
+            assert state.state == "ready" and state.unresolved_warning_ids == (warning,)
+
+    @LANGUAGES
+    def test_a_fresh_acknowledgment_after_the_round_trip_is_a_new_record(self, lang):
+        doc, item_id, text = single_warning_job(lang)
+        warning = f"{item_id}:preferred_cue_missing"
+        acked = acknowledge_classification_warning(doc, warning, user_id="user-1", acknowledged_at=NOW)
+        back = back_to_preferred(to_required(acked, item_id), item_id)
+        assert compute_readiness(back).state == "needs_classification_review"
+        fresh = acknowledge_classification_warning(back, warning, user_id="user-2", acknowledged_at="2026-03-03T00:00:00Z")
+        (record,) = fresh["classification_review"]["acknowledgments"]
+        assert record["user_id"] == "user-2" and record["acknowledged_at"] == "2026-03-03T00:00:00Z"
+        assert record["item_state"]["importance"] == "preferred" and record["item_state"]["text"] == text
+        assert compute_readiness(fresh).state == "ready"
+
+    @LANGUAGES
+    @POLICIES
+    def test_the_warning_evidence_and_the_original_ai_answer_survive_the_round_trip(self, lang, policy):
+        doc, item_id, text = single_warning_job(lang)
+        before = copy.deepcopy(doc["classification_review"]["warnings"])
+        back = back_to_preferred(to_required(doc, item_id), item_id)
+        assert back["classification_review"]["warnings"] == before                # evidence and message untouched
+        r = extract(*[LANG[lang][0]], raw_item(LANG[lang][2], LANG[lang][1]), raw_item(text, text, "preferred", None))
+        assert r.raw_ai_output["categories"]["skills"][1]["importance"] == "preferred"
+        assert r.original["categories"]["skills"]["items"][1]["importance"] == "preferred"
+
+    @LANGUAGES
+    @POLICIES
+    def test_preferred_weights_stay_null_and_required_weighting_follows_the_normal_rules(self, lang, policy):
+        doc, item_id, text = single_warning_job(lang)
+        required = to_required(doc, item_id)
+        assert sorted(i["weight"] for i in required["categories"]["skills"]["items"]) == [50, 50]
+        back = back_to_preferred(required, item_id)
+        assert weights(back)[text] is None
+        assert sorted(w for w in weights(back).values() if w) == [100]
+        assert validate_final(back).ok
+        # without the explicit equalize the leftover required weight is unbalanced, and that is reported, not hidden
+        raw_back = set_importance(required, item_id, "preferred")
+        assert not validate_final(raw_back).ok
+        assert compute_readiness(back, require_classification_acknowledgment=False).state == "ready"
+
+    @LANGUAGES
+    @POLICIES
+    def test_the_round_trip_through_real_saves_behaves_the_same(self, lang, policy):
+        """Every step goes through the server path: carry_server_owned(stored, incoming) as an API save would."""
+        doc, item_id, text = single_warning_job(lang)
+        warning = f"{item_id}:preferred_cue_missing"
+        stored = acknowledge_classification_warning(doc, warning, user_id="user-1", acknowledged_at=NOW)
+
+        # the client edits ONLY the item (it also sends back whatever block it holds -- forged or stale, it is discarded)
+        edited = set_importance(copy.deepcopy(stored), item_id, "required")
+        edited["classification_review"] = copy.deepcopy(stored["classification_review"])
+        stored = carry_server_owned(stored, to_required(edited, item_id))
+        assert stored["classification_review"]["acknowledgments"] == []
+        assert classification_status(stored).inactive == (warning,)
+
+        incoming = back_to_preferred(copy.deepcopy(stored), item_id)
+        incoming["classification_review"] = copy.deepcopy(acknowledge_classification_warning(
+            doc, warning, user_id="forger", acknowledged_at=NOW)["classification_review"])      # forged acknowledgment
+        stored = carry_server_owned(stored, incoming)
+        assert stored["classification_review"]["acknowledgments"] == []
+        assert classification_status(stored).unresolved == (warning,)
+        state = compute_readiness(stored, require_classification_acknowledgment=policy)
+        assert state.state == ("needs_classification_review" if policy else "ready")
+
+    @LANGUAGES
+    def test_net_unchanged_state_between_two_saves_keeps_the_stored_acknowledgment(self, lang):
+        """No save happened while the item was Required, so nothing changed: the stored acceptance still matches."""
+        doc, item_id, text = single_warning_job(lang)
+        stored = acknowledge_classification_warning(doc, f"{item_id}:preferred_cue_missing", user_id="u", acknowledged_at=NOW)
+        saved = carry_server_owned(stored, copy.deepcopy(stored))
+        assert saved["classification_review"] == stored["classification_review"]
+        assert compute_readiness(saved).state == "ready"
+
+    @LANGUAGES
+    @POLICIES
+    def test_the_cycle_can_repeat_and_each_time_needs_a_fresh_decision(self, lang, policy):
+        doc, item_id, text = single_warning_job(lang)
+        warning = f"{item_id}:preferred_cue_missing"
+        for n in range(3):
+            doc = acknowledge_classification_warning(doc, warning, user_id=f"u{n}", acknowledged_at=NOW)
+            assert compute_readiness(doc, require_classification_acknowledgment=policy).state == "ready"
+            doc = back_to_preferred(to_required(doc, item_id), item_id)
+            assert classification_status(doc).unresolved == (warning,)
+            assert (compute_readiness(doc, require_classification_acknowledgment=policy).state
+                    == ("needs_classification_review" if policy else "ready"))
+
+
+class TestRemovalMakesTheWarningInactive:
+
+    @LANGUAGES
+    @POLICIES
+    @pytest.mark.parametrize("acknowledged", [False, True], ids=["unacknowledged", "acknowledged"])
+    def test_a_removed_item_has_no_active_warning_and_blocks_nothing(self, lang, policy, acknowledged):
+        doc, item_id, text = single_warning_job(lang)
+        warning = f"{item_id}:preferred_cue_missing"
+        if acknowledged:
+            doc = acknowledge_classification_warning(doc, warning, user_id="u", acknowledged_at=NOW)
+        removed = remove_item(doc, item_id)
+        assert removed["classification_review"]["acknowledgments"] == []
+        status = classification_status(removed)
+        assert status.resolved == (warning,) and status.open == () and status.unresolved == ()
+        assert removed["classification_review"]["warnings"][0]["status"] == "resolved"
+        assert removed["classification_review"]["warnings"][0]["resolution"] == "item_removed"
+        state = compute_readiness(removed, require_classification_acknowledgment=policy)
+        assert state.state == "ready" and state.open_warning_ids == ()
+
+    @LANGUAGES
+    def test_adding_the_item_back_creates_a_new_item_without_the_old_warning(self, lang):
+        doc, item_id, text = single_warning_job(lang)
+        removed = remove_item(doc, item_id)
+        readded, new_id = add_item(removed, "skills", text, "preferred",
+                                   reserved_ids=[item_id])
+        assert new_id != item_id
+        status = classification_status(readded)
+        assert status.open == () and status.unresolved == () and status.resolved == (f"{item_id}:preferred_cue_missing",)
+        assert compute_readiness(readded).state == "ready"
+
+    @LANGUAGES
+    def test_a_resolved_warning_cannot_be_acknowledged_or_reopened_by_the_client(self, lang):
+        doc, item_id, text = single_warning_job(lang)
+        warning = f"{item_id}:preferred_cue_missing"
+        removed = remove_item(doc, item_id)
+        with pytest.raises(AcknowledgmentError):
+            acknowledge_classification_warning(removed, warning, user_id="u", acknowledged_at=NOW)
+        incoming = copy.deepcopy(removed)
+        incoming["classification_review"]["warnings"][0].update(status="open", resolution=None)       # client "reopens"
+        saved = carry_classification_review(removed, incoming)
+        assert saved["classification_review"]["warnings"][0]["status"] == "resolved"
