@@ -1673,7 +1673,8 @@ class TestLegacyAndGuards:
             if rel in {"scripts/requirements_v2_extraction_eval.py", "scripts/_gen_benchmark_cases_md.py", "scripts/requirements_v2_extraction_run.py",
                   "scripts/requirements_v2_extraction_compare.py",
                   "scripts/requirements_v2_injection_guard_replay.py",
-                  "scripts/requirements_v2_split_or_guard_replay.py"}:
+                  "scripts/requirements_v2_split_or_guard_replay.py",
+                  "scripts/requirements_v2_warning_adapter_replay.py"}:
                 continue   # offline benchmark tooling: no model, network or database (pinned by test_requirements_v2_benchmark_cases)
             text_ = path.read_text(encoding="utf-8", errors="ignore")
             if re.search(r"^\s*(from|import)\s+services\.requirements_v2\b", text_, re.M):
