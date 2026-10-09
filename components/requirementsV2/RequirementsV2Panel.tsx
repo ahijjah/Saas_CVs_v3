@@ -1,0 +1,316 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CATEGORIES, CategoryKey, Draft, DraftItem, LocalIssue, addItem, applyCategoryWeights, compareWithOriginal, computeNormalize,
+  describeApiError, draftFromServer, equalizeCategory, findItem, isDirty, removeItem, setAlternatives, setCategoryWeight,
+  setExperience, setImportance, setItemWeight, setText, toPayload, validateDraft, categoryTotal, ApiProblem,
+} from '../../utils/requirementsV2';
+import type { RequirementsApi, RequirementsView } from '../../services/requirementsV2Api';
+import { fmt, STRINGS } from './i18n';
+import { CategoryCard, ItemInfo, RowActions } from './CategoryCard';
+import {
+  ClassificationPanel, ComparisonView, ConflictBanner, EvaluationUnavailable, IssuesBox, PreferredOnlyCard, ReadinessCard,
+  SimilarityPanel, btnPrimary, btnSecondary,
+} from './Panels';
+
+// Recruiter editor for requirements-v2 jobs. The BACKEND is the authority: this component sends the draft with the
+// revision it was based on, shows the server's answer (readiness, warnings, validation issues) and never overwrites or
+// discards the recruiter's draft without an explicit choice. It never creates a job and never starts evaluation.
+
+export interface RequirementsV2PanelProps {
+  jobId: string;
+  api: RequirementsApi;
+  isAr: boolean;
+  canEdit: boolean;                                  // page-level permission (admin / hr_manager); the server decides too
+  currentUserId?: string | null;
+  resolveUser?: (id: string) => string | null;
+  addToast?: (msg: string, type: 'success' | 'error' | 'info') => void;
+  /** Test hook: replaces window.confirm. */
+  confirmFn?: (message: string) => boolean;
+}
+
+type Busy = null | 'load' | 'save' | 'action';
+
+export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
+  jobId, api, isAr, canEdit: pageCanEdit, currentUserId, resolveUser, addToast, confirmFn,
+}) => {
+  const s = STRINGS[isAr ? 'ar' : 'en'];
+  const [view, setView] = useState<RequirementsView | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [base, setBase] = useState<Draft | null>(null);            // what the draft is compared with for "unsaved"
+  const [baseRevision, setBaseRevision] = useState(0);              // the revision sent as expected_revision
+  const [busy, setBusy] = useState<Busy>('load');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [problem, setProblem] = useState<ApiProblem | null>(null);  // last refused save / action
+  const [conflict, setConflict] = useState<{ current: RequirementsView; rebased: boolean } | null>(null);
+  const [showCompare, setShowCompare] = useState(false);
+  const [status, setStatus] = useState('');
+  const [normalizeNote, setNormalizeNote] = useState<string | null>(null);
+  const [fallback, setFallback] = useState<Record<CategoryKey, number> | null>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const alive = useRef(true);
+  const apiRef = useRef(api);
+  apiRef.current = api;                                            // callers may pass a new object each render
+
+  const toast = useCallback((m: string, t: 'success' | 'error' | 'info') => { if (addToast) addToast(m, t); }, [addToast]);
+  const say = (m: string) => setStatus(m);
+
+  const apply = useCallback((v: RequirementsView) => {
+    const d = draftFromServer(v.requirements);
+    setView(v); setDraft(d); setBase(d); setBaseRevision(v.revision);
+    setConflict(null); setProblem(null); setFallback(null); setNormalizeNote(null);
+  }, []);
+
+  const load = useCallback(async () => {
+    setBusy('load'); setLoadError(null);
+    try { apply(await apiRef.current.get(jobId)); }
+    catch (e) { const p = describeApiError(e); setLoadError((s as any)[`err_${p.code}`] || p.message || s.loadFailed); }
+    finally { if (alive.current) setBusy(null); }
+  }, [jobId, apply, s]);
+
+  useEffect(() => { alive.current = true; load(); return () => { alive.current = false; }; }, [load]);
+
+  const dirty = !!(draft && base && isDirty(draft, base));
+  useEffect(() => {
+    if (!dirty) return;
+    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', h);
+    return () => window.removeEventListener('beforeunload', h);
+  }, [dirty]);
+
+  const canEdit = pageCanEdit && !!view?.can_edit;
+  const canAct = canEdit && !dirty && !conflict;                  // server-side actions need a clean, current draft
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+  const fmtDate = (d: string) => { const x = new Date(d); return isNaN(x.getTime()) ? '—' : x.toLocaleDateString(isAr ? 'ar' : 'en-GB'); };
+  const who = (id: string) => (resolveUser && resolveUser(id)) || (currentUserId && id === currentUserId ? (isAr ? 'أنت' : 'you') : (isAr ? 'مستخدم آخر' : 'another user'));
+  const textOf = (id: string) => (draft ? findItem(draft, id)?.item.text || '' : '');
+  const goTo = (elId: string) => {
+    const el = document.getElementById(elId);
+    if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); (el as HTMLElement).focus({ preventScroll: true }); }
+  };
+  const goToItem = (id: string) => goTo(`req-item-${id}`);
+  const goToCategory = (c: string) => goTo(`req-cat-${c}`);
+
+  const issueText = (i: LocalIssue) => (s as any)[`reason_${i.code}`] || i.code;
+  const localIssues = useMemo(() => (draft ? validateDraft(draft) : []), [draft]);
+  const original = view?.original ?? null;
+  const comparison = useMemo(() => (draft && original ? compareWithOriginal(draft, original) : null), [draft, original]);
+
+  const editedCat = (c: CategoryKey) => {
+    if (comparison) { const cm = comparison[c]; return cm.weightChanged || cm.removed.length > 0 || cm.current.some(x => x.kind !== 'same'); }
+    return !!view?.edited_categories?.[c];
+  };
+  const dirtyCat = (c: CategoryKey) => !!(draft && base && JSON.stringify(toPayload(draft).categories[c]) !== JSON.stringify(toPayload(base).categories[c]));
+
+  const staleKeys = useMemo(() => {
+    if (!conflict || !draft) return new Set<string>();
+    const ids = new Set<string>();
+    for (const c of CATEGORIES) for (const i of conflict.current.requirements.categories[c].items) ids.add(i.id);
+    const out = new Set<string>();
+    for (const c of CATEGORIES) for (const i of draft[c].items) if (i.id && !ids.has(i.id)) out.add(i.key);
+    return out;
+  }, [conflict, draft]);
+
+  const serverIssueFor = (c: CategoryKey | null, itemId: string | null) =>
+    (problem?.issues ?? []).filter(x => (itemId ? x.item_id === itemId : !x.item_id && x.category === c));
+
+  const infoFor = (item: DraftItem): ItemInfo => {
+    const cmp = comparison && findItem(draft!, item.key);
+    const ch = cmp && comparison![cmp.category].current.find(x => x.item.key === item.key);
+    const st = item.id ? view?.structure_review.items.find(x => x.item_id === item.id) : undefined;
+    const itemLocalIssues = localIssues.filter(i => i.itemKey === item.key).map(issueText);
+    const srv = item.id ? serverIssueFor(null, item.id).map(x => (s as any)[`reason_${x.code}`] || x.message) : [];
+    return {
+      edited: !!ch && ch.kind !== 'same', isNew: !item.id,
+      structureState: dirtyItemStructure(item) ? null : (st?.state ?? null), structureRecord: st?.record ?? null,
+      classification: item.id ? (view?.classification_warnings ?? []).filter(w => w.item_id === item.id) : [],
+      similar: item.id ? (view?.similarity_warnings ?? []).filter(w => w.items.some(x => x.item_id === item.id)).map(w => ({
+        id: w.id, kind: w.kind, differences: w.differences, other: w.items.find(x => x.item_id !== item.id)!, label: '' })) : [],
+      issues: [...new Set([...itemLocalIssues, ...srv])], stale: staleKeys.has(item.key),
+    };
+  };
+  const dirtyItemStructure = (item: DraftItem) => {
+    if (!base || !item.id) return false;
+    const b = findItem(base, item.id)?.item;
+    return !!b && (b.text !== item.text || JSON.stringify(b.alternatives) !== JSON.stringify(item.alternatives) || JSON.stringify(b.experience) !== JSON.stringify(item.experience));
+  };
+
+  // ── draft edits (always explicit; no automatic redistribution) ─────────────
+  const edit = (fn: (d: Draft) => Draft) => { setDraft(d => (d ? fn(d) : d)); setProblem(null); setFocusKey(null); };
+  const actions: RowActions = {
+    setText: (k, v) => edit(d => setText(d, k, v)),
+    setWeight: (k, v) => edit(d => setItemWeight(d, k, v)),
+    toggleImportance: (k) => edit(d => { const f = findItem(d, k); return f ? setImportance(d, k, f.item.importance === 'required' ? 'preferred' : 'required') : d; }),
+    remove: (k) => { edit(d => removeItem(d, k)); say(s.delete); },
+    setAlternatives: (k, v) => edit(d => setAlternatives(d, k, v)),
+    setExperience: (k, v) => edit(d => setExperience(d, k, v)),
+    confirmStructure: (id) => runAction(() => apiRef.current.confirmStructure(jobId, baseRevision, id)),
+    goToItem,
+  };
+  const add = (c: CategoryKey, importance: 'required' | 'preferred') => {
+    if (!draft) return;
+    const r = addItem(draft, c, importance);
+    setDraft(r.draft); setFocusKey(r.key); setProblem(null);
+  };
+
+  // ── server round trips ─────────────────────────────────────────────────────
+  const handleProblem = async (e: any, fromSave: boolean) => {
+    const p = describeApiError(e);
+    if (p.status === 409 && p.code === 'requirements_revision_conflict' && p.current) {
+      if (fromSave && dirty) { setConflict({ current: p.current as RequirementsView, rebased: false }); setProblem(null); return; }
+      apply(p.current as RequirementsView);                      // nothing of the recruiter's would be lost
+      toast(s.conflictTitle, 'info');
+      return;
+    }
+    setProblem(p);
+    const msg = (s as any)[`err_${p.code}`] || p.message;
+    toast(msg, 'error');
+  };
+
+  const save = async () => {
+    if (!draft || busy) return;
+    setBusy('save'); say(s.saving);
+    try {
+      const v = await apiRef.current.save(jobId, baseRevision, toPayload(draft));
+      // The saved version replaces the draft with what the server stored (ids for new items, normalised state).
+      apply(v);
+      toast(v.changed === false ? s.savedNoChange : s.saved, 'success'); say(s.saved);
+    } catch (e) { await handleProblem(e, true); }
+    finally { if (alive.current) setBusy(null); }
+  };
+
+  async function runAction(call: () => Promise<RequirementsView>) {
+    if (busy) return;
+    setBusy('action');
+    try { apply(await call()); say(s.saved); }
+    catch (e) { await handleProblem(e, false); }
+    finally { if (alive.current) setBusy(null); }
+  }
+
+  const discard = () => { if (base) { setDraft(base); setProblem(null); setFallback(null); setNormalizeNote(null); } };
+  const keepDraft = () => {
+    if (!conflict) return;
+    const latest = conflict.current;
+    setView(latest); setBase(draftFromServer(latest.requirements)); setBaseRevision(latest.revision);
+    setConflict({ current: latest, rebased: true });
+  };
+  const discardForLatest = () => {
+    if (!conflict) return;
+    if ((confirmFn || ((m: string) => window.confirm(m)))(s.conflictConfirmDiscard)) apply(conflict.current);
+  };
+
+  const normalize = () => {
+    if (!draft) return;
+    const r = computeNormalize(draft);
+    if (r.status === 'no_eligible') { setNormalizeNote(s.normalizeNothing); setFallback(null); return; }
+    if (r.status === 'fallback_required') { setFallback(r.suggested); setNormalizeNote(null); return; }
+    setDraft(applyCategoryWeights(draft, r.weights)); setFallback(null);
+    setNormalizeNote(r.raised.length ? s.normalizeRaised : null); say(s.normalize);
+  };
+
+  // ── render ─────────────────────────────────────────────────────────────────
+  if (busy === 'load' && !view) return <section className="bg-white rounded-2xl border border-border p-6 text-sm text-textMuted" aria-busy="true">{s.loading}</section>;
+  if (loadError || !view || !draft) {
+    return (
+      <section className="bg-white rounded-2xl border border-border p-6" dir={isAr ? 'rtl' : 'ltr'}>
+        <p className="text-sm text-error" role="alert">{loadError || s.loadFailed}</p>
+        <button type="button" className={`${btnSecondary} mt-3`} onClick={load}>{s.retry}</button>
+      </section>
+    );
+  }
+
+  const total = categoryTotal(draft);
+  const anyRequired = CATEGORIES.some(c => draft[c].items.some(i => i.importance === 'required'));
+  const totalOk = !anyRequired || total === 100;
+  const serverListed = (problem?.issues ?? []).map(x => ({
+    text: (s as any)[`reason_${x.code}`] || x.message,
+    onGo: x.item_id ? () => goToItem(x.item_id as string) : x.category ? () => goToCategory(x.category as string) : undefined,
+  }));
+  const problemOther = problem && problem.issues.length === 0 ? ((s as any)[`err_${problem.code}`] || problem.message) : null;
+
+  return (
+    <section dir={isAr ? 'rtl' : 'ltr'} lang={isAr ? 'ar' : 'en'} aria-labelledby="req-title-text" className="space-y-4" data-testid="requirements-v2">
+      <div role="status" aria-live="polite" className="sr-only">{status}</div>
+
+      <header className="bg-white rounded-2xl border border-border shadow-sm px-4 py-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 id="req-title" className="text-base font-black text-textMain flex items-center gap-2 flex-wrap">
+            <span id="req-title-text">{s.title}</span>
+            {dirty && <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600" data-testid="unsaved-badge">{s.unsaved}</span>}
+          </h3>
+          <p className="text-xs text-textMuted mt-0.5">{s.subtitle}</p>
+          {!canEdit && <p className="text-xs text-textMuted mt-1">{s.readOnly}</p>}
+        </div>
+        {canEdit && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className={btnPrimary} onClick={save} disabled={!dirty || busy !== null} data-testid="save">{busy === 'save' ? s.saving : s.save}</button>
+            <button type="button" className={btnSecondary} onClick={discard} disabled={!dirty || busy !== null}>{s.discard}</button>
+          </div>
+        )}
+      </header>
+
+      <EvaluationUnavailable s={s} />
+
+      {conflict && <ConflictBanner s={s} latestRevision={conflict.current.revision} staleCount={staleKeys.size} rebased={conflict.rebased} onKeep={keepDraft} onDiscard={discardForLatest} />}
+      <IssuesBox s={s} tone="red" testId="server-issues" title={s.serverIssues} items={serverListed} />
+      {problemOther && <p role="alert" className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-900" data-testid="problem">{problemOther}</p>}
+
+      <ReadinessCard s={s} view={view} goToCategory={goToCategory} goToItem={goToItem} />
+      {dirty && localIssues.length > 0 && (
+        <IssuesBox s={s} tone="amber" testId="local-issues" title={s.localIssues} hint={s.localIssuesHint}
+                   items={dedupeIssues(localIssues).map(i => ({ text: issueText(i), onGo: i.itemKey ? () => goToItem(i.itemKey as string) : i.category ? () => goToCategory(i.category as string) : undefined }))} />
+      )}
+
+      <ClassificationPanel s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} textOf={textOf} fmtDate={fmtDate} who={who}
+                           onAck={(id) => runAction(() => apiRef.current.acknowledge(jobId, baseRevision, id))} goToItem={goToItem} />
+      <PreferredOnlyCard s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} fmtDate={fmtDate} who={who}
+                         onConfirm={() => runAction(() => apiRef.current.confirmNoScore(jobId, baseRevision))} />
+      <SimilarityPanel s={s} view={view} textOf={textOf} goToItem={goToItem} />
+
+      <div className="bg-white rounded-2xl border border-border shadow-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        <p className={`text-sm font-bold ${totalOk ? 'text-success' : 'text-error'}`} data-testid="category-total">
+          {fmt(s.categoryTotal, { total })} {anyRequired && <span className="font-normal">({totalOk ? s.totalsOk : s.totalsOff})</span>}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {canEdit && <button type="button" className={btnSecondary} title={s.normalizeHint} aria-label={`${s.normalize}. ${s.normalizeHint}`} onClick={normalize} data-testid="normalize">{s.normalize}</button>}
+          <button type="button" className={btnSecondary} aria-pressed={showCompare} onClick={() => setShowCompare(v => !v)} data-testid="toggle-compare">{showCompare ? s.hideCompare : s.compare}</button>
+        </div>
+        {normalizeNote && <p className="basis-full text-xs text-textMuted" role="status">{normalizeNote}</p>}
+        {fallback && (
+          <div className="basis-full text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded-lg p-2" role="alert">
+            {s.normalizeFallback}{' '}
+            <button type="button" className={btnSecondary} onClick={() => { setDraft(applyCategoryWeights(draft, fallback)); setFallback(null); }}>{s.normalizeApplyEqual}</button>
+          </div>
+        )}
+      </div>
+
+      {showCompare && <ComparisonView s={s} original={original} comparison={comparison} />}
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {CATEGORIES.map(c => (
+          <CategoryCard key={c} category={c} cat={draft[c]} s={s} isAr={isAr} canEdit={canEdit} canAct={canAct} busy={busy !== null}
+                        edited={editedCat(c)} dirty={dirtyCat(c)}
+                        issues={[...localIssues.filter(i => i.category === c && !i.itemKey).map(issueText), ...serverIssueFor(c, null).map(x => (s as any)[`reason_${x.code}`] || x.message)]}
+                        infoFor={infoFor} actions={actions} focusKey={focusKey} fmtDate={fmtDate} who={who}
+                        setCategoryWeight={(v) => edit(d => setCategoryWeight(d, c, v))}
+                        equalize={() => { edit(d => equalizeCategory(d, c)); say(s.equalize); }}
+                        add={(imp) => add(c, imp)} />
+        ))}
+      </div>
+
+      {canEdit && dirty && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" className={btnPrimary} onClick={save} disabled={busy !== null}>{busy === 'save' ? s.saving : s.save}</button>
+          <span className="text-xs text-textMuted">{s.unsavedHint}</span>
+        </div>
+      )}
+    </section>
+  );
+};
+
+function dedupeIssues(xs: LocalIssue[]): LocalIssue[] {
+  const seen = new Set<string>();
+  return xs.filter(x => { const k = `${x.code}|${x.category}|${x.itemKey}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+export default RequirementsV2Panel;

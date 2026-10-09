@@ -7,6 +7,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 import { QualifyingContextPanel } from '../components/QualifyingContextPanel';
+import { RequirementsV2Section } from '../components/requirementsV2/RequirementsV2Section';
 
 interface JobDetailsProps {
   jobId: string;
@@ -1316,6 +1317,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const intakeBlocked = ['pending', 'processing', 'insufficient', 'failed', 'blocked'].includes(details.criteria_extraction_status || '');
 
   const analysis = details.analysis_json ?? undefined;
+  // A requirements-v2 job is edited through its own API/UI; legacy jobs keep the criteria section below unchanged.
+  const isRequirementsV2 = (analysis as any)?.requirements?.schema_version === 2;
   const reloadJobDetails = async () => {
     const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
     if (data) {
@@ -2729,6 +2732,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         </div>
       </section>
 
+      {isRequirementsV2 ? (
+        <RequirementsV2Section jobId={(details as any).job_id} token={auth.token!} isAr={isAr} canEdit={canEdit}
+          currentUserId={auth.user?.user_id ?? (auth.user as any)?.id ?? null} addToast={addToast} />
+      ) : (
+      <>
       {/* F. AI Criteria ──────────────────────────────────────────────────── */}
       <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
@@ -2916,6 +2924,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         })()}
 
       </section>
+      </>
+      )}
 
       </div>
       {/* Right column — Evaluation Weights ────────────────────────────────── */}
