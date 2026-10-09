@@ -265,3 +265,39 @@ def with_records(record: dict, records: dict) -> dict:
     out = copy.deepcopy(record)
     out["review_records"] = copy.deepcopy(records)
     return out
+
+
+# ── read-only presentation helpers (no detection, no readiness: they only reshape what the server-owned records already hold) ──────────
+def issue_details(state: dict) -> dict[str, dict]:
+    """issue id -> the supporting data the records hold for it, for display (JD evidence, applied / proposed weights, options)."""
+    rr = state["review_records"]
+    out: dict[str, dict] = {}
+    for i in rr["injection"]["issues"]:
+        if i["kind"] == "requirement":
+            out[i["id"]] = {"instruction_text": i["evidence"].get("instruction_text"), "source_text": i["evidence"].get("source_text"), "item_text": i.get("item_text")}
+        else:
+            out[i["id"]] = {"instruction_text": i["evidence"].get("instruction_text"), "clause": i["evidence"].get("clause"), "category": i["category"],
+                            "proposed_weight": i.get("proposed_weight"), "contaminated_applied_weight": i.get("contaminated_applied_weight")}
+    for i in rr["split_or"]["issues"]:
+        out[i["id"]] = {"options": list(i["options"]), "shared_evidence": i.get("shared_evidence"), "form": i["form"], "item_texts": dict(i["item_texts"])}
+    for w in rr["model_warnings"]["item_warnings"]:
+        out[w["id"]] = {"model_warnings": [m["text"] for m in w["evidence"].get("model_warnings", [])],
+                        "jd_statements": [{"class": s["class"], "text": s["text"]} for s in w["evidence"].get("jd_statements", [])],
+                        "flagged_importance": w["flagged_importance"]}
+    return out
+
+
+def model_conflicts(state: dict) -> list[dict]:
+    """Every item-specific importance conflict with its state (unresolved | acknowledged | inactive | resolved) and acknowledgment, for display."""
+    review = state["review_records"]["model_warnings"]
+    st = warning_status(review, state["requirements"])
+    acks = {a["warning_id"]: a for a in review["acknowledgments"]}
+    out = []
+    for w in review["item_warnings"]:
+        label = ("acknowledged" if w["id"] in st.acknowledged else "unresolved" if w["id"] in st.unresolved else "inactive" if w["id"] in st.inactive else "resolved")
+        a = acks.get(w["id"]) if label == "acknowledged" else None
+        out.append({"id": w["id"], "code": w["code"], "item_id": w["item_id"], "category": w["category"], "message": w["message"], "state": label,
+                    "flagged_importance": w["flagged_importance"], "model_warnings": [m["text"] for m in w["evidence"].get("model_warnings", [])],
+                    "jd_statements": [{"class": s["class"], "text": s["text"]} for s in w["evidence"].get("jd_statements", [])],
+                    "acknowledgment": {"user_id": a["user_id"], "acknowledged_at": a["acknowledged_at"]} if a else None})
+    return out

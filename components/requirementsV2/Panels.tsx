@@ -23,18 +23,25 @@ export interface ReadinessProps {
 
 export const ReadinessCard: React.FC<ReadinessProps> = ({ s, view, goToCategory, goToItem, dirty }) => {
   const r = view.readiness;
+  const unguarded = !!view.pipeline && view.pipeline.status !== 'ok';      // the additional checks were NOT applied to this readiness
   const ready = r.state === 'ready';
+  const passed = ready && !unguarded;
   const title = (s as any)[`state_${r.state}`] || r.state;
   const reasonText = (code: string, fallback: string) => (s as any)[`reason_${code}`] || fallback;
   return (
-    <section aria-labelledby="req-readiness-h" className={`rounded-xl border p-4 ${ready ? 'border-green-300 bg-green-50' : 'border-border bg-white'}`} data-testid="readiness">
+    <section aria-labelledby="req-readiness-h" className={`rounded-xl border p-4 ${passed ? 'border-green-300 bg-green-50' : unguarded ? 'border-amber-300 bg-amber-50' : 'border-border bg-white'}`} data-testid="readiness" data-guarded={unguarded ? 'false' : 'true'}>
       <div className="flex items-start gap-3">
-        {ready ? <CheckIcon className="mt-0.5 text-success shrink-0" /> : <WarnIcon className="mt-0.5 text-warning shrink-0" />}
+        {passed ? <CheckIcon className="mt-0.5 text-success shrink-0" /> : <WarnIcon className="mt-0.5 text-warning shrink-0" />}
         <div className="min-w-0">
           <h4 id="req-readiness-h" className="text-sm font-black text-textMain">{dirty ? s.readinessSavedTitle : s.readiness}: <span data-testid="readiness-state">{title}</span></h4>
           {dirty && (
             <p className="mt-1 text-xs font-bold text-amber-900 bg-amber-50 border border-amber-300 rounded px-2 py-1" data-testid="readiness-stale">
               {s.readinessSavedNote}
+            </p>
+          )}
+          {unguarded && (
+            <p className="mt-1 text-xs font-bold text-amber-900" data-testid="readiness-unguarded">
+              <span className="me-2 text-[10px] font-black uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">{s.checksNotAppliedBadge}</span>{s.readinessUnguardedNote}
             </p>
           )}
           {ready && <p className="text-xs text-textMuted mt-0.5">{r.scoring_mode === 'none' ? s.hint_ready_none : s.hint_ready_weighted}</p>}
@@ -102,6 +109,7 @@ export const ClassificationPanel: React.FC<ClassificationProps> = ({ s, view, ca
               <button type="button" className="font-bold text-primary underline" onClick={() => goToItem(w.item_id)}>{textOf(w.item_id) || s.goToItem}</button>
             </div>
             <p className="mt-1 text-textMain">{s.classificationWhy}</p>
+            {w.evidence.source_text && <p className="mt-0.5 text-textMuted">{s.evidenceSource}: <span dir="auto" data-testid="class-evidence">“{w.evidence.source_text}”</span></p>}
             {w.evidence.cue && <p className="mt-0.5 text-textMuted">{s.cue}: <span dir="auto">“{w.evidence.cue}”</span></p>}
             {changedIds?.has(w.item_id) && <p className="mt-1 text-amber-900 font-bold" data-testid="warning-item-edited">{s.savedBadge}: {s.itemEditedSaved}</p>}
             {w.state === 'acknowledged' && w.acknowledgment && <p className="mt-1 text-textMuted">{fmt(s.acknowledged, { name: who(w.acknowledgment.user_id), date: fmtDate(w.acknowledgment.acknowledged_at) })}{changedIds?.has(w.item_id) ? ` — ${s.ackSavedOnly}` : ''}</p>}

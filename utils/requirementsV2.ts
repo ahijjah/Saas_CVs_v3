@@ -345,3 +345,26 @@ export function describeApiError(err: any): ApiProblem {
     current: d.current ?? null,
   };
 }
+
+// ── corrections offered by the pipeline panels (draft only: nothing is saved, no weight is redistributed) ───────────────
+
+/** Split-OR correction: keep ONE item, give it the complete alternatives, remove the redundant items. Weights are NOT touched (the recruiter
+ *  equalizes or edits them; validation tells them when the totals are off). */
+export function keepOneOfSplit(draft: Draft, keepKey: string, options: string[], removeKeys: string[]): Draft {
+  let next = draft;
+  const kept = findItem(next, keepKey);
+  if (!kept) return draft;
+  const have = kept.item.alternatives ?? [];
+  const complete = options.every(o => have.some(h => h.trim().toLowerCase() === o.trim().toLowerCase()));
+  if (!complete) next = setAlternatives(next, keepKey, options.length >= 2 ? [...options] : null);
+  for (const k of removeKeys) if (k !== keepKey) next = removeItem(next, k);
+  return next;
+}
+
+/** Injection correction "replace": remove the affected item and open an empty item of the same importance in the same category for the
+ *  recruiter's own wording. The new item is a recruiter item with no source wording; nothing is copied from the removed one. */
+export function replaceWithBlank(draft: Draft, key: string): { draft: Draft; key: string } | null {
+  const found = findItem(draft, key);
+  if (!found) return null;
+  return addItem(removeItem(draft, key), found.category, found.item.importance);
+}

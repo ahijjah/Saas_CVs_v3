@@ -460,7 +460,8 @@ def build_view(*, job_id: str, revision: int | None, doc: dict, original: dict |
         "readiness": ready_view,
         "pipeline": _pipeline_block(ctx, editable),
         # null (not []) without a usable pipeline record: an empty list would claim "no issues"
-        "unresolved_issues": state.get("unresolved_issues"),
+        "unresolved_issues": ([{**i, "details": pipe.issue_details(state).get(i["id"])} for i in state["unresolved_issues"]] if state else None),
+        "model_conflicts": pipe.model_conflicts(state) if state else None,
         "gates": state.get("gates"),
         "normalized_warnings": state.get("normalized_warnings"),
         "informational": ({"generic_model_notes": state["informational"]["generic_model_notes"],

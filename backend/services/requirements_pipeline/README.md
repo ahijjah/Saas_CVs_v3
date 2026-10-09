@@ -69,3 +69,14 @@ applied".
 a stored record, step-by-step edit-lifecycle parity, record integrity, view modes. `tests/test_requirements_pipeline_postgres.py` (real PostgreSQL via
 `pgserver`; skipped without it): persistence, GET, compatibility, 422/no-write, forged client and stored state, acknowledgments, combined lifecycles under both
 policies (simultaneous issues, partial correction, reversal, item removal), policy changes, concurrency, audit-failure rollback.
+
+## Recruiter editor (frontend)
+
+`components/requirementsV2/PipelinePanels.tsx` (wired in `RequirementsV2Panel.tsx`) only PRESENTS what the API returns (`pipeline`, `unresolved_issues` with
+`details`, `model_conflicts`, `informational`, `readiness.guarded|basis`); it never detects anything or recomputes readiness. Injection / split-OR blockers are shown
+prominently with no acknowledgment control; their corrections (remove, replace, keep-one-with-all-options, edit a category weight) change the DRAFT only: no
+auto-save, no weight redistribution. Classification and conflict acknowledgments use the existing endpoint (`gate` = `classification` | `conflict`) and are disabled
+while the draft is unsaved. Without a usable record the editor shows "Additional checks unavailable" / a damaged-record message, labels readiness as basic checks only
+and keeps the original analysis comparison. Raw AI output is a collapsed disclosure for editors only. Verification: `tests/requirementsV2/pipeline.test.tsx` (component
+tests, fixture = a real GET response kept in step by `TestEditorFixture`) and `tests/requirementsV2/browser/verify_ui.py` (real page, real API, disposable PostgreSQL;
+report in `benchmark_results/requirements_v2/ui_verification/`).

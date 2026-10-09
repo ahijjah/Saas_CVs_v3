@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CATEGORIES, CategoryKey, Draft, DraftItem, LocalIssue, addItem, applyCategoryWeights, compareWithOriginal, computeNormalize,
   describeApiError, draftFromServer, equalizeCategory, findItem, isDirty, removeItem, setAlternatives, setCategoryWeight,
-  setExperience, setImportance, setItemWeight, setText, toPayload, validateDraft, categoryTotal, ApiProblem,
+  setExperience, setImportance, setItemWeight, setText, toPayload, validateDraft, categoryTotal, ApiProblem, keepOneOfSplit, replaceWithBlank,
 } from '../../utils/requirementsV2';
 import { Choice, threeWayMerge } from '../../utils/requirementsMerge';
-import type { RequirementsApi, RequirementsView } from '../../services/requirementsV2Api';
+import type { PipelineIssue, RequirementsApi, RequirementsView } from '../../services/requirementsV2Api';
 import { fmt, STRINGS } from './i18n';
 import { CategoryCard, ItemInfo, RowActions } from './CategoryCard';
+import { BlockerPanel, ConflictPanel, CorrectionActions, InformationalPanel, IssuesPanel, PipelineStatusCard } from './PipelinePanels';
 import {
   ClassificationPanel, ComparisonView, ConflictResolver, EvaluationUnavailable, IssuesBox, PreferredOnlyCard, ReadinessCard,
   SimilarityPanel, btnPrimary, btnSecondary,
@@ -146,6 +147,13 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     };
   };
 
+  // Whether the DRAFT already carries a correction for an issue (the issue itself only clears after the next save: the server re-checks).
+  const issuePending = (i: PipelineIssue): boolean => {
+    if (!draft || !base) return false;
+    if (i.kind === 'injection_weights') return !!i.category && draft[i.category as CategoryKey]?.weight !== base[i.category as CategoryKey]?.weight;
+    return i.item_ids.length > 0 && i.item_ids.some(id => !findItem(draft, id) || changedIds.has(id));
+  };
+
   // ── draft edits (always explicit; no automatic redistribution) ─────────────
   const edit = (fn: (d: Draft) => Draft) => { setDraft(d => (d ? fn(d) : d)); setProblem(null); setFocusKey(null); };
   const actions: RowActions = {
@@ -156,6 +164,23 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     setAlternatives: (k, v) => edit(d => setAlternatives(d, k, v)),
     setExperience: (k, v) => edit(d => setExperience(d, k, v)),
     confirmStructure: (id) => runAction(() => apiRef.current.confirmStructure(jobId, baseRevision, id)),
+    goToItem,
+  };
+  // Corrections offered by the pipeline panels: they change the DRAFT only (never save, never touch other weights).
+  const corrections: CorrectionActions = {
+    removeItem: (id) => { edit(d => removeItem(d, id)); say(s.correctionApplied); },
+    replaceItem: (id) => {
+      if (!draft) return;
+      const r = replaceWithBlank(draft, id);
+      if (r) { setDraft(r.draft); setFocusKey(r.key); setProblem(null); say(s.correctionApplied); }
+    },
+    editCategoryWeight: (c) => goTo(`req-cat-${c}-w`),
+    keepOne: (issue, keepId) => {
+      const options = issue.details?.options ?? [];
+      edit(d => keepOneOfSplit(d, keepId, options, issue.item_ids));
+      say(s.correctionApplied);
+    },
+    editStructure: goToItem,
     goToItem,
   };
   const add = (c: CategoryKey, importance: 'required' | 'preferred') => {
@@ -270,7 +295,10 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
       <IssuesBox s={s} tone="red" testId="server-issues" title={s.serverIssues} items={serverListed} />
       {problemOther && <p role="alert" className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-900" data-testid="problem">{problemOther}</p>}
 
+      <PipelineStatusCard s={s} view={view} canEdit={canEdit} />
+      <BlockerPanel s={s} view={view} canEdit={canEdit && !conflict} dirty={dirty} busy={busy !== null} textOf={textOf} pending={issuePending} actions={corrections} />
       <ReadinessCard s={s} view={view} goToCategory={goToCategory} goToItem={goToItem} dirty={dirty} />
+      <IssuesPanel s={s} view={view} dirty={dirty} textOf={textOf} pending={issuePending} goToItem={goToItem} goToCategory={goToCategory} />
       {dirty && localIssues.length > 0 && (
         <IssuesBox s={s} tone="amber" testId="local-issues" title={s.localIssues} hint={s.localIssuesHint}
                    items={dedupeIssues(localIssues).map(i => ({ text: issueText(i), onGo: i.itemKey ? () => goToItem(i.itemKey as string) : i.category ? () => goToCategory(i.category as string) : undefined }))} />
@@ -278,8 +306,11 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
 
       <ClassificationPanel dirty={dirty} changedIds={changedIds} s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} textOf={textOf} fmtDate={fmtDate} who={who}
                            onAck={(id) => runAction(() => apiRef.current.acknowledge(jobId, baseRevision, id))} goToItem={goToItem} />
+      <ConflictPanel s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} dirty={dirty} changedIds={changedIds} textOf={textOf} fmtDate={fmtDate} who={who}
+                     onAck={(id) => runAction(() => apiRef.current.acknowledge(jobId, baseRevision, id, 'conflict'))} goToItem={goToItem} />
       <PreferredOnlyCard dirty={dirty} s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} fmtDate={fmtDate} who={who}
                          onConfirm={() => runAction(() => apiRef.current.confirmNoScore(jobId, baseRevision))} />
+      <InformationalPanel s={s} view={view} />
       <SimilarityPanel dirty={dirty} changedIds={changedIds} s={s} view={view} textOf={textOf} goToItem={goToItem} />
 
       <div className="bg-white rounded-2xl border border-border shadow-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">

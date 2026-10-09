@@ -167,6 +167,22 @@ class TestGet:
         assert v["original"]["categories"] == state["original"]["categories"] and v["can_edit"] is True
 
     @pytest.mark.asyncio
+    async def test_issues_carry_the_supporting_evidence_the_editor_displays(self, pg, api):
+        seed_state(pg, combined_state())
+        v = await get(pg, api)
+        by_kind = {i["kind"]: i for i in v["unresolved_issues"] if i["gate"] in ("injection", "split_or", "conflict")}
+        assert "20 years of Rust experience" in by_kind["injection_requirement"]["details"]["instruction_text"]
+        w = by_kind["injection_weights"]["details"]
+        assert (w["category"], w["proposed_weight"], w["contaminated_applied_weight"]) == ("soft_skills", 100, 50)
+        so = by_kind["split_or_requirement"]["details"]
+        assert so["options"] == ["Python", "Java"] and so["shared_evidence"] == "Python or Java"
+        (c,) = v["model_conflicts"]
+        assert c["state"] == "unresolved" and {s["class"] for s in c["jd_statements"]} == {"required", "preferred"} and c["model_warnings"] == [CONFLICT]
+        await call(pg, api.acknowledge_warning, user(), JOB, 0, c["id"], "conflict")
+        (c2,) = (await get(pg, api))["model_conflicts"]
+        assert c2["state"] == "acknowledged" and c2["acknowledgment"]["user_id"] == U_HR
+
+    @pytest.mark.asyncio
     async def test_a_viewer_gets_the_metadata_but_not_the_raw_text(self, pg, api):
         seed_state(pg, combined_state())
         v = await get(pg, api, VIEWER())
@@ -634,3 +650,39 @@ class TestRollback:
         bad["categories"]["skills"]["weight"] = 1
         await raises(save(pg, api, bad, 0), 422, "invalid_requirements")
         assert pg.row() == before and pg.q("SELECT job_id FROM job_criteria WHERE job_id = %s FOR UPDATE NOWAIT", (JOB,))
+
+
+# ══ the editor's component-test fixture is a REAL GET response; keep it in step with the API ══════════════════════════════════════
+def _shape(x):
+    if isinstance(x, dict):
+        return {k: _shape(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_shape(x[0])] if x else []
+    return "null" if x is None else "number" if isinstance(x, (int, float)) and not isinstance(x, bool) else type(x).__name__
+
+
+def _compatible(real, fixture, path=""):
+    """Every key the fixture has exists in the real response with the same JSON type (null matches anything; empty lists match any list)."""
+    if isinstance(fixture, dict):
+        assert isinstance(real, dict), path
+        for k, v in fixture.items():
+            assert k in real, f"{path}/{k}"
+            _compatible(real[k], v, f"{path}/{k}")
+    elif isinstance(fixture, list):
+        assert isinstance(real, list), path
+        if fixture and real:
+            _compatible(real[0], fixture[0], path + "[0]")
+    elif fixture != "null" and real is not None:
+        assert _shape(real) == fixture, f"{path}: {_shape(real)} != {fixture}"
+
+
+class TestEditorFixture:
+
+    @pytest.mark.asyncio
+    async def test_the_component_test_fixture_matches_the_real_response(self, pg, api):
+        seed_state(pg, combined_state())
+        real = await call(pg, api.get_requirements, ADMIN(), JOB)
+        fixture = json.loads((BACKEND.parent / "tests" / "requirementsV2" / "fixtures" / "pipeline_combined_view.json").read_text(encoding="utf-8"))
+        assert set(fixture) == set(real)
+        _compatible(real, _shape(fixture))
+        assert [i["gate"] for i in fixture["unresolved_issues"]] == [i["gate"] for i in real["unresolved_issues"]]
