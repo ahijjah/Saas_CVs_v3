@@ -114,7 +114,7 @@ export const BlockerPanel: React.FC<IssueListProps> = ({ s, view, canEdit, dirty
                 <li key={i.id} data-issue={i.id} data-gate={i.gate} data-kind={i.kind} className="rounded-lg border border-red-300 bg-white p-3 text-xs">
                   <p className="font-black text-red-800">{i.kind === 'injection_requirement' ? s.injectionRequirementTitle : i.kind === 'injection_weights' ? s.injectionWeightsTitle : s.splitOrTitle}</p>
                   <p className="text-textMuted mt-0.5">{policyNote(s, i, true)}</p>
-                  <p className="mt-1" dir="auto">{i.message}</p>
+                  <p className="mt-1" dir="auto">{(s as any)[`reason_${i.kind}`] || i.message}</p>
 
                   {i.kind === 'injection_requirement' && (
                     <>

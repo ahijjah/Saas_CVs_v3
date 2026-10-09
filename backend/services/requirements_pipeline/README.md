@@ -80,3 +80,11 @@ while the draft is unsaved. Without a usable record the editor shows "Additional
 and keeps the original analysis comparison. Raw AI output is a collapsed disclosure for editors only. Verification: `tests/requirementsV2/pipeline.test.tsx` (component
 tests, fixture = a real GET response kept in step by `TestEditorFixture`) and `tests/requirementsV2/browser/verify_ui.py` (real page, real API, disposable PostgreSQL;
 report in `benchmark_results/requirements_v2/ui_verification/`).
+
+## Full-application verification
+
+`tests/requirementsV2/browser/verify_full_app.py` (wrapped by `tests/test_requirements_pipeline_full_app.py`, skipped when prerequisites are missing) drives the REAL
+single-page application (login form, `/jobs/:id` JobDetails) against the REAL FastAPI app (`main:app`) and a disposable PostgreSQL 16 built from `db/schema.sql` + all
+migrations; report in `benchmark_results/requirements_v2/full_app_verification/`. The earlier `verify_ui.py` run used a test-only page (`harness.html`) and is
+complementary, not a substitute. Defect found and fixed by the full-app run: `GET /jobs/details` returned the whole `analysis_json`, including the server-owned
+`requirements_pipeline` record (raw AI output), to every user of the tenant; `routers/jobs.py` now strips it (the requirements API is the only source, editors only).

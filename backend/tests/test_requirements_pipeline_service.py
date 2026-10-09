@@ -323,3 +323,16 @@ def test_acknowledging_a_gate_without_an_acknowledgment_is_refused_by_the_servic
     with pytest.raises(pipe.PipelineError) as e:
         pipe.acknowledge_gate(pipe.to_record(cand)["review_records"], cand["requirements"], "mystery", "x", user_id="u", at=AT)
     assert e.value.code == "unknown_gate"
+
+
+def test_job_details_response_never_carries_the_server_owned_pipeline_record():
+    """Found by the full-application run: GET /jobs/details served the whole analysis_json (raw AI output, guard records) to every user of the tenant."""
+    src = (BACKEND / "routers" / "jobs.py").read_text(encoding="utf-8")
+    assert '"analysis": _public_analysis(analysis_json)' in src and 'requirements_pipeline' in src
+    tree = ast.parse(src)
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_public_analysis")
+    ns: dict = {"Any": object, "_SERVER_OWNED_ANALYSIS_KEYS": ("requirements_pipeline",)}
+    exec(ast.get_source_segment(src, fn), ns)
+    out = ns["_public_analysis"]({"requirements": {"a": 1}, "requirements_pipeline": {"raw_response": {"text": "secret"}}, "keep": 1})
+    assert out == {"requirements": {"a": 1}, "keep": 1}
+    assert ns["_public_analysis"]({"skills": []}) == {"skills": []} and ns["_public_analysis"](None) is None

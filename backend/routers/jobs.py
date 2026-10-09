@@ -131,6 +131,16 @@ async def _reject_requirements_v2(db, job_id: str, action: str) -> None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
 
 
+_SERVER_OWNED_ANALYSIS_KEYS = ("requirements_pipeline",)   # requirements-v2 extraction-check record: served only by the requirements API (editors see the raw output there)
+
+
+def _public_analysis(analysis_json: Any) -> Any:
+    """The job-details response must not carry the server-owned pipeline record (raw AI output, guard records, provenance) to every user of the tenant."""
+    if isinstance(analysis_json, dict) and any(k in analysis_json for k in _SERVER_OWNED_ANALYSIS_KEYS):
+        return {k: v for k, v in analysis_json.items() if k not in _SERVER_OWNED_ANALYSIS_KEYS}
+    return analysis_json
+
+
 def _qc_review_status(analysis_json: Any) -> dict:
     """Recruiter-facing review state of the required experience context (missing is never 'none')."""
     from services.qualifying_context.recruiter import review_status
@@ -780,7 +790,7 @@ async def get_job_details(
                 else f"Forward CVs to: {forwarding_email} — include {job_code} in subject"
             ),
         },
-        "analysis": analysis_json,
+        "analysis": _public_analysis(analysis_json),
         "original_analysis": original_analysis_json,
         "qualifying_context_review": _qc_review_status(analysis_json),
     }
