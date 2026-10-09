@@ -98,3 +98,15 @@ the confirmation (server-stamped user and time, wording + structure confirmed). 
 acknowledgment (it is part of the acknowledged item state) and the preferred-only confirmation (part of its basis hash).
 Audit actions: `requirements_structure_confirmed`, `requirements_structure_recorded`,
 `requirements_structure_confirmation_invalidated`.
+
+## Duplicate / similarity warnings (informational)
+
+`similarity.find_similar_items(doc)` (stdlib only, method `lexical_v1`) is returned as `similarity_warnings` (+ `similarity_method`) by
+GET and by every write response of `/jobs/{id}/requirements`. Per related pair: kind `possible_duplicate` or `similar_requirement`,
+both item ids with category and importance, `same_category`, `token_overlap`, `string_ratio`, `differences`
+(`numbers` | `alternatives` | `connective` | `subject`). Within and across categories. Derived from the items on every call: never stored,
+never audited, never part of readiness, classification acknowledgment, confirmations, weights or saving; nothing is merged, removed or
+reclassified. Thresholds (fixtures in `tests/fixtures/requirements_v2_similarity/pairs.json`): duplicate = same token sequence/set, or overlap >= 0.85
+and ratio >= 0.90 with no known difference; similar = overlap >= 0.60 and ratio >= 0.70 (or a near-duplicate with a difference); both need
+>= 2 content tokens to be "similar". Not detected: translations / different languages (never compared), synonyms and paraphrases, number words,
+units, ranges. Opposite polarity (negation word list) is suppressed. See the module docstring for the full list. No claim of semantic accuracy.

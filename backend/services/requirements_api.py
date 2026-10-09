@@ -50,10 +50,11 @@ from services.requirements_v2 import (
     acknowledge_classification_warning, classification_status, collect_item_ids, compute_readiness,
     StructureError, confirm_no_numeric_score, confirm_structure, edited_categories, make_item, new_item_id,
     parse_acknowledgment_policy, reconcile_classification_review, reconcile_structure_review, record_structure_edits,
-    structure_status, validate_final, validate_structure,
+    find_similar_items, structure_status, validate_final, validate_structure,
 )
 from services.requirements_v2.acknowledgment import REVIEW_KEY, get_review
 from services.requirements_v2.contract import ORIGIN_RECRUITER_ADDED
+from services.requirements_v2.similarity import METHOD as SIMILARITY_METHOD
 from services.requirements_v2.structure import STRUCTURE_KEY, get_block as get_structure_block
 
 EDIT_ROLES = ("admin", "hr_manager")                  # same rule as PUT /jobs/{id}/criteria/content
@@ -377,6 +378,9 @@ def build_view(*, job_id: str, revision: int | None, doc: dict, original: dict |
         "preferred_only_confirmation": ({"confirmed": True, "user_id": conf["user_id"],
                                          "confirmed_at": conf["confirmed_at"]} if conf else {"confirmed": False}),
         "structure_review": structure_view(doc, original),
+        # Informational only, derived from the items on every call, never stored, never part of readiness
+        "similarity_warnings": find_similar_items(doc),
+        "similarity_method": SIMILARITY_METHOD,
         "discarded_client_fields": list(discarded or []),
         "can_edit": editable,
     }

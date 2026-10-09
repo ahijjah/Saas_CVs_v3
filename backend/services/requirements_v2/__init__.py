@@ -24,6 +24,7 @@ from services.requirements_v2.readiness import (
     ConfirmationError, Readiness, basis_hash, carry_confirmation, carry_server_owned, compute_readiness,
     confirm_no_numeric_score, is_preferred_only,
 )
+from services.requirements_v2.similarity import compare_items, find_similar_items
 from services.requirements_v2.structure import (
     StructureError, StructureStatus, carry_structure_review, confirm_structure, reconcile_structure_review,
     record_structure_edits, structure_status,
@@ -44,6 +45,6 @@ __all__ = [
     "edited_category_names", "empty_requirements", "equal_category_weights", "equalize_category",
     "equalize_weights", "is_preferred_only", "make_item", "new_item_id", "normalize_category_weights",
     "original_digest", "remove_item", "set_category_weight", "set_importance", "set_item_weight", "set_text",
-    "snapshot_original", "StructureError", "StructureStatus", "carry_structure_review", "confirm_structure",
+    "snapshot_original", "compare_items", "find_similar_items", "StructureError", "StructureStatus", "carry_structure_review", "confirm_structure",
     "reconcile_structure_review", "record_structure_edits", "set_structure", "structure_status", "validate_draft", "validate_final", "validate_structure",
 ]
