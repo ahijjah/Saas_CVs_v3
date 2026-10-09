@@ -8,8 +8,8 @@ from services.requirements_v2.comparison import (
     edited_categories, edited_category_names, original_digest, snapshot_original,
 )
 from services.requirements_v2.contract import (
-    CATEGORIES, MAX_REQUIRED_PER_CATEGORY, SCHEMA_VERSION, Issue, ValidationResult, empty_requirements,
-    make_item, new_item_id,
+    CATEGORIES, MAX_REQUIRED_PER_CATEGORY, SCHEMA_VERSION, Issue, ValidationResult, collect_item_ids,
+    empty_requirements, make_item, new_item_id,
 )
 from services.requirements_v2.editing import (
     add_item, remove_item, set_category_weight, set_importance, set_item_weight, set_text,
@@ -27,7 +27,7 @@ from services.requirements_v2.weights import (
 __all__ = [
     "CATEGORIES", "MAX_REQUIRED_PER_CATEGORY", "SCHEMA_VERSION", "ConfirmationError", "Issue", "NormalizeResult",
     "OverLimitError", "Readiness", "ValidationResult", "add_item", "apply_category_weights", "basis_hash",
-    "carry_confirmation", "compute_readiness", "confirm_no_numeric_score", "edited_categories",
+    "carry_confirmation", "collect_item_ids", "compute_readiness", "confirm_no_numeric_score", "edited_categories",
     "edited_category_names", "empty_requirements", "equal_category_weights", "equalize_category",
     "equalize_weights", "is_preferred_only", "make_item", "new_item_id", "normalize_category_weights",
     "original_digest", "remove_item", "set_category_weight", "set_importance", "set_item_weight", "set_text",

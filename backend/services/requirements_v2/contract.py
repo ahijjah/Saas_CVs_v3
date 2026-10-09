@@ -17,6 +17,10 @@ package treats its inputs as read-only and returns new objects.
       }
     }
 
+    scoring_confirmation is never client input. basis_hash is an unkeyed digest of the confirmed content, so anyone
+    can compute a matching one: a matching hash proves nothing about WHO confirmed. Only readiness.confirm_no_numeric_score
+    (trusted server code, authenticated user) creates it, and every save must go through readiness.carry_confirmation.
+
     ITEM = {
       "id": "req_<alnum>",                  # code-generated, stable, never reused
       "text": str,                          # wording shown to the recruiter; free-form, authoritative
@@ -102,6 +106,11 @@ class ValidationResult:
 
     def codes(self) -> list[str]:
         return [i.code for i in self.errors] + [i.code for i in self.review]
+
+
+def collect_item_ids(doc: dict) -> set[str]:
+    """Every item id in a document (use it to reserve the ids of the original or of deleted items)."""
+    return {i["id"] for c in CATEGORIES for i in doc["categories"][c]["items"]}
 
 
 def new_item_id(existing: Iterable[str] = ()) -> str:

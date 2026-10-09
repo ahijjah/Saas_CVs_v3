@@ -9,12 +9,15 @@ Rules enforced here:
   - Preferred items never keep a weight; a reclassified item to required starts unweighted.
   - Editing the wording keeps every other field, including source wording, provenance, OR alternatives and the
     structured experience subject/duration; nothing structured is discarded or rewritten on a text edit.
-  - Ids are stable; new items get a fresh code-generated id.
+  - Ids are stable; new items get a fresh code-generated id. Pass `reserved_ids` (for example the ids of the original
+    analysis and of deleted items, see contract.collect_item_ids) to add_item so those ids can never be reused.
 The confirmation is left as it is: whether it survives is decided at save time by readiness.carry_confirmation.
 """
 from __future__ import annotations
 
 import copy
+
+from typing import Iterable
 
 from services.requirements_v2.contract import (
     CATEGORIES, IMPORTANCE_PREFERRED, IMPORTANCE_REQUIRED, IMPORTANCES, ORIGIN_RECRUITER_ADDED,
@@ -42,9 +45,11 @@ def _zero_weight_if_no_required(doc: dict, category: str) -> None:
 
 def add_item(doc: dict, category: str, text: str, importance: str, *, origin: str = ORIGIN_RECRUITER_ADDED,
              source_text: str | None = None, alternatives: list[str] | None = None,
-             experience: dict | None = None, weight: int | None = None) -> tuple[dict, str]:
-    """Append an item. Returns (new document, new item id). A required item without a weight leaves the
-    document unbalanced until the recruiter sets weights."""
+             experience: dict | None = None, weight: int | None = None,
+             reserved_ids: Iterable[str] = ()) -> tuple[dict, str]:
+    """Append an item. Returns (new document, new item id). The new id differs from every id in the document and
+    from every id in `reserved_ids`. A required item without a weight leaves the document unbalanced until the
+    recruiter sets weights."""
     if category not in CATEGORIES:
         raise ValueError(f"unknown category {category!r}")
     if importance not in IMPORTANCES:
@@ -52,7 +57,7 @@ def add_item(doc: dict, category: str, text: str, importance: str, *, origin: st
     if importance == IMPORTANCE_PREFERRED and weight is not None:
         raise ValueError("preferred items carry no weight")
     out = copy.deepcopy(doc)
-    item = make_item(text, importance, item_id=new_item_id(_all_ids(out)), weight=weight, origin=origin,
+    item = make_item(text, importance, item_id=new_item_id([*_all_ids(out), *reserved_ids]), weight=weight, origin=origin,
                      source_text=source_text, alternatives=alternatives, experience=experience)
     out["categories"][category]["items"].append(item)
     return out, item["id"]

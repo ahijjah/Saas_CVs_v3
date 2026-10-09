@@ -10,9 +10,19 @@ State (compute_readiness):
                       (scoring mode "none")
 
 Confirmation (document["scoring_confirmation"]) is SERVER-OWNED:
-  - it is created only by confirm_no_numeric_score();
+  - it is created only by confirm_no_numeric_score(), called by trusted server code for an authenticated user;
   - carry_confirmation(stored, incoming) is the only way a save keeps it: whatever the client sent is ignored, and
     the stored one survives only while the job is still preferred-only AND the basis hash still matches;
+
+  RULES FOR THE API STAGE (not implemented here):
+    1. Every save discards the client's scoring_confirmation and builds the document to validate and persist with
+       carry_confirmation(stored, incoming), where `stored` is read from the database inside the same locked
+       transaction, never taken from the request.
+    2. basis_hash is an unkeyed digest of the content: it detects that the content changed, it does not prove who
+       confirmed. A matching hash alone is NOT authorization; validate_final accepting a document that carries a
+       confirmation is not evidence the confirmation is genuine, so never run it on unprocessed client input.
+    3. A confirmation is created only through confirm_no_numeric_score() in an endpoint that checks the caller's
+       role, and that action is audit-logged.
   - basis_hash covers what the confirmation was given for: each item's category, id, importance, wording, OR
     alternatives and structured experience. Item order, weights and provenance are not part of it, so reordering
     does not invalidate, while wording, addition, removal, classification and structure changes do.
@@ -97,15 +107,22 @@ def confirm_no_numeric_score(doc: dict, *, user_id: str, confirmed_at: str) -> d
 
 def carry_confirmation(stored: dict | None, incoming: dict) -> dict:
     """The document to validate and persist for a save: `incoming` with its confirmation replaced by the stored
-    one if (and only if) it is still applicable. A confirmation supplied by the client is never trusted."""
+    one if (and only if) it is still applicable. A confirmation supplied by the client is never trusted.
+
+    `stored` must be the trusted, persisted document (never request data); anything that is not a dict, or
+    carries no usable confirmation, counts as "no stored confirmation".
+    A non-object `incoming` is returned as an unchanged copy so that validation rejects it (`not_an_object`);
+    this function never raises for malformed input."""
+    if not isinstance(incoming, dict):
+        return copy.deepcopy(incoming)
     out = copy.deepcopy(incoming)
     out["scoring_confirmation"] = None
     prior = stored.get("scoring_confirmation") if isinstance(stored, dict) else None
-    if prior is None:
+    if not isinstance(prior, dict):
         return out
     try:
         applicable = is_preferred_only(out) and prior.get("basis_hash") == basis_hash(out)
-    except (KeyError, TypeError, AttributeError):    # incoming is malformed; validation will reject it
+    except (KeyError, TypeError, AttributeError, IndexError):   # incoming is malformed; validation rejects it
         return out
     if applicable:
         out["scoring_confirmation"] = copy.deepcopy(prior)

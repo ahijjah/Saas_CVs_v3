@@ -157,8 +157,20 @@ def normalize_category_weights(proposed: Mapping[str, Any] | None, eligible: Ite
 
 
 def apply_category_weights(doc: dict, weights: Mapping[str, int]) -> dict:
-    """A new document with the given category weights (explicit action; used after Normalize)."""
+    """A new document with the given category weights (explicit action; used after Normalize).
+
+    `weights` must contain exactly the seven category keys, each a whole number from 0 to 100 (bool and float are
+    rejected, never truncated). The total is NOT checked here: validate_final decides whether the result is valid."""
+    if not isinstance(weights, Mapping):
+        raise ValueError("weights must be a mapping of category -> whole percent")
+    missing = [c for c in CATEGORIES if c not in weights]
+    unknown = [c for c in weights if c not in CATEGORIES]
+    if missing or unknown:
+        raise ValueError(f"weights must contain exactly the seven categories (missing {missing}, unknown {unknown})")
+    bad = [c for c in CATEGORIES if not is_int(weights[c]) or not 0 <= weights[c] <= 100]
+    if bad:
+        raise ValueError(f"category weights must be whole numbers from 0 to 100 (invalid: {bad})")
     out = copy.deepcopy(doc)
     for c in CATEGORIES:
-        out["categories"][c]["weight"] = int(weights[c])
+        out["categories"][c]["weight"] = weights[c]
     return out
