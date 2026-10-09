@@ -90,6 +90,7 @@ def numbers_in(text: str) -> set[int]:
 
 _BULLET_RE = re.compile(r"^\s*(?:[-*•·–—▪●◦‣]|\(?[0-9٠-٩۰-۹]+[.)\-]|\(?[A-Za-z][.)])\s*")
 _SENTENCE_END = (".", "!", "?", "؟", "。")
+_SENTENCE_BREAK_RE = re.compile(r"[.!?؟。]\s+")
 _HEADING_MAX_WORDS = 6
 
 
@@ -110,8 +111,9 @@ def cue_relationship(jd_text: str, span: tuple[int, int], cue: str) -> str | Non
     """How `cue` is tied to the item whose wording occupies `span` of the job description:
 
       "inline"   the cue is inside the item's own wording ("LinkedIn Recruiter is a plus")
-      "heading"  the cue is in the same line before the item ("Preferred: Docker"), or in the NEAREST heading above it
-                 ("Nice to have:" followed by the list the item belongs to)
+      "heading"  the cue is earlier in the item's own SENTENCE ("Preferred: Docker, Kubernetes"; a cue in an earlier
+                 sentence of the same line does not count), or in the NEAREST heading above it ("Nice to have:"
+                 followed by the list the item belongs to)
       None       not established: the cue may exist elsewhere in the job description (another requirement's wording,
                  another section's heading), which is not proof that it applies to this item.
     """
@@ -119,7 +121,8 @@ def cue_relationship(jd_text: str, span: tuple[int, int], cue: str) -> str | Non
     if contains_phrase(jd_text[start:end], cue):
         return "inline"
     line_start = jd_text.rfind("\n", 0, start) + 1
-    if contains_phrase(jd_text[line_start:start], cue):
+    same_sentence = _SENTENCE_BREAK_RE.split(jd_text[line_start:start])[-1]
+    if contains_phrase(same_sentence, cue):
         return "heading"
     line_end = jd_text.find("\n", end)
     below = jd_text[line_start:len(jd_text) if line_end < 0 else line_end]       # the item's own line

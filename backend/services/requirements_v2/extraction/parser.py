@@ -35,6 +35,9 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
+from services.requirements_v2.acknowledgment import (
+    CLASSIFICATION_WARNING_CODES, CUE_MISSING, CUE_NOT_IN_JD, CUE_NOT_LINKED, REVIEW_KEY, build_warning, empty_review,
+)
 from services.requirements_v2.comparison import original_digest, snapshot_original
 from services.requirements_v2.contract import (
     CATEGORIES, EXPERIENCE_CATEGORY, IMPORTANCE_PREFERRED, IMPORTANCE_REQUIRED, MAX_REQUIRED_PER_CATEGORY,
@@ -60,10 +63,8 @@ _ITEM_FIELDS = {"text", "importance", "importance_cue", "source_text", "origin",
 _QUOTE_PREVIEW = 80
 
 NEEDS_REVIEW = "Needs review: "
-CUE_MISSING = "preferred_cue_missing"
-CUE_NOT_IN_JD = "preferred_cue_not_in_job_description"
-CUE_NOT_LINKED = "preferred_cue_not_linked_to_item"
-IMPORTANCE_CUE_REVIEW_CODES = (CUE_MISSING, CUE_NOT_IN_JD, CUE_NOT_LINKED)
+# the classification warnings (defined with the acknowledgment contract; re-exported here for the extraction's users)
+IMPORTANCE_CUE_REVIEW_CODES = CLASSIFICATION_WARNING_CODES
 
 
 @dataclass(frozen=True)
@@ -131,7 +132,7 @@ def _preview(text: Any) -> str:
 # ── item conversion ───────────────────────────────────────────────────────────
 
 def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Callable[[], str],
-                  review: list[Issue], unmapped: list[dict]) -> dict | None:
+                  review: list[Issue], unmapped: list[dict], classification: list[dict]) -> dict | None:
     """One AI item -> one requirements-v2 item, or None (recorded in `unmapped`) when no item can be built."""
     where = f"{category}[{position}]"
 
@@ -183,6 +184,9 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
         problem = _cue_problem(raw.get("importance_cue"), jd, span)
         if problem:
             note(problem[0], problem[1], iid, prefix=NEEDS_REVIEW)
+            classification.append(build_warning(code=problem[0], item_id=iid, category=category,
+                                                cue=raw.get("importance_cue"), source_text=source,
+                                                message=review[-1].message))
     elif declared is None and not plain_string:
         note("importance_missing_defaulted_required", "no importance was given; set to required", iid)
     elif not plain_string:
@@ -308,8 +312,11 @@ def _convert_conditions(raw: Any, list_name: str, jd: str, review: list[Issue], 
 # ── main entry ────────────────────────────────────────────────────────────────
 
 def parse_response(raw_text: Any, jd_text: str, finish_reason: str | None = None, *,
-                   id_factory: Callable[[Iterable[str]], str] = new_item_id) -> ExtractionResult:
-    """Convert the raw model output for `jd_text` into an ExtractionResult (see the module doc)."""
+                   id_factory: Callable[[Iterable[str]], str] = new_item_id,
+                   require_classification_acknowledgment: bool = True) -> ExtractionResult:
+    """Convert the raw model output for `jd_text` into an ExtractionResult (see the module doc).
+    `require_classification_acknowledgment` is the admin policy, passed explicitly (default: required); it only
+    affects the readiness reported on the result."""
     if finish_reason == "length":
         return _failed("output_truncated", "The model output was cut off (finish_reason 'length'); it is not trusted.")
     if not isinstance(raw_text, str) or not raw_text.strip():
@@ -318,11 +325,12 @@ def parse_response(raw_text: Any, jd_text: str, finish_reason: str | None = None
         ai = json.loads(raw_text)
     except ValueError as exc:
         return _failed("invalid_json", f"The model output is not valid JSON: {exc}")
-    return process_ai_output(ai, jd_text, id_factory=id_factory)
+    return process_ai_output(ai, jd_text, id_factory=id_factory,
+                             require_classification_acknowledgment=require_classification_acknowledgment)
 
 
-def process_ai_output(ai: Any, jd_text: str, *,
-                      id_factory: Callable[[Iterable[str]], str] = new_item_id) -> ExtractionResult:
+def process_ai_output(ai: Any, jd_text: str, *, id_factory: Callable[[Iterable[str]], str] = new_item_id,
+                      require_classification_acknowledgment: bool = True) -> ExtractionResult:
     if not isinstance(ai, dict):
         return _failed("not_an_object", "The model output is not a JSON object.")
     raw_copy = copy.deepcopy(ai)
@@ -333,6 +341,7 @@ def process_ai_output(ai: Any, jd_text: str, *,
 
     review: list[Issue] = []
     unmapped: list[dict] = []
+    classification: list[dict] = []
     used_ids: set[str] = set()
 
     def new_id() -> str:
@@ -353,7 +362,7 @@ def process_ai_output(ai: Any, jd_text: str, *,
                                 category=category))
             value = []
         items = [i for pos, raw in enumerate(value)
-                 if (i := _convert_item(raw, category, pos, jd, new_id, review, unmapped)) is not None]
+                 if (i := _convert_item(raw, category, pos, jd, new_id, review, unmapped, classification)) is not None]
         categories[category] = {"weight": 0, "items": items}
     for name in cats:
         if name not in CATEGORIES:
@@ -374,6 +383,8 @@ def process_ai_output(ai: Any, jd_text: str, *,
                                 category=category))
 
     doc = {"schema_version": SCHEMA_VERSION, "categories": categories, "scoring_confirmation": None}
+    if classification:                                    # server-owned block: warnings only, never acknowledgments
+        doc[REVIEW_KEY] = {**empty_review(), "warnings": classification}
 
     # category weights: AI proposal, normalized by code, never replaced by an unapproved fallback
     eligible = [c for c in CATEGORIES if any(i["importance"] == IMPORTANCE_REQUIRED for i in categories[c]["items"])]
@@ -408,7 +419,8 @@ def process_ai_output(ai: Any, jd_text: str, *,
     original = snapshot_original(doc)
     return ExtractionResult(
         status=STATUS_DRAFT, requirements=doc, original=original, original_digest=original_digest(original),
-        readiness=compute_readiness(doc), review=tuple(review), category_weights=weights_info,
+        readiness=compute_readiness(doc, require_classification_acknowledgment=require_classification_acknowledgment),
+        review=tuple(review), category_weights=weights_info,
         conditions=conditions, scoreability=scoreability, ai_warnings=ai_warnings,
         unmapped=tuple(unmapped), raw_ai_output=raw_copy,
     )

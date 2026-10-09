@@ -17,6 +17,9 @@ package treats its inputs as read-only and returns new objects.
       }
     }
 
+    classification_review (optional, SERVER-OWNED, see acknowledgment.py) holds the extraction's classification warnings and
+    the recruiters' acknowledgments of them; it is never client input either.
+
     scoring_confirmation is never client input. basis_hash is an unkeyed digest of the confirmed content, so anyone
     can compute a matching one: a matching hash proves nothing about WHO confirmed. Only readiness.confirm_no_numeric_score
     (trusted server code, authenticated user) creates it, and every save must go through readiness.carry_confirmation.
@@ -78,7 +81,8 @@ READY = "ready"
 NEEDS_ITEMS = "needs_items"                  # no items anywhere: the recruiter must add at least one
 NEEDS_CONFIRMATION = "needs_confirmation"    # preferred-only: explicit confirmation to proceed without a score
 NEEDS_REVIEW = "needs_review"                # structurally or numerically invalid (incl. over-limit extraction)
-READINESS_STATES = (READY, NEEDS_ITEMS, NEEDS_CONFIRMATION, NEEDS_REVIEW)
+NEEDS_CLASSIFICATION_REVIEW = "needs_classification_review"   # unresolved classification warnings, policy requires acknowledgment
+READINESS_STATES = (READY, NEEDS_ITEMS, NEEDS_CLASSIFICATION_REVIEW, NEEDS_CONFIRMATION, NEEDS_REVIEW)
 
 SCORING_WEIGHTED = "weighted"
 SCORING_NONE = "none"

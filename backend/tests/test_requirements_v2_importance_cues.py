@@ -269,8 +269,10 @@ class TestNothingElseChanged:
     def test_preferred_only_job_with_flagged_items_still_needs_confirmation(self, L):
         text, source = L["missing_text"]
         r, _ = run(L["jd_one"], item(text, source, cue=None))
-        assert r.readiness.state == "needs_confirmation"
+        assert r.readiness.state == "needs_classification_review"          # default policy: acknowledgment required
         assert all(r.requirements["categories"][c]["weight"] == 0 for c in CATEGORIES)
+        relaxed = process_ai_output(r.raw_ai_output, L["jd_one"], require_classification_acknowledgment=False)
+        assert relaxed.readiness.state == "needs_confirmation"             # policy No: warnings visible, not blocking
 
     @LANGS
     def test_the_review_warnings_travel_in_the_analysis_envelope(self, L):
@@ -297,6 +299,25 @@ class TestNothingElseChanged:
         r, _ = run("Docker is a plus", ("skills", raw), weights={"skills": 100})
         assert r.requirements["categories"]["skills"]["items"][0]["importance"] == "required"
         assert [i.code for i in r.review] == ["importance_missing_defaulted_required"]
+
+
+# ══ a cue in an earlier sentence of the same line is another requirement's cue ═══
+
+class TestSameLineSentences:
+
+    @pytest.mark.parametrize("jd,first,second,cue", [
+        ("SQL is a plus. Docker.", ("SQL", "SQL is a plus"), ("Docker", "Docker"), "is a plus"),
+        ("يفضل معرفة SQL. Docker.", ("SQL", "يفضل معرفة SQL"), ("Docker", "Docker"), "يفضل"),
+    ], ids=["english", "arabic"])
+    def test_a_cue_in_the_previous_sentence_does_not_govern_the_next_item(self, jd, first, second, cue):
+        r, _ = run(jd, item(*first, cue=cue), item(*second, cue=cue))
+        flagged = [i.item_id for i in cue_issues(r)]
+        assert flagged == [r.requirements["categories"]["skills"]["items"][1]["id"]]
+
+    @pytest.mark.parametrize("jd,cue", [("Preferred: Docker, Kubernetes", "Preferred"), ("يفضل: Docker, Kubernetes", "يفضل")])
+    def test_a_cue_earlier_in_the_same_sentence_governs_every_item_after_it(self, jd, cue):
+        r, _ = run(jd, item("Docker", "Docker", cue=cue), item("Kubernetes", "Kubernetes", cue=cue))
+        assert cue_issues(r) == []
 
 
 # ══ the relationship helper on its own ════════════════════════════════════════

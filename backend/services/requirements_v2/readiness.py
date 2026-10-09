@@ -4,10 +4,19 @@ Readiness and the preferred-only confirmation. Pure functions; the caller suppli
 State (compute_readiness):
   needs_review        the document breaks a final-save rule (malformed, unbalanced weights, over-limit extraction, ...)
   needs_items         valid but no items anywhere: the recruiter must add at least one before proceeding
+  needs_classification_review
+                      valid, but a classification warning (a Preferred item whose Preferred status the job
+                      description does not establish) is unresolved and the policy requires acknowledgment. Evaluated
+                      before the preferred-only confirmation: the recruiter settles the classification first.
   needs_confirmation  valid, only preferred items (all weights 0): proceeding without a numerical score needs an
                       explicit confirmation
   ready               valid with required items (weighted scoring), or preferred-only with a current confirmation
                       (scoring mode "none")
+
+Policy: compute_readiness(doc, require_classification_acknowledgment=True) takes the admin setting EXPLICITLY (default:
+acknowledgment required). With False, classification warnings are still reported (Readiness.open_warning_ids) but never
+block. Only classification warnings are covered; no other extraction warning has any effect on readiness.
+See acknowledgment.py for the warning / acknowledgment contract.
 
 Confirmation (document["scoring_confirmation"]) is SERVER-OWNED:
   - it is created only by confirm_no_numeric_score(), called by trusted server code for an authenticated user;
@@ -34,8 +43,11 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+from services.requirements_v2.acknowledgment import (
+    carry_classification_review, classification_status, unresolved_warnings,
+)
 from services.requirements_v2.contract import (
-    CATEGORIES, CONFIRMATION_KIND, NEEDS_CONFIRMATION, NEEDS_ITEMS, NEEDS_REVIEW, READY,
+    CATEGORIES, CONFIRMATION_KIND, NEEDS_CLASSIFICATION_REVIEW, NEEDS_CONFIRMATION, NEEDS_ITEMS, NEEDS_REVIEW, READY,
     SCORING_NONE, SCORING_WEIGHTED, Issue, count_items,
 )
 from services.requirements_v2.validation import validate_final
@@ -50,6 +62,8 @@ class Readiness:
     state: str                                    # READY | NEEDS_*
     scoring_mode: str | None                      # "weighted" | "none" when ready, else None
     reasons: tuple[Issue, ...] = ()               # why the job is not ready (empty when ready)
+    open_warning_ids: tuple[str, ...] = ()        # classification warnings that still apply (visible under any policy)
+    unresolved_warning_ids: tuple[str, ...] = ()  # ... of which not yet acknowledged (these block when policy is Yes)
 
     @property
     def can_proceed(self) -> bool:
@@ -72,27 +86,37 @@ def basis_hash(doc: dict) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def compute_readiness(doc: object) -> Readiness:
+def compute_readiness(doc: object, *, require_classification_acknowledgment: bool = True) -> Readiness:
     result = validate_final(doc)
     if not result.ok:
         return Readiness(NEEDS_REVIEW, None, result.errors)
+    status = classification_status(doc)
+    visible = dict(open_warning_ids=status.open, unresolved_warning_ids=status.unresolved)
     required, preferred = count_items(doc)           # type: ignore[arg-type]
     if required + preferred == 0:
         return Readiness(NEEDS_ITEMS, None, (Issue(
-            "no_items", "There are no requirements. Add at least one before proceeding."),))
+            "no_items", "There are no requirements. Add at least one before proceeding."),), **visible)
+    if require_classification_acknowledgment and status.unresolved:
+        return Readiness(NEEDS_CLASSIFICATION_REVIEW, None, tuple(
+            Issue("classification_warning_unresolved", w["message"], category=w["category"], item_id=w["item_id"])
+            for w in unresolved_warnings(doc)), **visible)
     if required > 0:
-        return Readiness(READY, SCORING_WEIGHTED)
+        return Readiness(READY, SCORING_WEIGHTED, **visible)
     if doc.get("scoring_confirmation") is not None:   # type: ignore[union-attr]
-        return Readiness(READY, SCORING_NONE)         # validate_final already proved it is current
+        return Readiness(READY, SCORING_NONE, **visible)  # validate_final already proved it is current
     return Readiness(NEEDS_CONFIRMATION, None, (Issue(
         "preferred_only_unconfirmed",
-        "Only preferred items exist, so no numerical score will be produced. Explicit confirmation is required."),))
+        "Only preferred items exist, so no numerical score will be produced. Explicit confirmation is required."),),
+        **visible)
 
 
-def confirm_no_numeric_score(doc: dict, *, user_id: str, confirmed_at: str) -> dict:
+def confirm_no_numeric_score(doc: dict, *, user_id: str, confirmed_at: str,
+                             require_classification_acknowledgment: bool = True) -> dict:
     """A new document carrying the confirmation. Allowed only while the job is preferred-only, valid and not
-    already confirmed with a current basis."""
-    state = compute_readiness(doc)
+    already confirmed with a current basis. With the (default) policy that requires acknowledgment, unresolved
+    classification warnings must be settled first: the recruiter decides what is Preferred before confirming that
+    there will be no numerical score."""
+    state = compute_readiness(doc, require_classification_acknowledgment=require_classification_acknowledgment)
     if state.state != NEEDS_CONFIRMATION:
         raise ConfirmationError(f"Nothing to confirm (readiness is {state.state!r}).")
     if not user_id or not confirmed_at:
@@ -127,3 +151,9 @@ def carry_confirmation(stored: dict | None, incoming: dict) -> dict:
     if applicable:
         out["scoring_confirmation"] = copy.deepcopy(prior)
     return out
+
+
+def carry_server_owned(stored: dict | None, incoming: dict) -> dict:
+    """carry_confirmation + carry_classification_review: the single call an API save should make to rebuild all
+    server-owned state from the TRUSTED stored document. Everything the client sent for these keys is discarded."""
+    return carry_classification_review(stored, carry_confirmation(stored, incoming))
