@@ -169,16 +169,17 @@ class Run:
         check("the creation request carried requirements_format=v2", bool(posted) and posted[-1].get("requirements_format") == "v2",
               posted[-1:] if posted else "none")
         # the Required/Preferred items are per item inside a category
-        body = self.page.inner_text("[data-testid=requirements-v2]")
-        check("Required and Preferred items appear inside the editor", "Required" in body and "Preferred" in body)
+        # the category headings are uppercase by CSS, so compare the text without that transform
+        body = self.page.text_content("[data-testid=requirements-v2]") or ""
+        check("Required and Preferred items appear inside the editor", "Required (" in body and "Preferred (" in body)
         EVIDENCE["english_job"] = job_en
 
         # B. Arabic v2 job: the editor opens right-to-left with Arabic items
         job_ar = self.create("محاسب (v2)", ar["jd"], "v2")
         states_ar = self.extraction_states()
         check("Arabic v2 job completes and opens the editor", "editor" in states_ar, states_ar)
-        item_values = self.page.eval_on_selector_all("[data-testid=requirements-v2] input, [data-testid=requirements-v2] textarea",
-                                                     "els => els.map(e => e.value)")
+        # review shows each item's wording as text (edit controls open only on request)
+        item_values = self.page.eval_on_selector_all("[data-testid=requirements-v2] p[id^='req-text-']", "els => els.map(e => e.textContent || '')")
         check("the Arabic job's items are shown in the editor", any(any("\u0600" <= ch <= "\u06ff" for ch in v) for v in item_values), item_values[:3])
         EVIDENCE["arabic_job"] = job_ar
 
