@@ -82,7 +82,7 @@ class Page:
         names = lang_names or EN
         row = self.row(text)
         row.get_by_role("button", name=f"{names['moreActions']}: {text}", exact=True).click()
-        row.get_by_role("button", name=names["editItem"], exact=True).click()
+        row.get_by_role("menuitem", name=names["editItem"], exact=True).click()
         return self.page.locator("[data-testid=item-editor]")
 
     def editor_weight(self, editor):
@@ -140,12 +140,15 @@ class Page:
     def delete(self, text):
         row = self.row(text)
         row.get_by_role("button", name=f"More actions: {text}", exact=True).click()
-        row.get_by_role("button", name=f"Delete this item: {text}", exact=True).click()
+        row.get_by_role("menuitem", name=f"Delete this item: {text}", exact=True).click()
+        confirm = self.page.locator("[data-testid=delete-confirm]")
+        confirm.get_by_role("button", name="Delete from draft", exact=True).click()
 
-    def action(self, text, name):
+    def open_delete(self, text):
         row = self.row(text)
         row.get_by_role("button", name=f"More actions: {text}", exact=True).click()
-        row.get_by_role("button", name=name, exact=True).click()
+        row.get_by_role("menuitem", name=f"Delete this item: {text}", exact=True).click()
+        return self.page.locator("[data-testid=delete-confirm]")
 
     # ── totals, warnings, saving ────────────────────────────────────────────────────────────────────────────────────────────────
     def required_total(self, cat):
@@ -240,6 +243,11 @@ def main():
             check("review: Equalize is disabled while the weights already are the equal split", pg.equalize("skills").is_disabled())
             check("review: no editor is open", pg.page.locator("[data-testid=item-editor]").count() == 0)
             pg.shot("0-review-default")
+            pg.row(names[0]).get_by_role("button", name=f"More actions: {names[0]}", exact=True).click()
+            items = [x.strip() for x in pg.page.locator("[role=menu] [role=menuitem]").all_inner_texts()]
+            check("the Actions dropdown lists Edit first and Delete last", items == ["Edit", "Delete"], items)
+            pg.shot("0b-actions-dropdown")
+            pg.page.keyboard.press("Escape")
 
             # ── 2. Cancel and Escape change nothing ───────────────────────────────────────────────────────────────────────────────
             requests_before = len(pg.requests)
@@ -302,9 +310,18 @@ def main():
             pg.apply(ed)
             check("add: the new item is in the draft, marked New", pg.row("Ruby on Rails experience").count() == 1
                   and pg.row("Ruby on Rails experience").get_by_text("New", exact=True).count() == 1)
-            pg.action("Ruby on Rails experience", "Make preferred")
-            check("reclassify: a Preferred item has no weight in review", pg.review_weight("Ruby on Rails experience") is None)
-            pg.action("Ruby on Rails experience", "Make required")
+            ed = pg.open_editor("Ruby on Rails experience")
+            ed.get_by_role("radio", name="Preferred", exact=True).check()
+            pg.apply(ed)
+            check("reclassify in Edit: a Preferred item has no weight in review", pg.review_weight("Ruby on Rails experience") is None)
+            ed = pg.open_editor("Ruby on Rails experience")
+            ed.get_by_role("radio", name="Required", exact=True).check()
+            pg.apply(ed)
+            confirm = pg.open_delete("Ruby on Rails experience")
+            check("delete asks first and names the item", "Ruby on Rails experience" in confirm.inner_text())
+            pg.shot("7a-delete-confirm")
+            confirm.get_by_role("button", name="Cancel", exact=True).click()
+            check("cancelled delete: the item stays in the draft", pg.row("Ruby on Rails experience").count() == 1)
             pg.delete("Ruby on Rails experience")
             check("remove: the item is gone from the draft", pg.row("Ruby on Rails experience").count() == 0)
 

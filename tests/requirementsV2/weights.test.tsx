@@ -223,7 +223,7 @@ describe('many items in one category', () => {
     expect(rows).toHaveLength(30);
     rows.forEach(row => {
       expect(row.querySelector('[id^="req-details-"]')!.hasAttribute('hidden')).toBe(true);
-      expect(row.querySelector('[id^="req-actions-"]')!.hasAttribute('hidden')).toBe(true);
+      expect(row.querySelector('[role="menu"]')).toBeNull();                              // the Actions dropdown is closed until asked for
     });
     expect(screen.queryByText('Source wording 2')).toBeNull();
     expect(screen.queryByText(S.sourceWording)).toBeNull();

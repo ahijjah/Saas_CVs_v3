@@ -228,7 +228,6 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     setCatEdit(null);
   };
   const actions: RowActions = {
-    toggleImportance: (k) => edit(d => { const f = findItem(d, k); return f ? setImportance(d, k, f.item.importance === 'required' ? 'preferred' : 'required') : d; }),
     remove: (k) => { edit(d => removeItem(d, k)); say(s.delete); },
     confirmStructure: (id) => runAction(() => apiRef.current.confirmStructure(jobId, baseRevision, id)),
     goToItem,

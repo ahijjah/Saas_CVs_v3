@@ -155,7 +155,7 @@ def edit_wording(scope, text, append, card=None):
     base = card if card is not None else scope              # the same wording can be in two categories: name the card when it matters
     row = base.locator("li[id^='req-item-']").filter(has=scope.get_by_text(text, exact=True))
     row.get_by_role("button", name=f"More actions: {text}", exact=True).click()
-    row.get_by_role("button", name="Edit", exact=True).click()
+    row.get_by_role("menuitem", name="Edit", exact=True).click()
     ed = scope.locator("[data-testid=item-editor]")
     ta = ed.get_by_label("Requirement wording")
     ta.fill(ta.input_value() + append)

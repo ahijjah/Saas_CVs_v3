@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import {
   CATEGORIES, CategoryKey, DraftCategory, DraftItem, ExperienceStructure, parseWhole, preferredItems, requiredItems, requiredStatus,
 } from '../../utils/requirementsV2';
@@ -11,7 +11,6 @@ import type { RequirementsView } from '../../services/requirementsV2Api';
 // category weight, or an add button). Details and Actions are closed until opened.
 
 export interface RowActions {
-  toggleImportance(key: string): void;
   remove(key: string): void;
   confirmStructure(itemId: string): void;
   goToItem(id: string): void;
@@ -42,6 +41,7 @@ export interface CategoryCardProps {
 }
 
 const btnGhost = 'px-2.5 py-1.5 text-xs font-bold rounded-lg border border-border text-textMain hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed';
+const menuItem = 'block w-full text-start px-3 py-2 text-xs font-bold text-textMain hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary';
 const iconBtn = 'inline-flex items-center justify-center w-8 h-8 rounded-lg border border-border text-textMain hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed';
 const inputCls = 'px-3 py-2 border border-border rounded-xl text-sm bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none';
 
@@ -60,11 +60,15 @@ interface ItemRowProps {
 
 // One item. Review shows its wording, importance, Required weight and blocking matters; Details and Actions open on request.
 const ItemRow: React.FC<ItemRowProps> = ({ item, category, s, canEdit, canAct, busy, info, actions, lastRequired, editing, startEdit, applyEdit, cancelEdit, notify, fmtDate, who }) => {
+  const uid = useId();
   const [details, setDetails] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);            // the delete confirmation, shown in place of the menu
   const k = item.key;
   const detailsId = `req-details-${k}`;
-  const menuId = `req-actions-${k}`;
+  const menuId = `${uid}-menu`;
+  const menuList = useRef<HTMLUListElement>(null);
+  const cancelBtn = useRef<HTMLButtonElement>(null);
   const label = item.text.trim() || s.itemText;
   const isReq = item.importance === 'required';
   const isEditing = editing?.key === k;
@@ -72,14 +76,25 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, category, s, canEdit, canAct, b
   const classificationOpen = info.classification.filter(w => w.state === 'unresolved' || w.state === 'acknowledged');
   const menuBtn = useRef<HTMLButtonElement>(null);
 
-  // closing the menu with Escape returns the focus to its button
+  // the menu: Escape closes it and returns the focus to its button; the first item takes the focus when it opens
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setMenuOpen(false); menuBtn.current?.focus(); } };
     document.addEventListener('keydown', onKey);
+    menuList.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
     return () => document.removeEventListener('keydown', onKey);
   }, [menuOpen]);
-  useEffect(() => { if (isEditing) setMenuOpen(false); }, [isEditing]);
+  useEffect(() => { if (confirming) cancelBtn.current?.focus(); }, [confirming]);
+  useEffect(() => { if (isEditing) { setMenuOpen(false); setConfirming(false); } }, [isEditing]);
+  const menuItems = (): HTMLButtonElement[] => Array.from(menuList.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    const items = menuItems();
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0]?.focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1]?.focus(); }
+  };
 
   const meta: React.ReactNode[] = [];
   if (item.origin === 'from_responsibilities') meta.push(<Badge key="resp" tone="blue"><BriefcaseIcon width={12} height={12} />{s.fromResponsibilities}</Badge>);
@@ -92,19 +107,16 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, category, s, canEdit, canAct, b
   if (info.changedInDraft && info.structureState && info.structureState !== 'original')
     meta.push(<Badge key="saved" tone="amber" title={s.itemEditedSaved}>{s.savedBadge}</Badge>);
 
-  // the guidance for the action asked for is said where the action was taken (the category card), not in this row: the row moves between
-  // the Required and Preferred lists when its importance changes
-  const toggleImportance = () => {
-    const n: string[] = [];
-    if (isReq) { n.push(s.guidePreferred); if (lastRequired) n.push(s.guideLastRequired); }
-    notify(n);
-    setMenuOpen(false);
-    actions.toggleImportance(k);
-  };
-  const remove = () => {
+  // Edit is the only place where importance changes. Delete is draft-only and needs a confirmation that names the item.
+  const openEdit = () => { setMenuOpen(false); startEdit(k); };
+  const askDelete = () => { setMenuOpen(false); setConfirming(true); };
+  const cancelDelete = () => { setConfirming(false); menuBtn.current?.focus(); };
+  const confirmDelete = () => {
+    // the guidance is said where the action was taken: the card keeps it while the row goes
     notify(isReq && lastRequired ? [s.guideLastRequired] : []);
-    setMenuOpen(false);
+    setConfirming(false);
     actions.remove(k);
+    window.setTimeout(() => document.getElementById(`req-cat-${category}`)?.focus(), 0);
   };
 
   if (isEditing && canEdit) {
@@ -137,10 +149,24 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, category, s, canEdit, canAct, b
             <InfoIcon width={16} height={16} />
           </button>
           {canEdit && (
-            <button ref={menuBtn} type="button" className={iconBtn} aria-label={`${s.moreActions}: ${label}`} title={s.moreActions}
-                    aria-expanded={menuOpen} aria-controls={menuId} onClick={() => setMenuOpen(o => !o)}>
-              <DotsIcon width={18} height={18} />
-            </button>
+            // the menu closes when the focus leaves it (Tab, or a click elsewhere)
+            <div className="relative" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setMenuOpen(false); }}>
+              <button ref={menuBtn} type="button" className={iconBtn} aria-label={`${s.moreActions}: ${label}`} title={s.moreActions}
+                      aria-haspopup="menu" aria-expanded={menuOpen} aria-controls={menuOpen ? menuId : undefined} onClick={() => setMenuOpen(o => !o)}>
+                <DotsIcon width={18} height={18} />
+              </button>
+              {menuOpen && (
+                <ul id={menuId} ref={menuList} role="menu" aria-label={`${s.moreActions}: ${label}`} onKeyDown={onMenuKey}
+                    className="absolute end-0 top-full mt-1 z-20 w-48 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-white shadow-lg py-1">
+                  <li role="none"><button role="menuitem" type="button" className={menuItem} onClick={openEdit}>{s.editItem}</button></li>
+                  <li role="separator" className="my-1 border-t border-border" />
+                  <li role="none">
+                    <button role="menuitem" type="button" className={`${menuItem} text-red-700 hover:bg-red-50 focus-visible:bg-red-50`}
+                            aria-label={`${s.deleteItem}: ${label}`} onClick={askDelete}>{s.delete}</button>
+                  </li>
+                </ul>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -181,16 +207,18 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, category, s, canEdit, canAct, b
         </p>
       )}
 
-      {/* Actions: Edit, the importance, and Delete; closed until asked for */}
-      {canEdit && (
-        <div id={menuId} hidden={!menuOpen} className="mt-2 border-t border-border pt-2 flex flex-wrap gap-2" role="group" aria-label={`${s.moreActions}: ${label}`}>
-          {menuOpen && (
-            <>
-              <button type="button" className={btnGhost} onClick={() => { setMenuOpen(false); startEdit(k); }}>{s.editItem}</button>
-              <button type="button" className={btnGhost} onClick={toggleImportance}>{isReq ? s.makePreferred : s.makeRequired}</button>
-              <button type="button" className={`${btnGhost} text-error`} aria-label={`${s.deleteItem}: ${label}`} onClick={remove}>{s.delete}</button>
-            </>
-          )}
+      {/* Delete needs this confirmation: it names the item, changes only the draft, and Cancel leaves the draft as it was */}
+      {confirming && canEdit && (
+        <div role="alertdialog" aria-labelledby={`${uid}-dh`} aria-describedby={`${uid}-dd`} data-testid="delete-confirm"
+             className="mt-2 rounded-lg border border-red-300 bg-red-50 p-3"
+             onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); cancelDelete(); } }}>
+          <p id={`${uid}-dh`} className="text-xs font-black text-red-900 break-words">{fmt(s.deleteConfirmTitle, { name: label })}</p>
+          <p id={`${uid}-dd`} className="text-xs text-red-900 mt-1">{s.deleteConfirmBody}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button ref={cancelBtn} type="button" className={btnGhost} onClick={cancelDelete}>{s.cancelEdit}</button>
+            <button type="button" className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-red-700 text-white hover:bg-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    onClick={confirmDelete}>{s.deleteConfirmButton}</button>
+          </div>
         </div>
       )}
 

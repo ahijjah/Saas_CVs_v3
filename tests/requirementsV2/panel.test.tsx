@@ -109,14 +109,19 @@ describe('editing rules', () => {
     expect(categoryWeight('skills')).toBe('60');
     expect(screen.getByTestId('category-total').textContent).toContain('60%');
   });
-  it('reclassify required <-> preferred follows the backend rules', async () => {
+  it('reclassify required <-> preferred follows the backend rules; it is changed in Edit, and the guidance is said there', async () => {
     const { ui } = await setup(makeView());
     const exp = '4 years as a Maintenance Planner';
-    await rowAction(ui, exp, S.makePreferred);
+    let ed = await openEditor(ui, exp);
+    await ui.click(within(ed).getByRole('radio', { name: S.preferred }));
+    expect(screen.getByTestId('guide-last-required').textContent).toBe(S.guideLastRequired);   // the consequence is said when it is asked for
+    expect(screen.getByTestId('guide-preferred').textContent).toBe(S.guidePreferred);
+    await applyEditor(ui, ed);
     expect(categoryWeight('experience')).toBe('0');
     expect(itemWeight(exp)).toBeNull();
-    expect(screen.getByText(S.guideLastRequired)).toBeTruthy();                        // the consequence is said when the action is taken
-    await rowAction(ui, exp, S.makeRequired);
+    ed = await openEditor(ui, exp);
+    await ui.click(within(ed).getByRole('radio', { name: S.required }));
+    await applyEditor(ui, ed);
     expect(itemWeight(exp)).toBeNull();                                                 // Required starts unweighted
     expect(rowOf(exp).querySelector('[data-testid^="weight-"]')).toBeTruthy();
   });

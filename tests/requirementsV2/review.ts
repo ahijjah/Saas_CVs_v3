@@ -12,7 +12,7 @@ export const cardOf = (category: string) => document.getElementById(`req-cat-${c
 export async function openEditor(ui: Ui, text: string, s: Strings = STRINGS.en) {
   const row = rowOf(text);
   await ui.click(within(row).getByRole('button', { name: `${s.moreActions}: ${text}` }));
-  await ui.click(within(row).getByRole('button', { name: s.editItem }));
+  await ui.click(within(row).getByRole('menuitem', { name: s.editItem }));
   return screen.getByTestId('item-editor') as HTMLFormElement;
 }
 
@@ -57,11 +57,15 @@ export async function setWeight(ui: Ui, text: string, value: string, s: Strings 
   await applyEditor(ui, editor, s);
 }
 
-// Actions (⋯) → the named action in the item's row (for example "Delete" or "Make preferred").
+// Actions (⋯) → the named menu item in the item's row (for example "Edit").
 export async function rowAction(ui: Ui, text: string, action: string | RegExp, s: Strings = STRINGS.en) {
   const row = rowOf(text);
   await ui.click(within(row).getByRole('button', { name: `${s.moreActions}: ${text}` }));
-  await ui.click(within(row).getByRole('button', { name: action }));
+  await ui.click(within(row).getByRole('menuitem', { name: action }));
 }
 
-export const deleteItem = (ui: Ui, text: string, s: Strings = STRINGS.en) => rowAction(ui, text, `${s.deleteItem}: ${text}`, s);
+// Actions → Delete → the confirmation that names the item → Delete from draft (draft-only; nothing is saved).
+export async function deleteItem(ui: Ui, text: string, s: Strings = STRINGS.en) {
+  await rowAction(ui, text, `${s.deleteItem}: ${text}`, s);
+  await ui.click(within(screen.getByTestId('delete-confirm')).getByRole('button', { name: s.deleteConfirmButton }));
+}
