@@ -14,7 +14,7 @@ import scripts.requirements_v2_tc20_noexamples as nx
 
 AUDIT = pathlib.Path(__file__).parent / "fixtures" / "requirements_v2_technical_coordinator_20" / "audit"
 NOEX = AUDIT / "run_tc20_v2-3-noex"
-STORED = AUDIT / "run_tc20_v2-3_v2-4"
+STORED = nx.STORED
 USER_SHA = "ff6b334ad32300a05933cf96284c6c253d86ed9442ffcac37a8b543a8c240473"
 
 
@@ -90,10 +90,35 @@ def test_the_observed_defects_hold_for_all_five_answers(noex_rows, jd_and_labels
     assert all(x["weights"]["total"] == 300 for x in f)                   # 100 / 100 / 100
     assert all(x["soft_skills_items"] == 0 for x in f)                    # soft_skills left empty
     assert all(x["javascript_category"] == ["experience"] for x in f)     # web knowledge in experience
-    assert all(x["arabic_english_single_item"] for x in f)                # Arabic and English merged
+    assert all(x["arabic_english_merged"] and x["arabic_english_items"] == 1 for x in f)   # one merged Arabic-and-English item
     assert all(x["education_alternatives_retained"] is False for x in f)  # no alternatives on the degree item
     assert all(x["responsibility_items"] == 0 for x in f)                 # no duties
     assert all(sum(x["condition_items"].values()) == 0 for x in f)        # all condition lists empty
+
+
+def test_the_stored_baseline_splits_arabic_and_english_into_two_items_in_all_five_calls(stored_v23_rows, jd_and_labels):
+    jd, labels = jd_and_labels
+    f = [C.facts(r["raw"], jd, labels) for r in stored_v23_rows]
+    assert all(x["arabic_english_items"] == 2 and x["arabic_english_merged"] is False for x in f)
+    for r in stored_v23_rows:                                             # both items share one source sentence
+        items = [it for lst in json.loads(r["raw"])["categories"].values() for it in lst]
+        split = [it for it in items if it["text"] in ("Arabic", "English")]
+        assert len(split) == 2 and split[0]["source_text"] == split[1]["source_text"] == \
+            "Good command of Arabic and English, including the ability to communicate with stakeholders and understand technical documentation"
+
+
+def test_the_baseline_files_are_the_uploaded_bytes_and_are_verified_before_use(monkeypatch, tmp_path):
+    nx.verify_baseline()
+    for name, digest in nx.BASELINE_SHA256.items():
+        assert nx.sha256_bytes((STORED / name).read_bytes()) == digest
+    tampered = tmp_path / "run"
+    tampered.mkdir()
+    for name in nx.BASELINE_SHA256:
+        (tampered / name).write_bytes((STORED / name).read_bytes())
+    (tampered / "calls.jsonl").write_bytes((tampered / "calls.jsonl").read_bytes() + b"\n")
+    monkeypatch.setattr(nx, "STORED", tampered)
+    with pytest.raises(ev.PlanError, match="calls.jsonl"):
+        nx.verify_baseline()
 
 
 def test_the_schema_defects_are_the_stored_missing_keys(noex_rows, jd_and_labels):
@@ -186,9 +211,18 @@ def test_the_comparison_uses_the_unchanged_full_v23_prompt_and_the_stored_user_m
     assert nx.sha256_bytes(msgs[1]["content"].encode("utf-8")) == USER_SHA
 
 
-def test_the_paid_path_refuses_while_pricing_is_unverified(monkeypatch, tmp_path):
+def test_the_recorded_pricing_is_the_official_gpt41_snapshot_price():
+    assert C.MODEL == "gpt-4.1-2025-04-14"
+    assert C.PRICE_IN == pytest.approx(2.00e-6) and C.PRICE_OUT == pytest.approx(8.00e-6)
+    assert C.PRICING_SOURCE == "https://developers.openai.com/api/docs/models/gpt-4.1"
+    assert C.PRICING_VERIFIED is True and "VERIFIED" in C.PRICING_STATUS and C.PRICING_SOURCE in C.PRICING_STATUS
+    assert C.plan(ev.load_inputs()[0])["pricing_status"] == C.PRICING_STATUS
+
+
+def test_the_paid_path_refuses_while_pricing_is_not_recorded_as_verified(monkeypatch, tmp_path):
     def boom(*_a, **_k):
-        raise AssertionError("no call may be made while pricing is unverified")
+        raise AssertionError("no call may be made while pricing is not verified")
+    monkeypatch.setattr(C, "PRICING_VERIFIED", False)
     monkeypatch.setattr(C, "openai_call_model", boom)
     monkeypatch.setenv("OPENAI_API_KEY", "not-a-real-key")
     with pytest.raises(C.ComparisonError, match="not verified"):
@@ -196,14 +230,14 @@ def test_the_paid_path_refuses_while_pricing_is_unverified(monkeypatch, tmp_path
     assert not (tmp_path / "x").exists()
 
 
-def test_the_dry_run_makes_no_network_call_and_says_pricing_is_unverified(monkeypatch, capsys):
+def test_the_dry_run_makes_no_network_call_and_reports_the_pricing_status(monkeypatch, capsys):
     def boom(*_a, **_k):
         raise AssertionError("the dry-run must not reach the network")
     monkeypatch.setattr(C, "openai_call_model", boom)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     assert C.main([]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out["pricing_verified"] is False and out["plan"]["worst_case_total_usd"] <= 0.40
+    assert out["pricing_verified"] is True and out["plan"]["worst_case_total_usd"] <= 0.40
     assert out["user_message_sha256"] == USER_SHA and out["disclosed_differences"]
 
 

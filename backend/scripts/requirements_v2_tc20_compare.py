@@ -28,10 +28,13 @@ from scripts import requirements_v2_tc20_noexamples as nx  # noqa: E402  (educat
 ARM = "v2-3-full-stronger"
 ARM_PROMPT = "v2-3"                                   # the unchanged full prompt (ev.ARMS["v2-3"])
 MODEL = "gpt-4.1-2025-04-14"                          # pinned snapshot; see PRICING_STATUS before any run
-PRICE_IN, PRICE_OUT = 2.00e-6, 8.00e-6                # USD per token: a third-party listing, NOT verified against the official page
-PRICING_STATUS = ("UNVERIFIED: taken from third-party aggregator listings (GPT-4.1 $2.00 input / $8.00 output per 1M tokens). "
-                  "The official OpenAI pricing and model pages could not be read from the sandbox. Confirm the snapshot ID, its "
-                  "availability to this key and both prices on the official pages before any run; the run refuses to start otherwise.")
+PRICE_IN, PRICE_OUT = 2.00e-6, 8.00e-6                # USD per token: standard input $2 / output $8 per 1M tokens
+PRICING_SOURCE = "https://developers.openai.com/api/docs/models/gpt-4.1"
+PRICING_VERIFIED = True                             # set only after the official page is checked and recorded above
+PRICING_STATUS = ("VERIFIED (owner-supplied from the official model page, " + PRICING_SOURCE + "): snapshot gpt-4.1-2025-04-14, "
+                  "standard input $2.00 and output $8.00 per 1M tokens. The sandbox could not open the page (DNS), so the figures "
+                  "were recorded from the owner's reading; the snapshot's availability to the key is checked by the first request "
+                  "(a model that differs from the pinned one stops the run).")
 CAP_USD = 0.40                                        # explicit cap for this comparison (five worst cases, see the dry-run)
 CALLS = 5
 DISCLOSED_DIFFERENCES = [
@@ -40,7 +43,7 @@ DISCLOSED_DIFFERENCES = [
     "temperature 0.1, max_tokens 6000, response_format json_object and timeout 90 are sent as in the stored arm; gpt-4.1 accepts all four",
     "the worst case estimates input tokens as characters/2 (the same convention as the stored plan), which overstates the real count",
 ]
-STORED = ev.FIX / "audit" / "run_tc20_v2-3_v2-4"
+STORED = nx.STORED
 MODEL_MUST_MATCH = True                               # the returned model must equal the requested snapshot
 
 ITEM_KEYS = ("text", "importance", "importance_cue", "source_text", "origin", "alternatives", "experience")
@@ -169,7 +172,9 @@ def facts(raw: str, jd: str, labels: dict) -> dict:
         "competency_lines_category": comp,
         "soft_skills_items": len(soft),
         "javascript_category": sorted({c for c, it in items if "JavaScript" in str(it.get("source_text", ""))}),
-        "arabic_english_single_item": any("Arabic and English" in str(it.get("source_text", "")) for _, it in items),
+        # Measured on the ITEM text, not the source sentence: the baseline splits one source sentence into two items.
+        "arabic_english_items": sum(1 for _, it in items if "Arabic" in str(it.get("text", "")) or "English" in str(it.get("text", ""))),
+        "arabic_english_merged": any("Arabic" in str(it.get("text", "")) and "English" in str(it.get("text", "")) for _, it in items),
         "education_alternatives_retained": nx.education_retained(raw),
         "responsibility_items": sum(1 for _, it in items if it.get("origin") == "from_responsibilities"),
         "condition_items": {n: len(obj.get(n) or []) for n in CONDITION_KEYS} if isinstance(obj, dict) else None,
@@ -196,6 +201,8 @@ def summarize(facts_list: list[dict]) -> dict:
 
 def analysis_document(noex_rows: list[dict], stored_rows: list[dict], jd: str, labels: dict) -> dict:
     """The raw-answer comparison of the no-examples run with the stored v2-3 baseline (both read offline, nothing re-run)."""
+    nx.verify_baseline()
+
     def per(rows):
         return [{"call": r["call"], **facts(r["raw"], jd, labels)} for r in rows if not r.get("error")]
     noex, stored = per(noex_rows), per(stored_rows)
@@ -226,8 +233,8 @@ def plan(jd: str, cap: float = CAP_USD) -> dict:
 
 def confirm_pricing_or_refuse() -> None:
     """The paid path refuses to start until the owner records the verified snapshot and prices in this file's constants."""
-    if "UNVERIFIED" in PRICING_STATUS:
-        raise ComparisonError("pricing and availability are not verified; confirm them on the official pages and update the constants first")
+    if not PRICING_VERIFIED:
+        raise ComparisonError("pricing and availability are not verified; confirm them on the official pages and record them first")
 
 
 def openai_call_model(messages_: list[dict]) -> dict:
@@ -312,7 +319,7 @@ def main(argv=None) -> int:
     jd, labels = ev.load_inputs()
     p = plan(jd)
     if not args.execute:
-        print(json.dumps({"mode": "dry-run", "arm": ARM, "plan": p, "pricing_verified": "UNVERIFIED" not in PRICING_STATUS,
+        print(json.dumps({"mode": "dry-run", "arm": ARM, "plan": p, "pricing_verified": PRICING_VERIFIED,
                           "disclosed_differences": DISCLOSED_DIFFERENCES, "labels_sha256": sha256_bytes(ev.LABELS.read_bytes()),
                           "prompt_sha256": ev.ARMS[ARM_PROMPT]["sha256"],
                           "user_message_sha256": sha256_bytes(ev.user_message(jd).encode("utf-8"))}, ensure_ascii=False, indent=1))

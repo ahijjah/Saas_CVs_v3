@@ -33,6 +33,17 @@ ARM = "v2-3-noex"
 CAP_USD = 0.03
 CALLS = 5
 STORED = ev.FIX / "audit" / "run_tc20_v2-3_v2-4"
+# The stored v2-3 baseline of the TC20 run (uploads 16d3343d-calls.jsonl, a08d7acf-manifest.json, 27b69479-scored.json).
+BASELINE_SHA256 = {"calls.jsonl": "705c5b37639549b5363cf27b12125180e967c3f432508e9985900743cd2e605e",
+                   "manifest.json": "2598c35dcc3c2a3ef1818079c0a65980f9e4bda9c92ec537fb40cc8133a14f41",
+                   "scored.json": "2eb263593f71fd5a55c1c5b017f148607126a7cc9944e9392618462a878893df"}
+
+
+def verify_baseline() -> None:
+    """Refuses to read a baseline whose bytes differ from the uploaded run."""
+    for name, digest in BASELINE_SHA256.items():
+        if sha256_bytes((STORED / name).read_bytes()) != digest:
+            raise ev.PlanError(f"stored baseline file {name} does not match its pinned sha256")
 # The JD sentence that carries the education alternatives (rule 4). Retention is read from the answer's education items.
 EDUCATION_SOURCE = "Bachelor’s degree in Computer Science, Information Technology"
 
@@ -158,6 +169,7 @@ def report(records: list[dict], jd: str, labels: dict) -> dict:
 def stored_comparison(jd: str) -> dict:
     """The five stored v2-3 answers of the TC20 run, read offline: their prompt and input hashes against this variant's, and the
     official pass counts and education retention those answers had. Nothing is re-scored or re-run here."""
+    verify_baseline()
     manifest = json.loads((STORED / "manifest.json").read_text(encoding="utf-8"))
     stored_report = json.loads((STORED / "scored.json").read_text(encoding="utf-8"))["report"]["v2-3"]
     rows = [json.loads(x) for x in (STORED / "calls.jsonl").read_text(encoding="utf-8").splitlines()]

@@ -47,11 +47,13 @@ Items per answer are counted from the raw JSON (before the parser).
 | Category weights total | **300 in all 5** (skills 100, experience 100, education 100; others 0) | 100 in all 5 |
 | Soft skills in `soft_skills` | **0 items**; the same competency wording sits in `skills` (11 skills items in every answer) | 7 items in `soft_skills` |
 | JavaScript / web knowledge | **In `experience`** (preferred, "is considered an advantage") | In `skills` |
-| Arabic and English merged | **Yes, 5/5**: one skills item "Good command of Arabic and English, including …" | Yes, 5/5 (the same merge; not a change) |
+| Arabic and English merged | **Yes, 5/5**: one skills item "Good command of Arabic and English, including …" | **Split in 5/5**: two skills items, "Arabic" and "English", both carrying the same source sentence (verified in `calls.jsonl`, calls 1–5) |
 | Education alternatives | **Absent, 5/5** (`alternatives: null` on the degree item) | Present, 5/5 (Computer Science / Information Technology / Software Engineering / Information Systems / related field) |
 | Duties (`from_responsibilities`) | **0 in all 5** | 0 in all 5 |
 | Condition lists (non-scoreable, post-hiring, informational) | **Empty in all 5** | Non-scoreable filled in calls 2, 3 and 5 (3, 4 and 3 items; this is where the location statement sits for C_LOCATION); empty in calls 1 and 4; post-hiring and informational empty in all 5 |
 | Local business knowledge (C_LOCAL) | In `experience`, not `domain_knowledge` (all 5) | Not in `domain_knowledge` either (C_LOCAL 0/5) |
+
+Baseline correction (verified): the stored v2-3 answers have separate "Arabic" and "English" items in all five calls, sharing one source sentence; the earlier draft of this audit wrongly said the baseline merged them. The no-examples answers merge them in all five.
 
 Note on the 300 total: rule 11 says the weights "do not need to total exactly 100" and each must be a whole number 0 to 100. A total of 300 is therefore **within the stated contract**, not a violation. It is a weighting choice: three equal categories, with no weight on soft skills or domain knowledge. The parser turns it into a valid split (section 4). The defect is what the weights sit on, not their sum.
 
@@ -84,6 +86,7 @@ Parser corrections are therefore limited to weight normalization and to the sile
 
 | Kind | Item |
 |---|---|
+| Change, not classed as a defect | Arabic and English merged into one item in the no-examples answers (the baseline split them into two items in 5/5; the content is the same) |
 | Raw-model defect | Competency wording placed in `skills` instead of `soft_skills` (all 5) |
 | Raw-model defect | JavaScript / web knowledge placed in `experience` (all 5) |
 | Raw-model defect | Education alternatives dropped (all 5) |

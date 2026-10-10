@@ -75,7 +75,8 @@
     "javascript_category": [
      "experience"
     ],
-    "arabic_english_single_item": true,
+    "arabic_english_items": 1,
+    "arabic_english_merged": true,
     "education_alternatives_retained": false,
     "responsibility_items": 0,
     "condition_items": {
@@ -137,7 +138,8 @@
     "javascript_category": [
      "experience"
     ],
-    "arabic_english_single_item": true,
+    "arabic_english_items": 1,
+    "arabic_english_merged": true,
     "education_alternatives_retained": false,
     "responsibility_items": 0,
     "condition_items": {
@@ -192,7 +194,8 @@
     "javascript_category": [
      "experience"
     ],
-    "arabic_english_single_item": true,
+    "arabic_english_items": 1,
+    "arabic_english_merged": true,
     "education_alternatives_retained": false,
     "responsibility_items": 0,
     "condition_items": {
@@ -254,7 +257,8 @@
     "javascript_category": [
      "experience"
     ],
-    "arabic_english_single_item": true,
+    "arabic_english_items": 1,
+    "arabic_english_merged": true,
     "education_alternatives_retained": false,
     "responsibility_items": 0,
     "condition_items": {
@@ -309,7 +313,8 @@
     "javascript_category": [
      "experience"
     ],
-    "arabic_english_single_item": true,
+    "arabic_english_items": 1,
+    "arabic_english_merged": true,
     "education_alternatives_retained": false,
     "responsibility_items": 0,
     "condition_items": {
@@ -381,7 +386,8 @@
     "javascript_category": [
      "skills"
     ],
-    "arabic_english_single_item": true,
+    "arabic_english_items": 2,
+    "arabic_english_merged": false,
     "education_alternatives_retained": true,
     "responsibility_items": 0,
     "condition_items": {
@@ -430,7 +436,8 @@
     "javascript_category": [
      "skills"
     ],
-    "arabic_english_single_item": true,
+    "arabic_english_items": 2,
+    "arabic_english_merged": false,
     "education_alternatives_retained": true,
     "responsibility_items": 0,
     "condition_items": {
@@ -479,7 +486,8 @@
     "javascript_category": [
      "skills"
     ],
-    "arabic_english_single_item": true,
+    "arabic_english_items": 2,
+    "arabic_english_merged": false,
     "education_alternatives_retained": true,
     "responsibility_items": 0,
     "condition_items": {
@@ -528,7 +536,8 @@
     "javascript_category": [
      "skills"
     ],
-    "arabic_english_single_item": true,
+    "arabic_english_items": 2,
+    "arabic_english_merged": false,
     "education_alternatives_retained": true,
     "responsibility_items": 0,
     "condition_items": {
@@ -577,7 +586,8 @@
     "javascript_category": [
      "skills"
     ],
-    "arabic_english_single_item": true,
+    "arabic_english_items": 2,
+    "arabic_english_merged": false,
     "education_alternatives_retained": true,
     "responsibility_items": 0,
     "condition_items": {
