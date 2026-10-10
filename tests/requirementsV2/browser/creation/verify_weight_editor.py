@@ -145,7 +145,7 @@ def main():
             check("60 and 50 show 110% in the Required total at once",
                   "110%" in pg.required_total("skills") and "+10" in pg.required_total("skills"), pg.required_total("skills"))
             check("the summary names the Skills Required total and the difference",
-                  "Required weights in Skills total 110%, not 100% (difference +10)." in pg.summary(), pg.summary()[:200])
+                  "Required item weights in Skills total 110%, not 100% (difference +10)." in pg.summary(), pg.summary()[:200])
             check("Equalize is enabled while the weights are not the equal split", pg.equalize("skills").is_enabled())
             shot_a = pg.shot("1-reported-defect-60-50")
             pg.equalize("skills").click()
@@ -163,7 +163,7 @@ def main():
             check("the server sends its numbers for the total (total, expected, difference)",
                   server_params == {"total": 110, "expected": 100, "difference": 10}, server_params)
             check("the message names the category and the numbers from the server",
-                  "Required weights in Skills total 110%, not 100% (difference +10)." in pg.summary(), pg.summary()[:200])
+                  "Required item weights in Skills total 110%, not 100% (difference +10)." in pg.summary(), pg.summary()[:200])
             check("the draft is kept after the refusal", pg.weights("skills")[0] == 60)
             check("the affected Required weights are highlighted", pg.card("skills").locator("input[id^='req-weight-']").first.get_attribute("aria-invalid") == "true")
 
@@ -183,7 +183,7 @@ def main():
             pg.page.locator("#req-cat-experience-w").fill("50")       # the Experience CATEGORY weight: the category total becomes 110
             summary = pg.page.locator("[data-testid=issue-summary]")
             check("several problems are listed together", summary.count() == 1 and "not a whole number" in summary.inner_text()
-                  and "Required weights in Skills" in summary.inner_text() and "Category weights total" in summary.inner_text(), summary.inner_text()[:400])
+                  and "Required item weights in Skills" in summary.inner_text() and "Category weights total" in summary.inner_text(), summary.inner_text()[:400])
             check("each problem has a Go to control", summary.get_by_role("button", name="Go to").count() >= 3, summary.get_by_role("button", name="Go to").count())
             shot_c = pg.shot("3-several-problems")
             pg.set_weight("skills", 0, 50); pg.set_weight("skills", 1, 50); pg.page.locator("#req-cat-experience-w").fill("40")
@@ -222,7 +222,7 @@ def main():
             pg.set_weight("skills", 0, 60)
             check("the Arabic total says the difference (120% against 100%: +20)", "الفرق +20" in pg.required_total("skills") and "120٪" in pg.required_total("skills"),
                   pg.required_total("skills"))
-            check("the Arabic summary names the total", "مجموع الأوزان الإلزامية في" in pg.summary(), pg.summary()[:200])
+            check("the Arabic summary names the total", "مجموع أوزان المتطلبات الإلزامية في" in pg.summary(), pg.summary()[:200])
             pg.shot("5-arabic-totals")
             pg.set_weight("skills", 0, 40)
 

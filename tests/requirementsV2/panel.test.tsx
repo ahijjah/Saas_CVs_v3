@@ -42,9 +42,9 @@ describe('layout: weighted job', () => {
   });
   it('shows required-item totals per category and the overall category total', async () => {
     await setup(makeView());
-    expect(screen.getByTestId('required-total-skills').textContent).toContain('Required total: 100% of 100%');
+    expect(screen.getByTestId('required-total-skills').textContent).toContain('Required item weights total: 100% of 100%');
     expect(screen.getByTestId('required-total-experience').textContent).toContain('100%');
-    expect(screen.getByTestId('category-total').textContent).toContain('Category total: 100% of 100%');
+    expect(screen.getByTestId('category-total').textContent).toContain('Category weights total: 100% of 100%');
   });
   it('always shows that candidate evaluation is unavailable', async () => {
     await setup(makeView());
@@ -173,7 +173,7 @@ describe('saving and readiness', () => {
     const { ui, api } = await setup(invalidWeightsView());
     expect(screen.getByTestId('readiness').textContent).toContain(S.reason_required_weights_total);
     await ui.type(within(card('Skills')).getAllByLabelText(S.itemText)[0], '!');
-    expect(screen.getByTestId('issue-summary').textContent).toMatch(/Required weights in Skills total \d+%, not 100%/);
+    expect(screen.getByTestId('issue-summary').textContent).toMatch(/Required item weights in Skills total \d+%, not 100%/);
     expect((screen.getByTestId('save') as HTMLButtonElement).disabled).toBe(false);
     api.save.mockRejectedValueOnce(apiError(422, { code: 'invalid_requirements', message: 'The requirements cannot be saved.',
       issues: [{ code: 'required_weights_total', message: 'Required item weights total 80%, not 100%.', category: 'skills', item_id: null }] }));

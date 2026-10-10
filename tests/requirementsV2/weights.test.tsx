@@ -89,7 +89,7 @@ describe('clear validation messages', () => {
     await ui.type(weightInput('Python'), '60');
     await ui.click(screen.getByTestId('save'));
     await screen.findByTestId('issue-summary');
-    expect(screen.getByTestId('issue-summary').textContent).toContain('Required weights in Skills total 110%, not 100% (difference +10).');
+    expect(screen.getByTestId('issue-summary').textContent).toContain('Required item weights in Skills total 110%, not 100% (difference +10).');
     expect(weightInput('Python').value).toBe('60');                                   // the draft is preserved
     expect(weightInput('Python').getAttribute('aria-invalid')).toBe('true');          // the affected field is highlighted
     expect(weightInput('SQL').getAttribute('aria-invalid')).toBe('true');
@@ -171,7 +171,7 @@ describe('clear validation messages', () => {
     await ui.type(weightInput('Python'), '60');                                       // Required total 110
     fireEvent.change(weightInput('SQL'), { target: { value: '12.5' } });             // not a whole number
     const summary = screen.getByTestId('issue-summary');
-    expect(summary.textContent).toContain('Required weights in Skills total 110%');
+    expect(summary.textContent).toContain('Required item weights in Skills total 110%');
     expect(summary.textContent).toContain('“12.5” is not a whole number');
     expect(within(summary).getAllByRole('button', { name: S.goToIssue }).length).toBeGreaterThanOrEqual(2);
   });
@@ -183,9 +183,9 @@ describe('Arabic', () => {
     await ui.clear(screen.getByLabelText(`وزن «Python»`) as HTMLInputElement);
     await ui.type(screen.getByLabelText(`وزن «Python»`) as HTMLInputElement, '60');
     const total = screen.getByTestId('required-total-skills').textContent ?? '';
-    expect(total).toContain('مجموع الإلزامي');
+    expect(total).toContain('مجموع أوزان المتطلبات الإلزامية');
     expect(total).toContain('الفرق +10');
-    expect(screen.getByTestId('issue-summary').textContent).toContain('مجموع الأوزان الإلزامية في');
+    expect(screen.getByTestId('issue-summary').textContent).toContain('مجموع أوزان المتطلبات الإلزامية في');
   });
 });
 
