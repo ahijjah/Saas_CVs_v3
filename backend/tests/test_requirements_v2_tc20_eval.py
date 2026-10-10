@@ -336,7 +336,7 @@ class FakeAuth(FakeAPIError):
 def test_the_sanitized_error_keeps_only_status_code_type_and_param(jd_and_labels):
     err = E.sanitize_error(bad_request())
     assert err == {"kind": "FakeAPIError", "http_status": 400, "code": "unsupported_value",
-                   "type": "invalid_request_error", "param": "response_format"}
+                   "type": "invalid_request_error", "param": "response_format", "message": None}
     dumped = json.dumps(err)
     assert SECRET not in dumped and "echo of the request" not in dumped
 
@@ -483,3 +483,100 @@ def test_the_cli_refuses_diagnose_or_execute_without_an_out_directory_and_key(mo
     monkeypatch.setenv("OPENAI_API_KEY", SECRET)
     with pytest.raises(SystemExit):
         E.main(["--diagnose"])                                         # a key but no --out
+
+
+# ── provider error shapes: flat and nested bodies, and the redacted message fallback ─────────────────────────────────────
+
+class ShapeError(Exception):
+    """A fake SDK error: the attributes, the body and the message are set per test to reproduce one provider shape."""
+    def __init__(self, body=None, attrs=None, message=None, status=400):
+        super().__init__("raised by the fake client")
+        self.body = body
+        self.status_code = status
+        for k, v in (attrs or {}).items():
+            setattr(self, k, v)
+        if message is not None:
+            self.message = message
+
+
+def test_a_nested_error_body_gives_code_type_and_param(jd_and_labels):
+    err = E.sanitize_error(ShapeError(body={"error": {"message": "bad", "type": "invalid_request_error", "param": "max_tokens",
+                                                      "code": "integer_below_min_value"}}))
+    assert (err["code"], err["type"], err["param"]) == ("integer_below_min_value", "invalid_request_error", "max_tokens")
+    assert err["message"] is None                                  # the fields are present: no message is kept
+
+
+def test_a_flat_error_body_gives_code_type_and_param(jd_and_labels):
+    err = E.sanitize_error(ShapeError(body={"message": "bad", "type": "invalid_request_error", "param": "response_format",
+                                            "code": "unsupported_value"}))
+    assert (err["code"], err["type"], err["param"]) == ("unsupported_value", "invalid_request_error", "response_format")
+    assert err["message"] is None
+
+
+def test_the_sdk_attributes_win_over_the_body_when_both_are_present(jd_and_labels):
+    err = E.sanitize_error(ShapeError(body={"error": {"code": "from_body"}}, attrs={"code": "from_attribute", "type": None, "param": None}))
+    assert err["code"] == "from_attribute"
+
+
+def test_a_flat_body_with_an_unsafe_code_falls_through_to_the_message(jd_and_labels):
+    err = E.sanitize_error(ShapeError(body={"code": "has a space", "type": None, "param": None}, message="Unsupported parameter."))
+    assert err["code"] is None and err["message"] == "Unsupported parameter."
+
+
+def test_with_no_code_type_or_param_a_redacted_message_is_kept(jd_and_labels):
+    err = E.sanitize_error(ShapeError(body=None, message="Invalid key sk-LIVE-abcdefgh123456 near Bearer abc.def.ghi and token=zzz"))
+    assert (err["code"], err["type"], err["param"]) == (None, None, None)
+    assert "sk-LIVE" not in err["message"] and "abc.def.ghi" not in err["message"] and "zzz" not in err["message"]
+    assert "[redacted]" in err["message"]
+
+
+def test_the_kept_message_is_length_limited_and_free_of_control_characters(jd_and_labels):
+    long_msg = "word " * 200 + "\n\t\x00end"
+    err = E.sanitize_error(ShapeError(body=None, message=long_msg))
+    assert len(err["message"]) <= E.MESSAGE_LIMIT and "\n" not in err["message"] and "\x00" not in err["message"]
+
+
+def test_a_message_that_echoes_the_jd_or_a_prompt_is_withheld(jd_and_labels):
+    jd, _ = jd_and_labels
+    echoed = "Your input was: " + jd[100:200]
+    err = E.sanitize_error(ShapeError(body=None, message=echoed), withheld=E.withheld_texts(jd))
+    assert err["message"] == "[withheld: the message echoes request content]"
+    assert jd[100:200] not in json.dumps(err)
+
+
+def test_a_message_with_no_safe_content_gives_no_message(jd_and_labels):
+    err = E.sanitize_error(ShapeError(body=None, message=None))
+    assert err["message"] is None
+
+
+def test_the_kept_record_has_only_the_allowed_keys_and_no_headers_or_body(jd_and_labels):
+    err = E.sanitize_error(ShapeError(body={"error": {"message": "x", "code": "c", "type": "t", "param": "p"}},
+                                      attrs={"headers": {"authorization": "Bearer SECRET"}, "request": "whole request"}))
+    assert set(err) == {"kind", "http_status", "code", "type", "param", "message"}
+    assert "SECRET" not in json.dumps(err) and "whole request" not in json.dumps(err)
+
+
+def test_a_run_with_a_flat_error_writes_the_flat_fields_and_stops(jd_and_labels, tmp_path):
+    jd, labels = jd_and_labels
+    calls = []
+
+    def api(m):
+        calls.append(1)
+        raise ShapeError(body={"code": "unsupported_value", "type": "invalid_request_error", "param": "response_format", "message": "x"})
+
+    E.run(tmp_path / "flat", jd, labels, api)
+    rec = json.loads((tmp_path / "flat" / "calls.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert len(calls) == 1 and rec["error"]["param"] == "response_format" and rec["error"]["code"] == "unsupported_value"
+
+
+def test_a_diagnose_with_nothing_safe_keeps_only_a_redacted_message(jd_and_labels, tmp_path):
+    jd, _ = jd_and_labels
+
+    def api(m):
+        raise ShapeError(body=None, message="rejected key sk-TESTKEY-0123456789 in request " + jd[300:360])
+
+    rec = E.diagnose(tmp_path / "nothing", jd, "v2-3", api)
+    err = rec["result"]["error"]
+    assert err["code"] is None and err["message"] == "[withheld: the message echoes request content]"
+    text = (tmp_path / "nothing" / "diagnostic.json").read_text(encoding="utf-8")
+    assert "sk-TESTKEY" not in text and jd[300:360] not in text

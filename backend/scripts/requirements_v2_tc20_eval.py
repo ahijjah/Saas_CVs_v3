@@ -120,17 +120,64 @@ def _safe(value) -> str | None:
     return value if isinstance(value, str) and SAFE_TOKEN.match(value) else None
 
 
-def sanitize_error(exc: BaseException) -> dict:
-    """What is kept of a failed request: the exception class, the HTTP status and the provider's code, type and param.
-    Never the message, headers, the API key or any request content."""
+_REDACTIONS = (re.compile(r"sk-[A-Za-z0-9_\-]{8,}"), re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]+"),
+               re.compile(r"(?i)(api[_-]?key|authorization|secret|token|password)\s*[:=]\s*\S+"),
+               re.compile(r"[A-Za-z0-9_\-]{32,}"))
+MESSAGE_LIMIT = 160
+ECHO_WINDOW = 40
+
+
+def _error_fields(exc: BaseException) -> dict:
+    """code, type and param from every shape the SDK can give: its attributes, the nested body {"error": {...}} and the flat body
+    {...}. The first safe identifier found wins; nothing else is read."""
     body = getattr(exc, "body", None)
-    err = body.get("error") if isinstance(body, dict) and isinstance(body.get("error"), dict) else {}
+    sources = [{k: getattr(exc, k, None) for k in ("code", "type", "param")}]
+    if isinstance(body, dict):
+        if isinstance(body.get("error"), dict):
+            sources.append(body["error"])                 # nested shape
+        sources.append(body)                              # flat shape
+    return {k: next((v for v in (_safe(s.get(k)) for s in sources) if v), None) for k in ("code", "type", "param")}
+
+
+def _provider_message(exc: BaseException) -> str | None:
+    body = getattr(exc, "body", None)
+    cands = [getattr(exc, "message", None)]
+    if isinstance(body, dict):
+        cands.append(body["error"].get("message") if isinstance(body.get("error"), dict) else None)
+        cands.append(body.get("message"))
+    return next((c for c in cands if isinstance(c, str) and c.strip()), None)
+
+
+def redact_message(message: str | None, withheld=()) -> str | None:
+    """A provider message, kept only when it is safe to keep: withheld if it echoes any ECHO_WINDOW-character run of the withheld
+    texts (the JD, the prompts, the request), otherwise stripped of keys and long tokens, control characters and length."""
+    if not message:
+        return None
+    for text in withheld:
+        for i in range(0, max(0, len(text) - ECHO_WINDOW) + 1):
+            if text[i:i + ECHO_WINDOW] in message:
+                return "[withheld: the message echoes request content]"
+    msg = message
+    for pat in _REDACTIONS:
+        msg = pat.sub("[redacted]", msg)
+    msg = "".join(ch for ch in msg if ch.isprintable())
+    return " ".join(msg.split())[:MESSAGE_LIMIT] or None
+
+
+def sanitize_error(exc: BaseException, withheld=()) -> dict:
+    """What is kept of a failed request: the exception class, the HTTP status, the provider's code, type and param, and, only when
+    all three are absent, a redacted and length-limited message. Never headers, the API key, the full exception or the body."""
     status = getattr(exc, "status_code", None)
-    return {"kind": type(exc).__name__,
-            "http_status": status if isinstance(status, int) else None,
-            "code": _safe(getattr(exc, "code", None) or err.get("code")),
-            "type": _safe(getattr(exc, "type", None) or err.get("type")),
-            "param": _safe(getattr(exc, "param", None) or err.get("param"))}
+    fields = _error_fields(exc)
+    out = {"kind": type(exc).__name__, "http_status": status if isinstance(status, int) else None, **fields, "message": None}
+    if all(v is None for v in fields.values()):
+        out["message"] = redact_message(_provider_message(exc), withheld)
+    return out
+
+
+def withheld_texts(jd: str) -> list[str]:
+    """What a provider message must not echo: the JD, the request's user message and both prompt texts."""
+    return [jd, user_message(jd), *(ARMS[a]["file"].read_text(encoding="utf-8") for a in ARMS)]
 
 
 def prepare_output_dir(out: pathlib.Path) -> None:
@@ -171,7 +218,7 @@ def run(out: pathlib.Path, jd: str, labels: dict, api_call) -> dict:
                 rec.update({"raw": r.get("raw", ""), "finish_reason": r.get("finish_reason"), "model": r.get("model"),
                             "usage": usage, "cost_usd": round(cost, 6), "error": None})
             except Exception as exc:                                  # recorded; never retried; the run stops here
-                err = sanitize_error(exc)
+                err = sanitize_error(exc, withheld_texts(jd))
                 rec.update({"raw": "", "finish_reason": None, "model": None, "usage": {}, "cost_usd": 0.0, "error": err})
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 fh.flush()
@@ -205,7 +252,7 @@ def diagnose(out: pathlib.Path, jd: str, arm: str, api_call) -> dict:
         rec["result"] = {"finish_reason": r.get("finish_reason"), "model": r.get("model"), "usage": r.get("usage") or {},
                          "raw": r.get("raw", ""), "error": None}
     except Exception as exc:
-        rec["result"] = {"error": sanitize_error(exc)}
+        rec["result"] = {"error": sanitize_error(exc, withheld_texts(jd))}
     (out / "diagnostic.json").write_text(json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
     return rec
 
