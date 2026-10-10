@@ -321,3 +321,44 @@ def test_the_report_keeps_groups_apart_and_is_unavailable_without_a_success(jd_a
     assert rep["summary"]["official_checks_pass"]["C_COMP"] == 5
     assert rep["summary"]["education_alternatives_retained"] == 0 and rep["summary"]["schema_compliant"] == 2
     assert C.report([{"arm": C.ARM, "call": 1, "error": {"kind": "X"}}], jd, labels)["status"] == "unavailable"
+
+
+# ── 5. the stronger-model run (uploaded by the owner; audited, not re-run) ──────────────────────────────────────────
+
+STRONGER = AUDIT / "run_tc20_v2-3-full-stronger"
+
+
+def test_the_stronger_run_evidence_is_the_uploaded_bytes():
+    assert nx.sha256_bytes((STRONGER / "calls.jsonl").read_bytes()) == "65293984cf5d911c59a54678eb09851a6f6e6f8a362ee35633fcb676be9f255d"
+    assert nx.sha256_bytes((STRONGER / "manifest.json").read_bytes()) == "bad16da9293389b8c1e6281ea3f7ec86b599b63bde8684775260ec831451f92c"
+    assert nx.sha256_bytes((STRONGER / "scored.json").read_bytes()) == "234a9ff4ec7fefb511a1fa68b3926aa47f08a8cd0251cd7bed190c62c0b7065e"
+
+
+def test_the_stronger_run_reproduces_its_scores_and_spend(jd_and_labels):
+    jd, labels = jd_and_labels
+    rows = [json.loads(x) for x in (STRONGER / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+    man = json.loads((STRONGER / "manifest.json").read_text(encoding="utf-8"))
+    stored = json.loads((STRONGER / "scored.json").read_text(encoding="utf-8"))
+    assert C.report(rows, jd, labels) == stored["report"]
+    assert all(r["input"] == man["input"] and r["model_returned"] == C.MODEL and r["error"] is None for r in rows)
+    assert man["prompt"]["sha256"] == ev.ARMS["v2-3"]["sha256"] and man["labels_sha256"] == "6a87da80e142640af1327c4a3fd5a21adb648726a9733a699fa8d3ec67135ef9"
+    assert sum(r["cost_usd"] for r in rows) == pytest.approx(stored["run"]["spent_usd"], abs=1e-6) == pytest.approx(0.14685, abs=1e-6)
+    assert stored["run"]["spent_usd"] <= C.CAP_USD
+
+
+def test_the_stronger_run_analysis_is_reproducible(jd_and_labels):
+    jd, labels = jd_and_labels
+    rows = [json.loads(x) for x in (STRONGER / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+    per = [{"call": r["call"], **C.facts(r["raw"], jd, labels)} for r in rows]
+    assert json.loads((STRONGER / "analysis.json").read_text(encoding="utf-8")) == {"summary": C.summarize(per), "answers": per}
+
+
+def test_the_stronger_run_defects_as_audited(jd_and_labels):
+    jd, labels = jd_and_labels
+    rows = [json.loads(x) for x in (STRONGER / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+    f = [C.facts(r["raw"], jd, labels) for r in rows]
+    assert [x["responsibility_items"] for x in f] == [16, 16, 0, 0, 0]              # duties unstable across calls
+    assert [x["checks"]["C_EXP_OR"] for x in f] == [True, False, False, False, True]
+    assert all(x["checks"]["C_FAM_OR"] is False and x["checks"]["C_AND"] is False for x in f)
+    assert all(x["soft_skills_items"] == 0 and x["arabic_english_merged"] for x in f)
+    assert all(x["schema_problems"] == [] and x["education_alternatives_retained"] for x in f)
