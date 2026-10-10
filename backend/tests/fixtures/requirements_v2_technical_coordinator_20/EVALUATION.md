@@ -107,6 +107,25 @@ errors), `scored.json` (run totals and the per-arm report).
 - `--out` must be a new or empty directory. Existing evidence is never overwritten.
 - `--diagnose --arm v2-3|v2-4 --out <new dir>` makes exactly ONE request, the exact evaluation request of that arm, under its worst-case reservation (must fit the cap). It writes `diagnostic.json` with the request settings and message hashes (no content), and the answer or the sanitized error. It does not retry.
 
+## Control experiment: v2-3 without the EXAMPLES block (prepared, NOT run)
+
+Prompt `criteria_extraction_v2-3-noex` (`backend/prompt_candidates/criteria_extraction_v2-3-noex/`, sha256 `764d2ee4ad8a523e67ef27b143b41d01538853d8f7d3c8921f3adf4430b87d90`
+— see its MANIFEST.json): the v2-3 text with only the worked-examples block removed. It is an exact byte prefix of v2-3
+before the EXAMPLES heading, so the rules and the JSON output contract are byte-identical; the removed span is pinned.
+
+- Same JD, same VPS job context and user message (sha256 `ff6b334a…`), same model and settings, five calls, no retries,
+  stop at the first failed call, sanitized errors, new-or-empty output directory, the frozen labels and the frozen scorer.
+- Education-alternative retention (the JD's degree sentence keeps its alternatives) is reported separately and is not an
+  official check. The five stored v2-3 answers are read offline for comparison (all five retained the alternatives).
+- Dry-run (no network): worst-case total USD 0.02484 for five calls, under the USD 0.03 cap for this control:
+
+```bash
+python3 backend/scripts/requirements_v2_tc20_noexamples.py --dry-run            # no network (default)
+```
+
+- The paid run is `--execute --out <new directory>` with `OPENAI_API_KEY`. It has NOT been run and is not approved by this
+  section. A result can show whether the examples contribute to the stored failures; it cannot show that they are the sole cause.
+
 ## Limitations
 
 - One JD; five calls per arm; no tokenizer offline, so input tokens are estimated for the cap, not counted.
