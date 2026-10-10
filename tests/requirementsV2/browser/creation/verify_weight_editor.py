@@ -379,6 +379,10 @@ def main():
             py_now = mp.required_names("skills")[0]
             mp.card("skills").scroll_into_view_if_needed()
             mp.shot("6a-mobile-review-default")
+            mp.open_job(job, lang="ar")
+            mp.card("skills").scroll_into_view_if_needed()
+            mp.shot("6c-mobile-arabic-review-default")
+            mp.open_job(job)
             overflow = mp.page.evaluate("() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
             check("no horizontal page scroll at phone width", overflow <= 1, overflow)
             mp.shot("6-mobile-skills")
