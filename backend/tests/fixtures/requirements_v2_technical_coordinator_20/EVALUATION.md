@@ -144,7 +144,7 @@ Audit of the no-examples run: `audit/AUDIT_NOEX.md` (provenance, reproduced scor
   pinned one, the cap guard runs before each call, sanitized errors only, a new or empty output directory.
 - Reporting: category accuracy (the official checks by category), raw weight validity, education-alternative retention and
   schema compliance are reported in separate groups. None of them replaces or changes a stored score.
-- Disclosed differences from the stored arm: the model (the purpose); the reservation uses the unverified prices; the
+- Disclosed differences from the stored arm: the model (the purpose); the reservation uses the standard prices recorded in PRICING_STATUS; the
   characters/2 input estimate overstates tokens.
 
 Dry-run (no network, the default):
@@ -157,6 +157,39 @@ Paid run (not approved by this section; the owner's approval and the verified pr
 
 ```bash
 OPENAI_API_KEY=… python3 backend/scripts/requirements_v2_tc20_compare.py --execute --out <new directory outside frozen paths>
+```
+
+## Candidate comparison: full v2-3 (control) versus criteria_extraction_v2-5 (prepared offline, NOT run)
+
+- Candidate: `backend/prompt_candidates/criteria_extraction_v2-5/` (sha256 `f1569a8b400257db20b1c0b24fd7728605fe472eef7fff993a384f12f0cbc8db`; see its MANIFEST.json and DIFF.patch). Built from the full v2-3 text by the diff listed in CHANGES.md; the output contract is byte-identical.
+- Same model for both arms: `gpt-4.1-2025-04-14`, temperature 0.1, max_tokens 6000, json_object, timeout 90, no retries, stop at the first failed call or on a returned model that differs.
+- Evaluation units and calls per arm:
+  - TC20 (frozen labels and official checks): 5 calls per arm.
+  - `eval_en_field_service_01` (English, new): 3 calls per arm.
+  - `eval_ar_facilities_01` (Arabic, new): 3 calls per arm.
+  - **Total: 22 calls** (11 per arm). The new JDs and their expected outputs are frozen in `tests/fixtures/requirements_v2_candidate_v25/eval_set/` (MANIFEST.json hashes); the expected outputs were fixed in the commit that adds this section, before any call.
+- Budget: worst case **USD 1.706582** (chars/2 input estimate, 6000 output tokens per call), cap **USD 2.00**. The worst case overstates the real cost, which for the stored stronger-model run was USD 0.0294 per call.
+- Groups, reported separately and never merged into one score:
+  - omissions (expected items and conditions not found; TC20 C_RESP and C_COMP);
+  - categories (TC20 C_LOCAL);
+  - OR/AND structure (incomplete or spurious alternatives, AND items merged or given alternatives; TC20 C_EXP_OR, C_FAM_OR, C_AND);
+  - importance (expected importance differs);
+  - routing (conditions missing or in the wrong list; TC20 C_LOCATION, C_REPORTING);
+  - invented content (source text not verbatim in the JD, and duties not in the JD's duty list);
+  - extra items (verbatim items that match no expected entry).
+- Education-alternative retention is not an official group; it is reported as in the earlier runs.
+- Every run manifest records: the git commit, the sha256 of the run script, the comparison script, the TC20 scorer, the candidate, the control, the eval-set manifest, the labels, the pricing status and the plan.
+
+Dry-run (no network, the default):
+
+```bash
+python3 backend/scripts/requirements_v2_candidate_eval.py --dry-run
+```
+
+Paid run (not approved by this section):
+
+```bash
+OPENAI_API_KEY=… python3 backend/scripts/requirements_v2_candidate_eval.py --execute --out <new directory outside frozen paths>
 ```
 
 ## Limitations

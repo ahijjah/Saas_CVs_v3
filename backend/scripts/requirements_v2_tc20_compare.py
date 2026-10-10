@@ -39,7 +39,7 @@ CAP_USD = 0.40                                        # explicit cap for this co
 CALLS = 5
 DISCLOSED_DIFFERENCES = [
     "model: gpt-4.1-2025-04-14 instead of gpt-4o-mini-2024-07-18 (the purpose of the comparison)",
-    "pricing: the reservation uses the unverified prices above; the stored run used the verified gpt-4o-mini list price of the earlier script",
+    "pricing: the reservation uses the standard prices recorded in PRICING_STATUS (owner-supplied from the official gpt-4.1 page; the sandbox could not open it)",
     "temperature 0.1, max_tokens 6000, response_format json_object and timeout 90 are sent as in the stored arm; gpt-4.1 accepts all four",
     "the worst case estimates input tokens as characters/2 (the same convention as the stored plan), which overstates the real count",
 ]
