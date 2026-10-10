@@ -44,6 +44,8 @@ const en = {
   structureConfirm: 'Confirm structure matches wording', structureConfirmed: 'Confirmed by {name} on {date}',
   structureCorrected: 'Corrected by {name} on {date}', structureEntered: 'Entered by {name} on {date}',
   // readiness
+  requirementsValidation: 'Requirements validation', validationPassed: 'Passed',
+  validationNote: 'Validation checks extracted requirements and weights; the recruiter must review completeness against the job description.',
   readiness: 'Readiness to proceed',
   state_ready: 'Ready', state_needs_items: 'No requirements yet', state_needs_classification_review: 'Classification review needed',
   state_needs_structure_review: 'Structure review needed', state_needs_confirmation: 'Confirmation needed',
@@ -268,6 +270,8 @@ const ar: typeof en = {
   structureReviewBody: 'تغيّرت الصياغة بينما لم تتغيّر بدائل «أو» / الخبرة. لا يمكن التحقق تلقائيًا من أنها ما زالت متوافقة. أكّد توافقها أو صحّحها.',
   structureConfirm: 'تأكيد أن البنية تطابق الصياغة', structureConfirmed: 'أكّده {name} بتاريخ {date}',
   structureCorrected: 'صحّحه {name} بتاريخ {date}', structureEntered: 'أدخله {name} بتاريخ {date}',
+  requirementsValidation: 'التحقق من المتطلبات', validationPassed: 'تم الاجتياز',
+  validationNote: 'يتحقق النظام من المتطلبات المستخرجة والأوزان؛ على المسؤول مراجعة اكتمالها مقارنةً بالوصف الوظيفي.',
   readiness: 'الجاهزية للمتابعة',
   state_ready: 'جاهز', state_needs_items: 'لا توجد متطلبات بعد', state_needs_classification_review: 'مطلوب مراجعة التصنيف',
   state_needs_structure_review: 'مطلوب مراجعة البنية', state_needs_confirmation: 'مطلوب تأكيد',

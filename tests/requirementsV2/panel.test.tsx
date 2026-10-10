@@ -263,7 +263,7 @@ describe('warnings', () => {
   it('policy No: warnings are shown for information and do not block', async () => {
     await setup(warningView(false));
     expect(screen.getByTestId('classification-policy').textContent).toBe(S.classificationPolicyNo);
-    expect(screen.getByTestId('readiness-state').textContent).toBe(S.state_ready);
+    expect(screen.getByTestId('readiness-state').textContent).toBe(S.validationPassed);
     expect(within(screen.getByTestId('classification')).getByText(S.stateUnresolved)).toBeTruthy();
   });
   it('server actions are disabled while there are unsaved changes', async () => {
@@ -577,5 +577,22 @@ describe('accessibility basics', () => {
     }
     expect(root.querySelector('[role="status"][aria-live="polite"]')).toBeTruthy();
     expect(root.querySelectorAll('[aria-expanded]').length).toBeGreaterThan(0);
+  });
+});
+
+describe('requirements validation wording', () => {
+  it('the successful state reads "Requirements validation: Passed" with the review note; the state is unchanged', async () => {
+    await setup(makeView());
+    const h = document.getElementById('req-readiness-h')!;
+    expect(h.textContent).toContain(S.requirementsValidation);
+    expect(screen.getByTestId('readiness-state').textContent).toBe(S.validationPassed);
+    expect(screen.getByTestId('validation-note').textContent).toBe(S.validationNote);
+    expect(h.textContent).not.toContain(S.state_ready);
+  });
+  it('the note and the wording are in Arabic too', async () => {
+    const A = STRINGS.ar;
+    await setup(makeView(), { isAr: true });
+    expect(screen.getByTestId('readiness-state').textContent).toBe(A.validationPassed);
+    expect(screen.getByTestId('validation-note').textContent).toBe(A.validationNote);
   });
 });

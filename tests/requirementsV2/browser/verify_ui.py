@@ -284,11 +284,11 @@ def main(argv=None) -> int:
             page.locator("[data-testid=classification] button", has_text="Accept as Preferred").first.click()
             page.wait_for_function("document.querySelector('[data-testid=readiness-state]').textContent.includes('conflict') || document.querySelector('[data-testid=readiness-state]').textContent.includes('Required / Preferred')", timeout=8000)
             page.locator("[data-testid=ack-conflict]").click()
-            page.wait_for_function("document.querySelector('[data-testid=readiness-state]').textContent.trim() === 'Ready'", timeout=8000)
+            page.wait_for_function("document.querySelector('[data-testid=readiness-state]').textContent.trim() === 'Passed'", timeout=8000)
             posts = [r for r in reqs if r["method"] == "POST"]
             check("S3 requests use the existing endpoint with gate=classification then gate=conflict",
                   [r["body"].get("gate") for r in posts] == ["classification", "conflict"] and all(r["path"].endswith("/classification-warnings/acknowledge") for r in posts))
-            check("S3 the job is ready only after both acknowledgments", text(page, "[data-testid=readiness-state]").strip() == "Ready")
+            check("S3 the job is ready only after both acknowledgments", text(page, "[data-testid=readiness-state]").strip() == "Passed")
             check("S3 acknowledgments are server-owned records (audited)", "requirements_conflict_acknowledged" in audit_actions() and "requirements_classification_acknowledged" in audit_actions())
             shot(page, "04_ready_after_acknowledgments")
             page.context.close()
@@ -308,7 +308,7 @@ def main(argv=None) -> int:
             st, v = call("PUT", "", "admin", {"expected_revision": 0, "requirements": d})
             check("S4 (setup via API) the blockers are corrected and saved", st == 200 and v["readiness"]["state"] == "ready", f"{st} {v.get('readiness', {}).get('state')}")
             page, reqs = open_page(browser)
-            check("S4 policy No: readiness is Ready while classification and conflict stay visible", text(page, "[data-testid=readiness-state]").strip() == "Ready"
+            check("S4 policy No: readiness is Ready while classification and conflict stay visible", text(page, "[data-testid=readiness-state]").strip() == "Passed"
                   and page.locator("[data-testid=conflicts]").count() == 1 and "do not block" in text(page, "[data-testid=conflict-policy]"))
             shot(page, "05_policy_no")
             page.context.close()

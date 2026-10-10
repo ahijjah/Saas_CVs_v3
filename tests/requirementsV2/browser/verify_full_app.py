@@ -414,7 +414,7 @@ def main(argv=None) -> int:
                 page.locator("[data-testid=classification] button", has_text="Accept as Preferred").first.click()
                 page.wait_for_function("document.querySelector('[data-testid=ack-conflict]') !== null", timeout=10000)
                 page.locator("[data-testid=ack-conflict]").click()
-                page.wait_for_function("document.querySelector('[data-testid=readiness-state]').textContent.trim() === 'Ready'", timeout=10000)
+                page.wait_for_function("document.querySelector('[data-testid=readiness-state]').textContent.trim() === 'Passed'", timeout=10000)
                 gates = [w["body"].get("gate") for w in s.writes if w["method"] == "POST"]
                 check("F4 acknowledgments use the existing endpoint with gate=classification then gate=conflict, ready only after both", gates == ["classification", "conflict"])
                 s.close()
@@ -423,7 +423,7 @@ def main(argv=None) -> int:
                 pg.q("UPDATE system_config SET value='false' WHERE key=%s", (POLICY_KEY,))
                 s = Session(browser, "admin")
                 page = s.open_job()
-                check("F4 policy No: Ready with classification and conflict visible but informational", txt(page, "[data-testid=readiness-state]").strip() == "Ready"
+                check("F4 policy No: Passed with classification and conflict visible but informational", txt(page, "[data-testid=readiness-state]").strip() == "Passed"
                       and "do not block" in txt(page, "[data-testid=conflict-policy]"), txt(page, "[data-testid=readiness-state]") + " | " + txt(page, "[data-testid=conflict-policy]"))
                 shot(page, "F4_policy_no")
                 pg.q("UPDATE system_config SET value='true' WHERE key=%s", (POLICY_KEY,))

@@ -26,14 +26,16 @@ export const ReadinessCard: React.FC<ReadinessProps> = ({ s, view, goToCategory,
   const unguarded = !!view.pipeline && view.pipeline.status !== 'ok';      // the additional checks were NOT applied to this readiness
   const ready = r.state === 'ready';
   const passed = ready && !unguarded;
-  const title = (s as any)[`state_${r.state}`] || r.state;
+  // the successful state with the checks applied is worded as a validation; the wording never says more than the checks did
+  const title = passed ? s.validationPassed : (s as any)[`state_${r.state}`] || r.state;
+  const heading = passed ? s.requirementsValidation : dirty ? s.readinessSavedTitle : s.readiness;
   const reasonText = (code: string, fallback: string) => (s as any)[`reason_${code}`] || fallback;
   return (
     <section aria-labelledby="req-readiness-h" className={`rounded-xl border p-4 ${passed ? 'border-green-300 bg-green-50' : unguarded ? 'border-amber-300 bg-amber-50' : 'border-border bg-white'}`} data-testid="readiness" data-guarded={unguarded ? 'false' : 'true'}>
       <div className="flex items-start gap-3">
         {passed ? <CheckIcon className="mt-0.5 text-success shrink-0" /> : <WarnIcon className="mt-0.5 text-warning shrink-0" />}
         <div className="min-w-0">
-          <h4 id="req-readiness-h" className="text-sm font-black text-textMain">{dirty ? s.readinessSavedTitle : s.readiness}: <span data-testid="readiness-state">{title}</span></h4>
+          <h4 id="req-readiness-h" className="text-sm font-black text-textMain">{heading}: <span data-testid="readiness-state">{title}</span></h4>
           {dirty && (
             <p className="mt-1 text-xs font-bold text-amber-900 bg-amber-50 border border-amber-300 rounded px-2 py-1" data-testid="readiness-stale">
               {s.readinessSavedNote}
@@ -44,6 +46,7 @@ export const ReadinessCard: React.FC<ReadinessProps> = ({ s, view, goToCategory,
               <span className="me-2 text-[10px] font-black uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">{s.checksNotAppliedBadge}</span>{s.readinessUnguardedNote}
             </p>
           )}
+          {passed && <p className="text-xs text-textMuted mt-0.5" data-testid="validation-note">{s.validationNote}</p>}
           {ready && <p className="text-xs text-textMuted mt-0.5">{r.scoring_mode === 'none' ? s.hint_ready_none : s.hint_ready_weighted}</p>}
           {!ready && r.reasons.length > 0 && (
             <>
