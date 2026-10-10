@@ -263,6 +263,27 @@ def test_a_modified_prompt_text_is_refused_before_any_call(db, monkeypatch):
     assert run_worker(job, tok, CASES["B01_en_hr_manager"]["jd"])["code"] == "prompt_hash_mismatch" and client.calls == []
 
 
+def test_a_new_prompt_version_an_admin_adds_is_refused_loudly_until_it_is_approved_in_code(db, monkeypatch):
+    """Versions are configurable only among the approved list (code, reviewed). An unapproved version that an admin activates is refused with a
+    stable code before any call; it is never used silently and no other version is substituted."""
+    feature(db, True)
+    cols = [c for (c,) in db.q("""SELECT column_name FROM information_schema.columns WHERE table_schema = 'cv_analyzer' AND table_name = 'ai_prompts'
+                                  AND column_name NOT IN ('prompt_id', 'version', 'is_active', 'created_at', 'updated_at')""")]
+    copied = ", ".join(cols)
+    db.q(f"""INSERT INTO ai_prompts (version, is_active, {copied})
+             SELECT 4, FALSE, {copied} FROM ai_prompts WHERE prompt_code = %s AND version = 3""", (ext.PROMPT_CODE,))
+    db.q("UPDATE ai_prompts SET is_active = FALSE WHERE prompt_code = %s", (ext.PROMPT_CODE,))
+    db.q("UPDATE ai_prompts SET is_active = TRUE WHERE prompt_code = %s AND version = 4", (ext.PROMPT_CODE,))
+    try:
+        job, tok = new_job(db, CASES["B01_en_hr_manager"]["jd"])
+        client = FakeClient([])
+        use_client(monkeypatch, client)
+        assert run_worker(job, tok, CASES["B01_en_hr_manager"]["jd"])["code"] == "prompt_not_approved" and client.calls == []
+        assert row(db, job)["status"] == "failed"
+    finally:
+        db.q("DELETE FROM ai_prompts WHERE prompt_code = %s AND version = 4", (ext.PROMPT_CODE,))   # the shared database keeps only v3
+
+
 def test_a_prompt_with_changed_settings_is_refused(db, monkeypatch):
     feature(db, True)
     db.q("UPDATE ai_prompts SET temperature = 0.5 WHERE prompt_code = %s AND version = 3", (ext.PROMPT_CODE,))

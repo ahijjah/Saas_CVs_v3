@@ -349,7 +349,28 @@ def _off_retry():
     return {"status": s, "code": ((body or {}).get("detail") or {}).get("code") if isinstance(body, dict) else None}
 
 
+@step("live_acknowledgment_policy_governs_readiness")
+def _policy():
+    SCRIPT[:] = [recorded("B06_en_injection")]
+    QUEUED.clear()
+    status, body = create_job("B06_en_injection")
+    job = job_of(body)
+    worker = run_queued()
+    out = {"worker_failed": worker["failed"], "job_id": job, "views": {}}
+    for value in ("true", "false", "true"):
+        sql("UPDATE system_config SET value = :v WHERE key = 'job_analysis.require_classification_acknowledgment'", {"v": value})
+        s, view = requirements(job, "admin")
+        out["views"][value + str(len(out["views"]))] = {
+            "policy_flag": view["classification_policy"]["require_acknowledgment"],
+            "can_proceed": view["readiness"]["can_proceed"], "state": view["readiness"]["state"],
+            "reason_codes": sorted(r["code"] for r in view["readiness"]["reasons"]),
+            "classification_warnings": len(view["classification_warnings"])}
+    stored = sql("SELECT criteria_extraction_status AS st, requirements_revision AS rev FROM job_criteria WHERE job_id = :j", {"j": job})[0]
+    out["stored"] = stored
+    return out
+
+
 if __name__ == "__main__":
-    for fn in (_off, _en, _edit, _pref, _ar, _trunc, _retry, _transient, _legacy, _off_retry):
+    for fn in (_off, _en, _edit, _pref, _ar, _trunc, _retry, _transient, _legacy, _off_retry, _policy):
         fn()
     pathlib.Path(sys.argv[1]).write_text(json.dumps(OUT, ensure_ascii=False, indent=1, default=str), encoding="utf-8")

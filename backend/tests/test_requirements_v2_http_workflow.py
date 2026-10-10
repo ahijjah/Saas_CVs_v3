@@ -181,3 +181,23 @@ def test_turning_the_switch_off_refuses_a_retry_of_an_existing_failed_job(obs):
     st = S(obs, "switch_off_refuses_retry")
     assert st.get("skipped") is not True
     assert st["status"] == 409 and st["code"] == "requirements_v2_disabled"
+
+
+def test_the_live_acknowledgment_setting_governs_readiness_on_every_view(obs):
+    st = S(obs, "live_acknowledgment_policy_governs_readiness")
+    assert st["worker_failed"] is False
+    v = st["views"]
+    print("POLICY VIEWS", json.dumps(v, indent=1))
+    assert v["true0"]["policy_flag"] is True and v["false1"]["policy_flag"] is False and v["true2"]["policy_flag"] is True
+    # the same stored document is judged differently only because of the live setting, and returning to 'true' restores the first answer
+    assert v["true0"] == {**v["true2"], "classification_warnings": v["true0"]["classification_warnings"]}
+    assert st["stored"]["st"] == "completed"
+
+
+def test_required_and_preferred_are_per_item_inside_a_category(obs):
+    """Importance belongs to each item; a category is only a grouping with its own weight. A category can hold Required and Preferred items together,
+    and only Required items carry weight in the job's scoring."""
+    st = S(obs, "english_required_preferred")
+    mixed = [name for name, c in st["categories"].items() if set(c["importance"]) == {"required", "preferred"}]
+    assert mixed, st["categories"]                                      # at least one category mixes the two kinds
+    assert st["categories"]["skills"]["count"] == 3 and set(st["categories"]["skills"]["importance"]) == {"required", "preferred"}
