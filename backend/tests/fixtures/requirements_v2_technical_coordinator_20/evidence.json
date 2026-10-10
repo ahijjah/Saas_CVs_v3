@@ -1,0 +1,313 @@
+{
+    "title": "Technical Coordinator 20",
+    "usage": [
+        {
+            "model": "gpt-4o-mini-2024-07-18",
+            "metadata": {
+                "settings": {
+                    "timeout_s": 90,
+                    "max_tokens": 6000,
+                    "temperature": 0.1,
+                    "response_format": {
+                        "type": "json_object"
+                    }
+                },
+                "prompt_id": "4ac8259f-fa4e-4e55-8c10-d511b4da5f33",
+                "prompt_label": "criteria_extraction_v2-3",
+                "finish_reason": "stop",
+                "prompt_sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+                "prompt_version": 3,
+                "returned_model": "gpt-4o-mini-2024-07-18",
+                "requested_model": "gpt-4o-mini-2024-07-18"
+            },
+            "prompt_tokens": 6485,
+            "completion_tokens": 962
+        }
+    ],
+    "job_code": "JOB-2026-0121",
+    "pipeline": {
+        "extraction": {
+            "unmapped": [
+            ],
+            "conditions": {
+                "informational_items": [
+                ],
+                "post_hiring_conditions": [
+                ],
+                "non_scoreable_requirements": [
+                ]
+            },
+            "scoreability": {
+                "reason": "",
+                "status": "scoreable"
+            },
+            "parser_review": [
+            ],
+            "category_weights": {
+                "status": "ok",
+                "applied": {
+                    "skills": 30,
+                    "education": 20,
+                    "experience": 30,
+                    "soft_skills": 20,
+                    "certifications": 0,
+                    "domain_knowledge": 0,
+                    "other_requirements": 0
+                },
+                "proposed": {
+                    "skills": 30,
+                    "education": 20,
+                    "experience": 30,
+                    "soft_skills": 20,
+                    "certifications": 0,
+                    "domain_knowledge": 0,
+                    "other_requirements": 0
+                },
+                "suggested_fallback": null
+            },
+            "parser_ai_warnings_kept": [
+            ]
+        },
+        "provenance": {
+            "model": "gpt-4o-mini-2024-07-18",
+            "extraction_prompt": {
+                "sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+                "version": "criteria_extraction_v2-3"
+            }
+        },
+        "raw_response": {
+            "text": "{\"scoreability\":{\"status\":\"scoreable\",\"reason\":\"\"},\"categories\":{\"skills\":[{\"text\":\"JavaScript\",\"importance\":\"preferred\",\"importance_cue\":\"is considered an advantage\",\"source_text\":\"Basic knowledge of web technologies and scripting languages, particularly JavaScript, is considered an advantage\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null},{\"text\":\"Microsoft Office applications\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"Good working knowledge of Microsoft Office applications\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null},{\"text\":\"Arabic\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"Good command of Arabic and English, including the ability to communicate with stakeholders and understand technical documentation\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null},{\"text\":\"English\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"Good command of Arabic and English, including the ability to communicate with stakeholders and understand technical documentation\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null}],\"experience\":[{\"text\":\"1–3 years of professional experience in ICT systems support, business applications, digital platforms, or software implementation projects\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"1–3 years of professional experience in ICT systems support, business applications, digital platforms, or software implementation projects\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":{\"subject\":\"ICT systems support, business applications, digital platforms, or software implementation projects\",\"min_years\":1}},{\"text\":\"Experience in supporting, testing, implementing, or operating business systems, digital services, or e-government platforms\",\"importance\":\"preferred\",\"importance_cue\":\"is an advantage\",\"source_text\":\"Experience in supporting, testing, implementing, or operating business systems, digital services, or e-government platforms is an advantage\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null},{\"text\":\"Familiarity with business process documentation, system integrations, databases, reporting tools, or enterprise applications\",\"importance\":\"preferred\",\"importance_cue\":\"is an advantage\",\"source_text\":\"Familiarity with business process documentation, system integrations, databases, reporting tools, or enterprise applications is an advantage\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null},{\"text\":\"Knowledge of the local business and regulatory environment\",\"importance\":\"preferred\",\"importance_cue\":\"is an advantage\",\"source_text\":\"Knowledge of the local business and regulatory environment is an advantage\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null}],\"education\":[{\"text\":\"Bachelor’s degree in Computer Science, Information Technology, Software Engineering, Information Systems, or a related field\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"Bachelor’s degree in Computer Science, Information Technology, Software Engineering, Information Systems, or a related field\",\"origin\":\"stated\",\"alternatives\":[\"Computer Science\",\"Information Technology\",\"Software Engineering\",\"Information Systems\",\"related field\"],\"experience\":null}],\"certifications\":[],\"soft_skills\":[{\"text\":\"Strong organizational skills\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"Strong organizational skills with the ability to plan, prioritize, and manage multiple tasks effectively\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null},{\"text\":\"Strong attention to detail\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"Strong attention to detail and commitment to accuracy and quality\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null},{\"text\":\"Ability to work effectively under pressure\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"Ability to work effectively under pressure and meet deadlines in a dynamic operational environment\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null},{\"text\":\"Strong communication, coordination, and teamwork skills\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"Strong communication, coordination, and teamwork skills\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null},{\"text\":\"Good analytical and problem-solving abilities\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"Good analytical and problem-solving abilities\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null},{\"text\":\"Good documentation and reporting skills\",\"importance\":\"required\",\"importance_cue\":null,\"source_text\":\"Good documentation and reporting skills\",\"origin\":\"stated\",\"alternatives\":null,\"experience\":null}],\"domain_knowledge\":[],\"other_requirements\":[]},\"category_weights\":{\"skills\":30,\"experience\":30,\"education\":20,\"certifications\":0,\"soft_skills\":20,\"domain_knowledge\":0,\"other_requirements\":0},\"non_scoreable_requirements\":[],\"post_hiring_conditions\":[],\"informational_items\":[],\"warnings\":[]}",
+            "sha256": "5c051eedcb963da3850d52174f09bcdad6e2489e0ae0368fa2b7aaf9e6529dc7",
+            "finish_reason": "stop"
+        },
+        "raw_ai_output": {
+            "warnings": [
+            ],
+            "categories": {
+                "skills": [
+                    {
+                        "text": "JavaScript",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "preferred",
+                        "source_text": "Basic knowledge of web technologies and scripting languages, particularly JavaScript, is considered an advantage",
+                        "alternatives": null,
+                        "importance_cue": "is considered an advantage"
+                    },
+                    {
+                        "text": "Microsoft Office applications",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "required",
+                        "source_text": "Good working knowledge of Microsoft Office applications",
+                        "alternatives": null,
+                        "importance_cue": null
+                    },
+                    {
+                        "text": "Arabic",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "required",
+                        "source_text": "Good command of Arabic and English, including the ability to communicate with stakeholders and understand technical documentation",
+                        "alternatives": null,
+                        "importance_cue": null
+                    },
+                    {
+                        "text": "English",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "required",
+                        "source_text": "Good command of Arabic and English, including the ability to communicate with stakeholders and understand technical documentation",
+                        "alternatives": null,
+                        "importance_cue": null
+                    }
+                ],
+                "education": [
+                    {
+                        "text": "Bachelor’s degree in Computer Science, Information Technology, Software Engineering, Information Systems, or a related field",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "required",
+                        "source_text": "Bachelor’s degree in Computer Science, Information Technology, Software Engineering, Information Systems, or a related field",
+                        "alternatives": [
+                            "Computer Science",
+                            "Information Technology",
+                            "Software Engineering",
+                            "Information Systems",
+                            "related field"
+                        ],
+                        "importance_cue": null
+                    }
+                ],
+                "experience": [
+                    {
+                        "text": "1–3 years of professional experience in ICT systems support, business applications, digital platforms, or software implementation projects",
+                        "origin": "stated",
+                        "experience": {
+                            "subject": "ICT systems support, business applications, digital platforms, or software implementation projects",
+                            "min_years": 1
+                        },
+                        "importance": "required",
+                        "source_text": "1–3 years of professional experience in ICT systems support, business applications, digital platforms, or software implementation projects",
+                        "alternatives": null,
+                        "importance_cue": null
+                    },
+                    {
+                        "text": "Experience in supporting, testing, implementing, or operating business systems, digital services, or e-government platforms",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "preferred",
+                        "source_text": "Experience in supporting, testing, implementing, or operating business systems, digital services, or e-government platforms is an advantage",
+                        "alternatives": null,
+                        "importance_cue": "is an advantage"
+                    },
+                    {
+                        "text": "Familiarity with business process documentation, system integrations, databases, reporting tools, or enterprise applications",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "preferred",
+                        "source_text": "Familiarity with business process documentation, system integrations, databases, reporting tools, or enterprise applications is an advantage",
+                        "alternatives": null,
+                        "importance_cue": "is an advantage"
+                    },
+                    {
+                        "text": "Knowledge of the local business and regulatory environment",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "preferred",
+                        "source_text": "Knowledge of the local business and regulatory environment is an advantage",
+                        "alternatives": null,
+                        "importance_cue": "is an advantage"
+                    }
+                ],
+                "soft_skills": [
+                    {
+                        "text": "Strong organizational skills",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "required",
+                        "source_text": "Strong organizational skills with the ability to plan, prioritize, and manage multiple tasks effectively",
+                        "alternatives": null,
+                        "importance_cue": null
+                    },
+                    {
+                        "text": "Strong attention to detail",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "required",
+                        "source_text": "Strong attention to detail and commitment to accuracy and quality",
+                        "alternatives": null,
+                        "importance_cue": null
+                    },
+                    {
+                        "text": "Ability to work effectively under pressure",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "required",
+                        "source_text": "Ability to work effectively under pressure and meet deadlines in a dynamic operational environment",
+                        "alternatives": null,
+                        "importance_cue": null
+                    },
+                    {
+                        "text": "Strong communication, coordination, and teamwork skills",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "required",
+                        "source_text": "Strong communication, coordination, and teamwork skills",
+                        "alternatives": null,
+                        "importance_cue": null
+                    },
+                    {
+                        "text": "Good analytical and problem-solving abilities",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "required",
+                        "source_text": "Good analytical and problem-solving abilities",
+                        "alternatives": null,
+                        "importance_cue": null
+                    },
+                    {
+                        "text": "Good documentation and reporting skills",
+                        "origin": "stated",
+                        "experience": null,
+                        "importance": "required",
+                        "source_text": "Good documentation and reporting skills",
+                        "alternatives": null,
+                        "importance_cue": null
+                    }
+                ],
+                "certifications": [
+                ],
+                "domain_knowledge": [
+                ],
+                "other_requirements": [
+                ]
+            },
+            "scoreability": {
+                "reason": "",
+                "status": "scoreable"
+            },
+            "category_weights": {
+                "skills": 30,
+                "education": 20,
+                "experience": 30,
+                "soft_skills": 20,
+                "certifications": 0,
+                "domain_knowledge": 0,
+                "other_requirements": 0
+            },
+            "informational_items": [
+            ],
+            "post_hiring_conditions": [
+            ],
+            "non_scoreable_requirements": [
+            ]
+        },
+        "record_version": "requirements-v2-pipeline-record-1",
+        "review_records": {
+            "split_or": {
+                "issues": [
+                ],
+                "guard_version": "requirements-v2-split-or-guard-1"
+            },
+            "injection": {
+                "issues": [
+                ],
+                "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+                "guard_version": "requirements-v2-injection-guard-1.1",
+                "raw_ai_sha256": "aff4ced71c91e30d2bc4f898f69939e442d09764ae7dd92a3667a8dc9c8b1753",
+                "instruction_spans": [
+                ]
+            },
+            "model_warnings": {
+                "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+                "item_warnings": [
+                ],
+                "raw_ai_sha256": "aff4ced71c91e30d2bc4f898f69939e442d09764ae7dd92a3667a8dc9c8b1753",
+                "model_warnings": [
+                ],
+                "acknowledgments": [
+                ],
+                "adapter_version": "requirements-v2-warning-adapter-1"
+            }
+        },
+        "original_digest": "4fb9c3444e8f646558b71fc808a88ab308a9bdef6841b6dc91a2c478ab811e7f",
+        "component_versions": {
+            "parser": {
+                "name": "services.requirements_v2.extraction.parse_response",
+                "frozen_benchmark_commit": "059c56b"
+            },
+            "pipeline": "requirements-v2-pipeline-1",
+            "split_or_guard": "requirements-v2-split-or-guard-1",
+            "injection_guard": "requirements-v2-injection-guard-1.1",
+            "result_contract": "requirements-v2-pipeline-result-1",
+            "warning_adapter": "requirements-v2-warning-adapter-1",
+            "extraction_prompt": {
+                "sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+                "version": "criteria_extraction_v2-3"
+            }
+        },
+        "job_description_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265"
+    },
+    "description": "Objective of the Assignment\n\nThe Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery.\n\nThe Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services.\n\n Responsibilities\n\nThe Coordinator will support the implementation, stabilization, enhancement, and continuous improvement of ABRS services and related digital platforms through the following activities:\n\nABRS Service Implementation, Stabilization, and Enhancement\nSupport the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.\nCoordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.\nSupport the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.\nParticipate in functional, integration, and user acceptance testing activities.\nSupport the monitoring and follow-up of system performance, service availability, and operational issues.\nSupport data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.\nAssist in the implementation, testing, and operational support of system integrations and data exchange processes.\nSupport the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.\nCoordinate with business, legal, and technical teams to support the implementation of new services and enhancements.\nSupport the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.\nContribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.\nKnowledge Transfer and Capacity Building\nSupport knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.\nProvide on-the-job coaching and technical guidance to MoNE ICT staff.\nSupport the preparation of operational guides, procedures, and technical documentation.\nParticipate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.\nContribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.\n\nReporting and Supervision\n\nIt is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.\n\nThe Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.\n\n\nمتطلبات الوظيفة\nQualifications\n\nQualifications and Professional Experience:\nBachelor’s degree in Computer Science, Information Technology, Software Engineering, Information Systems, or a related field.\n1–3 years of professional experience in ICT systems support, business applications, digital platforms, or software implementation projects.\nExperience in supporting, testing, implementing, or operating business systems, digital services, or e-government platforms is an advantage.\nFamiliarity with business process documentation, system integrations, databases, reporting tools, or enterprise applications is an advantage.\nBasic knowledge of web technologies and scripting languages, particularly JavaScript, is considered an advantage.\nKnowledge of the local business and regulatory environment is an advantage.\nSkills and Competencies\nGood understanding of business applications, digital platforms, and software support processes.\nAbility to support system testing, troubleshooting, issue tracking, and operational follow-up activities.\nStrong organizational skills with the ability to plan, prioritize, and manage multiple tasks effectively.\nStrong attention to detail and commitment to accuracy and quality.\nAbility to work effectively under pressure and meet deadlines in a dynamic operational environment.\nAbility to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.\nStrong communication, coordination, and teamwork skills.\nGood analytical and problem-solving abilities.\nGood documentation and reporting skills.\nGood working knowledge of Microsoft Office applications.\nGood command of Arabic and English, including the ability to communicate with stakeholders and understand technical documentation."
+}
