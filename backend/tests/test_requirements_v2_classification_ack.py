@@ -82,7 +82,9 @@ class TestPolicySetting:
         import pathlib
         assert ack_module.POLICY_KEY == "job_analysis.require_classification_acknowledgment"
         backend = pathlib.Path(__file__).resolve().parent.parent
-        allowed = {"routers/platform_config.py", "db/migrations/107_requirements_v2_revision.sql"}
+        # workers/requirements_v2_extraction_worker.py passes the approved extraction contract a constant True (extraction always requires
+        # acknowledgment for classification flags); it does not read the platform setting (reviewed: requirements-v2 extraction)
+        allowed = {"routers/platform_config.py", "db/migrations/107_requirements_v2_revision.sql", "workers/requirements_v2_extraction_worker.py"}
         found = set()
         for sub in ("routers", "workers", "db"):
             for path in (backend / sub).rglob("*"):

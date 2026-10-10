@@ -119,7 +119,9 @@ def test_only_the_api_layer_and_its_router_use_the_pipeline_package():
             continue
         if "services.requirements_pipeline" in path.read_text(encoding="utf-8", errors="ignore") or "from services import requirements_pipeline" in path.read_text(encoding="utf-8", errors="ignore"):
             users.append(rel)
-    assert sorted(users) == ["routers/job_requirements.py", "services/requirements_api.py"]
+    # the v2 extraction service and worker run the approved production pipeline on the model output (reviewed: requirements-v2 extraction)
+    assert sorted(users) == ["routers/job_requirements.py", "services/requirements_api.py",
+                             "services/requirements_v2_extraction.py", "workers/requirements_v2_extraction_worker.py"]
 
 
 def test_v2_creation_extraction_and_scoring_stay_disabled():

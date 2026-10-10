@@ -57,8 +57,8 @@ class TestMigrationText:
 
     def test_exists_and_is_numbered_after_the_latest_migration(self):
         numbers = sorted(int(p.name[:3]) for p in MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
-        # 107 (editing-API revision columns) is the only migration allowed after 106
-        assert MIGRATION.exists() and numbers.count(106) == 1 and numbers[numbers.index(106):] in ([106], [106, 107])
+        # 107 (editing-API revision columns) is the only migration allowed after 106; 108 (extraction, prepared, NOT applied) follows it
+        assert MIGRATION.exists() and numbers.count(106) == 1 and numbers[numbers.index(106):] in ([106], [106, 107], [106, 107, 108])
 
     def test_is_transactional_and_idempotent_in_style(self):
         sql = sql_without_comments(MIGRATION)
