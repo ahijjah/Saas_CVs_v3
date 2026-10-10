@@ -357,6 +357,8 @@ def main():
             # ── 11. Arabic: the same editor, totals and messages, right to left ───────────────────────────────────────────────────
             pg.open_job(job, lang="ar")
             py_now = pg.required_names("skills")[0]           # renamed by the conflict step above
+            pg.card("skills").scroll_into_view_if_needed()
+            pg.shot("5a-arabic-review-default")               # review is the default in Arabic too
             AR = {"moreActions": "إجراءات أخرى", "editItem": "تعديل", "applyEdit": "تطبيق", "cancelEdit": "إلغاء",
                   "addRequired": "إضافة متطلب إلزامي", "addPreferred": "إضافة متطلب مفضّل", "useLatest": "استخدام الحفظ الأحدث"}
             ed = pg.open_editor(py_now, AR)
@@ -376,6 +378,7 @@ def main():
             mp.open_job(job)
             py_now = mp.required_names("skills")[0]
             mp.card("skills").scroll_into_view_if_needed()
+            mp.shot("6a-mobile-review-default")
             overflow = mp.page.evaluate("() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
             check("no horizontal page scroll at phone width", overflow <= 1, overflow)
             mp.shot("6-mobile-skills")
