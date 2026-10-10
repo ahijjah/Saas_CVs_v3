@@ -501,8 +501,10 @@ async def create_job(
         # v2: the marker is set in the same insert (never later), with the attempt token of the extraction queued below.
         await db.execute(
             text("""
-                INSERT INTO job_criteria (job_id, criteria_extraction_status, requirements_schema_version, requirements_extraction_token)
-                VALUES (:jid, 'pending', 2, CAST(:tok AS uuid))
+                INSERT INTO job_criteria (job_id, criteria_extraction_status, requirements_schema_version, requirements_extraction_token,
+                                          weight_skills, weight_experience, weight_education, weight_certifications, weight_soft_skills,
+                                          weight_domain_knowledge, weight_other)
+                VALUES (:jid, 'pending', 2, CAST(:tok AS uuid), 0, 0, 0, 0, 0, 0, 0)   -- no document yet: the weights are set by the extraction
             """),
             {"jid": job_id, "tok": v2_token},
         )
@@ -561,6 +563,16 @@ async def create_job(
         "requirements_format": "legacy",
         "message": "Job created successfully. AI criteria extraction started in background.",
     }
+
+
+@router.get("/requirements-v2/availability")
+async def requirements_v2_availability(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Whether the platform's requirements-v2 switch is on. Read-only and boolean only: the job-creation screen offers the v2 choice from it."""
+    from services import requirements_v2_extraction as v2_extraction
+    return {"enabled": await v2_extraction.feature_enabled(db)}
 
 
 @router.get("/details")

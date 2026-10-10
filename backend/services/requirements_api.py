@@ -637,10 +637,15 @@ async def request_extraction_retry(db, user, job_id: str) -> dict:
     token = await ext.request_retry(db, job_id=str(job_id), actor_user=str(user.user_id), actor_tenant=str(user.tenant_id))
     if token is None:
         raise ApiError(409, CODE_RETRY_NOT_ALLOWED, "This job is not waiting for an extraction retry (it has a document, or an attempt is running).")
-    description = (await db.execute(text("SELECT description FROM jobs WHERE job_id = CAST(:jid AS uuid)"), {"jid": str(job_id)})).scalar_one()
+    # the retry sends the SAME job context the first attempt sent (the stored job fields are the ones the creation request carried)
+    job = (await db.execute(text("""
+        SELECT description, title, department, experience_level, location, job_type, work_mode
+        FROM jobs WHERE job_id = CAST(:jid AS uuid)"""), {"jid": str(job_id)})).mappings().one()
+    job_meta = {"title": job["title"], "department": job["department"], "experience_level": job["experience_level"], "location": job["location"],
+                "job_type": job["job_type"], "work_mode": job["work_mode"]}
     await db.commit()
     from workers.requirements_v2_extraction_worker import extract_requirements_v2_task
-    extract_requirements_v2_task.delay(str(job_id), token, description, None)
+    extract_requirements_v2_task.delay(str(job_id), token, job["description"], job_meta)
     return {"job_id": str(job_id), "extraction": {"status": "pending"}}
 
 

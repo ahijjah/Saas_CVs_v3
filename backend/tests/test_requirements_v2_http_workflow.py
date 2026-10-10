@@ -156,6 +156,7 @@ def test_retry_is_editor_only_and_a_new_attempt_completes_while_the_old_one_is_r
     assert st["admin_retry_status"] == 200 and st["admin_retry_body_status"] == "pending"
     assert st["second_retry_status"] == 200                            # a queued (pending) job may be re-requested: the earlier token is superseded
     assert st["second_worker_failed"] is False and st["second_model_calls"] == 1
+    assert st["same_context_on_retry"] is True                       # the retry sends the same prompt context as the failed attempt
     assert st["stale_outcome"] == {"outcome": "stale", "code": "not_claimable"}   # the superseded attempt made no model call
     assert st["done_extraction"]["status"] == "completed" and st["done_readiness_basis"] == "pipeline"
     assert [r["request_status"] for r in st["usage_rows"]] == ["failed", "success"]

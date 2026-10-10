@@ -73,6 +73,14 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
 
   useEffect(() => { alive.current = true; load(); return () => { alive.current = false; }; }, [load]);
 
+  // While the extraction is queued or processing, the status is refreshed by itself; when it completes the reloaded view is the editor.
+  const extracting = view?.readiness.basis === 'extraction' && (view.extraction?.status === 'pending' || view.extraction?.status === 'processing');
+  useEffect(() => {
+    if (!extracting) return;
+    const id = window.setTimeout(() => { load(); }, 3000);
+    return () => window.clearTimeout(id);
+  }, [extracting, view, load]);
+
   const dirty = !!(draft && base && isDirty(draft, base));
   useEffect(() => {
     if (!dirty) return;
@@ -380,14 +388,32 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
 const ExtractionCard: React.FC<{
   s: Strings; extraction: RequirementsView['extraction'] | null; busy: boolean; onRetry: () => void; onRefresh: () => void;
 }> = ({ s, extraction, busy, onRetry, onRefresh }) => {
-  const failed = extraction?.status === 'failed';
+  const status = extraction?.status ?? 'pending';
+  const failed = status === 'failed';
+  const completed = status === 'completed';
+  const queued = status === 'pending';
+  const steps: { key: string; label: string; active: boolean }[] = failed
+    ? [{ key: 'failed', label: s.extractionStepFailed, active: true }]
+    : [
+        { key: 'pending', label: s.extractionStepQueued, active: queued },
+        { key: 'processing', label: s.extractionStepProcessing, active: status === 'processing' },
+        { key: 'completed', label: s.extractionStepCompleted, active: completed },
+      ];
+  const title = failed ? s.extractionFailedTitle : completed ? s.extractionCompletedTitle : queued ? s.extractionQueuedTitle : s.extractionPendingTitle;
+  const body = failed ? s.extractionFailedBody : completed ? s.extractionCompletedBody : queued ? s.extractionQueuedBody : s.extractionPendingBody;
   return (
     <section aria-labelledby="req-extraction-h" className={`rounded-xl border p-4 space-y-2 ${failed ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
-             data-testid="extraction-status" data-status={extraction?.status ?? 'pending'}>
-      <h4 id="req-extraction-h" className={`text-sm font-black ${failed ? 'text-red-900' : 'text-textMain'}`}>
-        {failed ? s.extractionFailedTitle : s.extractionPendingTitle}
-      </h4>
-      <p className={`text-xs ${failed ? 'text-red-900' : 'text-textMuted'}`}>{failed ? s.extractionFailedBody : s.extractionPendingBody}</p>
+             data-testid="extraction-status" data-status={status}>
+      <ol className="flex flex-wrap gap-2" aria-label={s.title}>
+        {steps.map(step => (
+          <li key={step.key} data-testid={`extraction-step-${step.key}`} aria-current={step.active ? 'step' : undefined}
+              className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${step.active ? (failed ? 'bg-red-600 text-white' : 'bg-primary text-white') : 'bg-slate-100 text-slate-500'}`}>
+            {step.label}
+          </li>
+        ))}
+      </ol>
+      <h4 id="req-extraction-h" className={`text-sm font-black ${failed ? 'text-red-900' : 'text-textMain'}`}>{title}</h4>
+      <p className={`text-xs ${failed ? 'text-red-900' : 'text-textMuted'}`}>{body}</p>
       {failed && extraction?.error && (
         <p className="text-xs text-red-900" data-testid="extraction-error"><span className="font-bold">{s.extractionReason}:</span> {extraction.error}</p>
       )}

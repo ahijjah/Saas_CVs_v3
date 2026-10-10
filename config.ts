@@ -1,5 +1,6 @@
 
-const API_BASE = 'http://72.62.31.221:8000';
+// VITE_API_BASE lets a local build point at another API; the default is the production origin, unchanged.
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://72.62.31.221:8000';
 
 export const WEBHOOK_CONFIG = {
   LOGIN_WEBHOOK_URL:             `${API_BASE}/auth/login`,

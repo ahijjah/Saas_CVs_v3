@@ -100,6 +100,10 @@ export interface RequirementsApi {
   retryExtraction(jobId: string): Promise<{ job_id: string; extraction: { status: string } }>;
 }
 
+/** Whether the requirements-v2 switch is on. The job-creation screen offers the v2 choice only then (read-only, boolean only). */
+export const getCreationAvailability = (token: string): Promise<{ enabled: boolean }> =>
+  apiService.get(`${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/requirements-v2/availability`, {}, token);
+
 const base = (jobId: string) => `${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/${jobId}/requirements`;
 
 export const createRequirementsApi = (token: string): RequirementsApi => ({

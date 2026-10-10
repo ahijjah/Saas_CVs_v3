@@ -54,7 +54,8 @@ def _req():
 class _Completions:
     async def create(self, **kw):
         OUT.setdefault("calls", []).append({"model": kw["model"], "temperature": kw["temperature"], "max_tokens": kw["max_tokens"],
-                                            "response_format": kw["response_format"]})
+                                            "response_format": kw["response_format"],
+                                            "user_sha": __import__("hashlib").sha256(kw["messages"][-1]["content"].encode("utf-8")).hexdigest()})
         step = SCRIPT.pop(0)
         if isinstance(step, BaseException):
             raise step
@@ -301,6 +302,7 @@ def _retry():
     status, body = create_job("B03_en_warehouse_supervisor")
     job = job_of(body)
     first = run_queued()
+    first_user_sha = OUT["calls"][-1]["user_sha"] if OUT.get("calls") else None
     first_args = list(QUEUED[0])
     s, failed_view = requirements(job, "admin")
     s_v, failed_viewer = requirements(job, "viewer")
@@ -311,6 +313,7 @@ def _retry():
     queued_after = len(QUEUED)
     SCRIPT[:] = [recorded("B03_en_warehouse_supervisor")]
     second = run_queued(-1)
+    second_user_sha = OUT["calls"][-1]["user_sha"] if OUT.get("calls") else None
     stale = TASK.apply(args=first_args).result                   # the superseded attempt's late result (no model call: it is refused at claim)
     s_done, done = requirements(job, "admin")
     rows = sql("SELECT request_status, error_type, retry_count FROM ai_usage_log WHERE job_id = :j ORDER BY created_at", {"j": job})
@@ -319,6 +322,7 @@ def _retry():
             "viewer_retry_status": s_retry_viewer, "admin_retry_status": s_retry, "admin_retry_body_status": (retry_body or {}).get("extraction", {}).get("status"),
             "second_retry_status": s_again, "queued_for_retry": queued_after - queued_before,
             "second_worker_failed": second["failed"], "second_model_calls": second["model_calls"], "stale_outcome": stale,
+            "same_context_on_retry": first_user_sha is not None and first_user_sha == second_user_sha,
             "done_extraction": done.get("extraction"),
             "done_readiness_basis": done["readiness"].get("basis"), "usage_rows": rows}
 

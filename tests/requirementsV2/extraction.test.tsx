@@ -39,7 +39,8 @@ describe('requirements-v2 extraction status', () => {
     const { ui } = await renderPanel(api);
     const card = screen.getByTestId('extraction-status');
     expect(card.getAttribute('data-status')).toBe('pending');
-    expect(screen.getByText(S.extractionPendingTitle)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: S.extractionQueuedTitle })).toBeTruthy();
+    expect(screen.getByTestId('extraction-step-pending').getAttribute('aria-current')).toBe('step');
     expect(screen.queryByTestId('save')).toBeNull();
     expect(screen.queryByTestId('extraction-retry')).toBeNull();
     expect(screen.queryByTestId('category-total')).toBeNull();
@@ -50,6 +51,23 @@ describe('requirements-v2 extraction status', () => {
     await waitFor(() => expect(screen.queryByTestId('extraction-status')).toBeNull());
     expect(screen.getByTestId('save')).toBeTruthy();
   });
+
+  it('a processing job shows the processing step and the processing text', async () => {
+    await renderPanel(mockApi(pendingView('processing')));
+    expect(screen.getByTestId('extraction-status').getAttribute('data-status')).toBe('processing');
+    expect(screen.getByTestId('extraction-step-processing').getAttribute('aria-current')).toBe('step');
+    expect(screen.getByText(S.extractionPendingTitle)).toBeTruthy();
+    expect(screen.getByText(S.extractionPendingBody)).toBeTruthy();
+  });
+
+  it('a queued or processing job refreshes by itself and opens the editor when it completes', async () => {
+    const api = mockApi(pendingView('pending'));
+    api.get.mockReset();
+    api.get.mockResolvedValueOnce(pendingView('processing')).mockResolvedValue(makeView());
+    await renderPanel(api);
+    await waitFor(() => expect(screen.queryByTestId('save')).toBeTruthy(), { timeout: 10000 });
+    expect(api.get).toHaveBeenCalledTimes(2);                      // the first read (processing) and the automatic refresh (completed)
+  }, 15000);
 
   it('a failed attempt shows the reason, and an editor can request a new attempt', async () => {
     const api = mockApi(pendingView('failed', 'The model output could not be used.', true));
@@ -84,7 +102,7 @@ describe('requirements-v2 extraction status', () => {
   it('Arabic renders the same card right-to-left', async () => {
     const api = mockApi(pendingView('pending'));
     await renderPanel(api, { isAr: true });
-    expect(screen.getByText(STRINGS.ar.extractionPendingTitle)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: STRINGS.ar.extractionQueuedTitle })).toBeTruthy();
     expect(screen.getByTestId('requirements-v2').getAttribute('dir')).toBe('rtl');
   });
 
