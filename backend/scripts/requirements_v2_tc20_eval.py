@@ -59,12 +59,18 @@ def load_inputs() -> tuple[str, dict]:
     return jd, labels
 
 
+def user_message(jd_text: str) -> str:
+    """The user message of the live request for a job with no context lines. Mirrors
+    services/requirements_v2/extraction/prompt.build_user_message (imported only by a test: this script never imports the
+    extraction package, so it stays outside the production isolation rules)."""
+    return "\n".join(["Job Description (verbatim, between the markers):", "<<<JD", jd_text or "", "JD>>>"])
+
+
 def messages_for(arm: str, jd: str) -> list[dict]:
-    from services.requirements_v2.extraction.prompt import build_user_message
     raw = ARMS[arm]["file"].read_bytes()
     if sha256_bytes(raw) != ARMS[arm]["sha256"]:
         raise PlanError(f"{arm}: prompt file sha256 does not match the pinned value")
-    return [{"role": "system", "content": raw.decode("utf-8")}, {"role": "user", "content": build_user_message(jd, None)}]
+    return [{"role": "system", "content": raw.decode("utf-8")}, {"role": "user", "content": user_message(jd)}]
 
 
 def worst_case_cost(messages: list[dict]) -> float:
