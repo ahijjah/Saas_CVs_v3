@@ -355,7 +355,8 @@ def main(argv=None) -> int:
                 page.locator("[data-kind=injection_requirement] button", has_text="Remove this item").click()
                 page.locator("[data-split-item]").first.locator("[data-testid=keep-one]").click()
                 check("F2 corrections change the draft only: nothing written, no auto-save", not s.writes and row()["revision"] == before["revision"] and page.locator("[data-testid=unsaved-badge]").count() == 1)
-                page.get_by_role("button", name="Save requirements").first.click()
+                with page.expect_response(lambda r: r.request.method == "PUT" and "/requirements" in r.url, timeout=10000):
+                    page.get_by_role("button", name="Save requirements").first.click()
                 page.wait_for_selector("[data-testid=issue-summary]", timeout=10000)
                 put = [w for w in s.writes if w["method"] == "PUT"]
                 resp422 = [r for r in s.responses if r[0] == "PUT" and "/requirements" in r[1]]
