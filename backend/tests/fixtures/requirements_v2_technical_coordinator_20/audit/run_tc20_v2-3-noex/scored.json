@@ -1,0 +1,74 @@
+{
+ "run": {
+  "spent_usd": 0.007568,
+  "calls_attempted": 5,
+  "successful_calls": 5,
+  "stopped": null
+ },
+ "report": {
+  "status": "scored",
+  "successful_calls": 5,
+  "calls_attempted": 5,
+  "errors": [],
+  "invalid_json": 0,
+  "pass_per_check": {
+   "C_RESP": 0,
+   "C_COMP": 5,
+   "C_EXP_OR": 0,
+   "C_FAM_OR": 0,
+   "C_LOCAL": 0,
+   "C_LOCATION": 0,
+   "C_REPORTING": 0,
+   "C_AND": 0
+  },
+  "by_category": {
+   "omissions": {
+    "C_RESP": "0/5",
+    "C_COMP": "5/5"
+   },
+   "alternatives": {
+    "C_EXP_OR": "0/5",
+    "C_FAM_OR": "0/5"
+   },
+   "categories": {
+    "C_LOCAL": "0/5"
+   },
+   "routing": {
+    "C_LOCATION": "0/5",
+    "C_REPORTING": "0/5"
+   },
+   "and_splitting": {
+    "C_AND": "0/5"
+   }
+  },
+  "consistency": {
+   "C_RESP": "never",
+   "C_COMP": "always",
+   "C_EXP_OR": "never",
+   "C_FAM_OR": "never",
+   "C_LOCAL": "never",
+   "C_LOCATION": "never",
+   "C_REPORTING": "never",
+   "C_AND": "never"
+  },
+  "items_per_call": [
+   17,
+   17,
+   17,
+   17,
+   17
+  ],
+  "education_alternative_retention": {
+   "reported_separately": true,
+   "official_score": false,
+   "retained_per_call": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "retained": 0
+  }
+ }
+}

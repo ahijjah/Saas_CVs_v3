@@ -1,0 +1,62 @@
+{
+ "arm": "v2-3-noex",
+ "labels_sha256": "6a87da80e142640af1327c4a3fd5a21adb648726a9733a699fa8d3ec67135ef9",
+ "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+ "prompt": {
+  "file": "criteria_extraction_v2-3-noex.txt",
+  "sha256": "764d2ee4ad8a523e67ef27b143b41d01538853d8f7d3c8921f3adf4430b87d90",
+  "base_sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+  "removed_span_sha256": "71e72b12bf873ef6d7cc0982235e41dc6201875a2a55166aaf4c568b2d20c322"
+ },
+ "input": {
+  "system_sha256": "764d2ee4ad8a523e67ef27b143b41d01538853d8f7d3c8921f3adf4430b87d90",
+  "user_sha256": "ff6b334ad32300a05933cf96284c6c253d86ed9442ffcac37a8b543a8c240473"
+ },
+ "job_metadata": {
+  "title": "Technical Coordinator 20",
+  "department": null,
+  "experience_level": null,
+  "location": null,
+  "job_type": null,
+  "work_mode": null
+ },
+ "context_sha256": "122ef7e4f5a05a131859237759d6bfa9ffe08fd513348554557dbd91c07a4d7e",
+ "policy": "no retries; the run stops at the first failed call",
+ "plan": {
+  "calls": [
+   {
+    "arm": "v2-3-noex",
+    "call": 1,
+    "worst_case_usd": 0.004968
+   },
+   {
+    "arm": "v2-3-noex",
+    "call": 2,
+    "worst_case_usd": 0.004968
+   },
+   {
+    "arm": "v2-3-noex",
+    "call": 3,
+    "worst_case_usd": 0.004968
+   },
+   {
+    "arm": "v2-3-noex",
+    "call": 4,
+    "worst_case_usd": 0.004968
+   },
+   {
+    "arm": "v2-3-noex",
+    "call": 5,
+    "worst_case_usd": 0.004968
+   }
+  ],
+  "worst_case_total_usd": 0.02484,
+  "cap_usd": 0.03,
+  "model": "gpt-4o-mini-2024-07-18",
+  "temperature": 0.1,
+  "max_tokens": 6000,
+  "timeout_s": 90,
+  "retries": 0
+ },
+ "started": 1791658766.2421904
+}

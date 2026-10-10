@@ -126,6 +126,43 @@ python3 backend/scripts/requirements_v2_tc20_noexamples.py --dry-run            
 - The paid run is `--execute --out <new directory>` with `OPENAI_API_KEY`. It has NOT been run and is not approved by this
   section. A result can show whether the examples contribute to the stored failures; it cannot show that they are the sole cause.
 
+## Stronger-model comparison (prepared offline, NOT run; pricing unverified)
+
+Audit of the no-examples run: `audit/AUDIT_NOEX.md` (provenance, reproduced scores, raw-answer comparison, parser handling).
+
+- Arm: the **unchanged full v2-3 prompt** (sha256 `21a2f942…b784b43b`), the same stored JD, the same VPS job context and user
+  message (sha256 `ff6b334a…240473`), the frozen labels (`6a87da80…`) and the frozen scorer.
+- Recommended model: **`gpt-4.1-2025-04-14`** (a pinned snapshot). Reasons: a chat model that accepts the same four
+  request settings as the stored arm (temperature 0.1, max_tokens 6000, json_object, timeout 90), so the model is the only
+  intended change. Not chosen: the newer GPT-5-family models, because reasoning models may reject some of these settings
+  (I could not confirm their parameter rules here).
+- **Verification status (must be completed before any paid run):** the official OpenAI pricing and model pages could not
+  be read from the sandbox (DNS failure), and the search results were third-party aggregators that disagree. The price used
+  ($2.00 input / $8.00 output per 1M tokens) is therefore unverified. The owner must confirm on the official pages: the
+  snapshot ID, that the key can use it, and both prices. Then update `PRICING_STATUS`, `PRICE_IN` and `PRICE_OUT` in
+  `scripts/requirements_v2_tc20_compare.py`; until then `--execute` refuses to start.
+- Budget: cap **USD 0.40** for five calls. Worst case (input estimated as characters/2, output at 6000 tokens):
+  **USD 0.387340** (0.077468 per call). The stored gpt-4o-mini calls used about 6,485 prompt and about 1,000 completion tokens
+  each, so the expected cost is far below the cap; the cap is on the worst case.
+- Protocol: five calls, no retries, the run stops at the first failed call or on a returned model that differs from the
+  pinned one, the cap guard runs before each call, sanitized errors only, a new or empty output directory.
+- Reporting: category accuracy (the official checks by category), raw weight validity, education-alternative retention and
+  schema compliance are reported in separate groups. None of them replaces or changes a stored score.
+- Disclosed differences from the stored arm: the model (the purpose); the reservation uses the unverified prices; the
+  characters/2 input estimate overstates tokens.
+
+Dry-run (no network, the default):
+
+```bash
+python3 backend/scripts/requirements_v2_tc20_compare.py --dry-run
+```
+
+Paid run (not approved by this section; the owner's approval and the verified prices come first):
+
+```bash
+OPENAI_API_KEY=… python3 backend/scripts/requirements_v2_tc20_compare.py --execute --out <new directory outside frozen paths>
+```
+
 ## Limitations
 
 - One JD; five calls per arm; no tokenizer offline, so input tokens are estimated for the cap, not counted.
