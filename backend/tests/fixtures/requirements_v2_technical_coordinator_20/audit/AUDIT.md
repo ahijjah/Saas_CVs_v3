@@ -1,134 +1,118 @@
-# Audit: TC20 evaluation (v2-3 vs v2-4) and the prompt worked examples
+# Audit: the stored TC20 comparison run (v2-3 vs v2-4) and the prompt worked examples
 
-Status: **partial.** The prompt and example audit is complete. The run audit (provenance and score reproduction) could NOT be
-performed: the three files requested (`calls.jsonl`, `manifest.json`, `scored.json` of the TC20 run) are not in this
-environment. The upload folder contains only the files listed in section 0. Nothing below claims a run result as verified.
+Status: **run evidence verified; raw answers audited; prompts audited.** The run files are stored in
+`audit/run_tc20_v2-3_v2-4/` and a test reproduces the stored scores from them. The example-removal experiment is a
+**proposal only**. No paid call was made, and no prompt, production behaviour, label, scorer, frozen artifact or cap was changed.
 
-No paid call, no change to the active prompt, production behaviour, the frozen parser, the labels or the scoring.
+## 0. Inputs
 
-## 0. What was present, and what was not
-
-| File (upload) | sha256 | What it is |
+| Item | sha256 (full) | Source |
 |---|---|---|
-| `5634a657-technical_coordinator_v2_evidence.json` | `86a9abe7991ac55899296eb37e2133c5a51280c6d0067b106269bd8777b56590` | the stored TC20 evidence (already in the repo as `evidence.json`, byte-identical) |
-| `02efa960-req_v2_calls.jsonl` | `157b91eff3846a01c3eb818522ea24d947e7417ec7fee83db7463d8ca5b0e4cd` | 12-case benchmark calls (24 rows, run1/run2); not TC20 |
-| `7e3511c3-calls.jsonl` | `4beac81b7aa08dfa6d12e68014acf6866b19a40417735d929396d4dae6e732f4` | 12-case benchmark calls for prompt key v2-2 (24 rows); not TC20 |
-| `c55265a4-req_v22_results.json` | `044d08272edc62e581a3eadd403c9780ae2db1ed4ab1682e0baa19a5f8f4763f` | 12-case benchmark results (`req-v2-extraction-eval-2`); not TC20 |
-| `fb33b985-req_v2_results.json` | `4dd691916a43bd7c02538e8b147065e5fe075ad4a75b092f552576d481193982` | 12-case benchmark results (`req-v2-extraction-eval-2`); not TC20 |
+| `calls.jsonl` (10 rows) | `705c5b37639549b5363cf27b12125180e967c3f432508e9985900743cd2e605e` | upload `16d3343d-calls.jsonl` |
+| `scored.json` | `2eb263593f71fd5a55c1c5b017f148607126a7cc9944e9392618462a878893df` | upload `27b69479-scored.json` |
+| `manifest.json` | `2598c35dcc3c2a3ef1818079c0a65980f9e4bda9c92ec537fb40cc8133a14f41` | upload `a08d7acf-manifest.json` |
+| stored TC20 evidence | `86a9abe7991ac55899296eb37e2133c5a51280c6d0067b106269bd8777b56590` | `evidence.json` (unchanged) |
 
-Missing: the TC20 `calls.jsonl` (10 rows), the TC20 `manifest.json` and the TC20 `scored.json`. Without them the following
-cannot be checked: the provenance (labels sha `6a87da80…`, JD sha `c0c7132c…`, prompt shas `21a2f942…`/`dd2651bc…`,
-user-message sha `ff6b334a…`), the 0-success/zero-answer status, the per-check counts, and whether `scored.json` is
-reproduced by the frozen scorer. **To complete section 1, re-upload the three TC20 files.** The reproduction will re-score
-each saved answer with the unchanged `score_answer` and compare every check, count and consistency field with `scored.json`.
+The four earlier uploads (12-case benchmark files) are not part of this run and are not used here.
 
-## 1. Provenance and reproduction: NOT PERFORMED
+## 1. Provenance and reproduction: VERIFIED
 
-Blocked on the missing files (section 0). No score is reported here as reproduced.
+Checked by `tests/test_requirements_v2_tc20_run_audit.py` (4 tests, passing):
 
-## 2. Partial coverage, one claim at a time
+- The manifest matches the frozen inputs: labels sha `6a87da80…`, JD sha `c0c7132c…`, prompt shas `21a2f942…` (v2-3) and
+  `dd2651bc…` (v2-4), context sha `122ef7e4…`, user-message sha `ff6b334a…`, plan total `0.058595` (cap `0.10`).
+- The two arms sent the same user message (the executor refuses otherwise; the manifest records one hash).
+- Every saved answer was re-scored with the unchanged `score_answer` and `report`. The reproduced report equals the stored
+  `scored.json` report exactly, for both arms, on every field.
+- The recorded cost adds up: the ten per-call costs sum to `0.017366`, the stored total. Every call ended with `finish_reason:
+  stop`, model `gpt-4o-mini-2024-07-18`, no error. The v2-3 prompt-token count (6485) matches the stored production call.
+- No answer contains an item whose source text is not verbatim in the JD.
 
-Each claim is listed with what the prompt says (cited), what is confirmed by the prompt, and what remains open. The claims
-themselves come from the brief; they are not verified against the answers (section 1 is blocked).
+## 2. The raw answers: confirmed findings
 
-### 2a. User communication is extracted; two competency lines remain missing
+Counts are over the 10 answers (5 per arm) unless stated. "Confirmed" means read directly in the saved answers.
 
-- The JD lines (in `evidence.json`): "Good understanding of business applications, digital platforms, and software support
-  processes." and "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
-- Prompt, confirmed: rule 5 (v2-3 line 70) defines skills as "technical and functional **abilities**, tools, systems, methods,
-  and languages", and soft_skills (line 74) as "behavioural and interpersonal **traits**". An "Ability to …" sentence fits both
-  categories, so the prompt does not decide where it goes.
-- Prompt, confirmed: no worked example contains an "Ability" statement (census `ability_statements` = 0 in v2-3 and v2-4).
-- Prompt, confirmed: rule 4 (line 56) splits a comma list joined by "and" into separate items, but the only split examples are
-  languages and tools (line 64 "Spanish, French and German"; Example 1 "Photoshop and Illustrator"; Example 3 "Word وPowerPoint").
-- Hypothesis H2 (open): the communication line matches the soft-skill vocabulary in rule 5 (communication), so it is kept;
-  the other two lines have no such vocabulary and no example, so they are dropped. Testable with the saved answers (blocked).
+| # | Finding | v2-3 | v2-4 | Rule / passage |
+|---|---|---|---|---|
+| R1 | Shape is identical in every call: 16 items (skills 4, experience 4, education 1, soft_skills 7); no warnings | 5/5 | 5/5 | rule 4 (warnings clause, line 58) not used |
+| R2 | No duty item (`origin` = `from_responsibilities`) | 0/5 | 0/5 | rule 7 (line 81) |
+| R3 | "Ability to communicate effectively with users …" extracted, as a soft_skills item | 5/5 | 5/5 | rule 5 soft_skills (line 74) |
+| R4 | "Good understanding of business applications, digital platforms, and software support processes." extracted | 0/5 | 0/5 | rule 1 |
+| R5 | "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities." extracted | 0/5 | 0/5 | rule 1, rule 4 (comma list) |
+| R6 | "Strong communication, coordination, and teamwork skills" kept as ONE soft_skills item | 5/5 | 5/5 | rule 4 AND (line 56) |
+| R7 | Experience "1–3 years … or software implementation projects": subject is the full list, `alternatives` absent | 5/5 | 5/5 | rules 4 and 6 (lines 57, 79) |
+| R8 | "Familiarity with business process documentation … or enterprise applications": in **experience**, not skills; `alternatives` absent | 5/5 | 5/5 | rule 4; rule 5 skills (line 70) |
+| R9 | "Knowledge of the local business and regulatory environment": in **experience**; domain_knowledge is empty in all 10 | 5/5 | 5/5 | rule 5 domain_knowledge (line 75) |
+| R10 | Education "… or a related field": `alternatives` present | 5/5 | 3/5 | rule 4 (line 57). **v2-4 dropped it in calls 1 and 2.** Not in the labels, so not in `scored.json` |
+| R11 | Location: "Ramallah" routed to non_scoreable `location` | 3/5 (calls 1 and 4 absent) | 5/5 | rule 9 (line 85) |
+| R12 | Reporting, "submit deliverables … for review and approval": routed to non_scoreable, label `other` (v2-3) or `reporting_line` (v2-4) | 3/5 `other`; 2/5 absent | 5/5 `reporting_line` | rule 9 (line 88 table: reporting_line is informational) |
+| R13 | Reporting, "maintain regular communication with …": routed to non_scoreable `reporting_line` | 0/5 (absent 5/5) | 3/5 (absent 2/5) | rule 9 |
+| R14 | `informational_items` and `post_hiring_conditions` are empty in every answer | 5/5 empty | 5/5 empty | rule 9 |
+| R15 | `document_submission` is never used | 0/5 | 0/5 | rule 9 (line 87) |
+| R16 | JavaScript kept as a preferred skill with only the word "JavaScript" as text (the broader "web technologies and scripting languages" is not in the text) | 5/5 | 5/5 | rule 1 (wording only; unscored) |
+| R17 | Arabic and English split into two items | 5/5 correct | 5/5 correct | rule 4 |
+| R18 | Distinct answers over the calls: v2-3 has 4 distinct answers in 5 calls (calls 1 and 4 are identical); v2-4 has 5 | | | consistency |
+| R19 | No answer copies wording from the worked examples (searched for their distinctive terms) | none | none | section 3 |
 
-### 2b. Reporting appears but is routed to the wrong list
+## 3. The partial-coverage claims: verdicts
 
-- The JD sentence (in `evidence.json`): "The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor
-  and the IPSD II Project Director for review and approval."
-- Prompt, confirmed: reporting_line is an informational label (rule 9, v2-3 line 88). The census finds no example that routes
-  any statement to informational reporting_line (`reporting_line_routes` = 0 in both versions).
-- Prompt, confirmed (a lexical trap): rule 9 puts **document_submission** in post_hiring_conditions (v2-3 line 87). "submit
-  deliverables … for review and approval" resembles that label more than it resembles reporting_line.
-- Prompt, confirmed: rule 9's chooser is "Choose the list by what the statement is" (line 85); the prompt does not say what to
-  do with a reporting sentence that sits inside a duties section (see 2c).
-- Hypothesis H3 (open): the sentence was routed by its verb ("submit", "approve") to document_submission, not by its function
-  (reporting). Testable with the saved answers (blocked). Note: this is a hypothesis about the answers, not a confirmed fact.
+**(a) "User communication is extracted; two other competency lines are missing." CONFIRMED** (R3, R4, R5, in both arms and
+all 10 answers). The mechanism is open. The worked examples contain no soft-skill item (census), which fits the hypothesis that
+the communication sentence is kept because it matches soft-skill vocabulary, while the other two lines are not. That is
+consistent with the prompt but not shown by these answers.
 
-### 2c. Duties remain absent in all 10 answers
+**(b) "Reporting appears but is routed to the wrong list." CONFIRMED, with a correction to my earlier hypothesis.** The reporting
+sentences went to non_scoreable_requirements, not to informational_items (R12, R13, R14). My earlier hypothesis H3 said the
+verb "submit" pulled the sentence into `document_submission` (post-hiring). **That is rejected**: `document_submission` was never
+used (R15). The raw answers show a different error: the model placed the reporting statement in the location list, using the
+label `other` (v2-3) or `reporting_line` (v2-4). In v2-4 the label is right and the list is wrong, which is the exact mismatch
+rule 9 forbids ("exactly ONE of three lists"; the label "is never a list name" and does not choose the list).
 
-- Prompt, confirmed: rule 7 (line 81) is explicit: duties are output as experience items with origin "from_responsibilities".
-- Prompt, confirmed: the five worked answers contain 0, 1, 2 and 3 such items (census `from_responsibilities_items` = 6 in
-  total, per version). None shows a long list.
-- Prompt, confirmed: v2-3 has no guidance for duty sections with sub-headings or several groups. The TC20 Responsibilities
-  section has two sub-headings and 16 duty lines (`evidence.json`). v2-4 adds this guidance (v2-4 line 84); v2-3 does not.
-- Prompt, confirmed: rule 7 sits between rule 6 (a long experience rule) and rule 8. It is not repeated near the examples.
-- Hypothesis H1 (open): the answers take the length of the examples as the expected output size. Hypothesis H1b: the
-  introductory sentence of the section ("The Coordinator will support … through the following activities") is read as the
-  duty statement and the lists are skipped. Both need the saved answers (blocked).
+**(c) "Duties are absent in all 10 answers." CONFIRMED** (R1, R2). Hypothesis H1 (the length of the examples sets the expected
+output size) remains unproven: no answer copies example wording (R19), so any example effect would have to be at the level of
+shape, not copying.
 
-## 3. Prompt audit: the complete v2-3 and v2-4 texts
+## 4. Prompt audit: additions to AUDIT of the prompts
 
-Method: every line of both prompts was read; the five worked answers were parsed and counted (census in
-`prompt_census.json`, generated by `scripts/requirements_v2_prompt_census.py`, reproducible offline).
+Prompt text unchanged from the previous audit. What the raw answers add:
 
-### 3a. Confirmed contradictions
+- **Confirmed: the v2-3 reporting rule is not followed.** Line 88 places `reporting_line` in informational_items. The answers
+  never do this (R12–R14). The rule is clear; the model's choice is not what the rule says.
+- **Confirmed: the v2-4 rule-9 sentence names no list.** v2-4 line 88 reads: "Statements about where the work is done (offices,
+  sites, cities, regions), and statements about who the candidate reports or submits work to, … are conditions even when they sit
+  in a responsibilities section." It says "conditions", not "informational_items". The v2-4 answers used the new label
+  `reporting_line` but still put the statements in non_scoreable (R12, R13). The sentence did not steer the list. This is a defect
+  in the candidate's wording, to be fixed only after the proposed experiment decides what to change.
+- **Confirmed: the `other` label is used against its definition.** Rule 9 says "other" only when no label fits (v2-3 line 89).
+  In v2-3 the reporting statement was labelled `other` in 3 of 5 calls, although `reporting_line` fits.
+- **Confirmed: the v2-4 candidate's education regression is not described by any rule change I made.** Rule 4 (line 57, unchanged
+  in v2-4) still requires alternatives for an "or" list, and v2-4 drops them in 2 of 5 calls (R10). The cause is open. Hypothesis
+  H5: the COVERAGE pass added to v2-4 (its line 47) draws attention to item counts and away from alternatives. Not tested.
+- **Confirmed: contradictions between examples and rules: none** (unchanged from the earlier audit).
 
-None. No worked answer contradicts a rule: each example's routing matches rule 9's table, each example's alternatives match
-rule 4, each example's min_years matches rule 6, and each example's source texts are verbatim. The census confirms this for
-the counts and routes; the reading confirmed it for the text.
+## 5. Proposal only: example-removal experiment
 
-### 3b. Confirmed ambiguities and gaps (in the text)
+Build nothing and run nothing until approved.
 
-| # | Passage (v2-3 line) | What it says | Why it matters for the failures |
-|---|---|---|---|
-| A1 | line 70, skills: "technical and functional **abilities**" | skills includes abilities | "Ability to …" competency sentences can go to skills or soft_skills (2a) |
-| A2 | line 74, soft_skills: "behavioural and interpersonal **traits**" | soft_skills is traits | same as A1 |
-| A3 | line 71 (experience: "… **sector**, kind of work") and line 75 (domain_knowledge: "industry or subject-matter knowledge") | sector is an experience qualifier; industry knowledge is domain knowledge | "Knowledge of the local business and regulatory environment" falls under both; line 77 ("Put a requirement in exactly one category") does not say which |
-| A4 | line 58, rule 4: "If the grouping is genuinely unclear, follow the exact wording and say so in warnings." | an escape hatch for unclear groupings; "genuinely unclear" is not defined | a model may treat a list it reads as one trait as unclear and keep it as one item (the soft-skill bundle). Hypothesis H4 (open) |
-| A5 | line 81, rule 7 | duties are experience items; no exclusion for reporting or coordination sentences | a reporting sentence inside a duties section is claimed by both rule 7 and rule 9 (2b) |
-| A6 | line 81, rule 7 | no guidance on sub-headed duty sections | 16 duty lines in two sub-groups (2c). v2-4 line 84 adds it |
-| A7 | line 87, document_submission in post_hiring_conditions | a submission label that sounds like a reporting sentence | the TC20 deliverables sentence (2b, H3) |
-| A8 | lines 64–65 (counts) and the five answers | the only experience-OR is a count line in prose; no answer shows an experience item with alternatives | an "or" list ending the experience sentence (TC20 line 1–3 years) has no full example. Confirmed by the census (`items_with_alternatives` for experience = 0 in all answers) |
-| A9 | Example 2 (line 142: "Basic cataloguing knowledge") | domain knowledge is shown only as a generic subject | no example separates domain knowledge from experience sector (A3) |
+- Variant: v2-3 with the EXAMPLES block (lines 99–182) removed; rules and output format byte-identical to v2-3.
+- Input, model, settings and budget: as the TC20 run (5 calls, about $0.03 worst case, cap $0.10, no retries).
+- Scoring: the same labels and eight checks, plus the unlabelled observations R2–R15 read from the answers. Labels and scorer unchanged.
 
-Not a gap in v2-3, but the same in v2-4: the rules and examples are unchanged except where v2-4 adds passages (census identical
-in both).
+**What it can show:** whether removing the examples changes the pass counts on this JD, in a direction. One JD, five calls, and no
+copying evidence (R19) limit how far a result can be trusted.
 
-### 3c. Examples that could encourage omissions (hypotheses, not confirmed)
+**What it cannot show:** that the examples are the sole cause, or that they are a cause at all. Removing examples also removes
+the only worked soft-skill-free and reporting-free patterns the rules depend on; a change in output could come from that, not from
+the omissions themselves. A null result would not exonerate the rules either.
 
-- The five worked answers are short and one-level: 0–3 duties, 2–4 items per category, one soft-skill-free set. The prompt
-  never shows a long list or a soft_skills item (census: `soft_skills_items` = 0 in both versions). H1 above.
-- No example routes a reporting statement (census). H3 above.
-- No example contains an experience OR with alternatives in a full answer (A8). Supports the TC20 alternatives omission as
-  a compliance failure, or as an example gap; the saved answers decide which (blocked).
+**Decision it informs:** if the duties, reporting and competency items come back with the examples removed, the examples are not
+the lever and the next step is a rule-salience test; if they change, the examples are one lever, to be tested with examples
+rewritten rather than removed.
 
-## 4. Recommended next experiment (one, not run, not built)
+## 6. Open items
 
-**Example-ablation control on the TC20 JD.** Build nothing new yet. The experiment is:
-
-- Factor: the worked examples only. Variant = v2-3 with the EXAMPLES block (v2-3 lines 99–182) removed; every rule (lines 1–97),
-  the output format and the wording of the remaining text are byte-identical to v2-3.
-- Input: the stored TC20 JD and metadata (the same user message as the TC20 executor).
-- Model and settings: unchanged (gpt-4o-mini-2024-07-18, temperature 0.1, max_tokens 6000, json_object, no retries).
-- Calls: 5, scored with the frozen labels and the same eight checks. Worst-case budget about $0.03 (within the $0.10 cap).
-
-Why this experiment and not a new prompt: the census shows that the examples are the only place where the prompt shows output
-shape, and every observed failure (duties, reporting, competency lines, experience OR, bundled AND) is a shape the examples do
-not show. Removing the examples isolates that factor with one changed variable. The outcome decides the next step:
-
-- If C_RESP, C_REPORTING and C_COMP pass more often without examples than with them, the examples are a cause of the
-  omissions, and the next candidate should change the examples (not the rules).
-- If they do not change, the examples are not the cause; the next step is a rule-salience experiment (rule 7 moved near the
-  output format), not an example rewrite.
-
-It addresses the observed failures only if the first outcome holds; the experiment tells us which of the two it is before any
-prompt is changed. It also needs the TC20 run files to compare against the baseline, which is one more reason to re-upload them.
-
-## 5. Open items
-
-1. Re-upload `calls.jsonl`, `manifest.json` and `scored.json` of the TC20 run. Then section 1 and sections 2a–2c can be tested
-   against the answers (H1, H1b, H2, H3, H4).
-2. Approve or change the example-ablation control before any paid call.
+1. Approve or decline the example-removal control (section 5). Nothing has been built for it.
+2. The education-alternatives regression in v2-4 (R10) and the v2-4 rule-9 wording (section 4) are open. Fixing either is a
+   prompt change and needs a decision after the control.
+3. The labels do not score the education alternatives or the routing of reporting statements to informational. Adding labelled
+   checks would change the labels and needs a separate decision.
