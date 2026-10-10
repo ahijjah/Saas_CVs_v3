@@ -45,7 +45,7 @@ EXTRA_SCHEMA = """
     ALTER TABLE job_criteria ADD COLUMN original_analysis_json JSONB;
     ALTER TABLE job_criteria ADD COLUMN last_edited_by UUID;
     ALTER TABLE job_criteria ADD COLUMN last_edited_at TIMESTAMPTZ;
-    CREATE TABLE jobs (job_id UUID PRIMARY KEY, tenant_id UUID NOT NULL, client_organization_id UUID);
+    CREATE TABLE jobs (job_id UUID PRIMARY KEY, tenant_id UUID NOT NULL, client_organization_id UUID, description TEXT);
     CREATE TABLE agency_user_clients (user_id UUID NOT NULL, client_organization_id UUID NOT NULL, tenant_id UUID NOT NULL);
     CREATE TABLE system_config (
         key VARCHAR(100) PRIMARY KEY, value TEXT NOT NULL,

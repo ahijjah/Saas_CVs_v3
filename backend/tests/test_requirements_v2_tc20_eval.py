@@ -177,19 +177,21 @@ def test_a_failed_call_is_recorded_and_never_retried(jd_and_labels, tmp_path, st
     assert res["spent_usd"] < E.CAP_USD
 
 
-def test_the_run_stops_before_the_cap_would_be_exceeded(jd_and_labels, tmp_path, stored_raw, monkeypatch):
+def test_the_guard_refuses_the_first_call_when_the_cap_cannot_hold_the_plan(jd_and_labels, tmp_path, stored_raw, monkeypatch):
+    """The before-call guard, exercised directly: a plan whose worst case cannot fit the cap makes the run refuse the call."""
     jd, labels = jd_and_labels
-    # a worst case that fits the plan, but real usage far above the estimate: the executor must stop, not continue
-    monkeypatch.setattr(E, "PRICE_OUT", 0.60e-6)
+    tiny = {"calls": [{"arm": "v2-3", "call": n, "worst_case_usd": 0.001} for n in range(1, 4)], "worst_case_total_usd": 0.003}
+    monkeypatch.setattr(E, "plan", lambda _jd: tiny)
+    monkeypatch.setattr(E, "CAP_USD", 0.0)
     calls = []
+    E.run(tmp_path / "guard", jd, labels, lambda m: calls.append(1) or {"raw": stored_raw})
+    assert calls == []
 
-    def api(messages):
-        calls.append(1)
-        return {"raw": stored_raw, "finish_reason": "stop", "model": E.MODEL, "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
 
-    E.run(tmp_path / "cheap", jd, labels, api)
-    assert len(calls) == 10                                              # cheap calls: all ten run, all under the cap
-    assert E.CAP_USD > 0
+def test_a_run_with_no_usage_spends_nothing_and_stays_under_the_cap(jd_and_labels, tmp_path, stored_raw):
+    jd, labels = jd_and_labels
+    res = E.run(tmp_path / "free", jd, labels, lambda m: {"raw": stored_raw, "finish_reason": "stop", "model": E.MODEL, "usage": {}})
+    assert res["spent_usd"] == 0 and res["calls_made"] == 10 and res["spent_usd"] <= E.CAP_USD
 
 
 def test_missing_key_or_out_refuses_execute(jd_and_labels, monkeypatch):
@@ -205,6 +207,19 @@ def test_a_changed_prompt_file_is_refused(jd_and_labels, monkeypatch):
     monkeypatch.setitem(E.ARMS["v2-4"], "sha256", "0" * 64)
     with pytest.raises(E.PlanError):
         E.messages_for("v2-4", jd)
+
+
+def test_the_executor_user_message_is_the_live_one():
+    from services.requirements_v2.extraction.prompt import build_user_message   # test-only import
+    jd, _ = E.load_inputs()
+    assert E.user_message(jd) == build_user_message(jd, None)
+
+
+def test_v24_manifest_matches_the_file():
+    import json as _json
+    m = _json.loads((E.ARMS["v2-4"]["file"].parent / "MANIFEST.json").read_text(encoding="utf-8"))
+    assert hashlib.sha256(E.ARMS["v2-4"]["file"].read_bytes()).hexdigest() == m["sha256"] == E.ARMS["v2-4"]["sha256"]
+    assert m["base_sha256"] == E.ARMS["v2-3"]["sha256"]
 
 
 def test_v24_keeps_the_v23_output_contract_byte_for_byte():
