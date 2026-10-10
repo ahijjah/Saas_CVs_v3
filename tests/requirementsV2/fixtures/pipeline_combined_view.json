@@ -894,5 +894,10 @@
  ],
  "similarity_method": "lexical_v1",
  "discarded_client_fields": [],
- "can_edit": true
+ "can_edit": true,
+ "extraction": {
+  "status": null,
+  "error": null,
+  "retry_available": false
+ }
 }

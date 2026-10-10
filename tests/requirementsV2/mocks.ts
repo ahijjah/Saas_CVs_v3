@@ -8,5 +8,6 @@ export const mockApi = (initial: RequirementsView): MockApi => ({
   acknowledge: vi.fn().mockResolvedValue({ ...initial, revision: initial.revision + 1 }),
   confirmStructure: vi.fn().mockResolvedValue({ ...initial, revision: initial.revision + 1 }),
   confirmNoScore: vi.fn().mockResolvedValue({ ...initial, revision: initial.revision + 1 }),
+  retryExtraction: vi.fn().mockResolvedValue({ job_id: initial.job_id, extraction: { status: 'pending' } }),
 });
 

@@ -68,6 +68,9 @@ CODE_FORBIDDEN = "forbidden"
 CODE_NOT_FOUND = "not_found"
 CODE_NOT_V2 = "not_requirements_v2"
 CODE_MISSING = "requirements_missing"
+CODE_NOT_READY = "requirements_extraction_not_ready"
+CODE_FEATURE_OFF = "requirements_v2_disabled"
+CODE_RETRY_NOT_ALLOWED = "requirements_extraction_retry_not_allowed"
 CODE_STORED_INVALID = "stored_requirements_invalid"
 CODE_ORIGINAL_MISSING = "original_snapshot_missing"
 CODE_REVISION_CONFLICT = "requirements_revision_conflict"
@@ -502,7 +505,9 @@ _CRITERIA_SQL = """
     SELECT jc.analysis_json, jc.original_analysis_json,
            to_jsonb(jc) ->> 'requirements_schema_version' AS requirements_schema_version,
            to_jsonb(jc) ->> 'requirements_revision' AS requirements_revision,
-           to_jsonb(jc) -> 'requirements_retired_item_ids' AS requirements_retired_item_ids
+           to_jsonb(jc) -> 'requirements_retired_item_ids' AS requirements_retired_item_ids,
+           to_jsonb(jc) ->> 'criteria_extraction_status' AS criteria_extraction_status,
+           to_jsonb(jc) ->> 'criteria_extraction_error' AS criteria_extraction_error
     FROM job_criteria jc WHERE jc.job_id = CAST(:jid AS uuid)
 """
 
@@ -529,6 +534,8 @@ class Loaded:
     revision: int | None
     retired: list[str]
     marker: Any = None                  # job_criteria.requirements_schema_version (NULL = not set / column absent)
+    extraction_status: str | None = None   # v2 jobs: pending | processing | completed | failed (job_criteria.criteria_extraction_status)
+    extraction_error: str | None = None
     retired_column_present: bool = True
     pipeline_record: Any = None         # analysis_json["requirements_pipeline"] as stored (None = the job has none)
 
@@ -562,8 +569,10 @@ async def _load(db, user, job_id: str, *, lock: bool) -> Loaded:
                                          "read or edited through the requirements API.")
     stored = analysis.get("requirements")
     if not isinstance(stored, dict):
-        raise ApiError(409, CODE_MISSING, "This job has no requirements document yet.")
-    if validate_structure(stored):
+        if row["requirements_schema_version"] is None:
+            raise ApiError(409, CODE_MISSING, "This job has no requirements document yet.")
+        stored = None                                          # a v2 job whose extraction has not produced a document yet (pending / failed)
+    elif validate_structure(stored):
         raise ApiError(409, CODE_STORED_INVALID, "The stored requirements are malformed and cannot be edited here.")
     original_analysis = _json(row["original_analysis_json"])
     original = original_analysis.get("requirements") if isinstance(original_analysis, dict) else None
@@ -572,18 +581,67 @@ async def _load(db, user, job_id: str, *, lock: bool) -> Loaded:
     retired_raw = _json(row["requirements_retired_item_ids"])
     retired = [x for x in retired_raw if isinstance(x, str)] if isinstance(retired_raw, list) else []
     revision = row["requirements_revision"]
+    marker = row["requirements_schema_version"]
+    marker = int(marker) if marker is not None and str(marker).strip() != "" else None   # the column is read as text through to_jsonb()
     return Loaded(analysis, stored, original, int(revision) if revision is not None else None, retired,
-                  marker=row["requirements_schema_version"], retired_column_present=retired_raw is not None,
-                  pipeline_record=analysis.get(pipe.STORAGE_KEY))
+                  marker=marker, retired_column_present=retired_raw is not None,
+                  pipeline_record=analysis.get(pipe.STORAGE_KEY), extraction_status=row.get("criteria_extraction_status"),
+                  extraction_error=row.get("criteria_extraction_error"))
+
+
+def build_pending_view(*, job_id: str, revision: int, status: str | None, error: str | None, editable: bool) -> dict:
+    """The view of a requirements-v2 job whose extraction has not produced a document: nothing is shown as checked, nothing can be edited."""
+    failed = status == "failed"
+    state = "extraction_failed" if failed else "extraction_pending"
+    reason = {"code": "extraction_failed" if failed else "extraction_pending", "message": error or "", "category": None, "item_id": None}
+    return {
+        "job_id": str(job_id), "revision": revision, "requirements": {"schema_version": 2, "categories": {c: {"weight": 0, "items": []} for c in CATEGORIES}},
+        "original": None, "edited_categories": None,
+        "readiness": {"state": state, "scoring_mode": None, "can_proceed": False, "reasons": [reason], "open_warning_ids": [], "unresolved_warning_ids": [],
+                      "structure_review_item_ids": [], "guarded": False, "basis": "extraction"},
+        "pipeline": {"status": "not_extracted", "available": False, "errors": []},
+        "unresolved_issues": None, "gates": None, "model_conflicts": None, "normalized_warnings": None, "informational": None,
+        "classification_warnings": [], "classification_policy": {"key": POLICY_KEY, "require_acknowledgment": True},
+        "preferred_only_confirmation": {"confirmed": False}, "structure_review": {"needs_review_item_ids": [], "items": []},
+        "similarity_warnings": [], "similarity_method": SIMILARITY_METHOD, "discarded_client_fields": [],
+        "extraction": {"status": status, "error": error, "retry_available": failed and editable},
+        "can_edit": False,
+    }
 
 
 async def get_requirements(db, user, job_id: str) -> dict:
     """Read-only; any user who can see the job. Takes no lock and writes nothing."""
     loaded = await _load(db, user, job_id, lock=False)
+    if loaded.stored is None:
+        return build_pending_view(job_id=job_id, revision=loaded.revision or 0, status=loaded.extraction_status, error=loaded.extraction_error,
+                                  editable=can_edit(user.role))
     policy = await load_policy(db)
-    return build_view(job_id=job_id, revision=loaded.revision if loaded.revision is not None else 0,
+    view = build_view(job_id=job_id, revision=loaded.revision if loaded.revision is not None else 0,
                       doc=loaded.stored, original=loaded.original, policy=policy, editable=can_edit(user.role),
                       pipeline_record=loaded.pipeline_record)
+    if loaded.marker == 2:
+        view["extraction"] = {"status": loaded.extraction_status, "error": loaded.extraction_error, "retry_available": False}
+    return view
+
+
+async def request_extraction_retry(db, user, job_id: str) -> dict:
+    """Start a new v2 extraction attempt for a failed (or stuck) job. Admin / HR manager only, feature switch on, the job's own access. The task is queued
+    AFTER the commit; a queued task that finds its token superseded does nothing."""
+    from services import requirements_v2_extraction as ext
+    ensure_can_edit(user.role)
+    loaded = await _load(db, user, job_id, lock=False)
+    if loaded.marker != 2:
+        raise ApiError(409, CODE_NOT_V2, "Only requirements-v2 jobs have an extraction to retry.")
+    if not await ext.feature_enabled(db):
+        raise ApiError(409, CODE_FEATURE_OFF, "The requirements-v2 feature is switched off; no extraction can be started.")
+    token = await ext.request_retry(db, job_id=str(job_id), actor_user=str(user.user_id), actor_tenant=str(user.tenant_id))
+    if token is None:
+        raise ApiError(409, CODE_RETRY_NOT_ALLOWED, "This job is not waiting for an extraction retry (it has a document, or an attempt is running).")
+    description = (await db.execute(text("SELECT description FROM jobs WHERE job_id = CAST(:jid AS uuid)"), {"jid": str(job_id)})).scalar_one()
+    await db.commit()
+    from workers.requirements_v2_extraction_worker import extract_requirements_v2_task
+    extract_requirements_v2_task.delay(str(job_id), token, description, None)
+    return {"job_id": str(job_id), "extraction": {"status": "pending"}}
 
 
 async def _mutate(db, user, job_id: str, expected_revision: int, work, client_discarded: list[str] | None = None) -> dict:
@@ -602,6 +660,9 @@ async def _mutate(db, user, job_id: str, expected_revision: int, work, client_di
             raise ApiError(409, CODE_MARKER_MISSING, "This job's analysis is requirements-v2 but job_criteria."
                                                      "requirements_schema_version is not set; it cannot be edited until "
                                                      "the marker is set.")
+        if loaded.stored is None:
+            raise ApiError(409, CODE_NOT_READY, "The requirements are not available yet: the extraction has not finished. Nothing was changed.",
+                           extraction={"status": loaded.extraction_status, "error": loaded.extraction_error})
         if loaded.original is None:
             raise ApiError(409, CODE_ORIGINAL_MISSING, "The original analysis snapshot is missing; refusing to write.")
         policy = await load_policy(db)

@@ -1318,7 +1318,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   const analysis = details.analysis_json ?? undefined;
   // A requirements-v2 job is edited through its own API/UI; legacy jobs keep the criteria section below unchanged.
-  const isRequirementsV2 = (analysis as any)?.requirements?.schema_version === 2;
+  const isRequirementsV2 = details.requirements_format === 'v2' || (analysis as any)?.requirements?.schema_version === 2;
   const reloadJobDetails = async () => {
     const data = await apiService.get(WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL, { job_id: (details as any).job_id }, auth.token!);
     if (data) {

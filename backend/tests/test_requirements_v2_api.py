@@ -391,11 +391,15 @@ class TestAuthorization:
         assert store.rows[JOB] == before and store.audit == []
 
     @pytest.mark.asyncio
-    async def test_a_job_with_the_marker_but_no_document_yet_is_refused(self, api):
+    async def test_a_job_with_the_marker_but_no_document_yet_is_a_pending_view_that_refuses_edits(self, api):
+        """Behaviour changed deliberately with the v2 extraction stage: a v2 job whose extraction has not produced a document is shown as pending
+        (no document, no guarded readiness) instead of a 409, and every write is refused with requirements_extraction_not_ready."""
         store = Store()
         seed(store)
         del store.rows[JOB]["analysis"]["requirements"]
-        await raises(api.get_requirements(store.session(), user(), JOB), 409, "requirements_missing")
+        view = await api.get_requirements(store.session(), user(), JOB)
+        assert view["readiness"]["state"] == "extraction_pending" and view["readiness"]["guarded"] is False and view["original"] is None
+        await raises(api.save_requirements(store.session(), user(), JOB, 0, {"schema_version": 2, "categories": {}}), 409, "requirements_extraction_not_ready")
 
     @pytest.mark.asyncio
     async def test_a_v2_block_without_the_marker_is_still_v2(self, api):
@@ -417,7 +421,8 @@ class TestAuthorization:
             (("GET",), "/jobs/{job_id}/requirements"), (("PUT",), "/jobs/{job_id}/requirements"),
             (("POST",), "/jobs/{job_id}/requirements/classification-warnings/acknowledge"),
             (("POST",), "/jobs/{job_id}/requirements/confirm-no-numeric-score"),
-            (("POST",), "/jobs/{job_id}/requirements/structure-review/confirm")}
+            (("POST",), "/jobs/{job_id}/requirements/structure-review/confirm"),
+            (("POST",), "/jobs/{job_id}/requirements/extraction/retry")}                 # v2 extraction retry (admin / HR, feature switch on)
         assert router.router.dependencies, "the AI-recruitment module guard must protect these routes"
 
     def test_request_bodies_reject_extra_fields_and_non_integer_revisions(self):
@@ -1668,7 +1673,8 @@ class TestLegacyAndGuards:
         offenders = []
         for path in BACKEND.rglob("*.py"):
             rel = path.relative_to(BACKEND).as_posix()
-            if rel.startswith(("tests/", "services/requirements_v2/", "services/requirements_pipeline/", "parser_candidates/", "venv")) or "/site-packages/" in rel:
+            if rel.startswith(("tests/", "services/requirements_v2/", "services/requirements_pipeline/", "parser_candidates/", "venv")) or "/site-packages/" in rel \
+                    or rel in ("services/requirements_v2_extraction.py", "workers/requirements_v2_extraction_worker.py"):   # the v2 extraction stage (reviewed; see its docstrings)
                 continue
             if rel in {"scripts/requirements_v2_extraction_eval.py", "scripts/_gen_benchmark_cases_md.py", "scripts/requirements_v2_extraction_run.py",
                   "scripts/requirements_v2_extraction_compare.py",

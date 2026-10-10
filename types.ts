@@ -288,6 +288,8 @@ export interface JobDetails extends Job {
   // AI comparison toggle
   enable_ai_comparison?: boolean;
   criteria_extraction_status?: 'pending' | 'processing' | 'completed' | 'insufficient' | 'blocked' | 'failed';
+  /** 'v2' for a requirements-v2 job (its own editor), 'legacy' otherwise. Set by the job-details endpoint. */
+  requirements_format?: 'legacy' | 'v2';
   criteria_extraction_error?: string | null;
   // Retry control
   criteria_extraction_retry_count?: number;

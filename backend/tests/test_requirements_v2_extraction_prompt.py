@@ -24,6 +24,9 @@ from services.requirements_v2.extraction.text import (
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
 # offline benchmark tooling (never imported by production code, never calls a model; see test_requirements_v2_benchmark_cases)
+REVIEWED_V23_WIRING = {"db/migrations/108_requirements_v2_extraction.sql", "services/requirements_v2_extraction.py",
+                       "workers/requirements_v2_extraction_worker.py"}   # the v2 extraction stage (behind the feature switch, prompt inactive until activated)
+REVIEWED_EXTRACTION_STAGE = REVIEWED_V23_WIRING
 OFFLINE_EVAL_SCRIPTS = {"scripts/requirements_v2_extraction_eval.py", "scripts/_gen_benchmark_cases_md.py", "scripts/requirements_v2_extraction_run.py",
                        "scripts/requirements_v2_extraction_compare.py",
                        "scripts/requirements_v2_injection_guard_replay.py",
@@ -182,7 +185,8 @@ class TestIsolation:
         hits = []
         for path in BACKEND.rglob("*.py"):
             rel = path.relative_to(BACKEND).as_posix()
-            if rel.startswith(("services/requirements_v2/", "tests/", "parser_candidates/")) or rel in OFFLINE_EVAL_SCRIPTS:
+            if rel.startswith(("services/requirements_v2/", "tests/", "parser_candidates/")) or rel in OFFLINE_EVAL_SCRIPTS \
+                    or rel in REVIEWED_EXTRACTION_STAGE:          # the v2 extraction stage wired behind the feature switch (see the stage's docstrings)
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
@@ -194,13 +198,20 @@ class TestIsolation:
                 if any(n == "services.requirements_v2.extraction" or n.startswith("services.requirements_v2.extraction.")
                        for n in names):
                     hits.append(rel)
-        assert hits == []
+        assert hits == [], hits
 
     def test_the_prompt_is_not_registered_or_activated_anywhere(self):
+        """The v2 prompt is registered ONLY by the reviewed, inactive migration 108; no other file names it or activates it."""
         for path in (BACKEND / "db").rglob("*.sql"):
+            rel = path.relative_to(BACKEND).as_posix()
+            if rel == "db/migrations/108_requirements_v2_extraction.sql":
+                assert "is_active, version, notes)" in path.read_text(encoding="utf-8")
+                assert re.search(r"'criteria_extraction_v2'.*FALSE, 3,", path.read_text(encoding="utf-8"), re.S)
+                continue
             assert "criteria_extraction_v2" not in path.read_text(encoding="utf-8"), path
         for sub in ("routers", "workers", "services"):
             for path in (BACKEND / sub).rglob("*.py"):
-                if "requirements_v2" in path.parts:
+                rel = path.relative_to(BACKEND).as_posix()
+                if "requirements_v2" in path.parts or rel in REVIEWED_EXTRACTION_STAGE:
                     continue
                 assert "criteria_extraction_v2" not in path.read_text(encoding="utf-8"), path

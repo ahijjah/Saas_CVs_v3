@@ -119,3 +119,12 @@ async def confirm_structure_review(job_id: str, body: ConfirmStructureRequest, c
         return await api.confirm_structure_review(db, current_user, job_id, body.expected_revision, body.item_id, client_discarded=body.discarded())
     except api.ApiError as exc:
         raise _http(exc) from exc
+
+
+@router.post("/extraction/retry")
+async def retry_extraction(job_id: str, current_user: CurrentUserDep, db: Annotated[AsyncSession, Depends(get_db)]):
+    """Start a new requirements-v2 extraction attempt for a failed (or stuck) job. Admin / HR manager, feature switch on, job access checked."""
+    try:
+        return await api.request_extraction_retry(db, current_user, job_id)
+    except api.ApiError as exc:
+        raise _http(exc) from exc

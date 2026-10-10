@@ -13,6 +13,7 @@ celery_app = Celery(
         "workers.cv_score",
         "workers.cv_intake",
         "workers.criteria_worker",
+        "workers.requirements_v2_extraction_worker",
         "workers.notification_worker",
         "workers.watchdog",
         "workers.backfill_canonical_fp",

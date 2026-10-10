@@ -26,7 +26,7 @@ export interface ModelConflict {
 }
 
 export interface PipelineInfo {
-  status: 'ok' | 'unavailable' | 'invalid_record'; available: boolean; errors: string[]; message?: string;
+  status: 'ok' | 'unavailable' | 'invalid_record' | 'not_extracted'; available: boolean; errors: string[]; message?: string;
   contract_version?: string; record_version?: string; job_description_sha256?: string;
   component_versions?: { pipeline?: string; injection_guard?: string; split_or_guard?: string; warning_adapter?: string; extraction_prompt?: { version?: string; sha256?: string } | null };
   provenance?: { extraction_prompt?: { version?: string; sha256?: string } | null; model?: string | null };
@@ -77,7 +77,16 @@ export interface RequirementsView {
   similarity_method: string;
   discarded_client_fields?: string[];
   changed?: boolean;
+  /** Present for requirements-v2 jobs (schema marker 2). While the extraction has no document the view is a read-only skeleton. */
+  extraction?: ExtractionStatus | null;
   can_edit: boolean;
+}
+
+export interface ExtractionStatus {
+  status: 'pending' | 'processing' | 'completed' | 'failed' | null;
+  error: string | null;
+  /** Server-decided: true only for an editor (admin / HR manager) on a failed attempt of a job that has no document yet. */
+  retry_available: boolean;
 }
 
 /** The calls the panel makes; tests and previews can supply a mock. */
@@ -87,6 +96,8 @@ export interface RequirementsApi {
   acknowledge(jobId: string, expectedRevision: number, warningId: string, gate?: GateName): Promise<RequirementsView>;
   confirmStructure(jobId: string, expectedRevision: number, itemId: string): Promise<RequirementsView>;
   confirmNoScore(jobId: string, expectedRevision: number): Promise<RequirementsView>;
+  /** Asks the server for a new extraction attempt (only for a failed attempt with no document yet). */
+  retryExtraction(jobId: string): Promise<{ job_id: string; extraction: { status: string } }>;
 }
 
 const base = (jobId: string) => `${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/${jobId}/requirements`;
@@ -100,4 +111,5 @@ export const createRequirementsApi = (token: string): RequirementsApi => ({
     apiService.post(`${base(jobId)}/structure-review/confirm`, { expected_revision, item_id }, token),
   confirmNoScore: (jobId, expected_revision) =>
     apiService.post(`${base(jobId)}/confirm-no-numeric-score`, { expected_revision }, token),
+  retryExtraction: (jobId) => apiService.post(`${base(jobId)}/extraction/retry`, {}, token),
 });

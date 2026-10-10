@@ -1,7 +1,7 @@
 import json
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
@@ -39,6 +39,8 @@ class CreateJobRequest(BaseModel):
     campaign_id: str | None = None  # NULL = standalone job (optional campaign grouping)
     vacancies_count: int | None = None
     knockout_questions: list[dict] | None = None
+    # "legacy" (default, unchanged workflow) or "v2" (requirements-v2 extraction). "v2" is refused unless the platform feature switch is on.
+    requirements_format: Literal["legacy", "v2"] = "legacy"
 
 
 class UpdateCriteriaRequest(BaseModel):
@@ -431,6 +433,18 @@ async def create_job(
             detail=campaign_check["message"],
         )
 
+    # requirements-v2 is opt-in per job and behind a platform switch that is OFF by default. Legacy creation below is untouched.
+    from services import requirements_v2_extraction as v2_extraction
+    use_v2 = body.requirements_format == "v2"
+    v2_token = None
+    if use_v2:
+        if not await v2_extraction.feature_enabled(db):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={
+                "code": "requirements_v2_disabled",
+                "message": "Requirements-v2 jobs are not enabled on this platform. Create the job in the legacy format."})
+        import uuid as _uuid
+        v2_token = str(_uuid.uuid4())
+
     # Platform alias must use the platform domain, never the tenant domain.
     # Read from system_config so super admin can change it without a redeploy.
     domain_row = await db.execute(
@@ -483,13 +497,23 @@ async def create_job(
 
     # Insert a pending criteria row immediately — AI extraction runs in background.
     # Default weights (30+25+15+10+10+5+5=100) satisfy the weights_sum_100 constraint.
-    await db.execute(
-        text("""
-            INSERT INTO job_criteria (job_id, criteria_extraction_status)
-            VALUES (:jid, 'pending')
-        """),
-        {"jid": job_id},
-    )
+    if use_v2:
+        # v2: the marker is set in the same insert (never later), with the attempt token of the extraction queued below.
+        await db.execute(
+            text("""
+                INSERT INTO job_criteria (job_id, criteria_extraction_status, requirements_schema_version, requirements_extraction_token)
+                VALUES (:jid, 'pending', 2, CAST(:tok AS uuid))
+            """),
+            {"jid": job_id, "tok": v2_token},
+        )
+    else:
+        await db.execute(
+            text("""
+                INSERT INTO job_criteria (job_id, criteria_extraction_status)
+                VALUES (:jid, 'pending')
+            """),
+            {"jid": job_id},
+        )
     await db.commit()
 
     job_dir = Path(settings.files_base_path) / "tenants" / current_user.tenant_id / "jobs" / job_id
@@ -504,7 +528,6 @@ async def create_job(
         await db.commit()
 
     # Queue async AI extraction — does not block job creation
-    from workers.criteria_worker import extract_criteria_task
     _job_meta = {
         "title":            body.title,
         "department":       body.department,
@@ -513,6 +536,20 @@ async def create_job(
         "job_type":         body.job_type,
         "work_mode":        body.work_mode,
     }
+    if use_v2:
+        from workers.requirements_v2_extraction_worker import extract_requirements_v2_task
+        extract_requirements_v2_task.delay(job_id, v2_token, body.description, _job_meta)
+        return {
+            "success": True,
+            "job_id": job_id,
+            "job_code": job_code,
+            "platform_email": platform_email,
+            "criteria_extraction_status": "pending",
+            "requirements_format": "v2",
+            "message": "Job created. Requirements-v2 extraction started in background.",
+        }
+
+    from workers.criteria_worker import extract_criteria_task
     extract_criteria_task.delay(job_id, body.description, _job_meta)
 
     return {
@@ -521,6 +558,7 @@ async def create_job(
         "job_code": job_code,
         "platform_email": platform_email,
         "criteria_extraction_status": "pending",
+        "requirements_format": "legacy",
         "message": "Job created successfully. AI criteria extraction started in background.",
     }
 
@@ -653,6 +691,7 @@ async def get_job_details(
                    original_analysis_json,
                    criteria_extraction_status,
                    criteria_extraction_error,
+                   to_jsonb(jc) ->> 'requirements_schema_version' AS requirements_schema_version,
                    criteria_extracted_at,
                    criteria_extraction_retry_count,
                    criteria_last_failed_description_hash,
@@ -661,7 +700,7 @@ async def get_job_details(
                    weight_certifications, weight_soft_skills,
                    weight_domain_knowledge, weight_other,
                    ai_model, ai_generated_at, last_edited_at, last_edited_by
-            FROM job_criteria WHERE job_id = :jid
+            FROM job_criteria jc WHERE jc.job_id = :jid
         """),
         {"jid": job_id},
     )
@@ -716,6 +755,7 @@ async def get_job_details(
 
     return {
         "details": {
+            "requirements_format": "v2" if (criteria and criteria["requirements_schema_version"] is not None) else "legacy",
             "job_id":             str(job["job_id"]),
             "job_code":           job_code,
             "job_title":          job["title"],

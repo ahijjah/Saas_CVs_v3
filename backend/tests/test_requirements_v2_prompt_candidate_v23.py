@@ -102,8 +102,11 @@ def test_the_candidate_is_not_registered_activated_or_wired():
     for sub in ("routers", "workers", "services", "db"):
         for path in (BACKEND / sub).rglob("*"):
             if path.is_file() and path.suffix in {".py", ".sql", ".txt"} and "__pycache__" not in path.parts:
+                rel = path.relative_to(BACKEND).as_posix()
+                if rel in {"db/migrations/108_requirements_v2_extraction.sql", "services/requirements_v2_extraction.py", "workers/requirements_v2_extraction_worker.py"}:
+                    continue                              # the reviewed v2 extraction stage (behind the feature switch; prompt inactive until activated)
                 assert "criteria_extraction_v2-3" not in path.read_text(encoding="utf-8", errors="ignore"), path
-    assert "criteria_extraction_v2-3" not in (BACKEND / "main.py").read_text(encoding="utf-8")
+    assert "criteria_extraction_v2-3" not in (BACKEND / "main.py").read_text(encoding="utf-8")                  # the router reaches the stage through its own module
     # the offline executor may select it ONLY explicitly (`--prompt v2-3`, see test_requirements_v2_candidate_v23_executor.py); the default stays the baseline
     run = (BACKEND / "scripts" / "requirements_v2_extraction_run.py").read_text(encoding="utf-8")
     assert 'default="baseline"' in run

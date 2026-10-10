@@ -6,7 +6,7 @@ import {
 } from '../../utils/requirementsV2';
 import { Choice, threeWayMerge } from '../../utils/requirementsMerge';
 import type { PipelineIssue, RequirementsApi, RequirementsView } from '../../services/requirementsV2Api';
-import { fmt, STRINGS } from './i18n';
+import { fmt, STRINGS, type Strings } from './i18n';
 import { CategoryCard, ItemInfo, RowActions } from './CategoryCard';
 import { BlockerPanel, ConflictPanel, CorrectionActions, InformationalPanel, IssuesPanel, PipelineStatusCard } from './PipelinePanels';
 import {
@@ -223,6 +223,16 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     finally { if (alive.current) setBusy(null); }
   }
 
+  // Asks for a new extraction attempt (server decides who may, and only for a failed attempt with no document), then reloads the status.
+  const retryExtraction = async () => {
+    if (busy) return;
+    setBusy('action');
+    try { await apiRef.current.retryExtraction(jobId); toast(s.extractionQueued, 'info'); }
+    catch (e) { const p = describeApiError(e); toast((s as any)[`err_${p.code}`] || p.message, 'error'); }
+    finally { if (alive.current) setBusy(null); }
+    await load();
+  };
+
   const discard = () => { if (base) { setDraft(base); setProblem(null); setFallback(null); setNormalizeNote(null); } };
   // Resolution never saves anything: it builds the merged draft from the recruiter's explicit choices and rebases the
   // comparison point onto the latest saved version, so the next save is checked against that revision.
@@ -253,6 +263,19 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
       <section className="bg-white rounded-2xl border border-border p-6" dir={isAr ? 'rtl' : 'ltr'}>
         <p className="text-sm text-error" role="alert">{loadError || s.loadFailed}</p>
         <button type="button" className={`${btnSecondary} mt-3`} onClick={load}>{s.retry}</button>
+      </section>
+    );
+  }
+
+  // No document yet (requirements-v2 extraction pending or failed): the editor is not shown; the status card is.
+  if (view.readiness.basis === 'extraction') {
+    return (
+      <section dir={isAr ? 'rtl' : 'ltr'} lang={isAr ? 'ar' : 'en'} aria-labelledby="req-title-text" className="space-y-4" data-testid="requirements-v2">
+        <header className="bg-white rounded-2xl border border-border shadow-sm px-4 py-4">
+          <h3 id="req-title" className="text-base font-black text-textMain"><span id="req-title-text">{s.title}</span></h3>
+          <p className="text-xs text-textMuted mt-0.5">{s.subtitle}</p>
+        </header>
+        <ExtractionCard s={s} extraction={view.extraction ?? null} busy={busy !== null} onRetry={retryExtraction} onRefresh={load} />
       </section>
     );
   }
@@ -350,6 +373,32 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
           <span className="text-xs text-textMuted">{s.unsavedHint}</span>
         </div>
       )}
+    </section>
+  );
+};
+
+const ExtractionCard: React.FC<{
+  s: Strings; extraction: RequirementsView['extraction'] | null; busy: boolean; onRetry: () => void; onRefresh: () => void;
+}> = ({ s, extraction, busy, onRetry, onRefresh }) => {
+  const failed = extraction?.status === 'failed';
+  return (
+    <section aria-labelledby="req-extraction-h" className={`rounded-xl border p-4 space-y-2 ${failed ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
+             data-testid="extraction-status" data-status={extraction?.status ?? 'pending'}>
+      <h4 id="req-extraction-h" className={`text-sm font-black ${failed ? 'text-red-900' : 'text-textMain'}`}>
+        {failed ? s.extractionFailedTitle : s.extractionPendingTitle}
+      </h4>
+      <p className={`text-xs ${failed ? 'text-red-900' : 'text-textMuted'}`}>{failed ? s.extractionFailedBody : s.extractionPendingBody}</p>
+      {failed && extraction?.error && (
+        <p className="text-xs text-red-900" data-testid="extraction-error"><span className="font-bold">{s.extractionReason}:</span> {extraction.error}</p>
+      )}
+      <div className="flex flex-wrap gap-2 pt-1">
+        {failed && extraction?.retry_available && (
+          <button type="button" className={btnPrimary} onClick={onRetry} disabled={busy} data-testid="extraction-retry">{s.extractionRetry}</button>
+        )}
+        {!failed && (
+          <button type="button" className={btnSecondary} onClick={onRefresh} disabled={busy} data-testid="extraction-refresh">{s.extractionRefresh}</button>
+        )}
+      </div>
     </section>
   );
 };
