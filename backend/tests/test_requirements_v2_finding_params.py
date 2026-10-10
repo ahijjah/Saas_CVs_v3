@@ -2,15 +2,24 @@
 _finding_params). The validator itself (services/requirements_v2) is frozen and is not changed here: these tests pin the payload only."""
 import copy
 
-from services import requirements_api as api
-from services.requirements_v2 import Issue
+def _api():
+    # imported inside the functions: a module-level import would bind the API module during collection of the whole suite
+    from services import requirements_api
+    return requirements_api
 
-from test_requirements_v2_validation import scored_doc
+
+def _issue(code, category=None, item_id=None):
+    from services.requirements_v2 import Issue
+    return Issue(code, "m", category=category, item_id=item_id)
+
+
+def scored_doc():
+    from test_requirements_v2_validation import scored_doc as make
+    return make()
 
 
 def _payload(doc, code, category=None, item_id=None):
-    issue = Issue(code, "m", category=category, item_id=item_id)
-    return api.issues_payload([issue], doc)[0]["params"]
+    return _api().issues_payload([_issue(code, category, item_id)], doc)[0]["params"]
 
 
 def test_required_total_finding_carries_the_actual_expected_and_difference():
@@ -34,10 +43,10 @@ def test_required_weight_finding_names_the_value_it_rejected():
 
 
 def test_without_the_document_no_numbers_are_invented():
-    assert api.issues_payload([Issue("required_weights_total", "m", category="skills")])[0]["params"] == {}
+    assert _api().issues_payload([_issue("required_weights_total", category="skills")])[0]["params"] == {}
 
 
 def test_the_payload_still_has_the_original_fields():
     d = scored_doc()
-    out = api.issues_payload([Issue("required_weights_total", "m", category="skills")], d)[0]
+    out = _api().issues_payload([_issue("required_weights_total", category="skills")], d)[0]
     assert set(out) == {"code", "message", "category", "item_id", "params"}

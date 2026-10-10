@@ -356,7 +356,7 @@ def main(argv=None) -> int:
                 page.locator("[data-split-item]").first.locator("[data-testid=keep-one]").click()
                 check("F2 corrections change the draft only: nothing written, no auto-save", not s.writes and row()["revision"] == before["revision"] and page.locator("[data-testid=unsaved-badge]").count() == 1)
                 page.get_by_role("button", name="Save requirements").first.click()
-                page.wait_for_selector("[data-testid=server-issues]", timeout=10000)
+                page.wait_for_selector("[data-testid=issue-summary]", timeout=10000)
                 put = [w for w in s.writes if w["method"] == "PUT"]
                 resp422 = [r for r in s.responses if r[0] == "PUT" and "/requirements" in r[1]]
                 check("F3 invalid weights (required totals off after removals) are rejected: HTTP 422, no writes", put and resp422[-1][2] == 422 and row() == before and actions() == [])
@@ -450,11 +450,11 @@ def main(argv=None) -> int:
                 s = Session(browser, "admin")
                 page = s.open_job()
                 check("F6 damaged record: clear blocking message, original and requirements readable", "damaged" in txt(page, "[data-testid=pipeline-invalid]").lower()
-                      and page.locator("textarea").count() > 3)
-                page.locator("textarea").first.fill("changed")
+                      and page.locator("input[id^='req-text-']").count() > 3)
+                page.locator("input[id^='req-text-']").first.fill("changed")
                 before = row()
                 page.get_by_role("button", name="Save requirements").first.click()
-                page.wait_for_selector("[data-testid=problem], [data-testid=server-issues]", timeout=10000)
+                page.wait_for_selector("[data-testid=problem], [data-testid=issue-summary]", timeout=10000)
                 check("F6 damaged record: the write is refused (409) with a clear message and nothing stored", "damaged" in txt(page, "[data-testid=problem]").lower() and row() == before)
                 shot(page, "F6_damaged")
                 s.close()
@@ -465,10 +465,10 @@ def main(argv=None) -> int:
                 fix_blockers_via_api()
                 a, h = Session(browser, "admin"), Session(browser, "hr")
                 pa, ph = a.open_job(), h.open_job()
-                ph.locator("textarea").first.fill("Python programming (HR change)")
+                ph.locator("input[id^='req-text-']").first.fill("Python programming (HR change)")
                 ph.get_by_role("button", name="Save requirements").first.click()
                 ph.wait_for_function("document.querySelector('[data-testid=unsaved-badge]') === null", timeout=10000)
-                soft = pa.get_by_role("region", name="Soft skills", exact=True).locator("textarea").first
+                soft = pa.get_by_role("region", name="Soft skills", exact=True).locator("input[id^='req-text-']").first
                 soft.fill(soft.input_value() + " (admin change)")
                 pa.get_by_role("button", name="Save requirements").first.click()
                 pa.wait_for_selector("[data-testid=conflict]", timeout=10000)

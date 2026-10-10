@@ -233,12 +233,12 @@ def main(argv=None) -> int:
             check("S2 'edit weight' focuses the category weight input", page.evaluate("document.activeElement && document.activeElement.id") == "req-cat-soft_skills-w")
             skills_before = page.locator("#req-cat-skills-w").input_value()
             page.locator("[data-split-item]").first.locator("[data-testid=keep-one]").click()
-            skill_texts = page.get_by_role("region", name="Skills", exact=True).locator("textarea").evaluate_all("els => els.map(e => e.value)")
+            skill_texts = page.get_by_role("region", name="Skills", exact=True).locator("input[id^='req-text-']").evaluate_all("els => els.map(e => e.value)")
             check("S2 keep-one removes the redundant split item and keeps one", ("Python" in skill_texts) != ("Java" in skill_texts), str(skill_texts))
             check("S2 weights were NOT redistributed (category weight unchanged; totals flagged)", page.locator("#req-cat-skills-w").input_value() == skills_before
-                  and page.locator("[data-testid=local-issues]").count() == 1)
+                  and page.locator("[data-testid=issue-summary]").count() == 1)
             page.get_by_role("button", name="Save requirements").first.click()
-            page.wait_for_selector("[data-testid=server-issues]", timeout=8000)
+            page.wait_for_selector("[data-testid=issue-summary]", timeout=8000)
             check("S2 invalid weights are rejected by the server (422) and nothing is written", row()["revision"] == rev0 and
                   any(r["method"] == "PUT" for r in reqs) and page.locator("[data-testid=unsaved-badge]").count() == 1)
             shot(page, "02_corrections_invalid_weights")
@@ -315,10 +315,10 @@ def main(argv=None) -> int:
             check("S6 a clear blocking message is shown for the damaged record", "damaged" in text(page, "[data-testid=pipeline-invalid]").lower()
                   and "Check record damaged" in text(page, "[data-testid=readiness-state]"))
             page.locator("[data-testid=toggle-compare]").click()
-            check("S6 the original analysis and the requirements stay readable", page.locator("[data-testid=comparison]").count() == 1 and page.locator("textarea").count() > 3)
-            page.locator("textarea").first.fill("changed wording")
+            check("S6 the original analysis and the requirements stay readable", page.locator("[data-testid=comparison]").count() == 1 and page.locator("input[id^='req-text-']").count() > 3)
+            page.locator("input[id^='req-text-']").first.fill("changed wording")
             page.get_by_role("button", name="Save requirements").first.click()
-            page.wait_for_selector("[data-testid=problem], [data-testid=server-issues]", timeout=8000)
+            page.wait_for_selector("[data-testid=problem], [data-testid=issue-summary]", timeout=8000)
             check("S6 a write is refused (409) with a clear message and nothing is stored", "damaged" in text(page, "[data-testid=problem]").lower() and row()["revision"] == 0)
             shot(page, "07_pipeline_damaged")
             page.context.close()
@@ -364,7 +364,7 @@ def main(argv=None) -> int:
             # ── S10: valid blocked document is saveable ─────────────────────────────────────────────────────────────────────────────────────────
             reseed()
             page, reqs = open_page(browser)
-            ta = page.locator("textarea").first
+            ta = page.locator("input[id^='req-text-']").first
             ta.fill(ta.input_value() + " (edited)")
             page.get_by_role("button", name="Save requirements").first.click()
             page.wait_for_function("document.querySelector('[data-testid=unsaved-badge]') === null", timeout=8000)
@@ -379,7 +379,7 @@ def main(argv=None) -> int:
             d = doc_of(v)
             d["categories"]["soft_skills"]["items"][0]["text"] = "Written communication (changed by someone else)"
             st, _ = call("PUT", "", "hr", {"expected_revision": 0, "requirements": d})
-            ta = page.locator("textarea").first
+            ta = page.locator("input[id^='req-text-']").first
             ta.fill(ta.input_value() + " (mine)")
             page.get_by_role("button", name="Save requirements").first.click()
             page.wait_for_selector("[data-testid=conflict]", timeout=8000)
