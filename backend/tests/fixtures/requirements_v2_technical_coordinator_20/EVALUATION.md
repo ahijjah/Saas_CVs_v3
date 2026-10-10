@@ -13,13 +13,15 @@ migrates the database or deploys.
 
 Both arms: the exact stored JD (`evidence.json`, sha `c0c7132c…d265`), model `gpt-4o-mini-2024-07-18` (requested and
 returned must match), temperature 0.1, max_tokens 6000, `response_format` json_object, timeout 90 s, **0 retries**,
-**5 calls each**, 10 calls in total. The request is the JD only: the job-context lines of the live request
-(title, department, location, …) are not in the stored evidence, so they are not reproduced. That is a limitation.
+**5 calls each**, 10 calls in total. The user message is the live builder's output for the VPS job context
+(`Job Title: Technical Coordinator 20`; department, seniority, location, employment type and work mode are empty on the VPS and
+are left out, as the live builder leaves out empty fields), then the verbatim JD block. Both arms send the identical user
+message. The run manifest stores the context hash (`context_sha256`) and the user-message hash (`user_message_sha256`).
 
 ## Cost
 
-Worst case per call (input at most half the characters, output at max_tokens): v2-3 USD 0.005806, v2-4 USD 0.005905.
-Total worst case **USD 0.0586** against the **USD 0.10** cap. The executor refuses to start if the worst case exceeds the
+Worst case per call (input at most half the characters, output at max_tokens): v2-3 USD 0.00581, v2-4 USD 0.005909.
+Total worst case **USD 0.058595** against the **USD 0.10** cap. The executor refuses to start if the worst case exceeds the
 cap, and before each call it refuses if spent plus the worst case of every remaining call would exceed the cap. Measured
 cost is recorded per call; the stored answer used 6485 input and 962 output tokens (about USD 0.0016).
 
@@ -85,7 +87,7 @@ test -n "$OPENAI_API_KEY" && echo KEY_PRESENT          # the value is never prin
 psql "$DATABASE_URL" -tAc "SELECT version, encode(sha256(convert_to(system_prompt,'UTF8')),'hex') FROM ai_prompts WHERE prompt_code='criteria_extraction_v2' AND is_active"
 ```
 
-Expected: HEAD = pinned commit; FROZEN_OK; sha256 values as in the table above; dry-run total 0.0586; KEY_PRESENT; the
+Expected: HEAD = pinned commit; FROZEN_OK; sha256 values as in the table above; dry-run total 0.058595; KEY_PRESENT; the
 active row is reported (if it is not version 3 with hash 21a2f942…, the report states that the v2-3 arm is the file, not the active row).
 
 Run (owner, from the same worktree; writes only to `--out`):
@@ -100,6 +102,6 @@ errors), `scored.json` (run totals and the per-arm report).
 ## Limitations
 
 - One JD; five calls per arm; no tokenizer offline, so input tokens are estimated for the cap, not counted.
-- The request omits the live job-context lines (not in the evidence).
+- The job context is the VPS's title only; the other fields are empty on the VPS, so the message matches the live one.
 - The VPS active prompt row cannot be read from here; the preflight reads it.
 - The offline tests use synthetic answers written from the labels; they prove the scorer and the cap, not model compliance.

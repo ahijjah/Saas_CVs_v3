@@ -59,11 +59,30 @@ def load_inputs() -> tuple[str, dict]:
     return jd, labels
 
 
-def user_message(jd_text: str) -> str:
-    """The user message of the live request for a job with no context lines. Mirrors
-    services/requirements_v2/extraction/prompt.build_user_message (imported only by a test: this script never imports the
-    extraction package, so it stays outside the production isolation rules)."""
-    return "\n".join(["Job Description (verbatim, between the markers):", "<<<JD", jd_text or "", "JD>>>"])
+# The job context of JOB-2026-0121 as it is on the VPS (empty fields are left out of the message, as in the live builder).
+JOB_METADATA = {"title": "Technical Coordinator 20", "department": None, "experience_level": None,
+                "location": None, "job_type": None, "work_mode": None}
+_CONTEXT_FIELDS = (
+    ("Job Title", "title"), ("Department", "department"), ("Seniority Level", "experience_level"),
+    ("Location", "location"), ("Employment Type", "job_type"), ("Work Mode", "work_mode"),
+)
+
+
+def context_lines(metadata: dict | None) -> list[str]:
+    """Mirrors services/requirements_v2/extraction/prompt.build_user_message: only non-empty fields, labelled as the live builder does."""
+    context = [f"{label}: {metadata.get(key)}" for label, key in _CONTEXT_FIELDS if metadata and metadata.get(key)]
+    return ["Job Context:", *context, ""] if context else []
+
+
+def user_message(jd_text: str, metadata: dict | None = JOB_METADATA) -> str:
+    """The user message of the live request. Mirrors services/requirements_v2/extraction/prompt.build_user_message (imported only
+    by a test: this script never imports the extraction package, so it stays outside the production isolation rules)."""
+    lines = [*context_lines(metadata), "Job Description (verbatim, between the markers):", "<<<JD", jd_text or "", "JD>>>"]
+    return "\n".join(lines)
+
+
+def context_sha256(metadata: dict | None = JOB_METADATA) -> str:
+    return sha256_bytes(json.dumps(metadata or {}, sort_keys=True, ensure_ascii=False).encode("utf-8"))
 
 
 def messages_for(arm: str, jd: str) -> list[dict]:
@@ -97,10 +116,15 @@ def run(out: pathlib.Path, jd: str, labels: dict, api_call) -> dict:
     take the total (spent + worst case of every remaining call) above the cap."""
     p = plan(jd)
     out.mkdir(parents=True, exist_ok=True)
-    manifest = {"labels_sha256": sha256_bytes(LABELS.read_bytes()), "jd_sha256": labels["jd_sha256"],
-                "prompts": {a: ARMS[a]["sha256"] for a in ARMS}, "plan": p, "started": time.time()}
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
     msgs = {a: messages_for(a, jd) for a in ARMS}
+    user_hashes = {a: sha256_bytes(msgs[a][1]["content"].encode("utf-8")) for a in ARMS}
+    if len(set(user_hashes.values())) != 1:
+        raise PlanError("the two arms do not send the same user message")
+    manifest = {"labels_sha256": sha256_bytes(LABELS.read_bytes()), "jd_sha256": labels["jd_sha256"],
+                "prompts": {a: ARMS[a]["sha256"] for a in ARMS}, "job_metadata": JOB_METADATA,
+                "context_sha256": context_sha256(JOB_METADATA), "user_message_sha256": next(iter(user_hashes.values())),
+                "plan": p, "started": time.time()}
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
     spent = 0.0
     remaining = [c["worst_case_usd"] for c in p["calls"]]
     with (out / "calls.jsonl").open("w", encoding="utf-8") as fh:
@@ -237,7 +261,9 @@ def main(argv=None) -> int:
     jd, labels = load_inputs()
     p = plan(jd)
     if not args.execute:
-        print(json.dumps({"mode": "dry-run", **p, "labels_sha256": sha256_bytes(LABELS.read_bytes())}, ensure_ascii=False, indent=1))
+        print(json.dumps({"mode": "dry-run", **p, "labels_sha256": sha256_bytes(LABELS.read_bytes()), "job_metadata": JOB_METADATA,
+                          "context_sha256": context_sha256(JOB_METADATA),
+                          "user_message_sha256": sha256_bytes(user_message(jd).encode("utf-8"))}, ensure_ascii=False, indent=1))
         return 0
     if args.out is None or not os.environ.get("OPENAI_API_KEY"):
         raise SystemExit("--execute needs --out and OPENAI_API_KEY")

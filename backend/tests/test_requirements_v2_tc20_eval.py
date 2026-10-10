@@ -212,7 +212,41 @@ def test_a_changed_prompt_file_is_refused(jd_and_labels, monkeypatch):
 def test_the_executor_user_message_is_the_live_one():
     from services.requirements_v2.extraction.prompt import build_user_message   # test-only import
     jd, _ = E.load_inputs()
-    assert E.user_message(jd) == build_user_message(jd, None)
+    assert E.user_message(jd) == build_user_message(jd, E.JOB_METADATA)
+    assert E.user_message(jd, None) == build_user_message(jd, None)            # and without any context
+
+
+def test_the_message_begins_with_the_job_context_then_the_verbatim_jd_block():
+    jd, _ = E.load_inputs()
+    m = E.user_message(jd)
+    assert m.startswith("Job Context:\nJob Title: Technical Coordinator 20\n\n")
+    assert m.split("\n")[:2] == ["Job Context:", "Job Title: Technical Coordinator 20"]
+    block = "Job Description (verbatim, between the markers):\n<<<JD\n" + jd + "\nJD>>>"
+    assert m.endswith(block)
+
+
+def test_empty_vps_fields_are_left_out_of_the_context():
+    assert "Department" not in E.user_message("x") and "Location" not in E.user_message("x")
+    assert E.context_lines({"title": "T", "location": None}) == ["Job Context:", "Job Title: T", ""]
+
+
+def test_both_arms_send_identical_user_messages_and_the_whole_jd():
+    jd, _ = E.load_inputs()
+    m3 = E.messages_for("v2-3", jd)[1]["content"]
+    m4 = E.messages_for("v2-4", jd)[1]["content"]
+    assert m3 == m4
+    assert jd in m3 and jd in m4
+    assert E.messages_for("v2-3", jd)[0]["role"] == "system" and E.messages_for("v2-3", jd)[1]["role"] == "user"
+
+
+def test_the_run_manifest_stores_the_context_and_the_user_message_hashes(jd_and_labels, tmp_path, stored_raw):
+    import hashlib as _h
+    jd, labels = jd_and_labels
+    E.run(tmp_path / "hashes", jd, labels, lambda m: {"raw": stored_raw, "finish_reason": "stop", "model": E.MODEL, "usage": {}})
+    man = json.loads((tmp_path / "hashes" / "manifest.json").read_text(encoding="utf-8"))
+    assert man["job_metadata"] == E.JOB_METADATA
+    assert man["context_sha256"] == _h.sha256(json.dumps(E.JOB_METADATA, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    assert man["user_message_sha256"] == _h.sha256(E.user_message(jd).encode("utf-8")).hexdigest()
 
 
 def test_v24_manifest_matches_the_file():
