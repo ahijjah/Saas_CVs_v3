@@ -180,6 +180,8 @@ OPENAI_API_KEY=… python3 backend/scripts/requirements_v2_tc20_compare.py --exe
 - Education-alternative retention is not an official group; it is reported as in the earlier runs.
 - Every run manifest records: the git commit, the sha256 of the run script, the comparison script, the TC20 scorer, the candidate, the control, the eval-set manifest, the labels, the pricing status and the plan.
 
+Audit of the completed comparison (run `1e73231…`): `tests/fixtures/requirements_v2_candidate_v25/audit/AUDIT.md`. The saved report is reproduced exactly; the flags are traced to their rules. The v2-5 reporting regression and the Arabic company-description omission are genuine; the Arabic v2-3 flags are mostly terminal-punctuation matching limitations. The control's run-to-run variance is large, so the TC20 gains are not yet established.
+
 Dry-run (no network, the default):
 
 ```bash
