@@ -151,8 +151,9 @@ def first_wording(scope):
     return scope.locator("p[id^='req-text-']").first.inner_text()
 
 
-def edit_wording(scope, text, append):
-    row = scope.locator("li[id^='req-item-']").filter(has=scope.get_by_text(text, exact=True))
+def edit_wording(scope, text, append, card=None):
+    base = card if card is not None else scope              # the same wording can be in two categories: name the card when it matters
+    row = base.locator("li[id^='req-item-']").filter(has=scope.get_by_text(text, exact=True))
     row.get_by_role("button", name=f"More actions: {text}", exact=True).click()
     row.get_by_role("button", name="Edit", exact=True).click()
     ed = scope.locator("[data-testid=item-editor]")
@@ -491,7 +492,8 @@ def main(argv=None) -> int:
                 edit_wording(ph, first_wording(ph), " (HR change)")
                 ph.get_by_role("button", name="Save requirements").first.click()
                 ph.wait_for_function("document.querySelector('[data-testid=unsaved-badge]') === null", timeout=10000)
-                edit_wording(pa, pa.get_by_role("region", name="Soft skills", exact=True).locator("p[id^='req-text-']").first.inner_text(), " (admin change)")
+                soft_card = pa.get_by_role("region", name="Soft skills", exact=True)
+                edit_wording(pa, soft_card.locator("p[id^='req-text-']").first.inner_text(), " (admin change)", card=soft_card)
                 pa.get_by_role("button", name="Save requirements").first.click()
                 pa.wait_for_selector("[data-testid=conflict]", timeout=10000)
                 check("F7 stale save opens the conflict resolver; the admin's draft is kept, nothing overwritten", pa.locator("[data-testid=unsaved-badge]").count() == 1
