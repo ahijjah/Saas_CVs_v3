@@ -99,6 +99,14 @@ OPENAI_API_KEY=… python3 backend/scripts/requirements_v2_tc20_eval.py --execut
 Outputs: `manifest.json` (labels sha, JD sha, prompt shas, plan), `calls.jsonl` (raw answers, finish reasons, usage, cost,
 errors), `scored.json` (run totals and the per-arm report).
 
+## Failure handling and the one-request diagnostic (added after the HTTP 400 at bb08f9f)
+
+- The run stops at the first failed call (any error, not only HTTP 400 or authentication). No call is retried, and no later call is attempted.
+- For each failure only these are kept: the exception class, the HTTP status and the provider's `code`, `type` and `param` (identifiers only; anything else is dropped). The provider message, headers, the API key and the request content are never stored.
+- A run with no successful call is reported as `unavailable`; no check is reported as passing or consistent.
+- `--out` must be a new or empty directory. Existing evidence is never overwritten.
+- `--diagnose --arm v2-3|v2-4 --out <new dir>` makes exactly ONE request, the exact evaluation request of that arm, under its worst-case reservation (must fit the cap). It writes `diagnostic.json` with the request settings and message hashes (no content), and the answer or the sanitized error. It does not retry.
+
 ## Limitations
 
 - One JD; five calls per arm; no tokenizer offline, so input tokens are estimated for the cap, not counted.

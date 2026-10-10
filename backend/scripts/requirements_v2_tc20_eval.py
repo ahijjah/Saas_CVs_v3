@@ -17,6 +17,7 @@ import json
 import math
 import os
 import pathlib
+import re
 import sys
 import time
 
@@ -111,26 +112,56 @@ def plan(jd: str) -> dict:
             "max_tokens": MAX_TOKENS, "timeout_s": TIMEOUT_S, "retries": 0}
 
 
-def run(out: pathlib.Path, jd: str, labels: dict, api_call) -> dict:
-    """Executes the planned calls in order. A failed call is recorded and is NOT retried. Stops before any call that could
-    take the total (spent + worst case of every remaining call) above the cap."""
-    p = plan(jd)
+SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.\-/]{1,80}$")
+
+
+def _safe(value) -> str | None:
+    """A provider field kept for diagnosis: a short identifier only. Free text is never kept, because it can echo request content."""
+    return value if isinstance(value, str) and SAFE_TOKEN.match(value) else None
+
+
+def sanitize_error(exc: BaseException) -> dict:
+    """What is kept of a failed request: the exception class, the HTTP status and the provider's code, type and param.
+    Never the message, headers, the API key or any request content."""
+    body = getattr(exc, "body", None)
+    err = body.get("error") if isinstance(body, dict) and isinstance(body.get("error"), dict) else {}
+    status = getattr(exc, "status_code", None)
+    return {"kind": type(exc).__name__,
+            "http_status": status if isinstance(status, int) else None,
+            "code": _safe(getattr(exc, "code", None) or err.get("code")),
+            "type": _safe(getattr(exc, "type", None) or err.get("type")),
+            "param": _safe(getattr(exc, "param", None) or err.get("param"))}
+
+
+def prepare_output_dir(out: pathlib.Path) -> None:
+    """A run never overwrites evidence: the directory must be new or empty."""
+    if out.exists() and any(out.iterdir()):
+        raise PlanError(f"{out} is not empty; previous evidence is never overwritten, choose a new directory")
     out.mkdir(parents=True, exist_ok=True)
+
+
+def run(out: pathlib.Path, jd: str, labels: dict, api_call) -> dict:
+    """Executes the planned calls in order. No retries. The run stops at the first failed call (its error is recorded), and
+    before any call that could take the total (spent + worst case of every remaining call) above the cap."""
+    p = plan(jd)
     msgs = {a: messages_for(a, jd) for a in ARMS}
     user_hashes = {a: sha256_bytes(msgs[a][1]["content"].encode("utf-8")) for a in ARMS}
     if len(set(user_hashes.values())) != 1:
         raise PlanError("the two arms do not send the same user message")
+    prepare_output_dir(out)
     manifest = {"labels_sha256": sha256_bytes(LABELS.read_bytes()), "jd_sha256": labels["jd_sha256"],
                 "prompts": {a: ARMS[a]["sha256"] for a in ARMS}, "job_metadata": JOB_METADATA,
                 "context_sha256": context_sha256(JOB_METADATA), "user_message_sha256": next(iter(user_hashes.values())),
-                "plan": p, "started": time.time()}
+                "policy": "no retries; the run stops at the first failed call", "plan": p, "started": time.time()}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
-    spent = 0.0
+    spent, attempted, stopped = 0.0, 0, None
     remaining = [c["worst_case_usd"] for c in p["calls"]]
     with (out / "calls.jsonl").open("w", encoding="utf-8") as fh:
         for i, c in enumerate(p["calls"]):
             if spent + sum(remaining[i:]) > CAP_USD:
+                stopped = "cap_guard"
                 break
+            attempted += 1
             rec = {"arm": c["arm"], "call": c["call"]}
             try:
                 r = api_call(msgs[c["arm"]])
@@ -139,16 +170,49 @@ def run(out: pathlib.Path, jd: str, labels: dict, api_call) -> dict:
                 spent += cost
                 rec.update({"raw": r.get("raw", ""), "finish_reason": r.get("finish_reason"), "model": r.get("model"),
                             "usage": usage, "cost_usd": round(cost, 6), "error": None})
-            except Exception as exc:                                  # recorded; never retried
-                rec.update({"raw": "", "finish_reason": None, "model": None, "usage": {}, "cost_usd": 0.0,
-                            "error": type(exc).__name__})
+            except Exception as exc:                                  # recorded; never retried; the run stops here
+                err = sanitize_error(exc)
+                rec.update({"raw": "", "finish_reason": None, "model": None, "usage": {}, "cost_usd": 0.0, "error": err})
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                fh.flush()
+                stopped = f"error:{err['kind']}"
+                break
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
             fh.flush()
-    return {"spent_usd": round(spent, 6), "calls_made": sum(1 for _ in (out / "calls.jsonl").read_text(encoding="utf-8").splitlines())}
+    records = [json.loads(x) for x in (out / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+    summary = {"spent_usd": round(spent, 6), "calls_attempted": attempted,
+               "successful_calls": sum(1 for r in records if not r.get("error")), "stopped": stopped}
+    (out / "run.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
+    return summary
+
+
+def diagnose(out: pathlib.Path, jd: str, arm: str, api_call) -> dict:
+    """ONE request: the exact evaluation request of the given arm, under its worst-case reservation (which must fit the cap).
+    No retries. Writes diagnostic.json with the request settings (no content), the result or the sanitized error."""
+    msgs = messages_for(arm, jd)
+    reservation = worst_case_cost(msgs)
+    if reservation > CAP_USD:
+        raise PlanError(f"the reservation {reservation} for one request exceeds the cap {CAP_USD}")
+    prepare_output_dir(out)
+    rec = {"arm": arm, "reservation_usd": round(reservation, 6), "reservation_cap_usd": CAP_USD,
+           "request": {"model": MODEL, "temperature": TEMPERATURE, "max_tokens": MAX_TOKENS, "response_format": "json_object",
+                       "timeout_s": TIMEOUT_S, "retries": 0,
+                       "messages": [{"role": m["role"], "characters": len(m["content"]),
+                                     "sha256": sha256_bytes(m["content"].encode("utf-8"))} for m in msgs]},
+           "prompt_sha256": ARMS[arm]["sha256"], "job_metadata": JOB_METADATA}
+    try:
+        r = api_call(msgs)
+        rec["result"] = {"finish_reason": r.get("finish_reason"), "model": r.get("model"), "usage": r.get("usage") or {},
+                         "raw": r.get("raw", ""), "error": None}
+    except Exception as exc:
+        rec["result"] = {"error": sanitize_error(exc)}
+    (out / "diagnostic.json").write_text(json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
+    return rec
 
 
 def openai_call(messages: list[dict]) -> dict:
-    """The only function that talks to the network. Used by --execute only."""
+    """The only function that talks to the network. Used by --execute and --diagnose only. The client never retries; a failure
+    is raised to the caller, which keeps only its sanitized description."""
     import openai
     client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], max_retries=0, timeout=TIMEOUT_S)
     r = client.chat.completions.create(model=MODEL, messages=messages, temperature=TEMPERATURE, max_tokens=MAX_TOKENS,
@@ -212,11 +276,17 @@ CATEGORY_CHECKS = {"omissions": ["C_RESP", "C_COMP"], "alternatives": ["C_EXP_OR
 def report(records: list[dict], labels: dict) -> dict:
     out = {}
     for arm in ARMS:
-        rows = [r for r in records if r["arm"] == arm and r.get("scored")]
+        arm_recs = [r for r in records if r["arm"] == arm]
+        rows = [r for r in arm_recs if r.get("scored")]
+        errors = [r["error"] for r in arm_recs if r.get("error")]
         n = len(rows)
+        if n == 0:
+            out[arm] = {"status": "unavailable", "successful_calls": 0, "calls_attempted": len(arm_recs), "errors": errors,
+                        "consistency": "unavailable", "note": "no successful call: nothing is reported as passing or consistent"}
+            continue
         per_check = {k: sum(1 for r in rows if r["scored"]["checks"][k]) for k in labels["checks"]}
         out[arm] = {
-            "calls": n,
+            "status": "scored", "successful_calls": n, "calls_attempted": len(arm_recs), "errors": errors,
             "invalid_json": sum(1 for r in rows if not r["scored"]["valid_json"]),
             "pass_per_check": per_check,
             "by_category": {cat: {k: f"{per_check[k]}/{n}" for k in ks} for cat, ks in CATEGORY_CHECKS.items()},
@@ -229,8 +299,7 @@ def report(records: list[dict], labels: dict) -> dict:
     return out
 
 
-# ── offline regression of the 12-case benchmark (read-only; the official gates are not changed) ─────────────────────
-
+# ── offline regression of the 12-case benchmark (read-only; the official gates are not changed) ─────────────────────────
 def offline_regression() -> dict:
     import scripts.requirements_v2_extraction_eval as ev
     stored = json.loads((BENCH_RUN / "results.json").read_text(encoding="utf-8"))
@@ -251,28 +320,35 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="plan and worst-case cost only (default)")
-    mode.add_argument("--execute", action="store_true", help="perform the paid calls (requires OPENAI_API_KEY and --out)")
+    mode.add_argument("--execute", action="store_true", help="perform the paid calls: 5 per arm, stops at the first failed call")
+    mode.add_argument("--diagnose", action="store_true", help="ONE request of one arm, to diagnose a failure (no retries)")
     mode.add_argument("--offline-regression", action="store_true", help="12-case offline regression of the stored answers")
-    ap.add_argument("--out", type=pathlib.Path, default=None)
+    ap.add_argument("--arm", choices=sorted(ARMS), default="v2-3", help="the arm for --diagnose")
+    ap.add_argument("--out", type=pathlib.Path, default=None, help="a new or empty directory (never overwritten)")
     args = ap.parse_args(argv)
     if args.offline_regression:
         print(json.dumps(offline_regression(), ensure_ascii=False, indent=1))
         return 0
     jd, labels = load_inputs()
     p = plan(jd)
-    if not args.execute:
+    if not (args.execute or args.diagnose):
         print(json.dumps({"mode": "dry-run", **p, "labels_sha256": sha256_bytes(LABELS.read_bytes()), "job_metadata": JOB_METADATA,
                           "context_sha256": context_sha256(JOB_METADATA),
                           "user_message_sha256": sha256_bytes(user_message(jd).encode("utf-8"))}, ensure_ascii=False, indent=1))
         return 0
     if args.out is None or not os.environ.get("OPENAI_API_KEY"):
-        raise SystemExit("--execute needs --out and OPENAI_API_KEY")
+        raise SystemExit("--execute and --diagnose need --out (a new directory) and OPENAI_API_KEY")
+    if args.diagnose:
+        rec = diagnose(args.out, jd, args.arm, openai_call)
+        print(json.dumps(rec["result"], ensure_ascii=False, indent=1))
+        return 0
     res = run(args.out, jd, labels, openai_call)
     records = [json.loads(line) for line in (args.out / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
     for r in records:
         r["scored"] = score_answer(r.get("raw", ""), jd, labels) if not r.get("error") else None
-    (args.out / "scored.json").write_text(json.dumps({"run": res, "report": report(records, labels)}, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(json.dumps({"run": res, "report": report(records, labels)}, ensure_ascii=False, indent=1))
+    rep = report(records, labels)
+    (args.out / "scored.json").write_text(json.dumps({"run": res, "report": rep}, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(json.dumps({"run": res, "report": rep}, ensure_ascii=False, indent=1))
     return 0
 
 

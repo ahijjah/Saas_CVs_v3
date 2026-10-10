@@ -160,7 +160,7 @@ def test_dry_run_makes_no_call(jd_and_labels, monkeypatch, capsys):
     assert "dry-run" in capsys.readouterr().out
 
 
-def test_a_failed_call_is_recorded_and_never_retried(jd_and_labels, tmp_path, stored_raw):
+def test_a_failed_call_stops_the_run_and_is_never_retried(jd_and_labels, tmp_path, stored_raw):
     jd, labels = jd_and_labels
     attempts = []
 
@@ -172,9 +172,9 @@ def test_a_failed_call_is_recorded_and_never_retried(jd_and_labels, tmp_path, st
 
     res = E.run(tmp_path / "run", jd, labels, api)
     recs = [json.loads(x) for x in (tmp_path / "run" / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert len(attempts) == 10 and len(recs) == 10                       # one attempt per planned call, no retry of the failed one
-    assert [r["error"] for r in recs].count("TimeoutError") == 1
-    assert res["spent_usd"] < E.CAP_USD
+    assert len(attempts) == 2 and len(recs) == 2                  # the second call failed: no further call, no retry
+    assert recs[1]["error"]["kind"] == "TimeoutError" and res["stopped"] == "error:TimeoutError"
+    assert res["successful_calls"] == 1 and res["calls_attempted"] == 2
 
 
 def test_the_guard_refuses_the_first_call_when_the_cap_cannot_hold_the_plan(jd_and_labels, tmp_path, stored_raw, monkeypatch):
@@ -191,7 +191,7 @@ def test_the_guard_refuses_the_first_call_when_the_cap_cannot_hold_the_plan(jd_a
 def test_a_run_with_no_usage_spends_nothing_and_stays_under_the_cap(jd_and_labels, tmp_path, stored_raw):
     jd, labels = jd_and_labels
     res = E.run(tmp_path / "free", jd, labels, lambda m: {"raw": stored_raw, "finish_reason": "stop", "model": E.MODEL, "usage": {}})
-    assert res["spent_usd"] == 0 and res["calls_made"] == 10 and res["spent_usd"] <= E.CAP_USD
+    assert res["spent_usd"] == 0 and res["calls_attempted"] == 10 and res["spent_usd"] <= E.CAP_USD
 
 
 def test_missing_key_or_out_refuses_execute(jd_and_labels, monkeypatch):
@@ -307,3 +307,179 @@ def test_inherited_overlap_is_recorded():
 def test_the_twelve_case_benchmark_reproduces_its_stored_gates():
     r = E.offline_regression()
     assert r["cases"] == 12 and r["gates_match_stored"] is True and r["mismatches"] == []
+
+
+# ── diagnostics: sanitized provider errors, stop on the first failure, zero-success reporting, no overwrite, one-request mode ─
+
+SECRET = "sk-TEST-SECRET-VALUE-0123456789abcdef"
+
+
+class FakeAPIError(Exception):
+    def __init__(self, status, code, type_, param, message):
+        super().__init__(message)
+        self.status_code = status
+        self.code = code
+        self.type = type_
+        self.param = param
+        self.body = {"error": {"message": message, "type": type_, "param": param, "code": code}}
+
+
+def bad_request(message=f"echo of the request content and {SECRET}"):
+    return FakeAPIError(400, "unsupported_value", "invalid_request_error", "response_format", message)
+
+
+class FakeAuth(FakeAPIError):
+    def __init__(self):
+        super().__init__(401, "invalid_api_key", "invalid_request_error", None, f"bad key {SECRET}")
+
+
+def test_the_sanitized_error_keeps_only_status_code_type_and_param(jd_and_labels):
+    err = E.sanitize_error(bad_request())
+    assert err == {"kind": "FakeAPIError", "http_status": 400, "code": "unsupported_value",
+                   "type": "invalid_request_error", "param": "response_format"}
+    dumped = json.dumps(err)
+    assert SECRET not in dumped and "echo of the request" not in dumped
+
+
+def test_unsafe_provider_fields_are_dropped_not_stored():
+    class Odd(Exception):
+        status_code = 422
+        code = "has a space and\nnewline"
+        type = "x" * 200
+        param = "messages.0.content"
+    err = E.sanitize_error(Odd())
+    assert err["code"] is None and err["type"] is None and err["param"] == "messages.0.content"
+
+
+def test_a_bad_request_stops_the_run_after_one_attempt_and_is_not_repeated(jd_and_labels, tmp_path):
+    jd, labels = jd_and_labels
+    calls = []
+
+    def api(m):
+        calls.append(1)
+        raise bad_request()
+
+    res = E.run(tmp_path / "bad", jd, labels, api)
+    assert len(calls) == 1 and res["stopped"] == "error:FakeAPIError" and res["successful_calls"] == 0
+    rec = json.loads((tmp_path / "bad" / "calls.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert rec["error"]["http_status"] == 400 and rec["error"]["param"] == "response_format"
+    everything = "".join(p.read_text(encoding="utf-8") for p in (tmp_path / "bad").iterdir())
+    assert SECRET not in everything and "echo of the request" not in everything
+
+
+def test_an_authentication_error_also_stops_the_run(jd_and_labels, tmp_path):
+    jd, labels = jd_and_labels
+    calls = []
+
+    def api(m):
+        calls.append(1)
+        raise FakeAuth()
+
+    E.run(tmp_path / "auth", jd, labels, api)
+    assert len(calls) == 1
+
+
+def test_zero_successes_are_unavailable_never_always(jd_and_labels, tmp_path):
+    jd, labels = jd_and_labels
+    E.run(tmp_path / "zero", jd, labels, lambda m: (_ for _ in ()).throw(bad_request()))
+    recs = [json.loads(x) for x in (tmp_path / "zero" / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+    for r in recs:
+        r["scored"] = None
+    rep = E.report(recs, labels)
+    for arm in E.ARMS:
+        assert rep[arm]["status"] == "unavailable" and rep[arm]["consistency"] == "unavailable"
+        assert "always" not in json.dumps(rep[arm]) and "pass_per_check" not in rep[arm]
+        assert rep[arm]["successful_calls"] == 0
+    # the run stopped at the first failure: the first arm was attempted and failed, the second was never attempted
+    assert rep["v2-3"]["errors"] and rep["v2-3"]["calls_attempted"] == 1
+    assert rep["v2-4"]["errors"] == [] and rep["v2-4"]["calls_attempted"] == 0
+
+
+def test_one_success_then_a_failure_is_reported_as_scored_for_the_successful_call(jd_and_labels, tmp_path, stored_raw):
+    jd, labels = jd_and_labels
+    seq = []
+
+    def api(m):
+        seq.append(1)
+        if len(seq) == 1:
+            return {"raw": stored_raw, "finish_reason": "stop", "model": E.MODEL, "usage": {}}
+        raise bad_request()
+
+    E.run(tmp_path / "partial", jd, labels, api)
+    recs = [json.loads(x) for x in (tmp_path / "partial" / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+    for r in recs:
+        r["scored"] = E.score_answer(r["raw"], jd, labels) if not r.get("error") else None
+    rep = E.report(recs, labels)["v2-3"]
+    assert rep["status"] == "scored" and rep["successful_calls"] == 1 and rep["calls_attempted"] == 2
+    assert set(rep["consistency"].values()) <= {"always", "never"}
+
+
+def test_a_non_empty_output_directory_is_refused_and_its_evidence_is_kept(jd_and_labels, tmp_path, stored_raw):
+    jd, labels = jd_and_labels
+    out = tmp_path / "kept"
+    out.mkdir()
+    (out / "calls.jsonl").write_text("previous evidence\n", encoding="utf-8")
+    with pytest.raises(E.PlanError):
+        E.run(out, jd, labels, lambda m: {"raw": stored_raw})
+    with pytest.raises(E.PlanError):
+        E.diagnose(out, jd, "v2-3", lambda m: {"raw": stored_raw})
+    assert (out / "calls.jsonl").read_text(encoding="utf-8") == "previous evidence\n"
+
+
+def test_diagnose_makes_exactly_one_request_and_records_the_sanitized_failure(jd_and_labels, tmp_path):
+    jd, _ = jd_and_labels
+    calls = []
+
+    def api(m):
+        calls.append(m)
+        raise bad_request()
+
+    rec = E.diagnose(tmp_path / "diag", jd, "v2-3", api)
+    assert len(calls) == 1 and calls[0] == E.messages_for("v2-3", jd)        # the exact evaluation request
+    assert rec["result"]["error"]["http_status"] == 400
+    assert rec["reservation_usd"] <= E.CAP_USD and rec["request"]["retries"] == 0
+    text = (tmp_path / "diag" / "diagnostic.json").read_text(encoding="utf-8")
+    assert SECRET not in text and jd not in text and E.ARMS["v2-3"]["file"].read_text(encoding="utf-8") not in text
+    assert "api_key" not in text and "authorization" not in text.lower()
+
+
+def test_diagnose_on_success_keeps_the_answer_and_stays_one_request(jd_and_labels, tmp_path, stored_raw):
+    jd, _ = jd_and_labels
+    calls = []
+    rec = E.diagnose(tmp_path / "ok", jd, "v2-4", lambda m: calls.append(1) or {"raw": stored_raw, "finish_reason": "stop", "model": E.MODEL, "usage": {}})
+    assert len(calls) == 1 and rec["result"]["raw"] == stored_raw and rec["result"]["error"] is None
+
+
+def test_the_openai_wrapper_builds_a_client_that_never_retries_and_raises_to_the_caller(jd_and_labels, monkeypatch):
+    import sys
+    import types
+    seen = {}
+
+    class Client:
+        def __init__(self, api_key, max_retries, timeout):
+            seen.update(api_key=api_key, max_retries=max_retries, timeout=timeout)
+            self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=self._create))
+
+        def _create(self, **kwargs):
+            seen["kwargs"] = kwargs
+            raise bad_request()
+
+    fake = types.ModuleType("openai")
+    fake.OpenAI = Client
+    monkeypatch.setitem(sys.modules, "openai", fake)
+    monkeypatch.setenv("OPENAI_API_KEY", SECRET)
+    jd, _ = jd_and_labels
+    with pytest.raises(FakeAPIError):
+        E.openai_call(E.messages_for("v2-3", jd))
+    assert seen["max_retries"] == 0 and seen["timeout"] == E.TIMEOUT_S
+    assert seen["kwargs"]["model"] == E.MODEL and seen["kwargs"]["temperature"] == E.TEMPERATURE
+    assert seen["kwargs"]["max_tokens"] == E.MAX_TOKENS and seen["kwargs"]["response_format"] == {"type": "json_object"}
+
+
+def test_the_cli_refuses_diagnose_or_execute_without_an_out_directory_and_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(SystemExit):
+        E.main(["--diagnose"])
+    monkeypatch.setenv("OPENAI_API_KEY", SECRET)
+    with pytest.raises(SystemExit):
+        E.main(["--diagnose"])                                         # a key but no --out
