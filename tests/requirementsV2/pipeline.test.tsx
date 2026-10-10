@@ -144,7 +144,7 @@ describe('corrections change the draft only', () => {
     expect(document.getElementById(`req-item-${javaId}`)).toBeNull();
     expect((screen.getByLabelText('Weight of “Python”') as HTMLInputElement).value).toBe(pyW);
     expect(api.save).not.toHaveBeenCalled();
-    expect(screen.getByTestId('local-issues')).toBeTruthy();                      // required totals are off; the recruiter decides (Equalize)
+    expect(screen.getByTestId('issue-summary')).toBeTruthy();                      // required totals are off; the recruiter decides (Equalize)
   });
   it('a valid blocked draft can be saved; the server revalidates; invalid weights stay rejected', async () => {
     const v = base();
@@ -157,7 +157,7 @@ describe('corrections change the draft only', () => {
     api.save.mockRejectedValueOnce(apiError(422, { code: 'invalid_requirements', message: 'no', issues: [{ code: 'required_weights_total', message: 'Required item weights total 66%', category: 'skills', item_id: null }] }));
     await ui.type(screen.getByDisplayValue(/Docker/), 'y');
     await ui.click(screen.getByTestId('save'));
-    await screen.findByTestId('server-issues');
+    await screen.findByTestId('issue-summary');
   });
 });
 

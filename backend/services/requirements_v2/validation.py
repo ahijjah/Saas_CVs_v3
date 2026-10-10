@@ -152,29 +152,32 @@ def _rule_issues(doc: dict) -> list[Issue]:
             if cat["weight"] < 1:
                 out.append(Issue("category_weight_not_positive",
                                  "A category with required items needs a category weight of at least 1%.",
-                                 category=c))
+                                 category=c, params={"weight": cat["weight"]}))
         elif cat["weight"] != 0:
             out.append(Issue("category_weight_without_required_items",
-                             "A category without required items must have weight 0.", category=c))
+                             "A category without required items must have weight 0.", category=c,
+                             params={"weight": cat["weight"]}))
 
         if len(required) > MAX_REQUIRED_PER_CATEGORY:
             out.append(Issue("too_many_required_items",
                              f"{len(required)} required items exceed the maximum of {MAX_REQUIRED_PER_CATEGORY} "
-                             "per category; reclassify or remove items. Nothing was dropped.", category=c))
+                             "per category; reclassify or remove items. Nothing was dropped.", category=c,
+                             params={"n": len(required), "max": MAX_REQUIRED_PER_CATEGORY}))
             continue                                   # item weights cannot be judged for this category
         for i in required:
             w = i["weight"]
             if w is None or not 1 <= w <= 100:
                 out.append(Issue("required_weight_invalid",
                                  "A required item needs a whole-percent weight from 1 to 100.",
-                                 category=c, item_id=i["id"]))
+                                 category=c, item_id=i["id"], params={"weight": w}))
         if required and all(i["weight"] is not None and 1 <= i["weight"] <= 100 for i in required):
             total = sum(i["weight"] for i in required)
             if total != 100:
                 out.append(Issue("required_weights_total", f"Required item weights total {total}%, not 100%.",
-                                 category=c))
+                                 category=c, params={"total": total, "expected": 100, "difference": total - 100}))
     if any_required and category_total != 100:
-        out.append(Issue("category_weights_total", f"Category weights total {category_total}%, not 100%."))
+        out.append(Issue("category_weights_total", f"Category weights total {category_total}%, not 100%.",
+                         params={"total": category_total, "expected": 100, "difference": category_total - 100}))
     return out
 
 

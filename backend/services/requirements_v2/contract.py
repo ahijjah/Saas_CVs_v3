@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 SCHEMA_VERSION = 2
@@ -92,11 +92,13 @@ SCORING_NONE = "none"
 
 @dataclass(frozen=True)
 class Issue:
-    """One finding. `code` is stable and machine-readable; `message` is for people."""
+    """One finding. `code` is stable and machine-readable; `message` is for people. `params` carries the numbers behind the message (totals,
+    expected value, difference, counts) so the editor can say exactly what is wrong; it never changes which findings exist."""
     code: str
     message: str
     category: str | None = None
     item_id: str | None = None
+    params: dict | None = field(default=None, compare=False, hash=False)
 
 
 @dataclass(frozen=True)

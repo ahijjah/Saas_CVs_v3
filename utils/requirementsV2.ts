@@ -99,6 +99,21 @@ export function requiredTotal(cat: DraftCategory): number {
 export function categoryTotal(draft: Draft): number {
   return CATEGORIES.reduce((s, c) => s + num(draft[c].weight), 0);
 }
+
+/** The Required weights of one category against the 100% they must make up (the same rule the server applies). */
+export interface RequiredStatus { total: number; difference: number; ok: boolean; n: number }
+export function requiredStatus(cat: DraftCategory): RequiredStatus {
+  const total = requiredTotal(cat);
+  return { total, difference: total - 100, ok: total === 100, n: requiredItems(cat).length };
+}
+
+/** True when Equalize would change nothing: the Required weights already are the deterministic equal split (34/33/33 for three items). */
+export function isEqualSplit(cat: DraftCategory): boolean {
+  const req = requiredItems(cat);
+  if (req.length === 0) return true;
+  const want = equalizeWeights(req.length);
+  return req.every((i, n) => i.weight === want[n]);
+}
 export function hasAnyRequired(draft: Draft): boolean {
   return CATEGORIES.some(c => requiredItems(draft[c]).length > 0);
 }
@@ -232,7 +247,7 @@ export interface LocalIssue {
   code: string;
   category?: CategoryKey;
   itemKey?: string;
-  params?: Record<string, string | number>;
+  params?: Record<string, string | number | null>;
 }
 
 export function validateDraft(draft: Draft): LocalIssue[] {
@@ -242,22 +257,25 @@ export function validateDraft(draft: Draft): LocalIssue[] {
     const cat = draft[c];
     const req = requiredItems(cat);
     if (!Number.isInteger(cat.weight) || (cat.weight as number) < 0 || (cat.weight as number) > 100)
-      issues.push({ code: 'bad_category_weight', category: c });
+      issues.push({ code: 'bad_category_weight', category: c, params: { weight: cat.weight } });
     if (req.length) {
       anyRequired = true;
-      if (num(cat.weight) < 1) issues.push({ code: 'category_weight_not_positive', category: c });
-      if (req.length > MAX_REQUIRED_PER_CATEGORY) issues.push({ code: 'too_many_required_items', category: c, params: { n: req.length } });
+      if (num(cat.weight) < 1) issues.push({ code: 'category_weight_not_positive', category: c, params: { weight: num(cat.weight) } });
+      if (req.length > MAX_REQUIRED_PER_CATEGORY)
+        issues.push({ code: 'too_many_required_items', category: c, params: { n: req.length, max: MAX_REQUIRED_PER_CATEGORY } });
       let allValid = true;
       for (const i of req) {
         if (!Number.isInteger(i.weight) || (i.weight as number) < 1 || (i.weight as number) > 100) {
           allValid = false;
-          issues.push({ code: 'required_weight_invalid', category: c, itemKey: i.key });
+          issues.push({ code: 'required_weight_invalid', category: c, itemKey: i.key, params: { weight: i.weight } });
         }
       }
-      if (allValid && requiredTotal(cat) !== 100)
-        issues.push({ code: 'required_weights_total', category: c, params: { total: requiredTotal(cat) } });
+      if (allValid && requiredTotal(cat) !== 100) {
+        const total = requiredTotal(cat);
+        issues.push({ code: 'required_weights_total', category: c, params: { total, expected: 100, difference: total - 100 } });
+      }
     } else if (num(cat.weight) !== 0) {
-      issues.push({ code: 'category_weight_without_required_items', category: c });
+      issues.push({ code: 'category_weight_without_required_items', category: c, params: { weight: num(cat.weight) } });
     }
     for (const i of cat.items) {
       if (!i.text.trim()) issues.push({ code: 'empty_text', category: c, itemKey: i.key });
@@ -272,8 +290,10 @@ export function validateDraft(draft: Draft): LocalIssue[] {
       }
     }
   }
-  if (anyRequired && categoryTotal(draft) !== 100)
-    issues.push({ code: 'category_weights_total', params: { total: categoryTotal(draft) } });
+  if (anyRequired && categoryTotal(draft) !== 100) {
+    const total = categoryTotal(draft);
+    issues.push({ code: 'category_weights_total', params: { total, expected: 100, difference: total - 100 } });
+  }
   return issues;
 }
 
@@ -330,7 +350,7 @@ export interface ApiProblem {
   status: number | null;
   code: string | null;
   message: string;
-  issues: { code: string; message: string; category: CategoryKey | null; item_id: string | null }[];
+  issues: { code: string; message: string; category: CategoryKey | null; item_id: string | null; params?: Record<string, string | number | null> | null }[];
   current: any | null;
 }
 

@@ -17,19 +17,12 @@ Outside requests (fonts, CDN, analytics) are blocked. Exit code 77 = prerequisit
 from __future__ import annotations
 
 import argparse
-import http.server
 import json
 import os
 import pathlib
 import re
-import shutil
-import socket
-import subprocess
 import sys
 import tempfile
-import threading
-import time
-import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parent.parent.parent.parent
@@ -38,13 +31,13 @@ sys.path[:0] = [str(BACKEND), str(BACKEND / "tests")]
 
 try:
     from playwright.sync_api import sync_playwright
-    import realdb_helper as rh
+    import stack as S
 except Exception as exc:                                     # pragma: no cover
     print(f"prerequisites missing: {exc}")
     raise SystemExit(77)
 
 T1 = "11111111-1111-1111-1111-111111111111"
-PASSWORD = "Passw0rd!x"
+PASSWORD = S.PASSWORD
 USERS = {"admin": ("a1000000-0000-0000-0000-000000000001", "admin"), "viewer": ("a1000000-0000-0000-0000-000000000003", "viewer")}
 EMAIL = {"admin": "admin@creation.example", "viewer": "viewer@creation.example"}
 CASES = {c["id"]: c for c in (json.loads(p.read_text(encoding="utf-8")) for p in sorted((BACKEND / "tests" / "fixtures" / "requirements_v2_benchmark" / "cases").glob("B*.json")))}
@@ -57,48 +50,14 @@ def check(name, cond, detail=""):
     print(("PASS " if cond else "FAIL ") + name + (f"  [{detail}]" if detail and not cond else ""), flush=True)
 
 
-def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def wait_http(url, timeout=60):
-    end = time.time() + timeout
-    while time.time() < end:
-        try:
-            urllib.request.urlopen(url, timeout=2)
-            return True
-        except Exception:
-            time.sleep(0.5)
-    return False
-
-
-def wait_log(path, needle, timeout=90):
-    end = time.time() + timeout
-    while time.time() < end:
-        if path.exists() and needle in path.read_text(encoding="utf-8", errors="ignore"):
-            return True
-        time.sleep(0.5)
-    return False
-
-
-def spa_server(dist, port):
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *a, **k):
-            super().__init__(*a, directory=str(dist), **k)
-
-        def log_message(self, *a):
-            pass
-
-        def do_GET(self):
-            path = self.translate_path(self.path)
-            if not os.path.exists(path) or os.path.isdir(path) and not os.path.exists(os.path.join(path, "index.html")):
-                self.path = "/index.html"                    # single-page application: deep links fall back to index.html
-            return super().do_GET()
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    return srv
+def seed_creation(db, tenant):
+    from auth.password import hash_password
+    db.q("INSERT INTO tenants (tenant_id, name, email_domain, status, subscription_status, tenant_type) VALUES (%s,'Creation Tenant','creation.example','active','active','organization')", (tenant,))
+    for key, (uid, role) in USERS.items():
+        db.q("INSERT INTO users (user_id, tenant_id, email, password_hash, full_name, role, status) VALUES (%s,%s,%s,%s,%s,%s,'active')",
+             (uid, tenant, EMAIL[key], hash_password(PASSWORD), key, role))
+    db.q("UPDATE system_config SET value = 'true' WHERE key = 'requirements_v2.enabled'")
+    db.q("UPDATE ai_prompts SET is_active = TRUE WHERE prompt_code = 'criteria_extraction_v2' AND version = 3")
 
 
 def main():
@@ -106,87 +65,28 @@ def main():
     ap.add_argument("--out", default=str(pathlib.Path(tempfile.gettempdir()) / "req_v2_creation_run"))
     args = ap.parse_args()
     out = pathlib.Path(args.out)
-    shutil.rmtree(out, ignore_errors=True)
-    out.mkdir(parents=True)
-    procs = []
-    cluster = None
+    stack = S.start(out, seed=seed_creation)
+    check("the stack starts: the API, the Celery worker and the built application", True)   # stack.start() raises if any of them does not start
     try:
-        # ── 1. database, seeded users (real bcrypt) ───────────────────────────────────────────────────────────────────────────────────
-        cluster = rh.Cluster()
-        db = cluster.build()
-        os.environ.setdefault("JWT_SECRET", "creation-flow-secret")
-        from auth.password import hash_password
-        db.q("INSERT INTO tenants (tenant_id, name, email_domain, status, subscription_status, tenant_type) VALUES (%s,'Creation Tenant','creation.example','active','active','organization')", (T1,))
-        for key, (uid, role) in USERS.items():
-            db.q("INSERT INTO users (user_id, tenant_id, email, password_hash, full_name, role, status) VALUES (%s,%s,%s,%s,%s,%s,'active')",
-                 (uid, T1, EMAIL[key], hash_password(PASSWORD), key, role))
-        db.q("UPDATE system_config SET value = 'true' WHERE key = 'requirements_v2.enabled'")
-        db.q("UPDATE ai_prompts SET is_active = TRUE WHERE prompt_code = 'criteria_extraction_v2' AND version = 3")
-
-        # ── 2. Redis, API, worker, SPA ────────────────────────────────────────────────────────────────────────────────────────────────
-        redis_port, api_port, spa_port = free_port(), free_port(), free_port()
-        redis_log = out / "redis.log"
-        procs.append(subprocess.Popen(["redis-server", "--port", str(redis_port), "--save", "", "--appendonly", "no", "--daemonize", "no"],
-                                      stdout=redis_log.open("w"), stderr=subprocess.STDOUT))
-        spa_dist = out / "dist"
-        build = subprocess.run(["npx", "vite", "build", "--outDir", str(spa_dist), "--emptyOutDir"], cwd=str(REPO), capture_output=True, text=True,
-                               env={**os.environ, "VITE_API_BASE": f"http://127.0.0.1:{api_port}"}, timeout=900)
-        if build.returncode != 0:
-            print(build.stdout[-2000:], build.stderr[-2000:])
-            raise RuntimeError("vite build failed")
-        fake_env = {**os.environ, "REQ_V2_BACKEND": str(BACKEND), "FAKE_LOG": str(out / "model_calls.jsonl"), "FAKE_STATE": str(out / "fail_once"),
-                    "DATABASE_URL": cluster_url(db), "JWT_SECRET": os.environ["JWT_SECRET"],
-                    "CELERY_BROKER_URL": f"redis://127.0.0.1:{redis_port}/0", "CELERY_RESULT_BACKEND": f"redis://127.0.0.1:{redis_port}/1",
-                    "CORS_ORIGINS": json.dumps([f"http://127.0.0.1:{spa_port}"]), "PYTHONIOENCODING": "utf-8"}
-        creation_dir = str(HERE)
-        api_log = out / "api.log"
-        procs.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "fake_api_app:app", "--host", "127.0.0.1", "--port", str(api_port), "--log-level", "warning"],
-                                      cwd=str(BACKEND), env={**fake_env, "PYTHONPATH": creation_dir}, stdout=api_log.open("w"), stderr=subprocess.STDOUT))
-        worker_log = out / "worker.log"
-        procs.append(subprocess.Popen([sys.executable, "-m", "celery", "-A", "fake_celery_app", "worker", "--pool=solo", "--loglevel=WARNING", "--without-heartbeat",
-                                       "--without-gossip", "--without-mingle"], cwd=str(BACKEND), env={**fake_env, "PYTHONPATH": creation_dir},
-                                      stdout=worker_log.open("w"), stderr=subprocess.STDOUT))
-        spa = spa_server(spa_dist, spa_port)
-        check("the API answers", wait_http(f"http://127.0.0.1:{api_port}/docs"))
-        check("the Celery worker consumes from the broker", wait_log(worker_log, "[queues]"), "see worker.log")
-        api = f"http://127.0.0.1:{api_port}"
-        spa_url = f"http://127.0.0.1:{spa_port}"
-
-        # ── 3. the browser: real login, real creation, real editor ────────────────────────────────────────────────────────────────────
         with sync_playwright() as p:
             chromium = "/opt/pw-browsers/chromium"
             browser = p.chromium.launch(headless=True, args=["--no-sandbox"], **({"executable_path": chromium} if os.path.exists(chromium) else {}))
             ctx = browser.new_context(viewport={"width": 1280, "height": 900})
             page = ctx.new_page()
             requests_out = []
-            page.on("request", lambda r: requests_out.append((r.method, r.url, r.post_data)) if r.url.startswith(api) and r.method == "POST" else None)
+            page.on("request", lambda r: requests_out.append((r.method, r.url, r.post_data)) if r.url.startswith(stack.api) and r.method == "POST" else None)
             page.route(re.compile(r"^https?://(?!127\.0\.0\.1)"), lambda route: route.abort())   # no external requests
-            run = Run(p, page, ctx, spa_url, api, db, requests_out, out)
+            run = Run(p, page, ctx, stack.spa, stack.api, stack.db, requests_out, out)
             try:
                 run.scenarios()
             finally:
                 browser.close()
     finally:
-        for proc in reversed(procs):
-            proc.terminate()
-        for proc in procs:
-            try:
-                proc.wait(timeout=10)
-            except Exception:
-                proc.kill()
-        if cluster is not None:
-            try:
-                db.drop()
-            finally:
-                cluster.stop()
         (out / "results.json").write_text(json.dumps({"checks": RESULTS, "evidence": EVIDENCE}, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+        S.close(stack)
         failed = [r for r in RESULTS if not r[1]]
         print(f"\n{len(RESULTS) - len(failed)} passed, {len(failed)} failed  ({out / 'results.json'})")
     return 1 if failed or not RESULTS else 0
-
-
-def cluster_url(db):
-    return db.async_url
 
 
 class Run:

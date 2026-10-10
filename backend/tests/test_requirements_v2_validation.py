@@ -366,3 +366,27 @@ def test_scored_job_never_uses_a_confirmation():
     d = equalize_category(add_item(preferred_only_doc(), "skills", "ATS", "required")[0], "skills")
     d = carry_confirmation(_confirmed(), d)
     assert d["scoring_confirmation"] is None
+
+
+def test_weight_findings_carry_the_totals_the_editor_shows():
+    # 60 + 50 = 110 for the two Required skills: the finding names the actual total, the expected 100 and the difference
+    d = scored_doc()
+    d["categories"]["skills"]["items"][0].update(weight=60)
+    d["categories"]["skills"]["items"][1].update(weight=50)
+    finding = next(i for i in validate_final(d).errors if i.code == "required_weights_total")
+    assert finding.category == "skills"
+    assert finding.params == {"total": 110, "expected": 100, "difference": 10}
+
+
+def test_category_total_finding_carries_actual_expected_and_difference():
+    d = scored_doc()
+    d["categories"]["education"]["weight"] = 41
+    finding = next(i for i in validate_final(d).errors if i.code == "category_weights_total")
+    assert finding.params == {"total": 101, "expected": 100, "difference": 1}
+
+
+def test_required_weight_finding_names_the_value_it_rejected():
+    d = scored_doc()
+    d["categories"]["skills"]["items"][0].update(weight=None)
+    finding = next(i for i in validate_final(d).errors if i.code == "required_weight_invalid")
+    assert finding.item_id == d["categories"]["skills"]["items"][0]["id"] and finding.params == {"weight": None}

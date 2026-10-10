@@ -1,16 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CATEGORIES, CategoryKey, Draft, DraftItem, LocalIssue, addItem, applyCategoryWeights, compareWithOriginal, computeNormalize,
-  describeApiError, draftFromServer, equalizeCategory, findItem, isDirty, removeItem, setAlternatives, setCategoryWeight,
+  CATEGORIES, CategoryKey, Draft, DraftItem, addItem, applyCategoryWeights, compareWithOriginal, computeNormalize,
+  describeApiError, draftFromServer, equalizeCategory, findItem, isDirty, isEqualSplit, removeItem, setAlternatives, setCategoryWeight,
   setExperience, setImportance, setItemWeight, setText, toPayload, validateDraft, categoryTotal, ApiProblem, keepOneOfSplit, replaceWithBlank,
+  parseWhole,
 } from '../../utils/requirementsV2';
 import { Choice, threeWayMerge } from '../../utils/requirementsMerge';
 import type { PipelineIssue, RequirementsApi, RequirementsView } from '../../services/requirementsV2Api';
 import { fmt, STRINGS, type Strings } from './i18n';
+import { issueText as describeIssue } from './issues';
 import { CategoryCard, ItemInfo, RowActions } from './CategoryCard';
 import { BlockerPanel, ConflictPanel, CorrectionActions, InformationalPanel, IssuesPanel, PipelineStatusCard } from './PipelinePanels';
 import {
-  ClassificationPanel, ComparisonView, ConflictResolver, EvaluationUnavailable, IssuesBox, PreferredOnlyCard, ReadinessCard,
+  ClassificationPanel, ComparisonView, ConflictResolver, EvaluationUnavailable, PreferredOnlyCard, ReadinessCard,
   SimilarityPanel, btnPrimary, btnSecondary,
 } from './Panels';
 
@@ -51,6 +53,8 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const [normalizeNote, setNormalizeNote] = useState<string | null>(null);
   const [fallback, setFallback] = useState<Record<CategoryKey, number> | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
+  // Typed weights that are not whole numbers, kept as typed. Field key: 'item:<key>' or 'cat:<category>'. The draft keeps its last valid value.
+  const [rawWeights, setRawWeights] = useState<Record<string, string>>({});
   const alive = useRef(true);
   const apiRef = useRef(api);
   apiRef.current = api;                                            // callers may pass a new object each render
@@ -61,7 +65,7 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const apply = useCallback((v: RequirementsView) => {
     const d = draftFromServer(v.requirements);
     setView(v); setDraft(d); setBase(d); setBaseRevision(v.revision);
-    setConflict(null); setChoices({}); setMergedNotice(false); setProblem(null); setFallback(null); setNormalizeNote(null);
+    setConflict(null); setChoices({}); setMergedNotice(false); setProblem(null); setFallback(null); setNormalizeNote(null); setRawWeights({});
   }, []);
 
   const load = useCallback(async () => {
@@ -104,8 +108,43 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const goToItem = (id: string) => goTo(`req-item-${id}`);
   const goToCategory = (c: string) => goTo(`req-cat-${c}`);
 
-  const issueText = (i: LocalIssue) => (s as any)[`reason_${i.code}`] || i.code;
   const localIssues = useMemo(() => (draft ? validateDraft(draft) : []), [draft]);
+
+  // Every problem with the draft in one list, each with the words that say what is wrong (actual and expected values included): typed text that is
+  // not a whole number, the local rules, and the server's answer to the last save.
+  type Problem = { code: string; text: string; itemKey?: string; category?: CategoryKey };
+  const issueCtx = { s, categoryName: (c: string) => s.categories[c as CategoryKey] ?? c };
+  const itemNameOf = (key: string) => (draft ? findItem(draft, key)?.item.text : undefined);
+  const keyForServerId = (id: string) => (draft ? CATEGORIES.flatMap(c => draft[c].items).find(i => i.id === id)?.key : undefined);
+  const rawProblems: Problem[] = (Object.entries(rawWeights) as [string, string][]).map(([field, raw]) => {
+    const sep = field.indexOf(':');
+    const kind = field.slice(0, sep), id = field.slice(sep + 1);
+    const itemKey = kind === 'item' ? id : undefined;
+    const category = (kind === 'cat' ? id : itemKey && draft ? findItem(draft, itemKey)?.category : undefined) as CategoryKey | undefined;
+    const label = itemKey ? fmt(s.weightOf, { name: itemNameOf(itemKey) || s.itemText }) : `${issueCtx.categoryName(category ?? '')} (${s.categoryWeight})`;
+    return { code: 'not_whole_number', text: describeIssue({ code: 'not_whole_number', params: { field: label, value: raw } }, issueCtx), itemKey, category };
+  });
+  const localProblems: Problem[] = localIssues.map(i => ({
+    code: i.code,
+    text: describeIssue({ code: i.code, category: i.category, itemName: i.itemKey ? itemNameOf(i.itemKey) : null, params: i.params }, issueCtx),
+    itemKey: i.itemKey, category: i.category as CategoryKey | undefined,
+  }));
+  const serverProblems: Problem[] = (problem?.issues ?? []).map(x => ({
+    code: x.code,
+    text: describeIssue({ code: x.code, message: x.message, category: x.category, itemName: x.item_id ? textOf(x.item_id) : null, params: x.params }, issueCtx),
+    itemKey: x.item_id ? keyForServerId(x.item_id) : undefined, category: (x.category ?? undefined) as CategoryKey | undefined,
+  }));
+  // the problems the editor can see before saving: the typed text and the local rules. Saving is never blocked here: the server decides
+  // (revision conflicts first, then the rules), and its answer is shown with the same wording.
+  const blockers: Problem[] = [...rawProblems, ...localProblems];
+  const shownProblems: Problem[] = serverProblems.length > 0 ? serverProblems : blockers;
+  const itemProblems = (key: string) => shownProblems.filter(p => p.itemKey === key).map(p => p.text);
+  const categoryProblems = (c: CategoryKey) => shownProblems.filter(p => p.category === c && !p.itemKey).map(p => p.text);
+  // the category weight field is marked for problems with the category weight itself; a Required-total problem marks the Required weights instead
+  const CATEGORY_WEIGHT_CODES = ['bad_category_weight', 'category_weight_not_positive', 'category_weight_without_required_items', 'category_weights_total'];
+  const categoryInvalid = (c: CategoryKey) => rawWeights[`cat:${c}`] !== undefined
+    || shownProblems.some(p => p.category === c && !p.itemKey && CATEGORY_WEIGHT_CODES.includes(p.code));
+  const requiredTotalWrong = (c: CategoryKey) => shownProblems.some(p => p.category === c && !p.itemKey && p.code === 'required_weights_total');
   const original = view?.original ?? null;
   const comparison = useMemo(() => (draft && original ? compareWithOriginal(draft, original) : null), [draft, original]);
 
@@ -134,15 +173,11 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const theirsDraft = useMemo(() => (conflict ? draftFromServer(conflict.current.requirements) : null), [conflict]);
   const analysis = useMemo(() => (conflict && draft && base && theirsDraft ? threeWayMerge(base, draft, theirsDraft) : null), [conflict, draft, base, theirsDraft]);
 
-  const serverIssueFor = (c: CategoryKey | null, itemId: string | null) =>
-    (problem?.issues ?? []).filter(x => (itemId ? x.item_id === itemId : !x.item_id && x.category === c));
-
   const infoFor = (item: DraftItem): ItemInfo => {
+    const itemCategory = findItem(draft!, item.key)?.category;
     const cmp = comparison && findItem(draft!, item.key);
     const ch = cmp && comparison![cmp.category].current.find(x => x.item.key === item.key);
     const st = item.id ? view?.structure_review.items.find(x => x.item_id === item.id) : undefined;
-    const itemLocalIssues = localIssues.filter(i => i.itemKey === item.key).map(issueText);
-    const srv = item.id ? serverIssueFor(null, item.id).map(x => (s as any)[`reason_${x.code}`] || x.message) : [];
     return {
       edited: !!ch && ch.kind !== 'same', isNew: !item.id,
       structureState: st?.state ?? null, structureRecord: st?.record ?? null,
@@ -151,7 +186,8 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
         const other = w.items.find(x => x.item_id !== item.id)!;
         return { id: w.id, kind: w.kind, differences: w.differences, other, label: '', stale: changedIds.has(item.id as string) || changedIds.has(other.item_id) };
       }) : [],
-      issues: [...new Set([...itemLocalIssues, ...srv])], changedInDraft: !!item.id && changedIds.has(item.id),
+      issues: itemProblems(item.key), changedInDraft: !!item.id && changedIds.has(item.id),
+      weightMarked: item.importance === 'required' && (itemProblems(item.key).length > 0 || (!!itemCategory && requiredTotalWrong(itemCategory))),
     };
   };
 
@@ -164,9 +200,18 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
 
   // ── draft edits (always explicit; no automatic redistribution) ─────────────
   const edit = (fn: (d: Draft) => Draft) => { setDraft(d => (d ? fn(d) : d)); setProblem(null); setFocusKey(null); };
+  // Typed weights: a whole number is committed to the draft; anything else stays in the field, is reported, and blocks saving.
+  const commitTyped = (field: string, raw: string, commit: (n: number | null) => void) => {
+    setProblem(null);                                        // typing supersedes the server's answer to an earlier save, as any edit does
+    const n = parseWhole(raw);
+    if (n === undefined) { setRawWeights(r => ({ ...r, [field]: raw })); return; }
+    setRawWeights(r => { if (!(field in r)) return r; const next = { ...r }; delete next[field]; return next; });
+    commit(n);
+  };
   const actions: RowActions = {
     setText: (k, v) => edit(d => setText(d, k, v)),
     setWeight: (k, v) => edit(d => setItemWeight(d, k, v)),
+    setWeightText: (k, raw) => commitTyped(`item:${k}`, raw, n => edit(d => setItemWeight(d, k, n))),
     toggleImportance: (k) => edit(d => { const f = findItem(d, k); return f ? setImportance(d, k, f.item.importance === 'required' ? 'preferred' : 'required') : d; }),
     remove: (k) => { edit(d => removeItem(d, k)); say(s.delete); },
     setAlternatives: (k, v) => edit(d => setAlternatives(d, k, v)),
@@ -213,6 +258,13 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
 
   const save = async () => {
     if (!draft || busy) return;
+    if (rawProblems.length > 0) {
+      // a typed value that is not a whole number is not in the draft: sending the draft now would save something other than what the field shows
+      setProblem(null);
+      const msg = rawProblems.length === 1 ? s.issueCountOne : fmt(s.issueCount, { n: rawProblems.length });
+      say(msg); toast(msg, 'error');
+      return;
+    }
     setBusy('save'); say(s.saving);
     try {
       const v = await apiRef.current.save(jobId, baseRevision, toPayload(draft));
@@ -241,7 +293,7 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     await load();
   };
 
-  const discard = () => { if (base) { setDraft(base); setProblem(null); setFallback(null); setNormalizeNote(null); } };
+  const discard = () => { if (base) { setDraft(base); setProblem(null); setFallback(null); setNormalizeNote(null); setRawWeights({}); } };
   // Resolution never saves anything: it builds the merged draft from the recruiter's explicit choices and rebases the
   // comparison point onto the latest saved version, so the next save is checked against that revision.
   const applyMerge = () => {
@@ -291,10 +343,6 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const total = categoryTotal(draft);
   const anyRequired = CATEGORIES.some(c => draft[c].items.some(i => i.importance === 'required'));
   const totalOk = !anyRequired || total === 100;
-  const serverListed = (problem?.issues ?? []).map(x => ({
-    text: (s as any)[`reason_${x.code}`] || x.message,
-    onGo: x.item_id ? () => goToItem(x.item_id as string) : x.category ? () => goToCategory(x.category as string) : undefined,
-  }));
   const problemOther = problem && problem.issues.length === 0 ? ((s as any)[`err_${problem.code}`] || problem.message) : null;
 
   return (
@@ -323,17 +371,30 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
       {conflict && analysis && <ConflictResolver s={s} latestRevision={conflict.current.revision} analysis={analysis} choices={choices}
                                                   onChoose={(k, c) => setChoices(prev => ({ ...prev, [k]: c }))} onApply={applyMerge} onDiscard={discardForLatest} />}
       {mergedNotice && !conflict && <p role="status" className="rounded-xl border border-green-300 bg-green-50 p-3 text-xs text-green-900" data-testid="merged-notice">{s.mergedNotice}</p>}
-      <IssuesBox s={s} tone="red" testId="server-issues" title={s.serverIssues} items={serverListed} />
+      {shownProblems.length > 0 && (
+        <section aria-labelledby="req-issues-h" className="rounded-xl border-2 border-error bg-red-50 p-4" data-testid="issue-summary">
+          <h4 id="req-issues-h" className="text-sm font-black text-red-900">{serverProblems.length > 0 ? s.issuesServerTitle : s.issuesFixTitle}</h4>
+          <p className="text-xs text-red-900 mt-0.5">{shownProblems.length === 1 ? s.issueCountOne : fmt(s.issueCount, { n: shownProblems.length })}</p>
+          <ul className="mt-2 space-y-2">
+            {shownProblems.map((p, n) => (
+              <li key={n} className="flex flex-wrap items-start gap-2 text-xs text-red-900">
+                <span className="flex-1 min-w-0">{p.text}</span>
+                <button type="button" className={btnSecondary}
+                        onClick={() => (p.itemKey ? goToItem(p.itemKey) : p.category ? goToCategory(p.category) : goTo('req-category-total'))}>
+                  {s.goToIssue}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {problemOther && <p role="alert" className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-900" data-testid="problem">{problemOther}</p>}
 
       <PipelineStatusCard s={s} view={view} canEdit={canEdit} />
       <BlockerPanel s={s} view={view} canEdit={canEdit && !conflict} dirty={dirty} busy={busy !== null} textOf={textOf} pending={issuePending} actions={corrections} />
       <ReadinessCard s={s} view={view} goToCategory={goToCategory} goToItem={goToItem} dirty={dirty} />
       <IssuesPanel s={s} view={view} dirty={dirty} textOf={textOf} pending={issuePending} goToItem={goToItem} goToCategory={goToCategory} />
-      {dirty && localIssues.length > 0 && (
-        <IssuesBox s={s} tone="amber" testId="local-issues" title={s.localIssues} hint={s.localIssuesHint}
-                   items={dedupeIssues(localIssues).map(i => ({ text: issueText(i), onGo: i.itemKey ? () => goToItem(i.itemKey as string) : i.category ? () => goToCategory(i.category as string) : undefined }))} />
-      )}
+
 
       <ClassificationPanel dirty={dirty} changedIds={changedIds} s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} textOf={textOf} fmtDate={fmtDate} who={who}
                            onAck={(id) => runAction(() => apiRef.current.acknowledge(jobId, baseRevision, id))} goToItem={goToItem} />
@@ -341,12 +402,25 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
                      onAck={(id) => runAction(() => apiRef.current.acknowledge(jobId, baseRevision, id, 'conflict'))} goToItem={goToItem} />
       <PreferredOnlyCard dirty={dirty} s={s} view={view} canEdit={canEdit} canAct={canAct} busy={busy !== null} fmtDate={fmtDate} who={who}
                          onConfirm={() => runAction(() => apiRef.current.confirmNoScore(jobId, baseRevision))} />
-      <InformationalPanel s={s} view={view} />
-      <SimilarityPanel dirty={dirty} changedIds={changedIds} s={s} view={view} textOf={textOf} goToItem={goToItem} />
+      {/* informational, not blocking: collapsed until asked for */}
+      {(view.informational?.generic_model_notes.length || view.informational?.parser_review.length) ? (
+        <details data-testid="informational-disclosure">
+          <summary className="cursor-pointer text-xs font-bold text-textMuted px-1 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">{s.informationalSummary}</summary>
+          <div className="mt-2"><InformationalPanel s={s} view={view} /></div>
+        </details>
+      ) : null}
+      {view.similarity_warnings.length > 0 && (
+        <details data-testid="similarity-disclosure">
+          <summary className="cursor-pointer text-xs font-bold text-textMuted px-1 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">{s.similaritySummary}</summary>
+          <div className="mt-2"><SimilarityPanel dirty={dirty} changedIds={changedIds} s={s} view={view} textOf={textOf} goToItem={goToItem} /></div>
+        </details>
+      )}
 
       <div className="bg-white rounded-2xl border border-border shadow-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-        <p className={`text-sm font-bold ${totalOk ? 'text-success' : 'text-error'}`} data-testid="category-total">
-          {fmt(s.categoryTotal, { total })} {anyRequired && <span className="font-normal">({totalOk ? s.totalsOk : s.totalsOff})</span>}
+        <p id="req-category-total" tabIndex={-1} className={`text-sm font-bold ${totalOk ? 'text-success' : 'text-error'}`} data-testid="category-total">
+          {totalOk
+            ? <>{fmt(s.categoryTotal, { total })} {anyRequired && <span className="font-normal">({s.totalsOk})</span>}</>
+            : fmt(s.categoryTotalOff, { total, difference: total - 100 > 0 ? `+${total - 100}` : String(total - 100) })}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           {canEdit && <button type="button" className={btnSecondary} title={s.normalizeHint} aria-label={`${s.normalize}. ${s.normalizeHint}`} onClick={normalize} data-testid="normalize">{s.normalize}</button>}
@@ -367,10 +441,12 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
         {CATEGORIES.map(c => (
           <CategoryCard key={c} category={c} cat={draft[c]} s={s} isAr={isAr} canEdit={canEdit} canAct={canAct} busy={busy !== null}
                         edited={editedCat(c)} dirty={dirtyCat(c)}
-                        issues={[...localIssues.filter(i => i.category === c && !i.itemKey).map(issueText), ...serverIssueFor(c, null).map(x => (s as any)[`reason_${x.code}`] || x.message)]}
+                        issues={categoryProblems(c)} categoryInvalid={categoryInvalid(c)}
                         infoFor={infoFor} actions={actions} focusKey={focusKey} fmtDate={fmtDate} who={who}
-                        setCategoryWeight={(v) => edit(d => setCategoryWeight(d, c, v))}
-                        equalize={() => { edit(d => equalizeCategory(d, c)); say(s.equalize); }}
+                        rawWeights={rawWeights} rawCategoryWeight={rawWeights[`cat:${c}`]}
+                        setCategoryWeightText={(raw) => commitTyped(`cat:${c}`, raw, n => edit(d => setCategoryWeight(d, c, n)))}
+                        equalDisabled={isEqualSplit(draft[c])}
+                        equalize={() => { if (!isEqualSplit(draft[c])) { edit(d => equalizeCategory(d, c)); say(s.equalize); } }}
                         add={(imp) => add(c, imp)} />
         ))}
       </div>
@@ -428,10 +504,5 @@ const ExtractionCard: React.FC<{
     </section>
   );
 };
-
-function dedupeIssues(xs: LocalIssue[]): LocalIssue[] {
-  const seen = new Set<string>();
-  return xs.filter(x => { const k = `${x.code}|${x.category}|${x.itemKey}`; if (seen.has(k)) return false; seen.add(k); return true; });
-}
 
 export default RequirementsV2Panel;

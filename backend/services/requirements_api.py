@@ -126,7 +126,8 @@ class ApiError(Exception):
 
 
 def issues_payload(issues) -> list[dict]:
-    return [{"code": i.code, "message": i.message, "category": i.category, "item_id": i.item_id} for i in issues]
+    return [{"code": i.code, "message": i.message, "category": i.category, "item_id": i.item_id,
+             "params": dict(getattr(i, "params", None) or {})} for i in issues]
 
 
 def invalid(issues: list[Issue]) -> ApiError:

@@ -57,15 +57,16 @@ describe('layout: weighted job', () => {
     expect(row.querySelector('svg rect[width="20"]')).toBeTruthy();                 // the briefcase glyph
     expect(document.getElementById('req-item-req_py')!.textContent).not.toContain(S.fromResponsibilities);
   });
-  it('original source wording is behind an accessible disclosure', async () => {
+  it('original source wording, OR alternatives and structure are behind an accessible Details control', async () => {
     const { ui } = await setup(makeView());
     const row = document.getElementById('req-item-req_sql')!;
-    const btn = within(row).getByRole('button', { name: S.showSource });
+    const btn = within(row).getByRole('button', { name: S.details });
     expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(within(row).queryByText('Knowledge of SQL or PostgreSQL')).toBeNull();     // the source wording is not shown until Details is opened
     await ui.click(btn);
     expect(btn.getAttribute('aria-expanded')).toBe('true');
     expect(within(row).getByText('Knowledge of SQL or PostgreSQL')).toBeTruthy();
-    expect(btn.getAttribute('aria-controls')).toBe(row.querySelector('[id^="req-source-"]')!.id);
+    expect(btn.getAttribute('aria-controls')).toBe(row.querySelector('[id^="req-details-"]')!.id);
   });
 });
 
@@ -101,6 +102,7 @@ describe('editing rules', () => {
   });
   it('removing the last required item sets the category to 0 and nothing else moves', async () => {
     const { ui } = await setup(makeView());
+    await ui.click(within(document.getElementById('req-item-req_exp')!).getByRole('button', { name: S.actions }));
     await ui.click(within(document.getElementById('req-item-req_exp')!).getByRole('button', { name: new RegExp(S.deleteItem) }));
     expect((within(card('Experience')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('0');
     expect((within(card('Skills')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('60');
@@ -109,9 +111,11 @@ describe('editing rules', () => {
   it('reclassify required <-> preferred follows the backend rules', async () => {
     const { ui } = await setup(makeView());
     const row = document.getElementById('req-item-req_exp')!;
+    await ui.click(within(row).getByRole('button', { name: S.actions }));
     await ui.click(within(row).getByRole('button', { name: S.makePreferred }));
     expect((within(card('Experience')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('0');
     expect(screen.queryByLabelText('Weight of “4 years as a Maintenance Planner”')).toBeNull();
+    await ui.click(within(document.getElementById('req-item-req_exp')!).getByRole('button', { name: S.actions }));
     await ui.click(within(document.getElementById('req-item-req_exp')!).getByRole('button', { name: S.makeRequired }));
     expect((screen.getByLabelText('Weight of “4 years as a Maintenance Planner”') as HTMLInputElement).value).toBe('');
   });
@@ -122,6 +126,7 @@ describe('editing rules', () => {
     expect(document.activeElement).toBe(box);
     await ui.type(box, 'BSc');
     expect(screen.getByTestId('unsaved-badge')).toBeTruthy();
+    await ui.click(within(card('Education')).getByRole('button', { name: S.actions }));
     await ui.click(within(card('Education')).getByRole('button', { name: new RegExp(S.deleteItem) }));
     expect(within(card('Education')).queryByLabelText(S.itemText)).toBeNull();
   });
@@ -168,13 +173,13 @@ describe('saving and readiness', () => {
     const { ui, api } = await setup(invalidWeightsView());
     expect(screen.getByTestId('readiness').textContent).toContain(S.reason_required_weights_total);
     await ui.type(within(card('Skills')).getAllByLabelText(S.itemText)[0], '!');
-    expect(screen.getByTestId('local-issues').textContent).toContain(S.reason_required_weights_total);
+    expect(screen.getByTestId('issue-summary').textContent).toMatch(/Required weights in Skills total \d+%, not 100%/);
     expect((screen.getByTestId('save') as HTMLButtonElement).disabled).toBe(false);
     api.save.mockRejectedValueOnce(apiError(422, { code: 'invalid_requirements', message: 'The requirements cannot be saved.',
       issues: [{ code: 'required_weights_total', message: 'Required item weights total 80%, not 100%.', category: 'skills', item_id: null }] }));
     await ui.click(screen.getByTestId('save'));
-    await screen.findByTestId('server-issues');
-    expect(screen.getByTestId('server-issues').textContent).toContain(S.reason_required_weights_total);
+    await screen.findByTestId('issue-summary');
+    expect(screen.getByTestId('issue-summary').textContent).toContain('Required item weights total 80%, not 100%.');
     expect(screen.getByDisplayValue('Python!')).toBeTruthy();                          // the draft is still there
   });
   it('distinguishes a valid saved draft from readiness to proceed', async () => {
@@ -365,6 +370,7 @@ describe('revision conflicts: three-way comparison and explicit resolution', () 
 
   it('I deleted an item that was changed in the latest version: explicit choice (delete it / keep the latest)', async () => {
     const { ui, api } = await setup(makeView());
+    await ui.click(within(document.getElementById('req-item-req_docker')!).getByRole('button', { name: S.actions }));
     await ui.click(within(document.getElementById('req-item-req_docker')!).getByRole('button', { name: new RegExp(S.deleteItem) }));
     conflictOn(api, edited(d => { d.categories.skills.items[2].text = 'Docker (edited upstream)'; }));
     await ui.click(screen.getByTestId('save'));
@@ -479,6 +485,7 @@ describe('warnings are labelled as referring to the saved version while a draft 
     expect(docker.textContent).toContain(S.ackSavedOnly);
     expect(docker.textContent).toContain(S.savedBadge);
     // the duplicate chip on the OTHER item of the pair refers to the saved version as well
+    await ui.click(within(sql).getByRole('button', { name: S.details }));                 // the similarity notes are under Details
     expect(within(sql).getByRole('button', { name: new RegExp(`${S.possibleDuplicate} \\(${S.similarSaved}\\)`) })).toBeTruthy();
     const classRow = within(screen.getByTestId('classification')).getByTestId('warning-item-edited');
     expect(classRow.textContent).toContain(S.itemEditedSaved);
