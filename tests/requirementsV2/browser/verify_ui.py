@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import glob
+import re
 import json
 import os
 import pathlib
@@ -51,6 +52,28 @@ RESULTS: list[tuple[str, bool, str]] = []
 def check(name: str, cond: bool, detail: str = "") -> None:
     RESULTS.append((name, bool(cond), detail))
     print(("PASS " if cond else "FAIL ") + name + (f"  [{detail}]" if detail and not cond else ""), flush=True)
+
+
+# The review-first editor: a wording change and a category weight change are made through Edit / the pencil, then Apply (draft only).
+def first_wording(scope):
+    return scope.locator("p[id^='req-text-']").first.inner_text()
+
+
+def edit_wording(scope, text, append):
+    row = scope.locator("li[id^='req-item-']").filter(has=scope.get_by_text(text, exact=True))
+    row.get_by_role("button", name=f"More actions: {text}", exact=True).click()
+    row.get_by_role("button", name="Edit", exact=True).click()
+    ed = scope.locator("[data-testid=item-editor]")
+    ta = ed.get_by_label("Requirement wording", exact=True)
+    ta.fill(ta.input_value() + append)
+    ed.locator("button[type=submit]").click()
+
+
+def edit_category(scope, cat, value):
+    card = scope.locator(f"#req-cat-{cat}")
+    card.get_by_role("button", name=re.compile(r"^Edit the .* weight")).first.click()
+    scope.fill(f"#req-cat-{cat}-w", str(value))
+    card.get_by_role("button", name="Apply", exact=True).click()
 
 
 def build_bundle(dist: pathlib.Path) -> None:
@@ -231,11 +254,11 @@ def main(argv=None) -> int:
                   page.locator("[data-testid=ack-conflict]").is_disabled() and page.locator("[data-testid=classification] button", has_text="Accept as Preferred").first.is_disabled())
             page.locator("[data-kind=injection_weights] button", has_text="weight").click()
             check("S2 'edit weight' focuses the category weight input", page.evaluate("document.activeElement && document.activeElement.id") == "req-cat-soft_skills-w")
-            skills_before = page.locator("#req-cat-skills-w").input_value()
+            skills_before = page.locator("[data-testid=cat-weight-skills]").inner_text()
             page.locator("[data-split-item]").first.locator("[data-testid=keep-one]").click()
-            skill_texts = page.get_by_role("region", name="Skills", exact=True).locator("input[id^='req-text-']").evaluate_all("els => els.map(e => e.value)")
+            skill_texts = page.get_by_role("region", name="Skills", exact=True).locator("p[id^='req-text-']").evaluate_all("els => els.map(e => e.textContent)")
             check("S2 keep-one removes the redundant split item and keeps one", ("Python" in skill_texts) != ("Java" in skill_texts), str(skill_texts))
-            check("S2 weights were NOT redistributed (category weight unchanged; totals flagged)", page.locator("#req-cat-skills-w").input_value() == skills_before
+            check("S2 weights were NOT redistributed (category weight unchanged; totals flagged)", page.locator("[data-testid=cat-weight-skills]").inner_text() == skills_before
                   and page.locator("[data-testid=issue-summary]").count() == 1)
             page.get_by_role("button", name="Save requirements").first.click()
             page.wait_for_selector("[data-testid=issue-summary]", timeout=8000)
@@ -243,7 +266,7 @@ def main(argv=None) -> int:
                   any(r["method"] == "PUT" for r in reqs) and page.locator("[data-testid=unsaved-badge]").count() == 1)
             shot(page, "02_corrections_invalid_weights")
             page.get_by_role("button", name="Equalize: Skills.").click()
-            page.fill("#req-cat-skills-w", "40"); page.fill("#req-cat-experience-w", "40"); page.fill("#req-cat-soft_skills-w", "20")
+            edit_category(page, "skills", 40); edit_category(page, "experience", 40); edit_category(page, "soft_skills", 20)
             page.get_by_role("button", name="Save requirements").first.click()
             page.wait_for_function("document.querySelector('[data-testid=unsaved-badge]') === null", timeout=8000)
             r1 = row()
@@ -315,8 +338,8 @@ def main(argv=None) -> int:
             check("S6 a clear blocking message is shown for the damaged record", "damaged" in text(page, "[data-testid=pipeline-invalid]").lower()
                   and "Check record damaged" in text(page, "[data-testid=readiness-state]"))
             page.locator("[data-testid=toggle-compare]").click()
-            check("S6 the original analysis and the requirements stay readable", page.locator("[data-testid=comparison]").count() == 1 and page.locator("input[id^='req-text-']").count() > 3)
-            page.locator("input[id^='req-text-']").first.fill("changed wording")
+            check("S6 the original analysis and the requirements stay readable", page.locator("[data-testid=comparison]").count() == 1 and page.locator("p[id^='req-text-']").count() > 3)
+            edit_wording(page, first_wording(page), " (changed)")
             page.get_by_role("button", name="Save requirements").first.click()
             page.wait_for_selector("[data-testid=problem], [data-testid=issue-summary]", timeout=8000)
             check("S6 a write is refused (409) with a clear message and nothing is stored", "damaged" in text(page, "[data-testid=problem]").lower() and row()["revision"] == 0)
@@ -364,8 +387,7 @@ def main(argv=None) -> int:
             # ── S10: valid blocked document is saveable ─────────────────────────────────────────────────────────────────────────────────────────
             reseed()
             page, reqs = open_page(browser)
-            ta = page.locator("input[id^='req-text-']").first
-            ta.fill(ta.input_value() + " (edited)")
+            edit_wording(page, first_wording(page), " (edited)")
             page.get_by_role("button", name="Save requirements").first.click()
             page.wait_for_function("document.querySelector('[data-testid=unsaved-badge]') === null", timeout=8000)
             check("S10 a valid document with unresolved blockers saves (revision +1) and stays blocked", row()["revision"] == 1 and page.locator("[data-testid=blockers]").count() == 1
@@ -379,8 +401,7 @@ def main(argv=None) -> int:
             d = doc_of(v)
             d["categories"]["soft_skills"]["items"][0]["text"] = "Written communication (changed by someone else)"
             st, _ = call("PUT", "", "hr", {"expected_revision": 0, "requirements": d})
-            ta = page.locator("input[id^='req-text-']").first
-            ta.fill(ta.input_value() + " (mine)")
+            edit_wording(page, first_wording(page), " (mine)")
             page.get_by_role("button", name="Save requirements").first.click()
             page.wait_for_selector("[data-testid=conflict]", timeout=8000)
             check("S11 a concurrent change opens the existing conflict resolver, the draft is kept and nothing was overwritten", st == 200 and row()["revision"] == 1

@@ -9,7 +9,8 @@ import { Choice, threeWayMerge } from '../../utils/requirementsMerge';
 import type { PipelineIssue, RequirementsApi, RequirementsView } from '../../services/requirementsV2Api';
 import { fmt, STRINGS, type Strings } from './i18n';
 import { issueText as describeIssue } from './issues';
-import { CategoryCard, ItemInfo, RowActions } from './CategoryCard';
+import { CategoryCard, CategoryEditState, EditingState, ItemInfo, RowActions } from './CategoryCard';
+import type { EditValues } from './ItemEditor';
 import { BlockerPanel, ConflictPanel, CorrectionActions, InformationalPanel, IssuesPanel, PipelineStatusCard } from './PipelinePanels';
 import {
   ClassificationPanel, ComparisonView, ConflictResolver, EvaluationUnavailable, PreferredOnlyCard, ReadinessCard,
@@ -52,9 +53,8 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const [status, setStatus] = useState('');
   const [normalizeNote, setNormalizeNote] = useState<string | null>(null);
   const [fallback, setFallback] = useState<Record<CategoryKey, number> | null>(null);
-  const [focusKey, setFocusKey] = useState<string | null>(null);
-  // Typed weights that are not whole numbers, kept as typed. Field key: 'item:<key>' or 'cat:<category>'. The draft keeps its last valid value.
-  const [rawWeights, setRawWeights] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<EditingState | null>(null);   // the one item whose editor is open (nothing changes until Apply)
+  const [catEdit, setCatEdit] = useState<{ category: CategoryKey } & CategoryEditState | null>(null);
   const alive = useRef(true);
   const apiRef = useRef(api);
   apiRef.current = api;                                            // callers may pass a new object each render
@@ -65,7 +65,8 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const apply = useCallback((v: RequirementsView) => {
     const d = draftFromServer(v.requirements);
     setView(v); setDraft(d); setBase(d); setBaseRevision(v.revision);
-    setConflict(null); setChoices({}); setMergedNotice(false); setProblem(null); setFallback(null); setNormalizeNote(null); setRawWeights({});
+    setConflict(null); setChoices({}); setMergedNotice(false); setProblem(null); setFallback(null); setNormalizeNote(null);
+    setEditing(null); setCatEdit(null);
   }, []);
 
   const load = useCallback(async () => {
@@ -110,20 +111,12 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
 
   const localIssues = useMemo(() => (draft ? validateDraft(draft) : []), [draft]);
 
-  // Every problem with the draft in one list, each with the words that say what is wrong (actual and expected values included): typed text that is
-  // not a whole number, the local rules, and the server's answer to the last save.
+  // Every problem with the draft in one list, each with the words that say what is wrong (actual and expected values included): the local
+  // rules, and the server's answer to the last save.
   type Problem = { code: string; text: string; itemKey?: string; category?: CategoryKey };
   const issueCtx = { s, categoryName: (c: string) => s.categories[c as CategoryKey] ?? c };
   const itemNameOf = (key: string) => (draft ? findItem(draft, key)?.item.text : undefined);
   const keyForServerId = (id: string) => (draft ? CATEGORIES.flatMap(c => draft[c].items).find(i => i.id === id)?.key : undefined);
-  const rawProblems: Problem[] = (Object.entries(rawWeights) as [string, string][]).map(([field, raw]) => {
-    const sep = field.indexOf(':');
-    const kind = field.slice(0, sep), id = field.slice(sep + 1);
-    const itemKey = kind === 'item' ? id : undefined;
-    const category = (kind === 'cat' ? id : itemKey && draft ? findItem(draft, itemKey)?.category : undefined) as CategoryKey | undefined;
-    const label = itemKey ? fmt(s.weightOf, { name: itemNameOf(itemKey) || s.itemText }) : `${issueCtx.categoryName(category ?? '')} (${s.categoryWeight})`;
-    return { code: 'not_whole_number', text: describeIssue({ code: 'not_whole_number', params: { field: label, value: raw } }, issueCtx), itemKey, category };
-  });
   const localProblems: Problem[] = localIssues.map(i => ({
     code: i.code,
     text: describeIssue({ code: i.code, category: i.category, itemName: i.itemKey ? itemNameOf(i.itemKey) : null, params: i.params }, issueCtx),
@@ -134,17 +127,14 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     text: describeIssue({ code: x.code, message: x.message, category: x.category, itemName: x.item_id ? textOf(x.item_id) : null, params: x.params }, issueCtx),
     itemKey: x.item_id ? keyForServerId(x.item_id) : undefined, category: (x.category ?? undefined) as CategoryKey | undefined,
   }));
-  // the problems the editor can see before saving: the typed text and the local rules. Saving is never blocked here: the server decides
-  // (revision conflicts first, then the rules), and its answer is shown with the same wording.
-  const blockers: Problem[] = [...rawProblems, ...localProblems];
-  const shownProblems: Problem[] = serverProblems.length > 0 ? serverProblems : blockers;
+  // the problems the draft has by its own rules. Saving is never blocked here: the server decides (revision conflicts first, then the rules),
+  // and its answer is shown with the same wording.
+  const shownProblems: Problem[] = serverProblems.length > 0 ? serverProblems : localProblems;
   const itemProblems = (key: string) => shownProblems.filter(p => p.itemKey === key).map(p => p.text);
   const categoryProblems = (c: CategoryKey) => shownProblems.filter(p => p.category === c && !p.itemKey).map(p => p.text);
-  // the category weight field is marked for problems with the category weight itself; a Required-total problem marks the Required weights instead
+  // the category weight is marked for problems with the category weight itself
   const CATEGORY_WEIGHT_CODES = ['bad_category_weight', 'category_weight_not_positive', 'category_weight_without_required_items', 'category_weights_total'];
-  const categoryInvalid = (c: CategoryKey) => rawWeights[`cat:${c}`] !== undefined
-    || shownProblems.some(p => p.category === c && !p.itemKey && CATEGORY_WEIGHT_CODES.includes(p.code));
-  const requiredTotalWrong = (c: CategoryKey) => shownProblems.some(p => p.category === c && !p.itemKey && p.code === 'required_weights_total');
+  const categoryInvalid = (c: CategoryKey) => shownProblems.some(p => p.category === c && !p.itemKey && CATEGORY_WEIGHT_CODES.includes(p.code));
   const original = view?.original ?? null;
   const comparison = useMemo(() => (draft && original ? compareWithOriginal(draft, original) : null), [draft, original]);
 
@@ -174,7 +164,6 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const analysis = useMemo(() => (conflict && draft && base && theirsDraft ? threeWayMerge(base, draft, theirsDraft) : null), [conflict, draft, base, theirsDraft]);
 
   const infoFor = (item: DraftItem): ItemInfo => {
-    const itemCategory = findItem(draft!, item.key)?.category;
     const cmp = comparison && findItem(draft!, item.key);
     const ch = cmp && comparison![cmp.category].current.find(x => x.item.key === item.key);
     const st = item.id ? view?.structure_review.items.find(x => x.item_id === item.id) : undefined;
@@ -187,7 +176,6 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
         return { id: w.id, kind: w.kind, differences: w.differences, other, label: '', stale: changedIds.has(item.id as string) || changedIds.has(other.item_id) };
       }) : [],
       issues: itemProblems(item.key), changedInDraft: !!item.id && changedIds.has(item.id),
-      weightMarked: item.importance === 'required' && (itemProblems(item.key).length > 0 || (!!itemCategory && requiredTotalWrong(itemCategory))),
     };
   };
 
@@ -199,23 +187,49 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   };
 
   // ── draft edits (always explicit; no automatic redistribution) ─────────────
-  const edit = (fn: (d: Draft) => Draft) => { setDraft(d => (d ? fn(d) : d)); setProblem(null); setFocusKey(null); };
-  // Typed weights: a whole number is committed to the draft; anything else stays in the field, is reported, and blocks saving.
-  const commitTyped = (field: string, raw: string, commit: (n: number | null) => void) => {
-    setProblem(null);                                        // typing supersedes the server's answer to an earlier save, as any edit does
-    const n = parseWhole(raw);
-    if (n === undefined) { setRawWeights(r => ({ ...r, [field]: raw })); return; }
-    setRawWeights(r => { if (!(field in r)) return r; const next = { ...r }; delete next[field]; return next; });
-    commit(n);
+  const edit = (fn: (d: Draft) => Draft) => { setDraft(d => (d ? fn(d) : d)); setProblem(null); };
+
+  // Review by default. The editor opens on request and Apply changes only the draft (wording, importance, weight, structure together).
+  const startEdit = (key: string) => { setEditing({ key, isNew: false }); };
+  const closeEdit = (key: string) => {
+    setEditing(null);
+    window.setTimeout(() => document.getElementById(`req-item-${key}`)?.focus({ preventScroll: true }), 0);
+  };
+  const applyEdit = (key: string, v: EditValues) => {
+    edit(d => {
+      const found = findItem(d, key);
+      if (!found) return d;
+      const before = found.item;
+      let n = setText(d, key, v.text);
+      if (v.importance !== before.importance) n = setImportance(n, key, v.importance);
+      if (v.importance === 'required') n = setItemWeight(n, key, v.weight);
+      if (JSON.stringify(v.alternatives) !== JSON.stringify(before.alternatives)) n = setAlternatives(n, key, v.alternatives);
+      if (JSON.stringify(v.experience) !== JSON.stringify(before.experience)) n = setExperience(n, key, v.experience);
+      return n;
+    });
+    closeEdit(key);
+  };
+  // Cancel discards the editor's values; a new item that was never applied is removed from the draft again.
+  const cancelEdit = () => {
+    if (!editing) return;
+    const { key, isNew } = editing;
+    if (isNew) edit(d => removeItem(d, key));
+    closeEdit(key);
+  };
+  const openCatEdit = (c: CategoryKey) => { if (draft) setCatEdit({ category: c, text: draft[c].weight === null ? '' : String(draft[c].weight), error: null }); };
+  const applyCatEdit = () => {
+    if (!catEdit || !draft) return;
+    const n = parseWhole(catEdit.text);
+    if (n === undefined) {
+      setCatEdit({ ...catEdit, error: describeIssue({ code: 'not_whole_number', params: { field: `${s.categories[catEdit.category]} (${s.categoryWeight})`, value: catEdit.text } }, issueCtx) });
+      return;
+    }
+    edit(d => setCategoryWeight(d, catEdit.category, n));
+    setCatEdit(null);
   };
   const actions: RowActions = {
-    setText: (k, v) => edit(d => setText(d, k, v)),
-    setWeight: (k, v) => edit(d => setItemWeight(d, k, v)),
-    setWeightText: (k, raw) => commitTyped(`item:${k}`, raw, n => edit(d => setItemWeight(d, k, n))),
     toggleImportance: (k) => edit(d => { const f = findItem(d, k); return f ? setImportance(d, k, f.item.importance === 'required' ? 'preferred' : 'required') : d; }),
     remove: (k) => { edit(d => removeItem(d, k)); say(s.delete); },
-    setAlternatives: (k, v) => edit(d => setAlternatives(d, k, v)),
-    setExperience: (k, v) => edit(d => setExperience(d, k, v)),
     confirmStructure: (id) => runAction(() => apiRef.current.confirmStructure(jobId, baseRevision, id)),
     goToItem,
   };
@@ -225,9 +239,9 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     replaceItem: (id) => {
       if (!draft) return;
       const r = replaceWithBlank(draft, id);
-      if (r) { setDraft(r.draft); setFocusKey(r.key); setProblem(null); say(s.correctionApplied); }
+      if (r) { setDraft(r.draft); setEditing({ key: r.key, isNew: false }); setProblem(null); say(s.correctionApplied); }
     },
-    editCategoryWeight: (c) => goTo(`req-cat-${c}-w`),
+    editCategoryWeight: (c) => openCatEdit(c as CategoryKey),
     keepOne: (issue, keepId) => {
       const options = issue.details?.options ?? [];
       edit(d => keepOneOfSplit(d, keepId, options, issue.item_ids));
@@ -239,10 +253,10 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const add = (c: CategoryKey, importance: 'required' | 'preferred') => {
     if (!draft) return;
     const r = addItem(draft, c, importance);
-    setDraft(r.draft); setFocusKey(r.key); setProblem(null);
+    setDraft(r.draft); setProblem(null);
+    setEditing({ key: r.key, isNew: true });                  // the new item opens in the editor: it is not in the saved version until Save
   };
 
-  // ── server round trips ─────────────────────────────────────────────────────
   const handleProblem = async (e: any, fromSave: boolean) => {
     const p = describeApiError(e);
     if (p.status === 409 && p.code === 'requirements_revision_conflict' && p.current) {
@@ -258,13 +272,6 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
 
   const save = async () => {
     if (!draft || busy) return;
-    if (rawProblems.length > 0) {
-      // a typed value that is not a whole number is not in the draft: sending the draft now would save something other than what the field shows
-      setProblem(null);
-      const msg = rawProblems.length === 1 ? s.issueCountOne : fmt(s.issueCount, { n: rawProblems.length });
-      say(msg); toast(msg, 'error');
-      return;
-    }
     setBusy('save'); say(s.saving);
     try {
       const v = await apiRef.current.save(jobId, baseRevision, toPayload(draft));
@@ -293,7 +300,7 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     await load();
   };
 
-  const discard = () => { if (base) { setDraft(base); setProblem(null); setFallback(null); setNormalizeNote(null); setRawWeights({}); } };
+  const discard = () => { if (base) { setDraft(base); setProblem(null); setFallback(null); setNormalizeNote(null); setEditing(null); setCatEdit(null); } };
   // Resolution never saves anything: it builds the merged draft from the recruiter's explicit choices and rebases the
   // comparison point onto the latest saved version, so the next save is checked against that revision.
   const applyMerge = () => {
@@ -417,11 +424,15 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
       )}
 
       <div className="bg-white rounded-2xl border border-border shadow-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-        <p id="req-category-total" tabIndex={-1} className={`text-sm font-bold ${totalOk ? 'text-success' : 'text-error'}`} data-testid="category-total">
-          {totalOk
-            ? <>{fmt(s.categoryTotal, { total })} {anyRequired && <span className="font-normal">({s.totalsOk})</span>}</>
-            : fmt(s.categoryTotalOff, { total, difference: total - 100 > 0 ? `+${total - 100}` : String(total - 100) })}
-        </p>
+        {totalOk ? (
+          <p id="req-category-total" tabIndex={-1} className="text-xs text-textMuted" data-testid="category-total">
+            {fmt(s.categoryTotal, { total })} {anyRequired && <span>({s.totalsOk})</span>}
+          </p>
+        ) : (
+          <p id="req-category-total" tabIndex={-1} role="status" className="basis-full sm:basis-auto flex-1 min-w-0 rounded-lg border-2 border-error bg-red-50 px-3 py-2 text-sm font-bold text-red-900" data-testid="category-total">
+            {fmt(s.categoryTotalOff, { total, difference: total - 100 > 0 ? `+${total - 100}` : String(total - 100) })}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           {canEdit && <button type="button" className={btnSecondary} title={s.normalizeHint} aria-label={`${s.normalize}. ${s.normalizeHint}`} onClick={normalize} data-testid="normalize">{s.normalize}</button>}
           <button type="button" className={btnSecondary} aria-pressed={showCompare} onClick={() => setShowCompare(v => !v)} data-testid="toggle-compare">{showCompare ? s.hideCompare : s.compare}</button>
@@ -439,12 +450,14 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {CATEGORIES.map(c => (
-          <CategoryCard key={c} category={c} cat={draft[c]} s={s} isAr={isAr} canEdit={canEdit} canAct={canAct} busy={busy !== null}
+          <CategoryCard key={c} category={c} cat={draft[c]} s={s} canEdit={canEdit} canAct={canAct} busy={busy !== null}
                         edited={editedCat(c)} dirty={dirtyCat(c)}
                         issues={categoryProblems(c)} categoryInvalid={categoryInvalid(c)}
-                        infoFor={infoFor} actions={actions} focusKey={focusKey} fmtDate={fmtDate} who={who}
-                        rawWeights={rawWeights} rawCategoryWeight={rawWeights[`cat:${c}`]}
-                        setCategoryWeightText={(raw) => commitTyped(`cat:${c}`, raw, n => edit(d => setCategoryWeight(d, c, n)))}
+                        infoFor={infoFor} actions={actions} fmtDate={fmtDate} who={who}
+                        editing={editing} startEdit={startEdit} applyEdit={applyEdit} cancelEdit={cancelEdit}
+                        catEdit={catEdit?.category === c ? catEdit : null} openCatEdit={() => openCatEdit(c)}
+                        setCatText={(text) => setCatEdit(e => (e && e.category === c ? { ...e, text, error: null } : e))}
+                        applyCatEdit={applyCatEdit} cancelCatEdit={() => setCatEdit(null)}
                         equalDisabled={isEqualSplit(draft[c])}
                         equalize={() => { if (!isEqualSplit(draft[c])) { edit(d => equalizeCategory(d, c)); say(s.equalize); } }}
                         add={(imp) => add(c, imp)} />

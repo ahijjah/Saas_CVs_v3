@@ -3,12 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RequirementsV2Panel } from '../../components/requirementsV2/RequirementsV2Panel';
-import { STRINGS } from '../../components/requirementsV2/i18n';
+import { fmt, STRINGS } from '../../components/requirementsV2/i18n';
 import type { RequirementsView } from '../../services/requirementsV2Api';
 import {
   apiError, emptyView, invalidWeightsView, makeView, preferredOnlyView, structureView, warningView, weightedDoc,
 } from './fixtures';
 import { mockApi } from './mocks';
+import { applyEditor, cardOf, categoryWeight, deleteItem, editWording, itemWeight, openCategoryEdit, openEditor, rowAction, rowOf, setWeight, typeIn, wording } from './review';
 
 const JOB = '00000000-0000-0000-0000-0000000000aa';
 
@@ -22,23 +23,23 @@ async function setup(view: RequirementsView, opts: { isAr?: boolean; canEdit?: b
 }
 
 const card = (name: string) => screen.getByRole('region', { name });
-const textboxOf = (text: string) => screen.getByDisplayValue(text) as HTMLTextAreaElement;
 const S = STRINGS.en;
 
 describe('layout: weighted job', () => {
   it('shows seven category cards with editable whole-number category weights', async () => {
     await setup(makeView());
     for (const name of Object.values(S.categories)) expect(card(name)).toBeTruthy();
-    const w = within(card('Skills')).getByLabelText(S.categoryWeight) as HTMLInputElement;
-    expect(w.value).toBe('60'); expect(w.readOnly).toBe(false);
+    expect(categoryWeight('skills')).toBe('60');
+    expect(within(card('Skills')).getByRole('button', { name: fmt(S.editCategoryWeight, { name: 'Skills' }) })).toBeTruthy();
   });
   it('separates Required and Preferred; preferred items have no weight input; required items do', async () => {
     await setup(makeView());
     const skills = card('Skills');
-    expect(within(skills).getAllByRole('heading', { level: 5 }).map(h => h.textContent)).toEqual(['Required', 'Preferred']);
-    expect(within(skills).getByLabelText('Weight of “Python”')).toHaveProperty('value', '50');
-    expect(within(skills).queryByLabelText('Weight of “Docker”')).toBeNull();
-    expect(within(skills).getByText(S.preferredNoWeight)).toBeTruthy();
+    expect(within(skills).getAllByRole('heading', { level: 5 }).map(h => h.textContent)).toEqual([fmt(S.requiredCount, { n: 2 }), fmt(S.preferredCount, { n: 1 })]);
+    expect(itemWeight('Python')).toBe('50');
+    expect(itemWeight('Docker')).toBeNull();
+    expect(within(skills).queryByLabelText(/^Weight of/)).toBeNull();                 // review shows the weight as text, not as an input
+    expect(within(skills).queryByText(S.preferredNoWeight)).toBeNull();               // guidance appears only when it is asked for
   });
   it('shows required-item totals per category and the overall category total', async () => {
     await setup(makeView());
@@ -73,89 +74,94 @@ describe('layout: weighted job', () => {
 describe('editing rules', () => {
   it('no automatic redistribution when a weight changes or an item is added', async () => {
     const { ui } = await setup(makeView());
-    const python = screen.getByLabelText('Weight of “Python”') as HTMLInputElement;
-    await ui.clear(python); await ui.type(python, '10');
-    expect((screen.getByLabelText('Weight of “SQL or PostgreSQL”') as HTMLInputElement).value).toBe('50');
+    await setWeight(ui, 'Python', '10');
+    expect(itemWeight('SQL or PostgreSQL')).toBe('50');
     expect(screen.getByTestId('required-total-skills').textContent).toContain('60%');
-    await ui.click(within(card('Skills')).getByRole('button', { name: `+ ${S.addRequired}` }));
-    expect((screen.getByLabelText('Weight of “Python”') as HTMLInputElement).value).toBe('10');
+    await ui.click(within(card('Skills')).getByRole('button', { name: S.addRequired }));
+    await ui.click(within(screen.getByTestId('item-editor')).getByRole('button', { name: S.cancelEdit }));
+    expect(itemWeight('Python')).toBe('10');
   });
   it('Equalize is explicit and per category', async () => {
     const { ui } = await setup(makeView());
-    await ui.click(within(card('Skills')).getByRole('button', { name: `+ ${S.addRequired}` }));
-    const rows = within(card('Skills')).getAllByLabelText(S.itemText);
-    await ui.type(rows[rows.length - 1], 'Go');
+    await ui.click(within(card('Skills')).getByRole('button', { name: S.addRequired }));
+    await ui.type(within(screen.getByTestId('item-editor')).getByLabelText(S.itemText), 'Go');
+    await applyEditor(ui, screen.getByTestId('item-editor'));
     await ui.click(within(card('Skills')).getByRole('button', { name: new RegExp(`^${S.equalize}`) }));
-    const weights = within(card('Skills')).getAllByLabelText(/^Weight of/).map(x => (x as HTMLInputElement).value);
+    const weights = ['Python', 'SQL or PostgreSQL', 'Go'].map(itemWeight);
     expect(weights).toEqual(['34', '33', '33']);
-    expect((screen.getByLabelText('Weight of “4 years as a Maintenance Planner”') as HTMLInputElement).value).toBe('100');
+    expect(itemWeight('4 years as a Maintenance Planner')).toBe('100');
   });
   it('Normalize is an explicit button and rescales only when pressed', async () => {
     const { ui } = await setup(makeView());
-    const w = within(card('Skills')).getByLabelText(S.categoryWeight) as HTMLInputElement;
-    await ui.clear(w); await ui.type(w, '30');
+    const w = await openCategoryEdit(ui, 'skills');
+    await typeIn(ui, w, '30');
+    await ui.click(within(cardOf('skills')).getByRole('button', { name: S.applyEdit }));
     expect(screen.getByTestId('category-total').textContent).toContain('70%');
     await ui.click(screen.getByTestId('normalize'));
-    expect((within(card('Skills')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('43');
-    expect((within(card('Experience')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('57');
+    expect(categoryWeight('skills')).toBe('43');
+    expect(categoryWeight('experience')).toBe('57');
     expect(screen.getByTestId('category-total').textContent).toContain('100%');
   });
   it('removing the last required item sets the category to 0 and nothing else moves', async () => {
     const { ui } = await setup(makeView());
-    await ui.click(within(document.getElementById('req-item-req_exp')!).getByRole('button', { name: S.actions }));
-    await ui.click(within(document.getElementById('req-item-req_exp')!).getByRole('button', { name: new RegExp(S.deleteItem) }));
-    expect((within(card('Experience')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('0');
-    expect((within(card('Skills')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('60');
+    await deleteItem(ui, '4 years as a Maintenance Planner');
+    expect(categoryWeight('experience')).toBe('0');
+    expect(categoryWeight('skills')).toBe('60');
     expect(screen.getByTestId('category-total').textContent).toContain('60%');
   });
   it('reclassify required <-> preferred follows the backend rules', async () => {
     const { ui } = await setup(makeView());
-    const row = document.getElementById('req-item-req_exp')!;
-    await ui.click(within(row).getByRole('button', { name: S.actions }));
-    await ui.click(within(row).getByRole('button', { name: S.makePreferred }));
-    expect((within(card('Experience')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('0');
-    expect(screen.queryByLabelText('Weight of “4 years as a Maintenance Planner”')).toBeNull();
-    await ui.click(within(document.getElementById('req-item-req_exp')!).getByRole('button', { name: S.actions }));
-    await ui.click(within(document.getElementById('req-item-req_exp')!).getByRole('button', { name: S.makeRequired }));
-    expect((screen.getByLabelText('Weight of “4 years as a Maintenance Planner”') as HTMLInputElement).value).toBe('');
+    const exp = '4 years as a Maintenance Planner';
+    await rowAction(ui, exp, S.makePreferred);
+    expect(categoryWeight('experience')).toBe('0');
+    expect(itemWeight(exp)).toBeNull();
+    expect(screen.getByText(S.guideLastRequired)).toBeTruthy();                        // the consequence is said when the action is taken
+    await rowAction(ui, exp, S.makeRequired);
+    expect(itemWeight(exp)).toBeNull();                                                 // Required starts unweighted
+    expect(rowOf(exp).querySelector('[data-testid^="weight-"]')).toBeTruthy();
   });
   it('add, edit and delete an item; the new item is focused', async () => {
     const { ui } = await setup(makeView());
-    await ui.click(within(card('Education')).getByRole('button', { name: `+ ${S.addPreferred}` }));
-    const box = within(card('Education')).getByLabelText(S.itemText);
-    expect(document.activeElement).toBe(box);
+    await ui.click(within(card('Education')).getByRole('button', { name: S.addPreferred }));
+    const editor = screen.getByTestId('item-editor');
+    const box = within(editor).getByLabelText(S.itemText);
+    expect(document.activeElement).toBe(box);                                          // the new item opens in its editor
     await ui.type(box, 'BSc');
+    await applyEditor(ui, editor);
     expect(screen.getByTestId('unsaved-badge')).toBeTruthy();
-    await ui.click(within(card('Education')).getByRole('button', { name: S.actions }));
-    await ui.click(within(card('Education')).getByRole('button', { name: new RegExp(S.deleteItem) }));
-    expect(within(card('Education')).queryByLabelText(S.itemText)).toBeNull();
+    await deleteItem(ui, 'BSc');
+    expect(wording('BSc')).toBeNull();
   });
   it('edits experience subject / duration and OR alternatives, including adding them', async () => {
     const { ui } = await setup(makeView());
-    const exp = document.getElementById('req-item-req_exp')!;
-    await ui.click(within(exp).getByRole('button', { name: S.details }));
-    const subj = within(exp).getByLabelText(S.subject) as HTMLInputElement;
-    await ui.clear(subj); await ui.type(subj, 'Senior Planner');
-    const yrs = within(exp).getByLabelText(S.years) as HTMLInputElement;
-    await ui.clear(yrs); await ui.type(yrs, '7');
-    expect(subj.value).toBe('Senior Planner'); expect(yrs.value).toBe('7');
-    const sql = document.getElementById('req-item-req_sql')!;
-    await ui.click(within(sql).getByRole('button', { name: S.details }));
-    await ui.click(within(sql).getByRole('button', { name: S.addAlternative }));
-    expect(within(sql).getAllByLabelText(/^Alternative \d/)).toHaveLength(3);
-    const py = document.getElementById('req-item-req_py')!;
-    await ui.click(within(py).getByRole('button', { name: S.details }));
-    await ui.click(within(py).getByRole('button', { name: S.makeAlternatives }));
-    expect(within(py).getAllByLabelText(/^Alternative \d/)).toHaveLength(2);
-    expect(within(py).queryByLabelText(S.subject)).toBeNull();                      // experience structure only in Experience
+    const ed = await openEditor(ui, '4 years as a Maintenance Planner');
+    const subj = within(ed).getByLabelText(S.subject) as HTMLInputElement;
+    await typeIn(ui, subj, 'Senior Planner');
+    const yrs = within(ed).getByLabelText(S.years) as HTMLInputElement;
+    await typeIn(ui, yrs, '7');
+    await applyEditor(ui, ed);
+    const again = await openEditor(ui, '4 years as a Maintenance Planner');
+    expect((within(again).getByLabelText(S.subject) as HTMLInputElement).value).toBe('Senior Planner');
+    expect((within(again).getByLabelText(S.years) as HTMLInputElement).value).toBe('7');
+    await ui.click(within(again).getByRole('button', { name: S.cancelEdit }));
+    const sqlEd = await openEditor(ui, 'SQL or PostgreSQL');
+    await ui.click(within(sqlEd).getByRole('button', { name: S.addAlternative }));
+    expect(within(sqlEd).getAllByLabelText(/^Alternative \d/)).toHaveLength(3);
+    await ui.click(within(sqlEd).getByRole('button', { name: S.cancelEdit }));
+    const pyEd = await openEditor(ui, 'Python');
+    await ui.click(within(pyEd).getByRole('button', { name: S.makeAlternatives }));
+    expect(within(pyEd).getAllByLabelText(/^Alternative \d/)).toHaveLength(2);
+    expect(within(pyEd).queryByLabelText(S.subject)).toBeNull();                      // experience structure only in Experience
+    await ui.click(within(pyEd).getByRole('button', { name: S.cancelEdit }));
   });
 });
 
 describe('saving and readiness', () => {
   it('saves the draft with the base revision, new items without ids and no provenance', async () => {
     const { ui, api } = await setup(makeView());
-    await ui.click(within(card('Education')).getByRole('button', { name: `+ ${S.addPreferred}` }));
-    await ui.type(within(card('Education')).getByLabelText(S.itemText), 'BSc');
+    await ui.click(within(card('Education')).getByRole('button', { name: S.addPreferred }));
+    await ui.type(within(screen.getByTestId('item-editor')).getByLabelText(S.itemText), 'BSc');
+    await applyEditor(ui, screen.getByTestId('item-editor'));
     await ui.click(screen.getByTestId('save'));
     await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
     const [job, rev, body] = api.save.mock.calls[0];
@@ -172,7 +178,7 @@ describe('saving and readiness', () => {
   it('shows invalid-weight blockers from the server and local hints for the draft; saving is not blocked locally', async () => {
     const { ui, api } = await setup(invalidWeightsView());
     expect(screen.getByTestId('readiness').textContent).toContain(S.reason_required_weights_total);
-    await ui.type(within(card('Skills')).getAllByLabelText(S.itemText)[0], '!');
+    await editWording(ui, 'Python', '!');
     expect(screen.getByTestId('issue-summary').textContent).toMatch(/Required item weights in Skills total \d+%, not 100%/);
     expect((screen.getByTestId('save') as HTMLButtonElement).disabled).toBe(false);
     api.save.mockRejectedValueOnce(apiError(422, { code: 'invalid_requirements', message: 'The requirements cannot be saved.',
@@ -180,7 +186,7 @@ describe('saving and readiness', () => {
     await ui.click(screen.getByTestId('save'));
     await screen.findByTestId('issue-summary');
     expect(screen.getByTestId('issue-summary').textContent).toContain('Required item weights total 80%, not 100%.');
-    expect(screen.getByDisplayValue('Python!')).toBeTruthy();                          // the draft is still there
+    expect(wording('Python!')).toBeTruthy();                                           // the draft is still there
   });
   it('distinguishes a valid saved draft from readiness to proceed', async () => {
     await setup(structureView());
@@ -191,8 +197,10 @@ describe('saving and readiness', () => {
   it('a read-only user sees the data but no editing controls', async () => {
     await setup(makeView(), { canEdit: false });
     expect(screen.queryByTestId('save')).toBeNull();
-    expect(screen.queryByRole('button', { name: `+ ${S.addRequired}` })).toBeNull();
-    expect((screen.getByLabelText('Weight of “Python”') as HTMLInputElement).readOnly).toBe(true);
+    expect(screen.queryByRole('button', { name: S.addRequired })).toBeNull();
+    expect(screen.queryAllByRole('button', { name: new RegExp(`^${S.moreActions}`) })).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: fmt(S.editCategoryWeight, { name: 'Skills' }) })).toBeNull();
+    expect(itemWeight('Python')).toBe('50');
     expect(screen.getByText(S.readOnly)).toBeTruthy();
   });
   it('shows the load error and can retry', async () => {
@@ -210,7 +218,7 @@ describe('edited badges and the original comparison', () => {
   it('shows Edited on categories and items that differ from the original, with an original-AI comparison', async () => {
     const { ui } = await setup(makeView());
     expect(within(card('Skills')).queryByText(S.edited)).toBeNull();
-    await ui.type(textboxOf('Python'), ' 3');
+    await editWording(ui, 'Python', ' 3');
     expect(within(card('Skills')).getAllByText(S.edited)).toHaveLength(2);           // the category and the item
     expect(within(document.getElementById('req-item-req_py')!).getByText(S.edited)).toBeTruthy();
     expect(within(card('Experience')).queryByText(S.edited)).toBeNull();
@@ -237,7 +245,7 @@ describe('warnings', () => {
     await ui.click(within(panel).getAllByRole('button', { name: 'SQL or PostgreSQL' })[0]);
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
     expect(document.activeElement).toBe(document.getElementById('req-item-req_sql'));
-    await ui.type(textboxOf('Python'), '!');
+    await editWording(ui, 'Python', '!');
     expect((screen.getByTestId('save') as HTMLButtonElement).disabled).toBe(false);
   });
   it('policy Yes: unresolved classification warnings must be acknowledged; the action calls the API with the revision', async () => {
@@ -255,7 +263,7 @@ describe('warnings', () => {
   });
   it('server actions are disabled while there are unsaved changes', async () => {
     const { ui } = await setup(warningView());
-    await ui.type(textboxOf('Python'), '!');
+    await editWording(ui, 'Python', '!');
     expect((within(screen.getByTestId('classification')).getByRole('button', { name: S.acknowledge }) as HTMLButtonElement).disabled).toBe(true);
     expect(within(screen.getByTestId('classification')).getByText(S.needsSavedState)).toBeTruthy();
   });
@@ -270,9 +278,9 @@ describe('warnings', () => {
   it('structure review can also be settled by correcting the structure (sent with the save)', async () => {
     const { ui, api } = await setup(structureView());
     const row = document.getElementById('req-item-req_exp')!;
-    await ui.click(within(row).getByRole('button', { name: S.details }));
-    const yrs = within(row).getByLabelText(S.years);
-    await ui.clear(yrs); await ui.type(yrs, '7');
+    const ed = await openEditor(ui, '7 years as a Maintenance Planner');
+    await typeIn(ui, within(ed).getByLabelText(S.years), '7');
+    await applyEditor(ui, ed);
     await ui.click(screen.getByTestId('save'));
     await waitFor(() => expect(api.save).toHaveBeenCalled());
     expect(api.save.mock.calls[0][2].categories.experience.items[0]).toMatchObject({ id: 'req_exp', experience: { subject: 'Maintenance Planner', min_years: 7 } });
@@ -303,18 +311,18 @@ describe('revision conflicts: three-way comparison and explicit resolution', () 
 
   it('separate-field edits are combined: nothing to decide, Apply does not save, the next save is checked against the latest revision', async () => {
     const { ui, api } = await setup(makeView());
-    await ui.type(textboxOf('Python'), ' (mine)');                                           // I edit Python
+    await editWording(ui, 'Python', ' (mine)');                                             // I edit Python
     conflictOn(api, edited(d => { d.categories.skills.items[2].text = 'Docker (theirs)'; }));  // they edited Docker
     await ui.click(screen.getByTestId('save'));
     await screen.findByTestId('conflict');
     expect(within(resolver()).getByText(S.noClashes)).toBeTruthy();
     expect(within(screen.getByTestId('merge-summary')).getByText(/Kept from your draft: 1/)).toBeTruthy();
     expect(within(screen.getByTestId('merge-summary')).getByText(/Taken from the latest saved version: 1/)).toBeTruthy();
-    expect(screen.getByDisplayValue('Python (mine)')).toBeTruthy();                           // draft untouched until Apply
+    expect(wording('Python (mine)')).toBeTruthy();                                            // draft untouched until Apply
     await ui.click(screen.getByTestId('apply-merge'));
     expect(api.save).toHaveBeenCalledTimes(1);                                                // applying never saves or resubmits
     expect(screen.queryByTestId('conflict')).toBeNull();
-    expect(screen.getByDisplayValue('Python (mine)')).toBeTruthy(); expect(screen.getByDisplayValue('Docker (theirs)')).toBeTruthy();
+    expect(wording('Python (mine)')).toBeTruthy(); expect(wording('Docker (theirs)')).toBeTruthy();
     expect(screen.getByTestId('merged-notice').textContent).toContain(S.mergedNotice);
     await ui.click(screen.getByTestId('save'));
     await waitFor(() => expect(api.save).toHaveBeenCalledTimes(2));
@@ -325,7 +333,7 @@ describe('revision conflicts: three-way comparison and explicit resolution', () 
 
   it('a conflicting field needs an explicit choice; the three versions are shown; Apply stays disabled until chosen', async () => {
     const { ui, api } = await setup(makeView());
-    await ui.type(textboxOf('Python'), ' mine');
+    await editWording(ui, 'Python', ' mine');
     conflictOn(api, edited(d => { d.categories.skills.items[0].text = 'Python theirs'; }));
     await ui.click(screen.getByTestId('save'));
     const box = await screen.findByTestId('conflict');
@@ -337,41 +345,41 @@ describe('revision conflicts: three-way comparison and explicit resolution', () 
     await ui.click(within(fs).getByRole('radio', { name: S.useLatest }));
     expect((screen.getByTestId('apply-merge') as HTMLButtonElement).disabled).toBe(false);
     await ui.click(screen.getByTestId('apply-merge'));
-    expect(screen.getByDisplayValue('Python theirs')).toBeTruthy(); expect(screen.queryByDisplayValue('Python mine')).toBeNull();
+    expect(wording('Python theirs')).toBeTruthy(); expect(wording('Python mine')).toBeNull();
     expect(api.save).toHaveBeenCalledTimes(1);
   });
 
   it('"use my draft" keeps my value for that conflict only; other fields still merge', async () => {
     const { ui, api } = await setup(makeView());
-    await ui.type(textboxOf('Python'), ' mine');
-    await ui.type(textboxOf('Docker'), ' mine');
+    await editWording(ui, 'Python', ' mine');
+    await editWording(ui, 'Docker', ' mine');
     conflictOn(api, edited(d => { d.categories.skills.items[0].text = 'Python theirs'; d.categories.skills.items[2].text = 'Docker theirs'; }));
     await ui.click(screen.getByTestId('save'));
     const box = await screen.findByTestId('conflict');
     await ui.click(within(within(box).getByRole('group', { name: /Python/ })).getByRole('radio', { name: S.useMine }));
     await ui.click(within(within(box).getByRole('group', { name: /Docker/ })).getByRole('radio', { name: S.useLatest }));
     await ui.click(screen.getByTestId('apply-merge'));
-    expect(screen.getByDisplayValue('Python mine')).toBeTruthy(); expect(screen.getByDisplayValue('Docker theirs')).toBeTruthy();
+    expect(wording('Python mine')).toBeTruthy(); expect(wording('Docker theirs')).toBeTruthy();
   });
 
   it('category weight conflicts are explicit too; a one-sided change is merged silently', async () => {
     const { ui, api } = await setup(makeView());
-    const w = within(card('Skills')).getByLabelText(S.categoryWeight);
-    await ui.clear(w); await ui.type(w, '55');
+    const w = await openCategoryEdit(ui, 'skills');
+    await typeIn(ui, w, '55');
+    await ui.click(within(cardOf('skills')).getByRole('button', { name: S.applyEdit }));
     conflictOn(api, edited(d => { d.categories.skills.weight = 70; d.categories.experience.weight = 30; }));
     await ui.click(screen.getByTestId('save'));
     const box = await screen.findByTestId('conflict');
     expect(box.querySelectorAll('fieldset')).toHaveLength(1);                                // Experience weight changed only upstream
     await ui.click(within(within(box).getByRole('group', { name: /Skills/ })).getByRole('radio', { name: S.useMine }));
     await ui.click(screen.getByTestId('apply-merge'));
-    expect((within(card('Skills')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('55');
-    expect((within(card('Experience')).getByLabelText(S.categoryWeight) as HTMLInputElement).value).toBe('30');
+    expect(categoryWeight('skills')).toBe('55');
+    expect(categoryWeight('experience')).toBe('30');
   });
 
   it('I deleted an item that was changed in the latest version: explicit choice (delete it / keep the latest)', async () => {
     const { ui, api } = await setup(makeView());
-    await ui.click(within(document.getElementById('req-item-req_docker')!).getByRole('button', { name: S.actions }));
-    await ui.click(within(document.getElementById('req-item-req_docker')!).getByRole('button', { name: new RegExp(S.deleteItem) }));
+    await deleteItem(ui, 'Docker');
     conflictOn(api, edited(d => { d.categories.skills.items[2].text = 'Docker (edited upstream)'; }));
     await ui.click(screen.getByTestId('save'));
     const box = await screen.findByTestId('conflict');
@@ -380,14 +388,14 @@ describe('revision conflicts: three-way comparison and explicit resolution', () 
     expect(within(fs).getAllByRole('cell').map(c => c.textContent)).toEqual(['Docker (Preferred)', S.deletedValue, 'Docker (edited upstream) (Preferred)']);
     await ui.click(within(fs).getByRole('radio', { name: S.choiceKeepLatest }));
     await ui.click(screen.getByTestId('apply-merge'));
-    expect(screen.getByDisplayValue('Docker (edited upstream)')).toBeTruthy();
+    expect(wording('Docker (edited upstream)')).toBeTruthy();
     expect(api.save).toHaveBeenCalledTimes(1);
   });
 
   it('I changed an item that was deleted in the latest version: keeping mine re-adds it as a new item; accepting drops it', async () => {
     const run = async (choice: string) => {
       const { ui, api, unmount } = await setup(makeView());
-      await ui.type(textboxOf('Docker'), ' (mine)');
+      await editWording(ui, 'Docker', ' (mine)');
       conflictOn(api, edited(d => { d.categories.skills.items.splice(2, 1); }));
       await ui.click(screen.getByTestId('save'));
       const box = await screen.findByTestId('conflict');
@@ -397,19 +405,19 @@ describe('revision conflicts: three-way comparison and explicit resolution', () 
       return { ui, api, unmount };
     };
     let r = await run(S.choiceKeepMine);
-    expect(screen.getByDisplayValue('Docker (mine)')).toBeTruthy();
+    expect(wording('Docker (mine)')).toBeTruthy();
     await r.ui.click(screen.getByTestId('save'));
     await waitFor(() => expect(r.api.save).toHaveBeenCalledTimes(2));
     const sent = r.api.save.mock.calls[1][2].categories.skills.items.find((i: any) => i.text === 'Docker (mine)');
     expect('id' in sent).toBe(false);                                                         // the deleted id is never sent again
     r.unmount();
     r = await run(S.choiceAcceptDeletion);
-    expect(screen.queryByDisplayValue('Docker (mine)')).toBeNull();
+    expect(wording('Docker (mine)')).toBeNull();
   });
 
   it('a second conflict after resolving is detected again (revision checking stays active)', async () => {
     const { ui, api } = await setup(makeView());
-    await ui.type(textboxOf('Python'), ' mine');
+    await editWording(ui, 'Python', ' mine');
     conflictOn(api, edited(d => { d.categories.skills.items[2].text = 'Docker v4'; }, 4));
     await ui.click(screen.getByTestId('save'));
     await screen.findByTestId('conflict');
@@ -419,27 +427,27 @@ describe('revision conflicts: three-way comparison and explicit resolution', () 
     expect(api.save.mock.calls[1][1]).toBe(4);
     const box = await screen.findByTestId('conflict');
     expect(box.textContent).toContain('5');
-    expect(screen.getByDisplayValue('Python mine')).toBeTruthy();
+    expect(wording('Python mine')).toBeTruthy();
     expect(api.save).toHaveBeenCalledTimes(2);                                                // nothing was resubmitted by itself
   });
 
   it('"discard my draft" asks for confirmation before replacing it', async () => {
     const confirmFn = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
     const { ui, api } = await setup(makeView(), { confirmFn });
-    await ui.type(textboxOf('Python'), ' mine');
+    await editWording(ui, 'Python', ' mine');
     conflictOn(api, edited(d => { d.categories.skills.items[0].text = 'Python (someone else)'; }));
     await ui.click(screen.getByTestId('save'));
     await screen.findByTestId('conflict');
     await ui.click(screen.getByTestId('discard-for-latest'));
-    expect(screen.getByDisplayValue('Python mine')).toBeTruthy();                             // declined: still there
+    expect(wording('Python mine')).toBeTruthy();                                               // declined: still there
     await ui.click(screen.getByTestId('discard-for-latest'));
-    expect(screen.getByDisplayValue('Python (someone else)')).toBeTruthy();
+    expect(wording('Python (someone else)')).toBeTruthy();
     expect(screen.queryByTestId('conflict')).toBeNull();
   });
 
   it('is operable by keyboard: radios by arrow keys, Apply by Enter', async () => {
     const { ui, api } = await setup(makeView());
-    await ui.type(textboxOf('Python'), ' mine');
+    await editWording(ui, 'Python', ' mine');
     conflictOn(api, edited(d => { d.categories.skills.items[0].text = 'Python theirs'; }));
     await ui.click(screen.getByTestId('save'));
     const fs = within(await screen.findByTestId('conflict')).getByRole('group', { name: /Python/ });
@@ -448,14 +456,14 @@ describe('revision conflicts: three-way comparison and explicit resolution', () 
     expect(document.activeElement).toBe(latest); expect((latest as HTMLInputElement).checked).toBe(true);
     const apply = screen.getByTestId('apply-merge') as HTMLButtonElement;
     apply.focus(); await ui.keyboard('{Enter}');
-    expect(screen.getByDisplayValue('Python theirs')).toBeTruthy(); expect(api.save).toHaveBeenCalledTimes(1);
+    expect(wording('Python theirs')).toBeTruthy(); expect(api.save).toHaveBeenCalledTimes(1);
   });
 
   it('an action refused for a stale revision reloads the latest (there is no draft to lose)', async () => {
     const { ui, api } = await setup(warningView());
     api.acknowledge.mockRejectedValueOnce(apiError(409, { code: 'requirements_revision_conflict', message: 'changed', current: edited(d => { d.categories.skills.items[0].text = 'Python (someone else)'; }) }));
     await ui.click(within(screen.getByTestId('classification')).getByRole('button', { name: S.acknowledge }));
-    await waitFor(() => expect(screen.getByDisplayValue('Python (someone else)')).toBeTruthy());
+    await waitFor(() => expect(wording('Python (someone else)')).toBeTruthy());
   });
 });
 
@@ -467,7 +475,7 @@ describe('warnings are labelled as referring to the saved version while a draft 
   });
   it('a draft change labels readiness, the classification list and the similarity list as the saved version', async () => {
     const { ui } = await setup(warningView());
-    await ui.type(textboxOf('Python'), '!');
+    await editWording(ui, 'Python', '!');
     expect(screen.getByTestId('readiness-stale').textContent).toBe(S.readinessSavedNote);
     expect(screen.getByTestId('readiness').textContent).toContain(S.readinessSavedTitle);
     expect(screen.getByTestId('classification-saved-note').textContent).toBe(S.savedNoteWarnings);
@@ -480,7 +488,7 @@ describe('warnings are labelled as referring to the saved version while a draft 
     const { ui } = await setup(view);
     const docker = document.getElementById('req-item-req_docker')!, sql = document.getElementById('req-item-req_sql')!;
     expect(docker.querySelector('[data-saved-only]')).toBeNull();
-    await ui.type(textboxOf('Docker'), ' 2');
+    await editWording(ui, 'Docker', ' 2');
     expect(docker.querySelectorAll('[data-saved-only="true"]').length).toBeGreaterThan(0);
     expect(docker.textContent).toContain(S.ackSavedOnly);
     expect(docker.textContent).toContain(S.savedBadge);
@@ -504,18 +512,18 @@ describe('warnings are labelled as referring to the saved version while a draft 
     view.structure_review.items[1] = { item_id: 'req_exp', category: 'experience', state: 'confirmed', record: { kind: 'confirmed', user_id: 'u-9', recorded_at: '2026-03-03T10:00:00+00:00' } };
     view.structure_review.needs_review_item_ids = [];
     const { ui } = await setup(view);
-    await ui.type(textboxOf('7 years as a Maintenance Planner'), '!');
+    await editWording(ui, '7 years as a Maintenance Planner', '!');
     expect(screen.getByTestId('structure-saved-only').textContent).toBe(S.structureSavedOnly);
   });
   it('preferred-only confirmation note appears only while a draft exists', async () => {
     const { ui } = await setup(preferredOnlyView(true));
     expect(screen.queryByTestId('preferred-only-saved-note')).toBeNull();
-    await ui.type(textboxOf('Docker is a plus'), '!');
+    await editWording(ui, 'Docker is a plus', '!');
     expect(screen.getByTestId('preferred-only-saved-note').textContent).toBe(S.preferredOnlySavedOnly);
   });
   it('a needs-review structure banner is marked as the saved version when the item is edited', async () => {
     const { ui } = await setup(structureView());
-    await ui.type(textboxOf('7 years as a Maintenance Planner'), '!');
+    await editWording(ui, '7 years as a Maintenance Planner', '!');
     const row = document.getElementById('req-item-req_exp')!;
     expect(row.querySelector('[data-saved-only="true"]')).toBeTruthy();
     expect(row.textContent).toContain(S.itemEditedSaved);
@@ -532,9 +540,10 @@ describe('Arabic / RTL', () => {
     expect(screen.getByTestId('evaluation-unavailable').textContent).toContain(A.evalUnavailableTitle);
     expect(screen.getByTestId('readiness-state').textContent).toBe(A.state_needs_classification_review);
     expect(within(screen.getByTestId('similarity')).getByText(A.possibleDuplicate)).toBeTruthy();
-    expect(screen.getByLabelText(`${A.categoryWeight}`, { selector: '#req-cat-skills-w' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: fmt(A.editCategoryWeight, { name: A.categories.skills }) })).toBeTruthy();
     // numbers stay left-to-right inside the right-to-left layout
-    expect((screen.getByLabelText('وزن «Python»') as HTMLInputElement).getAttribute('dir')).toBe('ltr');
+    expect(rowOf('Python').querySelector('[data-testid^="weight-"] span')!.getAttribute('dir')).toBe('ltr');
+    expect(screen.getByTestId('cat-weight-skills').querySelector('span')!.getAttribute('dir')).toBe('ltr');
     // no physical left/right utilities in the new components (logical ones only)
     expect(root.innerHTML).not.toMatch(/class="[^"]*\b(ml|mr|pl|pr|text-left|text-right|left|right)-\d?/);
     await ui.tab();

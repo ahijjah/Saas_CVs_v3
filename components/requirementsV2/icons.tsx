@@ -22,3 +22,19 @@ export const ChevronIcon = ({ open, ...p }: React.SVGProps<SVGSVGElement> & { op
 export const QuoteIcon = (p: React.SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}><path d="M4 6h16M4 12h10M4 18h16" /></svg>
 );
+
+export const PencilIcon = (p: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true" {...p}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+  </svg>
+);
+export const PlusIcon = (p: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden="true" {...p}>
+    <path strokeLinecap="round" d="M12 5v14M5 12h14" />
+  </svg>
+);
+export const DotsIcon = (p: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" width={18} height={18} fill="currentColor" aria-hidden="true" {...p}>
+    <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+  </svg>
+);

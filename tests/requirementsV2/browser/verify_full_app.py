@@ -146,6 +146,28 @@ def serve_spa(dist: pathlib.Path, port: int) -> http.server.ThreadingHTTPServer:
 
 
 # ── main ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# The review-first editor: a wording change and a category weight change are made through Edit / the pencil, then Apply (draft only).
+def first_wording(scope):
+    return scope.locator("p[id^='req-text-']").first.inner_text()
+
+
+def edit_wording(scope, text, append):
+    row = scope.locator("li[id^='req-item-']").filter(has=scope.get_by_text(text, exact=True))
+    row.get_by_role("button", name=f"More actions: {text}", exact=True).click()
+    row.get_by_role("button", name="Edit", exact=True).click()
+    ed = scope.locator("[data-testid=item-editor]")
+    ta = ed.get_by_label("Requirement wording")
+    ta.fill(ta.input_value() + append)
+    ed.locator("button[type=submit]").click()
+
+
+def edit_category(scope, cat, value):
+    card = scope.locator(f"#req-cat-{cat}")
+    card.get_by_role("button", name=re.compile(r"^Edit the .* weight")).first.click()
+    scope.fill(f"#req-cat-{cat}-w", str(value))
+    card.get_by_role("button", name="Apply", exact=True).click()
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(BACKEND / "benchmark_results" / "requirements_v2" / "full_app_verification"))
@@ -362,7 +384,7 @@ def main(argv=None) -> int:
                 resp422 = [r for r in s.responses if r[0] == "PUT" and "/requirements" in r[1]]
                 check("F3 invalid weights (required totals off after removals) are rejected: HTTP 422, no writes", put and resp422[-1][2] == 422 and row() == before and actions() == [])
                 page.get_by_role("button", name="Equalize: Skills.").click()
-                page.fill("#req-cat-skills-w", "40"); page.fill("#req-cat-experience-w", "40"); page.fill("#req-cat-soft_skills-w", "20")
+                edit_category(page, "skills", 40); edit_category(page, "experience", 40); edit_category(page, "soft_skills", 20)
                 page.get_by_role("button", name="Save requirements").first.click()
                 page.wait_for_function("document.querySelector('[data-testid=unsaved-badge]') === null", timeout=10000)
                 r1 = row()
@@ -451,8 +473,8 @@ def main(argv=None) -> int:
                 s = Session(browser, "admin")
                 page = s.open_job()
                 check("F6 damaged record: clear blocking message, original and requirements readable", "damaged" in txt(page, "[data-testid=pipeline-invalid]").lower()
-                      and page.locator("input[id^='req-text-']").count() > 3)
-                page.locator("input[id^='req-text-']").first.fill("changed")
+                      and page.locator("p[id^='req-text-']").count() > 3)
+                edit_wording(page, first_wording(page), " (changed)")
                 before = row()
                 page.get_by_role("button", name="Save requirements").first.click()
                 page.wait_for_selector("[data-testid=problem], [data-testid=issue-summary]", timeout=10000)
@@ -466,11 +488,10 @@ def main(argv=None) -> int:
                 fix_blockers_via_api()
                 a, h = Session(browser, "admin"), Session(browser, "hr")
                 pa, ph = a.open_job(), h.open_job()
-                ph.locator("input[id^='req-text-']").first.fill("Python programming (HR change)")
+                edit_wording(ph, first_wording(ph), " (HR change)")
                 ph.get_by_role("button", name="Save requirements").first.click()
                 ph.wait_for_function("document.querySelector('[data-testid=unsaved-badge]') === null", timeout=10000)
-                soft = pa.get_by_role("region", name="Soft skills", exact=True).locator("input[id^='req-text-']").first
-                soft.fill(soft.input_value() + " (admin change)")
+                edit_wording(pa, pa.get_by_role("region", name="Soft skills", exact=True).locator("p[id^='req-text-']").first.inner_text(), " (admin change)")
                 pa.get_by_role("button", name="Save requirements").first.click()
                 pa.wait_for_selector("[data-testid=conflict]", timeout=10000)
                 check("F7 stale save opens the conflict resolver; the admin's draft is kept, nothing overwritten", pa.locator("[data-testid=unsaved-badge]").count() == 1

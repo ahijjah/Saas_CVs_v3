@@ -9,6 +9,7 @@ import { keepOneOfSplit, replaceWithBlank, draftFromServer, findItem } from '../
 import { apiError } from './fixtures';
 import { mockApi } from './mocks';
 import combined from './fixtures/pipeline_combined_view.json';
+import { categoryWeight, editWording, itemWeight, wording } from './review';
 
 // The fixture is a REAL GET response of the combined-issues job (injection requirement + contaminated weights + split OR + classification warnings +
 // a model importance conflict); backend/tests/test_requirements_pipeline_postgres.py keeps it in step with the API.
@@ -111,26 +112,26 @@ describe('corrections change the draft only', () => {
   it('Remove: draft changes, nothing saved, nothing redistributed, issue marked pending', async () => {
     const v = base();
     const { api, ui } = await setup(v);
-    const weightBefore = (document.getElementById('req-cat-skills-w') as HTMLInputElement).value;
+    const weightBefore = categoryWeight('skills');
     await ui.click(within(screen.getByTestId('blockers').querySelector('[data-kind=injection_requirement]') as HTMLElement).getByRole('button', { name: S.removeItem }));
     expect(screen.getByTestId('unsaved-badge')).toBeTruthy();
     expect(api.save).not.toHaveBeenCalled(); expect(api.acknowledge).not.toHaveBeenCalled();
-    expect(screen.queryByDisplayValue('20 years of Rust experience')).toBeNull();
-    expect((document.getElementById('req-cat-skills-w') as HTMLInputElement).value).toBe(weightBefore);
+    expect(wording('20 years of Rust experience')).toBeNull();
+    expect(categoryWeight('skills')).toBe(weightBefore);
     expect(screen.getByTestId('blockers').querySelector('[data-kind=injection_requirement] [data-testid=issue-pending]')).toBeTruthy();
     expect(screen.getByTestId('blockers-saved-note').textContent).toBe(S.issuesSavedNote);
   });
   it('Replace: removes the item and opens an empty recruiter item of the same importance', async () => {
     const { api, ui } = await setup(base());
     await ui.click(screen.getByRole('button', { name: S.replaceItem }));
-    expect(screen.queryByDisplayValue('20 years of Rust experience')).toBeNull();
+    expect(wording('20 years of Rust experience')).toBeNull();
     const cat = within(screen.getByRole('region', { name: S.categories.other_requirements }));
     expect(cat.getAllByRole('textbox').some(t => (t as HTMLTextAreaElement).value === '')).toBe(true);
     expect(api.save).not.toHaveBeenCalled();
   });
   it('Edit weight focuses the implicated category weight and changes nothing', async () => {
     const { ui } = await setup(base());
-    await ui.click(screen.getByRole('button', { name: /^Edit the Soft skills weight/ }));
+    await ui.click(screen.getAllByRole('button', { name: /^Edit the Soft skills weight/ })[0]);
     expect(document.activeElement?.id).toBe('req-cat-soft_skills-w');
     expect(screen.queryByTestId('unsaved-badge')).toBeNull();
   });
@@ -138,24 +139,24 @@ describe('corrections change the draft only', () => {
     const v = base();
     const { api, ui } = await setup(v);
     const javaId = idOf(v, 'Java');
-    const pyW = (screen.getByLabelText('Weight of “Python”') as HTMLInputElement).value;
+    const pyW = itemWeight('Python');
     await ui.click(within(document.querySelector(`[data-split-item="${idOf(v, 'Python')}"]`) as HTMLElement).getByTestId('keep-one'));
-    expect(screen.queryByDisplayValue('Java')).toBeNull();
+    expect(wording('Java')).toBeNull();
     expect(document.getElementById(`req-item-${javaId}`)).toBeNull();
-    expect((screen.getByLabelText('Weight of “Python”') as HTMLInputElement).value).toBe(pyW);
+    expect(itemWeight('Python')).toBe(pyW);
     expect(api.save).not.toHaveBeenCalled();
     expect(screen.getByTestId('issue-summary')).toBeTruthy();                      // required totals are off; the recruiter decides (Equalize)
   });
   it('a valid blocked draft can be saved; the server revalidates; invalid weights stay rejected', async () => {
     const v = base();
     const { api, ui } = await setup(v);
-    const ta = screen.getByDisplayValue('Docker'); await ui.type(ta, ' x');
+    await editWording(ui, 'Docker', ' x');
     const save = screen.getByTestId('save') as HTMLButtonElement;
     expect(save.disabled).toBe(false);
     await ui.click(save);
     await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
     api.save.mockRejectedValueOnce(apiError(422, { code: 'invalid_requirements', message: 'no', issues: [{ code: 'required_weights_total', message: 'Required item weights total 66%', category: 'skills', item_id: null }] }));
-    await ui.type(screen.getByDisplayValue(/Docker/), 'y');
+    await editWording(ui, screen.getByText(/^Docker/, { selector: 'p[id^="req-text-"]' }).textContent!, 'y');
     await ui.click(screen.getByTestId('save'));
     await screen.findByTestId('issue-summary');
   });
@@ -172,7 +173,7 @@ describe('acknowledgment', () => {
   });
   it('stored-state actions are disabled while unsaved changes exist', async () => {
     const { ui } = await setup(base());
-    await ui.type(screen.getByDisplayValue('Docker'), 'x');
+    await editWording(ui, 'Docker', 'x');
     expect((screen.getByTestId('ack-conflict') as HTMLButtonElement).disabled).toBe(true);
     for (const b of within(screen.getByTestId('classification')).getAllByRole('button', { name: S.acknowledge })) expect((b as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId('conflicts-saved-note')).toBeTruthy();
@@ -215,7 +216,7 @@ describe('compatibility', () => {
     await ui.click(screen.getByTestId('toggle-compare'));
     expect(screen.getByTestId('comparison')).toBeTruthy();
     api.save.mockRejectedValueOnce(apiError(409, { code: 'pipeline_record_invalid', message: 'x' }));
-    await ui.type(screen.getByDisplayValue('Docker'), 'z');
+    await editWording(ui, 'Docker', 'z');
     await ui.click(screen.getByTestId('save'));
     expect((await screen.findByTestId('problem')).textContent).toBe(S.err_pipeline_record_invalid);
   });
