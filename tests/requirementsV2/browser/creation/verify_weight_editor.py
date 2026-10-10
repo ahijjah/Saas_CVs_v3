@@ -86,7 +86,7 @@ class Page:
         return self.page.locator("[data-testid=item-editor]")
 
     def editor_weight(self, editor):
-        return editor.get_by_role("textbox", name=re.compile(r"^Weight of"))
+        return editor.get_by_role("textbox", name=re.compile(r"^(Weight of|وزن)"))
 
     def apply(self, editor, lang_names=None):
         editor.locator("button[type=submit]").click()
