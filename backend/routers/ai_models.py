@@ -18,6 +18,7 @@ RequireSuperAdmin = Depends(require_role("super_admin"))
 
 VALID_STAGES = frozenset([
     "cv_analyzer", "cv_scoring", "cv_comparison", "fallback",
+    "requirements_v2_extraction",          # requirements-v2 extraction: configured here like every other stage (primary model only, no fallback used)
 ])
 
 

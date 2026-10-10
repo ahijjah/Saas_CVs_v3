@@ -14,7 +14,7 @@
 -- 4. ai_stage_defaults 'requirements_v2_extraction' -> that model, NO fallback (a failed primary fails closed; it never falls back to a legacy model).
 -- 5. ai_prompts 'criteria_extraction_v2' version 3 = criteria_extraction_v2-3 (is_active = FALSE). The text is the file
 --    prompt_candidates/criteria_extraction_v2-3/criteria_extraction_v2-3.txt, SHA-256 21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b.
---    The worker refuses any prompt text whose hash is not on its approved list (services/requirements_v2_extraction.py).
+--    The worker uses the active row as configured by an administrator (prompt admin API) and records the text's SHA-256 with each attempt.
 --
 -- Additive only. Idempotent (ON CONFLICT DO NOTHING; IF NOT EXISTS). Rollback (only while no v2 job exists):
 --   DELETE FROM ai_prompts WHERE prompt_code = 'criteria_extraction_v2';

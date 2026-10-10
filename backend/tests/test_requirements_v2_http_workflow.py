@@ -22,12 +22,13 @@ REASON = rh.available()
 pytestmark = pytest.mark.skipif(REASON is not None, reason=f"no real PostgreSQL 16 here: {REASON}")
 
 DRIVER = BACKEND / "tests" / "requirements_v2_http_driver.py"
-APPROVED_SHA = "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b"
+SEED_SHA = "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b"
 WEIGHT_COLUMNS = ("weight_skills", "weight_experience", "weight_education", "weight_certifications", "weight_soft_skills",
                   "weight_domain_knowledge", "weight_other")
 T1, T2 = str(uuid.UUID(int=0x101)), str(uuid.UUID(int=0x102))
 USERS = {"admin": (str(uuid.UUID(int=0x201)), T1, "admin"), "hr": (str(uuid.UUID(int=0x202)), T1, "hr_manager"),
-         "viewer": (str(uuid.UUID(int=0x203)), T1, "viewer"), "other": (str(uuid.UUID(int=0x204)), T2, "admin")}
+         "viewer": (str(uuid.UUID(int=0x203)), T1, "viewer"), "other": (str(uuid.UUID(int=0x204)), T2, "admin"),
+         "super": (str(uuid.UUID(int=0x205)), T1, "super_admin")}
 
 
 def _seed(db):
@@ -87,7 +88,7 @@ def test_english_required_and_preferred_is_stored_served_and_detailed(obs):
     importances = {i for c in st["categories"].values() for i in c["importance"]}
     assert importances == {"required", "preferred"}                    # both kinds are present in the English job
     assert st["details_status"] == 200 and st["details_requirements_format"] == "v2"
-    assert st["prompt_sha_recorded"] == APPROVED_SHA                   # the stored prompt provenance is the approved one
+    assert st["prompt_sha_recorded"] == SEED_SHA                   # the stored prompt provenance is the approved one
 
 
 def test_the_editor_saves_reloads_and_refuses_a_stale_save(obs):
@@ -201,3 +202,50 @@ def test_required_and_preferred_are_per_item_inside_a_category(obs):
     mixed = [name for name, c in st["categories"].items() if set(c["importance"]) == {"required", "preferred"}]
     assert mixed, st["categories"]                                      # at least one category mixes the two kinds
     assert st["categories"]["skills"]["count"] == 3 and set(st["categories"]["skills"]["importance"]) == {"required", "preferred"}
+
+
+
+# ── administrator configuration through the real admin API ──────────────────────────────────────────────────────────────────────────
+def test_only_a_super_admin_can_configure_and_a_refusal_changes_nothing(obs):
+    st = S(obs, "administrator_configuration_through_the_real_api")
+    assert st["viewer_create_status"] == 403 and st["tenant_admin_create_status"] == 403   # the existing prompt admin API: super_admin only
+    assert st["viewer_stage_status"] == 403 and st["stage_unchanged_after_refusal"] is True  # the existing model admin API: super_admin only
+
+
+def test_invalid_configuration_is_refused_by_the_existing_validation(obs):
+    st = S(obs, "administrator_configuration_through_the_real_api")
+    assert st["invalid_temperature_status"] == 422                  # 0..2 (prompt request model)
+    assert st["invalid_max_tokens_status"] == 422                   # 1..32000
+    assert st["invalid_model_status"] == 422                        # the prompt admin API's model list
+    assert st["invalid_stage_status"] == 400                        # an unknown stage
+    assert st["disabled_model_stage_status"] == 400                 # a disabled model cannot be the stage default
+    assert st["unsupported_stage_model_status"] == 400              # a model that does not support the stage cannot be set for it
+
+
+def test_an_admin_configured_version_and_model_are_used_and_recorded(obs):
+    st = S(obs, "administrator_configuration_through_the_real_api")
+    assert st["create_status"] == 200 and st["new_version"] == 4 and st["activate_status"] == 200
+    assert st["active_versions"] == [{"version": 4}]
+    assert st["registry_create_status"] == 200 and st["stage_to_new_model_status"] == 200 and st["stage_still_new_model"] is True
+    assert st["worker"] == {"failed": False, "outcome": "completed", "model_calls": 1}
+    assert st["sent"] == {"model": "gpt-4.1-mini", "temperature": 0.3, "max_tokens": 5000}           # what the model call carried
+    a = st["audit"]
+    assert a["prompt_version"] == 4 and a["prompt_label"] == "criteria_extraction_v2-4" and a["prompt_code"] == "criteria_extraction_v2"
+    assert a["prompt_sha256"] == st["prompt_sha_expected"]                                           # the hash of the text that was sent
+    assert a["requested_model"] == "gpt-4.1-mini" and a["settings"] == {"temperature": 0.3, "max_tokens": 5000, "response_format": {"type": "json_object"}, "timeout_s": 90}
+    assert a["acknowledgment_policy"] is True
+    u = st["usage_metadata"]
+    assert u["prompt_version"] == 4 and u["prompt_sha256"] == st["prompt_sha_expected"] and u["requested_model"] == "gpt-4.1-mini"
+
+
+def test_the_policy_in_force_at_each_attempt_is_recorded(obs):
+    st = S(obs, "administrator_configuration_through_the_real_api")
+    assert st["policy_recorded_false"] is False                     # an attempt under 'false' records 'false'
+
+
+def test_a_stage_whose_primary_is_unavailable_fails_closed_and_never_uses_its_fallback(obs):
+    st = S(obs, "stage_fallback_is_refused_when_the_primary_is_unavailable")
+    assert st["stage_set_status"] == 200                            # the existing endpoint accepts a fallback ...
+    assert st["worker"] == {"failed": False, "result": {"outcome": "failed", "code": "primary_model_unavailable"}, "model_calls": 0}
+    assert st["row"]["st"] == "failed" and "no fallback is used" in st["row"]["err"]    # ... and the stage never uses it
+    assert st["fallback_answer_left_unused"] == 1                    # the recorded answer was not consumed

@@ -27,6 +27,7 @@ from sqlalchemy import text
 from config import get_settings
 from database import set_rls_context
 from services import requirements_v2_extraction as ext
+from services.requirements_api import load_policy
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ async def _tenant_of(db, job_id: str) -> str | None:
 async def run_attempt(job_id: str, token: str, description: str, job_metadata: dict | None, Session, *, retries_used: int) -> dict:
     """One pass through phases A-F. Returns {"outcome": "retry"|"completed"|"failed"|"stale", "code": ...}."""
     # ── A-C: feature, claim, prompt and model ─────────────────────────────────────────────────────────────────────────────────────────
+    policy = None
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
         tenant = await _tenant_of(db, job_id)
@@ -61,6 +63,7 @@ async def run_attempt(job_id: str, token: str, description: str, job_metadata: d
                                      message="The requirements-v2 feature is switched off.", actor_tenant=tenant or "")
             await db.commit()
             return {"outcome": "failed", "code": "feature_disabled"}
+        policy = await load_policy(db)                  # the live platform setting this attempt runs under (recorded in the audit)
         await db.commit()
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
@@ -92,7 +95,7 @@ async def run_attempt(job_id: str, token: str, description: str, job_metadata: d
             return {"outcome": "failed", "code": exc.kind}
 
     # ── E: the production pipeline; malformed or truncated output fails the attempt (no retry) ──────────────────────────────────────────
-    state = ext.analyse(description, call, prompt, require_classification_acknowledgment=True)
+    state = ext.analyse(description, call, prompt, require_classification_acknowledgment=policy)
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
         await ext.record_usage(db, job_id=job_id, tenant_id=tenant, prompt=prompt, call=call, status="success", error_type=None, retry_count=retries_used)
@@ -105,7 +108,8 @@ async def run_attempt(job_id: str, token: str, description: str, job_metadata: d
 
         # ── F: persist, atomically, under the attempt token ───────────────────────────────────────────────────────────────────────────────
         try:
-            result = await ext.finish_success(db, job_id=job_id, token=token, state=state, call=call, actor_tenant=tenant or "")
+            result = await ext.finish_success(db, job_id=job_id, token=token, state=state, call=call, prompt=prompt, policy=policy,
+                                              actor_tenant=tenant or "")
             await db.commit()
         except Exception as exc:                                  # noqa: BLE001 - the whole write is rolled back, then the attempt is failed
             await db.rollback()

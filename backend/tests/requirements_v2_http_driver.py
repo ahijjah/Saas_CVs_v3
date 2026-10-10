@@ -70,11 +70,22 @@ class FakeClient:
         return self
 
 
-async def fake_resolve_model(db):
-    return SimpleNamespace(model_name=MODEL, client=FakeClient())
+# The registry's OWN lookup runs (stage default -> primary/fallback -> model -> key -> client). Only the two points that would reach the
+# network are replaced: the API key read (no secret value is used or stored) and the client constructor. A registry row whose base_url is
+# "https://fail.invalid" cannot build a client, which is how the fallback rule is exercised end to end.
+import services.ai_model_registry_service as registry  # noqa: E402
 
 
-ext.resolve_model = fake_resolve_model          # the registry lookup is replaced; the prompt check (approved hash) is NOT
+async def _no_secret_read(db, key):
+    return "test-key-never-sent"
+
+
+def _fake_build_client(provider, api_key, base_url, *_, **__):
+    return None if base_url == "https://fail.invalid" else FakeClient()
+
+
+registry._get_api_key = _no_secret_read
+registry._build_client = _fake_build_client
 
 
 def recorded(case_id, finish="stop"):
@@ -370,7 +381,109 @@ def _policy():
     return out
 
 
+def _json(value):
+    return json.loads(value) if isinstance(value, str) else value
+
+
+@step("stage_fallback_is_refused_when_the_primary_is_unavailable")
+def _fallback():
+    registry_original = sql("SELECT model_id::text AS mid FROM ai_model_registry WHERE model_name = 'gpt-4o-mini-2024-07-18'")[0]["mid"]
+    status, broken = http("POST", "/admin/ai-models/registry", "super", {"provider": "openai", "model_name": "gpt-4.1-nano", "display_name": "unavailable primary",
+                                                                         "provider_secret_key": "OPENAI_API_KEY", "base_url": "https://fail.invalid",
+                                                                         "supported_stages": ["requirements_v2_extraction"], "enabled": True})
+    s1 = http("PUT", "/admin/ai-models/stage-defaults/requirements_v2_extraction", "super", {"primary_model_id": broken["model_id"], "fallback_model_id": registry_original})[0]
+    SCRIPT[:] = [recorded("B01_en_hr_manager")]
+    QUEUED.clear()
+    status, body_job = create_job("B01_en_hr_manager")
+    worker = run_queued()
+    row_ = sql("SELECT criteria_extraction_status AS st, criteria_extraction_error AS err FROM job_criteria WHERE job_id = :j", {"j": job_of(body_job)})[0]
+    out = {"stage_set_status": s1, "worker": {"failed": worker["failed"], "result": worker["result"], "model_calls": worker["model_calls"]},
+           "row": row_, "fallback_answer_left_unused": len(SCRIPT)}
+    sql("UPDATE ai_stage_defaults SET primary_model_id = CAST(:m AS uuid), fallback_model_id = NULL WHERE stage = 'requirements_v2_extraction'",
+        {"m": registry_original})
+    return out
+
+
+@step("administrator_configuration_through_the_real_api")
+def _config():
+    """Prompt text/version, model, temperature and max_tokens are changed through the EXISTING admin API (super_admin only), with its validation;
+    the next extraction runs under the new configuration, and the audit records what it ran with."""
+    set_switch(True)
+    activate_prompt(True)
+    out = {}
+    current = sql("SELECT system_prompt AS txt FROM ai_prompts WHERE prompt_code = 'criteria_extraction_v2' AND is_active = TRUE")[0]["txt"]
+    registry_original = sql("SELECT model_id::text AS mid FROM ai_model_registry WHERE model_name = 'gpt-4o-mini-2024-07-18'")[0]["mid"]
+    stage_before = sql("SELECT primary_model_id::text AS p, fallback_model_id::text AS f FROM ai_stage_defaults WHERE stage = 'requirements_v2_extraction'")
+    body = {"prompt_code": "criteria_extraction_v2", "prompt_name": "Requirements-v2 extraction (configured)", "prompt_category": "criteria",
+            "system_prompt": current + "\n", "model": "gpt-4o-mini", "temperature": 0.3, "max_tokens": 5000, "output_language": "auto"}
+
+    # 1. authority: only super_admin may configure; a refusal changes nothing
+    out["viewer_create_status"] = http("POST", "/admin/ai-prompts", "viewer", body)[0]
+    out["tenant_admin_create_status"] = http("POST", "/admin/ai-prompts", "admin", body)[0]
+    out["viewer_stage_status"] = http("PUT", "/admin/ai-models/stage-defaults/requirements_v2_extraction", "viewer", {"primary_model_id": registry_original})[0]
+    out["stage_unchanged_after_refusal"] = sql("SELECT primary_model_id::text AS p FROM ai_stage_defaults WHERE stage = 'requirements_v2_extraction'") == \
+        [{"p": stage_before[0]["p"]}]
+
+    # 2. invalid settings are refused by the admin API's own validation
+    out["invalid_temperature_status"] = http("POST", "/admin/ai-prompts", "super", {**body, "temperature": 3.0})[0]
+    out["invalid_max_tokens_status"] = http("POST", "/admin/ai-prompts", "super", {**body, "max_tokens": 0})[0]
+    out["invalid_model_status"] = http("POST", "/admin/ai-prompts", "super", {**body, "model": "gpt-5"})[0]
+    out["invalid_stage_status"] = http("PUT", "/admin/ai-models/stage-defaults/not_a_stage", "super", {"primary_model_id": registry_original})[0]
+
+    # 3. a new version with new text, temperature and max_tokens, then activation
+    status, created = http("POST", "/admin/ai-prompts", "super", body)
+    out["create_status"], out["new_version"] = status, (created or {}).get("version")
+    out["activate_status"] = http("POST", f"/admin/ai-prompts/{created['prompt_id']}/activate", "super")[0]
+    out["active_versions"] = sql("SELECT version FROM ai_prompts WHERE prompt_code = 'criteria_extraction_v2' AND is_active = TRUE")
+
+    # 4. a second model for the stage: registered, then set as the stage default; a disabled model and an unsupported stage are refused
+    status, reg = http("POST", "/admin/ai-models/registry", "super", {"provider": "openai", "model_name": "gpt-4.1-mini", "display_name": "GPT-4.1 mini (config test)",
+                                                                       "provider_secret_key": "OPENAI_API_KEY", "supported_stages": ["requirements_v2_extraction"], "enabled": True})
+    out["registry_create_status"] = status
+    out["stage_to_new_model_status"] = http("PUT", "/admin/ai-models/stage-defaults/requirements_v2_extraction", "super", {"primary_model_id": reg["model_id"]})[0]
+    status, disabled = http("POST", "/admin/ai-models/registry", "super", {"provider": "openai", "model_name": "gpt-4o-mini-disabled", "display_name": "off",
+                                                                            "provider_secret_key": "OPENAI_API_KEY", "supported_stages": ["requirements_v2_extraction"], "enabled": False})
+    out["disabled_model_stage_status"] = http("PUT", "/admin/ai-models/stage-defaults/requirements_v2_extraction", "super", {"primary_model_id": disabled["model_id"]})[0]
+    status, other = http("POST", "/admin/ai-models/registry", "super", {"provider": "openai", "model_name": "gpt-4o-other", "display_name": "other",
+                                                                         "provider_secret_key": "OPENAI_API_KEY", "supported_stages": ["cv_analyzer"], "enabled": True})
+    out["unsupported_stage_model_status"] = http("PUT", "/admin/ai-models/stage-defaults/requirements_v2_extraction", "super", {"primary_model_id": other["model_id"]})[0]
+    out["stage_still_new_model"] = sql("SELECT primary_model_id::text AS p FROM ai_stage_defaults WHERE stage = 'requirements_v2_extraction'") == [{"p": reg["model_id"]}]
+
+    # 5. an extraction under the new configuration: the real job API, the real worker, the recorded answer
+    SCRIPT[:] = [recorded("B01_en_hr_manager")]
+    QUEUED.clear()
+    status, body_job = create_job("B01_en_hr_manager")
+    job = job_of(body_job)
+    worker = run_queued()
+    out["worker"] = {"failed": worker["failed"], "outcome": (worker["result"] or {}).get("outcome"), "model_calls": worker["model_calls"]}
+    sent = OUT["calls"][-1] if OUT.get("calls") else {}
+    out["sent"] = {"model": sent.get("model"), "temperature": sent.get("temperature"), "max_tokens": sent.get("max_tokens")}
+    audit_row = sql("SELECT details FROM audit_logs WHERE action = 'requirements_extraction_completed' AND resource_id = :j ORDER BY created_at DESC LIMIT 1",
+                    {"j": job})[0]["details"]
+    out["audit"] = _json(audit_row)
+    usage_row = sql("SELECT metadata FROM ai_usage_log WHERE job_id = :j ORDER BY created_at DESC LIMIT 1", {"j": job})[0]["metadata"]
+    out["usage_metadata"] = _json(usage_row)
+    out["prompt_sha_expected"] = __import__("hashlib").sha256((current + "\n").encode("utf-8")).hexdigest()
+
+    # 6. the live acknowledgment policy is recorded per attempt
+    sql("UPDATE system_config SET value = 'false' WHERE key = 'job_analysis.require_classification_acknowledgment'")
+    SCRIPT[:] = [recorded("B01_en_hr_manager")]
+    QUEUED.clear()
+    status, body_job2 = create_job("B01_en_hr_manager")
+    run_queued()
+    audit_policy = _json(sql("SELECT details FROM audit_logs WHERE action = 'requirements_extraction_completed' AND resource_id = :j ORDER BY created_at DESC LIMIT 1",
+                             {"j": job_of(body_job2)})[0]["details"])
+    out["policy_recorded_false"] = audit_policy.get("acknowledgment_policy")
+    sql("UPDATE system_config SET value = 'true' WHERE key = 'job_analysis.require_classification_acknowledgment'")
+
+    # 7. restore the original configuration so later runs are unaffected
+    sql("UPDATE ai_prompts SET is_active = FALSE WHERE prompt_code = 'criteria_extraction_v2'")
+    sql("UPDATE ai_prompts SET is_active = TRUE WHERE prompt_code = 'criteria_extraction_v2' AND version = 3")
+    sql("UPDATE ai_stage_defaults SET primary_model_id = CAST(:m AS uuid) WHERE stage = 'requirements_v2_extraction'", {"m": registry_original})
+    return out
+
+
 if __name__ == "__main__":
-    for fn in (_off, _en, _edit, _pref, _ar, _trunc, _retry, _transient, _legacy, _off_retry, _policy):
+    for fn in (_off, _en, _edit, _pref, _ar, _trunc, _retry, _transient, _legacy, _off_retry, _policy, _config, _fallback):
         fn()
     pathlib.Path(sys.argv[1]).write_text(json.dumps(OUT, ensure_ascii=False, indent=1, default=str), encoding="utf-8")

@@ -8,12 +8,13 @@ settings.
 FEATURE SWITCH: system_config 'requirements_v2.enabled' (default 'false'). Read at job creation and again at worker start; a switch that is off
 means no v2 job is created and no model is called.
 
-PROMPT: ai_prompts row (prompt_code 'criteria_extraction_v2', integer version N) is the configurable source of the text. The text must hash to a
-value on APPROVED_PROMPTS (a code allowlist, not configuration), and its temperature / max_tokens must match the approved settings. A row that
-is inactive, missing, unapproved or differently configured is refused before any call.
+CONFIGURATION: the prompt text, version, temperature and max_tokens come from ai_prompts (prompt_code 'criteria_extraction_v2'), and the model
+from the model registry's stage default for 'requirements_v2_extraction'. An administrator changes them through the existing prompt and model
+admin API (super_admin, validated there), with no code deployment. The worker checks what it reads with the same rules as that API, refuses an
+empty text, and never falls back to another model. Every attempt records the prompt version, the SHA-256 of the text, the requested and returned
+model, the settings actually sent, the usage and the live acknowledgment policy it ran under.
 
-MODEL: the stage 'requirements_v2_extraction' in the model registry (no fallback to a legacy model). The model that answered is recorded from the
-response, next to the requested model.
+The output contract (the JSON response format) and the per-call timeout are code constants: the production pipeline parses that output.
 
 PERSISTENCE: an attempt has an attempt token (job_criteria.requirements_extraction_token). Every write re-checks the token under a row lock; a late
 or superseded result is discarded and never overwrites a newer attempt, a recruiter's edit or the original snapshot.
@@ -41,11 +42,7 @@ FEATURE_KEY = "requirements_v2.enabled"
 STAGE = "requirements_v2_extraction"
 PROMPT_CODE = "criteria_extraction_v2"
 PROVIDER = "openai"
-MODEL_SETTINGS = {"temperature": 0.1, "max_tokens": 6000, "response_format": {"type": "json_object"}}
-# The approved text(s). Adding a version is a code change with a review, never a database edit.
-APPROVED_PROMPTS = {
-    3: {"label": "criteria_extraction_v2-3", "sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b"},
-}
+RESPONSE_FORMAT = {"type": "json_object"}     # the output contract the production pipeline parses; not configurable
 STALE_AFTER_S = 30 * 60                       # a claimed attempt that never finished can be retried after this
 PER_CALL_TIMEOUT_S = 90                       # the approved per-call timeout (ev.PLAN["per_call_timeout_s"] in the benchmark)
 MAX_ATTEMPT_ERRORS = 2000
@@ -56,7 +53,7 @@ RETRYABLE_CALL_KINDS = ("rate_limit", "timeout", "transport", "http_error_5xx")
 
 
 class ExtractionUnavailable(Exception):
-    """A precondition of the v2 extraction is not met (feature off, prompt not approved, stage not configured). `code` is stable."""
+    """A precondition of the v2 extraction is not met (feature off, no active prompt, prompt empty or out of range, stage not configured). `code` is stable."""
 
     def __init__(self, code: str, message: str):
         super().__init__(message)
@@ -79,11 +76,15 @@ class TransportError(Exception):
 class PromptRef:
     prompt_id: str | None
     version: int
-    label: str
-    sha256: str
+    label: str                       # "criteria_extraction_v2-<version>", the same naming the benchmark uses
+    sha256: str                      # SHA-256 of the system prompt text as stored
     system_prompt: str
     temperature: float
     max_tokens: int
+
+    @property
+    def settings(self) -> dict:
+        return {"temperature": self.temperature, "max_tokens": self.max_tokens, "response_format": dict(RESPONSE_FORMAT)}
 
 
 @dataclass
@@ -95,7 +96,7 @@ class CallResult:
     prompt_tokens: int
     completion_tokens: int
     latency_ms: int
-    settings: dict = field(default_factory=lambda: copy.deepcopy(MODEL_SETTINGS))
+    settings: dict = field(default_factory=dict)      # the settings actually sent (temperature, max_tokens, response_format, timeout_s)
 
 
 # ── feature switch ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -116,25 +117,30 @@ async def feature_enabled(db) -> bool:
 
 # ── prompt ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 async def load_prompt(db) -> PromptRef:
-    """The active v2 prompt, verified against the approved list and the approved settings. Raises ExtractionUnavailable."""
+    """The active v2 prompt as configured by an administrator. The text is never compared with a code list: the SHA-256 of the text that was used
+    is recorded with the attempt instead. Temperature and max_tokens are checked with the prompt admin API's own request model, and an empty text is
+    refused. Raises ExtractionUnavailable."""
+    from pydantic import ValidationError
+    from routers.ai_prompts import UpdatePromptRequest        # the admin API's bounds for temperature and max_tokens
     row = (await db.execute(text("""
-        SELECT prompt_id, version, system_prompt, temperature, max_tokens, is_active
+        SELECT prompt_id, version, system_prompt, temperature, max_tokens
         FROM ai_prompts WHERE prompt_code = :code AND is_active = TRUE
         ORDER BY version DESC LIMIT 1
     """), {"code": PROMPT_CODE})).mappings().first()
     if row is None:
         raise ExtractionUnavailable("prompt_not_active", f"No active {PROMPT_CODE} prompt is configured.")
     version = int(row["version"])
-    approved = APPROVED_PROMPTS.get(version)
-    if approved is None:
-        raise ExtractionUnavailable("prompt_not_approved", f"{PROMPT_CODE} version {version} is not on the approved list.")
-    digest = hashlib.sha256((row["system_prompt"] or "").encode("utf-8")).hexdigest()
-    if digest != approved["sha256"]:
-        raise ExtractionUnavailable("prompt_hash_mismatch", f"The stored text of {approved['label']} does not match its approved hash.")
-    if (float(row["temperature"]), int(row["max_tokens"])) != (MODEL_SETTINGS["temperature"], MODEL_SETTINGS["max_tokens"]):
-        raise ExtractionUnavailable("prompt_settings_mismatch", "The prompt row's temperature / max_tokens differ from the approved settings.")
-    return PromptRef(str(row["prompt_id"]), version, approved["label"], digest, row["system_prompt"],
-                     float(row["temperature"]), int(row["max_tokens"]))
+    body = row["system_prompt"] or ""
+    if not body.strip():
+        raise ExtractionUnavailable("prompt_empty", f"{PROMPT_CODE} version {version} has an empty text.")
+    try:
+        temperature, max_tokens = float(row["temperature"]), int(row["max_tokens"])
+        UpdatePromptRequest(temperature=temperature, max_tokens=max_tokens)
+    except (TypeError, ValueError, ValidationError):
+        raise ExtractionUnavailable("prompt_settings_invalid",
+                                    f"{PROMPT_CODE} version {version} has a temperature or max_tokens outside the allowed range.") from None
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    return PromptRef(str(row["prompt_id"]), version, f"{PROMPT_CODE}-{version}", digest, body, temperature, max_tokens)
 
 
 # ── model ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -144,6 +150,9 @@ async def resolve_model(db):
     resolved = await resolve_stage_client(db, STAGE)
     if resolved is None or resolved.client is None:
         raise ExtractionUnavailable("model_not_configured", f"No usable model is configured for the {STAGE} stage.")
+    if resolved.is_fallback:
+        # the registry would answer with its fallback model: this stage never uses one (fail closed)
+        raise ExtractionUnavailable("primary_model_unavailable", f"The primary model of the {STAGE} stage is unavailable; no fallback is used.")
     return resolved
 
 
@@ -176,12 +185,12 @@ def _kind_of(exc: Exception) -> tuple[str, int | None]:
 
 
 async def call_model(client, prompt: PromptRef, messages: list[dict], requested_model: str, *, timeout_s: float) -> CallResult:
-    """One chat completion with the approved settings. Maps every provider error to a TransportError; never keeps a provider message."""
+    """One chat completion with the configured settings. Maps every provider error to a TransportError; never keeps a provider message."""
     started = time.monotonic()
     try:
         response = await client.with_options(timeout=timeout_s, max_retries=0).chat.completions.create(
             model=requested_model, messages=messages, temperature=prompt.temperature, max_tokens=prompt.max_tokens,
-            response_format=dict(MODEL_SETTINGS["response_format"]))
+            response_format=dict(RESPONSE_FORMAT))
     except TransportError:
         raise
     except Exception as exc:                                    # noqa: BLE001 - classified below
@@ -192,7 +201,8 @@ async def call_model(client, prompt: PromptRef, messages: list[dict], requested_
     return CallResult(raw=choice.message.content or "", finish_reason=choice.finish_reason, requested_model=requested_model,
                       returned_model=getattr(response, "model", None),
                       prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0), completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
-                      latency_ms=int((time.monotonic() - started) * 1000))
+                      latency_ms=int((time.monotonic() - started) * 1000),
+                      settings={**prompt.settings, "timeout_s": timeout_s})
 
 
 # ── analysis: the production pipeline (the approved one, unchanged) ────────────────────────────────────────────────────────────────
@@ -220,8 +230,9 @@ async def record_usage(db, *, job_id: str, tenant_id: str | None, prompt: Prompt
         request_status=status, retry_count=retry_count, error_type=error_type, tenant_id=tenant_id, job_id=job_id,
         prompt_key=PROMPT_CODE, metadata={
             "requested_model": call.requested_model if call else None, "returned_model": call.returned_model if call else None,
-            "prompt_version": prompt.label if prompt else None, "prompt_sha256": prompt.sha256 if prompt else None,
-            "settings": call.settings if call else MODEL_SETTINGS, "finish_reason": call.finish_reason if call else None})
+            "prompt_id": prompt.prompt_id if prompt else None, "prompt_version": prompt.version if prompt else None,
+            "prompt_label": prompt.label if prompt else None, "prompt_sha256": prompt.sha256 if prompt else None,
+            "settings": call.settings if call else (prompt.settings if prompt else None), "finish_reason": call.finish_reason if call else None})
 
 
 # ── persistence (every function runs inside the caller's transaction and locks the job's criteria row) ────────────────────────────────
@@ -286,7 +297,7 @@ async def claim_attempt(db, job_id: str, token: str) -> bool:
     return getattr(res, "rowcount", 0) == 1
 
 
-async def finish_success(db, *, job_id: str, token: str, state: dict, call: CallResult, actor_tenant: str) -> str:
+async def finish_success(db, *, job_id: str, token: str, state: dict, call: CallResult, prompt: PromptRef, policy: bool, actor_tenant: str) -> str:
     """Write the draft, its snapshot, the pipeline record and the weight columns, bump the revision, and audit — all in the caller's transaction.
     Returns 'completed' or 'stale'. A stale result changes nothing."""
     from services.audit_service import log_action
@@ -321,10 +332,13 @@ async def finish_success(db, *, job_id: str, token: str, state: dict, call: Call
            "w_skills": w["skills"], "w_experience": w["experience"], "w_education": w["education"], "w_certifications": w["certifications"],
            "w_soft_skills": w["soft_skills"], "w_domain_knowledge": w["domain_knowledge"], "w_other_requirements": w["other_requirements"],
            "model": call.returned_model or call.requested_model})
+    # the audit snapshot records everything this attempt ran with; readiness shown later is recomputed under the live policy
     await log_action(db, actor_tenant, None, None, "requirements_extraction_completed", resource_type="job", resource_id=str(job_id), strict=True,
-                     details={"job_id": str(job_id), "attempt_token": token, "prompt_version": PROMPT_CODE, "requested_model": call.requested_model,
-                              "returned_model": call.returned_model, "settings": call.settings, "usage": {"prompt_tokens": call.prompt_tokens,
-                              "completion_tokens": call.completion_tokens}, "readiness_state": state["readiness"]["state"],
+                     details={"job_id": str(job_id), "attempt_token": token, "prompt_id": prompt.prompt_id, "prompt_code": PROMPT_CODE,
+                              "prompt_version": prompt.version, "prompt_label": prompt.label, "prompt_sha256": prompt.sha256,
+                              "requested_model": call.requested_model, "returned_model": call.returned_model, "settings": call.settings,
+                              "usage": {"prompt_tokens": call.prompt_tokens, "completion_tokens": call.completion_tokens},
+                              "acknowledgment_policy": bool(policy), "readiness_state": state["readiness"]["state"],
                               "original_digest": state["original_digest"], "revision": lk.revision + 1, "weights": w})
     return "completed"
 

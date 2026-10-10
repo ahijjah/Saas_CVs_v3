@@ -80,7 +80,8 @@ def _fresh(db, monkeypatch):
         db.q("INSERT INTO users (user_id, tenant_id, email, password_hash, full_name, role, status) VALUES (%s,%s,%s,'x',%s,%s,'active')",
              (uid, tenant, f"{role}-{uid[-4:]}@x.example", role, role))
     db.q("UPDATE system_config SET value = 'false' WHERE key = %s", (ext.FEATURE_KEY,))
-    db.q("UPDATE ai_prompts SET is_active = FALSE, system_prompt = %s, temperature = 0.10 WHERE prompt_code = %s AND version = 3", (PROMPT_TEXT, ext.PROMPT_CODE))
+    db.q("UPDATE ai_prompts SET is_active = FALSE, system_prompt = %s, temperature = 0.10, max_tokens = 6000 WHERE prompt_code = %s AND version = 3",
+         (PROMPT_TEXT, ext.PROMPT_CODE))
     db.q("""INSERT INTO ai_stage_defaults (stage, primary_model_id, fallback_model_id)
             SELECT %s, model_id, NULL FROM ai_model_registry WHERE model_name = %s ON CONFLICT (stage) DO NOTHING""", (ext.STAGE, MODEL))
     db.q("UPDATE system_config SET value = 'true' WHERE key = 'job_analysis.require_classification_acknowledgment'")
@@ -92,8 +93,9 @@ def feature(db, on: bool):
     db.q("UPDATE system_config SET value = %s WHERE key = %s", ("true" if on else "false", ext.FEATURE_KEY))
 
 
-def activate_prompt(db):
-    db.q("UPDATE ai_prompts SET is_active = TRUE WHERE prompt_code = %s AND version = 3", (ext.PROMPT_CODE,))
+def activate_prompt(db, version=3):
+    db.q("UPDATE ai_prompts SET is_active = FALSE WHERE prompt_code = %s", (ext.PROMPT_CODE,))
+    db.q("UPDATE ai_prompts SET is_active = TRUE WHERE prompt_code = %s AND version = %s", (ext.PROMPT_CODE, version))
 
 
 def new_job(db, description: str, *, v2=True, title="Synthetic role", original=None, status="pending") -> tuple[str, str]:
@@ -105,6 +107,10 @@ def new_job(db, description: str, *, v2=True, title="Synthetic role", original=N
     else:
         db.q("INSERT INTO job_criteria (job_id, criteria_extraction_status, skills) VALUES (%s, 'completed', ARRAY['Excel'])", (job_id,))
     return job_id, token
+
+
+def _sha(text_):
+    return hashlib.sha256(text_.encode("utf-8")).hexdigest()
 
 
 def row(db, job_id):
@@ -253,45 +259,76 @@ def test_an_inactive_prompt_is_refused_before_any_call(db, monkeypatch):
     assert res == {"outcome": "failed", "code": "prompt_not_active"} and client.calls == []
 
 
-def test_a_modified_prompt_text_is_refused_before_any_call(db, monkeypatch):
+EDITED = PROMPT_TEXT + "\n"                 # an administrator's edit: a different text, a different hash, the same rules for the output
+
+
+def _sha(text_):
+    return hashlib.sha256(text_.encode("utf-8")).hexdigest()
+
+
+def test_an_edited_prompt_text_is_used_and_its_new_hash_is_recorded(db, monkeypatch):
     feature(db, True)
-    db.q("UPDATE ai_prompts SET system_prompt = system_prompt || ' ' WHERE prompt_code = %s AND version = 3", (ext.PROMPT_CODE,))
+    db.q("UPDATE ai_prompts SET system_prompt = %s WHERE prompt_code = %s AND version = 3", (EDITED, ext.PROMPT_CODE))
     activate_prompt(db)
-    job, tok = new_job(db, CASES["B01_en_hr_manager"]["jd"])
-    client = FakeClient([])
+    c = CASES["B01_en_hr_manager"]
+    job, tok = new_job(db, c["jd"])
+    client = FakeClient([V22["B01_en_hr_manager"]["raw"]])
     use_client(monkeypatch, client)
-    assert run_worker(job, tok, CASES["B01_en_hr_manager"]["jd"])["code"] == "prompt_hash_mismatch" and client.calls == []
+    assert run_worker(job, tok, c["jd"])["outcome"] == "completed"
+    assert client.calls[0]["messages"][0]["content"] == EDITED                  # the text actually sent is the edited one
+    (done,) = audit(db, "requirements_extraction_completed")
+    assert done["details"]["prompt_sha256"] == _sha(EDITED) and done["details"]["prompt_version"] == 3
+    assert usage(db, job)[0][6]["prompt_sha256"] == _sha(EDITED)
 
 
-def test_a_new_prompt_version_an_admin_adds_is_refused_loudly_until_it_is_approved_in_code(db, monkeypatch):
-    """Versions are configurable only among the approved list (code, reviewed). An unapproved version that an admin activates is refused with a
-    stable code before any call; it is never used silently and no other version is substituted."""
+def test_an_admin_added_version_is_used_with_its_own_version_text_and_settings(db, monkeypatch):
     feature(db, True)
     cols = [c for (c,) in db.q("""SELECT column_name FROM information_schema.columns WHERE table_schema = 'cv_analyzer' AND table_name = 'ai_prompts'
                                   AND column_name NOT IN ('prompt_id', 'version', 'is_active', 'created_at', 'updated_at')""")]
     copied = ", ".join(cols)
-    db.q(f"""INSERT INTO ai_prompts (version, is_active, {copied})
-             SELECT 4, FALSE, {copied} FROM ai_prompts WHERE prompt_code = %s AND version = 3""", (ext.PROMPT_CODE,))
-    db.q("UPDATE ai_prompts SET is_active = FALSE WHERE prompt_code = %s", (ext.PROMPT_CODE,))
-    db.q("UPDATE ai_prompts SET is_active = TRUE WHERE prompt_code = %s AND version = 4", (ext.PROMPT_CODE,))
     try:
-        job, tok = new_job(db, CASES["B01_en_hr_manager"]["jd"])
-        client = FakeClient([])
+        db.q(f"""INSERT INTO ai_prompts (version, is_active, {copied})
+                 SELECT 4, FALSE, {copied} FROM ai_prompts WHERE prompt_code = %s AND version = 3""", (ext.PROMPT_CODE,))
+        db.q("UPDATE ai_prompts SET system_prompt = %s, temperature = 0.30, max_tokens = 5000 WHERE prompt_code = %s AND version = 4",
+             (EDITED, ext.PROMPT_CODE))
+        activate_prompt(db, version=4)
+        c = CASES["B01_en_hr_manager"]
+        job, tok = new_job(db, c["jd"])
+        client = FakeClient([V22["B01_en_hr_manager"]["raw"]])
         use_client(monkeypatch, client)
-        assert run_worker(job, tok, CASES["B01_en_hr_manager"]["jd"])["code"] == "prompt_not_approved" and client.calls == []
-        assert row(db, job)["status"] == "failed"
+        assert run_worker(job, tok, c["jd"])["outcome"] == "completed"
+        sent = client.calls[0]
+        assert sent["temperature"] == pytest.approx(0.3) and sent["max_tokens"] == 5000
+        (done,) = audit(db, "requirements_extraction_completed")
+        d = done["details"]
+        assert d["prompt_version"] == 4 and d["prompt_label"] == "criteria_extraction_v2-4" and d["prompt_sha256"] == _sha(EDITED)
+        assert d["settings"] == {"temperature": pytest.approx(0.3), "max_tokens": 5000, "response_format": {"type": "json_object"}, "timeout_s": 90}
+        assert usage(db, job)[0][6]["prompt_version"] == 4
     finally:
         db.q("DELETE FROM ai_prompts WHERE prompt_code = %s AND version = 4", (ext.PROMPT_CODE,))   # the shared database keeps only v3
 
 
-def test_a_prompt_with_changed_settings_is_refused(db, monkeypatch):
+def test_the_database_itself_refuses_a_temperature_outside_zero_to_two(db):
+    # the database's own CHECK is the first guard for temperature; the worker re-checks the stored value for max_tokens and the text
+    with pytest.raises(Exception, match="temperature"):
+        db.q("UPDATE ai_prompts SET temperature = 3.0 WHERE prompt_code = %s AND version = 3", (ext.PROMPT_CODE,))
+
+
+@pytest.mark.parametrize("column,value,code", [
+    ("max_tokens", 0, "prompt_settings_invalid"),         # the prompt admin API allows 1..32000
+    ("max_tokens", 40000, "prompt_settings_invalid"),
+    ("system_prompt", "   ", "prompt_empty"),
+])
+def test_out_of_range_or_empty_configuration_is_refused_before_any_call(db, monkeypatch, column, value, code):
     feature(db, True)
-    db.q("UPDATE ai_prompts SET temperature = 0.5 WHERE prompt_code = %s AND version = 3", (ext.PROMPT_CODE,))
+    db.q(f"UPDATE ai_prompts SET {column} = %s WHERE prompt_code = %s AND version = 3", (value, ext.PROMPT_CODE))
     activate_prompt(db)
     job, tok = new_job(db, CASES["B01_en_hr_manager"]["jd"])
     client = FakeClient([])
     use_client(monkeypatch, client)
-    assert run_worker(job, tok, CASES["B01_en_hr_manager"]["jd"])["code"] == "prompt_settings_mismatch" and client.calls == []
+    res = run_worker(job, tok, CASES["B01_en_hr_manager"]["jd"])
+    assert res == {"outcome": "failed", "code": code} and client.calls == []
+    assert row(db, job)["status"] == "failed"
 
 
 def test_no_stage_model_fails_closed_with_the_real_registry_lookup(db, monkeypatch):
@@ -322,7 +359,7 @@ def test_a_required_and_preferred_job_is_persisted_completely(db, monkeypatch, c
     assert len(client.calls) == 1
     call = client.calls[0]
     assert call["model"] == MODEL and call["temperature"] == 0.1 and call["max_tokens"] == 6000 and call["response_format"] == {"type": "json_object"}
-    assert call["messages"][0]["content"] == PROMPT_TEXT                                         # the approved text, exactly
+    assert call["messages"][0]["content"] == PROMPT_TEXT                                         # the configured text, exactly
     assert call["messages"][1]["content"].count(c["jd"]) == 1                                    # the JD verbatim, once
     r = row(db, job)
     assert r["status"] == "completed" and r["marker"] == 2 and r["revision"] == 1 and r["token"] is None and r["error"] is None
@@ -332,17 +369,20 @@ def test_a_required_and_preferred_job_is_persisted_completely(db, monkeypatch, c
     assert doc["schema_version"] == 2 and r["weights"] == _weights(doc)                           # the weight columns are synchronised
     assert sum(r["weights"].values()) in (0, 100)
     assert pipe.verify_record(analysis[pipe.STORAGE_KEY], r["original"]["requirements"]) == []     # the record matches the immutable snapshot
-    assert analysis[pipe.STORAGE_KEY]["provenance"] == {"extraction_prompt": {"version": "criteria_extraction_v2-3", "sha256": ext.APPROVED_PROMPTS[3]["sha256"]},
+    assert analysis[pipe.STORAGE_KEY]["provenance"] == {"extraction_prompt": {"version": "criteria_extraction_v2-3", "sha256": _sha(PROMPT_TEXT)},
                                                        "model": MODEL}
     assert analysis[pipe.STORAGE_KEY]["raw_response"]["text"] == V22[case]["raw"]                # the raw AI text is kept
     assert r["ai_model"] == MODEL
     (done,) = audit(db, "requirements_extraction_completed")
     d = done["details"]
-    assert d["prompt_version"] == "criteria_extraction_v2" and d["requested_model"] == MODEL and d["returned_model"] == MODEL
-    assert d["settings"] == ext.MODEL_SETTINGS and d["revision"] == 1 and d["weights"] == r["weights"]
+    assert d["prompt_version"] == 3 and d["prompt_code"] == ext.PROMPT_CODE and d["requested_model"] == MODEL and d["returned_model"] == MODEL
+    assert d["prompt_sha256"] == _sha(PROMPT_TEXT) and d["acknowledgment_policy"] is True          # the live policy of this attempt
+    assert d["settings"] == {"temperature": 0.1, "max_tokens": 6000, "response_format": {"type": "json_object"}, "timeout_s": 90}
+    assert d["revision"] == 1 and d["weights"] == r["weights"]
     (u,) = usage(db, job)
     assert u[0] == ext.STAGE and u[1] == MODEL and u[2] == ext.PROMPT_CODE and u[3] == "success"
-    assert u[6]["prompt_sha256"] == ext.APPROVED_PROMPTS[3]["sha256"] and u[6]["requested_model"] == MODEL and u[6]["settings"] == ext.MODEL_SETTINGS
+    assert u[6]["prompt_sha256"] == _sha(PROMPT_TEXT) and u[6]["requested_model"] == MODEL
+    assert u[6]["settings"] == {"temperature": 0.1, "max_tokens": 6000, "response_format": {"type": "json_object"}, "timeout_s": 90}
 
 
 def test_an_injection_draft_is_stored_as_completed_and_its_blockers_are_not_extraction_failures(db, monkeypatch):
@@ -701,3 +741,16 @@ def test_the_prompt_loader_returns_the_approved_reference_only_when_active(db):
     ref = with_session(lambda s: ext.load_prompt(s))
     assert (ref.label, ref.version, ref.sha256) == ("criteria_extraction_v2-3", 3, hashlib.sha256(PROMPT_TEXT.encode()).hexdigest())
     assert ref.system_prompt == PROMPT_TEXT
+
+
+def test_the_audit_snapshot_records_the_live_policy_it_ran_under(db, monkeypatch):
+    feature(db, True)
+    activate_prompt(db)
+    db.q("UPDATE system_config SET value = 'false' WHERE key = 'job_analysis.require_classification_acknowledgment'")
+    c = CASES["B01_en_hr_manager"]
+    job, tok = new_job(db, c["jd"])
+    use_client(monkeypatch, FakeClient([V22["B01_en_hr_manager"]["raw"]]))
+    assert run_worker(job, tok, c["jd"])["outcome"] == "completed"
+    (done,) = audit(db, "requirements_extraction_completed")
+    assert done["details"]["acknowledgment_policy"] is False
+    db.q("UPDATE system_config SET value = 'true' WHERE key = 'job_analysis.require_classification_acknowledgment'")
