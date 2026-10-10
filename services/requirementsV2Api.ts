@@ -56,6 +56,7 @@ export interface RequirementsView {
   model_conflicts?: ModelConflict[] | null;
   normalized_warnings?: { index: number; text: string; kind: string; linked_item_ids: string[]; informational: boolean }[] | null;
   informational?: { generic_model_notes: { index: number; text: string; kind: string }[]; parser_review: { code: string; message: string }[] } | null;
+  coverage_warnings?: { code: string; heading: string; candidate_lines: number }[] | null;   // non-blocking: duties may be missing (total omission only)
   classification_warnings: {
     id: string; code: string; item_id: string; category: string; message: string;
     evidence: { code: string; cue: string | null; source_text: string | null };

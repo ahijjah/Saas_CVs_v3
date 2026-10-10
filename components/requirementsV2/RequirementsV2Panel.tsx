@@ -399,6 +399,13 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
       <PipelineStatusCard s={s} view={view} canEdit={canEdit} />
       <BlockerPanel s={s} view={view} canEdit={canEdit && !conflict} dirty={dirty} busy={busy !== null} textOf={textOf} pending={issuePending} actions={corrections} />
       <ReadinessCard s={s} view={view} goToCategory={goToCategory} goToItem={goToItem} dirty={dirty} />
+      {/* non-blocking: a whole duties section was not extracted; readiness, weights and items are not changed by this */}
+      {(view.coverage_warnings?.length ?? 0) > 0 && (
+        <section role="status" aria-labelledby="req-coverage-h" className="rounded-xl border border-amber-300 bg-amber-50 p-4" data-testid="coverage-warning">
+          <h4 id="req-coverage-h" className="text-sm font-black text-amber-900">{s.coverageTitle}</h4>
+          <p className="text-xs text-amber-900 mt-1">{s.coverageBody}</p>
+        </section>
+      )}
       <IssuesPanel s={s} view={view} dirty={dirty} textOf={textOf} pending={issuePending} goToItem={goToItem} goToCategory={goToCategory} />
 
 

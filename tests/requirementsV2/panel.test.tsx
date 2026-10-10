@@ -596,3 +596,32 @@ describe('requirements validation wording', () => {
     expect(screen.getByTestId('validation-note').textContent).toBe(A.validationNote);
   });
 });
+
+describe('the duties coverage warning (non-blocking)', () => {
+  const warned = (base: RequirementsView) => ({ ...base, coverage_warnings: [{ code: 'duties_may_be_omitted', heading: 'Responsibilities', candidate_lines: 16 }] });
+  it('is shown in English as a status note, and does not change readiness', async () => {
+    const plain = makeView(weightedDoc());
+    const withWarning = await setup(warned(plain));
+    const card = screen.getByTestId('coverage-warning');
+    expect(card.getAttribute('role')).toBe('status');
+    expect(card.textContent).toContain(S.coverageTitle);
+    expect(card.textContent).toContain(S.coverageBody);
+    const stateWith = screen.getByTestId('readiness-state').textContent;
+    withWarning.unmount();
+    await setup(plain);
+    expect(screen.queryByTestId('coverage-warning')).toBeNull();
+    expect(screen.getByTestId('readiness-state').textContent).toBe(stateWith);               // the warning changes no readiness
+  });
+  it('is absent when no warning is reported, and when the list is empty', async () => {
+    await setup(makeView(weightedDoc()));
+    expect(screen.queryByTestId('coverage-warning')).toBeNull();
+    await setup({ ...makeView(weightedDoc()), coverage_warnings: [] });
+    expect(screen.queryByTestId('coverage-warning')).toBeNull();
+  });
+  it('is written in Arabic too', async () => {
+    const A = STRINGS.ar;
+    await setup(warned(makeView(weightedDoc())), { isAr: true });
+    expect(screen.getByTestId('coverage-warning').textContent).toContain(A.coverageTitle);
+    expect(screen.getByTestId('coverage-warning').textContent).toContain(A.coverageBody);
+  });
+});

@@ -44,6 +44,8 @@ const en = {
   structureConfirm: 'Confirm structure matches wording', structureConfirmed: 'Confirmed by {name} on {date}',
   structureCorrected: 'Corrected by {name} on {date}', structureEntered: 'Entered by {name} on {date}',
   // readiness
+  coverageTitle: 'Duties may be missing',
+  coverageBody: 'The job description has a responsibilities section, but no duties were extracted from it. Review the duties against the job description. This check only detects a missing section, not single missing duties; it does not change readiness, weights or items.',
   requirementsValidation: 'Requirements validation', validationPassed: 'Passed',
   validationNote: 'Validation checks extracted requirements and weights; the recruiter must review completeness against the job description.',
   readiness: 'Readiness to proceed',
@@ -270,6 +272,8 @@ const ar: typeof en = {
   structureReviewBody: 'تغيّرت الصياغة بينما لم تتغيّر بدائل «أو» / الخبرة. لا يمكن التحقق تلقائيًا من أنها ما زالت متوافقة. أكّد توافقها أو صحّحها.',
   structureConfirm: 'تأكيد أن البنية تطابق الصياغة', structureConfirmed: 'أكّده {name} بتاريخ {date}',
   structureCorrected: 'صحّحه {name} بتاريخ {date}', structureEntered: 'أدخله {name} بتاريخ {date}',
+  coverageTitle: 'قد تكون المهام ناقصة',
+  coverageBody: 'يتضمن الوصف الوظيفي قسم المسؤوليات، ولم يُستخرج منه أي مهمة. راجع المهام مقابل الوصف الوظيفي. هذا الفحص يكشف غياب القسم كله فقط، ولا يكشف مهامًا ناقصة فرديًا؛ ولا يغيّر الجاهزية أو الأوزان أو المتطلبات.',
   requirementsValidation: 'التحقق من المتطلبات', validationPassed: 'تم الاجتياز',
   validationNote: 'يتحقق النظام من المتطلبات المستخرجة والأوزان؛ على المسؤول مراجعة اكتمالها مقارنةً بالوصف الوظيفي.',
   readiness: 'الجاهزية للمتابعة',

@@ -48,6 +48,7 @@ from typing import Any
 
 from sqlalchemy import text
 
+from services import requirements_coverage as cov
 from services import requirements_pipeline as pipe
 from services.requirements_guard import is_requirements_v2
 from services.requirements_v2 import (
@@ -457,8 +458,19 @@ def _pipeline_block(ctx: PipelineContext, include_raw: bool) -> dict:
     return out
 
 
+def coverage_for(description: str | None, pipeline_record: Any, doc: dict) -> list[dict] | None:
+    """The non-blocking coverage warnings (services/requirements_coverage.py). None without the JD text; [] when the job's
+    description is no longer the one the extraction recorded (the warning describes the extraction's JD only)."""
+    if description is None:
+        return None
+    rec = pipeline_record if isinstance(pipeline_record, dict) else {}
+    if rec.get("job_description_sha256") != cov.jd_sha256(description):
+        return []
+    return cov.coverage_warnings(description, doc)
+
+
 def build_view(*, job_id: str, revision: int | None, doc: dict, original: dict | None, policy: bool,
-               editable: bool, discarded: list[str] | None = None, pipeline_record: Any = None) -> dict:
+               editable: bool, discarded: list[str] | None = None, pipeline_record: Any = None, description: str | None = None) -> dict:
     readiness = compute_readiness(doc, require_classification_acknowledgment=policy, original=original)
     conf = doc.get("scoring_confirmation")
     ctx = pipeline_context(pipeline_record, doc, original, policy)
@@ -494,6 +506,7 @@ def build_view(*, job_id: str, revision: int | None, doc: dict, original: dict |
         "informational": ({"generic_model_notes": state["informational"]["generic_model_notes"],
                            "parser_review": state["informational"]["parser_review"]} if state else None),
         "classification_warnings": warnings_view(doc),
+        "coverage_warnings": coverage_for(description, pipeline_record, doc),
         "classification_policy": {"key": POLICY_KEY, "require_acknowledgment": policy},
         "preferred_only_confirmation": ({"confirmed": True, "user_id": conf["user_id"],
                                          "confirmed_at": conf["confirmed_at"]} if conf else {"confirmed": False}),
@@ -562,6 +575,7 @@ class Loaded:
     extraction_error: str | None = None
     retired_column_present: bool = True
     pipeline_record: Any = None         # analysis_json["requirements_pipeline"] as stored (None = the job has none)
+    description: str | None = None      # jobs.description as it is now (the coverage warning checks it against the record's JD hash)
 
 
 async def load_policy(db) -> bool:
@@ -604,12 +618,14 @@ async def _load(db, user, job_id: str, *, lock: bool) -> Loaded:
         original = None
     retired_raw = _json(row["requirements_retired_item_ids"])
     retired = [x for x in retired_raw if isinstance(x, str)] if isinstance(retired_raw, list) else []
+    description = (await db.execute(text("SELECT description FROM jobs WHERE job_id = CAST(:jid AS uuid)"),
+                                    {"jid": str(job_id)})).scalar_one_or_none()
     revision = row["requirements_revision"]
     marker = row["requirements_schema_version"]
     marker = int(marker) if marker is not None and str(marker).strip() != "" else None   # the column is read as text through to_jsonb()
     return Loaded(analysis, stored, original, int(revision) if revision is not None else None, retired,
                   marker=marker, retired_column_present=retired_raw is not None,
-                  pipeline_record=analysis.get(pipe.STORAGE_KEY), extraction_status=row.get("criteria_extraction_status"),
+                  pipeline_record=analysis.get(pipe.STORAGE_KEY), description=description, extraction_status=row.get("criteria_extraction_status"),
                   extraction_error=row.get("criteria_extraction_error"))
 
 
@@ -642,7 +658,7 @@ async def get_requirements(db, user, job_id: str) -> dict:
     policy = await load_policy(db)
     view = build_view(job_id=job_id, revision=loaded.revision if loaded.revision is not None else 0,
                       doc=loaded.stored, original=loaded.original, policy=policy, editable=can_edit(user.role),
-                      pipeline_record=loaded.pipeline_record)
+                      pipeline_record=loaded.pipeline_record, description=loaded.description)
     if loaded.marker == 2:
         view["extraction"] = {"status": loaded.extraction_status, "error": loaded.extraction_error, "retry_available": False}
     return view
@@ -704,7 +720,7 @@ async def _mutate(db, user, job_id: str, expected_revision: int, work, client_di
                            "The requirements were changed by someone else. Reload and try again.",
                            current=build_view(job_id=job_id, revision=loaded.revision, doc=loaded.stored,
                                               original=loaded.original, policy=policy, editable=True,
-                                              pipeline_record=loaded.pipeline_record))
+                                              pipeline_record=loaded.pipeline_record, description=loaded.description))
         plan: SavePlan = work(loaded, policy, _now())
         revision = loaded.revision
         if plan.changed:
@@ -730,7 +746,7 @@ async def _mutate(db, user, job_id: str, expected_revision: int, work, client_di
         raise
     view = build_view(job_id=job_id, revision=revision, doc=plan.doc, original=loaded.original, policy=policy,
                       editable=True, discarded=plan.discarded + [f"body.{k}" for k in (client_discarded or [])],
-                      pipeline_record=plan.record if plan.record is not None else loaded.pipeline_record)
+                      pipeline_record=plan.record if plan.record is not None else loaded.pipeline_record, description=loaded.description)
     view["changed"] = plan.changed
     return view
 
