@@ -67,7 +67,7 @@ class Fake:
 
 # ══ 1. explicit candidate selection; the baseline stays the default ═══════════════════════════════════════════════════
 def test_baseline_is_the_default_and_builds_exactly_the_pinned_request():
-    assert ex.SPECS["baseline"] is ex.BASELINE_SPEC and set(ex.SPECS) == {"baseline", "v2-2"}
+    assert ex.SPECS["baseline"] is ex.BASELINE_SPEC and set(ex.SPECS) == {"baseline", "v2-2", "v2-3"}
     for c in CASES:
         built = ex.BASELINE_SPEC.build(c["jd"], c["job_metadata"])
         from services.requirements_v2.extraction.prompt import build_request
@@ -95,7 +95,7 @@ def test_cli_default_is_baseline_and_v2_2_is_explicit(capsys):
         d = json.loads(capsys.readouterr().out)
         assert (d["prompt_key"], d["prompt_version"], d["prompt_sha256"], d["candidate_commit"]) == ("v2-2", "criteria_extraction_v2-2", ex.CANDIDATE_V22_SHA256, "916d1058")
     with pytest.raises(SystemExit):
-        ex.main(["--preflight", "--prompt", "v2-3"])
+        ex.main(["--preflight", "--prompt", "v2-4"])
 
 
 # ══ 2. the candidate hash / manifest / commit are verified; the baseline's frozen checks are kept ═══════════════════════

@@ -104,7 +104,9 @@ def test_the_candidate_is_not_registered_activated_or_wired():
             if path.is_file() and path.suffix in {".py", ".sql", ".txt"} and "__pycache__" not in path.parts:
                 assert "criteria_extraction_v2-3" not in path.read_text(encoding="utf-8", errors="ignore"), path
     assert "criteria_extraction_v2-3" not in (BACKEND / "main.py").read_text(encoding="utf-8")
-    assert "criteria_extraction_v2-3" not in (BACKEND / "scripts" / "requirements_v2_extraction_run.py").read_text(encoding="utf-8")    # not selectable in the executor
+    # the offline executor may select it ONLY explicitly (`--prompt v2-3`, see test_requirements_v2_candidate_v23_executor.py); the default stays the baseline
+    run = (BACKEND / "scripts" / "requirements_v2_extraction_run.py").read_text(encoding="utf-8")
+    assert 'default="baseline"' in run
     assert not list(D3.glob("*.py"))
 
 

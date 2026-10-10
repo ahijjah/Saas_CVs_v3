@@ -7,11 +7,13 @@ inputs. The only network host it contacts is api.openai.com, and only after ever
 
   python scripts/requirements_v2_extraction_run.py --preflight                    # baseline prompt v2-1: offline checks, no key, no network
   python scripts/requirements_v2_extraction_run.py --preflight --prompt v2-2      # candidate comparison run: offline checks, token reservations
-  python scripts/requirements_v2_extraction_run.py --run --out DIR [--prompt v2-2]   # needs OPENAI_API_KEY in the environment
+  python scripts/requirements_v2_extraction_run.py --preflight --prompt v2-3      # candidate v2-3: offline checks, token reservations
+  python scripts/requirements_v2_extraction_run.py --run --out DIR [--prompt v2-2|v2-3]   # needs OPENAI_API_KEY in the environment
 
---prompt selects the system prompt: "baseline" (the default, criteria_extraction_v2-1, unchanged behavior) or "v2-2" (the offline
-candidate, verified byte-for-byte against commit 916d1058 and its manifest hash). Everything else (model, settings, limits, stop
-conditions, scorer) is identical. Every call record and the run metadata carry the selected prompt version and hash.
+--prompt selects the system prompt: "baseline" (the default, criteria_extraction_v2-1, unchanged behavior), "v2-2" (an offline
+candidate, verified byte-for-byte against commit 916d1058 and its manifest hash) or "v2-3" (an offline candidate, verified against
+commit 7d5c671, its manifest and SHA-256 21a2f942...; a v2-3 preflight also re-verifies v2-2). Everything else (model, settings,
+limits, stop conditions, scorer) is identical. Every call record and the run metadata carry the selected prompt version and hash.
 
 Secrets: the key is read from the environment only. It is never printed, logged or written; API error messages (which can echo
 a key fragment) are never stored, only the error kind and HTTP status.
@@ -53,6 +55,12 @@ CANDIDATE_DIR = BACKEND / "prompt_candidates" / "criteria_extraction_v2-2"
 CANDIDATE_VERSION = "criteria_extraction_v2-2"
 CANDIDATE_V22_SHA256 = "40ea678b65a5782da3f74f1c0b52f4dbeb10cc369f78efd25f1e38827ff48dda"   # pinned here AND in the manifest
 BASELINE_V21_SHA256 = "f2017d2879554935baa5d0d4f51d53fa0600e18858cc875d4a791c5ac0678b04"
+
+CANDIDATE_V23_COMMIT = "7d5c671"
+CANDIDATE_V23_DIR_REL = "backend/prompt_candidates/criteria_extraction_v2-3"
+CANDIDATE_V23_DIR = BACKEND / "prompt_candidates" / "criteria_extraction_v2-3"
+CANDIDATE_V23_VERSION = "criteria_extraction_v2-3"
+CANDIDATE_V23_SHA256 = "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b"   # pinned here AND in the manifest; base = v2-2
 BASELINE_DATA = BACKEND / "benchmark_results" / "requirements_v2" / "baseline_v2-1"
 
 
@@ -63,10 +71,11 @@ class CandidateIntegrityError(RuntimeError):
 class PromptSpec:
     """The system prompt a run uses. `build` produces the full chat-completion arguments (model, settings and user message are
     identical for every spec); `text` returns the verified system prompt."""
-    __slots__ = ("key", "version", "sha256", "source", "text")
+    __slots__ = ("key", "version", "sha256", "source", "text", "commit")
 
-    def __init__(self, key: str, version: str, sha256: str, source: str, text):
+    def __init__(self, key: str, version: str, sha256: str, source: str, text, commit: str | None = None):
         self.key, self.version, self.sha256, self.source, self.text = key, version, sha256, source, text   # text: () -> str, verifies the hash
+        self.commit = commit                                                                              # the commit the candidate is verified against (None: baseline)
 
     def build(self, jd_text: str, job_metadata) -> dict:
         if self.key == "baseline":                 # the unchanged baseline path
@@ -95,9 +104,22 @@ def load_candidate_v22() -> str:
     return raw.decode("utf-8")
 
 
+def load_candidate_v23() -> str:
+    raw = (CANDIDATE_V23_DIR / "criteria_extraction_v2-3.txt").read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != CANDIDATE_V23_SHA256:
+        raise CandidateIntegrityError(f"candidate sha256 {digest} != pinned {CANDIDATE_V23_SHA256}")
+    manifest = json.loads((CANDIDATE_V23_DIR / "MANIFEST.json").read_text(encoding="utf-8"))
+    if (manifest.get("sha256"), manifest.get("version"), manifest.get("base_sha256"), manifest.get("frozen_baseline_commit")) != (
+            digest, CANDIDATE_V23_VERSION, CANDIDATE_V22_SHA256, FROZEN_COMMIT):
+        raise CandidateIntegrityError("candidate manifest does not match the file, the version, the v2-2 base hash or the frozen commit")
+    return raw.decode("utf-8")
+
+
 BASELINE_SPEC = PromptSpec("baseline", PROMPT_VERSION, PROMPT_SHA256, "services/requirements_v2/extraction/prompts (pinned, frozen at 059c56b)", load_prompt)
-CANDIDATE_SPEC = PromptSpec("v2-2", CANDIDATE_VERSION, CANDIDATE_V22_SHA256, f"{CANDIDATE_DIR_REL} @ {CANDIDATE_COMMIT}", load_candidate_v22)
-SPECS = {"baseline": BASELINE_SPEC, "v2-2": CANDIDATE_SPEC}
+CANDIDATE_SPEC = PromptSpec("v2-2", CANDIDATE_VERSION, CANDIDATE_V22_SHA256, f"{CANDIDATE_DIR_REL} @ {CANDIDATE_COMMIT}", load_candidate_v22, CANDIDATE_COMMIT)
+CANDIDATE_V23_SPEC = PromptSpec("v2-3", CANDIDATE_V23_VERSION, CANDIDATE_V23_SHA256, f"{CANDIDATE_V23_DIR_REL} @ {CANDIDATE_V23_COMMIT}", load_candidate_v23, CANDIDATE_V23_COMMIT)
+SPECS = {"baseline": BASELINE_SPEC, "v2-2": CANDIDATE_SPEC, "v2-3": CANDIDATE_V23_SPEC}
 
 
 class ApiError(Exception):
@@ -150,39 +172,51 @@ def verify_frozen() -> list[str]:
     return problems
 
 
-def verify_candidate() -> list[str]:
-    """Problems found (empty = the candidate directory is byte-identical to CANDIDATE_COMMIT, hashes verified)."""
+def _verify_candidate_dir(commit: str, dir_rel: str, loader) -> list[str]:
+    """Problems found (empty = the candidate directory is byte-identical to `commit`, hashes and manifest verified by `loader`)."""
     problems = []
     try:
-        _git("cat-file", "-e", CANDIDATE_COMMIT)
-        _git("merge-base", "--is-ancestor", CANDIDATE_COMMIT, "HEAD")
+        _git("cat-file", "-e", commit)
+        _git("merge-base", "--is-ancestor", commit, "HEAD")
     except Exception:
-        return [f"{CANDIDATE_COMMIT} is missing or not an ancestor of HEAD"]
-    tracked = _git("ls-tree", "-r", "--name-only", CANDIDATE_COMMIT, "--", CANDIDATE_DIR_REL).decode().split()
-    now = set(_git("ls-files", "--", CANDIDATE_DIR_REL).decode().split())
-    problems += [f"added to the candidate since {CANDIDATE_COMMIT}: {p}" for p in sorted(now - set(tracked))]
+        return [f"{commit} is missing or not an ancestor of HEAD"]
+    tracked = _git("ls-tree", "-r", "--name-only", commit, "--", dir_rel).decode().split()
+    now = set(_git("ls-files", "--", dir_rel).decode().split())
+    problems += [f"added to the candidate since {commit}: {p}" for p in sorted(now - set(tracked))]
     if not tracked:
         problems.append("the candidate directory does not exist at the candidate commit")
     for p in tracked:
         f = REPO / p
         if not f.exists():
             problems.append(f"missing: {p}")
-        elif f.read_bytes() != _git("show", f"{CANDIDATE_COMMIT}:{p}"):
-            problems.append(f"differs from {CANDIDATE_COMMIT}: {p}")
-    if _git("status", "--porcelain", "--", CANDIDATE_DIR_REL).strip():
+        elif f.read_bytes() != _git("show", f"{commit}:{p}"):
+            problems.append(f"differs from {commit}: {p}")
+    if _git("status", "--porcelain", "--", dir_rel).strip():
         problems.append("uncommitted changes in the candidate directory")
     try:
-        load_candidate_v22()
+        loader()
     except Exception as exc:
         problems.append(f"candidate integrity: {type(exc).__name__}: {exc}")
     return problems
+
+
+def verify_candidate() -> list[str]:
+    """The v2-2 candidate versus CANDIDATE_COMMIT (module globals are read at call time)."""
+    return _verify_candidate_dir(CANDIDATE_COMMIT, CANDIDATE_DIR_REL, load_candidate_v22)
+
+
+def verify_candidate_v23() -> list[str]:
+    """The v2-3 candidate versus CANDIDATE_V23_COMMIT, its manifest and SHA-256."""
+    return _verify_candidate_dir(CANDIDATE_V23_COMMIT, CANDIDATE_V23_DIR_REL, load_candidate_v23)
 
 
 def preflight_offline(cases: list[dict], spec: PromptSpec = BASELINE_SPEC) -> dict:
     count, method = make_counter()
     problems = verify_frozen()
     if spec.key != "baseline":
-        problems += verify_candidate()
+        problems += verify_candidate()                 # v2-2 stays verified for every candidate run (it is the comparison base)
+    if spec.key == "v2-3":
+        problems += verify_candidate_v23()
     if PROMPT_SHA256 != ev.PLAN["prompt_sha256"] or ev.PLAN["prompt_sha256"] != "f2017d2879554935baa5d0d4f51d53fa0600e18858cc875d4a791c5ac0678b04":
         problems.append("prompt hash differs from the plan")
     try:
@@ -200,7 +234,7 @@ def preflight_offline(cases: list[dict], spec: PromptSpec = BASELINE_SPEC) -> di
             problems.append(f"request settings differ for {c['id']}")
         reserve[c["id"]] = count(req["messages"]) + ev.PLAN["max_completion_tokens_per_call"]
     return {"ok": not problems, "problems": problems, "token_counting": method, "model": RUN_MODEL, "prompt_sha256": spec.sha256,
-            **spec.meta(), "frozen_commit": FROZEN_COMMIT, "candidate_commit": CANDIDATE_COMMIT if spec.key != "baseline" else None,
+            **spec.meta(), "frozen_commit": FROZEN_COMMIT, "candidate_commit": spec.commit,
             "reserve_per_call_tokens": reserve, "worst_case_reserved_total": sum(reserve.values()) * ev.PLAN["runs_per_case"]}
 
 
@@ -283,7 +317,7 @@ def execute(cases: list[dict], call_fn, out_dir: Path, *, count_fn, clock=time.m
                 "response_format": dict(EXTRACTION_CONFIG["response_format"])}, "limits": {k: plan[k] for k in (
                     "max_calls", "max_total_tokens", "max_completion_tokens_per_call", "max_cost_usd", "wall_clock_limit_s", "per_call_timeout_s", "retries")},
                 "plan_version": plan.get("plan_version"), "frozen_benchmark_commit": FROZEN_COMMIT,
-                "candidate_commit": CANDIDATE_COMMIT if spec.key != "baseline" else None, "eval_version": ev.EVAL_VERSION,
+                "candidate_commit": spec.commit, "eval_version": ev.EVAL_VERSION,
                 "started_utc": dt.datetime.now(dt.timezone.utc).isoformat()}
     (out_dir / "meta.json").write_text(json.dumps(run_meta, indent=1), encoding="utf-8")     # written before the first call: a partial run keeps it
     t0 = clock()
@@ -473,6 +507,22 @@ def budget_assessment(cases: list[dict], spec: PromptSpec, count_fn, method: str
                 "stress_C_calls_before_reserve_stop": C["calls_made"], "stress_C_stopped_by": C["stopped_by"]}}
 
 
+def reservation_comparison(cases: list[dict], count_fn, other: PromptSpec, base: PromptSpec, plan: dict = ev.PLAN) -> dict:
+    """Per-call reservations (input estimate + the 6000-token output reserve) of two prompts for the same 12 cases, and the worst-case total over the
+    24 planned calls. Offline; nothing is called."""
+    rows = {}
+    for c in cases:
+        a = count_fn(base.build(c["jd"], c["job_metadata"])["messages"])
+        b = count_fn(other.build(c["jd"], c["job_metadata"])["messages"])
+        rows[c["id"]] = {f"{base.key}_input": a, f"{other.key}_input": b, "added_input_tokens": b - a}
+    cap = plan["max_completion_tokens_per_call"]
+    tot = lambda k: sum(r[f"{k}_input"] + cap for r in rows.values()) * plan["runs_per_case"]          # noqa: E731
+    return {"per_case": rows, f"{base.key}_worst_case_reserved_total": tot(base.key), f"{other.key}_worst_case_reserved_total": tot(other.key),
+            "added_input_tokens_per_call_min_max": [min(r["added_input_tokens"] for r in rows.values()), max(r["added_input_tokens"] for r in rows.values())],
+            "note": "Worst-case totals reserve the output cap on every call, so they exceed the 200,000-token limit by design; the run gate reserves input + 6000 only for the NEXT call "
+                    "against tokens already used (see assessment.limits_practical for the projected headroom)."}
+
+
 def check_network(host: str = "api.openai.com", port: int = 443, timeout: float = 5.0) -> dict:
     """TCP reachability only: no request, no credentials, no data sent."""
     try:
@@ -485,7 +535,7 @@ def check_network(host: str = "api.openai.com", port: int = 443, timeout: float 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--preflight", action="store_true"); ap.add_argument("--run", action="store_true"); ap.add_argument("--out")
-    ap.add_argument("--prompt", choices=sorted(SPECS), default="baseline", help="system prompt: baseline (v2-1, default) or v2-2 (candidate)")
+    ap.add_argument("--prompt", choices=sorted(SPECS), default="baseline", help="system prompt: baseline (v2-1, default), v2-2 or v2-3 (offline candidates)")
     ap.add_argument("--check-network", action="store_true", help="with --preflight: TCP-connect to api.openai.com:443 (no request, no key used)")
     a = ap.parse_args(argv)
     spec = SPECS[a.prompt]
@@ -496,6 +546,8 @@ def main(argv=None) -> int:
                               "frozen_commit", "candidate_commit", "worst_case_reserved_total")}
     if pf["ok"] or a.preflight:
         out["assessment"] = budget_assessment(cases, spec, count_fn, method)
+        if spec.key == "v2-3":
+            out["reservations_vs_v2_2"] = reservation_comparison(cases, count_fn, spec, CANDIDATE_SPEC)
     if a.preflight:
         out["openai_key_present"] = bool(os.environ.get("OPENAI_API_KEY"))        # a boolean only; the value is never read into the output
         if a.check_network:
