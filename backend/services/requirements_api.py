@@ -51,7 +51,7 @@ from sqlalchemy import text
 from services import requirements_pipeline as pipe
 from services.requirements_guard import is_requirements_v2
 from services.requirements_v2 import (
-    CATEGORIES, POLICY_KEY, SCHEMA_VERSION, AcknowledgmentError, ConfirmationError, Issue,
+    CATEGORIES, MAX_REQUIRED_PER_CATEGORY, POLICY_KEY, SCHEMA_VERSION, AcknowledgmentError, ConfirmationError, Issue,
     acknowledge_classification_warning, classification_status, collect_item_ids, compute_readiness,
     StructureError, confirm_no_numeric_score, confirm_structure, edited_categories, make_item, new_item_id,
     parse_acknowledgment_policy, reconcile_classification_review, reconcile_structure_review, record_structure_edits,
@@ -125,13 +125,36 @@ class ApiError(Exception):
         return {"code": self.code, "message": self.message, **self.extra}
 
 
-def issues_payload(issues) -> list[dict]:
+def _finding_params(issue: Issue, doc: dict | None) -> dict:
+    """The numbers behind a weight finding, read from the same document the validator judged. The rules are the validator's; this only reports
+    the totals and differences they were judged on, so the editor can say exactly what is wrong."""
+    if doc is None:
+        return {}
+    cats = doc.get("categories", {})
+    cat = cats.get(issue.category) if issue.category else None
+    if issue.code == "required_weights_total" and cat:
+        total = sum(i["weight"] for i in cat["items"] if i["importance"] == "required")
+        return {"total": total, "expected": 100, "difference": total - 100}
+    if issue.code == "category_weights_total":
+        total = sum(c["weight"] for c in cats.values())
+        return {"total": total, "expected": 100, "difference": total - 100}
+    if issue.code in ("category_weight_not_positive", "category_weight_without_required_items") and cat:
+        return {"weight": cat["weight"]}
+    if issue.code == "required_weight_invalid" and cat and issue.item_id:
+        item = next((i for i in cat["items"] if i["id"] == issue.item_id), None)
+        return {"weight": item["weight"] if item else None}
+    if issue.code == "too_many_required_items" and cat:
+        return {"n": sum(1 for i in cat["items"] if i["importance"] == "required"), "max": MAX_REQUIRED_PER_CATEGORY}
+    return {}
+
+
+def issues_payload(issues, doc: dict | None = None) -> list[dict]:
     return [{"code": i.code, "message": i.message, "category": i.category, "item_id": i.item_id,
-             "params": dict(getattr(i, "params", None) or {})} for i in issues]
+             "params": _finding_params(i, doc)} for i in issues]
 
 
-def invalid(issues: list[Issue]) -> ApiError:
-    return ApiError(422, CODE_INVALID, "The requirements cannot be saved.", issues=issues_payload(issues))
+def invalid(issues: list[Issue], doc: dict | None = None) -> ApiError:
+    return ApiError(422, CODE_INVALID, "The requirements cannot be saved.", issues=issues_payload(issues, doc))
 
 
 def _now() -> str:
@@ -280,7 +303,7 @@ def plan_save(stored: dict, client: Any, *, reserved_ids: set[str], retired_befo
     doc, recorded = record_structure_edits(stored, doc, original, user_id=user_id, recorded_at=now)
     result = validate_final(doc)
     if not result.ok:
-        raise invalid(list(result.errors))
+        raise invalid(list(result.errors), doc)
     ids_after = collect_item_ids(doc)
     retired = sorted(set(retired_before) | (collect_item_ids(stored) - ids_after))
     changes = _item_changes(stored, doc)

@@ -23,6 +23,7 @@ import pathlib
 import re
 import sys
 import tempfile
+import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parent.parent.parent.parent
@@ -148,6 +149,8 @@ class Run:
         # A. admin, switch on: the choice is offered; v2 creation shows queued -> processing -> completed, then the editor
         self.login("admin")
         self.open_creation()
+        # the switch state is read when the dialog opens: wait for the choice to appear, as a user would see it
+        self.page.wait_for_selector("[data-testid=analysis-format]", timeout=10000)
         choice_visible = self.page.locator("[data-testid=analysis-format]").count() == 1
         check("switch on: the analysis-format choice is shown", choice_visible)
         labels = self.page.locator("[data-testid=analysis-format]").inner_text()
