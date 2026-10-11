@@ -1,6 +1,10 @@
 # Audit of the TC20 repeat (v2-3 versus v2-5): status and static analysis
 
-## Status: the four repeat files were NOT available, so the run audit is not done
+## Status (superseded): the four repeat files were not available at the time of this document
+
+Superseded by `AUDIT_REPEAT_RESULTS.md`, written after the four files were attached. The static analysis below still stands.
+
+## Status when written: the four repeat files were NOT available, so the run audit is not done
 
 The request named the attached files `calls.jsonl`, `manifest.json`, `run.json` and `scored.json`. None was attached to the
 message, none is in the uploads folder, and a search of the filesystem found no repeat outputs (the only matches were this

@@ -1,0 +1,655 @@
+{
+ "runs_kept_separate": {
+  "paired_run": {
+   "source": "tests/fixtures/requirements_v2_candidate_v25/audit/run_v2-3_v2-5_20261010",
+   "arms": {
+    "v2-3": {
+     "calls": [
+      {
+       "call": 1,
+       "checks": {
+        "C_RESP": false,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": false,
+        "C_AND": false
+       },
+       "duty_lines_found": 0,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": false,
+        "it_focal_point": false,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": false,
+       "informational_items": 1,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 2,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": true,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": true,
+        "it_focal_point": true,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": true,
+       "informational_items": 3,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 3,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": true,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": true,
+        "it_focal_point": true,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": true,
+       "informational_items": 2,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 4,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": true,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": true,
+        "it_focal_point": true,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": true,
+       "informational_items": 2,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 5,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": false,
+        "C_REPORTING": true,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": true,
+        "it_focal_point": true,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": true,
+       "informational_items": 3,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "skills"
+       ],
+       "communication_line_split_items": 0
+      }
+     ],
+     "duty_zero_calls": 1,
+     "reporting_missing_whole_answer": 1,
+     "informational_empty_calls": 0,
+     "ict_alternatives_kept": 0,
+     "familiarity_alternatives_kept": 0,
+     "communication_split_calls": 0,
+     "checks_passed": {
+      "C_RESP": 4,
+      "C_COMP": 5,
+      "C_EXP_OR": 0,
+      "C_FAM_OR": 0,
+      "C_LOCAL": 5,
+      "C_LOCATION": 4,
+      "C_REPORTING": 4,
+      "C_AND": 0
+     }
+    },
+    "v2-5": {
+     "calls": [
+      {
+       "call": 1,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": true,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": true,
+        "it_focal_point": true,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": true,
+       "informational_items": 2,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "soft_skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 2,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": false,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": false,
+        "it_focal_point": false,
+        "regular_communication": false
+       },
+       "reporting_statement_in_whole_answer": false,
+       "informational_items": 0,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "soft_skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 3,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": false,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": false,
+        "it_focal_point": false,
+        "regular_communication": false
+       },
+       "reporting_statement_in_whole_answer": false,
+       "informational_items": 0,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "soft_skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 4,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": false,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": false,
+        "it_focal_point": false,
+        "regular_communication": false
+       },
+       "reporting_statement_in_whole_answer": false,
+       "informational_items": 0,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "soft_skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 5,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": false,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": false,
+        "it_focal_point": false,
+        "regular_communication": false
+       },
+       "reporting_statement_in_whole_answer": false,
+       "informational_items": 0,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "soft_skills"
+       ],
+       "communication_line_split_items": 0
+      }
+     ],
+     "duty_zero_calls": 0,
+     "reporting_missing_whole_answer": 4,
+     "informational_empty_calls": 4,
+     "ict_alternatives_kept": 0,
+     "familiarity_alternatives_kept": 0,
+     "communication_split_calls": 0,
+     "checks_passed": {
+      "C_RESP": 5,
+      "C_COMP": 5,
+      "C_EXP_OR": 0,
+      "C_FAM_OR": 0,
+      "C_LOCAL": 5,
+      "C_LOCATION": 5,
+      "C_REPORTING": 1,
+      "C_AND": 0
+     }
+    }
+   }
+  },
+  "repeat": {
+   "source": "tests/fixtures/requirements_v2_tc20_repeat/run",
+   "arms": {
+    "v2-3": {
+     "calls": [
+      {
+       "call": 1,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": true,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": true,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": true,
+        "it_focal_point": true,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": true,
+       "informational_items": 2,
+       "ict_alternatives_kept": true,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 2,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": true,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": true,
+        "it_focal_point": true,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": true,
+       "informational_items": 3,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 3,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": true,
+        "C_FAM_OR": true,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": true,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": true,
+        "it_focal_point": true,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": true,
+       "informational_items": 3,
+       "ict_alternatives_kept": true,
+       "familiarity_alternatives_kept": true,
+       "communication_line_categories": [
+        "skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 4,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": true,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": true,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": true,
+        "it_focal_point": true,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": true,
+       "informational_items": 3,
+       "ict_alternatives_kept": true,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 5,
+       "checks": {
+        "C_RESP": false,
+        "C_COMP": true,
+        "C_EXP_OR": true,
+        "C_FAM_OR": true,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": true,
+        "C_AND": false
+       },
+       "duty_lines_found": 0,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": true,
+        "it_focal_point": true,
+        "regular_communication": true
+       },
+       "reporting_statement_in_whole_answer": true,
+       "informational_items": 3,
+       "ict_alternatives_kept": true,
+       "familiarity_alternatives_kept": true,
+       "communication_line_categories": [
+        "skills"
+       ],
+       "communication_line_split_items": 0
+      }
+     ],
+     "duty_zero_calls": 1,
+     "reporting_missing_whole_answer": 0,
+     "informational_empty_calls": 0,
+     "ict_alternatives_kept": 4,
+     "familiarity_alternatives_kept": 2,
+     "communication_split_calls": 0,
+     "checks_passed": {
+      "C_RESP": 4,
+      "C_COMP": 5,
+      "C_EXP_OR": 4,
+      "C_FAM_OR": 2,
+      "C_LOCAL": 5,
+      "C_LOCATION": 5,
+      "C_REPORTING": 5,
+      "C_AND": 0
+     }
+    },
+    "v2-5": {
+     "calls": [
+      {
+       "call": 1,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": false,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": false,
+        "it_focal_point": false,
+        "regular_communication": false
+       },
+       "reporting_statement_in_whole_answer": false,
+       "informational_items": 0,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "soft_skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 2,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": false,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": false,
+        "it_focal_point": false,
+        "regular_communication": false
+       },
+       "reporting_statement_in_whole_answer": false,
+       "informational_items": 0,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "soft_skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 3,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": false,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": false,
+        "it_focal_point": false,
+        "regular_communication": false
+       },
+       "reporting_statement_in_whole_answer": false,
+       "informational_items": 0,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "soft_skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 4,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": false,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": false,
+        "it_focal_point": false,
+        "regular_communication": false
+       },
+       "reporting_statement_in_whole_answer": false,
+       "informational_items": 0,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "soft_skills"
+       ],
+       "communication_line_split_items": 0
+      },
+      {
+       "call": 5,
+       "checks": {
+        "C_RESP": true,
+        "C_COMP": true,
+        "C_EXP_OR": false,
+        "C_FAM_OR": false,
+        "C_LOCAL": true,
+        "C_LOCATION": true,
+        "C_REPORTING": false,
+        "C_AND": false
+       },
+       "duty_lines_found": 16,
+       "reporting_sentences_in_whole_answer": {
+        "submit_deliverables": false,
+        "it_focal_point": false,
+        "regular_communication": false
+       },
+       "reporting_statement_in_whole_answer": false,
+       "informational_items": 0,
+       "ict_alternatives_kept": false,
+       "familiarity_alternatives_kept": false,
+       "communication_line_categories": [
+        "soft_skills"
+       ],
+       "communication_line_split_items": 0
+      }
+     ],
+     "duty_zero_calls": 0,
+     "reporting_missing_whole_answer": 5,
+     "informational_empty_calls": 5,
+     "ict_alternatives_kept": 0,
+     "familiarity_alternatives_kept": 0,
+     "communication_split_calls": 0,
+     "checks_passed": {
+      "C_RESP": 5,
+      "C_COMP": 5,
+      "C_EXP_OR": 0,
+      "C_FAM_OR": 0,
+      "C_LOCAL": 5,
+      "C_LOCATION": 5,
+      "C_REPORTING": 0,
+      "C_AND": 0
+     }
+    }
+   }
+  }
+ },
+ "pooled_for_description_only": {
+  "v2-3": {
+   "duty_zero_calls": 2,
+   "reporting_missing_whole_answer": 1,
+   "informational_empty_calls": 0,
+   "ict_alternatives_kept": 4,
+   "familiarity_alternatives_kept": 2,
+   "communication_split_calls": 0,
+   "calls": 10
+  },
+  "v2-5": {
+   "duty_zero_calls": 0,
+   "reporting_missing_whole_answer": 9,
+   "informational_empty_calls": 9,
+   "ict_alternatives_kept": 0,
+   "familiarity_alternatives_kept": 0,
+   "communication_split_calls": 0,
+   "calls": 10
+  }
+ },
+ "note": "pooled counts are descriptive; they are not a significance test; no cause is identified"
+}
