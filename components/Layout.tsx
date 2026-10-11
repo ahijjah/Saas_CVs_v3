@@ -4,6 +4,7 @@ import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { User } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
+import { useFeatures } from '../context/FeatureContext';
 
 interface LayoutProps {
   user: User | null;
@@ -23,6 +24,7 @@ const T = {
     tenantSubscriptions: 'Tenant Subscriptions',
     secrets: 'Secrets & Credentials', aiPrompts: 'AI Prompts', auditLogs: 'Audit Logs',
     aiUsage: 'AI Usage & Cost', aiModels: 'AI Models',
+    tenantFeatures: 'Tenant Features',
     organization: 'Organization', langBtn: 'عربي',
     pageTitles: {
       '/jobs':                        'Jobs',
@@ -46,6 +48,7 @@ const T = {
       '/admin/audit-logs':            'Audit Logs',
       '/admin/ai-usage':              'AI Usage & Cost',
       '/admin/ai-models':             'AI Models',
+      '/admin/tenant-features':       'Tenant Features',
     } as Record<string, string>,
   },
   ar: {
@@ -58,6 +61,7 @@ const T = {
     tenantSubscriptions: 'اشتراكات المستأجرين',
     secrets: 'المفاتيح والبيانات السرية', aiPrompts: 'موجهات الذكاء الاصطناعي', auditLogs: 'سجل التدقيق',
     aiUsage: 'استخدام الذكاء الاصطناعي والتكلفة', aiModels: 'نماذج الذكاء الاصطناعي',
+    tenantFeatures: 'ميزات المستأجرين',
     organization: 'المنظمة', langBtn: 'English',
     pageTitles: {
       '/jobs':                        'الوظائف',
@@ -81,6 +85,7 @@ const T = {
       '/admin/audit-logs':            'سجل التدقيق',
       '/admin/ai-usage':              'استخدام الذكاء الاصطناعي والتكلفة',
       '/admin/ai-models':             'نماذج الذكاء الاصطناعي',
+      '/admin/tenant-features':       'ميزات المستأجرين',
     } as Record<string, string>,
   },
 };
@@ -97,6 +102,7 @@ function pathnameToMenuId(pathname: string): string {
   if (pathname.startsWith('/admin/audit-logs'))         return 'admin-audit-logs';
   if (pathname.startsWith('/admin/ai-usage'))           return 'admin-ai-usage';
   if (pathname.startsWith('/admin/ai-models'))          return 'admin-ai-models';
+  if (pathname.startsWith('/admin/tenant-features'))    return 'admin-tenant-features';
   if (pathname === '/plan-usage')          return 'plan-usage';
   if (pathname === '/client-organizations') return 'client-organizations';
   if (pathname === '/dashboard')           return 'dashboard';
@@ -131,6 +137,7 @@ function menuIdToRoute(id: string): string {
     'admin-audit-logs':           '/admin/audit-logs',
     'admin-ai-usage':             '/admin/ai-usage',
     'admin-ai-models':            '/admin/ai-models',
+    'admin-tenant-features':      '/admin/tenant-features',
   };
   return map[id] || '/dashboard';
 }
@@ -151,6 +158,7 @@ function pathnameToTitle(pathname: string, search: string, titles: Record<string
   if (pathname.startsWith('/admin/audit-logs'))           return titles['/admin/audit-logs'] || '';
   if (pathname.startsWith('/admin/ai-usage'))             return titles['/admin/ai-usage'] || '';
   if (pathname.startsWith('/admin/ai-models'))            return titles['/admin/ai-models'] || '';
+  if (pathname.startsWith('/admin/tenant-features'))      return titles['/admin/tenant-features'] || '';
   if (pathname.startsWith('/applications')) {
     // app_id in the query string signals we're viewing a single application's detail
     if (new URLSearchParams(search).has('app_id')) return titles['/applications/details'] || 'Application Details';
@@ -189,6 +197,11 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
   const showClientOrgs = user?.tenant_type !== 'organization';
   const isAgencyOrFreelancer = user?.tenant_type === 'agency' || user?.tenant_type === 'individual_recruiter';
 
+  const features = useFeatures();
+  // super_admin always sees all nav items regardless of feature flags
+  const showAIRecruitment = isSuperAdmin || !features.loaded || features.aiRecruitment;
+  const showATSManagement = isSuperAdmin || !features.loaded || features.atsManagement;
+
   const { pageTitle: contextTitle } = usePageTitle();
   const currentMenuId = pathnameToMenuId(location.pathname);
   const pageTitle = contextTitle ?? pathnameToTitle(location.pathname, location.search, t.pageTitles);
@@ -215,38 +228,44 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
       ),
     });
 
-    // Candidates (global workspace — always shown after Dashboard)
-    items.push({
-      id: 'candidates',
-      label: t.candidates,
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      ),
-    });
+    // Candidates (ATS Management)
+    if (showATSManagement) {
+      items.push({
+        id: 'candidates',
+        label: t.candidates,
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        ),
+      });
+    }
 
-    // Talent Pool
-    items.push({
-      id: 'talent-pool',
-      label: t.talentPool || 'Talent Pool',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12a2 2 0 100-4 2 2 0 000 4zm0 0a3 3 0 103-3 3 3 0 00-3 3zm6 0h5v2a5 5 0 01-5 5h-4a5 5 0 01-5-5v-2h1M15 9a2 2 0 100-4 2 2 0 000 4z" />
-        </svg>
-      ),
-    });
+    // Talent Pool (ATS Management)
+    if (showATSManagement) {
+      items.push({
+        id: 'talent-pool',
+        label: t.talentPool || 'Talent Pool',
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12a2 2 0 100-4 2 2 0 000 4zm0 0a3 3 0 103-3 3 3 0 00-3 3zm6 0h5v2a5 5 0 01-5 5h-4a5 5 0 01-5-5v-2h1M15 9a2 2 0 100-4 2 2 0 000 4z" />
+          </svg>
+        ),
+      });
+    }
 
-    // Analytics (funnel, SLA monitoring)
-    items.push({
-      id: 'analytics',
-      label: t.analytics,
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-        </svg>
-      ),
-    });
+    // Analytics — ATS Management (funnel, SLA monitoring)
+    if (showATSManagement) {
+      items.push({
+        id: 'analytics',
+        label: t.analytics,
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+        ),
+      });
+    }
 
     // For agency/freelancer: Clients next (if present)
     if (isAgencyOrFreelancer) {
@@ -261,27 +280,31 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
       });
     }
 
-    // Campaigns (always shown)
-    items.push({
-      id: 'campaigns',
-      label: t.campaigns,
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
-        </svg>
-      ),
-    });
+    // Campaigns — AI Recruitment
+    if (showAIRecruitment) {
+      items.push({
+        id: 'campaigns',
+        label: t.campaigns,
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+          </svg>
+        ),
+      });
+    }
 
-    // Jobs (always shown, core to all tenant types)
-    items.push({
-      id: 'jobs',
-      label: t.jobs,
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-        </svg>
-      ),
-    });
+    // Jobs — AI Recruitment
+    if (showAIRecruitment) {
+      items.push({
+        id: 'jobs',
+        label: t.jobs,
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        ),
+      });
+    }
 
     return items;
   })();
@@ -369,6 +392,11 @@ export const Layout: React.FC<LayoutProps> = ({ user, onLogout, children }) => {
     { id: 'admin-ai-models', label: t.aiModels, icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+      </svg>
+    )},
+    { id: 'admin-tenant-features', label: t.tenantFeatures, icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
       </svg>
     )},
   ];

@@ -1,0 +1,262 @@
+{
+ "v2-3": {
+  "file": "prompt_candidates/criteria_extraction_v2-3/criteria_extraction_v2-3.txt",
+  "sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+  "answers": [
+   {
+    "line": 103,
+    "status": "scoreable",
+    "items_per_category": {
+     "skills": 3,
+     "experience": 2,
+     "education": 1,
+     "certifications": 1,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "from_responsibilities_items": 1,
+    "items_with_alternatives": 1,
+    "soft_skills_items": 0,
+    "domain_knowledge_items": 0,
+    "non_scoreable_routes": [],
+    "post_hiring_routes": [],
+    "informational_routes": []
+   },
+   {
+    "line": 133,
+    "status": "scoreable",
+    "items_per_category": {
+     "skills": 4,
+     "experience": 4,
+     "education": 0,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "from_responsibilities_items": 3,
+    "items_with_alternatives": 1,
+    "soft_skills_items": 0,
+    "domain_knowledge_items": 0,
+    "non_scoreable_routes": [
+     "location",
+     "salary"
+    ],
+    "post_hiring_routes": [],
+    "informational_routes": [
+     "benefits"
+    ]
+   },
+   {
+    "line": 148,
+    "status": "scoreable",
+    "items_per_category": {
+     "skills": 1,
+     "experience": 0,
+     "education": 0,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 1,
+     "other_requirements": 0
+    },
+    "from_responsibilities_items": 0,
+    "items_with_alternatives": 0,
+    "soft_skills_items": 0,
+    "domain_knowledge_items": 1,
+    "non_scoreable_routes": [],
+    "post_hiring_routes": [],
+    "informational_routes": [
+     "company_description"
+    ]
+   },
+   {
+    "line": 171,
+    "status": "scoreable",
+    "items_per_category": {
+     "skills": 4,
+     "experience": 3,
+     "education": 0,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "from_responsibilities_items": 2,
+    "items_with_alternatives": 1,
+    "soft_skills_items": 0,
+    "domain_knowledge_items": 0,
+    "non_scoreable_routes": [
+     "location",
+     "salary"
+    ],
+    "post_hiring_routes": [
+     "background_check"
+    ],
+    "informational_routes": []
+   },
+   {
+    "line": 182,
+    "status": "open_broad",
+    "items_per_category": {
+     "skills": 0,
+     "experience": 0,
+     "education": 0,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "from_responsibilities_items": 0,
+    "items_with_alternatives": 0,
+    "soft_skills_items": 0,
+    "domain_knowledge_items": 0,
+    "non_scoreable_routes": [
+     "salary"
+    ],
+    "post_hiring_routes": [],
+    "informational_routes": [
+     "benefits"
+    ]
+   }
+  ],
+  "totals": {
+   "from_responsibilities_items": 6,
+   "items_with_alternatives": 3,
+   "soft_skills_items": 0,
+   "domain_knowledge_items": 1
+  },
+  "reporting_line_routes": 0,
+  "ability_statements": 0
+ },
+ "v2-4": {
+  "file": "prompt_candidates/criteria_extraction_v2-4/criteria_extraction_v2-4.txt",
+  "sha256": "dd2651bcda14ae816c89d33dd08ecb4aefa5d63e2e51dfbe7d2b39f8b1989a9e",
+  "answers": [
+   {
+    "line": 106,
+    "status": "scoreable",
+    "items_per_category": {
+     "skills": 3,
+     "experience": 2,
+     "education": 1,
+     "certifications": 1,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "from_responsibilities_items": 1,
+    "items_with_alternatives": 1,
+    "soft_skills_items": 0,
+    "domain_knowledge_items": 0,
+    "non_scoreable_routes": [],
+    "post_hiring_routes": [],
+    "informational_routes": []
+   },
+   {
+    "line": 136,
+    "status": "scoreable",
+    "items_per_category": {
+     "skills": 4,
+     "experience": 4,
+     "education": 0,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "from_responsibilities_items": 3,
+    "items_with_alternatives": 1,
+    "soft_skills_items": 0,
+    "domain_knowledge_items": 0,
+    "non_scoreable_routes": [
+     "location",
+     "salary"
+    ],
+    "post_hiring_routes": [],
+    "informational_routes": [
+     "benefits"
+    ]
+   },
+   {
+    "line": 151,
+    "status": "scoreable",
+    "items_per_category": {
+     "skills": 1,
+     "experience": 0,
+     "education": 0,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 1,
+     "other_requirements": 0
+    },
+    "from_responsibilities_items": 0,
+    "items_with_alternatives": 0,
+    "soft_skills_items": 0,
+    "domain_knowledge_items": 1,
+    "non_scoreable_routes": [],
+    "post_hiring_routes": [],
+    "informational_routes": [
+     "company_description"
+    ]
+   },
+   {
+    "line": 174,
+    "status": "scoreable",
+    "items_per_category": {
+     "skills": 4,
+     "experience": 3,
+     "education": 0,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "from_responsibilities_items": 2,
+    "items_with_alternatives": 1,
+    "soft_skills_items": 0,
+    "domain_knowledge_items": 0,
+    "non_scoreable_routes": [
+     "location",
+     "salary"
+    ],
+    "post_hiring_routes": [
+     "background_check"
+    ],
+    "informational_routes": []
+   },
+   {
+    "line": 185,
+    "status": "open_broad",
+    "items_per_category": {
+     "skills": 0,
+     "experience": 0,
+     "education": 0,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "from_responsibilities_items": 0,
+    "items_with_alternatives": 0,
+    "soft_skills_items": 0,
+    "domain_knowledge_items": 0,
+    "non_scoreable_routes": [
+     "salary"
+    ],
+    "post_hiring_routes": [],
+    "informational_routes": [
+     "benefits"
+    ]
+   }
+  ],
+  "totals": {
+   "from_responsibilities_items": 6,
+   "items_with_alternatives": 3,
+   "soft_skills_items": 0,
+   "domain_knowledge_items": 1
+  },
+  "reporting_line_routes": 0,
+  "ability_statements": 0
+ }
+}

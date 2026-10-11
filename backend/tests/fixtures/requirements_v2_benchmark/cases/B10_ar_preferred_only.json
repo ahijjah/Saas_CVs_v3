@@ -1,0 +1,92 @@
+{
+ "id": "B10_ar_preferred_only",
+ "language": "ar",
+ "title": "مساعد إداري (دوام جزئي)",
+ "tags": [
+  "headings_required_preferred",
+  "preferred_only",
+  "alternatives"
+ ],
+ "job_metadata": {
+  "title": "مساعد إداري (دوام جزئي)"
+ },
+ "jd": "مساعد إداري (دوام جزئي)\n\nجميع ما يلي ميزة إضافية وليس شرطًا للتقديم.\n\nيفضل:\n- إجادة برنامج Word.\n- معرفة أساسية بالمحاسبة.\n- رخصة قيادة.\n- خبرة سابقة في العمل في عيادة أو فندق.\n",
+ "expected": {
+  "scoreability": "scoreable",
+  "readiness": "needs_confirmation",
+  "review_codes": [],
+  "category_weights_hint": {
+   "skills": 0,
+   "experience": 0,
+   "education": 0,
+   "certifications": 0,
+   "soft_skills": 0,
+   "domain_knowledge": 0,
+   "other_requirements": 0
+  },
+  "items": [
+   {
+    "category": "skills",
+    "text": "إجادة برنامج Word",
+    "importance": "preferred",
+    "cue": "يفضل",
+    "evidence": "إجادة برنامج Word.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "skills",
+    "text": "معرفة أساسية بالمحاسبة",
+    "importance": "preferred",
+    "cue": "يفضل",
+    "evidence": "معرفة أساسية بالمحاسبة.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "skills",
+     "domain_knowledge"
+    ]
+   },
+   {
+    "category": "certifications",
+    "text": "رخصة قيادة",
+    "importance": "preferred",
+    "cue": "يفضل",
+    "evidence": "رخصة قيادة.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "certifications",
+     "other_requirements"
+    ]
+   },
+   {
+    "category": "experience",
+    "text": "خبرة سابقة في العمل في عيادة أو فندق",
+    "importance": "preferred",
+    "cue": "يفضل",
+    "evidence": "خبرة سابقة في العمل في عيادة أو فندق.",
+    "origin": "stated",
+    "alternatives": [
+     "عيادة",
+     "فندق"
+    ],
+    "experience": {
+     "subject": "العمل في عيادة أو فندق",
+     "min_years": null
+    },
+    "subject_variants": [
+     "العمل في عيادة أو فندق",
+     "عيادة أو فندق"
+    ]
+   }
+  ],
+  "conditions": [],
+  "must_not_extract": [],
+  "model_warnings_expected": false,
+  "notes": "All preferred: no weights; readiness needs the recruiter's explicit no-numeric-score confirmation."
+ }
+}

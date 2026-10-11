@@ -1,0 +1,1216 @@
+{
+ "_comment": "HELD-OUT synthetic P4 context cases for S1 s1-6. NEW vocabulary, disjoint from the main context fixture, the S1 boundary and held-out fixtures, both qualifying-context fixtures and the s1-6.0 prompt illustrations (pinned by leakage tests). SHA256-pinned in scripts/s1_context_eval.py before any real run. Run AT MOST ONCE per prompt version: once used it is permanently exposed and can never again serve as unseen validation. Same schema as s1_ctx_main_cases.json.",
+ "fixture_version": "s1-ctx-heldout-1",
+ "cases": [
+  {
+   "id": "CX01",
+   "family": "geographic",
+   "lang": "en",
+   "description": "regional market",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Customs Broker"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Customs Broker in East African markets."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Customs Broker in East African markets"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "East African markets"
+       }
+      ],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "East African markets"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX02",
+   "family": "geographic",
+   "lang": "ar",
+   "description": "Arabic region",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات في التسويق الرقمي في دول شمال أفريقيا."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 3 سنوات في التسويق الرقمي في دول شمال أفريقيا"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "التسويق الرقمي",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "دول شمال أفريقيا",
+        "kind": "context"
+       }
+      ],
+      "duration": "3 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "دول شمال أفريقيا"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX03",
+   "family": "multinational_positive",
+   "lang": "en",
+   "description": "global conglomerates as organisation type",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Transfer Pricing Specialist"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 5 years as a Transfer Pricing Specialist in global conglomerates."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "At least 5 years as a Transfer Pricing Specialist in global conglomerates"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "global conglomerates"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "global conglomerates"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX04",
+   "family": "multinational_negative",
+   "lang": "en",
+   "description": "international describes the employer",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Brand Manager"
+    ]
+   },
+   "jd_lines": [
+    "Join our international family of brands.",
+    "Requirements",
+    "- Minimum 3 years as a Brand Manager."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 3,
+        "text": "Minimum 3 years as a Brand Manager"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "3 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX05",
+   "family": "government",
+   "lang": "en",
+   "description": "municipal authorities, hint-less",
+   "analysis": {
+    "minimum_years": 6,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 6 years of grants administration experience with municipal authorities."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "6 years of grants administration experience with municipal authorities"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "grants administration",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "municipal authorities",
+        "kind": "context"
+       }
+      ],
+      "duration": "6 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "municipal authorities"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX06",
+   "family": "sector",
+   "lang": "en",
+   "description": "sector",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Reliability Engineer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a Reliability Engineer in the aviation maintenance sector."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years as a Reliability Engineer in the aviation maintenance sector"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "aviation maintenance sector"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "aviation maintenance sector"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX07",
+   "family": "project_type",
+   "lang": "en",
+   "description": "project type",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Commissioning Engineer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 4 years as a Commissioning Engineer on data centre projects."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "At least 4 years as a Commissioning Engineer on data centre projects"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "data centre projects"
+       }
+      ],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "data centre projects"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX08",
+   "family": "organisation_type",
+   "lang": "ar",
+   "description": "Arabic organisation type",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات في إدارة الموارد البشرية في الشركات العائلية."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 4 سنوات في إدارة الموارد البشرية في الشركات العائلية"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "إدارة الموارد البشرية",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "الشركات العائلية",
+        "kind": "context"
+       }
+      ],
+      "duration": "4 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "الشركات العائلية"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX09",
+   "family": "two_and",
+   "lang": "en",
+   "description": "two AND contexts, separate sentence",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Fleet Planner"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a Fleet Planner in cargo airlines.",
+    "- Additional skills: SAP.",
+    "- That experience must come from the Latin American region."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years as a Fleet Planner in cargo airlines"
+       },
+       {
+        "line": 4,
+        "text": "That experience must come from the Latin American region"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "cargo airlines"
+       },
+       {
+        "line": 4,
+        "text": "Latin American region"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "cargo airlines",
+       "Latin American region"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX10",
+   "family": "or_phrase",
+   "lang": "en",
+   "description": "OR inside one context",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Menu Developer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years as a Menu Developer in bakeries or patisseries."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 3 years as a Menu Developer in bakeries or patisseries"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "bakeries or patisseries"
+       }
+      ],
+      "duration": "3 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "bakeries or patisseries"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX11",
+   "family": "generic_environment",
+   "lang": "ar",
+   "description": "Arabic fast-moving environment",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 5 سنوات في خدمة العملاء في بيئة سريعة الإيقاع."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 5 سنوات في خدمة العملاء في بيئة سريعة الإيقاع"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "خدمة العملاء",
+        "kind": "function"
+       }
+      ],
+      "duration": "5 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX12",
+   "family": "about_us",
+   "lang": "en",
+   "description": "About-us names a sector",
+   "analysis": {
+    "minimum_years": 2,
+    "relevant_roles": [
+     "Receptionist"
+    ]
+   },
+   "jd_lines": [
+    "Who we are: the region's largest chain of veterinary clinics.",
+    "Requirements",
+    "- Minimum 2 years as a Receptionist."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 3,
+        "text": "Minimum 2 years as a Receptionist"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "2 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX13",
+   "family": "new_job_duty",
+   "lang": "en",
+   "description": "duty names a client type",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Exhibition Coordinator"
+    ]
+   },
+   "jd_lines": [
+    "Your role",
+    "- Coordinate exhibitions for luxury watch brands.",
+    "Requirements",
+    "- Minimum 3 years as an Exhibition Coordinator."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 4,
+        "text": "Minimum 3 years as an Exhibition Coordinator"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "3 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX14",
+   "family": "job_location",
+   "lang": "en",
+   "description": "vacancy location after the requirement",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Hydrologist"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Hydrologist.",
+    "- The position is located in Muscat, Oman."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Hydrologist"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX15",
+   "family": "preferred",
+   "lang": "en",
+   "description": "whole requirement is an advantage",
+   "analysis": {
+    "minimum_years": 0,
+    "relevant_roles": [
+     "Wine Steward"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Experience as a Wine Steward in fine-dining restaurants is an advantage."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Experience as a Wine Steward in fine-dining restaurants is an advantage"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "fine-dining restaurants"
+       }
+      ],
+      "duration": null,
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "fine-dining restaurants"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX16",
+   "family": "preferred",
+   "lang": "en",
+   "description": "softened qualifier",
+   "analysis": {
+    "minimum_years": 6,
+    "relevant_roles": [
+     "Actuary"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 6 years as an Actuary, ideally within reinsurance firms."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 6 years as an Actuary, ideally within reinsurance firms"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "6 years",
+      "ambiguity": [
+       "ambiguous_context_scope"
+      ],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "needs_confirmation",
+      "reasons_include": [
+       "ambiguous_context_scope"
+      ],
+      "polarity": "scope"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX17",
+   "family": "role_specific",
+   "lang": "en",
+   "description": "context on one role-only criterion",
+   "analysis": {
+    "minimum_years": 0,
+    "relevant_roles": [
+     "Glaciologist",
+     "GIS Analyst"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Experience as a Glaciologist in polar research stations is required.",
+    "- Experience as a GIS Analyst is a plus."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Experience as a Glaciologist in polar research stations is required"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "polar research stations"
+       }
+      ],
+      "duration": null,
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "polar research stations"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    },
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 3,
+        "text": "Experience as a GIS Analyst is a plus"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": null,
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX18",
+   "family": "alternative_scope",
+   "lang": "en",
+   "description": "context on one alternative only",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Tour Guide",
+     "Travel Agent"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Tour Guide in archaeological sites or as a Travel Agent."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Tour Guide in archaeological sites or as a Travel Agent"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       },
+       {
+        "hint": "T2",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "4 years",
+      "ambiguity": [
+       "ambiguous_context_scope"
+      ],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "needs_confirmation",
+      "reasons_include": [
+       "ambiguous_context_scope"
+      ],
+      "polarity": "scope"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX19",
+   "family": "arabic_prefix",
+   "lang": "ar",
+   "description": "attached ب before the context",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات في تطوير الأعمال بشركات الاتصالات المتنقلة."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 3 سنوات في تطوير الأعمال بشركات الاتصالات المتنقلة"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "تطوير الأعمال",
+        "kind": "function"
+       },
+       {
+        "line": 2,
+        "text": "بشركات الاتصالات المتنقلة",
+        "kind": "context"
+       }
+      ],
+      "duration": "3 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       {
+        "one_of": [
+         "بشركات الاتصالات المتنقلة",
+         "شركات الاتصالات المتنقلة"
+        ]
+       }
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX20",
+   "family": "contiguous",
+   "lang": "en",
+   "description": "one contiguous restriction",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Vineyard Agronomist"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a Vineyard Agronomist on family vineyards in volcanic regions."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 5 years as a Vineyard Agronomist on family vineyards in volcanic regions"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "family vineyards in volcanic regions"
+       }
+      ],
+      "duration": "5 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "family vineyards in volcanic regions"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX21",
+   "family": "split",
+   "lang": "en",
+   "description": "two restrictions stated separately",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Ski Patroller"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years as a Ski Patroller in alpine resorts.",
+    "- All of it must have been gained in the Southern Hemisphere."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "Minimum 4 years as a Ski Patroller in alpine resorts"
+       },
+       {
+        "line": 3,
+        "text": "All of it must have been gained in the Southern Hemisphere"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [
+       {
+        "line": 2,
+        "text": "alpine resorts"
+       },
+       {
+        "line": 3,
+        "text": "Southern Hemisphere"
+       }
+      ],
+      "duration": "4 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [
+       "alpine resorts",
+       "Southern Hemisphere"
+      ],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "positive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX22",
+   "family": "compound",
+   "lang": "en",
+   "description": "overall + part in a context",
+   "analysis": {
+    "minimum_years": 10,
+    "relevant_roles": [
+     "Ship Captain"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 10 years of overall experience as a Ship Captain, including at least 4 years in Arctic waters."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "10 years of overall experience as a Ship Captain, including at least 4 years in Arctic waters"
+       }
+      ],
+      "targets": [
+       {
+        "hint": "T1",
+        "type": "role",
+        "match": "exact",
+        "jd_span": null
+       }
+      ],
+      "settings": [],
+      "duration": "10 years",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "needs_confirmation",
+      "reasons_include": [
+       "compound_requirement"
+      ],
+      "polarity": "compound"
+     }
+    }
+   ]
+  },
+  {
+   "id": "CX23",
+   "family": "tools",
+   "lang": "ar",
+   "description": "Arabic tools are not a context",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات كمطور برمجيات باستخدام أدوات حديثة."
+   ],
+   "criteria": [
+    {
+     "oracle": {
+      "requirement_spans": [
+       {
+        "line": 2,
+        "text": "خبرة 3 سنوات كمطور برمجيات باستخدام أدوات حديثة"
+       }
+      ],
+      "restrictions": [
+       {
+        "line": 2,
+        "text": "مطور برمجيات",
+        "kind": "role"
+       }
+      ],
+      "duration": "3 سنوات",
+      "ambiguity": [],
+      "note": "labelled reference answer"
+     },
+     "expected": {
+      "settings": [],
+      "status": "resolved",
+      "reasons_include": [],
+      "polarity": "negative"
+     }
+    }
+   ]
+  }
+ ]
+}

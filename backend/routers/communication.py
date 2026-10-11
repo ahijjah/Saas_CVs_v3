@@ -8,12 +8,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.module_guards import RequireATSManagement
 from database import get_db, set_rls_context
 from services.email_service import _send
 
-template_router = APIRouter(prefix="/communication/templates", tags=["communication"])
-comm_router = APIRouter(prefix="/applications", tags=["communication"])
-automation_router = APIRouter(prefix="/communication/automation-rules", tags=["communication"])
+_ats = [RequireATSManagement]
+template_router  = APIRouter(prefix="/communication/templates",     tags=["communication"], dependencies=_ats)
+comm_router      = APIRouter(prefix="/applications",                tags=["communication"], dependencies=_ats)
+automation_router = APIRouter(prefix="/communication/automation-rules", tags=["communication"], dependencies=_ats)
 
 _EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
 

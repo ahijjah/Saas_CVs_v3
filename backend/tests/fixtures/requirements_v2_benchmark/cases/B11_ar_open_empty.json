@@ -1,0 +1,41 @@
+{
+ "id": "B11_ar_open_empty",
+ "language": "ar",
+ "title": "منسق متطوعين (مساعد)",
+ "tags": [
+  "empty",
+  "informational"
+ ],
+ "job_metadata": {
+  "title": "منسق متطوعين (مساعد)"
+ },
+ "jd": "منسق متطوعين (مساعد)\n\nهذه الوظيفة مفتوحة لجميع الخلفيات. لا تشترط مؤهلات أو شهادات أو خبرة محددة، وسنتولى تدريبك.\n\nعن الفريق: جمعية خيرية صغيرة في الحي.\nنقدم ساعات عمل مرنة وفريقًا ودودًا وغداءً مجانيًا أيام الجمعة.\n",
+ "expected": {
+  "scoreability": "open_broad",
+  "readiness": "needs_items",
+  "review_codes": [],
+  "category_weights_hint": {},
+  "items": [],
+  "conditions": [
+   {
+    "list": "informational_items",
+    "category": "company_description",
+    "evidence": "عن الفريق: جمعية خيرية صغيرة في الحي.",
+    "text": "جمعية خيرية صغيرة في الحي"
+   },
+   {
+    "list": "informational_items",
+    "category": "benefits",
+    "evidence": "نقدم ساعات عمل مرنة وفريقًا ودودًا وغداءً مجانيًا أيام الجمعة.",
+    "text": "ساعات مرنة وفريق ودود وغداء مجاني"
+   }
+  ],
+  "must_not_extract": [
+   "لا تشترط مؤهلات",
+   "سنتولى تدريبك",
+   "مفتوحة لجميع الخلفيات"
+  ],
+  "model_warnings_expected": false,
+  "notes": "No requirement may be invented from 'no qualifications are required'."
+ }
+}

@@ -1,0 +1,72 @@
+{
+ "arm": "v2-3-full-stronger",
+ "model": "gpt-4.1-2025-04-14",
+ "pricing_status": "VERIFIED (owner-supplied from the official model page, https://developers.openai.com/api/docs/models/gpt-4.1): snapshot gpt-4.1-2025-04-14, standard input $2.00 and output $8.00 per 1M tokens. The sandbox could not open the page (DNS), so the figures were recorded from the owner's reading; the snapshot's availability to the key is checked by the first request (a model that differs from the pinned one stops the run).",
+ "labels_sha256": "6a87da80e142640af1327c4a3fd5a21adb648726a9733a699fa8d3ec67135ef9",
+ "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+ "prompt": {
+  "file": "criteria_extraction_v2-3.txt",
+  "sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b"
+ },
+ "input": {
+  "system_sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+  "user_sha256": "ff6b334ad32300a05933cf96284c6c253d86ed9442ffcac37a8b543a8c240473"
+ },
+ "job_metadata": {
+  "title": "Technical Coordinator 20",
+  "department": null,
+  "experience_level": null,
+  "location": null,
+  "job_type": null,
+  "work_mode": null
+ },
+ "context_sha256": "122ef7e4f5a05a131859237759d6bfa9ffe08fd513348554557dbd91c07a4d7e",
+ "disclosed_differences": [
+  "model: gpt-4.1-2025-04-14 instead of gpt-4o-mini-2024-07-18 (the purpose of the comparison)",
+  "pricing: the reservation uses the unverified prices above; the stored run used the verified gpt-4o-mini list price of the earlier script",
+  "temperature 0.1, max_tokens 6000, response_format json_object and timeout 90 are sent as in the stored arm; gpt-4.1 accepts all four",
+  "the worst case estimates input tokens as characters/2 (the same convention as the stored plan), which overstates the real count"
+ ],
+ "policy": "no retries; the run stops at the first failed call",
+ "plan": {
+  "model": "gpt-4.1-2025-04-14",
+  "calls": [
+   {
+    "arm": "v2-3-full-stronger",
+    "call": 1,
+    "worst_case_usd": 0.077468
+   },
+   {
+    "arm": "v2-3-full-stronger",
+    "call": 2,
+    "worst_case_usd": 0.077468
+   },
+   {
+    "arm": "v2-3-full-stronger",
+    "call": 3,
+    "worst_case_usd": 0.077468
+   },
+   {
+    "arm": "v2-3-full-stronger",
+    "call": 4,
+    "worst_case_usd": 0.077468
+   },
+   {
+    "arm": "v2-3-full-stronger",
+    "call": 5,
+    "worst_case_usd": 0.077468
+   }
+  ],
+  "worst_case_total_usd": 0.38734,
+  "cap_usd": 0.4,
+  "temperature": 0.1,
+  "max_tokens": 6000,
+  "response_format": "json_object",
+  "timeout_s": 90,
+  "retries": 0,
+  "price_in_usd_per_token": 2e-06,
+  "price_out_usd_per_token": 8e-06,
+  "pricing_status": "VERIFIED (owner-supplied from the official model page, https://developers.openai.com/api/docs/models/gpt-4.1): snapshot gpt-4.1-2025-04-14, standard input $2.00 and output $8.00 per 1M tokens. The sandbox could not open the page (DNS), so the figures were recorded from the owner's reading; the snapshot's availability to the key is checked by the first request (a model that differs from the pinned one stops the run)."
+ },
+ "started": 1791661750.8863873
+}

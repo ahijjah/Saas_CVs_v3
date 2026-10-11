@@ -1,5 +1,6 @@
 
-const API_BASE = 'http://72.62.31.221:8000';
+// VITE_API_BASE lets a local build point at another API; the default is the production origin, unchanged.
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://72.62.31.221:8000';
 
 export const WEBHOOK_CONFIG = {
   LOGIN_WEBHOOK_URL:             `${API_BASE}/auth/login`,
@@ -65,6 +66,7 @@ export const WEBHOOK_CONFIG = {
   JOB_SETTINGS_BASE_URL:        `${API_BASE}/jobs`,
   UPDATE_JOB_URL:            `${API_BASE}/jobs`,
   UPDATE_CRITERIA_CONTENT_URL: `${API_BASE}/jobs`,  // append /{job_id}/criteria/content
+  QUALIFYING_CONTEXT_BASE_URL: `${API_BASE}/jobs`,  // append /{job_id}/criteria/qualifying-context[/confirm]
   // Duplicate submission logs (append /{job_id}/duplicate-logs)
   DUPLICATE_LOGS_BASE_URL:      `${API_BASE}/jobs`,
   // Duplicate CV file download (append /{job_id}/duplicate-logs/{log_id}/cv)
@@ -124,6 +126,12 @@ export const WEBHOOK_CONFIG = {
   // Knockout AI analysis — append /{application_id}/knockout-analysis
   // Knockout suggestion accept/ignore — append /{application_id}/knockout-suggestions/accept|ignore
   KNOCKOUT_ANALYSIS_BASE_URL:         `${API_BASE}/applications`,
+  // Bulk Upload (E-01) — base for all /bulk-upload/* endpoints
+  BULK_UPLOAD_BASE_URL:               `${API_BASE}/bulk-upload`,
+  // E-02 Platform Feature Management (super_admin only)
+  PLATFORM_FEATURES_BASE_URL:         `${API_BASE}/platform`,
+  // E-02 Phase 3 — Tenant module status (all authenticated users)
+  TENANT_MODULES_URL:                 `${API_BASE}/tenant/modules`,
 };
 
 export const GLOBAL_FORWARDING_EMAIL = 'jobs@ai970.cloud';

@@ -1,0 +1,179 @@
+{
+ "id": "B02_en_data_analyst",
+ "language": "en",
+ "title": "Data Analyst (Reporting)",
+ "tags": [
+  "experience_years",
+  "experience_range",
+  "experience_months",
+  "alternatives",
+  "independent_items",
+  "responsibilities",
+  "repeated_requirement",
+  "inline_cue"
+ ],
+ "job_metadata": {
+  "title": "Data Analyst (Reporting)"
+ },
+ "jd": "Data Analyst (Reporting)\n\nRequirements\n- 3-5 years of experience in data analysis.\n- At least 6 months of hands-on experience with Tableau.\n- Proficiency in Python or R.\n- SQL and Power BI.\n- Ability to explain findings to non-technical colleagues.\n- Understanding of retail sales metrics is an advantage.\n\nWhat you will do\n- Build weekly sales dashboards for regional managers.\n- Write SQL queries to validate data quality.\n- Present monthly findings to the commercial team.\n\nAlso important: clear communication of findings to non-technical colleagues is expected from everyone on the team.\n",
+ "expected": {
+  "scoreability": "scoreable",
+  "readiness": "ready",
+  "review_codes": [],
+  "category_weights_hint": {
+   "skills": 30,
+   "experience": 40,
+   "education": 0,
+   "certifications": 0,
+   "soft_skills": 20,
+   "domain_knowledge": 10,
+   "other_requirements": 0
+  },
+  "items": [
+   {
+    "category": "experience",
+    "text": "3-5 years of experience in data analysis",
+    "importance": "required",
+    "cue": null,
+    "evidence": "3-5 years of experience in data analysis.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": {
+     "subject": "data analysis",
+     "min_years": 3
+    },
+    "note": "range: lowest number"
+   },
+   {
+    "category": "experience",
+    "text": "At least 6 months of hands-on experience with Tableau",
+    "importance": "required",
+    "cue": null,
+    "evidence": "At least 6 months of hands-on experience with Tableau.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": {
+     "subject": "Tableau",
+     "min_years": null
+    },
+    "subject_variants": [
+     "Tableau",
+     "hands-on experience with Tableau"
+    ],
+    "note": "months are not whole years: min_years null, wording kept"
+   },
+   {
+    "category": "skills",
+    "text": "Proficiency in Python or R",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Proficiency in Python or R.",
+    "origin": "stated",
+    "alternatives": [
+     "Python",
+     "R"
+    ],
+    "experience": null
+   },
+   {
+    "category": "skills",
+    "text": "SQL",
+    "importance": "required",
+    "cue": null,
+    "evidence": "SQL and Power BI.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "note": "independent: two items"
+   },
+   {
+    "category": "skills",
+    "text": "Power BI",
+    "importance": "required",
+    "cue": null,
+    "evidence": "SQL and Power BI.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "note": "independent: two items"
+   },
+   {
+    "category": "soft_skills",
+    "text": "Ability to explain findings to non-technical colleagues",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Ability to explain findings to non-technical colleagues.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "soft_skills",
+     "skills"
+    ]
+   },
+   {
+    "category": "domain_knowledge",
+    "text": "Understanding of retail sales metrics",
+    "importance": "preferred",
+    "cue": "is an advantage",
+    "evidence": "Understanding of retail sales metrics is an advantage.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "domain_knowledge",
+     "skills"
+    ]
+   },
+   {
+    "category": "experience",
+    "text": "Build weekly sales dashboards for regional managers",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Build weekly sales dashboards for regional managers.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "Write SQL queries to validate data quality",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Write SQL queries to validate data quality.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null,
+    "note": "repeats the SQL skill as a duty: kept as its own item"
+   },
+   {
+    "category": "experience",
+    "text": "Present monthly findings to the commercial team",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Present monthly findings to the commercial team.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "soft_skills",
+    "text": "Clear communication of findings to non-technical colleagues",
+    "importance": "required",
+    "cue": null,
+    "evidence": "clear communication of findings to non-technical colleagues is expected from everyone on the team",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "soft_skills",
+     "skills"
+    ],
+    "note": "repeats an earlier requirement in other words: kept as a separate item (rule 10)"
+   }
+  ],
+  "conditions": [],
+  "must_not_extract": [],
+  "model_warnings_expected": false
+ }
+}

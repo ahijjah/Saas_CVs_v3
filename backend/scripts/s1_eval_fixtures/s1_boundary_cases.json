@@ -1,0 +1,2544 @@
+{
+ "_comment": "SYNTHETIC labelled boundary cases for the S1 s1-2 real-model evaluation. No candidate, CV, application or personal data. 'oracle' is the labelled reference AI answer (duration given as candidate TEXT, resolved to an id by the harness); 'expected' are the labels the evaluation scores against. Field values may be {\"one_of\": [...]}; 'alternatives' lists complete acceptable variants. s1-boundary-2: oracle hint targets gained the s1-3 'match' field (structural only; every 'expected' label is unchanged from s1-boundary-1). s1-boundary-3 (s1-4 contract): oracle answers no longer carry a model policy (policy is derived); hint-less cases carry relevance_basis; K2 (PM vs P.M.) is policy-sensitive (either mapping accepted, excluded from the jd_asserted precision gate); E3 accepts a defensive ambiguous_relevance. All other expectations unchanged. s1-boundary-4 (s1-5 contract): equivalent reference answers carry a word alignment; years-only cases carry typed restrictions instead of relevance_basis/targets/setting; M2 is anchored by its sector restriction (anchor 'restriction'); R1 is a compound requirement (two thresholds) and must be compound_requirement / needs_confirmation instead of a resolved single threshold. All other expectations unchanged. s1-boundary-5 (s1-5.1): the B1/B2/B4 reference alignments pair the bare Arabic word (مدير, مهندس, محاسب) inside the span word that carries the attached letter ك, exercising the canonical proclitic boundary; no expectation changed. s1-boundary-6 (s1-5.2 trust contract): a model-labelled grammatical 'form' pair is NOT trust-bearing, so G1/G2 (equivalence through a form pair) are needs_confirmation with an original_ai target, reason equivalence_unverified and the candidate mapping kept in the audit (no jd_asserted, no S2 view). I1 is unchanged: none (target_not_in_jd) or a form candidate (equivalence_unverified) are both safe; it is never jd_asserted, jd_verified or resolved. No other expectation changed. s1-boundary-7: target + setting family expansion (M4-M9: role/function with a sector, project-domain or organisational setting; negative controls without a setting; generic environment wording that is not a setting). An expected setting may be {\"one_of\": [...]} listing only faithful verbatim variants of the canonical shortest span (a leading article/preposition); a missing or materially different setting still fails. M1's expected setting uses the same variants. No other expectation changed.",
+ "fixture_version": "s1-boundary-7",
+ "cases": [
+  {
+   "id": "A1",
+   "family": "A_exact_role",
+   "description": "exact role in the requirement",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Construction Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Construction Project Manager."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience as a Construction Project Manager"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Construction Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 5 years of experience as a Construction Project Manager"
+    ]
+   }
+  },
+  {
+   "id": "B1",
+   "family": "B_translated",
+   "description": "Arabic role with attached letter",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Construction Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 5 سنوات كمدير مشروع إنشائي."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة لا تقل عن 5 سنوات كمدير مشروع إنشائي"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "كمدير مشروع إنشائي"
+      },
+      "alignment": [
+       {
+        "hint": "Construction",
+        "jd": "إنشائي",
+        "relation": "translation"
+       },
+       {
+        "hint": "Project",
+        "jd": "مشروع",
+        "relation": "translation"
+       },
+       {
+        "hint": "Manager",
+        "jd": "مدير",
+        "relation": "translation"
+       }
+      ],
+      "jd_extra": []
+     }
+    ],
+    "setting": null,
+    "duration": "5 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Construction Project Manager",
+      "type": "role",
+      "provenance": "jd_asserted",
+      "mapped": true
+     }
+    ],
+    "setting": null,
+    "duration": "5 سنوات",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "خبرة لا تقل عن 5 سنوات كمدير مشروع إنشائي"
+    ]
+   }
+  },
+  {
+   "id": "B2",
+   "family": "B_translated",
+   "description": "Arabic role, Arabic number word",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Site Engineer"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة ثلاث سنوات كمهندس موقع."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة ثلاث سنوات كمهندس موقع"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "كمهندس موقع"
+      },
+      "alignment": [
+       {
+        "hint": "Site",
+        "jd": "موقع",
+        "relation": "translation"
+       },
+       {
+        "hint": "Engineer",
+        "jd": "مهندس",
+        "relation": "translation"
+       }
+      ],
+      "jd_extra": []
+     }
+    ],
+    "setting": null,
+    "duration": "ثلاث سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Site Engineer",
+      "type": "role",
+      "provenance": "jd_asserted",
+      "mapped": true
+     }
+    ],
+    "setting": null,
+    "duration": "ثلاث سنوات",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "خبرة ثلاث سنوات كمهندس موقع"
+    ]
+   }
+  },
+  {
+   "id": "B3",
+   "family": "B_translated",
+   "description": "Arabic function",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "procurement"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات في المشتريات."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 4 سنوات في المشتريات"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "المشتريات"
+      },
+      "alignment": [
+       {
+        "hint": "procurement",
+        "jd": "المشتريات",
+        "relation": "translation"
+       }
+      ],
+      "jd_extra": []
+     }
+    ],
+    "setting": null,
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "procurement",
+      "type": "function",
+      "provenance": "jd_asserted",
+      "mapped": true
+     }
+    ],
+    "setting": null,
+    "duration": "4 سنوات",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "خبرة 4 سنوات في المشتريات"
+    ]
+   }
+  },
+  {
+   "id": "B4",
+   "family": "B_translated",
+   "description": "Arabic dual duration",
+   "analysis": {
+    "minimum_years": 2,
+    "relevant_roles": [
+     "Accountant"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة سنتين كمحاسب."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة سنتين كمحاسب"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "كمحاسب"
+      },
+      "alignment": [
+       {
+        "hint": "Accountant",
+        "jd": "محاسب",
+        "relation": "translation"
+       }
+      ],
+      "jd_extra": []
+     }
+    ],
+    "setting": null,
+    "duration": "سنتين",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Accountant",
+      "type": "role",
+      "provenance": "jd_asserted",
+      "mapped": true
+     }
+    ],
+    "setting": null,
+    "duration": "سنتين",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "خبرة سنتين كمحاسب"
+    ]
+   }
+  },
+  {
+   "id": "C1",
+   "family": "C_dropped_qualifier",
+   "description": "JD drops the sector qualifier",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Construction Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Project Manager."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience as a Project Manager"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Construction Project Manager",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 5 years of experience as a Project Manager"
+    ]
+   }
+  },
+  {
+   "id": "C2",
+   "family": "C_dropped_qualifier",
+   "description": "Arabic JD drops the sector qualifier",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Construction Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 5 سنوات كمدير مشروع."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة 5 سنوات كمدير مشروع"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Construction Project Manager",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 سنوات",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "خبرة 5 سنوات كمدير مشروع"
+    ]
+   }
+  },
+  {
+   "id": "D1",
+   "family": "D_added_qualifier",
+   "description": "target embedded in a longer qualified title",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Construction Project Manager."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience as a Construction Project Manager"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 5 years of experience as a Construction Project Manager"
+    ]
+   }
+  },
+  {
+   "id": "E1",
+   "family": "E_seniority",
+   "description": "Accountant vs Senior Accountant",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Accountant"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience as a Senior Accountant."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience as a Senior Accountant"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Accountant",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 3 years of experience as a Senior Accountant"
+    ]
+   }
+  },
+  {
+   "id": "E2",
+   "family": "E_seniority",
+   "description": "Project Manager vs Assistant Project Manager",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as an Assistant Project Manager."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience as an Assistant Project Manager"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 5 years of experience as an Assistant Project Manager"
+    ]
+   }
+  },
+  {
+   "id": "E3",
+   "family": "E_seniority",
+   "description": "Senior Accountant vs Accountant",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Senior Accountant"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience as an Accountant."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience as an Accountant"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Senior Accountant",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": {
+     "one_of": [
+      [],
+      [
+       "ambiguous_relevance"
+      ]
+     ]
+    },
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 3 years of experience as an Accountant"
+    ]
+   }
+  },
+  {
+   "id": "F1",
+   "family": "F_function_exact",
+   "description": "exact function",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "project management"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 5 years of project management experience."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 5 years of project management experience"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "project management",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "At least 5 years of project management experience"
+    ]
+   }
+  },
+  {
+   "id": "F2",
+   "family": "F_function_exact",
+   "description": "function stored in relevant_roles",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Quantity Surveying"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 3+ years of experience in Quantity Surveying."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "3+ years of experience in Quantity Surveying"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3+ years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "Quantity Surveying",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3+ years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "3+ years of experience in Quantity Surveying"
+    ]
+   }
+  },
+  {
+   "id": "G1",
+   "family": "G_function_equivalent",
+   "description": "noun vs verb form",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "software implementation"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience implementing software."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience implementing software"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "implementing software"
+      },
+      "alignment": [
+       {
+        "hint": "software",
+        "jd": "software",
+        "relation": "same"
+       },
+       {
+        "hint": "implementation",
+        "jd": "implementing",
+        "relation": "form"
+       }
+      ],
+      "jd_extra": []
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "software implementation",
+      "type": "function",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 3 years of experience implementing software"
+    ],
+    "reasons_include": [
+     "equivalence_unverified"
+    ]
+   }
+  },
+  {
+   "id": "G2",
+   "family": "G_function_equivalent",
+   "description": "noun vs verb form",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "database administration"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience administering databases."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience administering databases"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "administering databases"
+      },
+      "alignment": [
+       {
+        "hint": "database",
+        "jd": "databases",
+        "relation": "form"
+       },
+       {
+        "hint": "administration",
+        "jd": "administering",
+        "relation": "form"
+       }
+      ],
+      "jd_extra": []
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "database administration",
+      "type": "function",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 4 years of experience administering databases"
+    ],
+    "reasons_include": [
+     "equivalence_unverified"
+    ]
+   }
+  },
+  {
+   "id": "H1",
+   "family": "H_function_narrowing",
+   "description": "JD adds a platform qualifier",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "software implementation"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience implementing enterprise software systems."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience implementing enterprise software systems"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "software implementation",
+      "type": "function",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 3 years of experience implementing enterprise software systems"
+    ]
+   }
+  },
+  {
+   "id": "H2",
+   "family": "H_function_narrowing",
+   "description": "target embedded in a longer qualified phrase",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "software implementation"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience in enterprise software implementation."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience in enterprise software implementation"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "software implementation",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 3 years of experience in enterprise software implementation"
+    ]
+   }
+  },
+  {
+   "id": "I1",
+   "family": "I_adjacent_function",
+   "description": "administration vs support",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "database administration"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience in database support."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience in database support"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "database administration",
+      "type": "function",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 4 years of experience in database support"
+    ]
+   }
+  },
+  {
+   "id": "I2",
+   "family": "I_adjacent_function",
+   "description": "management vs coordination",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "project management"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience in project coordination."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience in project coordination"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "project management",
+      "type": "function",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 5 years of experience in project coordination"
+    ]
+   }
+  },
+  {
+   "id": "J1",
+   "family": "J_works_with",
+   "description": "worked with the target's team",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience working with the project management team."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience working with the project management team"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 5 years of experience working with the project management team"
+    ]
+   }
+  },
+  {
+   "id": "K1",
+   "family": "K_abbreviation",
+   "description": "PM with explicit expansion",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "PM"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a Project Manager (P.M.)."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years as a Project Manager (P.M.)"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "equivalent",
+      "jd_span": {
+       "line": 2,
+       "text": "Project Manager"
+      },
+      "alignment": [
+       {
+        "hint": "PM",
+        "jd": "Project Manager",
+        "relation": "abbreviation"
+       }
+      ],
+      "jd_extra": []
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "PM",
+      "type": "role",
+      "provenance": "jd_asserted",
+      "mapped": true
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 5 years as a Project Manager (P.M.)"
+    ]
+   }
+  },
+  {
+   "id": "K2",
+   "family": "K_abbreviation",
+   "description": "PM without expansion",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "PM"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years as a P.M. in a fast-paced environment."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years as a P.M. in a fast-paced environment"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "PM",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false,
+      "mapping_policy_sensitive": true
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 5 years as a P.M. in a fast-paced environment"
+    ],
+    "alternatives": [
+     {
+      "targets": [
+       {
+        "text": "PM",
+        "type": "role",
+        "provenance": "jd_asserted",
+        "mapped": true,
+        "mapping_policy_sensitive": true
+       }
+      ],
+      "status": "resolved"
+     }
+    ]
+   }
+  },
+  {
+   "id": "L1",
+   "family": "L_mixed",
+   "description": "role or function hints",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Project Manager",
+     "project management"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Project Manager or in project management."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience as a Project Manager or in project management"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     },
+     {
+      "hint": "T2",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "mixed",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     },
+     {
+      "text": "project management",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 5 years of experience as a Project Manager or in project management"
+    ]
+   }
+  },
+  {
+   "id": "L2",
+   "family": "L_mixed",
+   "description": "hint-less: JD-selected role and function",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years as a Procurement Officer or in contract management."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years as a Procurement Officer or in contract management"
+     }
+    ],
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer",
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "Procurement Officer",
+      "kind": "role"
+     },
+     {
+      "line": 2,
+      "text": "contract management",
+      "kind": "function"
+     }
+    ]
+   },
+   "expected": {
+    "policy": "mixed",
+    "targets": [
+     {
+      "text": "Procurement Officer",
+      "type": "role",
+      "provenance": "jd_asserted"
+     },
+     {
+      "text": "contract management",
+      "type": "function",
+      "provenance": "jd_asserted"
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved"
+   }
+  },
+  {
+   "id": "M1",
+   "family": "M_sector",
+   "description": "sector requirement",
+   "analysis": {
+    "minimum_years": 2,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 2 years of experience in the banking sector."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "2 years of experience in the banking sector"
+     }
+    ],
+    "duration": "2 years",
+    "ambiguity": [],
+    "note": "labelled reference answer",
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "banking sector",
+      "kind": "sector"
+     }
+    ]
+   },
+   "expected": {
+    "policy": "sector",
+    "targets": [],
+    "setting": {
+     "one_of": [
+      "banking sector",
+      "the banking sector",
+      "in the banking sector"
+     ]
+    },
+    "duration": "2 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "2 years of experience in the banking sector"
+    ]
+   }
+  },
+  {
+   "id": "M2",
+   "family": "M_sector",
+   "description": "sector requirement without a duration (statement anchor)",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Experience in the banking sector is preferred."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Experience in the banking sector is preferred"
+     }
+    ],
+    "duration": null,
+    "ambiguity": [],
+    "note": "labelled reference answer",
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "banking sector",
+      "kind": "sector"
+     }
+    ]
+   },
+   "expected": {
+    "policy": "sector",
+    "targets": [],
+    "setting": "banking sector",
+    "duration": null,
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "anchor": "restriction"
+   }
+  },
+  {
+   "id": "M3",
+   "family": "M_sector",
+   "description": "role with a criterion-specific setting",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Site Engineer"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Site Engineer on oil and gas projects."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience as a Site Engineer on oil and gas projects"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "oil and gas projects"
+    },
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Site Engineer",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": "oil and gas projects",
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 5 years of experience as a Site Engineer on oil and gas projects"
+    ]
+   }
+  },
+  {
+   "id": "M4",
+   "family": "M_sector",
+   "description": "role with a sector setting",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Accountant"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience as an Accountant in the banking sector."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 3 years of experience as an Accountant in the banking sector"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "banking sector"
+    },
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Accountant",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": {
+     "one_of": [
+      "banking sector",
+      "the banking sector",
+      "in the banking sector"
+     ]
+    },
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 3 years of experience as an Accountant in the banking sector"
+    ]
+   }
+  },
+  {
+   "id": "M5",
+   "family": "M_sector",
+   "description": "role with a project-domain setting",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 5 years of experience as a Project Manager on construction projects."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 5 years of experience as a Project Manager on construction projects"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "construction projects"
+    },
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": {
+     "one_of": [
+      "construction projects",
+      "on construction projects"
+     ]
+    },
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "At least 5 years of experience as a Project Manager on construction projects"
+    ]
+   }
+  },
+  {
+   "id": "M6",
+   "family": "M_sector",
+   "description": "function with an organisational setting",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "database administration"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience in database administration within financial institutions."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience in database administration within financial institutions"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": {
+     "line": 2,
+     "text": "financial institutions"
+    },
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "database administration",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": {
+     "one_of": [
+      "financial institutions",
+      "within financial institutions"
+     ]
+    },
+    "duration": "4 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 4 years of experience in database administration within financial institutions"
+    ]
+   }
+  },
+  {
+   "id": "M7",
+   "family": "M_sector",
+   "description": "role without a setting (negative control)",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Project Manager."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of experience as a Project Manager"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 5 years of experience as a Project Manager"
+    ]
+   }
+  },
+  {
+   "id": "M8",
+   "family": "M_sector",
+   "description": "function without a setting (negative control)",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "database administration"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience in database administration."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "At least 3 years of experience in database administration"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "function",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "database administration",
+      "type": "function",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "At least 3 years of experience in database administration"
+    ]
+   }
+  },
+  {
+   "id": "M9",
+   "family": "M_sector",
+   "description": "generic environment wording is not a setting",
+   "analysis": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as a Project Manager in a dynamic, fast-paced environment."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 4 years of experience as a Project Manager in a dynamic, fast-paced environment"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "4 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 4 years of experience as a Project Manager in a dynamic, fast-paced environment"
+    ]
+   }
+  },
+  {
+   "id": "N1",
+   "family": "N_pure_duration",
+   "description": "professional experience",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 5 years of professional experience."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "5 years of professional experience"
+     }
+    ],
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer",
+    "restrictions": []
+   },
+   "expected": {
+    "policy": "pure_duration",
+    "targets": [],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "5 years of professional experience"
+    ]
+   }
+  },
+  {
+   "id": "N2",
+   "family": "N_pure_duration",
+   "description": "Arabic-Indic digits",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة مهنية لا تقل عن ٣ سنوات."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "خبرة مهنية لا تقل عن ٣ سنوات"
+     }
+    ],
+    "duration": "٣ سنوات",
+    "ambiguity": [],
+    "note": "labelled reference answer",
+    "restrictions": []
+   },
+   "expected": {
+    "policy": "pure_duration",
+    "targets": [],
+    "setting": null,
+    "duration": "٣ سنوات",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "خبرة مهنية لا تقل عن ٣ سنوات"
+    ]
+   }
+  },
+  {
+   "id": "N3",
+   "family": "N_pure_duration",
+   "description": "range with a JD-selected function",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 3-5 years of experience in procurement."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "3-5 years of experience in procurement"
+     }
+    ],
+    "duration": "3-5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer",
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "procurement",
+      "kind": "function"
+     }
+    ]
+   },
+   "expected": {
+    "policy": "functional",
+    "targets": [
+     {
+      "text": "procurement",
+      "type": "function",
+      "provenance": "jd_asserted"
+     }
+    ],
+    "setting": null,
+    "duration": "3-5 years",
+    "ambiguity": [],
+    "status": "resolved"
+   }
+  },
+  {
+   "id": "O1",
+   "family": "O_vague_relevance",
+   "description": "relevance undefined",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of relevant experience."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Minimum 5 years of relevant experience"
+     }
+    ],
+    "duration": "5 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "note": "labelled reference answer",
+    "restrictions": [
+     {
+      "line": 2,
+      "text": "relevant",
+      "kind": "vague"
+     }
+    ]
+   },
+   "expected": {
+    "policy": "pure_duration",
+    "targets": [],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [
+     "ambiguous_relevance"
+    ],
+    "status": "needs_confirmation",
+    "span_includes": [
+     "Minimum 5 years of relevant experience"
+    ]
+   }
+  },
+  {
+   "id": "P1",
+   "family": "P_statement_anchor",
+   "description": "no years, target not stated verbatim",
+   "analysis": {
+    "minimum_years": 0,
+    "relevant_roles": [
+     "Registered Nurse"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Experience in nursing is preferred."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Experience in nursing is preferred",
+      "experience_requirement": true
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": null,
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Registered Nurse",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": null,
+    "ambiguity": [],
+    "status": "needs_confirmation",
+    "anchor": "statement",
+    "span_includes": [
+     "Experience in nursing is preferred"
+    ]
+   }
+  },
+  {
+   "id": "P2",
+   "family": "P_statement_anchor",
+   "description": "no years, target verbatim",
+   "analysis": {
+    "minimum_years": 0,
+    "relevant_roles": [
+     "Registered Nurse"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Experience as a Registered Nurse is required."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "Experience as a Registered Nurse is required"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": null,
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Registered Nurse",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": null,
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Experience as a Registered Nurse is required"
+    ],
+    "anchor": "evidence"
+   }
+  },
+  {
+   "id": "Q1",
+   "family": "Q_about_us",
+   "description": "About-us sector text is not a setting",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Site Engineer"
+    ]
+   },
+   "jd_lines": [
+    "About us",
+    "We are a leading oil and gas contractor.",
+    "",
+    "Requirements",
+    "- Minimum 5 years of experience as a Site Engineer."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 5,
+      "text": "Minimum 5 years of experience as a Site Engineer"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Site Engineer",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 5 years of experience as a Site Engineer"
+    ],
+    "span_forbidden_lines": [
+     2
+    ]
+   }
+  },
+  {
+   "id": "Q2",
+   "family": "Q_about_us",
+   "description": "About-us bank text is not a sector requirement",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": []
+   },
+   "jd_lines": [
+    "We are a leading bank in the region.",
+    "",
+    "Requirements",
+    "- Minimum 3 years of professional experience."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 4,
+      "text": "Minimum 3 years of professional experience"
+     }
+    ],
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer",
+    "restrictions": []
+   },
+   "expected": {
+    "policy": "pure_duration",
+    "targets": [],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "status": "resolved",
+    "span_includes": [
+     "Minimum 3 years of professional experience"
+    ],
+    "span_forbidden_lines": [
+     1
+    ]
+   }
+  },
+  {
+   "id": "R1",
+   "family": "R_multiple_durations",
+   "description": "overall vs role-specific duration",
+   "analysis": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- 7 years of overall experience, including at least 3 years as a Project Manager."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "7 years of overall experience, including at least 3 years as a Project Manager"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "3 years",
+    "ambiguity": [],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": {
+     "one_of": [
+      "3 years",
+      "7 years",
+      null
+     ]
+    },
+    "ambiguity": {
+     "one_of": [
+      [],
+      [
+       "multiple_durations"
+      ]
+     ]
+    },
+    "status": "needs_confirmation",
+    "span_includes": [
+     "7 years of overall experience, including at least 3 years as a Project Manager"
+    ],
+    "reasons_include": [
+     "compound_requirement"
+    ]
+   }
+  },
+  {
+   "id": "S1",
+   "family": "S_conflict",
+   "description": "summary and requirements state different minimums",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Summary",
+    "We are hiring a Project Manager with at least 5 years of experience.",
+    "",
+    "Requirements",
+    "- Minimum 8 years of experience as a Project Manager."
+   ],
+   "oracle": {
+    "requirement_spans": [
+     {
+      "line": 2,
+      "text": "We are hiring a Project Manager with at least 5 years of experience"
+     },
+     {
+      "line": 5,
+      "text": "Minimum 8 years of experience as a Project Manager"
+     }
+    ],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "exact",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": "5 years",
+    "ambiguity": [
+     "conflicting_requirements"
+    ],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Project Manager",
+      "type": "role",
+      "provenance": "jd_verified",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": {
+     "one_of": [
+      "5 years",
+      "8 years",
+      null
+     ]
+    },
+    "ambiguity": {
+     "one_of": [
+      [
+       "conflicting_requirements"
+      ],
+      [
+       "conflicting_requirements",
+       "multiple_durations"
+      ]
+     ]
+    },
+    "status": "needs_confirmation"
+   }
+  },
+  {
+   "id": "T1",
+   "family": "T_requirement_absent",
+   "description": "no corresponding experience requirement",
+   "analysis": {
+    "minimum_years": 0,
+    "relevant_roles": [
+     "Registered Nurse"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Fluent English.",
+    "- Valid driving licence."
+   ],
+   "oracle": {
+    "requirement_spans": [],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": null,
+    "ambiguity": [
+     "requirement_not_in_jd"
+    ],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Registered Nurse",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": null,
+    "ambiguity": [
+     "requirement_not_in_jd"
+    ],
+    "status": "needs_confirmation",
+    "anchor": null
+   }
+  },
+  {
+   "id": "T2",
+   "family": "T_requirement_absent",
+   "description": "no corresponding experience requirement",
+   "analysis": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Construction Project Manager"
+    ]
+   },
+   "jd_lines": [
+    "Requirements",
+    "- Bachelor's degree in Civil Engineering.",
+    "- PMP certification."
+   ],
+   "oracle": {
+    "requirement_spans": [],
+    "targets": [
+     {
+      "hint": "T1",
+      "type": "role",
+      "match": "none",
+      "jd_span": null
+     }
+    ],
+    "setting": null,
+    "duration": null,
+    "ambiguity": [
+     "requirement_not_in_jd"
+    ],
+    "note": "labelled reference answer"
+   },
+   "expected": {
+    "policy": "explicit_role",
+    "targets": [
+     {
+      "text": "Construction Project Manager",
+      "type": "role",
+      "provenance": "original_ai",
+      "mapped": false
+     }
+    ],
+    "setting": null,
+    "duration": null,
+    "ambiguity": [
+     "requirement_not_in_jd"
+    ],
+    "status": "needs_confirmation",
+    "anchor": null
+   }
+  }
+ ]
+}

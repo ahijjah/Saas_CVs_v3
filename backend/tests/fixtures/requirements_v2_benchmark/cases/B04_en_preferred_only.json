@@ -1,0 +1,92 @@
+{
+ "id": "B04_en_preferred_only",
+ "language": "en",
+ "title": "Front Desk Assistant (Part-time)",
+ "tags": [
+  "headings_required_preferred",
+  "preferred_only",
+  "alternatives"
+ ],
+ "job_metadata": {
+  "title": "Front Desk Assistant (Part-time)"
+ },
+ "jd": "Front Desk Assistant (Part-time)\n\nEverything below is a bonus; none of it is required to apply.\n\nNice to have:\n- Experience with Microsoft Office.\n- Basic bookkeeping knowledge.\n- A driving licence.\n- Previous work in a clinic or hotel.\n",
+ "expected": {
+  "scoreability": "scoreable",
+  "readiness": "needs_confirmation",
+  "review_codes": [],
+  "category_weights_hint": {
+   "skills": 0,
+   "experience": 0,
+   "education": 0,
+   "certifications": 0,
+   "soft_skills": 0,
+   "domain_knowledge": 0,
+   "other_requirements": 0
+  },
+  "items": [
+   {
+    "category": "skills",
+    "text": "Experience with Microsoft Office",
+    "importance": "preferred",
+    "cue": "Nice to have",
+    "evidence": "Experience with Microsoft Office.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "skills",
+    "text": "Basic bookkeeping knowledge",
+    "importance": "preferred",
+    "cue": "Nice to have",
+    "evidence": "Basic bookkeeping knowledge.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "skills",
+     "domain_knowledge"
+    ]
+   },
+   {
+    "category": "certifications",
+    "text": "A driving licence",
+    "importance": "preferred",
+    "cue": "Nice to have",
+    "evidence": "A driving licence.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "certifications",
+     "other_requirements"
+    ]
+   },
+   {
+    "category": "experience",
+    "text": "Previous work in a clinic or hotel",
+    "importance": "preferred",
+    "cue": "Nice to have",
+    "evidence": "Previous work in a clinic or hotel.",
+    "origin": "stated",
+    "alternatives": [
+     "clinic",
+     "hotel"
+    ],
+    "experience": {
+     "subject": "work in a clinic or hotel",
+     "min_years": null
+    },
+    "subject_variants": [
+     "work in a clinic or hotel",
+     "clinic or hotel"
+    ]
+   }
+  ],
+  "conditions": [],
+  "must_not_extract": [],
+  "model_warnings_expected": false,
+  "notes": "All preferred: no weights; readiness needs the recruiter's explicit no-numeric-score confirmation."
+ }
+}

@@ -1,0 +1,34 @@
+{
+  "_comment": "SYNTHETIC fixture: the job description is invented and `ai_response` is hand-written to look like a model answer. It is not the output of any real model call.",
+  "language": "en",
+  "job_metadata": {},
+  "jd": "General Helper. This role is open to all backgrounds. No specific experience, education or skills are required; training will be provided.",
+  "ai_response": {
+    "scoreability": {
+      "status": "open_broad",
+      "reason": "Open to all backgrounds; no requirements stated."
+    },
+    "categories": {
+      "skills": [],
+      "experience": [],
+      "education": [],
+      "certifications": [],
+      "soft_skills": [],
+      "domain_knowledge": [],
+      "other_requirements": []
+    },
+    "category_weights": {
+      "skills": 0,
+      "experience": 0,
+      "education": 0,
+      "certifications": 0,
+      "soft_skills": 0,
+      "domain_knowledge": 0,
+      "other_requirements": 0
+    },
+    "non_scoreable_requirements": [],
+    "post_hiring_conditions": [],
+    "informational_items": [],
+    "warnings": []
+  }
+}

@@ -1,0 +1,1187 @@
+{
+ "_comment": "Job-analysis qualifying-context evaluation fixtures (SYNTHETIC; evaluation only, not wired into production). expected.contexts: AND-combined slots, each a verbatim JD phrase or {one_of: [...]} differing only by leading articles/prepositions; uncertain cases list allowed_candidates instead. decoys: generic/company phrases that must not become contexts. flags no_experience_criterion: today's enumeration yields no experience criterion (documented gap, not fixed). analysis_stub is diagnostic only and never shown to a model.",
+ "fixture_version": "qc-main-1",
+ "split": "main",
+ "cases": [
+  {
+   "id": "QC-A1",
+   "family": "A",
+   "lang": "en",
+   "description": "role + sector",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as an Accountant in the banking sector."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Accountant"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "banking sector",
+       "the banking sector",
+       "in the banking sector"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "banking sector"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-A2",
+   "family": "A",
+   "lang": "en",
+   "description": "role + industry",
+   "jd_lines": [
+    "Requirements",
+    "- At least 6 years of experience as a Compliance Officer in the telecommunications industry."
+   ],
+   "analysis_stub": {
+    "minimum_years": 6,
+    "relevant_roles": [
+     "Compliance Officer"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "telecommunications industry",
+       "the telecommunications industry",
+       "in the telecommunications industry"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "telecommunications industry"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-A3",
+   "family": "A",
+   "lang": "en",
+   "description": "role + sector, short form",
+   "jd_lines": [
+    "Requirements",
+    "- 5+ years as a Recruiter in the hospitality sector."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Recruiter"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "hospitality sector",
+       "the hospitality sector",
+       "in the hospitality sector"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "hospitality sector"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-B1",
+   "family": "B",
+   "lang": "en",
+   "description": "role + project domain",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Site Engineer on oil and gas projects."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Site Engineer"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "oil and gas projects",
+       "on oil and gas projects"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "oil and gas projects"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-B2",
+   "family": "B",
+   "lang": "en",
+   "description": "role + project domain",
+   "jd_lines": [
+    "Requirements",
+    "- At least 7 years of experience as a Project Manager on construction projects."
+   ],
+   "analysis_stub": {
+    "minimum_years": 7,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "construction projects",
+       "on construction projects"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "construction projects"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-B3",
+   "family": "B",
+   "lang": "en",
+   "description": "role + project domain",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years as a Planning Engineer on railway projects."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Planning Engineer"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "railway projects",
+       "on railway projects"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "railway projects"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-C1",
+   "family": "C",
+   "lang": "en",
+   "description": "function + organisation type",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience in database administration within financial institutions."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "database administration"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "financial institutions",
+       "within financial institutions"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "financial institutions"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-C2",
+   "family": "C",
+   "lang": "en",
+   "description": "function + organisation type",
+   "jd_lines": [
+    "Requirements",
+    "- At least 5 years of experience in payroll processing within government entities."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "payroll processing"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "government entities",
+       "within government entities"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "government entities"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-D1",
+   "family": "D",
+   "lang": "en",
+   "description": "role only",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Project Manager."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-D2",
+   "family": "D",
+   "lang": "en",
+   "description": "function only",
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience in payroll processing."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "payroll processing"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-D3",
+   "family": "D",
+   "lang": "ar",
+   "description": "role only (Arabic)",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 5 سنوات كمدير مشروع."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "مدير مشروع"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-E1",
+   "family": "E",
+   "lang": "en",
+   "description": "generic environment: dynamic, fast-paced",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as a Project Manager in a dynamic, fast-paced environment."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Project Manager"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "a dynamic, fast-paced environment"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-E2",
+   "family": "E",
+   "lang": "en",
+   "description": "generic environment: multicultural team",
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience as a Recruiter in a multicultural team."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Recruiter"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "a multicultural team"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-E3",
+   "family": "E",
+   "lang": "en",
+   "description": "generic environment: collaborative",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as an Accountant in a collaborative environment."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Accountant"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "a collaborative environment"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-E4",
+   "family": "E",
+   "lang": "en",
+   "description": "generic environment: challenging",
+   "jd_lines": [
+    "Requirements",
+    "- 3+ years of experience as a Site Engineer in a challenging environment."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Site Engineer"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "a challenging environment"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-F1",
+   "family": "F",
+   "lang": "ar",
+   "description": "Arabic role + sector",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 3 سنوات كمحاسب في القطاع المصرفي."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "محاسب"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "القطاع المصرفي",
+       "في القطاع المصرفي"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "القطاع المصرفي"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-F2",
+   "family": "F",
+   "lang": "ar",
+   "description": "Arabic function + organisation type",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 4 سنوات في إدارة قواعد البيانات في المؤسسات المالية."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "إدارة قواعد البيانات"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "المؤسسات المالية",
+       "في المؤسسات المالية"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "المؤسسات المالية"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-F3",
+   "family": "F",
+   "lang": "ar",
+   "description": "Arabic role + sector, attached proclitic (بالقطاع)",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن سنتين كمدقق داخلي بالقطاع الحكومي."
+   ],
+   "analysis_stub": {
+    "minimum_years": 2,
+    "relevant_roles": [
+     "مدقق داخلي"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     "القطاع الحكومي"
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "القطاع الحكومي"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-G1",
+   "family": "G",
+   "lang": "ar",
+   "description": "Arabic generic environment: dynamic",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 4 سنوات كمدير مشروع في بيئة عمل ديناميكية."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "مدير مشروع"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "في بيئة عمل ديناميكية"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-G2",
+   "family": "G",
+   "lang": "ar",
+   "description": "Arabic generic environment: multicultural team",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات كمحاسب ضمن فريق عمل متعدد الثقافات."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "محاسب"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "ضمن فريق عمل متعدد الثقافات"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-H1",
+   "family": "H",
+   "lang": "en",
+   "description": "OR context kept as one phrase",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 6 years of experience as a Project Engineer on construction or infrastructure projects."
+   ],
+   "analysis_stub": {
+    "minimum_years": 6,
+    "relevant_roles": [
+     "Project Engineer"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "construction or infrastructure projects",
+       "on construction or infrastructure projects"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "construction or infrastructure projects"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-H2",
+   "family": "H",
+   "lang": "ar",
+   "description": "Arabic OR context kept as one phrase",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 5 سنوات كمهندس تخطيط في مشاريع الطرق أو الجسور."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "مهندس تخطيط"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "مشاريع الطرق أو الجسور",
+       "في مشاريع الطرق أو الجسور"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "مشاريع الطرق أو الجسور"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-I1",
+   "family": "I",
+   "lang": "en",
+   "description": "conjunctive, one contiguous combined phrase",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as an Internal Auditor in Islamic banking institutions in the GCC region."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Internal Auditor"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "Islamic banking institutions in the GCC region",
+       "in Islamic banking institutions in the GCC region"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "Islamic banking institutions in the GCC region"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-I2",
+   "family": "I",
+   "lang": "en",
+   "description": "conjunctive, non-contiguous (two lines) -> two contexts ANDed",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Procurement Specialist in the pharmaceutical sector.",
+    "- This experience must have been gained in multinational organisations."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Procurement Specialist"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "pharmaceutical sector",
+       "the pharmaceutical sector",
+       "in the pharmaceutical sector"
+      ]
+     },
+     {
+      "one_of": [
+       "multinational organisations",
+       "in multinational organisations"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "pharmaceutical sector",
+     "multinational organisations"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-I3",
+   "family": "I",
+   "lang": "en",
+   "description": "conjunctive, non-contiguous (same line) -> two contexts ANDed",
+   "jd_lines": [
+    "Requirements",
+    "- At least 4 years of experience as a Maintenance Supervisor on petrochemical projects, gained within state-owned companies."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Maintenance Supervisor"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "petrochemical projects",
+       "on petrochemical projects"
+      ]
+     },
+     {
+      "one_of": [
+       "state-owned companies",
+       "within state-owned companies"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "petrochemical projects",
+     "state-owned companies"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-J1",
+   "family": "J",
+   "lang": "en",
+   "description": "role-specific contexts -> shared block cannot represent",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as an Accountant in the banking sector or as an Auditor in a Big Four firm."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Accountant",
+     "Auditor"
+    ]
+   },
+   "expected": {
+    "state": "uncertain",
+    "allowed_candidates": [
+     {
+      "one_of": [
+       "banking sector",
+       "the banking sector",
+       "in the banking sector"
+      ]
+     },
+     {
+      "one_of": [
+       "Big Four firm",
+       "a Big Four firm",
+       "in a Big Four firm"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "uncertain",
+    "contexts": [
+     "banking sector",
+     "Big Four firm"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-J2",
+   "family": "J",
+   "lang": "ar",
+   "description": "Arabic role-specific contexts",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات كمهندس موقع في مشاريع النفط والغاز أو كمهندس تخطيط في المشاريع السكنية."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "مهندس موقع",
+     "مهندس تخطيط"
+    ]
+   },
+   "expected": {
+    "state": "uncertain",
+    "allowed_candidates": [
+     {
+      "one_of": [
+       "مشاريع النفط والغاز",
+       "في مشاريع النفط والغاز"
+      ]
+     },
+     {
+      "one_of": [
+       "المشاريع السكنية",
+       "في المشاريع السكنية"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "uncertain",
+    "contexts": [
+     "مشاريع النفط والغاز",
+     "المشاريع السكنية"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-K1",
+   "family": "K",
+   "lang": "en",
+   "description": "ambiguous preference",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as a Quality Analyst, preferably within regulated environments."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Quality Analyst"
+    ]
+   },
+   "expected": {
+    "state": "uncertain",
+    "allowed_candidates": [
+     {
+      "one_of": [
+       "regulated environments",
+       "within regulated environments"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "uncertain",
+    "contexts": [
+     "regulated environments"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-K2",
+   "family": "K",
+   "lang": "ar",
+   "description": "Arabic ambiguous preference",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 3 سنوات كمحلل بيانات ويفضل لدى جهات حكومية."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "محلل بيانات"
+    ]
+   },
+   "expected": {
+    "state": "uncertain",
+    "allowed_candidates": [
+     {
+      "one_of": [
+       "جهات حكومية",
+       "لدى جهات حكومية"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "uncertain",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-L1",
+   "family": "L",
+   "lang": "en",
+   "description": "context on a separate line, absent from relevant_roles",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as an Accountant.",
+    "- All of this experience must have been gained in the banking sector."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Accountant"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "banking sector",
+       "the banking sector",
+       "in the banking sector"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "banking sector"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-L2",
+   "family": "L",
+   "lang": "en",
+   "description": "context in the JD, stub role paraphrased without it",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 6 years of experience in facilities management, all within hospital environments."
+   ],
+   "analysis_stub": {
+    "minimum_years": 6,
+    "relevant_roles": [
+     "Facilities Manager"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "hospital environments",
+       "within hospital environments"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "hospital environments"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-M1",
+   "family": "M",
+   "lang": "en",
+   "description": "about-us sector text, no experience restriction",
+   "jd_lines": [
+    "About us",
+    "We are a leading oil and gas contractor in the region.",
+    "",
+    "Requirements",
+    "- Minimum 5 years of experience as a Site Engineer."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Site Engineer"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "a leading oil and gas contractor"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-M2",
+   "family": "M",
+   "lang": "en",
+   "description": "company overview sector text, no experience restriction",
+   "jd_lines": [
+    "Company overview",
+    "Our client is a major retail bank.",
+    "",
+    "Requirements",
+    "- At least 3 years of experience as a Data Analyst."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Data Analyst"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "a major retail bank"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-N1",
+   "family": "N",
+   "lang": "en",
+   "description": "context-only requirement (no years, no target)",
+   "jd_lines": [
+    "Requirements",
+    "- Experience in the banking sector is preferred."
+   ],
+   "analysis_stub": {
+    "minimum_years": 0,
+    "relevant_roles": []
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "banking sector",
+       "the banking sector",
+       "in the banking sector"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [
+    "no_experience_criterion"
+   ],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "banking sector"
+    ],
+    "source": "analysis"
+   }
+  }
+ ]
+}

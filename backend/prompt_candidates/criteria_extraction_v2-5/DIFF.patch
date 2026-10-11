@@ -1,0 +1,72 @@
+--- a/criteria_extraction_v2-3.txt	2026-10-09 20:21:58.893399563 +0000
++++ b/criteria_extraction_v2-5.txt	2026-10-10 20:05:42.586923006 +0000
+@@ -44,22 +44,27 @@
+ 
+ RULES
+ 
++COVERAGE. Before you write the answer, go through the job description section by section, in the order the sections appear: each heading, each list and each sentence, in both languages. Every requirement, duty and competency line found in a section becomes an item (rules 4 to 8) or a condition (rule 9). A heading groups the lines under it and is never an item itself. A group of duties under a sub-heading (a heading followed by its own list) belongs to the duties of its section: extract every line of every group, and never stop a group because another heading follows. This pass decides what you output; it is not written into the answer.
++
+ 1. Extract only what the job description says. Never invent, infer or add a requirement that is not stated. Never merge two different requirements into one and never drop one (options joined by "or" are one requirement: rule 4). Preferred items are requirements: extract every one of them with the same care as Required items, including when the job has no Required item at all.
+ 
+ 2. source_text must be copied character for character from the job description (same language, same spelling, same punctuation), one contiguous span, usually one sentence or one list entry. Never translate it, correct it or shorten it with "...". If you cannot point to exact words, do not output the item.
+    source_text is the entry that states the requirement itself. It never includes a governing heading (such as "Required", "Preferred", "Nice to have", "Desirable", "المتطلبات", "يفضل") or a list marker (-, •, 1.), and it never joins text from two places. An entry under a heading is always quoted from the entry alone; the heading is never a reason to leave the entry out.
+ 
+ 3. Importance. Use "required" unless the job description itself marks the requirement as optional or an advantage: for example "preferred", "desirable", "nice to have", "a plus", "an advantage", "ideally", "is an asset", or Arabic such as "يفضل", "مفضل", "ميزة إضافية", "تعتبر ميزة", "أفضلية", "ويفضل". A heading such as "Preferred", "Nice to have", "Desirable" or "مهارات إضافية / يفضل" makes every entry under it preferred. If importance is not stated, it is "required": a plain list of skills or qualifications with no qualifier is entirely required. Do not decide importance from how important a requirement seems to you.
++   Importance is decided item by item. A heading governs only the entries directly beneath it, up to the next heading. An item whose own wording carries a cue is preferred whatever heading it sits under; an item with no cue of its own takes the importance of its heading, or required when there is none. Classify each item from its own wording, never a whole list from one entry.
+    For a preferred item, importance_cue is the exact words (copied from the job description) that made it preferred, such as the inline word, or the heading that governs the entry. The cue is copied separately from source_text and may lie outside it. For a required item, importance_cue is null.
+ 
+ 4. Item count. Count requirements, not words: one item per independent requirement, and options joined by "or" are ONE requirement. The rule is the same in English and Arabic ("or" = "أو", "and" = "و"), in every category.
+    AND: independent requirements joined by "and", "و" or a comma (a comma-separated list without "or") are separate items, each with its own text, even when they share one sentence or one source_text. This includes a "و" attached to the next word ("والإسبانية", "وWord"); a "و" that is part of a word itself (for example "وظيفة") is not a conjunction. "a degree and 5 years of experience" is two items in two categories. alternatives is null for these items.
+    OR: when the job description accepts any ONE of several options (including a list that ends in "or", "أو", or "or equivalent"), output exactly ONE item whose text names all the options and whose alternatives lists EVERY option (two or more entries). Never one item per option, never an alternatives list with a single entry, never alternatives for "and".
++   Complete alternatives: alternatives lists every option the job description names, in the order it gives them, each as its own entry, including a general last option such as "a related field" or "or equivalent" (that option is an entry too). Never a partial list, and never an option left only in the text. Decision test: if meeting ONE of the options is enough, the requirement is OR; if every named item must be met, each one is a separate AND item, and each AND item's text names only itself.
+    Mixed wording: the "or" group is one item and each other requirement is its own item. If the grouping is genuinely unclear, follow the exact wording and say so in warnings.
+    Experience follows the same rule: experience that may be gained in any one of several settings or fields is ONE experience item (see rule 6).
+    Item-count check (counts only; not answers to copy):
+    - "Terraform or Ansible" = 1 item, alternatives ["Terraform", "Ansible"]
+    - "Git and Jira" = 2 items
++   - "Communication and teamwork skills" = 2 items, both soft_skills
+    - "Spanish, French or German" = 1 item, three alternatives
+    - "Spanish, French and German" = 3 items
+    - "two years of experience in a bakery or restaurant" = 1 experience item: subject "bakery or restaurant", min_years 2, alternatives ["bakery", "restaurant"]
+@@ -67,11 +72,11 @@
+    - "خبرة في مخبز أو مطعم" = 1 experience item, alternatives ["مخبز", "مطعم"]
+ 
+ 5. Categories.
+-   skills: technical and functional abilities, tools, systems, methods, and languages the candidate must be able to use.
++   skills: technical and functional abilities the candidate must be able to use: tools, software, systems, equipment, technical methods, and languages the job needs (rule 8). An ability that is technical in its own terms (for example programming or equipment diagnosis) is a skill, even when it is worded "ability to ...".
+    experience: required work experience (years, roles, sector, kind of work) and the role's stated responsibilities (rule 7).
+    education: degree level and field of study (one item per education requirement; fields that are alternatives stay together).
+    certifications: named certificates, licences and professional memberships.
+-   soft_skills: behavioural and interpersonal traits (communication, teamwork, leadership, attention to detail...).
++   soft_skills: behavioural and interpersonal traits only: how the candidate communicates, works with others, organises and prioritises work, pays attention to detail, handles pressure, and takes initiative (for example communication, teamwork, leadership, attention to detail). A technical ability is never a soft skill, whatever its wording.
+    domain_knowledge: industry or subject-matter knowledge.
+    other_requirements: any other measurable qualification that fits nowhere else. Employment conditions do NOT belong in any category (rule 9).
+    Put a requirement in exactly one category.
+@@ -180,3 +185,27 @@
+ JD>>>
+ Answer:
+ {"scoreability":{"status":"open_broad","reason":""},"categories":{"skills":[],"experience":[],"education":[],"certifications":[],"soft_skills":[],"domain_knowledge":[],"other_requirements":[]},"category_weights":{"skills":0,"experience":0,"education":0,"certifications":0,"soft_skills":0,"domain_knowledge":0,"other_requirements":0},"non_scoreable_requirements":[{"text":"الراتب 500 دينار شهريًا","category":"salary","reason":"الراتب ليس متطلبًا قابلًا للتقييم","source_text":"الراتب 500 دينار شهريًا"}],"post_hiring_conditions":[],"informational_items":[{"text":"نوفر تدريبًا مجانيًا","category":"benefits","reason":"ميزة وظيفية وليست متطلبًا","source_text":"نوفر تدريبًا مجانيًا"}],"warnings":[]}
++
++Example 5 (EN: duties under two sub-headings, an OR with complete alternatives as one item, AND members as separate items, technical and soft skills apart, a Preferred entry under a heading, conditions)
++<<<JD
++Warehouse Inventory Clerk
++
++Key duties
++Receiving:
++- Check incoming pallets against purchase orders.
++- Log damaged goods.
++Dispatch:
++- Prepare outbound orders for pick-up.
++
++Requirements:
++- Forklift licence or equivalent operating certificate.
++- Stock counting and barcode scanning.
++- Communication and teamwork skills.
++
++Preferred:
++- Basic accounting knowledge.
++
++Reports to the warehouse supervisor. Shifts: 6 am to 2 pm.
++JD>>>
++Answer:
++{"scoreability":{"status":"scoreable","reason":""},"categories":{"skills":[{"text":"Stock counting","importance":"required","importance_cue":null,"source_text":"Stock counting and barcode scanning.","origin":"stated","alternatives":null,"experience":null},{"text":"Barcode scanning","importance":"required","importance_cue":null,"source_text":"Stock counting and barcode scanning.","origin":"stated","alternatives":null,"experience":null}],"experience":[{"text":"Check incoming pallets against purchase orders","importance":"required","importance_cue":null,"source_text":"Check incoming pallets against purchase orders.","origin":"from_responsibilities","alternatives":null,"experience":null},{"text":"Log damaged goods","importance":"required","importance_cue":null,"source_text":"Log damaged goods.","origin":"from_responsibilities","alternatives":null,"experience":null},{"text":"Prepare outbound orders for pick-up","importance":"required","importance_cue":null,"source_text":"Prepare outbound orders for pick-up.","origin":"from_responsibilities","alternatives":null,"experience":null}],"education":[],"certifications":[{"text":"Forklift licence or equivalent operating certificate","importance":"required","importance_cue":null,"source_text":"Forklift licence or equivalent operating certificate.","origin":"stated","alternatives":["Forklift licence","equivalent operating certificate"],"experience":null}],"soft_skills":[{"text":"Communication","importance":"required","importance_cue":null,"source_text":"Communication and teamwork skills.","origin":"stated","alternatives":null,"experience":null},{"text":"Teamwork","importance":"required","importance_cue":null,"source_text":"Communication and teamwork skills.","origin":"stated","alternatives":null,"experience":null}],"domain_knowledge":[{"text":"Basic accounting knowledge","importance":"preferred","importance_cue":"Preferred","source_text":"Basic accounting knowledge.","origin":"stated","alternatives":null,"experience":null}],"other_requirements":[]},"category_weights":{"skills":35,"experience":25,"education":0,"certifications":20,"soft_skills":20,"domain_knowledge":0,"other_requirements":0},"non_scoreable_requirements":[{"text":"Shifts: 6 am to 2 pm","category":"schedule","reason":"work hours are not a scoreable requirement","source_text":"Shifts: 6 am to 2 pm."}],"post_hiring_conditions":[],"informational_items":[{"text":"Reports to the warehouse supervisor","category":"reporting_line","reason":"reporting line is not a requirement","source_text":"Reports to the warehouse supervisor."}],"warnings":[]}

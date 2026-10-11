@@ -176,8 +176,10 @@ export function evaluateJobDescriptionQuality(description: string): JobDescripti
 // ── Job title validation ───────────────────────────────────────────────────────
 
 const TITLE_PLACEHOLDER = /^(test\d*|sample|demo|placeholder|temp|hello|hi|n\/a|na|tbd|todo|job|new\s+job|title|position|vacancy|role|post|opening|اختبار|تجربة|مثال|نموذج|وظيفة\s*جديدة|منصب|دور)\.?$/i;
-const TITLE_SYMBOLS_ONLY = /^[\d\s\W]+$/;
-const TITLE_REPEAT_CHARS = /(.)\1{2,}/; // 3+ identical consecutive chars (aaa, aaaa, zzz…)
+// \W in JS (without /u flag) only covers [^a-zA-Z0-9_], so Arabic letters would be
+// wrongly treated as symbols. Use Unicode property escape \p{L} instead.
+const TITLE_HAS_LETTER = /\p{L}/u; // matches any Unicode letter (Arabic, Latin, etc.)
+const TITLE_REPEAT_CHARS = /(.)\1{2,}/u; // 3+ identical consecutive chars (aaa, aaaa, zzz…)
 
 const TITLE_BAD_MESSAGE = 'Please enter a real job title, such as Sales Assistant, Accountant, Driver, or HR Manager.';
 const TITLE_BAD_MESSAGE_AR = 'يرجى إدخال مسمى وظيفي حقيقي، مثل: مساعد مبيعات، محاسب، سائق، أو مدير موارد بشرية.';
@@ -194,7 +196,7 @@ export function validateJobTitle(title: string, lang: 'en' | 'ar' = 'en'): Title
   if (!text) return { valid: false, message: lang === 'ar' ? 'المسمى الوظيفي مطلوب.' : 'Job title is required.' };
   if (text.length < 2) return { valid: false, message: badMsg };
   if (TITLE_PLACEHOLDER.test(text)) return { valid: false, message: badMsg };
-  if (TITLE_SYMBOLS_ONLY.test(text)) return { valid: false, message: badMsg };
+  if (!TITLE_HAS_LETTER.test(text)) return { valid: false, message: badMsg };
   if (TITLE_REPEAT_CHARS.test(text)) return { valid: false, message: badMsg };
 
   const words = text.split(/\s+/).filter(Boolean);

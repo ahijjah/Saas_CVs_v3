@@ -47,6 +47,10 @@ import { PaymentSimulationPage } from './pages/PaymentSimulation';
 import { ToastContainer, ToastType } from './components/Toast';
 import { VerifyEmail } from './pages/VerifyEmail';
 import { ForceChangePassword } from './pages/ForceChangePassword';
+import { BulkUploadPage } from './pages/BulkUpload';
+import { TenantFeaturesPage } from './pages/TenantFeatures';
+import { FeatureProvider, useFeatures } from './context/FeatureContext';
+import { FeatureNotAvailable } from './pages/FeatureNotAvailable';
 
 // ── JWT helper ─────────────────────────────────────────────────────────────
 function decodeJwtPayload(token: string) {
@@ -58,6 +62,26 @@ function decodeJwtPayload(token: string) {
     return null;
   }
 }
+
+// ── Route wrapper: /jobs/:jobId/bulk-upload ───────────────────────────────
+const BulkUploadRoute: React.FC<{
+  auth: AuthState;
+  addToast: (msg: string, type: ToastType) => void;
+  onOpenApplication: (jobId: string, applicationId: string) => void;
+}> = ({ auth, addToast, onOpenApplication }) => {
+  const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
+  if (!jobId) return <Navigate to="/jobs" replace />;
+  return (
+    <BulkUploadPage
+      jobId={jobId}
+      auth={auth}
+      addToast={addToast}
+      onBack={() => navigate(`/jobs/${jobId}`)}
+      onOpenApplication={onOpenApplication}
+    />
+  );
+};
 
 // ── Route wrapper: /jobs/:jobId ────────────────────────────────────────────
 const JobDetailsRoute: React.FC<{
@@ -139,6 +163,23 @@ const TenantAccessGuard: React.FC<{ subscriptionStatus: string | undefined }> = 
   if (subscriptionStatus && PLAN_GATE_STATUSES.has(subscriptionStatus)) return <Navigate to="/plan-selection" replace />;
   if (subscriptionStatus && BILLING_GATE_STATUSES.has(subscriptionStatus)) return <Navigate to="/plan-usage" replace />;
   return <Outlet />;
+};
+
+// ── Module guards — render children or Feature Not Available ─────────────────
+const AIRecruitmentGuard: React.FC = () => {
+  const { aiRecruitment, loaded } = useFeatures();
+  if (!loaded) return null;
+  return aiRecruitment
+    ? <Outlet />
+    : <FeatureNotAvailable moduleName="AI Recruitment" description="AI Recruitment features are not enabled for your organisation." returnPath="/dashboard" />;
+};
+
+const ATSManagementGuard: React.FC = () => {
+  const { atsManagement, loaded } = useFeatures();
+  if (!loaded) return null;
+  return atsManagement
+    ? <Outlet />
+    : <FeatureNotAvailable moduleName="ATS Management" description="ATS Management features are not enabled for your organisation." returnPath="/dashboard" />;
 };
 
 // ── Not-found page inside layout ──────────────────────────────────────────
@@ -261,6 +302,7 @@ const AppInner: React.FC = () => {
   const sharedAuth = { auth, addToast };
 
   return (
+    <FeatureProvider token={auth.token}>
     <>
       <Routes>
         {/* ── Fully public: no auth required, no Layout ─────────────────── */}
@@ -369,38 +411,10 @@ const AppInner: React.FC = () => {
             element={<Dashboard auth={auth} addToast={addToast} />}
           />
           <Route
-            path="/jobs"
-            element={
-              <JobsDashboard
-                auth={auth}
-                onViewDetails={id => navigate(`/jobs/${id}`)}
-                onViewApplications={handleViewApplications}
-                onAddJob={() => setIsAddJobOpen(true)}
-                addToast={addToast}
-              />
-            }
-          />
-          <Route
-            path="/jobs/:jobId"
-            element={
-              <JobDetailsRoute
-                auth={auth}
-                onViewApplications={handleViewApplications}
-                onOpenApplication={handleOpenApplication}
-                addToast={addToast}
-              />
-            }
-          />
-          <Route
             path="/applications"
             element={<ApplicationsRoute auth={auth} addToast={addToast} />}
           />
           <Route path="/settings" element={<Settings {...sharedAuth} />} />
-          <Route path="/candidates" element={<CandidatesWorkspace {...sharedAuth} />} />
-          <Route path="/talent-pool" element={<TalentPool {...sharedAuth} />} />
-          <Route path="/analytics" element={<AnalyticsDashboard {...sharedAuth} />} />
-          <Route path="/campaigns" element={<CampaignsPage {...sharedAuth} />} />
-          <Route path="/campaigns/:campaignId" element={<CampaignDetailPage {...sharedAuth} />} />
           <Route path="/client-organizations" element={<ClientOrganizationsPage {...sharedAuth} />} />
           <Route
             path="/plan-usage"
@@ -412,6 +426,52 @@ const AppInner: React.FC = () => {
               )
             }
           />
+
+          {/* AI Recruitment module routes */}
+          <Route element={<AIRecruitmentGuard />}>
+            <Route
+              path="/jobs"
+              element={
+                <JobsDashboard
+                  auth={auth}
+                  onViewDetails={id => navigate(`/jobs/${id}`)}
+                  onViewApplications={handleViewApplications}
+                  onAddJob={() => setIsAddJobOpen(true)}
+                  addToast={addToast}
+                />
+              }
+            />
+            <Route
+              path="/jobs/:jobId"
+              element={
+                <JobDetailsRoute
+                  auth={auth}
+                  onViewApplications={handleViewApplications}
+                  onOpenApplication={handleOpenApplication}
+                  addToast={addToast}
+                />
+              }
+            />
+            <Route
+              path="/jobs/:jobId/bulk-upload"
+              element={
+                <BulkUploadRoute
+                  auth={auth}
+                  addToast={addToast}
+                  onOpenApplication={handleOpenApplication}
+                />
+              }
+            />
+            <Route path="/campaigns" element={<CampaignsPage {...sharedAuth} />} />
+            <Route path="/campaigns/:campaignId" element={<CampaignDetailPage {...sharedAuth} />} />
+          </Route>
+
+          {/* ATS Management module routes */}
+          <Route element={<ATSManagementGuard />}>
+            <Route path="/candidates" element={<CandidatesWorkspace {...sharedAuth} />} />
+            <Route path="/talent-pool" element={<TalentPool {...sharedAuth} />} />
+            <Route path="/analytics" element={<AnalyticsDashboard {...sharedAuth} />} />
+          </Route>
           </Route>
 
           {/* Super-admin only routes */}
@@ -426,6 +486,7 @@ const AppInner: React.FC = () => {
             <Route path="/admin/audit-logs" element={<AuditLogs />} />
             <Route path="/admin/ai-usage" element={<AIUsagePage {...sharedAuth} />} />
             <Route path="/admin/ai-models" element={<AIModelsPage {...sharedAuth} />} />
+            <Route path="/admin/tenant-features" element={<TenantFeaturesPage {...sharedAuth} />} />
           </Route>
 
           {/* 404 inside layout */}
@@ -452,6 +513,7 @@ const AppInner: React.FC = () => {
 
       <ToastContainer toasts={toasts} removeToast={removeToast} />
     </>
+    </FeatureProvider>
   );
 };
 

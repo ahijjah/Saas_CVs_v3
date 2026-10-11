@@ -146,6 +146,7 @@ export interface Campaign {
   applications_total?: number;
   applications_qualified?: number;
   applications_partial?: number;
+  applications_needs_verification?: number;
   applications_rejected?: number;
   applications_scored?: number;
 }
@@ -196,6 +197,7 @@ export interface Job {
   applications_total: number;
   applications_qualified: number;
   applications_partial: number;
+  applications_needs_verification?: number;
   applications_rejected: number;
   applications_evaluated?: number;
   applications_pending?: number;
@@ -208,6 +210,36 @@ export interface Job {
   applications_duplicate_blocked?: number;
   applications_possible_duplicate?: number;
   applications_failed_needs_review?: number;
+  /** P0-01: count of scored applications per scoring_method ('unknown' = unclassified history). */
+  scoring_methods?: Record<string, number>;
+  /** P0-01: true when scored candidates in this job came from more than one ranking methodology. */
+  mixed_scoring_methods?: boolean;
+}
+
+// Required experience context (qualifying context). `source` "analysis" = automatic suggestion,
+// "recruiter" = reviewed by a recruiter. A missing object means "not assessed" — never "no restriction".
+export interface QualifyingContext {
+  state: 'identified' | 'none' | 'uncertain';
+  contexts: string[];
+  source: 'analysis' | 'recruiter';
+}
+
+export type QualifyingContextReviewStatus =
+  | 'not_assessed'
+  | 'assessment_failed'
+  | 'needs_confirmation'
+  | 'awaiting_confirmation'
+  | 'confirmed'
+  | 'edited';
+
+export interface QualifyingContextReview {
+  status: QualifyingContextReviewStatus;
+  can_confirm: boolean;
+  can_edit: boolean;
+  state: 'identified' | 'none' | 'uncertain' | null;
+  contexts: string[];
+  changed_by_name: string | null;
+  changed_at: string | null;
 }
 
 export interface AnalysisJson {
@@ -219,6 +251,7 @@ export interface AnalysisJson {
     minimum_years: number;
     relevant_roles: string[];
     key_responsibilities: string[];
+    qualifying_context?: QualifyingContext | null;
   };
   education: {
     minimum_level: string;
@@ -241,6 +274,7 @@ export interface AnalysisJson {
 export interface JobDetails extends Job {
   description: string;
   analysis_json: AnalysisJson | null;
+  qualifying_context_review?: QualifyingContextReview;
   forwarding_email?: string;
   // Ingestion booleans (replaces forwarding_enabled/alias_enabled)
   receive_cv_via_forwarding_email?: boolean;
@@ -254,6 +288,8 @@ export interface JobDetails extends Job {
   // AI comparison toggle
   enable_ai_comparison?: boolean;
   criteria_extraction_status?: 'pending' | 'processing' | 'completed' | 'insufficient' | 'blocked' | 'failed';
+  /** 'v2' for a requirements-v2 job (its own editor), 'legacy' otherwise. Set by the job-details endpoint. */
+  requirements_format?: 'legacy' | 'v2';
   criteria_extraction_error?: string | null;
   // Retry control
   criteria_extraction_retry_count?: number;
@@ -264,7 +300,9 @@ export interface JobDetails extends Job {
 }
 
 // decision='low_match' is a frontend-only display alias for evaluation_stage=1 + gatekeeper_passed=false + decision='rejected'
-export type ApplicationDecision = 'qualified' | 'partial' | 'rejected' | 'low_match';
+// 'needs_verification' (P0-02a): required criteria could not be determined from the CV and
+// verifying them would make the candidate qualified. Never a rejection.
+export type ApplicationDecision = 'qualified' | 'partial' | 'needs_verification' | 'rejected' | 'low_match';
 
 export type WorkflowStatus =
   | 'awaiting_review'
@@ -307,14 +345,30 @@ export interface AssignableUser {
   role: string;
 }
 
+export type GenderValue = 'male' | 'female' | 'unknown';
+export type GenderBasis = 'title' | 'pronoun' | 'explicit_cv_text' | 'name' | 'unknown';
+
+/** P0-01: values of application_scores.scoring_method (open for future versions). */
+export type ScoringMethod =
+  | 'deterministic_v1'
+  | 'deterministic_v2'
+  | 'legacy_llm_v1'
+  | 'gatekeeper_local_v1'
+  | 'legacy_llm_det_backfill_v1'
+  | (string & {});
+
 export interface Application {
   id: string;
   application_id: string;
   candidate_name: string;
   score: number | null;
+  /** P0-02a: upper bound / pending verification points (null when unscored). */
+  score_upper?: number | null;
+  pending_points?: number | null;
+  required_to_verify?: number;
   status: ApplicationDecision | null;
   processing_status?: string;
-  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'other' | null;
+  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'scoring_failed' | 'other' | null;
   duplicate_status?: 'not_duplicate' | 'possible_duplicate' | 'exact_duplicate';
   duplicate_reason?: string | null;
   duplicate_reference_application_id?: string | null;
@@ -324,6 +378,7 @@ export interface Application {
   summary: string;
   workflow_status?: WorkflowStatus;
   recruiter_notes?: string | null;
+  gender_value?: GenderValue;
 }
 
 export interface ScoreDimension {
@@ -360,6 +415,107 @@ export interface AIComparison {
   created_at?: string;
 }
 
+/** P0-02a: CANNOT_DETERMINE = not established either way by the CV (to verify). */
+export type DetCriterionStatus = 'MATCHED' | 'PARTIAL' | 'ABSENT' | 'CANNOT_DETERMINE';
+export type CannotDetermineReason = 'relevance_unverified' | 'detail_missing' | 'ambiguous' | 'conflicting';
+
+export interface DetCriterionScore {
+  criterion_text: string;
+  dimension: string;
+  required: boolean;
+  status: DetCriterionStatus;
+  match_type: 'direct' | 'equivalent' | 'transferable' | 'inferred' | 'missing';
+  criterion_class: string;
+  status_credit: number;
+  quality_factor: number;
+  effective_credit: number;
+  confidence: number;
+  supporting_evidence: string[];
+  risk_flags: string[];
+  has_overqualification: boolean;
+  /** det_score_v3 (P0-02a) fields; absent on older payloads. */
+  cd_reason?: CannotDetermineReason | null;
+  match_reason?: string;
+  verified_credit?: number;
+  upper_credit?: number;
+  pending_worth?: number;
+}
+
+export interface DetDimensionScore {
+  dimension: string;
+  dimension_score: number;
+  weighted_contribution: number;
+  weight_pct: number;
+  n_required: number;
+  n_required_matched: number;
+  n_required_partial: number;
+  n_required_absent: number;
+  n_preferred: number;
+  n_preferred_matched: number;
+  n_preferred_partial: number;
+  n_preferred_absent: number;
+  required_avg: number;
+  preferred_avg: number;
+  required_absent_floor_triggered: boolean;
+  has_overqualification_risk: boolean;
+  low_confidence_count: number;
+  review_recommended: boolean;
+  criteria: DetCriterionScore[];
+  dimension_score_upper?: number;
+  n_required_cannot_determine?: number;
+  n_preferred_cannot_determine?: number;
+}
+
+export interface DetScoreSummary {
+  total: number;
+  matched: number;
+  partial: number;
+  absent: number;
+  cannot_determine?: number;
+  coverage_pct: number | null;
+  partial_or_matched_pct: number | null;
+  blocking_gaps?: number;
+  fully_covered?: boolean;
+  signal: string;
+}
+
+export interface QualitativeSummary {
+  candidate_name: string;
+  evaluation_notes: string;
+  strengths: string[];
+  gaps_identified: string[];
+  suggested_interview_questions: string[];
+}
+
+export interface DeterministicScore {
+  _schema: string;
+  final_score: number;
+  scoring_version: string;
+  scored_at: string;
+  mapper_version: string;
+  overqualification_risk_dimensions: string[];
+  required_summary: DetScoreSummary;
+  preferred_summary: DetScoreSummary;
+  recruiter_signal: string;
+  recruiter_label: string;
+  qualitative_summary?: QualitativeSummary | null;
+  dimensions: Record<string, DetDimensionScore>;
+  /** det_score_v3 (P0-02a); older payloads: upper = verified, pending = 0. */
+  verified_score?: number;
+  upper_score?: number;
+  pending_points?: number;
+  decision_verified_basis?: string;
+  decision_if_verified?: string;
+  recommendation?: string;
+  verification_items?: {
+    criterion_text: string;
+    dimension: string;
+    required: boolean;
+    cd_reason: CannotDetermineReason | null;
+    pending_worth: number;
+  }[];
+}
+
 export interface ApplicationDetailedAnalysis {
   application_id: string;
   candidate_name: string;
@@ -370,6 +526,9 @@ export interface ApplicationDetailedAnalysis {
   preferred_contact_email?: string | null;
   preferred_contact_source?: string | null;
   preferred_contact_confidence?: number | null;
+  gender_value?: GenderValue;
+  gender_confidence?: number;
+  gender_basis?: GenderBasis;
   submitted_by_user_id?: string | null;
   submitted_by_name?: string | null;
   submitted_by_email?: string | null;
@@ -377,9 +536,16 @@ export interface ApplicationDetailedAnalysis {
   original_filename?: string | null;
   decision: ApplicationDecision;
   overall_score: number;
+  /** P0-02a: verified score (= overall_score), upper bound and pending points. */
+  verified_score?: number | null;
+  score_upper?: number | null;
+  pending_points?: number;
+  required_to_verify?: number;
+  preferred_to_verify?: number;
+  decision_if_verified?: string | null;
   submission_source?: 'manual_upload' | 'email_forwarding' | 'platform_email';
   processing_status?: string;
-  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'other' | null;
+  stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'scoring_failed' | 'other' | null;
   evaluation_stage?: 1 | 2 | 3 | null;
   evaluation_exit_reason?: string | null;
   scores: {
@@ -392,6 +558,7 @@ export interface ApplicationDetailedAnalysis {
     other_requirements?: ScoreDimension;
   };
   score_details?: Record<string, ScoreDetail>;
+  det_score?: DeterministicScore | null;
   analysis: {
     summary: string;
     cv_skills_matched?: string;
@@ -415,6 +582,8 @@ export interface ApplicationDetailedAnalysis {
   reasoning?: Record<string, string>;
   raw_ai_response?: any;
   ai_model?: string;
+  /** P0-01: methodology that produced the stored score (application_scores.scoring_method). */
+  scoring_method?: ScoringMethod | null;
   scoring_provider?: string;
   scoring_prompt_code?: string;
   scoring_prompt_version?: number;
@@ -447,7 +616,7 @@ export interface ApplicationDetailedAnalysis {
   workflow_history?: WorkflowHistoryEntry[];
 }
 
-export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked' | 'workflow_awaiting_review' | 'workflow_under_review' | 'workflow_shortlisted' | 'workflow_interviewing' | 'workflow_offer' | 'workflow_hired' | 'workflow_rejected' | 'workflow_withdrawn' | 'workflow_on_hold';
+export type ApplicationFilter = 'qualified' | 'partial' | 'needs_verification' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked' | 'workflow_awaiting_review' | 'workflow_under_review' | 'workflow_shortlisted' | 'workflow_interviewing' | 'workflow_offer' | 'workflow_hired' | 'workflow_rejected' | 'workflow_withdrawn' | 'workflow_on_hold';
 
 export interface UploadedCV {
   application_id: string;

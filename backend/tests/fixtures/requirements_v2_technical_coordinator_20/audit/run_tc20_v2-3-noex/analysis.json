@@ -1,0 +1,602 @@
+{
+ "noex": {
+  "summary": {
+   "answers": 5,
+   "valid_json": 5,
+   "official_checks_pass": {
+    "C_RESP": 0,
+    "C_COMP": 5,
+    "C_EXP_OR": 0,
+    "C_FAM_OR": 0,
+    "C_LOCAL": 0,
+    "C_LOCATION": 0,
+    "C_REPORTING": 0,
+    "C_AND": 0
+   },
+   "weights_usable": 5,
+   "weights_total_is_100": 0,
+   "education_alternatives_retained": 0,
+   "schema_compliant": 2,
+   "schema_problem_codes": {
+    "item_missing:alternatives": 16,
+    "item_missing:experience": 2
+   }
+  },
+  "answers": [
+   {
+    "call": 1,
+    "valid_json": true,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_problems": [
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:alternatives"
+    ],
+    "weights": {
+     "whole_0_100": true,
+     "usable": true,
+     "total": 300,
+     "total_is_100": false,
+     "positive_in_category_without_required": []
+    },
+    "items_per_category": {
+     "skills": 11,
+     "experience": 5,
+     "education": 1,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "competency_lines_category": {
+     "Good understanding of business applications, digital platforms, and software support processes.": [
+      "skills"
+     ],
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.": [
+      "skills"
+     ],
+     "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.": [
+      "skills"
+     ]
+    },
+    "soft_skills_items": 0,
+    "javascript_category": [
+     "experience"
+    ],
+    "arabic_english_items": 1,
+    "arabic_english_merged": true,
+    "education_alternatives_retained": false,
+    "responsibility_items": 0,
+    "condition_items": {
+     "non_scoreable_requirements": 0,
+     "post_hiring_conditions": 0,
+     "informational_items": 0
+    },
+    "scoreability_status": "scoreable"
+   },
+   {
+    "call": 2,
+    "valid_json": true,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_problems": [
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:experience"
+    ],
+    "weights": {
+     "whole_0_100": true,
+     "usable": true,
+     "total": 300,
+     "total_is_100": false,
+     "positive_in_category_without_required": []
+    },
+    "items_per_category": {
+     "skills": 11,
+     "experience": 5,
+     "education": 1,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "competency_lines_category": {
+     "Good understanding of business applications, digital platforms, and software support processes.": [
+      "skills"
+     ],
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.": [
+      "skills"
+     ],
+     "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.": [
+      "skills"
+     ]
+    },
+    "soft_skills_items": 0,
+    "javascript_category": [
+     "experience"
+    ],
+    "arabic_english_items": 1,
+    "arabic_english_merged": true,
+    "education_alternatives_retained": false,
+    "responsibility_items": 0,
+    "condition_items": {
+     "non_scoreable_requirements": 0,
+     "post_hiring_conditions": 0,
+     "informational_items": 0
+    },
+    "scoreability_status": "scoreable"
+   },
+   {
+    "call": 3,
+    "valid_json": true,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_problems": [],
+    "weights": {
+     "whole_0_100": true,
+     "usable": true,
+     "total": 300,
+     "total_is_100": false,
+     "positive_in_category_without_required": []
+    },
+    "items_per_category": {
+     "skills": 11,
+     "experience": 5,
+     "education": 1,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "competency_lines_category": {
+     "Good understanding of business applications, digital platforms, and software support processes.": [
+      "skills"
+     ],
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.": [
+      "skills"
+     ],
+     "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.": [
+      "skills"
+     ]
+    },
+    "soft_skills_items": 0,
+    "javascript_category": [
+     "experience"
+    ],
+    "arabic_english_items": 1,
+    "arabic_english_merged": true,
+    "education_alternatives_retained": false,
+    "responsibility_items": 0,
+    "condition_items": {
+     "non_scoreable_requirements": 0,
+     "post_hiring_conditions": 0,
+     "informational_items": 0
+    },
+    "scoreability_status": "scoreable"
+   },
+   {
+    "call": 4,
+    "valid_json": true,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_problems": [
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:alternatives",
+     "item_missing:experience"
+    ],
+    "weights": {
+     "whole_0_100": true,
+     "usable": true,
+     "total": 300,
+     "total_is_100": false,
+     "positive_in_category_without_required": []
+    },
+    "items_per_category": {
+     "skills": 11,
+     "experience": 5,
+     "education": 1,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "competency_lines_category": {
+     "Good understanding of business applications, digital platforms, and software support processes.": [
+      "skills"
+     ],
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.": [
+      "skills"
+     ],
+     "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.": [
+      "skills"
+     ]
+    },
+    "soft_skills_items": 0,
+    "javascript_category": [
+     "experience"
+    ],
+    "arabic_english_items": 1,
+    "arabic_english_merged": true,
+    "education_alternatives_retained": false,
+    "responsibility_items": 0,
+    "condition_items": {
+     "non_scoreable_requirements": 0,
+     "post_hiring_conditions": 0,
+     "informational_items": 0
+    },
+    "scoreability_status": "scoreable"
+   },
+   {
+    "call": 5,
+    "valid_json": true,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_problems": [],
+    "weights": {
+     "whole_0_100": true,
+     "usable": true,
+     "total": 300,
+     "total_is_100": false,
+     "positive_in_category_without_required": []
+    },
+    "items_per_category": {
+     "skills": 11,
+     "experience": 5,
+     "education": 1,
+     "certifications": 0,
+     "soft_skills": 0,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "competency_lines_category": {
+     "Good understanding of business applications, digital platforms, and software support processes.": [
+      "skills"
+     ],
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.": [
+      "skills"
+     ],
+     "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.": [
+      "skills"
+     ]
+    },
+    "soft_skills_items": 0,
+    "javascript_category": [
+     "experience"
+    ],
+    "arabic_english_items": 1,
+    "arabic_english_merged": true,
+    "education_alternatives_retained": false,
+    "responsibility_items": 0,
+    "condition_items": {
+     "non_scoreable_requirements": 0,
+     "post_hiring_conditions": 0,
+     "informational_items": 0
+    },
+    "scoreability_status": "scoreable"
+   }
+  ]
+ },
+ "stored_v2-3": {
+  "summary": {
+   "answers": 5,
+   "valid_json": 5,
+   "official_checks_pass": {
+    "C_RESP": 0,
+    "C_COMP": 0,
+    "C_EXP_OR": 0,
+    "C_FAM_OR": 0,
+    "C_LOCAL": 0,
+    "C_LOCATION": 3,
+    "C_REPORTING": 0,
+    "C_AND": 0
+   },
+   "weights_usable": 5,
+   "weights_total_is_100": 5,
+   "education_alternatives_retained": 5,
+   "schema_compliant": 5,
+   "schema_problem_codes": {}
+  },
+  "answers": [
+   {
+    "call": 1,
+    "valid_json": true,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_problems": [],
+    "weights": {
+     "whole_0_100": true,
+     "usable": true,
+     "total": 100,
+     "total_is_100": true,
+     "positive_in_category_without_required": []
+    },
+    "items_per_category": {
+     "skills": 4,
+     "experience": 4,
+     "education": 1,
+     "certifications": 0,
+     "soft_skills": 7,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "competency_lines_category": {
+     "Good understanding of business applications, digital platforms, and software support processes.": [],
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.": [],
+     "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.": []
+    },
+    "soft_skills_items": 7,
+    "javascript_category": [
+     "skills"
+    ],
+    "arabic_english_items": 2,
+    "arabic_english_merged": false,
+    "education_alternatives_retained": true,
+    "responsibility_items": 0,
+    "condition_items": {
+     "non_scoreable_requirements": 0,
+     "post_hiring_conditions": 0,
+     "informational_items": 0
+    },
+    "scoreability_status": "scoreable"
+   },
+   {
+    "call": 2,
+    "valid_json": true,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_problems": [],
+    "weights": {
+     "whole_0_100": true,
+     "usable": true,
+     "total": 100,
+     "total_is_100": true,
+     "positive_in_category_without_required": []
+    },
+    "items_per_category": {
+     "skills": 4,
+     "experience": 4,
+     "education": 1,
+     "certifications": 0,
+     "soft_skills": 7,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "competency_lines_category": {
+     "Good understanding of business applications, digital platforms, and software support processes.": [],
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.": [],
+     "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.": []
+    },
+    "soft_skills_items": 7,
+    "javascript_category": [
+     "skills"
+    ],
+    "arabic_english_items": 2,
+    "arabic_english_merged": false,
+    "education_alternatives_retained": true,
+    "responsibility_items": 0,
+    "condition_items": {
+     "non_scoreable_requirements": 3,
+     "post_hiring_conditions": 0,
+     "informational_items": 0
+    },
+    "scoreability_status": "scoreable"
+   },
+   {
+    "call": 3,
+    "valid_json": true,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_problems": [],
+    "weights": {
+     "whole_0_100": true,
+     "usable": true,
+     "total": 100,
+     "total_is_100": true,
+     "positive_in_category_without_required": []
+    },
+    "items_per_category": {
+     "skills": 4,
+     "experience": 4,
+     "education": 1,
+     "certifications": 0,
+     "soft_skills": 7,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "competency_lines_category": {
+     "Good understanding of business applications, digital platforms, and software support processes.": [],
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.": [],
+     "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.": []
+    },
+    "soft_skills_items": 7,
+    "javascript_category": [
+     "skills"
+    ],
+    "arabic_english_items": 2,
+    "arabic_english_merged": false,
+    "education_alternatives_retained": true,
+    "responsibility_items": 0,
+    "condition_items": {
+     "non_scoreable_requirements": 4,
+     "post_hiring_conditions": 0,
+     "informational_items": 0
+    },
+    "scoreability_status": "scoreable"
+   },
+   {
+    "call": 4,
+    "valid_json": true,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_problems": [],
+    "weights": {
+     "whole_0_100": true,
+     "usable": true,
+     "total": 100,
+     "total_is_100": true,
+     "positive_in_category_without_required": []
+    },
+    "items_per_category": {
+     "skills": 4,
+     "experience": 4,
+     "education": 1,
+     "certifications": 0,
+     "soft_skills": 7,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "competency_lines_category": {
+     "Good understanding of business applications, digital platforms, and software support processes.": [],
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.": [],
+     "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.": []
+    },
+    "soft_skills_items": 7,
+    "javascript_category": [
+     "skills"
+    ],
+    "arabic_english_items": 2,
+    "arabic_english_merged": false,
+    "education_alternatives_retained": true,
+    "responsibility_items": 0,
+    "condition_items": {
+     "non_scoreable_requirements": 0,
+     "post_hiring_conditions": 0,
+     "informational_items": 0
+    },
+    "scoreability_status": "scoreable"
+   },
+   {
+    "call": 5,
+    "valid_json": true,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_problems": [],
+    "weights": {
+     "whole_0_100": true,
+     "usable": true,
+     "total": 100,
+     "total_is_100": true,
+     "positive_in_category_without_required": []
+    },
+    "items_per_category": {
+     "skills": 4,
+     "experience": 4,
+     "education": 1,
+     "certifications": 0,
+     "soft_skills": 7,
+     "domain_knowledge": 0,
+     "other_requirements": 0
+    },
+    "competency_lines_category": {
+     "Good understanding of business applications, digital platforms, and software support processes.": [],
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.": [],
+     "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.": []
+    },
+    "soft_skills_items": 7,
+    "javascript_category": [
+     "skills"
+    ],
+    "arabic_english_items": 2,
+    "arabic_english_merged": false,
+    "education_alternatives_retained": true,
+    "responsibility_items": 0,
+    "condition_items": {
+     "non_scoreable_requirements": 3,
+     "post_hiring_conditions": 0,
+     "informational_items": 0
+    },
+    "scoreability_status": "scoreable"
+   }
+  ]
+ }
+}

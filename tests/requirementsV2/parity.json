@@ -1,0 +1,268 @@
+{
+ "normalize": [
+  {
+   "proposed": {
+    "skills": 30,
+    "experience": 25,
+    "education": 15,
+    "certifications": 10,
+    "soft_skills": 10,
+    "domain_knowledge": 5,
+    "other_requirements": 5
+   },
+   "eligible": [
+    "skills",
+    "experience",
+    "education",
+    "certifications",
+    "soft_skills",
+    "domain_knowledge",
+    "other_requirements"
+   ],
+   "status": "ok",
+   "weights": {
+    "skills": 30,
+    "experience": 25,
+    "education": 15,
+    "certifications": 10,
+    "soft_skills": 10,
+    "domain_knowledge": 5,
+    "other_requirements": 5
+   },
+   "fallback": null,
+   "raised": []
+  },
+  {
+   "proposed": {
+    "skills": 1,
+    "experience": 1,
+    "education": 1
+   },
+   "eligible": [
+    "skills",
+    "experience",
+    "education"
+   ],
+   "status": "ok",
+   "weights": {
+    "skills": 34,
+    "experience": 33,
+    "education": 33,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "fallback": null,
+   "raised": []
+  },
+  {
+   "proposed": {
+    "skills": 50,
+    "experience": 50,
+    "education": 0
+   },
+   "eligible": [
+    "skills",
+    "experience"
+   ],
+   "status": "ok",
+   "weights": {
+    "skills": 50,
+    "experience": 50,
+    "education": 0,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "fallback": null,
+   "raised": []
+  },
+  {
+   "proposed": {
+    "skills": 99,
+    "experience": 1,
+    "education": 0,
+    "certifications": 0
+   },
+   "eligible": [
+    "skills",
+    "experience",
+    "education"
+   ],
+   "status": "ok",
+   "weights": {
+    "skills": 98,
+    "experience": 1,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "fallback": null,
+   "raised": [
+    "education"
+   ]
+  },
+  {
+   "proposed": {
+    "skills": 0,
+    "experience": 0
+   },
+   "eligible": [
+    "skills",
+    "experience"
+   ],
+   "status": "fallback_required",
+   "weights": null,
+   "fallback": {
+    "skills": 50,
+    "experience": 50,
+    "education": 0,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "raised": []
+  },
+  {
+   "proposed": {
+    "skills": 33,
+    "experience": 33,
+    "education": 33
+   },
+   "eligible": [
+    "skills",
+    "experience",
+    "education"
+   ],
+   "status": "ok",
+   "weights": {
+    "skills": 34,
+    "experience": 33,
+    "education": 33,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "fallback": null,
+   "raised": []
+  },
+  {
+   "proposed": {
+    "skills": 70,
+    "experience": 20,
+    "education": 10,
+    "certifications": 3
+   },
+   "eligible": [
+    "skills",
+    "education",
+    "certifications"
+   ],
+   "status": "ok",
+   "weights": {
+    "skills": 84,
+    "experience": 0,
+    "education": 12,
+    "certifications": 4,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "fallback": null,
+   "raised": []
+  },
+  {
+   "proposed": {
+    "skills": 1000,
+    "experience": 1
+   },
+   "eligible": [
+    "skills",
+    "experience"
+   ],
+   "status": "ok",
+   "weights": {
+    "skills": 99,
+    "experience": 1,
+    "education": 0,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "fallback": null,
+   "raised": [
+    "experience"
+   ]
+  }
+ ],
+ "equalize": {
+  "1": [
+   100
+  ],
+  "2": [
+   50,
+   50
+  ],
+  "3": [
+   34,
+   33,
+   33
+  ],
+  "4": [
+   25,
+   25,
+   25,
+   25
+  ],
+  "6": [
+   17,
+   17,
+   17,
+   17,
+   16,
+   16
+  ],
+  "7": [
+   15,
+   15,
+   14,
+   14,
+   14,
+   14,
+   14
+  ],
+  "9": [
+   12,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11,
+   11
+  ],
+  "13": [
+   8,
+   8,
+   8,
+   8,
+   8,
+   8,
+   8,
+   8,
+   8,
+   7,
+   7,
+   7,
+   7
+  ]
+ }
+}

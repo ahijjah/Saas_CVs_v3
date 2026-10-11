@@ -1,0 +1,171 @@
+{
+ "id": "B03_en_warehouse_supervisor",
+ "language": "en",
+ "title": "Warehouse Shift Supervisor",
+ "tags": [
+  "headings_required_preferred",
+  "experience_years",
+  "responsibilities",
+  "mandatory_certification",
+  "languages",
+  "employment_conditions",
+  "post_hiring",
+  "informational"
+ ],
+ "job_metadata": {
+  "title": "Warehouse Shift Supervisor",
+  "location": "Jebel Ali"
+ },
+ "jd": "Warehouse Shift Supervisor\n\nWe are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.\n\nRequired:\n- Valid forklift operator licence is mandatory.\n- Two years of experience supervising a warehouse team.\n- Fluent English, spoken and written.\n- Working knowledge of inventory management systems.\n\nPreferred:\n- Arabic language skills.\n- First aid certificate.\n\nDuties:\n- Assign tasks to a team of 12 operators each shift.\n- Check inbound deliveries against purchase orders.\n\nTerms: rotating night shifts, occasional travel to the Abu Dhabi depot, and candidates must hold a valid UAE residence visa or be willing to relocate. A background check and two professional references will be requested before the start date. We offer a transport allowance.\n",
+ "expected": {
+  "scoreability": "scoreable",
+  "readiness": "ready",
+  "review_codes": [],
+  "category_weights_hint": {
+   "skills": 25,
+   "experience": 40,
+   "education": 0,
+   "certifications": 25,
+   "soft_skills": 0,
+   "domain_knowledge": 10,
+   "other_requirements": 0
+  },
+  "items": [
+   {
+    "category": "certifications",
+    "text": "Valid forklift operator licence",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Valid forklift operator licence is mandatory.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "certifications",
+     "other_requirements"
+    ],
+    "note": "'mandatory' must stay Required"
+   },
+   {
+    "category": "experience",
+    "text": "Two years of experience supervising a warehouse team",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Two years of experience supervising a warehouse team.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": {
+     "subject": "supervising a warehouse team",
+     "min_years": 2
+    },
+    "subject_variants": [
+     "supervising a warehouse team",
+     "warehouse supervision",
+     "supervising a team"
+    ]
+   },
+   {
+    "category": "skills",
+    "text": "Fluent English, spoken and written",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Fluent English, spoken and written.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "note": "language skill (rule 8); one item"
+   },
+   {
+    "category": "skills",
+    "text": "Working knowledge of inventory management systems",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Working knowledge of inventory management systems.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "skills",
+     "domain_knowledge"
+    ]
+   },
+   {
+    "category": "skills",
+    "text": "Arabic language skills",
+    "importance": "preferred",
+    "cue": "Preferred",
+    "evidence": "Arabic language skills.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "certifications",
+    "text": "First aid certificate",
+    "importance": "preferred",
+    "cue": "Preferred",
+    "evidence": "First aid certificate.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "Assign tasks to a team of 12 operators each shift",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Assign tasks to a team of 12 operators each shift.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "Check inbound deliveries against purchase orders",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Check inbound deliveries against purchase orders.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   }
+  ],
+  "conditions": [
+   {
+    "list": "non_scoreable_requirements",
+    "category": "schedule",
+    "evidence": "rotating night shifts",
+    "text": "Rotating night shifts"
+   },
+   {
+    "list": "non_scoreable_requirements",
+    "category": "travel",
+    "evidence": "occasional travel to the Abu Dhabi depot",
+    "text": "Occasional travel to the Abu Dhabi depot"
+   },
+   {
+    "list": "non_scoreable_requirements",
+    "category": "work_authorization",
+    "evidence": "candidates must hold a valid UAE residence visa or be willing to relocate",
+    "text": "UAE residence visa or willingness to relocate"
+   },
+   {
+    "list": "post_hiring_conditions",
+    "category": "background_check",
+    "evidence": "A background check and two professional references will be requested before the start date.",
+    "text": "Background check and two professional references before the start date"
+   },
+   {
+    "list": "informational_items",
+    "category": "benefits",
+    "evidence": "We offer a transport allowance.",
+    "text": "Transport allowance"
+   }
+  ],
+  "must_not_extract": [
+   "residence visa",
+   "night shifts"
+  ],
+  "model_warnings_expected": false
+ }
+}

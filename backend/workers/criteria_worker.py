@@ -6,10 +6,18 @@ Flow:
   2. Call OpenAI via extract_job_criteria()
   3. Flatten nested result to flat arrays for scoring pipeline
   4. Validate criteria quality (sufficient content or explicitly open/broad role)
-  5. Write analysis_json + flat arrays + weights to DB
+  5. Qualifying context (Architecture C P2): only when the system_config flag
+     scoring_v2.qualifying_context_analysis_enabled is exactly "true" AND the main
+     analysis is 'completed', run the pinned candidate_qc-1 call on the JD text.
+     Any QC failure is contained (failed_technical / failed_validation audit only):
+     it never fails the main extraction and never triggers a Celery retry.
+  6. Write analysis_json + flat arrays + weights to DB in ONE transaction that
+     locks the job_criteria row (SELECT ... FOR UPDATE) and merges qualifying
+     context against the values read under that lock (a recruiter-owned object is
+     never overwritten; see services.qualifying_context.persistence)
      - 'completed' if quality check passes
      - 'failed'    if all criteria arrays are empty and role is not open/broad
-  6. On max-retry failure: mark 'failed' with error message
+  7. On max-retry failure: mark 'failed' with error message
 
 Event-loop safety
 -----------------
@@ -110,6 +118,51 @@ def _check_criteria_quality(analysis: dict, flat: dict) -> tuple[bool, bool, str
     return False, False, _EMPTY_DESCRIPTION_ERROR
 
 
+QC_FLAG_KEY = "scoring_v2.qualifying_context_analysis_enabled"
+
+
+async def _qc_flag_enabled(db) -> bool:
+    """Direct system_config lookup. Only the exact (trimmed, lower-cased) value "true" enables QC; a missing
+    row, a DB error or any other value means OFF."""
+    from sqlalchemy import text
+    try:
+        row = await db.execute(text("SELECT value FROM system_config WHERE key = :k"), {"k": QC_FLAG_KEY})
+        value = row.scalar_one_or_none()
+    except Exception as exc:                      # noqa: BLE001 - flag errors always mean OFF
+        logger.warning("Qualifying-context flag lookup failed (treated as OFF): %s", exc)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return False
+    return isinstance(value, str) and value.strip().lower() == "true"
+
+
+async def _run_qc(job_id: str, description: str):
+    """One pinned candidate_qc-1 run. Never raises: every exception becomes a failed_technical result."""
+    from datetime import datetime, timezone
+    from services.qualifying_context import persistence, runner
+    try:
+        result = await runner.run_qualifying_context(description)
+    except Exception as exc:                      # noqa: BLE001 - incl. PromptIntegrityError
+        result = persistence.technical_failure(description, f"{type(exc).__name__}: {exc}")
+    generated_at = datetime.now(timezone.utc).isoformat()
+    if result.ok:
+        logger.info("[job:%s] Qualifying context: ok (state=%s).", job_id, result.qualifying_context.state)
+    else:
+        logger.warning("[job:%s] Qualifying context: %s (%s).", job_id, result.status, result.error)
+    return result, generated_at
+
+
+def _load_json(value):
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return None
+    return value
+
+
 def _run_in_fresh_loop(coro):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -129,8 +182,12 @@ def _run_in_fresh_loop(coro):
     default_retry_delay=30,
     name="workers.criteria_worker.extract_criteria_task",
 )
-def extract_criteria_task(self, job_id: str, description: str) -> None:
-    """Background task: extract AI criteria and update job_criteria row."""
+def extract_criteria_task(self, job_id: str, description: str, job_metadata: dict | None = None) -> None:
+    """Background task: extract AI criteria and update job_criteria row.
+
+    job_metadata: optional dict with title, department, experience_level,
+                  location, job_type, work_mode — passed to the AI for richer context.
+    """
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
     from sqlalchemy.pool import NullPool
     from config import get_settings
@@ -146,7 +203,7 @@ def extract_criteria_task(self, job_id: str, description: str) -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(_extract_async(job_id, description, TaskSession))
+        loop.run_until_complete(_extract_async(job_id, description, TaskSession, job_metadata))
     except Exception as exc:
         logger.error("extract_criteria_task failed for job %s (attempt %d/%d): %s",
                      job_id, self.request.retries + 1, self.max_retries + 1, exc)
@@ -164,7 +221,7 @@ def extract_criteria_task(self, job_id: str, description: str) -> None:
         task_engine.dispose()
 
 
-async def _extract_async(job_id: str, description: str, Session) -> None:
+async def _extract_async(job_id: str, description: str, Session, job_metadata: dict | None = None) -> None:
     from database import set_rls_context
     from services.ai_service import extract_job_criteria, flatten_criteria_for_scoring, load_active_prompt
     from config import get_settings
@@ -173,8 +230,27 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
 
     settings = get_settings()
 
+    from services.requirements_guard import UnsupportedEvaluationError, ensure_job_legacy
+
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
+        # Requirements-v2 jobs are never (re)analysed by the legacy extraction: it would overwrite them with the
+        # legacy format. Mark the run failed with an explicit reason; no model call, no retry.
+        try:
+            await ensure_job_legacy(db, job_id, "criteria_worker.legacy_extraction")
+        except UnsupportedEvaluationError as exc:
+            await db.execute(
+                text("""
+                    UPDATE job_criteria
+                    SET criteria_extraction_status = 'failed',
+                        criteria_extraction_error  = :err
+                    WHERE job_id = :jid
+                """),
+                {"err": exc.message[:2000], "jid": job_id},
+            )
+            await db.commit()
+            logger.error("[job:%s] %s", job_id, exc.message)
+            return
         await db.execute(
             text("""
                 UPDATE job_criteria
@@ -186,6 +262,7 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
         await db.commit()
 
         criteria_prompt = await load_active_prompt(db, "criteria_extraction")
+        qc_enabled = await _qc_flag_enabled(db)
 
     logger.info("[job:%s] Criteria extraction started.", job_id)
 
@@ -220,6 +297,7 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
         description,
         prompt_override=_crit_prompt,
         openai_client=_crit_reg.client if _crit_reg else None,
+        job_metadata=job_metadata,
     )
     flat = flatten_criteria_for_scoring(analysis)
 
@@ -244,13 +322,39 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
             job_id,
         )
 
+    # Qualifying context: model call OUTSIDE any DB transaction; skipped when OFF or insufficient.
+    from services.qualifying_context.persistence import merge_qualifying_context
+    from services.qualifying_context.runner import jd_sha256
+    qc_run, qc_generated_at = None, None
+    if qc_enabled and final_status == "completed":
+        qc_run, qc_generated_at = await _run_qc(job_id, description)
+
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
+        # Lock the row and read the CURRENT stored analysis and JD inside this transaction, so a
+        # recruiter-owned qualifying_context written while the model was running always wins.
+        locked = await db.execute(
+            text("""
+                SELECT jc.analysis_json, j.description
+                FROM job_criteria jc
+                JOIN jobs j ON j.job_id = jc.job_id
+                WHERE jc.job_id = :jid
+                FOR UPDATE OF jc
+            """),
+            {"jid": job_id},
+        )
+        current_row = locked.mappings().first()
+        existing_analysis = _load_json(current_row["analysis_json"]) if current_row else None
+        current_description = current_row["description"] if current_row else None
+        merged = merge_qualifying_context(
+            existing_analysis, analysis, qc_run, generated_at=qc_generated_at,
+            current_jd_sha256=jd_sha256(current_description) if current_description is not None else None,
+        )
         await db.execute(
             text("""
                 UPDATE job_criteria SET
                     analysis_json              = CAST(:aj AS jsonb),
-                    original_analysis_json     = COALESCE(original_analysis_json, CAST(:aj AS jsonb)),
+                    original_analysis_json     = COALESCE(original_analysis_json, CAST(:orig AS jsonb)),
                     skills                     = :skills,
                     experience                 = :experience,
                     education                  = :education,
@@ -275,7 +379,8 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
                 WHERE job_id = :jid
             """),
             {
-                "aj":                 json.dumps(analysis, ensure_ascii=False),
+                "aj":                 json.dumps(merged.analysis, ensure_ascii=False),
+                "orig":               json.dumps(merged.original, ensure_ascii=False),
                 "skills":             flat["skills"],
                 "experience":         flat["experience"],
                 "education":          flat["education"],

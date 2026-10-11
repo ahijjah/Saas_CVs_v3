@@ -291,18 +291,6 @@ class CreatePromptRequest(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("prompt_code is required")
-        if not _PROMPT_CODE_RE.match(v):
-            raise ValueError(
-                "prompt_code must be lowercase snake_case — only lowercase letters, digits, "
-                "and underscores, starting with a letter (e.g. cv_scoring, criteria_extraction)"
-            )
-        return v
-
-    @field_validator("prompt_category")
-    @classmethod
-    def validate_category(cls, v: str) -> str:
-        if v not in VALID_CATEGORIES:
-            raise ValueError(f"prompt_category must be one of: {', '.join(sorted(VALID_CATEGORIES))}")
         return v
 
     @field_validator("model")
@@ -438,7 +426,32 @@ async def create_prompt(
         text("SELECT COALESCE(MAX(version), 0) AS max_ver FROM ai_prompts WHERE prompt_code = :code"),
         {"code": body.prompt_code},
     )
-    next_version = (ver_row.scalar() or 0) + 1
+    max_ver = ver_row.scalar() or 0
+    next_version = max_ver + 1
+
+    if max_ver == 0:
+        # New prompt — enforce snake_case and category validation
+        if not _PROMPT_CODE_RE.match(body.prompt_code):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "prompt_code must be lowercase snake_case — only lowercase letters, digits, "
+                    "and underscores, starting with a letter (e.g. cv_scoring, criteria_extraction)"
+                ),
+            )
+        if body.prompt_category not in VALID_CATEGORIES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"prompt_category must be one of: {', '.join(sorted(VALID_CATEGORIES))}",
+            )
+        category = body.prompt_category
+    else:
+        # New version — inherit category from existing prompt
+        cat_row = await db.execute(
+            text("SELECT prompt_category FROM ai_prompts WHERE prompt_code = :code LIMIT 1"),
+            {"code": body.prompt_code},
+        )
+        category = cat_row.scalar() or body.prompt_category
 
     prompt_id = str(uuid.uuid4())
     await db.execute(text("""
@@ -457,7 +470,7 @@ async def create_prompt(
         "pid":    prompt_id,
         "code":   body.prompt_code,
         "name":   body.prompt_name,
-        "cat":    body.prompt_category,
+        "cat":    category,
         "sys":    body.system_prompt,
         "usr":    body.user_prompt_template,
         "model":  body.model,

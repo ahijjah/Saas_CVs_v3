@@ -1,0 +1,14 @@
+{
+ "prompt_code": "criteria_extraction_v2",
+ "version": "criteria_extraction_v2-4",
+ "file": "criteria_extraction_v2-4.txt",
+ "sha256": "dd2651bcda14ae816c89d33dd08ecb4aefa5d63e2e51dfbe7d2b39f8b1989a9e",
+ "base_version": "criteria_extraction_v2-3",
+ "base_sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+ "v2_1_sha256": "f2017d2879554935baa5d0d4f51d53fa0600e18858cc875d4a791c5ac0678b04",
+ "frozen_baseline_commit": "059c56b",
+ "scope": "coverage of all JD sections and explicit competencies (COVERAGE pass, rule 1), competency counting (rule 4), duty lines under sub-headings (rule 7), routing of place of work and reporting statements (rule 9). Output contract (format, enums, JSON shapes) is byte-identical to v2-3.",
+ "status": "offline candidate: not registered, not activated, not selectable in the active configuration, not run against any model in this commit",
+ "evidence_level": "text consistency only (format block identical to v2-3; changed passages checked for JD-specific and benchmark-specific wording; the executor offline tests). No evidence of real-model compliance; compliance is measured only by the approved bounded evaluation (see tests/fixtures/requirements_v2_technical_coordinator_20/EVALUATION.md).",
+ "created": "2026-10-10"
+}

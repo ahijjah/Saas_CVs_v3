@@ -1,7 +1,7 @@
 import json
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
@@ -10,12 +10,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep, get_current_user
+from auth.module_guards import RequireAIRecruitment
 from config import get_settings
 from database import get_db, set_rls_context
 from services.job_description_quality import evaluate_description_quality, validate_job_title
 from services.subscription_service import can_create_campaign
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[RequireAIRecruitment])
+
 settings = get_settings()
 
 
@@ -37,6 +39,8 @@ class CreateJobRequest(BaseModel):
     campaign_id: str | None = None  # NULL = standalone job (optional campaign grouping)
     vacancies_count: int | None = None
     knockout_questions: list[dict] | None = None
+    # "legacy" (default, unchanged workflow) or "v2" (requirements-v2 extraction). "v2" is refused unless the platform feature switch is on.
+    requirements_format: Literal["legacy", "v2"] = "legacy"
 
 
 class UpdateCriteriaRequest(BaseModel):
@@ -75,15 +79,29 @@ class UpdateJobSettingsRequest(BaseModel):
 
 
 class UpdateCriteriaContentRequest(BaseModel):
-    required_skills:    list[str] | None = None
-    preferred_skills:   list[str] | None = None
-    minimum_years:      int | None = None
-    relevant_roles:     list[str] | None = None
-    minimum_education:  str | None = None
-    fields_of_study:    list[str] | None = None
-    certifications:     list[str] | None = None
-    domain_knowledge:   list[str] | None = None
-    other_requirements: list[str] | None = None
+    required_skills:      list[str] | None = None
+    preferred_skills:     list[str] | None = None
+    required_soft_skills: list[str] | None = None
+    preferred_soft_skills: list[str] | None = None
+    minimum_years:        int | None = None
+    relevant_roles:       list[str] | None = None
+    minimum_education:    str | None = None
+    fields_of_study:      list[str] | None = None
+    certifications:       list[str] | None = None
+    domain_knowledge:     list[str] | None = None
+    other_requirements:   list[str] | None = None
+
+
+class EditQualifyingContextRequest(BaseModel):
+    state: str
+    contexts: list[Any] = []
+    # required; may be null — the qualifying context the recruiter last saw (optimistic concurrency)
+    expected_qualifying_context: dict[str, Any] | None
+
+
+class ConfirmQualifyingContextRequest(BaseModel):
+    # required — the automatic suggestion being confirmed, exactly as displayed
+    expected_qualifying_context: dict[str, Any] | None
 
 
 class UpdateJobMetadataRequest(BaseModel):
@@ -105,6 +123,31 @@ class UpdateJobMetadataRequest(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+async def _reject_requirements_v2(db, job_id: str, action: str) -> None:
+    """409 when the job uses the requirements-v2 format: the legacy criteria endpoints must not touch it."""
+    from services.requirements_guard import UnsupportedEvaluationError, ensure_job_legacy
+    try:
+        await ensure_job_legacy(db, job_id, action)
+    except UnsupportedEvaluationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+
+
+_SERVER_OWNED_ANALYSIS_KEYS = ("requirements_pipeline",)   # requirements-v2 extraction-check record: served only by the requirements API (editors see the raw output there)
+
+
+def _public_analysis(analysis_json: Any) -> Any:
+    """The job-details response must not carry the server-owned pipeline record (raw AI output, guard records, provenance) to every user of the tenant."""
+    if isinstance(analysis_json, dict) and any(k in analysis_json for k in _SERVER_OWNED_ANALYSIS_KEYS):
+        return {k: v for k, v in analysis_json.items() if k not in _SERVER_OWNED_ANALYSIS_KEYS}
+    return analysis_json
+
+
+def _qc_review_status(analysis_json: Any) -> dict:
+    """Recruiter-facing review state of the required experience context (missing is never 'none')."""
+    from services.qualifying_context.recruiter import review_status
+    return review_status(analysis_json)
+
 
 async def _get_tenant_info(tenant_id: str, db) -> dict:
     """Return tenant_type and any other fields needed for business logic."""
@@ -254,6 +297,8 @@ async def list_jobs(
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
                     AND a.decision = 'partial')                                                                   AS applications_partial,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
+                    AND a.decision = 'needs_verification')                                                        AS applications_needs_verification,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
                     AND a.decision = 'rejected')                                                                  AS applications_rejected,
                 -- Stopped Before AI: processing_status = 'failed'
                 -- stopped_reason is authoritative; fall back to security_check_status for historical rows
@@ -309,6 +354,7 @@ async def list_jobs(
             "applications_total":               r["applications_total"],
             "applications_qualified":           r["applications_qualified"],
             "applications_partial":             r["applications_partial"],
+            "applications_needs_verification":  r["applications_needs_verification"],
             "applications_rejected":            r["applications_rejected"],
             "applications_in_progress":         int(r["applications_in_progress"]),
             "applications_scored":              int(r["applications_scored"]),
@@ -387,6 +433,18 @@ async def create_job(
             detail=campaign_check["message"],
         )
 
+    # requirements-v2 is opt-in per job and behind a platform switch that is OFF by default. Legacy creation below is untouched.
+    from services import requirements_v2_extraction as v2_extraction
+    use_v2 = body.requirements_format == "v2"
+    v2_token = None
+    if use_v2:
+        if not await v2_extraction.feature_enabled(db):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={
+                "code": "requirements_v2_disabled",
+                "message": "Requirements-v2 jobs are not enabled on this platform. Create the job in the legacy format."})
+        import uuid as _uuid
+        v2_token = str(_uuid.uuid4())
+
     # Platform alias must use the platform domain, never the tenant domain.
     # Read from system_config so super admin can change it without a redeploy.
     domain_row = await db.execute(
@@ -439,13 +497,25 @@ async def create_job(
 
     # Insert a pending criteria row immediately — AI extraction runs in background.
     # Default weights (30+25+15+10+10+5+5=100) satisfy the weights_sum_100 constraint.
-    await db.execute(
-        text("""
-            INSERT INTO job_criteria (job_id, criteria_extraction_status)
-            VALUES (:jid, 'pending')
-        """),
-        {"jid": job_id},
-    )
+    if use_v2:
+        # v2: the marker is set in the same insert (never later), with the attempt token of the extraction queued below.
+        await db.execute(
+            text("""
+                INSERT INTO job_criteria (job_id, criteria_extraction_status, requirements_schema_version, requirements_extraction_token,
+                                          weight_skills, weight_experience, weight_education, weight_certifications, weight_soft_skills,
+                                          weight_domain_knowledge, weight_other)
+                VALUES (:jid, 'pending', 2, CAST(:tok AS uuid), 0, 0, 0, 0, 0, 0, 0)   -- no document yet: the weights are set by the extraction
+            """),
+            {"jid": job_id, "tok": v2_token},
+        )
+    else:
+        await db.execute(
+            text("""
+                INSERT INTO job_criteria (job_id, criteria_extraction_status)
+                VALUES (:jid, 'pending')
+            """),
+            {"jid": job_id},
+        )
     await db.commit()
 
     job_dir = Path(settings.files_base_path) / "tenants" / current_user.tenant_id / "jobs" / job_id
@@ -453,12 +523,36 @@ async def create_job(
 
     if body.knockout_questions:
         from services.knockout_questions_service import save_job_knockout_questions
-        await save_job_knockout_questions(db, job_id, current_user.tenant_id, body.knockout_questions)
+        await save_job_knockout_questions(
+            db, job_id, current_user.tenant_id, body.knockout_questions,
+            job_description=body.description,
+        )
         await db.commit()
 
     # Queue async AI extraction — does not block job creation
+    _job_meta = {
+        "title":            body.title,
+        "department":       body.department,
+        "experience_level": body.experience_level,
+        "location":         body.location,
+        "job_type":         body.job_type,
+        "work_mode":        body.work_mode,
+    }
+    if use_v2:
+        from workers.requirements_v2_extraction_worker import extract_requirements_v2_task
+        extract_requirements_v2_task.delay(job_id, v2_token, body.description, _job_meta)
+        return {
+            "success": True,
+            "job_id": job_id,
+            "job_code": job_code,
+            "platform_email": platform_email,
+            "criteria_extraction_status": "pending",
+            "requirements_format": "v2",
+            "message": "Job created. Requirements-v2 extraction started in background.",
+        }
+
     from workers.criteria_worker import extract_criteria_task
-    extract_criteria_task.delay(job_id, body.description)
+    extract_criteria_task.delay(job_id, body.description, _job_meta)
 
     return {
         "success": True,
@@ -466,8 +560,19 @@ async def create_job(
         "job_code": job_code,
         "platform_email": platform_email,
         "criteria_extraction_status": "pending",
+        "requirements_format": "legacy",
         "message": "Job created successfully. AI criteria extraction started in background.",
     }
+
+
+@router.get("/requirements-v2/availability")
+async def requirements_v2_availability(
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Whether the platform's requirements-v2 switch is on. Read-only and boolean only: the job-creation screen offers the v2 choice from it."""
+    from services import requirements_v2_extraction as v2_extraction
+    return {"enabled": await v2_extraction.feature_enabled(db)}
 
 
 @router.get("/details")
@@ -478,8 +583,23 @@ async def get_job_details(
 ):
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    is_admin = (current_user.role or "").lower() in ("admin", "super_admin")
+    tenant_filter = "" if is_super_admin else "AND j.tenant_id = :tid"
+
+    # For super_admin, allow all tenants. For regular users, check client_organization_id access
+    client_org_filter = "" if is_super_admin else """AND auc.tenant_id = CAST(:tid AS uuid)"""
+
+    params: dict = {
+        "jid": job_id,
+        "uid": current_user.user_id,
+        "is_admin": is_admin,
+    }
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
+
     job_row = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 j.job_id, j.job_code, j.title, j.department, j.description,
                 j.location, j.job_type, j.duration,
@@ -510,6 +630,8 @@ async def get_job_details(
                     AND a.decision = 'qualified')                                                                 AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
                     AND a.decision = 'partial')                                                                   AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
+                    AND a.decision = 'needs_verification')                                                        AS applications_needs_verification,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
                     AND a.decision = 'rejected')                                                                  AS applications_rejected,
                 -- Stopped Before AI: processing_status = 'failed'
@@ -556,7 +678,7 @@ async def get_job_details(
             LEFT JOIN job_campaigns camp ON camp.campaign_id = j.campaign_id
             LEFT JOIN users cu ON cu.user_id = j.created_by
             LEFT JOIN users uu ON uu.user_id = j.updated_by
-            WHERE j.job_id = :jid AND j.tenant_id = :tid
+            WHERE j.job_id = :jid {tenant_filter}
               AND (
                 :is_admin = TRUE
                 OR j.client_organization_id IS NULL
@@ -564,17 +686,12 @@ async def get_job_details(
                     SELECT 1 FROM agency_user_clients auc
                     WHERE auc.user_id = CAST(:uid AS uuid)
                       AND auc.client_organization_id = j.client_organization_id
-                      AND auc.tenant_id = CAST(:tid AS uuid)
+                      {client_org_filter}
                 )
               )
             GROUP BY j.job_id, t.tenant_id, co.organization_name, camp.name, cu.full_name, uu.full_name
         """),
-        {
-            "jid":      job_id,
-            "tid":      current_user.tenant_id,
-            "uid":      current_user.user_id,
-            "is_admin": (current_user.role or "").lower() in ("admin", "super_admin"),
-        },
+        params,
     )
     job = job_row.mappings().first()
     if not job:
@@ -586,6 +703,7 @@ async def get_job_details(
                    original_analysis_json,
                    criteria_extraction_status,
                    criteria_extraction_error,
+                   to_jsonb(jc) ->> 'requirements_schema_version' AS requirements_schema_version,
                    criteria_extracted_at,
                    criteria_extraction_retry_count,
                    criteria_last_failed_description_hash,
@@ -594,7 +712,7 @@ async def get_job_details(
                    weight_certifications, weight_soft_skills,
                    weight_domain_knowledge, weight_other,
                    ai_model, ai_generated_at, last_edited_at, last_edited_by
-            FROM job_criteria WHERE job_id = :jid
+            FROM job_criteria jc WHERE jc.job_id = :jid
         """),
         {"jid": job_id},
     )
@@ -633,8 +751,23 @@ async def get_job_details(
     from services.knockout_questions_service import get_job_knockout_questions
     knockout_questions = await get_job_knockout_questions(db, job_id)
 
+    # P0-01: which scoring methodologies produced this job's scores.
+    from services.scoring_method import has_mixed_scoring_methods
+    method_rows = await db.execute(
+        text("""
+            SELECT COALESCE(s.scoring_method, 'unknown') AS method, COUNT(*) AS n
+            FROM application_scores s
+            JOIN applications a ON a.application_id = s.application_id
+            WHERE a.job_id = :jid
+            GROUP BY 1
+        """),
+        {"jid": job_id},
+    )
+    scoring_methods = {r["method"]: int(r["n"]) for r in method_rows.mappings()}
+
     return {
         "details": {
+            "requirements_format": "v2" if (criteria and criteria["requirements_schema_version"] is not None) else "legacy",
             "job_id":             str(job["job_id"]),
             "job_code":           job_code,
             "job_title":          job["title"],
@@ -665,6 +798,7 @@ async def get_job_details(
             "applications_total":               job["applications_total"],
             "applications_qualified":           job["applications_qualified"],
             "applications_partial":             job["applications_partial"],
+            "applications_needs_verification":  job["applications_needs_verification"],
             "applications_rejected":            job["applications_rejected"],
             "applications_valid_count":         job["applications_valid_count"],
             "applications_in_progress":         int(job["applications_in_progress"]),
@@ -673,6 +807,8 @@ async def get_job_details(
             "applications_duplicate_blocked":   int(job["applications_duplicate_blocked"]),
             "applications_possible_duplicate":  int(job["applications_possible_duplicate"]),
             "applications_failed_needs_review": int(job["applications_failed_needs_review"]),
+            "scoring_methods":    scoring_methods,
+            "mixed_scoring_methods": has_mixed_scoring_methods(scoring_methods),
             "applications_awaiting_review":     int(job["applications_awaiting_review"]),
             "applications_under_review":        int(job["applications_under_review"]),
             "applications_shortlisted":         int(job["applications_shortlisted"]),
@@ -706,8 +842,9 @@ async def get_job_details(
                 else f"Forward CVs to: {forwarding_email} — include {job_code} in subject"
             ),
         },
-        "analysis": analysis_json,
+        "analysis": _public_analysis(analysis_json),
         "original_analysis": original_analysis_json,
+        "qualifying_context_review": _qc_review_status(analysis_json),
     }
 
 
@@ -833,6 +970,8 @@ async def update_criteria(
     )
     if not job_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    await _reject_requirements_v2(db, job_id, "PUT /jobs/{id}/criteria")
 
     existing_row = await db.execute(
         text("""
@@ -1094,8 +1233,12 @@ async def update_criteria_content(
     if not job_row.first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
+    await _reject_requirements_v2(db, job_id, "PUT /jobs/{id}/criteria/content")
+
+    # FOR UPDATE: serialise with the criteria worker and the qualifying-context endpoints, so this
+    # read-modify-write can never restore an older qualifying_context over a recruiter confirmation/edit.
     criteria_row = await db.execute(
-        text("SELECT analysis_json FROM job_criteria WHERE job_id = :jid"),
+        text("SELECT analysis_json FROM job_criteria WHERE job_id = :jid FOR UPDATE"),
         {"jid": job_id},
     )
     existing = criteria_row.mappings().first()
@@ -1112,6 +1255,14 @@ async def update_criteria_content(
         if body.preferred_skills is not None:
             skills["preferred"] = [s.strip() for s in body.preferred_skills if s.strip()]
         current["skills"] = skills
+
+    if body.required_soft_skills is not None or body.preferred_soft_skills is not None:
+        soft_skills = dict(current.get("soft_skills", {}))
+        if body.required_soft_skills is not None:
+            soft_skills["required"] = [s.strip() for s in body.required_soft_skills if s.strip()]
+        if body.preferred_soft_skills is not None:
+            soft_skills["preferred"] = [s.strip() for s in body.preferred_soft_skills if s.strip()]
+        current["soft_skills"] = soft_skills
 
     if body.minimum_years is not None or body.relevant_roles is not None:
         exp = dict(current.get("experience", {}))
@@ -1172,6 +1323,43 @@ async def update_criteria_content(
     return {"success": True, "message": "Criteria content updated"}
 
 
+@router.put("/{job_id}/criteria/qualifying-context")
+async def edit_qualifying_context(
+    job_id: str,
+    body: EditQualifyingContextRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Recruiter sets the required experience context (identified + contexts, or none).
+    Admin and HR Manager only. Never touches original_analysis_json."""
+    from services.qualifying_context import recruiter as qc_recruiter
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+    await _reject_requirements_v2(db, job_id, "PUT /jobs/{id}/criteria/qualifying-context")
+    try:
+        return await qc_recruiter.edit_qualifying_context(
+            db, current_user, job_id, body.state, body.contexts, body.expected_qualifying_context)
+    except qc_recruiter.QCRecruiterError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.detail()) from exc
+
+
+@router.post("/{job_id}/criteria/qualifying-context/confirm")
+async def confirm_qualifying_context(
+    job_id: str,
+    body: ConfirmQualifyingContextRequest,
+    current_user: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Recruiter accepts the automatic suggestion unchanged. Admin and HR Manager only."""
+    from services.qualifying_context import recruiter as qc_recruiter
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+    await _reject_requirements_v2(db, job_id, "POST /jobs/{id}/criteria/qualifying-context/confirm")
+    try:
+        return await qc_recruiter.confirm_qualifying_context(
+            db, current_user, job_id, body.expected_qualifying_context)
+    except qc_recruiter.QCRecruiterError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.detail()) from exc
+
+
 @router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)
 async def retry_criteria_extraction(
     job_id: str,
@@ -1185,7 +1373,8 @@ async def retry_criteria_extraction(
 
     row = await db.execute(
         text("""
-            SELECT j.description,
+            SELECT j.description, j.title, j.department, j.experience_level,
+                   j.location, j.job_type, j.work_mode,
                    jc.criteria_extraction_status,
                    jc.criteria_extraction_retry_count,
                    jc.criteria_last_failed_description_hash
@@ -1198,6 +1387,7 @@ async def retry_criteria_extraction(
     job = row.mappings().first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    await _reject_requirements_v2(db, job_id, "POST /jobs/{id}/criteria/retry")
 
     cfg_row = await db.execute(
         text("SELECT value FROM system_config WHERE key = 'criteria_extraction_max_retries'"),
@@ -1265,7 +1455,15 @@ async def retry_criteria_extraction(
     )
     await db.commit()
 
-    extract_criteria_task.delay(job_id, description)
+    _retry_meta = {
+        "title":            job.get("title"),
+        "department":       job.get("department"),
+        "experience_level": job.get("experience_level"),
+        "location":         job.get("location"),
+        "job_type":         job.get("job_type"),
+        "work_mode":        job.get("work_mode"),
+    }
+    extract_criteria_task.delay(job_id, description, _retry_meta)
     return {"success": True, "message": "Criteria extraction re-queued."}
 
 
@@ -1380,7 +1578,10 @@ async def update_job_metadata(
     # Handle knockout_questions separately (None = leave alone, [] = clear all)
     if body.knockout_questions is not None:
         from services.knockout_questions_service import save_job_knockout_questions
-        await save_job_knockout_questions(db, job_id, current_user.tenant_id, body.knockout_questions)
+        await save_job_knockout_questions(
+            db, job_id, current_user.tenant_id, body.knockout_questions,
+            job_description=body.description,
+        )
 
     if not updates and body.knockout_questions is None:
         return {"success": True, "message": "No changes"}

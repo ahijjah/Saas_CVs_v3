@@ -1,0 +1,659 @@
+{
+ "_comment": "REAL recorded outputs (gpt-4o-mini, S1 s1-6.0 fingerprint 5b4172f709b2, S1 1.5.0) from the P4b MAIN evaluation of s1_ctx_main_cases.json (sha256 cf5844a2...ca975) on 2026-10-06: the raw main/repair model contents and the observations the s1-6.0 code produced. Used ONLY to replay the P4b RC1 repair fix and the target/policy metric offline. MAIN fixture only; never the held-out.",
+ "source_meta": {
+  "prompt_version": "s1-6.0",
+  "prompt_fingerprint": "5b4172f709b2",
+  "s1_version": "1.5.0",
+  "model": "gpt-4o-mini",
+  "temperature": 0.0,
+  "max_tokens": 4000,
+  "client_max_retries": 0,
+  "fixture": "main",
+  "fixture_sha256": "cf5844a22092a43d296e227de317ac75c6919f7d77e21da618c3945b4f0ca975",
+  "created_at": "2026-10-06T18:33:59.272343+00:00"
+ },
+ "records": [
+  {
+   "case": "CM02",
+   "run": 1,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"f372f2c0c1a6c046\",\"requirement_spans\":[{\"line\":2,\"text\":\"- At least 4 years of procurement experience within Saudi Arabia.\"}],\"settings\":[{\"line\":2,\"text\":\"within Saudi Arabia\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 4 years of procurement experience.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"f372f2c0c1a6c046\",\"requirement_spans\":[{\"line\":2,\"text\":\"- At least 4 years of procurement experience within Saudi Arabia.\"}],\"restrictions\":[{\"line\":2,\"text\":\"procurement experience\",\"kind\":\"function\"},{\"line\":2,\"text\":\"within Saudi Arabia\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 4 years of procurement experience.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "f372f2c0c1a6c046",
+     "status": "failed_validation",
+     "outcome": "validation",
+     "reasons": [
+      "validation_failed"
+     ],
+     "policy": null,
+     "settings": null,
+     "setting_spans": [],
+     "requirement_spans": [],
+     "restrictions": [],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM02",
+   "run": 4,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"f372f2c0c1a6c046\",\"requirement_spans\":[{\"line\":2,\"text\":\"- At least 4 years of procurement experience within Saudi Arabia.\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 4 years of experience in procurement.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"f372f2c0c1a6c046\",\"requirement_spans\":[{\"line\":2,\"text\":\"- At least 4 years of procurement experience within Saudi Arabia.\"}],\"restrictions\":[{\"line\":2,\"text\":\"within Saudi Arabia\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 4 years of experience in procurement.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "f372f2c0c1a6c046",
+     "status": "resolved",
+     "outcome": "ok",
+     "reasons": [],
+     "policy": "sector",
+     "settings": [
+      "within Saudi Arabia"
+     ],
+     "setting_spans": [
+      {
+       "line": 2,
+       "start": 45,
+       "end": 64,
+       "text": "within Saudi Arabia"
+      }
+     ],
+     "requirement_spans": [
+      {
+       "line": 2,
+       "start": 0,
+       "end": 65,
+       "text": "- At least 4 years of procurement experience within Saudi Arabia."
+      }
+     ],
+     "restrictions": [
+      {
+       "line": 2,
+       "text": "within Saudi Arabia",
+       "kind": "context"
+      }
+     ],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM03",
+   "run": 1,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"e5059584463d6c7f\",\"requirement_spans\":[{\"line\":2,\"text\":\"- خبرة لا تقل عن 5 سنوات في المراجعة الداخلية في دول مجلس التعاون الخليجي.\"}],\"settings\":[{\"line\":2,\"text\":\"في دول مجلس التعاون الخليجي\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 5 years of experience in internal auditing in the Gulf Cooperation Council countries.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"e5059584463d6c7f\",\"requirement_spans\":[{\"line\":2,\"text\":\"- خبرة لا تقل عن 5 سنوات في المراجعة الداخلية في دول مجلس التعاون الخليجي.\"}],\"restrictions\":[{\"line\":2,\"text\":\"في المراجعة الداخلية\",\"kind\":\"function\"},{\"line\":2,\"text\":\"في دول مجلس التعاون الخليجي\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 5 years of experience in internal auditing in the Gulf Cooperation Council countries.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "e5059584463d6c7f",
+     "status": "failed_validation",
+     "outcome": "validation",
+     "reasons": [
+      "validation_failed"
+     ],
+     "policy": null,
+     "settings": null,
+     "setting_spans": [],
+     "requirement_spans": [],
+     "restrictions": [],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM05",
+   "run": 1,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"6408e48d10d93b27\",\"requirement_spans\":[{\"line\":2,\"text\":\"- At least 3 years of HR administration experience gained in multinational companies.\"}],\"settings\":[{\"line\":2,\"text\":\"in multinational companies\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies 3 years of HR administration experience in multinational companies.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"6408e48d10d93b27\",\"requirement_spans\":[{\"line\":2,\"text\":\"- At least 3 years of HR administration experience gained in multinational companies.\"}],\"restrictions\":[{\"line\":2,\"text\":\"gained in multinational companies\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies 3 years of HR administration experience in multinational companies.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "6408e48d10d93b27",
+     "status": "failed_validation",
+     "outcome": "validation",
+     "reasons": [
+      "validation_failed"
+     ],
+     "policy": null,
+     "settings": null,
+     "setting_spans": [],
+     "requirement_spans": [],
+     "restrictions": [],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM05",
+   "run": 5,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"6408e48d10d93b27\",\"requirement_spans\":[{\"line\":2,\"text\":\"- At least 3 years of HR administration experience gained in multinational companies.\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 3 years of experience in HR administration.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"6408e48d10d93b27\",\"requirement_spans\":[{\"line\":2,\"text\":\"- At least 3 years of HR administration experience gained in multinational companies.\"}],\"restrictions\":[{\"line\":2,\"text\":\"in multinational companies\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 3 years of experience in HR administration.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "6408e48d10d93b27",
+     "status": "resolved",
+     "outcome": "ok",
+     "reasons": [],
+     "policy": "sector",
+     "settings": [
+      "in multinational companies"
+     ],
+     "setting_spans": [
+      {
+       "line": 2,
+       "start": 58,
+       "end": 84,
+       "text": "in multinational companies"
+      }
+     ],
+     "requirement_spans": [
+      {
+       "line": 2,
+       "start": 0,
+       "end": 85,
+       "text": "- At least 3 years of HR administration experience gained in multinational companies."
+      }
+     ],
+     "restrictions": [
+      {
+       "line": 2,
+       "text": "in multinational companies",
+       "kind": "context"
+      }
+     ],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM09",
+   "run": 1,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"6daf07b23bcd737c\",\"requirement_spans\":[{\"line\":2,\"text\":\"- 5 years of legal experience in the public sector.\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies 5 years of legal experience in the public sector.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"6daf07b23bcd737c\",\"requirement_spans\":[{\"line\":2,\"text\":\"- 5 years of legal experience in the public sector.\"}],\"restrictions\":[{\"line\":2,\"text\":\"public sector\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies 5 years of legal experience in the public sector.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "6daf07b23bcd737c",
+     "status": "resolved",
+     "outcome": "ok",
+     "reasons": [],
+     "policy": "sector",
+     "settings": [
+      "public sector"
+     ],
+     "setting_spans": [
+      {
+       "line": 2,
+       "start": 37,
+       "end": 50,
+       "text": "public sector"
+      }
+     ],
+     "requirement_spans": [
+      {
+       "line": 2,
+       "start": 0,
+       "end": 51,
+       "text": "- 5 years of legal experience in the public sector."
+      }
+     ],
+     "restrictions": [
+      {
+       "line": 2,
+       "text": "public sector",
+       "kind": "context"
+      }
+     ],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM10",
+   "run": 1,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"50445de61e6bc0d2\",\"requirement_spans\":[{\"line\":2,\"text\":\"- خبرة 4 سنوات في الشؤون القانونية في القطاع الحكومي.\"}],\"settings\":[{\"line\":2,\"text\":\"في القطاع الحكومي\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies 4 years of experience in legal affairs within the government sector.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"50445de61e6bc0d2\",\"requirement_spans\":[{\"line\":2,\"text\":\"- خبرة 4 سنوات في الشؤون القانونية في القطاع الحكومي.\"}],\"restrictions\":[{\"line\":2,\"text\":\"الشؤون القانونية\",\"kind\":\"function\"},{\"line\":2,\"text\":\"في القطاع الحكومي\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies 4 years of experience in legal affairs within the government sector.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "50445de61e6bc0d2",
+     "status": "failed_validation",
+     "outcome": "validation",
+     "reasons": [
+      "validation_failed"
+     ],
+     "policy": null,
+     "settings": null,
+     "setting_spans": [],
+     "requirement_spans": [],
+     "restrictions": [],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM15",
+   "run": 1,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"f5dd24f73e00f72c\",\"requirement_spans\":[{\"line\":2,\"text\":\"- 3+ years of supply chain experience in the FMCG sector.\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 3 years of experience in supply chain.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"f5dd24f73e00f72c\",\"requirement_spans\":[{\"line\":2,\"text\":\"- 3+ years of supply chain experience in the FMCG sector.\"}],\"restrictions\":[{\"line\":2,\"text\":\"in the FMCG sector\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 3 years of experience in supply chain.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "f5dd24f73e00f72c",
+     "status": "resolved",
+     "outcome": "ok",
+     "reasons": [],
+     "policy": "sector",
+     "settings": [
+      "in the FMCG sector"
+     ],
+     "setting_spans": [
+      {
+       "line": 2,
+       "start": 38,
+       "end": 56,
+       "text": "in the FMCG sector"
+      }
+     ],
+     "requirement_spans": [
+      {
+       "line": 2,
+       "start": 0,
+       "end": 57,
+       "text": "- 3+ years of supply chain experience in the FMCG sector."
+      }
+     ],
+     "restrictions": [
+      {
+       "line": 2,
+       "text": "in the FMCG sector",
+       "kind": "context"
+      }
+     ],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM19",
+   "run": 1,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"8ad7fff7dc8e9a1c\",\"requirement_spans\":[{\"line\":2,\"text\":\"- 4 years of fundraising experience in non-governmental organisations.\"}],\"settings\":[{\"line\":2,\"text\":\"in non-governmental organisations\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies 4 years of experience in fundraising within non-governmental organisations.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"8ad7fff7dc8e9a1c\",\"requirement_spans\":[{\"line\":2,\"text\":\"- 4 years of fundraising experience in non-governmental organisations.\"}],\"restrictions\":[{\"line\":2,\"text\":\"in non-governmental organisations\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies 4 years of experience in fundraising within non-governmental organisations.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "8ad7fff7dc8e9a1c",
+     "status": "failed_validation",
+     "outcome": "validation",
+     "reasons": [
+      "validation_failed"
+     ],
+     "policy": null,
+     "settings": null,
+     "setting_spans": [],
+     "requirement_spans": [],
+     "restrictions": [],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM20",
+   "run": 1,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\n  \"criteria\": [\n    {\n      \"criterion_id\": \"a68cc8c5e7268f6a\",\n      \"requirement_spans\": [\n        {\n          \"line\": 2,\n          \"text\": \"- Minimum 5 years as an Internal Auditor in government entities.\"\n        }\n      ],\n      \"targets\": [\n        {\n          \"hint\": \"T1\",\n          \"type\": \"role\",\n          \"match\": \"exact\",\n          \"jd_span\": null\n        }\n      ],\n      \"settings\": [\n        {\n          \"line\": 4,\n          \"text\": \"All of this experience must have been gained in the GCC region.\"\n        }\n      ],\n      \"duration\": \"D1\",\n      \"ambiguity\": [],\n      \"note\": \"The requirement specifies a minimum of 5 years as an Internal Auditor.\"\n    }\n  ]\n}"
+    },
+    {
+     "call": "repair",
+     "content": "{\n  \"criteria\": [\n    {\n      \"criterion_id\": \"a68cc8c5e7268f6a\",\n      \"requirement_spans\": [\n        {\n          \"line\": 2,\n          \"text\": \"- Minimum 5 years as an Internal Auditor in government entities.\"\n        }\n      ],\n      \"targets\": [\n        {\n          \"hint\": \"T1\",\n          \"type\": \"role\",\n          \"match\": \"exact\",\n          \"jd_span\": null\n        }\n      ],\n      \"settings\": [\n        {\n          \"line\": 4,\n          \"text\": \"All of this experience must have been gained in the GCC region.\"\n        }\n      ],\n      \"duration\": \"D1\",\n      \"ambiguity\": [],\n      \"note\": \"The requirement specifies a minimum of 5 years as an Internal Auditor.\"\n    }\n  ]\n}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "a68cc8c5e7268f6a",
+     "status": "failed_validation",
+     "outcome": "validation",
+     "reasons": [
+      "validation_failed"
+     ],
+     "policy": null,
+     "settings": null,
+     "setting_spans": [],
+     "requirement_spans": [],
+     "restrictions": [],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM21",
+   "run": 1,
+   "repair_used": false,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"c10d13a08d760a6d\",\"requirement_spans\":[{\"line\":2,\"text\":\"- Minimum 6 years of project controls experience on infrastructure projects.\"},{\"line\":3,\"text\":\"- The experience must have been gained with government entities.\"}],\"restrictions\":[{\"line\":3,\"text\":\"The experience must have been gained with government entities.\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 6 years of experience in project controls on infrastructure projects, gained with government entities.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "c10d13a08d760a6d",
+     "status": "resolved",
+     "outcome": "ok",
+     "reasons": [],
+     "policy": "sector",
+     "settings": [
+      "The experience must have been gained with government entities."
+     ],
+     "setting_spans": [
+      {
+       "line": 3,
+       "start": 2,
+       "end": 64,
+       "text": "The experience must have been gained with government entities."
+      }
+     ],
+     "requirement_spans": [
+      {
+       "line": 2,
+       "start": 0,
+       "end": 76,
+       "text": "- Minimum 6 years of project controls experience on infrastructure projects."
+      },
+      {
+       "line": 3,
+       "start": 0,
+       "end": 64,
+       "text": "- The experience must have been gained with government entities."
+      }
+     ],
+     "restrictions": [
+      {
+       "line": 3,
+       "text": "The experience must have been gained with government entities.",
+       "kind": "context"
+      }
+     ],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM21",
+   "run": 3,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"c10d13a08d760a6d\",\"requirement_spans\":[{\"line\":2,\"text\":\"- Minimum 6 years of project controls experience on infrastructure projects.\"},{\"line\":3,\"text\":\"- The experience must have been gained with government entities.\"}],\"duration\":\"D1\",\"restrictions\":[{\"line\":3,\"text\":\"The experience must have been gained with government entities.\",\"kind\":\"context\"}],\"settings\":[{\"line\":3,\"text\":\"with government entities\"}],\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 6 years of experience in project controls on infrastructure projects, gained with government entities.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"c10d13a08d760a6d\",\"requirement_spans\":[{\"line\":2,\"text\":\"- Minimum 6 years of project controls experience on infrastructure projects.\"},{\"line\":3,\"text\":\"- The experience must have been gained with government entities.\"}],\"duration\":\"D1\",\"restrictions\":[{\"line\":3,\"text\":\"The experience must have been gained with government entities.\",\"kind\":\"context\"}],\"settings\":[],\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 6 years of experience in project controls on infrastructure projects, gained with government entities.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "c10d13a08d760a6d",
+     "status": "failed_validation",
+     "outcome": "validation",
+     "reasons": [
+      "validation_failed"
+     ],
+     "policy": null,
+     "settings": null,
+     "setting_spans": [],
+     "requirement_spans": [],
+     "restrictions": [],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM21",
+   "run": 5,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"c10d13a08d760a6d\",\"requirement_spans\":[{\"line\":2,\"text\":\"- Minimum 6 years of project controls experience on infrastructure projects.\"},{\"line\":3,\"text\":\"- The experience must have been gained with government entities.\"}],\"settings\":[{\"line\":3,\"text\":\"with government entities\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 6 years of experience in project controls on infrastructure projects.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"c10d13a08d760a6d\",\"requirement_spans\":[{\"line\":2,\"text\":\"- Minimum 6 years of project controls experience on infrastructure projects.\"},{\"line\":3,\"text\":\"- The experience must have been gained with government entities.\"}],\"restrictions\":[{\"line\":3,\"text\":\"with government entities\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 6 years of experience in project controls on infrastructure projects.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "c10d13a08d760a6d",
+     "status": "failed_validation",
+     "outcome": "validation",
+     "reasons": [
+      "validation_failed"
+     ],
+     "policy": null,
+     "settings": null,
+     "setting_spans": [],
+     "requirement_spans": [],
+     "restrictions": [],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM30",
+   "run": 1,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"d47df52e4d0effcc\",\"requirement_spans\":[{\"line\":4,\"text\":\"- At least 6 years of project management experience.\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 6 years of project management experience.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"d47df52e4d0effcc\",\"requirement_spans\":[{\"line\":4,\"text\":\"- At least 6 years of project management experience.\"}],\"restrictions\":[],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies a minimum of 6 years of project management experience.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "d47df52e4d0effcc",
+     "status": "resolved",
+     "outcome": "ok",
+     "reasons": [],
+     "policy": "pure_duration",
+     "settings": [],
+     "setting_spans": [],
+     "requirement_spans": [
+      {
+       "line": 4,
+       "start": 0,
+       "end": 52,
+       "text": "- At least 6 years of project management experience."
+      }
+     ],
+     "restrictions": [],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  },
+  {
+   "case": "CM38",
+   "run": 1,
+   "repair_used": true,
+   "raw": [
+    {
+     "call": "main",
+     "content": "{\"criteria\":[{\"criterion_id\":\"04fc59d86eabd4b6\",\"requirement_spans\":[{\"line\":2,\"text\":\"- خبرة 4 سنوات كمحاسب في البنوك أو في التدقيق الداخلي.\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies 4 years of experience as an accountant in banks or internal auditing.\"}]}"
+    },
+    {
+     "call": "repair",
+     "content": "{\"criteria\":[{\"criterion_id\":\"04fc59d86eabd4b6\",\"requirement_spans\":[{\"line\":2,\"text\":\"- خبرة 4 سنوات كمحاسب في البنوك أو في التدقيق الداخلي.\"}],\"restrictions\":[{\"line\":2,\"text\":\"كمحاسب\",\"kind\":\"role\"},{\"line\":2,\"text\":\"في البنوك أو في التدقيق الداخلي\",\"kind\":\"context\"}],\"duration\":\"D1\",\"ambiguity\":[],\"note\":\"The requirement specifies 4 years of experience as an accountant in banks or internal auditing.\"}]}"
+    }
+   ],
+   "criteria": [
+    {
+     "criterion_id": "04fc59d86eabd4b6",
+     "status": "resolved",
+     "outcome": "ok",
+     "reasons": [],
+     "policy": "explicit_role",
+     "settings": [
+      "في البنوك أو في التدقيق الداخلي"
+     ],
+     "setting_spans": [
+      {
+       "line": 2,
+       "start": 22,
+       "end": 53,
+       "text": "في البنوك أو في التدقيق الداخلي"
+      }
+     ],
+     "requirement_spans": [
+      {
+       "line": 2,
+       "start": 0,
+       "end": 54,
+       "text": "- خبرة 4 سنوات كمحاسب في البنوك أو في التدقيق الداخلي."
+      }
+     ],
+     "restrictions": [
+      {
+       "line": 2,
+       "text": "كمحاسب",
+       "kind": "role"
+      },
+      {
+       "line": 2,
+       "text": "في البنوك أو في التدقيق الداخلي",
+       "kind": "context"
+      }
+     ],
+     "view": "context_unresolved",
+     "outside_requirement": 0,
+     "ungrounded": 0,
+     "failed_as_none": false
+    }
+   ]
+  }
+ ]
+}
