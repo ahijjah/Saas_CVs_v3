@@ -1,0 +1,19 @@
+seed_set,language,defect,seed,expected_flag,flags_observed,detected,known_gap
+reference (dev),en,wrong_list,location condition 'Based at the Northern depot.' moved to informational_items,wrong_list,wrong_list,True,no
+reference (dev),en,lost_or,alternatives set to null in category education,possible_lost_or,possible_lost_or,True,no
+reference (dev),en,bundled_and,the two communication and teamwork items merged into one,possible_bundled_and,possible_bundled_and,True,no
+reference (dev),en,shorter_verbatim_quote,"source_text shortened to its first two words: 'Inspect pumps,'",partial_quote,partial_quote,True,no
+reference (dev),en,non_verbatim_quote,' (edited)' appended to a source_text,source_not_verbatim,source_not_verbatim;uncovered_statement,True,no
+reference (dev),en,ambiguous_category_other,location category changed to 'other',unclassified_other,unclassified_other,True,no
+reference (dev),en,unknown_category,location category changed to 'perks',unknown_category,unknown_category,True,no
+reference (dev),en,omitted_section,all items whose source lies in the Requirements section removed,uncovered_statement,uncovered_statement,True,no
+reference (dev),ar,wrong_list,location condition 'الموقع: مقر المشروع في عمّان.' moved to informational_items,wrong_list,wrong_list,True,no
+reference (dev),ar,lost_or,alternatives set to null in category education,possible_lost_or,possible_lost_or,True,no
+reference (dev),ar,shorter_verbatim_quote,source_text shortened to its first two words: 'فحص أجهزة',partial_quote,partial_quote,True,no
+reference (dev),ar,non_verbatim_quote,' (edited)' appended to a source_text,source_not_verbatim,source_not_verbatim;uncovered_statement,True,no
+reference (dev),ar,ambiguous_category_other,location category changed to 'other',unclassified_other,unclassified_other,True,no
+reference (dev),ar,unknown_category,location category changed to 'perks',unknown_category,unknown_category,True,no
+reference (dev),ar,omitted_section,all items whose source lies in the Requirements section removed,uncovered_statement,uncovered_statement,True,no
+reference (dev),en,unpunctuated_requirement_as_heading,bare line; the answer quotes it without its final period,source_is_heading,source_is_heading,True,no
+reference (dev),en,unpunctuated_requirement_as_heading,bare line; the answer omits it; only the heading-candidate row can surface it,none (silent by construction),,False,yes
+reference (dev),ar,bundled_and_attached_waw,two items for 'مهارات التواصل والعمل ضمن فريق' merged into one; the second item removed,possible_bundled_and,,False,yes

@@ -1,0 +1,501 @@
+{
+ "builder": "scripts/requirements_v2_review_package.py",
+ "builder_sha256": "09d9fc7a4eed85cdff7dda583d7824ae6dd9ddb321eb149a0d7766d5b9d6cc30",
+ "checker_sha256": "4fdf88ee927df030a84869c30918b3494898ca19020f7b9a3cdb152a0b883832",
+ "human_judgments": "none filled; every reviewer choice cell is blank",
+ "outputs_sha256": {
+  "INSTRUCTIONS.md": "9eaf1001e626aea8f20bd4dddb464ac47a177e9c8994153a7508840f9cb6cba1",
+  "review_sheet_dev.csv": "488a03e8dadf8da3def5173cde04f015fda66316ff6efeed87b51635b8dee877",
+  "review_sheet_unseen.csv": "574c5ab4fe6056c0e04b48c5b41318f268a38396bbbf7ccf836f90771e9956bf",
+  "seeded_defect_results.csv": "f4359b0ef794e37b032d7ad417ecc9f4d9ced82d3df150e7ce7c290cc31ae744"
+ },
+ "package": "requirements_v2 staged-validation checker, human review (offline)",
+ "precision_or_recall": "not computed: no human judgments exist",
+ "selection": {
+  "dev": "TC20 (routing CONTROL call 1; scope CLARIFIED call 2) and the EN and AR eval JDs (v2-3 and v2-5 call 1), gpt-4.1",
+  "not_included": "TC20 paired v2-3 call 1 (all sixteen responsibility statements uncovered; behaviour pinned by tests)",
+  "unseen": "benchmark cases B01 to B12, answers from the v2-2 run 1 (gpt-4o-mini-2024-07-18); one answer per case"
+ },
+ "source_provenance": {
+  "sources/benchmark_v2-2_run1_calls.jsonl": {
+   "derived_from": "7e3511c3-calls.jsonl (attachment)",
+   "derived_from_sha256": "4beac81b7aa08dfa6d12e68014acf6866b19a40417735d929396d4dae6e732f4",
+   "rows_kept": "the 12 rows with run == run1"
+  },
+  "sources/eval_gpt-4.1_calls.jsonl": {
+   "derived_from": "1e1fcb97-calls.jsonl (attachment)",
+   "derived_from_sha256": "7a176b8ba6b78f1285187c1b72713b93aea76d2250f6b22e9b53e985c5df6f73",
+   "rows_kept": "the 12 rows whose jd is an eval JD"
+  }
+ },
+ "sources_sha256": {
+  "benchmark cases/B01_en_hr_manager.json": "becd0fc2e257a1a306232ae17519e17f06bdee4be4e90eefa753ff4910df6e56",
+  "benchmark cases/B02_en_data_analyst.json": "dd0bc07dd030b3d7776487ff90d709cb7ce23bfad3bd05f75c7d05ec7cef26c4",
+  "benchmark cases/B03_en_warehouse_supervisor.json": "36e09f9e8aed175dce37bd532d29bc83db8f61ef2a80d35aa208af3a34b32da8",
+  "benchmark cases/B04_en_preferred_only.json": "311bd2c90eb61150c36f6a5b29e0a9b20f133d39292f8c314d43195fb034f67d",
+  "benchmark cases/B05_en_open_empty.json": "b09f12d11ee40261e1864a6dddb4857fe87ad3da2d525ec8a814e5a7313e1afe",
+  "benchmark cases/B06_en_injection.json": "14ae7c792f7ff87a8fe8842910f74b7cbde18b8571ea2078c144020df71a5dd9",
+  "benchmark cases/B07_ar_accountant.json": "246228338b4cd2455a3e300712692fa2c3b7efa3ee0b67d48d0dc9ecc22eb616",
+  "benchmark cases/B08_ar_hr_specialist.json": "3cc6cac557f221801cb74edfd006c440a4b102c421ff40174309f278dab5fee2",
+  "benchmark cases/B09_ar_sales_rep.json": "0106211ee3172d934b7a616bd69ad49bc0183a82cd3cb30b9a0cd151019593fa",
+  "benchmark cases/B10_ar_preferred_only.json": "ef1b8a988f8db24b398cd0dcb1c60be8d8ca3cf86950f2a1d9a0c513d14f227c",
+  "benchmark cases/B11_ar_open_empty.json": "9a139099d0563cdb834ef4e172cd4ad0c51997fbb52a5356779c978ec7995980",
+  "benchmark cases/B12_ar_injection.json": "70db264fdd8f809275c65e90f29c5d6f8a86b1456852da882e8b2c5fbdf30e13",
+  "eval set/expected/eval_ar_facilities_01.json": "35cde3501264bf6ffdcf112a48348293324ec00d9f5850a6049b442785ad730d",
+  "eval set/expected/eval_en_field_service_01.json": "5aeb8a6be6b01f26c5c8083b90b8ac62b83d6a3f76e2aade334cdbe93f51c002",
+  "eval set/jds/eval_ar_facilities_01.txt": "272260768005aa155ab8632dd6fbb3e2ebf293510775cb7f00ba9cb0885aad43",
+  "eval set/jds/eval_en_field_service_01.txt": "1f13d8f87ef51ebd222948febafbdbf05ea497ceec03b558587b0105579603dc",
+  "sources/benchmark_v2-2_run1_calls.jsonl": "cfcfb5dfa8261ba44a76eef8189f34a199d9876ee902323ff8f0e6193d4ecc0c",
+  "sources/eval_gpt-4.1_calls.jsonl": "b7840494960bed6bb83b57754dc9ca130c6deb734560c0c6dc99036fedebbee7"
+ },
+ "summary": {
+  "dev": {
+   "answers": [
+    {
+     "answer": "routing run, CONTROL call 1 (gpt-4.1)",
+     "case_id": "TC20",
+     "coverage": {
+      "covered": 33,
+      "short_quote": 1,
+      "statements": 40,
+      "uncovered": 6
+     },
+     "listed": {
+      "checker_silent_probe": 0,
+      "checker_warning": 22,
+      "heading_candidate": 8,
+      "location_probe": 1,
+      "punctuation_only_partial_not_listed": 0
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 1,
+      "quote equals the statement without its terminal punctuation": 0,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "routing run calls.jsonl",
+     "warnings_total": 22
+    },
+    {
+     "answer": "scope run, CLARIFIED call 2 (gpt-4.1)",
+     "case_id": "TC20",
+     "coverage": {
+      "covered": 37,
+      "short_quote": 0,
+      "statements": 40,
+      "uncovered": 3
+     },
+     "listed": {
+      "checker_silent_probe": 0,
+      "checker_warning": 20,
+      "heading_candidate": 8,
+      "location_probe": 1,
+      "punctuation_only_partial_not_listed": 0
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 0,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "scope run calls.jsonl",
+     "warnings_total": 20
+    },
+    {
+     "answer": "v2-3 call 1 (gpt-4.1)",
+     "case_id": "eval_en_field_service_01",
+     "coverage": {
+      "covered": 19,
+      "short_quote": 0,
+      "statements": 19,
+      "uncovered": 0
+     },
+     "listed": {
+      "checker_silent_probe": 0,
+      "checker_warning": 1,
+      "heading_candidate": 3,
+      "location_probe": 1,
+      "punctuation_only_partial_not_listed": 0
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 0,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "eval_gpt-4.1_calls.jsonl",
+     "warnings_total": 1
+    },
+    {
+     "answer": "v2-5 call 1 (gpt-4.1)",
+     "case_id": "eval_en_field_service_01",
+     "coverage": {
+      "covered": 19,
+      "short_quote": 0,
+      "statements": 19,
+      "uncovered": 0
+     },
+     "listed": {
+      "checker_silent_probe": 0,
+      "checker_warning": 0,
+      "heading_candidate": 3,
+      "location_probe": 1,
+      "punctuation_only_partial_not_listed": 0
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 0,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "eval_gpt-4.1_calls.jsonl",
+     "warnings_total": 0
+    },
+    {
+     "answer": "v2-3 call 1 (gpt-4.1)",
+     "case_id": "eval_ar_facilities_01",
+     "coverage": {
+      "covered": 1,
+      "short_quote": 17,
+      "statements": 18,
+      "uncovered": 0
+     },
+     "listed": {
+      "checker_silent_probe": 6,
+      "checker_warning": 1,
+      "heading_candidate": 2,
+      "location_probe": 1,
+      "punctuation_only_partial_not_listed": 16
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 17,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "eval_gpt-4.1_calls.jsonl",
+     "warnings_total": 17
+    },
+    {
+     "answer": "v2-5 call 1 (gpt-4.1)",
+     "case_id": "eval_ar_facilities_01",
+     "coverage": {
+      "covered": 17,
+      "short_quote": 0,
+      "statements": 18,
+      "uncovered": 1
+     },
+     "listed": {
+      "checker_silent_probe": 2,
+      "checker_warning": 1,
+      "heading_candidate": 2,
+      "location_probe": 1,
+      "punctuation_only_partial_not_listed": 0
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 0,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "eval_gpt-4.1_calls.jsonl",
+     "warnings_total": 1
+    }
+   ],
+   "rows": 71
+  },
+  "seeded": {
+   "detected": 16,
+   "known_gap_rows": 2,
+   "rows": 18
+  },
+  "unseen": {
+   "answers": [
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B01_en_hr_manager",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 13,
+      "statements": 14,
+      "uncovered": 1
+     },
+     "listed": {
+      "checker_silent_probe": 2,
+      "checker_warning": 3,
+      "heading_candidate": 1,
+      "location_probe": 1,
+      "punctuation_only_partial_not_listed": 11
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 12,
+      "quote omits the label before the colon": 1
+     },
+     "source_file": "B01_en_hr_manager.json",
+     "warnings_total": 14
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B02_en_data_analyst",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 10,
+      "statements": 10,
+      "uncovered": 0
+     },
+     "listed": {
+      "checker_silent_probe": 2,
+      "checker_warning": 2,
+      "heading_candidate": 3,
+      "location_probe": 0,
+      "punctuation_only_partial_not_listed": 8
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 9,
+      "quote omits the label before the colon": 1
+     },
+     "source_file": "B02_en_data_analyst.json",
+     "warnings_total": 10
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B03_en_warehouse_supervisor",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 11,
+      "statements": 12,
+      "uncovered": 1
+     },
+     "listed": {
+      "checker_silent_probe": 1,
+      "checker_warning": 4,
+      "heading_candidate": 1,
+      "location_probe": 0,
+      "punctuation_only_partial_not_listed": 9
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 1,
+      "quote equals the statement without its terminal punctuation": 10,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "B03_en_warehouse_supervisor.json",
+     "warnings_total": 13
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B04_en_preferred_only",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 4,
+      "statements": 5,
+      "uncovered": 1
+     },
+     "listed": {
+      "checker_silent_probe": 1,
+      "checker_warning": 2,
+      "heading_candidate": 1,
+      "location_probe": 0,
+      "punctuation_only_partial_not_listed": 3
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 4,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "B04_en_preferred_only.json",
+     "warnings_total": 5
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B05_en_open_empty",
+     "coverage": {
+      "covered": 1,
+      "short_quote": 0,
+      "statements": 4,
+      "uncovered": 3
+     },
+     "listed": {
+      "checker_silent_probe": 1,
+      "checker_warning": 3,
+      "heading_candidate": 1,
+      "location_probe": 0,
+      "punctuation_only_partial_not_listed": 0
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 0,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "B05_en_open_empty.json",
+     "warnings_total": 3
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B06_en_injection",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 7,
+      "statements": 9,
+      "uncovered": 2
+     },
+     "listed": {
+      "checker_silent_probe": 2,
+      "checker_warning": 5,
+      "heading_candidate": 1,
+      "location_probe": 0,
+      "punctuation_only_partial_not_listed": 5
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 1,
+      "quote equals the statement without its terminal punctuation": 6,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "B06_en_injection.json",
+     "warnings_total": 10
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B07_ar_accountant",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 12,
+      "statements": 13,
+      "uncovered": 1
+     },
+     "listed": {
+      "checker_silent_probe": 5,
+      "checker_warning": 4,
+      "heading_candidate": 1,
+      "location_probe": 1,
+      "punctuation_only_partial_not_listed": 10
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 1,
+      "quote equals the statement without its terminal punctuation": 11,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "B07_ar_accountant.json",
+     "warnings_total": 14
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B08_ar_hr_specialist",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 8,
+      "statements": 9,
+      "uncovered": 1
+     },
+     "listed": {
+      "checker_silent_probe": 4,
+      "checker_warning": 2,
+      "heading_candidate": 1,
+      "location_probe": 0,
+      "punctuation_only_partial_not_listed": 7
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 8,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "B08_ar_hr_specialist.json",
+     "warnings_total": 9
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B09_ar_sales_rep",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 11,
+      "statements": 11,
+      "uncovered": 0
+     },
+     "listed": {
+      "checker_silent_probe": 5,
+      "checker_warning": 3,
+      "heading_candidate": 1,
+      "location_probe": 0,
+      "punctuation_only_partial_not_listed": 9
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 1,
+      "quote equals the statement without its terminal punctuation": 10,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "B09_ar_sales_rep.json",
+     "warnings_total": 12
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B10_ar_preferred_only",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 4,
+      "statements": 5,
+      "uncovered": 1
+     },
+     "listed": {
+      "checker_silent_probe": 2,
+      "checker_warning": 2,
+      "heading_candidate": 1,
+      "location_probe": 0,
+      "punctuation_only_partial_not_listed": 3
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 4,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "B10_ar_preferred_only.json",
+     "warnings_total": 5
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B11_ar_open_empty",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 1,
+      "statements": 4,
+      "uncovered": 3
+     },
+     "listed": {
+      "checker_silent_probe": 3,
+      "checker_warning": 4,
+      "heading_candidate": 1,
+      "location_probe": 0,
+      "punctuation_only_partial_not_listed": 0
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 1,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "B11_ar_open_empty.json",
+     "warnings_total": 4
+    },
+    {
+     "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+     "case_id": "B12_ar_injection",
+     "coverage": {
+      "covered": 0,
+      "short_quote": 6,
+      "statements": 9,
+      "uncovered": 3
+     },
+     "listed": {
+      "checker_silent_probe": 5,
+      "checker_warning": 4,
+      "heading_candidate": 1,
+      "location_probe": 0,
+      "punctuation_only_partial_not_listed": 5
+     },
+     "partial_quote_mechanical_classes": {
+      "quote covers only part of the statement": 0,
+      "quote equals the statement without its terminal punctuation": 6,
+      "quote omits the label before the colon": 0
+     },
+     "source_file": "B12_ar_injection.json",
+     "warnings_total": 9
+    }
+   ],
+   "rows": 87
+  }
+ },
+ "unseen_disclosure": "the checker was run on the unseen cases while this package was designed, and the sampling and probes were chosen after seeing the warning counts; the checker's code was not changed in response"
+}
