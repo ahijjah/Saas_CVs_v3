@@ -98,23 +98,38 @@ A different approach is worth considering, but each option needs its own design 
   AND and location routing independent of model compliance. It is a parser change, outside this scope.
 - **Structured output** enforces the schema but not the routing or the splits, so it does not address these defects.
 
-## 6. Recommendation: one next step
+## 6. Recommendation: one next step (corrected)
 
-**Run one pre-registered replicate of the existing pair, v2-3 against v2-5 FULL, with no new wording.** Twenty calls per arm, the TC20 JD,
-the same user message, model and settings.
+**Correction, made in this revision.** The first version of this section had three errors, now fixed:
+1. It treated a non-significant difference as evidence that v2-5 was "not shown to be worse". A non-significant result shows only that no
+   difference was detected at that size. It does not establish equivalence or non-inferiority. Those need a margin fixed before the data are
+   seen and a design with enough power to exclude it.
+2. It gave "about 9 calls" as a fixed threshold for p < 0.05. That number was an example for one pair of counts (13 of 20 against 4 of 20).
+   The threshold depends on the actual counts. The rule must be applied to the counts a replicate actually produces.
+3. It implied that a gap of 6 "is not decisive" without saying what decision follows. A gap of 6 at 12 against 6 gives p = 0.11. That is
+   not significant, so it is "no detectable difference at this size", not evidence of equivalence.
 
-Rationale. The decision that matters now is whether v2-5 should replace v2-3 as the offline candidate. The evidence points in opposite
-directions: duties favour v2-5, reporting favours v2-3, and both comparisons are within-batch and small. Only a larger same-batch comparison
-can settle it. It uses bytes that already exist, so it adds no new prompt, and it costs roughly $1.5 expected (worst case $3.2036, so a cap of
-at least $3.25).
+No stored run, score, label or scorer was changed by this correction. Only the wording of this recommendation changed.
+
+**Power.** With 20 calls per arm, the Wald 95 % interval for a difference in proportions has a half-width of about ±0.31 at p = 0.5. A
+non-inferiority margin of 0.10 needs about 193 calls per arm at the same proportions. A 20-per-arm replicate cannot establish equivalence
+within 0.10 and should not be presented as if it could.
+
+**Recommended next step.** Run one pre-registered replicate of the existing pair, v2-3 against v2-5 FULL, with no new wording and 20 calls per arm,
+only if the owner approves the cost. Set the cap from the exact worst case, which is $3.2036 for this pair, so at least $3.25.
 
 Pre-registered primary outcome: reporting complete (all three sentences, whole answer). Secondary: duties 16 of 16.
 
-Stopping rule, fixed before the run. Use a two-sided Fisher test at 20 calls per arm. A gap of about 9 calls is needed for p < 0.05, for example
-13 of 20 against 4 of 20 (p = 0.0095). A gap of 6 (12 against 6) gives p = 0.11, which is not decisive.
-- **If v2-3 exceeds v2-5 by a decisive margin on reporting:** stop v2-5 work; keep v2-3 as the control.
-- **If the reporting difference is not decisive and v2-5 is not fewer duty-complete calls than v2-3:** v2-5 is not shown to be worse on
-  reporting. Decide on duties and the other evidence, and stop prompt experiments.
-- **Otherwise:** the result is inconclusive. Stop prompt experiments and decide on a structural approach (section 5), not another sentence.
+Decision rule, fixed before the run:
+- Apply a two-sided Fisher exact test at alpha = 0.05 to the replicate's actual counts. The test decides the direction and whether the
+  difference is decisive.
+- **Decisive, favouring v2-3:** stop v2-5 work and keep v2-3 as the control.
+- **Decisive, favouring v2-5:** report it, but treat it as a single replicate. It does not establish general reliability.
+- **Not decisive:** report "no detectable difference at this size". This is not equivalence and not non-inferiority. Do not conclude that v2-5
+  is as good as v2-3 on reporting. Stop prompt experiments, and decide on other evidence.
 
-In every outcome: no further rule sentences are added before the decision above, and nothing is activated by this replicate.
+In every outcome: no further rule sentences are added before that decision, and nothing is activated by the replicate.
+
+**Structural alternative.** Prompt-level changes have not fixed the AND split or the OR lists in 60 calls. The offline validation layer
+(`scripts/requirements_v2_staged_check.py`) and the bounded evaluation proposal in `tests/fixtures/requirements_v2_staged_design/` describe the
+structural option. Neither is run or approved here.
