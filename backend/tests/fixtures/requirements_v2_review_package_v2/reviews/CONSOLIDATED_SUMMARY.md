@@ -1,0 +1,77 @@
+# Consolidated summary: the twelve starter judgments (S001 to S012)
+
+**Provenance and limits.** The judgments come from Asaad Hijjah, dated 2026-10-12, recorded as given in four confirmed submissions. The review was
+**assisted by ChatGPT recommendations**. It is **not independent and not blinded**. The sample is the twelve starter rows chosen by fixed rules, not a
+random or representative sample. **No accuracy, precision, recall or production readiness is calculated or claimed here.** The unconfirmed example
+file is excluded. The blank starter is unchanged. The table is generated in `CONSOLIDATED_judgments_S001-S012.csv` by
+`scripts/requirements_v2_review_consolidation.py`, and the counts below are checked against it by a test.
+
+## Counts (as recorded, not measures)
+
+| Class | Genuine defect | False alarm (no defect) | Ambiguous | Total |
+|---|---|---|---|---|
+| Emitted warnings (S001 to S008) | 2 | 6 | 0 | 8 |
+| Unflagged probes (S009 to S012) | 1 | 3 | 0 | 4 |
+
+Correct probes are **not** dismissed warnings. S009 and S011 are correct location placements, and S012 is correct on the speaking-and-writing point. They are probes that required no warning.
+
+## Emitted warnings
+
+| ID | Warning type | Judgment | Note (as recorded) |
+|---|---|---|---|
+| S001 | uncovered statement (company background) | false alarm | omitting optional company background is acceptable |
+| S002 | possible OR split ("Python or R") | **genuine defect** | should be one item with alternatives |
+| S003 | partial quotation (salary and location) | false alarm | separate, correctly routed salary and location items together cover the statement |
+| S004 | uncovered statement (company background) | false alarm | omitting optional company background is acceptable |
+| S005 | possible bundled AND ("Fluent English, spoken and written") | false alarm | spoken and written English form one language requirement |
+| S006 | possible bundled AND (communication, understanding user issues, resolution) | false alarm | one connected competency |
+| S007 | possible attached AND ("labour law and social insurance") | false alarm | one combined knowledge requirement |
+| S008 | possible attached AND ("CSS and HTML") | **genuine defect** | distinct skills, should be separate items |
+
+## Unflagged probes
+
+| ID | Probe type | Judgment | Note (as recorded) |
+|---|---|---|---|
+| S009 | location placement (Cairo, on-site) | false alarm, no defect | location correctly placed in non_scoreable_requirements; an unflagged probe, not a dismissed warning |
+| S010 | OR silent (shifts, travel, visa or relocation) | **genuine defect** | shifts, travel and visa/relocation conditions are omitted and should be retained |
+| S011 | location placement (Arabic accountant) | false alarm, no defect | location correctly placed in non_scoreable_requirements |
+| S012 | attached و limitation ("speaking and writing") | false alarm, no defect | one English-language requirement, consistent with S005 |
+
+## Data notes the reviewer should reconcile
+
+1. **S010 conflicts with the stored answer.** The answer has three conditions for the statement, all in `non_scoreable_requirements`: schedule
+   "rotating night shifts", travel "occasional travel to the Abu Dhabi depot", and work authorization "candidates must hold a valid UAE residence
+   visa or be willing to relocate", the last quoted in full. The recorded judgment says these are omitted. The stored data shows them present, so the
+   defect may be elsewhere, for example the missing split of the visa and relocation options, or the shortened clauses. This is recorded as given.
+   **Please confirm the intended defect.** The probe text also says "no item quotes any part", which is wrong for this answer. The probe looked only at
+   items and not at conditions, so its explanation misled the row. The same statement also has an emitted partial-quotation row that was not judged.
+2. **S003 is a verified checker limitation.** The two correctly routed items together cover the statement, but the checker emits `partial_quote`
+   because no single item covers it. This is documented in `FINDINGS.md`.
+3. **The starter stratum name "real_warning" was misleading.** It selected rows by warning type, so it contained two background-omission false alarms
+   (S001, S004).
+
+## Limitations these judgments reveal
+
+- **Partial quotations that together cover a statement are flagged as partial (S003, false alarm).** The checker looks for one covering item only.
+- **Uncovered background is surfaced as an uncovered statement (S001, S004, false alarms).** The warning text hedges, but the checker cannot tell
+  optional background from a required omission.
+- **Candidate AND warnings over-trigger on coordinated lists (S005, S006, both false alarms).** Rule 5's "independent requirement" is a judgment the
+  checker cannot make, so these candidates produce false alarms in this sample.
+- **Attached Arabic conjunction candidates are mixed (S007 false alarm, S008 genuine).** The conservative pattern does not separate a conjunction from a
+  coordinated noun phrase.
+- **OR split detection is correct where it fired (S002, genuine).**
+- **Probe explanations can be wrong.** The OR-silent probe ignored conditions, so S010's explanation was incorrect (note 1 above). This is a package
+  defect, not a checker-logic defect.
+- **Omissions of statements that are covered only by short conditions are not clearly separated from omissions of whole statements (S010).**
+
+## Smallest next correction (recommended, not implemented)
+
+**Union coverage for partial quotations.** When a statement has no single covering item, but two or more quotations inside it, with no gap between
+them, jointly cover its substantive text, the checker should record a split across items, with the quotations listed, and emit no `partial_quote`. This
+is deterministic, changes only the one case that produced a false alarm in this sample (S003), and keeps genuinely shortened quotations flagged. It
+needs a changed test expectation for the S003 finding and a new positive test. The probe fix for conditions (note 1) is a separate package change and should
+be made alongside it, so that OR-silent probes stop claiming "no item quotes any part" when a condition does.
+
+Not recommended as the smallest step: changing the AND or attached-و rules (S005 to S008). Their false and genuine cases need a rule-level decision first.
+
+No checker logic has been changed by this summary.

@@ -339,3 +339,43 @@ def test_the_s007_to_s009_confirmed_judgments_are_recorded_as_given_and_earlier_
         for key in ("case_id", "warning_type", "jd_statement_exact", "matched_item"):
             assert r[key] == starter_rows[r["review_id"]][key], (r["review_id"], key)
     assert {r["review_id"] for r in _rows("reviews/CONFIRMED_reviewer_Asaad-Hijjah_2026-10-12_S004-S006.csv") if r["reviewer_choice"]} == {"S004", "S005", "S006"}
+
+
+def test_the_s010_to_s012_confirmed_judgments_are_recorded_as_given():
+    rows = _rows("reviews/CONFIRMED_reviewer_Asaad-Hijjah_2026-10-12_S010-S012.csv")
+    done = {r["review_id"]: (r["reviewer_choice"], r["reviewer_note"]) for r in rows if r["reviewer_choice"]}
+    assert done == {
+        "S010": ("genuine defect", "shifts, travel and visa/relocation conditions are omitted and should be retained."),
+        "S011": ("false alarm", "no defect: location is correctly placed in non_scoreable_requirements."),
+        "S012": ("false alarm", "no defect: speaking and writing form one English-language requirement, consistent with S005."),
+    }
+
+
+def test_the_consolidation_has_twelve_judgments_with_the_counts_stated_in_the_summary_and_no_unconfirmed_example():
+    import subprocess
+    import sys
+    script = RP.BACKEND / "scripts" / "requirements_v2_review_consolidation.py"
+    out = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, check=True).stdout
+    assert "'emitted_warning: false alarm': 6" in out and "'emitted_warning: genuine defect': 2" in out
+    assert "'unflagged_probe: false alarm': 3" in out and "'unflagged_probe: genuine defect': 1" in out
+    rows = _rows("reviews/CONSOLIDATED_judgments_S001-S012.csv")
+    assert len(rows) == 12 and len({r["review_id"] for r in rows}) == 12
+    assert all("UNCONFIRMED" not in r["submission"] for r in rows)
+    summary = (PKG / "reviews" / "CONSOLIDATED_SUMMARY.md").read_text(encoding="utf-8")
+    assert "assisted by ChatGPT recommendations" in summary and "not independent and not blinded" in summary
+    assert "No accuracy, precision, recall or production readiness is calculated" in summary
+
+
+def test_the_probes_are_counted_separately_from_emitted_warnings_in_the_consolidation():
+    rows = _rows("reviews/CONSOLIDATED_judgments_S001-S012.csv")
+    probes = [r for r in rows if r["class"] == "unflagged_probe"]
+    warnings = [r for r in rows if r["class"] == "emitted_warning"]
+    assert {r["review_id"] for r in probes} == {"S009", "S010", "S011", "S012"}
+    assert {r["review_id"] for r in warnings} == {f"S00{i}" for i in range(1, 9)}
+    assert all(r["row_kind"] == "checker_warning" for r in warnings)
+    assert all(r["row_kind"] in ("checker_silent_probe", "location_probe") for r in probes)
+
+
+def test_the_checker_is_unchanged_by_the_consolidation_and_the_summary_states_no_checker_change():
+    summary = (PKG / "reviews" / "CONSOLIDATED_SUMMARY.md").read_text(encoding="utf-8")
+    assert "No checker logic has been changed by this summary." in summary
