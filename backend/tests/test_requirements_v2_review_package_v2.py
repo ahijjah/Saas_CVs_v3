@@ -281,3 +281,28 @@ def test_the_findings_document_records_the_verified_s003_facts_and_no_judgment()
     text = (PKG / "FINDINGS.md").read_text(encoding="utf-8")
     assert "Together the two quotations cover the statement" in text
     assert "not confirmed" in text
+
+
+CONFIRMED = PKG / "reviews" / "CONFIRMED_reviewer_Asaad-Hijjah_2026-10-12_S001-S003.csv"
+
+
+def test_the_confirmed_judgments_are_recorded_as_given_and_only_those_three_rows_are_filled():
+    rows = _rows("reviews/CONFIRMED_reviewer_Asaad-Hijjah_2026-10-12_S001-S003.csv")
+    done = {r["review_id"]: (r["reviewer_choice"], r["reviewer_note"]) for r in rows if r["reviewer_choice"]}
+    assert done == {
+        "S001": ("false alarm", "omitting optional company background is acceptable."),
+        "S002": ("genuine defect", "Python or R should be one item with alternatives."),
+        "S003": ("false alarm", "separate, correctly routed salary and location items together cover the statement."),
+    }
+    starter_rows = {r["review_id"]: r for r in _rows("starter_review_sheet_v2.csv")}
+    for r in rows:
+        for key in ("case_id", "warning_type", "jd_statement_exact", "matched_item"):
+            assert r[key] == starter_rows[r["review_id"]][key], (r["review_id"], key)
+
+
+def test_the_confirmed_status_is_recorded_and_no_accuracy_is_claimed_from_it():
+    status = (PKG / "reviews" / "STATUS.md").read_text(encoding="utf-8")
+    assert "CONFIRMED" in status and "Asaad Hijjah" in status and "2026-10-12" in status
+    assert "No accuracy or precision has been calculated" in status
+    assert (PKG / "reviews" / "UNCONFIRMED_example_judgments_S001-S003.csv").exists()
+    assert all(r["reviewer_choice"] == "" for r in _rows("starter_review_sheet_v2.csv"))
