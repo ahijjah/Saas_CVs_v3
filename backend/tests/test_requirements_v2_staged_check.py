@@ -695,3 +695,102 @@ def test_the_attached_waw_candidate_is_not_raised_for_a_duty_line_because_the_an
     jd = "إعداد القوائم المالية الشهرية والسنوية.\n"
     rep = _check(jd, _one_item_answer("x", "إعداد القوائم المالية الشهرية والسنوية", category="experience", origin="from_responsibilities"))
     assert "possible_attached_and" not in _types(rep)
+
+
+# ── revision 2: joint coverage across separate items (S003, S010 and genuinely missing clauses) ──────────────────────────
+
+def _stored(case):
+    rows = [json.loads(x) for x in (BACKEND / "tests" / "fixtures" / "requirements_v2_review_package" / "sources"
+                                    / "benchmark_v2-2_run1_calls.jsonl").read_text(encoding="utf-8").splitlines()]
+    return [r["raw"] for r in rows if r["case"] == case][0]
+
+
+def _bench_jd(case):
+    return json.loads((BACKEND / "tests" / "fixtures" / "requirements_v2_benchmark" / "cases" / f"{case}.json").read_text(encoding="utf-8"))["jd"]
+
+
+def test_regression_s003_two_items_jointly_cover_the_salary_and_location_statement_and_no_partial_quote_is_raised():
+    jd, raw = _bench_jd("B07_ar_accountant"), _stored("B07_ar_accountant")
+    rep = P.validate(jd, raw)
+    stmt = [s for s in rep["statements"] if s["text"].startswith("الشروط:")][0]["id"]
+    assert not [x for x in rep["review_queue"] if x["type"] == "partial_quote" and x.get("statement") == stmt]
+    split = [j for j in rep["joint_split_statements"] if j["statement"] == stmt][0]
+    assert split["paths"] == ["non_scoreable_requirements[0]", "non_scoreable_requirements[1]"]
+
+
+def test_regression_s010_three_conditions_jointly_cover_the_terms_statement_and_no_partial_quote_is_raised():
+    jd, raw = _bench_jd("B03_en_warehouse_supervisor"), _stored("B03_en_warehouse_supervisor")
+    rep = P.validate(jd, raw)
+    stmt = [s for s in rep["statements"] if s["text"].startswith("Terms:")][0]["id"]
+    assert not [x for x in rep["review_queue"] if x["type"] == "partial_quote" and x.get("statement") == stmt]
+    split = [j for j in rep["joint_split_statements"] if j["statement"] == stmt][0]
+    assert len(split["paths"]) == 3
+    assert any("covered jointly with other quotations" in n for row in rep["trace"] for n in row.get("notes", []))
+
+
+def test_a_genuinely_missing_location_clause_still_raises_partial_quote_and_names_the_unquoted_text():
+    jd = _bench_jd("B07_ar_accountant")
+    answer = json.loads(_stored("B07_ar_accountant"))
+    answer["non_scoreable_requirements"] = [c for c in answer["non_scoreable_requirements"] if c["category"] != "location"]
+    rep = P.validate(jd, json.dumps(answer, ensure_ascii=False))
+    stmt = [s for s in rep["statements"] if s["text"].startswith("الشروط:")][0]["id"]
+    partial = [x for x in rep["review_queue"] if x["type"] == "partial_quote" and x.get("statement") == stmt]
+    assert len(partial) == 1
+    assert "unquoted substantive text" in partial[0]["detail"] and "العمل في مدينة الرياض" in partial[0]["detail"]
+    assert not any(j["statement"] == stmt for j in rep["joint_split_statements"])
+
+
+def test_a_genuinely_missing_final_clause_in_the_terms_statement_still_raises_partial_quote():
+    jd = _bench_jd("B03_en_warehouse_supervisor")
+    answer = json.loads(_stored("B03_en_warehouse_supervisor"))
+    answer["non_scoreable_requirements"] = [c for c in answer["non_scoreable_requirements"] if "residence visa" not in c["source_text"]]
+    rep = P.validate(jd, json.dumps(answer, ensure_ascii=False))
+    stmt = [s for s in rep["statements"] if s["text"].startswith("Terms:")][0]["id"]
+    partial = [x for x in rep["review_queue"] if x["type"] == "partial_quote" and x.get("statement") == stmt]
+    assert len(partial) == 1 and "candidates must hold" in partial[0]["detail"]
+
+
+def test_joint_coverage_allows_only_separators_and_the_conjunction_between_quotations_in_english():
+    jd = "Strong communication, coordination, and teamwork skills.\n"
+    ans = {"categories": {c: [] for c in P.CATEGORIES}, "non_scoreable_requirements": [], "post_hiring_conditions": [], "informational_items": []}
+    ans["categories"]["soft_skills"] = [
+        {"text": "communication", "importance": "required", "importance_cue": None, "source_text": "Strong communication",
+         "origin": "stated", "alternatives": None, "experience": None},
+        {"text": "coordination and teamwork", "importance": "required", "importance_cue": None,
+         "source_text": "coordination, and teamwork skills", "origin": "stated", "alternatives": None, "experience": None}]
+    rep = P.validate(jd, json.dumps(ans, ensure_ascii=False))
+    assert "partial_quote" not in _types(rep)
+    assert rep["coverage"]["covered"] == 1
+
+
+def test_joint_coverage_does_not_bridge_an_or_gap_so_two_or_halves_stay_a_partial_quote():
+    jd = "Proficiency in Python or R.\n"
+    ans = {"categories": {c: [] for c in P.CATEGORIES}, "non_scoreable_requirements": [], "post_hiring_conditions": [], "informational_items": []}
+    ans["categories"]["skills"] = [
+        {"text": "Python", "importance": "required", "importance_cue": None, "source_text": "Proficiency in Python",
+         "origin": "stated", "alternatives": None, "experience": None},
+        {"text": "R", "importance": "required", "importance_cue": None, "source_text": "R", "origin": "stated",
+         "alternatives": None, "experience": None}]
+    rep = P.validate(jd, json.dumps(ans, ensure_ascii=False))
+    partial = [x for x in rep["review_queue"] if x["type"] == "partial_quote"]
+    assert len(partial) == 1 and "or" in partial[0]["detail"]
+
+
+def test_joint_coverage_allows_the_arabic_separator_and_waw_between_two_clauses():
+    jd = "الشروط: الراتب بالريال السعودي، والعمل في مدينة الرياض بدوام كامل.\n"
+    ans = {"categories": {c: [] for c in P.CATEGORIES}, "post_hiring_conditions": [], "informational_items": []}
+    ans["non_scoreable_requirements"] = [
+        {"text": "salary", "category": "salary", "reason": "", "source_text": "الراتب بالريال السعودي"},
+        {"text": "location", "category": "location", "reason": "", "source_text": "العمل في مدينة الرياض بدوام كامل"}]
+    rep = P.validate(jd, json.dumps(ans, ensure_ascii=False))
+    assert "partial_quote" not in _types(rep) and rep["coverage"]["covered"] == 1
+
+
+def test_a_single_quotation_that_covers_only_the_first_clause_is_still_partial_and_is_not_joint():
+    jd = "Terms: rotating night shifts, occasional travel to the Abu Dhabi depot.\n"
+    ans = {"categories": {c: [] for c in P.CATEGORIES}, "post_hiring_conditions": [], "informational_items": []}
+    ans["non_scoreable_requirements"] = [{"text": "shifts", "category": "schedule", "reason": "", "source_text": "rotating night shifts"}]
+    rep = P.validate(jd, json.dumps(ans, ensure_ascii=False))
+    partial = [x for x in rep["review_queue"] if x["type"] == "partial_quote"]
+    assert len(partial) == 1 and "occasional travel" in partial[0]["detail"]
+    assert rep["joint_split_statements"] == []

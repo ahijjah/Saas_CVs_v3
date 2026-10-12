@@ -75,3 +75,31 @@ be made alongside it, so that OR-silent probes stop claiming "no item quotes any
 Not recommended as the smallest step: changing the AND or attached-و rules (S005 to S008). Their false and genuine cases need a rule-level decision first.
 
 No checker logic has been changed by this summary.
+
+
+## Amendment: S010 disputed, pending confirmation (not a reviewer judgment yet)
+
+- **Status: DISPUTED.** The 2026-10-12 judgment for S010 (`genuine defect`, shifts, travel and visa/relocation conditions omitted) is preserved as given in
+  `CONFIRMED_reviewer_Asaad-Hijjah_2026-10-12_S010-S012.csv`. The stored answer (B03, v2-2 run 1) contains all three conditions in
+  `non_scoreable_requirements`, so the omission claim is not supported by the evidence. The amendment is in
+  `AMENDMENT_S010_disputed_pending_confirmation.csv`. It is **not confirmed** and has not been treated as the reviewer's decision.
+- **Recommended for the omission probe: `no defect`.** The probe text ("no item quotes any part") was wrong because the probe looked only at items. That
+  is fixed in the v3 builder (the probe now inspects conditions too), and the B03 statement is no longer emitted as a probe.
+- **OR structure, assessed separately.** "visa or be willing to relocate" is one `work_authorization` condition that joins two options. Conditions have
+  no `alternatives` field, so the checker does not test this. Routing under rule 9 is not affected. Whether it is one condition or two is a question
+  for the reviewer; it is not an omission.
+- **Counts.** S010 is excluded from resolved counts. The consolidation now reports `disputed (excluded)`: 1, with resolved counts
+  `emitted_warning: false alarm` 6, `emitted_warning: genuine defect` 2, `unflagged_probe: false alarm` 3. These are counts of recorded judgments,
+  not accuracy, precision or recall.
+- **Asked of Asaad Hijjah:** confirm `no defect` for the omission probe, and state whether the OR-structure concern should be recorded at all. Until
+  then S010 stays disputed.
+
+## Offline corrections made after the S010 dispute (v3 package, checker unchanged in its judgments)
+
+- **Probe construction.** The OR-silent probe now looks at conditions as well as category items.
+- **Joint quotation coverage.** Quotations from separate items no longer produce `partial_quote` when their combined spans cover all substantive text
+  (separators and one conjunction allowed between them). A real gap still produces `partial_quote`, with the unquoted text named.
+- **Effect on benchmark answers.** `partial_quote` warnings fell from 4 to 1 across the 12 benchmark answers; the remaining one is the B06 injection case.
+- **Regression checks.** S003 (B07) and S010 (B03) joint coverage, and a genuinely missing final clause, are covered by tests.
+- The v3 package is in `tests/fixtures/requirements_v2_review_package_v3/`, superseding v2 (27eee4d). v2 and v1 are kept unchanged with their reviews.
+  The reviewer cells in v3 are blank; no judgments were made in v3.

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Versioned offline human-review package for the staged-validation checker, v2 (no model call, no network).
+"""Versioned offline human-review package for the staged-validation checker, v3 (no model call, no network).
 
-v2 supersedes the v1 package (tests/fixtures/requirements_v2_review_package, kept unchanged as historical evidence; its builder and
-checker copy are in scripts/historical/). Every case used here (the twelve benchmark cases, TC20 and the EN and AR eval JDs) has been
-inspected during development, so all of them are DEVELOPMENT evidence. None is an independent or held-out validation set.
+v3 supersedes v2 (tests/fixtures/requirements_v2_review_package_v2, kept unchanged with its reviews; its builder and checker copy are in
+scripts/historical/requirements_v2_review_package_v2.py and requirements_v2_staged_check_v2.py). v1 is kept the same way. v3 differs from v2
+in two fixes: the OR-silent probe now looks at conditions as well as items, and quotations that jointly cover a statement are recognised
+as a split rather than a partial quotation. Every case used here has been inspected during development, so all of them are DEVELOPMENT
+evidence. None is an independent or held-out validation set.
 
-It writes into tests/fixtures/requirements_v2_review_package_v2/:
+It writes into tests/fixtures/requirements_v2_review_package_v3/:
   review_sheet_v2.csv         every checker warning and probe for the stored answers, with blank reviewer cells
   starter_review_sheet_v2.csv a 12-row EN/AR starter sheet chosen by fixed rules (real warnings, candidate-type warnings,
                               unflagged probes)
@@ -32,7 +34,7 @@ sys.path.insert(0, str(BACKEND / "scripts"))
 import requirements_v2_staged_check as P  # noqa: E402
 import requirements_v2_tc20_eval as ev  # noqa: E402
 
-PKG = BACKEND / "tests" / "fixtures" / "requirements_v2_review_package_v2"
+PKG = BACKEND / "tests" / "fixtures" / "requirements_v2_review_package_v3"
 V1_SRC = BACKEND / "tests" / "fixtures" / "requirements_v2_review_package" / "sources"
 SRC = PKG / "sources"
 BENCH = BACKEND / "tests" / "fixtures" / "requirements_v2_benchmark" / "cases"
@@ -182,16 +184,17 @@ def answer_rows(out: Rows, group: str, case_id: str, lang: str, label: str, jd: 
             out.add(group, case_id, lang, label, "location_probe", "location_probe", " | ".join(stmts) or "(no span)", describe_entry(ent),
                     src, "placement of a location condition", f"placed in {ent['list']}")
             counts["location_probe"] += 1
-    # silent probes: OR statements no item quotes at all; Arabic words beginning with و that the conservative rule does not match
+    # silent probes: OR statements that no item or condition quotes at all; Arabic words beginning with و that the conservative rule does not match
     for s in st:
-        overlapping = [t for t in rep["trace"] if t["span"] and t["kind"] == "item" and s["start"] < t["span"][1] and t["span"][0] < s["end"]]
+        overlapping = [t for t in rep["trace"] if t["span"] and s["start"] < t["span"][1] and t["span"][0] < s["end"]]
+        items_overlapping = [t for t in overlapping if t["kind"] == "item"]
         if OR_RE.search(s["text"]) and not overlapping:
             out.add(group, case_id, lang, label, "checker_silent_probe", "or_silent_probe", s["text"], "none", "",
-                    "no item quotes any part of this statement", "no item quotes any part")
+                    "no item or condition quotes any part of this statement", "no item or condition quotes any part")
             counts["or_silent_probe"] += 1
         words = sorted(set(m.group(0) for m in WORD_WAW.finditer(s["text"]))) if lang == "ar" else []
-        if words and not P.ATTACHED_CONJ.search(s["text"]) and overlapping:
-            stated = [t for t in overlapping if t.get("origin") == "stated"]
+        if words and not P.ATTACHED_CONJ.search(s["text"]) and items_overlapping:
+            stated = [t for t in items_overlapping if t.get("origin") == "stated"]
             if stated:
                 out.add(group, case_id, lang, label, "checker_silent_probe", "attached_waw_limitation_probe", s["text"],
                         describe_entry(ents.get(stated[0]["path"])), stated[0]["source_text"],
@@ -504,7 +507,9 @@ rows.
 ## 9. Checker limitations (mechanical)
 
 - A quotation that omits only the final punctuation, or a label before a colon, covers its statement. The mechanical note says so.
-- A quotation that covers only part of the substantive text remains a shortened quotation.
+- Quotations from separate items that together cover a statement's substantive text, with only separators, whitespace or the conjunction
+  و or "and" between them, are recorded as a split across items. They are not a partial quotation.
+- A quotation, or a set of quotations, that leaves a substantive word unquoted remains a partial quotation, and the warning names the unquoted text.
 - An OR statement quoted by two or more items is a candidate, and nothing is merged.
 - Attached Arabic و is matched only before ال or a Latin letter. This is conservative: some conjunctions are missed (section 8).
 
@@ -525,8 +530,10 @@ def manifest_for(files: dict, summary: dict) -> dict:
                  "expected/eval_ar_facilities_01.json"):
         sources_hashes[f"eval set/{name}"] = sha_file(EVAL / name)
     return {
-        "package": "requirements_v2 staged-validation checker, human review, version 2 (offline)",
-        "supersedes": "tests/fixtures/requirements_v2_review_package (v1, commit 347dc55), kept unchanged as historical evidence",
+        "package": "requirements_v2 staged-validation checker, human review, version 3 (offline)",
+        "supersedes": "tests/fixtures/requirements_v2_review_package_v2 (v2, commit 27eee4d), kept unchanged with its reviews; "
+                      "v1 (commit 347dc55) is kept unchanged as well",
+        "v2_historical_builder": "scripts/historical/requirements_v2_review_package_v2.py with scripts/historical/requirements_v2_staged_check_v2.py",
         "v1_historical_builder": "scripts/historical/requirements_v2_review_package_v1.py with scripts/historical/requirements_v2_staged_check_v1.py",
         "builder": "scripts/requirements_v2_review_package.py",
         "builder_sha256": sha_file(pathlib.Path(__file__).resolve()),

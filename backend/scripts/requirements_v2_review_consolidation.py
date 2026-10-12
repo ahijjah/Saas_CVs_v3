@@ -17,11 +17,22 @@ PKG = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "r
 STARTER = PKG / "starter_review_sheet_v2.csv"
 REVIEWS = PKG / "reviews"
 OUT = REVIEWS / "CONSOLIDATED_judgments_S001-S012.csv"
-COLUMNS = ["review_id", "class", "row_kind", "warning_type", "case_id", "jd_statement_exact", "reviewer_choice", "reviewer_note", "submission"]
+COLUMNS = ["review_id", "status", "class", "row_kind", "warning_type", "case_id", "jd_statement_exact", "reviewer_choice", "reviewer_note", "submission"]
+
+
+def disputed_ids() -> set[str]:
+    """Review ids whose confirmed judgment is disputed pending confirmation: excluded from resolved counts, original kept."""
+    out = set()
+    for f in sorted(REVIEWS.glob("AMENDMENT_*.csv")):
+        for r in csv.DictReader(f.read_text(encoding="utf-8").splitlines()):
+            if r["status"].startswith("DISPUTED"):
+                out.add(r["review_id"])
+    return out
 
 
 def consolidate() -> list[dict]:
     starter = {r["review_id"]: r for r in csv.DictReader(STARTER.read_text(encoding="utf-8").splitlines())}
+    disputed = disputed_ids()
     judgments: dict[str, dict] = {}
     for f in sorted(REVIEWS.glob("CONFIRMED_*.csv")):
         for r in csv.DictReader(f.read_text(encoding="utf-8").splitlines()):
@@ -31,6 +42,7 @@ def consolidate() -> list[dict]:
                 raise SystemExit(f"duplicate confirmed judgment for {r['review_id']}")
             base = starter[r["review_id"]]
             judgments[r["review_id"]] = {"review_id": r["review_id"],
+                                         "status": "disputed" if r["review_id"] in disputed else "resolved",
                                          "class": "emitted_warning" if base["row_kind"] == "checker_warning" else "unflagged_probe",
                                          "row_kind": base["row_kind"], "warning_type": base["warning_type"], "case_id": base["case_id"],
                                          "jd_statement_exact": base["jd_statement_exact"], "reviewer_choice": r["reviewer_choice"],
@@ -42,8 +54,11 @@ def consolidate() -> list[dict]:
 
 
 def counts(rows: list[dict]) -> dict:
-    out = collections.Counter((r["class"], r["reviewer_choice"]) for r in rows)
-    return {f"{c}: {ch}": n for (c, ch), n in sorted(out.items())}
+    """Resolved judgments only. Disputed judgments are excluded and reported separately."""
+    out = collections.Counter((r["class"], r["reviewer_choice"]) for r in rows if r["status"] == "resolved")
+    result = {f"{c}: {ch}": n for (c, ch), n in sorted(out.items())}
+    result["disputed (excluded)"] = sum(1 for r in rows if r["status"] == "disputed")
+    return result
 
 
 def main() -> int:

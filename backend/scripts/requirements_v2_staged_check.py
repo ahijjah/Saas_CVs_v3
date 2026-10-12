@@ -108,6 +108,31 @@ def covers_statement(loc: dict, s: dict) -> bool:
     return s["sub_start"] is not None and loc["start"] <= s["sub_start"]
 
 
+# Text allowed BETWEEN two quotations that jointly cover a statement: separators, whitespace and the conjunction و or "and" only.
+# Any word in a gap means a substantive part is unquoted, so the statement is not jointly covered.
+GAP_OK = re.compile(r"^[\s،,;؛.:\-–—]*(?:(?:و|and)[\s،,;؛.:]*)?$", re.I)
+
+
+def jointly_covers(jd: str, s: dict, spans: list[tuple[int, int]]) -> tuple[bool, str]:
+    """True when the quotations' spans, together, cover the statement's substantive text with no substantive gap.
+    Returns (ok, the first unquoted substantive text, or '')."""
+    a = s["sub_start"] if s["sub_start"] is not None else s["start"]
+    b = s["core_end"]
+    clipped = sorted((max(x, a), min(y, b)) for x, y in spans if min(y, b) > max(x, a))
+    cur = a
+    for x, y in clipped:
+        if x > cur:
+            gap = jd[cur:x]
+            if not GAP_OK.match(gap):
+                return False, gap.strip()
+        cur = max(cur, y)
+    if cur < b:
+        tail = jd[cur:b]
+        if not GAP_OK.match(tail):
+            return False, tail.strip()
+    return True, ""
+
+
 def coverage_notes(loc: dict, s: dict) -> list[str]:
     """Mechanical facts about how a covering quotation differs from the statement (shown in the trace, never a warning)."""
     notes = []
@@ -199,6 +224,7 @@ def validate(jd: str, raw: str) -> dict:
     review = report["review_queue"]
     covering: dict[str, list[str]] = {s["id"]: [] for s in statements}
     partial: dict[str, list[str]] = {s["id"]: [] for s in statements}
+    partial_spans: dict[str, list[tuple[int, int]]] = {s["id"]: [] for s in statements}
     heading_spans = {(h["start"], h["end"]) for h in headings}
     quoted_spans: list[tuple[int, int]] = []
     for ent in entries_of(answer):
@@ -232,6 +258,7 @@ def validate(jd: str, raw: str) -> dict:
         for s in overlap:
             if s not in inside:
                 partial[s["id"]].append(ent["path"])
+                partial_spans[s["id"]].append((loc["start"], loc["end"]))
         if ent["kind"] == "condition":
             cat, lst = ent["category"], ent["list"]
             if cat == "other":
@@ -248,12 +275,23 @@ def validate(jd: str, raw: str) -> dict:
             if alt is not None and (not isinstance(alt, list) or len(alt) < 2):
                 review.append({"type": "alternatives_too_short", "path": ent["path"], "detail": "alternatives must hold two or more options"})
     coverage = {"statements": len(statements), "covered": 0, "short_quote": 0, "uncovered": 0}
+    report["joint_split_statements"] = []
     for s in statements:
         if covering[s["id"]]:
             coverage["covered"] += 1
+        elif partial[s["id"]] and jointly_covers(jd, s, partial_spans[s["id"]])[0]:
+            # two or more quotations, with no substantive gap between them, cover the statement: a split, not a shortened quotation
+            coverage["covered"] += 1
+            report["joint_split_statements"].append({"statement": s["id"], "paths": partial[s["id"]]})
+            for row in report["trace"]:
+                if row["path"] in partial[s["id"]]:
+                    row.setdefault("notes", []).append(f"{s['id']}: covered jointly with other quotations (split across items)")
         elif partial[s["id"]]:
             coverage["short_quote"] += 1
-            review.append({"type": "partial_quote", "statement": s["id"], "detail": f"only part of the statement is quoted: {s['text'][:80]}",
+            _, gap = jointly_covers(jd, s, partial_spans[s["id"]])
+            review.append({"type": "partial_quote", "statement": s["id"],
+                           "detail": f"only part of the statement is quoted: {s['text'][:80]}"
+                                     + (f"; unquoted substantive text: '{gap[:60]}'" if gap else ""),
                            "paths": partial[s["id"]]})
         else:
             coverage["uncovered"] += 1

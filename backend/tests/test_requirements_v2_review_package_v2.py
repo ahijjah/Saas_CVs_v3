@@ -13,8 +13,12 @@ import re
 
 import pytest
 
-import scripts.requirements_v2_review_package as RP
-import scripts.requirements_v2_staged_check as P
+import sys
+
+HISTORICAL = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "historical"
+sys.path.insert(0, str(HISTORICAL))
+import requirements_v2_review_package_v2 as RP  # noqa: E402  (HISTORICAL v2 builder, pinned to the v2 checker copy)
+import requirements_v2_staged_check_v2 as P  # noqa: E402
 
 PKG = RP.PKG
 
@@ -41,10 +45,15 @@ def seeded():
 # ── regeneration and provenance ──────────────────────────────────────────────────────────────────────────────────────────
 
 def test_the_v2_package_regenerates_byte_for_byte_from_its_sources():
+    """Every output. The manifest is compared on its content keys; its builder hash refers to the builder's original location."""
     files, summary = RP.build()
-    files["MANIFEST.json"] = (json.dumps(RP.manifest_for(files, summary), ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8")
     for name, data in files.items():
         assert (PKG / name).read_bytes() == data, name
+    recorded = json.loads((PKG / "MANIFEST.json").read_text(encoding="utf-8"))
+    regenerated = RP.manifest_for(files, summary)
+    # checker_sha256 is pinned by test_the_manifest_hashes_match... through the v2 checker copy's reconstruction, not here
+    for key in ("sources_sha256", "outputs_sha256", "summary", "selection"):
+        assert recorded[key] == regenerated[key], key
 
 
 def test_building_twice_gives_the_same_bytes():
@@ -65,7 +74,11 @@ def test_the_manifest_hashes_match_the_files_on_disk_and_the_checker_is_the_curr
         else:
             path = RP.EVAL / rel.split("/", 1)[1]
         assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, rel
-    assert hashlib.sha256((RP.BACKEND / "scripts" / "requirements_v2_staged_check.py").read_bytes()).hexdigest() == m["checker_sha256"]
+    copy = (HISTORICAL / "requirements_v2_staged_check_v2.py").read_text(encoding="utf-8")
+    original = copy.replace("# HISTORICAL COPY (v2, commit 27eee4d). Only this path constant changed (the file now lives in scripts/historical/).\n"
+                            "BACKEND = pathlib.Path(__file__).resolve().parent.parent.parent\n",
+                            "BACKEND = pathlib.Path(__file__).resolve().parent.parent\n")
+    assert hashlib.sha256(original.encode("utf-8")).hexdigest() == m["checker_sha256"]          # the v2 checker: only the path line changed
 
 
 def test_the_v2_manifest_records_the_derived_source_provenance_and_the_supersession():
@@ -262,7 +275,7 @@ def test_the_unconfirmed_file_holds_the_example_choices_and_matches_the_starter_
             assert r[key] == starter_rows[r["review_id"]][key], (r["review_id"], key)
 
 
-def test_the_verified_s003_split_is_flagged_as_partial_quote_by_the_current_checker():
+def test_the_verified_s003_split_is_flagged_as_partial_quote_by_the_v2_checker():
     """Pins the current behaviour: two items together cover the statement, and the checker still raises partial_quote."""
     raw = [json.loads(x) for x in (RP.V1_SRC / "benchmark_v2-2_run1_calls.jsonl").read_text(encoding="utf-8").splitlines()]
     raw = [r for r in raw if r["case"] == "B07_ar_accountant"][0]["raw"]
@@ -357,9 +370,12 @@ def test_the_consolidation_has_twelve_judgments_with_the_counts_stated_in_the_su
     script = RP.BACKEND / "scripts" / "requirements_v2_review_consolidation.py"
     out = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, check=True).stdout
     assert "'emitted_warning: false alarm': 6" in out and "'emitted_warning: genuine defect': 2" in out
-    assert "'unflagged_probe: false alarm': 3" in out and "'unflagged_probe: genuine defect': 1" in out
+    assert "'unflagged_probe: false alarm': 3" in out and "'disputed (excluded)': 1" in out
+    assert "'unflagged_probe: genuine defect'" not in out
     rows = _rows("reviews/CONSOLIDATED_judgments_S001-S012.csv")
     assert len(rows) == 12 and len({r["review_id"] for r in rows}) == 12
+    s010 = next(r for r in rows if r["review_id"] == "S010")
+    assert s010["status"] == "disputed" and s010["reviewer_choice"] == "genuine defect"
     assert all("UNCONFIRMED" not in r["submission"] for r in rows)
     summary = (PKG / "reviews" / "CONSOLIDATED_SUMMARY.md").read_text(encoding="utf-8")
     assert "assisted by ChatGPT recommendations" in summary and "not independent and not blinded" in summary
