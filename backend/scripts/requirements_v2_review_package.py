@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Versioned offline human-review package for the staged-validation checker, v3 (no model call, no network).
+"""Versioned offline human-review package for the staged-validation checker, v4 (no model call, no network).
 
-v3 supersedes v2 (tests/fixtures/requirements_v2_review_package_v2, kept unchanged with its reviews; its builder and checker copy are in
-scripts/historical/requirements_v2_review_package_v2.py and requirements_v2_staged_check_v2.py). v1 is kept the same way. v3 differs from v2
+v4 supersedes v3 (tests/fixtures/requirements_v2_review_package_v3, kept unchanged, with its reviewer submission under reviews/; its builder
+and checker copy are in scripts/historical/requirements_v2_review_package_v3.py and requirements_v2_staged_check_v3.py). v2 and v1 are kept the
+same way. v4 changes only how a partial quotation is presented: the quotations and the exact uncovered spans are listed separately, with no
+span truncated. The coverage decision is unchanged. v3 differed from v2
 in two fixes: the OR-silent probe now looks at conditions as well as items, and quotations that jointly cover a statement are recognised
 as a split rather than a partial quotation. Every case used here has been inspected during development, so all of them are DEVELOPMENT
 evidence. None is an independent or held-out validation set.
 
-It writes into tests/fixtures/requirements_v2_review_package_v3/:
+It writes into tests/fixtures/requirements_v2_review_package_v4/:
   review_sheet_v2.csv         every checker warning and probe for the stored answers, with blank reviewer cells
   starter_review_sheet_v2.csv a 12-row EN/AR starter sheet chosen by fixed rules (real warnings, candidate-type warnings,
                               unflagged probes)
@@ -34,7 +36,7 @@ sys.path.insert(0, str(BACKEND / "scripts"))
 import requirements_v2_staged_check as P  # noqa: E402
 import requirements_v2_tc20_eval as ev  # noqa: E402
 
-PKG = BACKEND / "tests" / "fixtures" / "requirements_v2_review_package_v3"
+PKG = BACKEND / "tests" / "fixtures" / "requirements_v2_review_package_v4"
 V1_SRC = BACKEND / "tests" / "fixtures" / "requirements_v2_review_package" / "sources"
 SRC = PKG / "sources"
 BENCH = BACKEND / "tests" / "fixtures" / "requirements_v2_benchmark" / "cases"
@@ -509,7 +511,8 @@ rows.
 - A quotation that omits only the final punctuation, or a label before a colon, covers its statement. The mechanical note says so.
 - Quotations from separate items that together cover a statement's substantive text, with only separators, whitespace or the conjunction
   و or "and" between them, are recorded as a split across items. They are not a partial quotation.
-- A quotation, or a set of quotations, that leaves a substantive word unquoted remains a partial quotation, and the warning names the unquoted text.
+- A quotation, or a set of quotations, that leaves a substantive word unquoted remains a partial quotation. The warning lists the quotations and,
+  separately, the exact uncovered text (not truncated). Some uncovered text may be a lead-in or injected instruction rather than a requirement; that is for the reviewer to decide.
 - An OR statement quoted by two or more items is a candidate, and nothing is merged.
 - Attached Arabic و is matched only before ال or a Latin letter. This is conservative: some conjunctions are missed (section 8).
 
@@ -530,9 +533,10 @@ def manifest_for(files: dict, summary: dict) -> dict:
                  "expected/eval_ar_facilities_01.json"):
         sources_hashes[f"eval set/{name}"] = sha_file(EVAL / name)
     return {
-        "package": "requirements_v2 staged-validation checker, human review, version 3 (offline)",
-        "supersedes": "tests/fixtures/requirements_v2_review_package_v2 (v2, commit 27eee4d), kept unchanged with its reviews; "
-                      "v1 (commit 347dc55) is kept unchanged as well",
+        "package": "requirements_v2 staged-validation checker, human review, version 4 (offline)",
+        "supersedes": "tests/fixtures/requirements_v2_review_package_v3 (v3, commit 3e42ebb), kept unchanged, with its reviewer submission under reviews/; "
+                      "v2 (commit 27eee4d) and v1 (commit 347dc55) are kept unchanged as well",
+        "v3_historical_builder": "scripts/historical/requirements_v2_review_package_v3.py with scripts/historical/requirements_v2_staged_check_v3.py",
         "v2_historical_builder": "scripts/historical/requirements_v2_review_package_v2.py with scripts/historical/requirements_v2_staged_check_v2.py",
         "v1_historical_builder": "scripts/historical/requirements_v2_review_package_v1.py with scripts/historical/requirements_v2_staged_check_v1.py",
         "builder": "scripts/requirements_v2_review_package.py",

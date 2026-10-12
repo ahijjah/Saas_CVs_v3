@@ -133,6 +133,22 @@ def jointly_covers(jd: str, s: dict, spans: list[tuple[int, int]]) -> tuple[bool
     return True, ""
 
 
+def uncovered_spans(jd: str, s: dict, spans: list[tuple[int, int]]) -> list[str]:
+    """Every substantive stretch of the statement's core that no quotation covers, as exact text from the job description.
+    Separator-only stretches (GAP_OK) are not substantive and are not listed. jointly_covers() decides; this only reports."""
+    a = s["sub_start"] if s["sub_start"] is not None else s["start"]
+    b = s["core_end"]
+    clipped = sorted((max(x, a), min(y, b)) for x, y in spans if min(y, b) > max(x, a))
+    gaps, cur = [], a
+    for x, y in clipped:
+        if x > cur and not GAP_OK.match(jd[cur:x]):
+            gaps.append(jd[cur:x])
+        cur = max(cur, y)
+    if cur < b and not GAP_OK.match(jd[cur:b]):
+        gaps.append(jd[cur:b])
+    return gaps
+
+
 def coverage_notes(loc: dict, s: dict) -> list[str]:
     """Mechanical facts about how a covering quotation differs from the statement (shown in the trace, never a warning)."""
     notes = []
@@ -227,6 +243,7 @@ def validate(jd: str, raw: str) -> dict:
     partial_spans: dict[str, list[tuple[int, int]]] = {s["id"]: [] for s in statements}
     heading_spans = {(h["start"], h["end"]) for h in headings}
     quoted_spans: list[tuple[int, int]] = []
+    source_by_path = {e["path"]: e["entry"].get("source_text") for e in entries_of(answer)}
     for ent in entries_of(answer):
         src = ent["entry"].get("source_text")
         loc = locate(jd, src) if isinstance(src, str) else None
@@ -288,10 +305,13 @@ def validate(jd: str, raw: str) -> dict:
                     row.setdefault("notes", []).append(f"{s['id']}: covered jointly with other quotations (split across items)")
         elif partial[s["id"]]:
             coverage["short_quote"] += 1
-            _, gap = jointly_covers(jd, s, partial_spans[s["id"]])
+            quoted = [source_by_path[path] for path in partial[s["id"]]]
+            uncovered = uncovered_spans(jd, s, partial_spans[s["id"]])
             review.append({"type": "partial_quote", "statement": s["id"],
-                           "detail": f"only part of the statement is quoted: {s['text'][:80]}"
-                                     + (f"; unquoted substantive text: '{gap[:60]}'" if gap else ""),
+                           "detail": "only part of the statement is quoted. Quotations: "
+                                     + ", ".join(json.dumps(q, ensure_ascii=False) for q in quoted)
+                                     + ". Uncovered (exact): " + ", ".join(json.dumps(g, ensure_ascii=False) for g in uncovered),
+                           "quoted": quoted, "uncovered": uncovered,
                            "paths": partial[s["id"]]})
         else:
             coverage["uncovered"] += 1

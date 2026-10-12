@@ -3,7 +3,8 @@
 v3 supersedes v2 for two mechanical reasons: the OR-silent probe now inspects conditions as well as category items, and the checker
 recognises joint quotation coverage across separate items. The tests check: byte-for-byte regeneration; blank reviewer cells; the two
 corrections on the cases that exposed them (S010 probe, S003 joint coverage); a genuinely missing clause that stays flagged; and that
-the historical v2 and v1 packages still match their own manifests. No network, no model call, no judgment is filled.
+the historical v2 and v1 packages still match their own manifests. v3 is now reproduced by its historical builder and checker copy, so later
+checker changes do not move it. No network, no model call, no judgment is filled.
 """
 import collections
 import csv
@@ -18,9 +19,11 @@ BACKEND = pathlib.Path(__file__).resolve().parent.parent
 PKG = BACKEND / "tests" / "fixtures" / "requirements_v2_review_package_v3"
 V2 = BACKEND / "tests" / "fixtures" / "requirements_v2_review_package_v2"
 V1 = BACKEND / "tests" / "fixtures" / "requirements_v2_review_package"
+HISTORICAL = BACKEND / "scripts" / "historical"
+sys.path.insert(0, str(HISTORICAL))
 sys.path.insert(0, str(BACKEND / "scripts"))
-import requirements_v2_review_package as RP  # noqa: E402
-import requirements_v2_staged_check as P  # noqa: E402
+import requirements_v2_review_package_v3 as RP  # noqa: E402  (HISTORICAL v3 builder, pinned to the v3 checker copy)
+import requirements_v2_staged_check_v3 as P  # noqa: E402
 
 B03 = "B03_en_warehouse_supervisor"
 B07 = "B07_ar_accountant"
@@ -183,3 +186,28 @@ def test_the_uncovered_text_of_each_remaining_partial_quote_is_exactly_as_presen
             gaps.append(jd[a + cur:a + i])
             cur = None
     assert gaps == expected_gaps
+
+
+# ── v3 pins: the historical copies reconstruct the original files whose hashes the v3 manifest records ──────────────────────
+
+def test_the_historical_v3_checker_and_builder_reconstruct_the_hashes_recorded_in_the_v3_manifest():
+    """Reverses exactly the lines the historical copies changed (their comments and path constant) and checks the original hashes."""
+    recorded = json.loads((PKG / "MANIFEST.json").read_text(encoding="utf-8"))
+    checker = (HISTORICAL_DIR / "requirements_v2_staged_check_v3.py").read_text(encoding="utf-8")
+    builder = (HISTORICAL_DIR / "requirements_v2_review_package_v3.py").read_text(encoding="utf-8")
+    checker_head = ("# HISTORICAL COPY (v3, commit 3e42ebb). Only the BACKEND path constant changed (this file lives in scripts/historical).\n"
+                    "# Later checker changes do not change v3; v3 is reproduced by requirements_v2_review_package_v3.py in this folder.\n"
+                    "BACKEND = pathlib.Path(__file__).resolve().parent.parent.parent\n")
+    builder_head = ("# HISTORICAL (v3, commit 3e42ebb). Reproduces the v3 package with the v3 checker copy in this folder.\n"
+                    "BACKEND = pathlib.Path(__file__).resolve().parent.parent.parent\n")
+    builder_import = ("sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))\n"
+                      "import requirements_v2_staged_check_v3 as P  # noqa: E402\n")
+    assert checker.count(checker_head) == 1 and builder.count(builder_head) == 1 and builder.count(builder_import) == 1
+    original_checker = checker.replace(checker_head, "BACKEND = pathlib.Path(__file__).resolve().parent.parent\n")
+    original_builder = (builder.replace(builder_head, "BACKEND = pathlib.Path(__file__).resolve().parent.parent\n")
+                        .replace(builder_import, "import requirements_v2_staged_check as P  # noqa: E402\n"))
+    assert hashlib.sha256(original_checker.encode("utf-8")).hexdigest() == recorded["checker_sha256"]
+    assert hashlib.sha256(original_builder.encode("utf-8")).hexdigest() == recorded["builder_sha256"]
+
+
+HISTORICAL_DIR = HISTORICAL
