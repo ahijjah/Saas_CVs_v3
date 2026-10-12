@@ -1,0 +1,507 @@
+{
+ "run": {
+  "spent_usd": 0.354424,
+  "calls_attempted": 10,
+  "successful_calls": 10,
+  "stopped": null
+ },
+ "report": {
+  "status": "scored",
+  "successful_calls": 10,
+  "errors": [],
+  "per_call": [
+   {
+    "order": 1,
+    "arm": "FULL",
+    "call": 1,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "duty_lines_found": 16,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "reporting_sentences_in_whole_answer": {
+     "submit_deliverables": false,
+     "it_focal_point": false,
+     "regular_communication": false
+    },
+    "reporting_sentences_routed": {
+     "submit deliverables": false,
+     "in coordination with the MoNE IT focal point": false,
+     "maintain regular communication": false
+    },
+    "reporting_line_items": 0,
+    "ict_alternatives_kept": false,
+    "familiarity_alternatives_kept": false,
+    "communication_line_categories": [
+     "soft_skills"
+    ],
+    "communication_line_split_items": 0,
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 2,
+    "arm": "CLARIFIED",
+    "call": 1,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "duty_lines_found": 16,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "reporting_sentences_in_whole_answer": {
+     "submit_deliverables": true,
+     "it_focal_point": true,
+     "regular_communication": true
+    },
+    "reporting_sentences_routed": {
+     "submit deliverables": true,
+     "in coordination with the MoNE IT focal point": true,
+     "maintain regular communication": true
+    },
+    "reporting_line_items": 2,
+    "ict_alternatives_kept": false,
+    "familiarity_alternatives_kept": false,
+    "communication_line_categories": [
+     "soft_skills"
+    ],
+    "communication_line_split_items": 0,
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 3,
+    "arm": "FULL",
+    "call": 2,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "duty_lines_found": 16,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "reporting_sentences_in_whole_answer": {
+     "submit_deliverables": false,
+     "it_focal_point": false,
+     "regular_communication": false
+    },
+    "reporting_sentences_routed": {
+     "submit deliverables": false,
+     "in coordination with the MoNE IT focal point": false,
+     "maintain regular communication": false
+    },
+    "reporting_line_items": 0,
+    "ict_alternatives_kept": false,
+    "familiarity_alternatives_kept": false,
+    "communication_line_categories": [
+     "soft_skills"
+    ],
+    "communication_line_split_items": 0,
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 4,
+    "arm": "CLARIFIED",
+    "call": 2,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": false,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "duty_lines_found": 16,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "reporting_sentences_in_whole_answer": {
+     "submit_deliverables": true,
+     "it_focal_point": true,
+     "regular_communication": true
+    },
+    "reporting_sentences_routed": {
+     "submit deliverables": true,
+     "in coordination with the MoNE IT focal point": true,
+     "maintain regular communication": true
+    },
+    "reporting_line_items": 2,
+    "ict_alternatives_kept": false,
+    "familiarity_alternatives_kept": false,
+    "communication_line_categories": [
+     "soft_skills"
+    ],
+    "communication_line_split_items": 0,
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 5,
+    "arm": "FULL",
+    "call": 3,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "duty_lines_found": 16,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "reporting_sentences_in_whole_answer": {
+     "submit_deliverables": true,
+     "it_focal_point": true,
+     "regular_communication": true
+    },
+    "reporting_sentences_routed": {
+     "submit deliverables": true,
+     "in coordination with the MoNE IT focal point": true,
+     "maintain regular communication": true
+    },
+    "reporting_line_items": 2,
+    "ict_alternatives_kept": false,
+    "familiarity_alternatives_kept": false,
+    "communication_line_categories": [
+     "soft_skills"
+    ],
+    "communication_line_split_items": 0,
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 6,
+    "arm": "CLARIFIED",
+    "call": 3,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "duty_lines_found": 16,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "reporting_sentences_in_whole_answer": {
+     "submit_deliverables": true,
+     "it_focal_point": true,
+     "regular_communication": true
+    },
+    "reporting_sentences_routed": {
+     "submit deliverables": true,
+     "in coordination with the MoNE IT focal point": true,
+     "maintain regular communication": true
+    },
+    "reporting_line_items": 2,
+    "ict_alternatives_kept": false,
+    "familiarity_alternatives_kept": false,
+    "communication_line_categories": [
+     "soft_skills"
+    ],
+    "communication_line_split_items": 0,
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 7,
+    "arm": "FULL",
+    "call": 4,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "duty_lines_found": 16,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "reporting_sentences_in_whole_answer": {
+     "submit_deliverables": false,
+     "it_focal_point": false,
+     "regular_communication": false
+    },
+    "reporting_sentences_routed": {
+     "submit deliverables": false,
+     "in coordination with the MoNE IT focal point": false,
+     "maintain regular communication": false
+    },
+    "reporting_line_items": 0,
+    "ict_alternatives_kept": false,
+    "familiarity_alternatives_kept": false,
+    "communication_line_categories": [
+     "soft_skills"
+    ],
+    "communication_line_split_items": 0,
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 8,
+    "arm": "CLARIFIED",
+    "call": 4,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "duty_lines_found": 16,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "reporting_sentences_in_whole_answer": {
+     "submit_deliverables": true,
+     "it_focal_point": true,
+     "regular_communication": true
+    },
+    "reporting_sentences_routed": {
+     "submit deliverables": true,
+     "in coordination with the MoNE IT focal point": true,
+     "maintain regular communication": true
+    },
+    "reporting_line_items": 2,
+    "ict_alternatives_kept": false,
+    "familiarity_alternatives_kept": false,
+    "communication_line_categories": [
+     "soft_skills"
+    ],
+    "communication_line_split_items": 0,
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 9,
+    "arm": "FULL",
+    "call": 5,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "duty_lines_found": 16,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "reporting_sentences_in_whole_answer": {
+     "submit_deliverables": false,
+     "it_focal_point": false,
+     "regular_communication": false
+    },
+    "reporting_sentences_routed": {
+     "submit deliverables": false,
+     "in coordination with the MoNE IT focal point": false,
+     "maintain regular communication": false
+    },
+    "reporting_line_items": 0,
+    "ict_alternatives_kept": false,
+    "familiarity_alternatives_kept": false,
+    "communication_line_categories": [
+     "soft_skills"
+    ],
+    "communication_line_split_items": 0,
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 10,
+    "arm": "CLARIFIED",
+    "call": 5,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": true,
+     "C_LOCAL": true,
+     "C_LOCATION": false,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "duty_lines_found": 16,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "reporting_sentences_in_whole_answer": {
+     "submit_deliverables": true,
+     "it_focal_point": true,
+     "regular_communication": true
+    },
+    "reporting_sentences_routed": {
+     "submit deliverables": true,
+     "in coordination with the MoNE IT focal point": true,
+     "maintain regular communication": true
+    },
+    "reporting_line_items": 2,
+    "ict_alternatives_kept": true,
+    "familiarity_alternatives_kept": true,
+    "communication_line_categories": [
+     "soft_skills"
+    ],
+    "communication_line_split_items": 0,
+    "schema_violations": [],
+    "invented_sources": 0
+   }
+  ],
+  "fresh_arms": {
+   "FULL": {
+    "calls": 5,
+    "primary_retained_and_routed": 1,
+    "reporting_statement_in_whole_answer": 1,
+    "reporting_line_items_nonempty": 1,
+    "checks_passed": {
+     "C_RESP": 5,
+     "C_COMP": 5,
+     "C_EXP_OR": 0,
+     "C_FAM_OR": 0,
+     "C_LOCAL": 5,
+     "C_LOCATION": 5,
+     "C_REPORTING": 1,
+     "C_AND": 0
+    },
+    "duty_lines_found": [
+     16,
+     16,
+     16,
+     16,
+     16
+    ],
+    "ict_alternatives_kept": 0,
+    "familiarity_alternatives_kept": 0,
+    "communication_split_calls": 0,
+    "schema_conforming_calls": 5,
+    "invented_source_items": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "CLARIFIED": {
+    "calls": 5,
+    "primary_retained_and_routed": 5,
+    "reporting_statement_in_whole_answer": 5,
+    "reporting_line_items_nonempty": 5,
+    "checks_passed": {
+     "C_RESP": 5,
+     "C_COMP": 5,
+     "C_EXP_OR": 1,
+     "C_FAM_OR": 1,
+     "C_LOCAL": 5,
+     "C_LOCATION": 3,
+     "C_REPORTING": 5,
+     "C_AND": 0
+    },
+    "duty_lines_found": [
+     16,
+     16,
+     16,
+     16,
+     16
+    ],
+    "ict_alternatives_kept": 1,
+    "familiarity_alternatives_kept": 1,
+    "communication_split_calls": 0,
+    "schema_conforming_calls": 5,
+    "invented_source_items": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "direct_comparison": {
+   "primary_difference_CLARIFIED_minus_FULL": 4,
+   "checks_passed_difference_CLARIFIED_minus_FULL": {
+    "C_RESP": 0,
+    "C_COMP": 0,
+    "C_EXP_OR": 1,
+    "C_FAM_OR": 1,
+    "C_LOCAL": 0,
+    "C_LOCATION": -2,
+    "C_REPORTING": 4,
+    "C_AND": 0
+   },
+   "descriptive_only": {
+    "duty_lines_found": [
+     16,
+     16,
+     16,
+     16,
+     16
+    ],
+    "ict_alternatives_kept": 1,
+    "familiarity_alternatives_kept": 1,
+    "communication_split_calls": 0,
+    "schema_conforming_calls": 5,
+    "invented_source_items": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "primary_reading": "supports the clarification helping on this JD (not proof of causation; not general reliability)"
+  },
+  "historical_context_not_pooled": {
+   "paired_run_v2-5": {
+    "calls": 5,
+    "primary_retained_and_routed": 1,
+    "reporting_statement_in_whole_answer": 1
+   },
+   "repeat_v2-5": {
+    "calls": 5,
+    "primary_retained_and_routed": 0,
+    "reporting_statement_in_whole_answer": 0
+   },
+   "ex5_experiment_FULL": {
+    "calls": 5,
+    "primary_retained_and_routed": 4,
+    "reporting_statement_in_whole_answer": 4
+   }
+  },
+  "scorer": "frozen TC20 checks (requirements_v2_tc20_eval.score_answer; labels unchanged)"
+ }
+}
