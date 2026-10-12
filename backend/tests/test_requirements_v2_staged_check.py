@@ -139,18 +139,18 @@ def test_locate_is_exact_first_then_whitespace_only_and_never_fuzzy():
 
 # ── positive controls: the reference answers ─────────────────────────────────────────────────────────────────────────────
 
-def test_the_english_reference_is_fully_covered_with_no_routing_or_structure_flags(en):
+def test_the_english_reference_is_fully_covered_and_only_its_title_lines_are_surfaced_for_review(en):
     jd, ans = en
     rep = _check(jd, ans)
     assert rep["coverage"] == {"statements": 19, "covered": 19, "short_quote": 0, "uncovered": 0}
-    assert _types(rep) == {}
+    assert _types(rep) == {"ambiguous_heading_line": 3}                    # the title, the company line and "Key duties"
 
 
-def test_the_arabic_reference_is_fully_covered_with_no_routing_or_structure_flags(ar):
+def test_the_arabic_reference_is_fully_covered_and_only_its_title_lines_are_surfaced_for_review(ar):
     jd, ans = ar
     rep = _check(jd, ans)
     assert rep["coverage"] == {"statements": 18, "covered": 18, "short_quote": 0, "uncovered": 0}
-    assert _types(rep) == {}
+    assert _types(rep) == {"ambiguous_heading_line": 2}                    # the title and the company line
 
 
 def test_the_reference_pair_split_for_and_is_not_flagged_as_bundled(en):
@@ -360,13 +360,15 @@ def test_mutation_bundled_and_is_flagged_english(en):
     assert _paths(_check(jd, m), "possible_bundled_and") == ["categories.soft_skills[0]"]
 
 
-def test_mutation_bundled_and_attached_arabic_waw_is_NOT_detected_and_that_gap_is_recorded(ar):
-    """Known limitation: an attached و (no standalone token) is not detected. Pinned here so the gap is visible, not hidden."""
+def test_mutation_bundled_and_attached_arabic_waw_is_detected_as_an_attached_candidate(ar):
+    """Changed in this revision: an attached و before the article ال is a review candidate (conservative pattern)."""
     jd, ans = ar
     m = copy.deepcopy(ans)
     soft = m["categories"]["soft_skills"]
     m["categories"]["soft_skills"] = [dict(soft[0], text="merged")]
-    assert "possible_bundled_and" not in _types(_check(jd, m))
+    rep = _check(jd, m)
+    assert _paths(rep, "possible_attached_and") == ["categories.soft_skills[0]"]
+    assert "possible_bundled_and" not in _types(rep)                           # no standalone و in this statement
 
 
 def test_mutation_shorter_verbatim_quote_is_a_partial_quote_not_a_silent_pass_english(en):
@@ -416,7 +418,7 @@ def test_a_wrong_item_category_is_NOT_detected_by_text_matching_and_that_gap_is_
     m = copy.deepcopy(ans)
     it = m["categories"]["experience"].pop(3)
     m["categories"]["skills"].append(it)
-    assert _types(_check(jd, m)) == {}
+    assert set(_types(_check(jd, m))) <= {"ambiguous_heading_line"}          # no category warning: the gap stands
 
 
 # ── guarantees ───────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -526,3 +528,170 @@ def test_the_decision_report_correction_is_present_and_the_uncorrected_claims_ar
 def test_the_decision_report_merge_figures_are_unchanged_by_the_statement_level_recount(tc20):
     text = DECISION.read_text(encoding="utf-8")
     assert "15 of the 20 v2-5 family answers" in text and "4 of 9 such v2-3 answers" in text
+
+
+# ── revision: punctuation-only quotes, OR handling, unpunctuated lines, attached و ────────────────────────────────────────
+
+def _one_item_answer(item_text, source, *, alternatives=None, category="skills", origin="stated", importance="required"):
+    item = {"text": item_text, "importance": importance, "importance_cue": None, "source_text": source, "origin": origin,
+            "alternatives": alternatives, "experience": None}
+    ans = {"categories": {c: [] for c in P.CATEGORIES}}
+    ans["categories"][category].append(item)
+    for name in P.CONDITION_LISTS:
+        ans[name] = []
+    return ans
+
+
+# 1. punctuation-only quotes: covered, offsets unchanged, shortened quotes still visible
+
+def test_a_quote_missing_only_the_final_period_covers_the_statement_and_keeps_its_exact_offsets():
+    jd = "Good documentation skills.\n"
+    ans = _one_item_answer("Good documentation skills", "Good documentation skills")
+    rep = _check(jd, ans)
+    assert rep["coverage"] == {"statements": 1, "covered": 1, "short_quote": 0, "uncovered": 0}
+    assert "partial_quote" not in _types(rep)
+    row = rep["trace"][0]
+    assert row["span"] == [0, len("Good documentation skills")]                 # the quote's own span, unchanged
+    assert row["notes"] == ["S001-" + sha("Good documentation skills.")[:8] + ": terminal punctuation omitted"]
+
+
+def test_a_quote_omitting_a_label_before_the_colon_covers_the_statement_and_is_noted():
+    jd = "Conditions: Salary is paid in USD.\n"
+    ans = {"categories": {c: [] for c in P.CATEGORIES}, "non_scoreable_requirements": [], "post_hiring_conditions": [],
+           "informational_items": [{"text": "salary", "category": "salary", "reason": "", "source_text": "Salary is paid in USD"}]}
+    rep = _check(jd, ans)
+    assert rep["coverage"]["covered"] == 1 and "partial_quote" not in _types(rep)
+    assert any("label before the colon omitted" in n for n in rep["trace"][0]["notes"])
+
+
+def test_a_genuinely_shortened_quote_is_still_a_visible_partial_quote():
+    jd = "Three years of experience maintaining industrial pumping equipment.\n"
+    ans = _one_item_answer("Three years", "Three years of experience", category="experience")
+    rep = _check(jd, ans)
+    assert rep["coverage"]["short_quote"] == 1 and _types(rep).get("partial_quote") == 1
+
+
+def test_a_label_quote_with_too_few_words_after_the_label_is_not_treated_as_covering():
+    jd = "Terms: rotating night shifts, travel.\n"
+    ans = {"categories": {c: [] for c in P.CATEGORIES}, "non_scoreable_requirements": [], "post_hiring_conditions": [],
+           "informational_items": [{"text": "terms", "category": "schedule", "reason": "", "source_text": "Terms"}]}
+    rep = _check(jd, ans)
+    assert rep["coverage"]["covered"] == 0
+
+
+def test_a_punctuation_only_quote_still_runs_the_lost_alternatives_check():
+    jd = "Previous work in a clinic or hotel.\n"
+    rep = _check(jd, _one_item_answer("Previous work", "Previous work in a clinic or hotel", category="experience"))
+    assert _paths(rep, "possible_lost_or") == ["categories.experience[0]"]
+    rep2 = _check(jd, _one_item_answer("Previous work", "Previous work in a clinic or hotel", category="experience",
+                                       alternatives=["clinic", "hotel"]))
+    assert "possible_lost_or" not in _types(rep2)
+
+
+# 2. OR handling: lost alternatives without punctuation, OR split across items, legitimate AND splits preserved
+
+def test_an_or_statement_split_across_two_items_that_each_keep_the_alternatives_is_flagged_and_not_merged():
+    jd = "Proficiency in Python or R.\n"
+    ans = {"categories": {c: [] for c in P.CATEGORIES}, "non_scoreable_requirements": [], "post_hiring_conditions": [], "informational_items": []}
+    ans["categories"]["skills"] = [
+        {"text": "Python", "importance": "required", "importance_cue": None, "source_text": "Proficiency in Python or R", "origin": "stated",
+         "alternatives": ["Python", "R"], "experience": None},
+        {"text": "R", "importance": "required", "importance_cue": None, "source_text": "Proficiency in Python or R", "origin": "stated",
+         "alternatives": ["Python", "R"], "experience": None}]
+    raw = json.dumps(ans, ensure_ascii=False)
+    rep = P.validate(jd, raw)
+    split = [x for x in rep["review_queue"] if x["type"] == "possible_or_split"]
+    assert len(split) == 1 and split[0]["paths"] == ["categories.skills[0]", "categories.skills[1]"]
+    assert "alternatives kept on 2" in split[0]["detail"] and "Not merged" in split[0]["detail"]
+    assert json.dumps(json.loads(raw), ensure_ascii=False) == raw                 # the answer is not changed
+    assert [t["path"] for t in rep["trace"]] == ["categories.skills[0]", "categories.skills[1]"]
+
+
+def test_a_single_item_carrying_the_or_alternatives_is_not_flagged_as_a_split():
+    jd = "Proficiency in Python or R.\n"
+    rep = _check(jd, _one_item_answer("Python or R", "Proficiency in Python or R", alternatives=["Python", "R"]))
+    assert "possible_or_split" not in _types(rep) and "possible_lost_or" not in _types(rep)
+
+
+def test_a_legitimate_and_split_into_two_items_is_preserved_and_not_flagged_as_bundled_or_split():
+    jd = "Communication and teamwork skills.\n"
+    ans = {"categories": {c: [] for c in P.CATEGORIES}, "non_scoreable_requirements": [], "post_hiring_conditions": [], "informational_items": []}
+    ans["categories"]["soft_skills"] = [
+        {"text": "Communication", "importance": "required", "importance_cue": None, "source_text": "Communication and teamwork skills",
+         "origin": "stated", "alternatives": None, "experience": None},
+        {"text": "Teamwork", "importance": "required", "importance_cue": None, "source_text": "Communication and teamwork skills",
+         "origin": "stated", "alternatives": None, "experience": None}]
+    rep = _check(jd, ans)
+    assert _types(rep) == {}                                                       # two items for an AND statement: correct, kept
+    assert len(rep["trace"]) == 2 and all(t["covers"] for t in rep["trace"])
+
+
+def test_an_and_statement_carried_by_one_stated_item_is_still_a_bundled_candidate():
+    jd = "Strong communication, coordination, and teamwork skills.\n"
+    rep = _check(jd, _one_item_answer("Strong communication", "Strong communication, coordination, and teamwork skills"))
+    assert _paths(rep, "possible_bundled_and") == ["categories.skills[0]"]
+
+
+# 3. unpunctuated lines: surfaced as ambiguous, never silently excluded, never called definite omissions
+
+def test_an_uncovered_bare_line_is_surfaced_as_ambiguous_and_is_not_counted_as_an_omission():
+    jd = "Coastal Utility\n\nRequirements:\n- Diploma in engineering.\nExcellent communication skills\n"
+    ans = _one_item_answer("Diploma", "Diploma in engineering", category="education")
+    ans["categories"]["education"][0]["alternatives"] = None
+    rep = _check(jd, ans)
+    ambiguous = [x for x in rep["review_queue"] if x["type"] == "ambiguous_heading_line"]
+    assert {"Coastal Utility", "Excellent communication skills"} <= {h["text"] for h in rep["headings"]}
+    assert len(ambiguous) == 2
+    assert all("may be a title or section label" in x["detail"] for x in ambiguous)
+    assert "uncovered_statement" not in _types(rep)                                # never a definite omission
+    assert rep["coverage"]["uncovered"] == 0
+
+
+def test_a_heading_ending_with_a_colon_is_not_surfaced_as_ambiguous():
+    jd = "Requirements:\n- Diploma in engineering.\n"
+    rep = _check(jd, _one_item_answer("Diploma", "Diploma in engineering", category="education"))
+    assert "ambiguous_heading_line" not in _types(rep)
+
+
+def test_a_bare_line_the_answer_quotes_is_a_review_item_for_its_requirement_status_not_a_silent_pass():
+    jd = "Excellent communication skills\n"
+    rep = _check(jd, _one_item_answer("Communication", "Excellent communication skills", category="soft_skills"))
+    assert _types(rep).get("source_is_heading") == 1
+    assert "ambiguous_heading_line" not in _types(rep)
+    detail = [x["detail"] for x in rep["review_queue"] if x["type"] == "source_is_heading"][0]
+    assert "review whether it is a requirement" in detail
+
+
+# 4. Arabic attached و: conservative, not every word beginning with و
+
+def test_an_attached_waw_before_the_article_is_a_candidate_for_a_stated_item():
+    jd = "مهارات التواصل والعمل ضمن فريق.\n"
+    rep = _check(jd, _one_item_answer("التواصل", "مهارات التواصل والعمل ضمن فريق", category="soft_skills"))
+    assert _paths(rep, "possible_attached_and") == ["categories.soft_skills[0]"]
+
+
+def test_an_attached_latin_word_after_waw_is_a_candidate():
+    jd = "إجادة Excel وPower BI.\n"
+    rep = _check(jd, _one_item_answer("Excel and Power BI", "إجادة Excel وPower BI", category="skills"))
+    assert _paths(rep, "possible_attached_and") == ["categories.skills[0]"]
+
+
+def test_words_that_merely_begin_with_waw_are_not_treated_as_conjunctions():
+    for jd_line, quote in (("مسؤول عن وظيفة الصيانة وفق الإجراءات.", "مسؤول عن وظيفة الصيانة وفق الإجراءات"),
+                           ("خبرة في وزارة الصحة.", "خبرة في وزارة الصحة"),
+                           ("معرفة بنظام وفق المعايير.", "معرفة بنظام وفق المعايير")):
+        rep = _check(jd_line + "\n", _one_item_answer("x", quote, category="skills"))
+        assert "possible_attached_and" not in _types(rep), jd_line
+
+
+def test_an_attached_waw_before_a_verb_is_a_documented_limitation_and_is_not_flagged():
+    """Known limitation: وتحتاج and وإجازة are attached conjunctions the conservative pattern does not match."""
+    jd = "نبحث عن مهندس، وتحتاج الشركة إلى خبرة.\n"
+    rep = _check(jd, _one_item_answer("x", "نبحث عن مهندس، وتحتاج الشركة إلى خبرة", category="skills"))
+    assert "possible_attached_and" not in _types(rep)
+
+
+def test_the_attached_waw_candidate_is_not_raised_for_a_duty_line_because_the_and_rule_is_for_stated_items():
+    jd = "إعداد القوائم المالية الشهرية والسنوية.\n"
+    rep = _check(jd, _one_item_answer("x", "إعداد القوائم المالية الشهرية والسنوية", category="experience", origin="from_responsibilities"))
+    assert "possible_attached_and" not in _types(rep)

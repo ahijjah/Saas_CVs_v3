@@ -29,7 +29,12 @@ BULLET = re.compile(r"^\s*(?:[-•*]|\d+[.)])\s+")
 OR_EN = re.compile(r"\bor\b|\beither\b", re.I)
 OR_AR = re.compile(r"(?<!\S)أو(?!\S)")
 AND_EN = re.compile(r",\s*and\b|\band\b", re.I)
-AND_AR = re.compile(r"(?<!\S)و(?!\S)")          # standalone و only; attached و is NOT detected (documented limitation)
+AND_AR = re.compile(r"(?<!\S)و(?!\S)")          # standalone و
+# Attached و, conservative: only when the word after و starts with the definite article ال or with a Latin letter ("والعمل",
+# "وPower"). A word that merely begins with و (وظيفة, وفق, وزارة) is NOT matched. Other attached conjunctions (وتحتاج, وإجازة) are not
+# matched: that is a review limitation, kept explicit in the review package.
+ATTACHED_CONJ = re.compile(r"(?<!\S)و(?:ال[\u0600-\u06FF]|[A-Za-z])")
+LABEL_PREFIX = re.compile(r"^(\S+(?: \S+){0,2}):\s+(\S.*)$")   # "Conditions: <text>": a label of at most three words
 HEADING_MAX_WORDS = 8
 # a sentence ends at terminal punctuation followed by space and a capital, digit, quote, bracket or Arabic letter (no case); a
 # period followed by a lower-case letter continues the sentence ("Coordinator. will ...")
@@ -80,6 +85,39 @@ def rule9_mapping() -> dict[str, str]:
 
 # ── Stage 1: source statements, with stable references and verbatim offsets ─────────────────────────────────────────────
 
+def _core_end(text: str, end: int) -> int:
+    """End of the statement without its trailing terminal punctuation and spaces (terminal punctuation is not substantive)."""
+    return end - (len(text) - len(text.rstrip(TERMINAL + " \t")))
+
+
+def _sub_start(text: str, start: int) -> int | None:
+    """Where the substantive text starts after a leading label, or None. Only with at least three words after the label."""
+    m = LABEL_PREFIX.match(text)
+    if m and len(m.group(2).split()) >= 3:
+        return start + m.start(2)
+    return None
+
+
+def covers_statement(loc: dict, s: dict) -> bool:
+    """True when the quotation covers the statement's substantive text. A missing final punctuation mark and a label before a colon
+    are not substantive, so a quotation that omits them still covers the statement. Offsets of the quotation are not changed."""
+    if s["core_end"] <= s["start"] or loc["end"] < s["core_end"]:
+        return False
+    if loc["start"] <= s["start"]:
+        return True
+    return s["sub_start"] is not None and loc["start"] <= s["sub_start"]
+
+
+def coverage_notes(loc: dict, s: dict) -> list[str]:
+    """Mechanical facts about how a covering quotation differs from the statement (shown in the trace, never a warning)."""
+    notes = []
+    if loc["end"] < s["end"]:
+        notes.append("terminal punctuation omitted")
+    if loc["start"] > s["start"]:
+        notes.append("label before the colon omitted")
+    return notes
+
+
 def segment(jd: str) -> tuple[list[dict], list[dict]]:
     """Statements (classified later) and headings (never classified, always surfaced). Each text is the exact slice jd[start:end]."""
     statements, headings = [], []
@@ -112,7 +150,8 @@ def segment(jd: str) -> tuple[list[dict], list[dict]]:
             start = body_start + s + lead
             end = start + len(text)
             assert jd[start:end] == text
-            statements.append({"id": f"S{len(statements) + 1:03d}-{sha(text)[:8]}", "text": text, "start": start, "end": end})
+            statements.append({"id": f"S{len(statements) + 1:03d}-{sha(text)[:8]}", "text": text, "start": start, "end": end,
+                               "core_end": _core_end(text, end), "sub_start": _sub_start(text, start)})
     return statements, headings
 
 
@@ -161,6 +200,7 @@ def validate(jd: str, raw: str) -> dict:
     covering: dict[str, list[str]] = {s["id"]: [] for s in statements}
     partial: dict[str, list[str]] = {s["id"]: [] for s in statements}
     heading_spans = {(h["start"], h["end"]) for h in headings}
+    quoted_spans: list[tuple[int, int]] = []
     for ent in entries_of(answer):
         src = ent["entry"].get("source_text")
         loc = locate(jd, src) if isinstance(src, str) else None
@@ -176,12 +216,15 @@ def validate(jd: str, raw: str) -> dict:
             review.append({"type": "whitespace_differs", "path": ent["path"], "detail": "source_text matches only after whitespace changes"})
         if loc["occurrences"] > 1:
             review.append({"type": "ambiguous_quote", "path": ent["path"], "detail": f"source_text occurs {loc['occurrences']} times"})
+        quoted_spans.append((loc["start"], loc["end"]))
         if (loc["start"], loc["end"]) in heading_spans:
-            review.append({"type": "source_is_heading", "path": ent["path"], "detail": "source_text is a heading, not a requirement line"})
-        inside = [s for s in statements if loc["start"] <= s["start"] and s["end"] <= loc["end"]]
+            review.append({"type": "source_is_heading", "path": ent["path"],
+                           "detail": "the quotation matches a heading-shaped line; review whether it is a requirement or a label"})
+        inside = [s for s in statements if covers_statement(loc, s)]
         overlap = [s for s in statements if s["start"] < loc["end"] and loc["start"] < s["end"]]
         row["statements"] = [s["id"] for s in overlap]
         row["covers"] = [s["id"] for s in inside]
+        row["notes"] = [f"{s['id']}: {n}" for s in inside for n in coverage_notes(loc, s)]
         if len(inside) >= 2:
             review.append({"type": "multi_statement_span", "path": ent["path"], "detail": f"source spans {len(inside)} statements"})
         for s in inside:
@@ -217,6 +260,15 @@ def validate(jd: str, raw: str) -> dict:
             review.append({"type": "uncovered_statement", "statement": s["id"],
                            "detail": f"no item or condition quotes it (it may be context, a duty not extracted, or an omission): {s['text'][:80]}"})
     report["coverage"] = coverage
+    for h in headings:
+        if h["text"].endswith(":"):
+            continue
+        if any(a < h["end"] and h["start"] < b for a, b in quoted_spans):
+            continue
+        position = "first line of the job description" if h["start"] == 0 or h["start"] == min(x["start"] for x in headings) else "not the first line"
+        review.append({"type": "ambiguous_heading_line", "heading": h["id"],
+                       "detail": f"no quotation covers this line, which has no terminal punctuation and resembles a heading ({position}); "
+                                 f"it may be a title or section label, or a requirement the answer did not extract: {h['text'][:80]}"})
     _or_and(report, statements, answer, mapping, review)
     items = [it for lst in (answer.get("categories") or {}).values() if isinstance(lst, list) for it in lst if isinstance(it, dict)]
     report["supplementary"] = {"items_per_category": {c: len(v) for c, v in (answer.get("categories") or {}).items() if isinstance(v, list)},
@@ -229,6 +281,16 @@ def validate(jd: str, raw: str) -> dict:
 def _or_and(report: dict, statements: list[dict], answer: dict, mapping: dict, review: list) -> None:
     """Possible OR and AND grouping defects, flagged for review and never repaired. Heuristic: text markers only."""
     by_id = {s["id"]: s for s in statements}
+    for st in statements:
+        if not (OR_EN.search(st["text"]) or OR_AR.search(st["text"])):
+            continue
+        quoting = [r for r in report["trace"] if r["kind"] == "item" and st["id"] in r.get("covers", [])]
+        if len(quoting) >= 2:
+            kept = sum(1 for r in quoting if _alternatives(answer, r["path"]))
+            review.append({"type": "possible_or_split", "path": quoting[0]["path"], "paths": [r["path"] for r in quoting],
+                           "statement": st["id"],
+                           "detail": f"one statement with 'or' is quoted by {len(quoting)} items (alternatives kept on {kept}); "
+                                     f"rule 4 keeps the options as one item. Not merged: a recruiter decides."})
     for row in report["trace"]:
         if row["kind"] != "item" or row["span"] is None:
             continue
@@ -242,12 +304,18 @@ def _or_and(report: dict, statements: list[dict], answer: dict, mapping: dict, r
             continue
         if OR_EN.search(text) or OR_AR.search(text):
             continue
-        if (AND_EN.search(text) or AND_AR.search(text)) and row.get("origin") == "stated":
+        has_and = bool(AND_EN.search(text) or AND_AR.search(text))
+        attached = bool(ATTACHED_CONJ.search(text))
+        if (has_and or attached) and row.get("origin") == "stated":
             n_items = sum(1 for r in report["trace"] if r["kind"] == "item" and r["span"] is not None
                           and set(r["covers"]) & {s["id"] for s in stmts})
-            if n_items == 1:
+            if n_items == 1 and has_and:
                 review.append({"type": "possible_bundled_and", "path": row["path"],
                                "detail": "the statement joins independent requirements with 'and' or a comma but one item carries them all"})
+            elif n_items == 1:
+                review.append({"type": "possible_attached_and", "path": row["path"],
+                               "detail": "a word begins with the conjunction و attached to the definite article or a Latin word; "
+                                         "a candidate only (a word that merely begins with و is not matched). Other attached forms are not checked"})
 
 
 def _alternatives(answer: dict, path: str):

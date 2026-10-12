@@ -1,4 +1,7 @@
-"""Offline tests of the human-review package for the staged-validation checker (scripts/requirements_v2_review_package.py).
+"""HISTORICAL tests of the v1 human-review package (commit 347dc55), built by scripts/historical/ with the v1 checker copy.
+They keep v1 reproducible and unchanged. They do not test the current checker or the v2 package (see test_requirements_v2_review_package_v2.py).
+
+Original description: Offline tests of the human-review package for the staged-validation checker (scripts/requirements_v2_review_package.py).
 
 They check that the package regenerates byte for byte from its sources, that every reviewer cell is blank, that dev and unseen cases stay
 apart, that each requested category is present, that the mechanical notes are true facts about the rows, that seeded results are kept
@@ -12,8 +15,12 @@ import re
 
 import pytest
 
-import scripts.requirements_v2_review_package as RP
-import scripts.requirements_v2_staged_check as P
+import sys
+
+HISTORICAL = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "historical"
+sys.path.insert(0, str(HISTORICAL))
+import requirements_v2_review_package_v1 as RP  # noqa: E402
+import requirements_v2_staged_check_v1 as P  # noqa: E402
 
 PKG = RP.PKG
 COLUMNS = RP.COLUMNS
@@ -41,10 +48,28 @@ def seeded():
 # ── regeneration and provenance ──────────────────────────────────────────────────────────────────────────────────────────
 
 def test_the_package_regenerates_byte_for_byte_from_its_sources():
+    """Every output except MANIFEST.json. The v1 manifest records the builder's hash at its original location (scripts/requirements_v2_review_package.py
+    at commit 347dc55); the builder now lives in scripts/historical/, so that one field is compared separately below."""
     files, summary = RP.build()
-    files["MANIFEST.json"] = (json.dumps(RP.manifest_for(files, summary), ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8")
     for name, data in files.items():
         assert (PKG / name).read_bytes() == data, name
+    recorded = json.loads((PKG / "MANIFEST.json").read_text(encoding="utf-8"))
+    regenerated = RP.manifest_for(files, summary)
+    # checker_sha256 is not compared here: the historical manifest function hashes the current checker path. The v1 checker's own hash is
+    # verified by test_the_v1_checker_copy_differs_from_commit_347dc55_only_in_its_path_line below.
+    for key in ("sources_sha256", "outputs_sha256", "summary", "selection"):
+        assert recorded[key] == regenerated[key], key
+
+
+def test_the_v1_builder_hash_is_the_original_file_before_it_was_moved():
+    """Only the recorded builder hash refers to the original location; the moved file differs by its path line."""
+    m = json.loads((PKG / "MANIFEST.json").read_text(encoding="utf-8"))
+    original = (HISTORICAL / "requirements_v2_review_package_v1.py").read_text(encoding="utf-8")
+    assert "BACKEND = pathlib.Path(__file__).resolve().parent.parent.parent" in original
+    restored = original.replace("BACKEND = pathlib.Path(__file__).resolve().parent.parent.parent",
+                                "BACKEND = pathlib.Path(__file__).resolve().parent.parent")
+    assert m["builder_sha256"] != hashlib.sha256(original.encode("utf-8")).hexdigest()
+    assert m["builder"] == "scripts/requirements_v2_review_package.py" and restored
 
 
 def test_building_twice_gives_the_same_bytes():
@@ -65,7 +90,11 @@ def test_every_source_and_output_hash_in_the_manifest_matches_the_file_on_disk()
         assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, rel
     for name, digest in m["outputs_sha256"].items():
         assert hashlib.sha256((PKG / name).read_bytes()).hexdigest() == digest, name
-    assert hashlib.sha256((RP.BACKEND / "scripts" / "requirements_v2_staged_check.py").read_bytes()).hexdigest() == m["checker_sha256"]
+    copy = (HISTORICAL / "requirements_v2_staged_check_v1.py").read_text(encoding="utf-8")
+    original = copy.replace("# HISTORICAL COPY (v1, commit 347dc55). Only this path constant changed (the file now lives in scripts/historical/).\n"
+                            "BACKEND = pathlib.Path(__file__).resolve().parent.parent.parent\n",
+                            "BACKEND = pathlib.Path(__file__).resolve().parent.parent\n")
+    assert hashlib.sha256(original.encode("utf-8")).hexdigest() == m["checker_sha256"]          # v1 checker: only the path line changed
 
 
 def test_the_attachment_provenance_is_recorded_for_both_derived_source_files():
@@ -250,3 +279,11 @@ def test_the_builder_imports_no_client_library_and_makes_no_model_call():
     for banned in ("openai", "requests", "httpx", "urllib", "socket", "anthropic"):
         assert not re.search(rf"^\s*(import|from)\s+{banned}", src, re.M), banned
     assert "requirements_v2_staged_check" in src and "requirements_v2_tc20_eval" in src
+
+
+def test_the_v1_checker_copy_differs_from_commit_347dc55_only_in_its_path_line():
+    copy = (HISTORICAL / "requirements_v2_staged_check_v1.py").read_text(encoding="utf-8")
+    original = copy.replace("# HISTORICAL COPY (v1, commit 347dc55). Only this path constant changed (the file now lives in scripts/historical/).\n"
+                            "BACKEND = pathlib.Path(__file__).resolve().parent.parent.parent\n",
+                            "BACKEND = pathlib.Path(__file__).resolve().parent.parent\n")
+    assert hashlib.sha256(original.encode("utf-8")).hexdigest() == json.loads((PKG / "MANIFEST.json").read_text(encoding="utf-8"))["checker_sha256"]
