@@ -231,3 +231,30 @@ def test_the_seeded_or_split_and_bare_line_omitted_seeds_are_now_detected(seeded
     assert by[("en", "or_split")]["detected"] == "True"
     assert by[("en", "unpunctuated_requirement_omitted")]["detected"] == "True"
     assert by[("en", "unpunctuated_requirement_omitted")]["known_gap"] == "no"
+
+
+# ── reviewer submission 1: three starter judgments as given; the blank starter is unchanged ───────────────────────────
+
+SUBMISSION = PKG / "reviews" / "starter_v2_reviewer_submission_1_S001-S003.csv"
+ALLOWED = {"genuine defect", "false alarm", "ambiguous", ""}
+
+
+def test_the_blank_starter_is_unchanged_by_the_submission(starter):
+    assert all(r["reviewer_choice"] == "" for r in starter)
+
+
+def test_the_submission_records_exactly_the_three_judgments_given_and_leaves_the_other_rows_blank():
+    rows = _rows("reviews/starter_v2_reviewer_submission_1_S001-S003.csv")
+    done = {r["review_id"]: (r["reviewer_choice"], r["reviewer_note"]) for r in rows if r["reviewer_choice"]}
+    assert done == {"S001": ("false alarm", "optional company background"),
+                    "S002": ("genuine defect", "should be one OR item"),
+                    "S003": ("false alarm", "both parts were extracted separately")}
+    assert all(r["reviewer_choice"] in ALLOWED for r in rows)
+
+
+def test_the_submission_rows_match_the_starter_rows_they_judge():
+    starter_rows = {r["review_id"]: r for r in _rows("starter_review_sheet_v2.csv")}
+    for r in _rows("reviews/starter_v2_reviewer_submission_1_S001-S003.csv"):
+        base = starter_rows[r["review_id"]]
+        for key in ("case_id", "warning_type", "jd_statement_exact", "matched_item"):
+            assert r[key] == base[key], (r["review_id"], key)
