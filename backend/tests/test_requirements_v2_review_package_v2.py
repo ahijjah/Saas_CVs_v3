@@ -324,3 +324,18 @@ def test_the_s004_to_s006_confirmed_judgments_are_recorded_as_given_and_s001_to_
     assert {r["review_id"] for r in earlier if r["reviewer_choice"]} == {"S001", "S002", "S003"}
     status = (PKG / "reviews" / "STATUS.md").read_text(encoding="utf-8")
     assert "S004-S006" in status and "S001-S003" in status
+
+
+def test_the_s007_to_s009_confirmed_judgments_are_recorded_as_given_and_earlier_submissions_are_untouched():
+    rows = _rows("reviews/CONFIRMED_reviewer_Asaad-Hijjah_2026-10-12_S007-S009.csv")
+    done = {r["review_id"]: (r["reviewer_choice"], r["reviewer_note"]) for r in rows if r["reviewer_choice"]}
+    assert done == {
+        "S007": ("false alarm", "keep labour law and social insurance as one combined knowledge requirement."),
+        "S008": ("genuine defect", "CSS and HTML are distinct skills and should be separate items."),
+        "S009": ("false alarm", "no defect: location is correctly placed in non_scoreable_requirements. This is an unflagged probe, not a dismissed warning."),
+    }
+    starter_rows = {r["review_id"]: r for r in _rows("starter_review_sheet_v2.csv")}
+    for r in rows:
+        for key in ("case_id", "warning_type", "jd_statement_exact", "matched_item"):
+            assert r[key] == starter_rows[r["review_id"]][key], (r["review_id"], key)
+    assert {r["review_id"] for r in _rows("reviews/CONFIRMED_reviewer_Asaad-Hijjah_2026-10-12_S004-S006.csv") if r["reviewer_choice"]} == {"S004", "S005", "S006"}
