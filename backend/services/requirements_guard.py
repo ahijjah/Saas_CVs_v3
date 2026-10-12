@@ -85,11 +85,72 @@ def assert_legacy_component(*, component: str, marker: Any = None, analysis_json
         raise UnsupportedEvaluationError(component, job_id)
 
 
+class InjectionReviewRequiredError(UnsupportedEvaluationError):
+    """A requirements-v2 job whose server-owned injection review is still open. Permanent, like its parent: never retried or degraded."""
+
+    def __init__(self, where: str, job_id: str | None = None, detail: str | None = None):
+        super().__init__(where, job_id, detail)
+        self.code = INJECTION_REVIEW_REASON_CODE
+
+
+INJECTION_REVIEW_REASON_CODE = "requirements_v2_injection_review_required"
+
+# Copied from services/requirements_pipeline/injection.py (approved). This module must not import the pipeline package (only the API layer and
+# its router may; tests/test_requirements_pipeline_service.py enforces it). tests/test_requirements_v2_live_injection_gate.py checks these
+# constants and the open-issue rule against the approved implementation, so a change there fails loudly here.
+_INJECTION_GUARD_VERSION = "requirements-v2-injection-guard-1.1"
+_ISSUE_REQUIREMENT, _ISSUE_WEIGHTS = "requirement", "weights"
+_STATUS_OPEN = "open"
+
+
+def _injection_issue_is_open(issue: dict, doc: dict) -> bool:
+    """The approved rule, re-derived from the stored document: a requirement issue is open while its item is in the document; a weights issue
+    is open while its category's weight is the contaminated applied value or the directed (proposed) value."""
+    if issue["kind"] == _ISSUE_REQUIREMENT:
+        return any(i.get("id") == issue.get("item_id") for cat in doc.get("categories", {}).values() for i in cat.get("items", []))
+    weight = doc["categories"][issue["category"]].get("weight")
+    return weight == issue["contaminated_applied_weight"] or weight == issue["proposed_weight"]
+
+
+def v2_injection_blockers(analysis_json: Any) -> list[str]:
+    """Why the injection gate of a v2 job still blocks, as reasons; empty when no injection issue is open.
+    Fails closed: a missing or invalid review record, or a missing document, blocks. It reads only the server-owned record and the stored
+    document, and derives open issues from that document (no stored status can close one)."""
+    analysis = analysis_json
+    if isinstance(analysis, str):
+        import json
+        analysis = json.loads(analysis)
+    if not isinstance(analysis, dict):
+        return ["no analysis document"]
+    doc = analysis.get("requirements")
+    record = analysis.get("requirements_pipeline")
+    if not isinstance(doc, dict) or not isinstance(doc.get("categories"), dict):
+        return ["the requirements document is missing"]
+    if not isinstance(record, dict):
+        return ["the server-owned extraction record is missing"]
+    review = (record.get("review_records") or {}).get("injection") if isinstance(record.get("review_records"), dict) else None
+    if not isinstance(review, dict) or review.get("guard_version") != _INJECTION_GUARD_VERSION or not isinstance(review.get("issues"), list):
+        return ["the injection review record is missing or invalid"]
+    for issue in review["issues"]:
+        if issue.get("kind") not in (_ISSUE_REQUIREMENT, _ISSUE_WEIGHTS) or (issue.get("kind") == _ISSUE_WEIGHTS and (
+                issue.get("category") not in doc["categories"] or "contaminated_applied_weight" not in issue or "proposed_weight" not in issue)):
+            return ["the injection review record is invalid"]
+    return [f"open injection issue {i['id']} ({i['kind']}, category {i.get('category')})"
+            for i in review["issues"] if _injection_issue_is_open(i, doc)]
+
+
 def assert_job_evaluable(*, entry: str, marker: Any = None, analysis_json: Any = None,
                          job_id: str | None = None) -> None:
-    """Called at evaluation entry points. Refuses a v2 job unless v2 evaluation is supported (it is not yet)."""
-    if is_requirements_v2(marker, analysis_json) and not REQUIREMENTS_V2_SCORING_SUPPORTED:
+    """Called at evaluation entry points. Refuses a v2 job unless v2 evaluation is supported (it is not yet). Once it is supported, the
+    server-owned injection gate still applies: an open injection issue (or a missing or invalid review record) refuses the job, so the switch
+    alone cannot release a draft that the injection review has not cleared."""
+    if not is_requirements_v2(marker, analysis_json):
+        return
+    if not REQUIREMENTS_V2_SCORING_SUPPORTED:
         raise UnsupportedEvaluationError(entry, job_id)
+    blockers = v2_injection_blockers(analysis_json)
+    if blockers:
+        raise InjectionReviewRequiredError(entry, job_id, detail=f"Blocked by: {'; '.join(blockers)}.")
 
 
 _LOAD_SQL = f"""

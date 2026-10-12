@@ -79,7 +79,8 @@ def test_entry_point_guard_passes_legacy_and_refuses_v2_with_explicit_reason():
 
 def test_legacy_component_guard_always_refuses_v2_even_if_v2_evaluation_becomes_supported(monkeypatch):
     monkeypatch.setattr(g, "REQUIREMENTS_V2_SCORING_SUPPORTED", True)
-    assert_job_evaluable(entry="entry", marker=2)                       # entry points would let it through ...
+    with pytest.raises(UnsupportedEvaluationError):                     # no server-owned record: the switch alone does not release the job
+        assert_job_evaluable(entry="entry", marker=2)                   # (fail closed; the injection gate, see test_requirements_v2_live_injection_gate)
     with pytest.raises(UnsupportedEvaluationError):                     # ... legacy components still refuse
         assert_legacy_component(component="CriteriaMatchEngine.match", marker=2)
     with pytest.raises(UnsupportedEvaluationError):
