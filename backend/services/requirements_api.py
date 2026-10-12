@@ -50,6 +50,7 @@ from sqlalchemy import text
 
 from services import requirements_coverage as cov
 from services import requirements_pipeline as pipe
+from services import requirements_model_inputs as NI
 from services.requirements_guard import is_requirements_v2
 from services.requirements_v2 import (
     CATEGORIES, MAX_REQUIRED_PER_CATEGORY, POLICY_KEY, SCHEMA_VERSION, AcknowledgmentError, ConfirmationError, Issue,
@@ -470,7 +471,8 @@ def coverage_for(description: str | None, pipeline_record: Any, doc: dict) -> li
 
 
 def build_view(*, job_id: str, revision: int | None, doc: dict, original: dict | None, policy: bool,
-               editable: bool, discarded: list[str] | None = None, pipeline_record: Any = None, description: str | None = None) -> dict:
+               editable: bool, discarded: list[str] | None = None, pipeline_record: Any = None, description: str | None = None,
+               job_metadata: dict | None = None) -> dict:
     readiness = compute_readiness(doc, require_classification_acknowledgment=policy, original=original)
     conf = doc.get("scoring_confirmation")
     ctx = pipeline_context(pipeline_record, doc, original, policy)
@@ -486,6 +488,11 @@ def build_view(*, job_id: str, revision: int | None, doc: dict, original: dict |
         pr = ctx.state["readiness"]
         ready_view.update(state=pr["state"], scoring_mode=pr["scoring_mode"], can_proceed=pr["can_proceed"], reasons=pr["reasons"],
                           guarded=True, basis="pipeline", by_policy=pr["by_policy"])
+        # the binding to the current description and context is checked on every read: a change blocks progression, never rebinds
+        blockers = NI.input_blockers(pipeline_record, description, job_metadata)
+        if blockers:
+            ready_view.update(NI.overlay_readiness({k: ready_view[k] for k in ("state", "scoring_mode", "can_proceed", "reasons")}, blockers))
+            ready_view["basis"] = "pipeline_inputs"
     elif ctx.status == PIPELINE_INVALID:
         ready_view.update(state=pipe.STATE_RECORD_INVALID, scoring_mode=None, can_proceed=False, basis="pipeline_record_invalid",
                           reasons=[{"code": "pipeline_record_invalid", "message": _MSG_INVALID, "category": None, "item_id": None}])
@@ -576,6 +583,7 @@ class Loaded:
     retired_column_present: bool = True
     pipeline_record: Any = None         # analysis_json["requirements_pipeline"] as stored (None = the job has none)
     description: str | None = None      # jobs.description as it is now (the coverage warning checks it against the record's JD hash)
+    job_metadata: dict | None = None    # the six context fields as they are now (the binding checks them against the record)
 
 
 async def load_policy(db) -> bool:
@@ -618,8 +626,11 @@ async def _load(db, user, job_id: str, *, lock: bool) -> Loaded:
         original = None
     retired_raw = _json(row["requirements_retired_item_ids"])
     retired = [x for x in retired_raw if isinstance(x, str)] if isinstance(retired_raw, list) else []
-    description = (await db.execute(text("SELECT description FROM jobs WHERE job_id = CAST(:jid AS uuid)"),
-                                    {"jid": str(job_id)})).scalar_one_or_none()
+    job_row = (await db.execute(text("""
+        SELECT description, title, department, experience_level, location, job_type, work_mode
+        FROM jobs WHERE job_id = CAST(:jid AS uuid)"""), {"jid": str(job_id)})).mappings().first()
+    description = job_row["description"] if job_row else None
+    job_metadata = {k: job_row[k] for k in NI.CONTEXT_KEYS} if job_row else None
     revision = row["requirements_revision"]
     marker = row["requirements_schema_version"]
     marker = int(marker) if marker is not None and str(marker).strip() != "" else None   # the column is read as text through to_jsonb()
@@ -658,7 +669,8 @@ async def get_requirements(db, user, job_id: str) -> dict:
     policy = await load_policy(db)
     view = build_view(job_id=job_id, revision=loaded.revision if loaded.revision is not None else 0,
                       doc=loaded.stored, original=loaded.original, policy=policy, editable=can_edit(user.role),
-                      pipeline_record=loaded.pipeline_record, description=loaded.description)
+                      pipeline_record=loaded.pipeline_record, description=loaded.description,
+                      job_metadata=loaded.job_metadata)
     if loaded.marker == 2:
         view["extraction"] = {"status": loaded.extraction_status, "error": loaded.extraction_error, "retry_available": False}
     return view
@@ -720,7 +732,8 @@ async def _mutate(db, user, job_id: str, expected_revision: int, work, client_di
                            "The requirements were changed by someone else. Reload and try again.",
                            current=build_view(job_id=job_id, revision=loaded.revision, doc=loaded.stored,
                                               original=loaded.original, policy=policy, editable=True,
-                                              pipeline_record=loaded.pipeline_record, description=loaded.description))
+                                              pipeline_record=loaded.pipeline_record, description=loaded.description,
+                      job_metadata=loaded.job_metadata))
         plan: SavePlan = work(loaded, policy, _now())
         revision = loaded.revision
         if plan.changed:
@@ -746,7 +759,8 @@ async def _mutate(db, user, job_id: str, expected_revision: int, work, client_di
         raise
     view = build_view(job_id=job_id, revision=revision, doc=plan.doc, original=loaded.original, policy=policy,
                       editable=True, discarded=plan.discarded + [f"body.{k}" for k in (client_discarded or [])],
-                      pipeline_record=plan.record if plan.record is not None else loaded.pipeline_record, description=loaded.description)
+                      pipeline_record=plan.record if plan.record is not None else loaded.pipeline_record, description=loaded.description,
+                      job_metadata=loaded.job_metadata)
     view["changed"] = plan.changed
     return view
 

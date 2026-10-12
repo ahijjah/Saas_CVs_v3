@@ -95,7 +95,7 @@ async def run_attempt(job_id: str, token: str, description: str, job_metadata: d
             return {"outcome": "failed", "code": exc.kind}
 
     # ── E: the production pipeline; malformed or truncated output fails the attempt (no retry) ──────────────────────────────────────────
-    state = ext.analyse(description, call, prompt, require_classification_acknowledgment=policy)
+    state = ext.analyse(description, call, prompt, require_classification_acknowledgment=policy, job_metadata=job_metadata)
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
         await ext.record_usage(db, job_id=job_id, tenant_id=tenant, prompt=prompt, call=call, status="success", error_type=None, retry_count=retries_used)
@@ -110,6 +110,13 @@ async def run_attempt(job_id: str, token: str, description: str, job_metadata: d
         try:
             result = await ext.finish_success(db, job_id=job_id, token=token, state=state, call=call, prompt=prompt, policy=policy,
                                               actor_tenant=tenant or "")
+            if result == "inputs_changed":
+                # the description or the context changed during the model call: nothing was written; the attempt fails and a person may request a new one
+                await ext.finish_failure(db, job_id=job_id, token=token, code="inputs_changed_during_call",
+                                         message="The job description or context changed while the analysis was running. Request a new analysis.",
+                                         actor_tenant=tenant or "", call=call)
+                await db.commit()
+                return {"outcome": "failed", "code": "inputs_changed_during_call"}
             await db.commit()
         except Exception as exc:                                  # noqa: BLE001 - the whole write is rolled back, then the attempt is failed
             await db.rollback()

@@ -660,6 +660,8 @@ async def _score_cv_async(
             criteria_row = await db.execute(
                 text("""
                     SELECT jc.*, j.title AS job_title, j.description AS job_description,
+                           j.department AS job_department, j.experience_level AS job_experience_level, j.location AS job_location,
+                           j.job_type AS job_job_type, j.work_mode AS job_work_mode,
                            j.enable_ai_comparison,
                            j.send_confirmation_to_cv_email_for_upload,
                            j.send_confirmation_to_cv_email_for_forwarding,
@@ -679,6 +681,10 @@ async def _score_cv_async(
                 marker=criteria.get("requirements_schema_version"),
                 analysis_json=criteria.get("analysis_json"),
                 job_id=str(job_id),
+                current_inputs={"description": criteria["job_description"], "job_metadata": {
+                    "title": criteria["job_title"], "department": criteria["job_department"],
+                    "experience_level": criteria["job_experience_level"], "location": criteria["job_location"],
+                    "job_type": criteria["job_job_type"], "work_mode": criteria["job_work_mode"]}},
             )
 
             weights = {

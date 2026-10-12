@@ -265,23 +265,31 @@ def test_to_record_refuses_a_failed_extraction():
 
 # ══ view modes ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 def _view(cand, record, policy=True, editable=True):
-    return api.build_view(job_id="j", revision=3, doc=cand["requirements"], original=cand["original"], policy=policy, editable=editable, pipeline_record=record)
+    return api.build_view(job_id="j", revision=3, doc=cand["requirements"], original=cand["original"], policy=policy, editable=editable, pipeline_record=record,
+                          description=FIX["jd"], job_metadata=None)
+
+
+def _bound(cand):
+    """A v2 record bound to the description the view is given and to no context fields (what a job without context produces)."""
+    from services import requirements_model_inputs as NI
+    return pipe.to_record_v2(cand, model=None, model_inputs=NI.model_inputs(FIX["jd"], None),
+                             context_review={"guard_version": NI.CONTEXT_SCAN_VERSION, "issues": []})
 
 
 def test_view_modes_guarded_unavailable_and_invalid():
     cand = combined()
-    good = _view(cand, pipe.to_record(cand))
+    good = _view(cand, _bound(cand))
     assert good["pipeline"]["status"] == "ok" and good["readiness"]["guarded"] and good["readiness"]["basis"] == "pipeline"
     assert good["readiness"]["state"] == cand["readiness"]["state"] == "needs_injection_review"
     none = _view(cand, None)
     assert none["pipeline"]["status"] == "unavailable" and none["readiness"]["guarded"] is False and none["unresolved_issues"] is None
     assert none["original"] is not None and "provenance" not in none["pipeline"]
-    broken = pipe.to_record(cand)
+    broken = _bound(cand)
     broken["raw_response"]["text"] = "x"
     inv = _view(cand, broken)
     assert inv["pipeline"]["status"] == "invalid_record" and inv["readiness"]["state"] == "pipeline_record_invalid" and inv["readiness"]["can_proceed"] is False
     assert inv["unresolved_issues"] is None and inv["requirements"] and inv["original"]
-    viewer = _view(cand, pipe.to_record(cand), editable=False)
+    viewer = _view(cand, _bound(cand), editable=False)
     assert "text" not in viewer["pipeline"]["raw_response"] and "raw_ai_output" not in viewer["pipeline"]
 
 

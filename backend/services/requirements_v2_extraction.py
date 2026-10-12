@@ -33,6 +33,7 @@ from typing import Any
 from sqlalchemy import text
 
 from services.requirements_pipeline import STORAGE_KEY, PipelineError
+from services import requirements_model_inputs as NI
 from services.requirements_pipeline import core as pipeline_core
 from services.requirements_v2.extraction.prompt import EXTRACTION_CONFIG, build_user_message
 
@@ -206,11 +207,45 @@ async def call_model(client, prompt: PromptRef, messages: list[dict], requested_
 
 
 # ── analysis: the production pipeline (the approved one, unchanged) ────────────────────────────────────────────────────────────────
-def analyse(jd_text: str, call: CallResult, prompt: PromptRef, *, require_classification_acknowledgment: bool) -> dict:
+def analyse(jd_text: str, call: CallResult, prompt: PromptRef, *, require_classification_acknowledgment: bool,
+            job_metadata: dict | None = None) -> dict:
+    """The approved pipeline on the model's raw response, plus the binding of what the model was given (the exact description and context) and
+    the context review (AI-directed text in the context fields, found by the approved scanner). Blockers are draft-with-blockers, never failures."""
     from parser_candidates.requirements_v2_pipeline_1 import extract
-    return extract(jd_text, call.raw, finish_reason=call.finish_reason,
-                   extraction_prompt={"version": prompt.label, "sha256": prompt.sha256},
-                   require_classification_acknowledgment=require_classification_acknowledgment)
+    state = extract(jd_text, call.raw, finish_reason=call.finish_reason,
+                    extraction_prompt={"version": prompt.label, "sha256": prompt.sha256},
+                    require_classification_acknowledgment=require_classification_acknowledgment)
+    state["model_inputs"] = NI.model_inputs(jd_text, job_metadata)
+    state["context_review"] = scan_context(job_metadata)
+    return state
+
+
+def scan_context(job_metadata: dict | None) -> dict:
+    """AI-directed text in the context fields, found by the approved instruction scanner (the rules used for the description). Each issue
+    keeps the exact text of its span, so the recruiter sees what was found and where."""
+    from services.requirements_pipeline.injection import instruction_spans
+    issues = []
+    for key in NI.CONTEXT_KEYS:
+        text_value = NI.sent_text((job_metadata or {}).get(key))
+        if not text_value:
+            continue
+        for n, span in enumerate(instruction_spans(text_value)):
+            issues.append({"id": f"ctx_{key}_{n}", "kind": "context_instruction", "field": key, "status": "open",
+                           "start": span["start"], "end": span["end"], "snippet": text_value[span["start"]:span["end"]],
+                           "rule_codes": list(span["rule_codes"])})
+    return {"guard_version": NI.CONTEXT_SCAN_VERSION, "issues": issues}
+
+
+async def current_inputs(db, job_id: str) -> tuple[str | None, dict | None]:
+    """The job's description and context fields as they are NOW, read under a share lock. A writer (the job edit) must wait until the caller's
+    transaction ends, so a value read here is still the value when the result is written."""
+    row = (await db.execute(text("""
+        SELECT description, title, department, experience_level, location, job_type, work_mode
+        FROM jobs WHERE job_id = CAST(:jid AS uuid) FOR SHARE
+    """), {"jid": str(job_id)})).mappings().first()
+    if row is None:
+        return None, None
+    return row["description"], {k: row[k] for k in NI.CONTEXT_KEYS}
 
 
 def weights_ok(doc: dict) -> bool:
@@ -312,7 +347,18 @@ async def finish_success(db, *, job_id: str, token: str, state: dict, call: Call
     doc = state["requirements"]
     if not weights_ok(doc):                                     # the category columns are constrained to 100 (or all 0 for v2)
         raise PipelineError("The category weights do not total 100 (or 0).", "weights_not_normalized")
-    record = pipeline_core.to_record(state, model=call.returned_model or call.requested_model)
+    # Accept the result only if the description and the context are still what the model was given. Otherwise nothing is written: the caller
+    # records a failed attempt, and a new attempt (requested by a person) sends the current inputs.
+    desc_now, meta_now = await current_inputs(db, job_id)
+    if desc_now is None and meta_now is None:
+        return "stale"
+    changed = NI.changed_fields(state["model_inputs"], NI.model_inputs(desc_now, meta_now))
+    if changed:
+        await log_action(db, actor_tenant, None, None, "requirements_extraction_inputs_changed", resource_type="job", resource_id=str(job_id),
+                         details={"job_id": str(job_id), "attempt_token": token, "changed_fields": changed}, strict=False)
+        return "inputs_changed"
+    record = pipeline_core.to_record_v2(state, model=call.returned_model or call.requested_model, model_inputs=state["model_inputs"],
+                                        context_review=state["context_review"])
     analysis = {"requirements": copy.deepcopy(doc), STORAGE_KEY: record}
     original = {"requirements": copy.deepcopy(state["original"])}
     w = {c: doc["categories"][c]["weight"] for c in doc["categories"]}

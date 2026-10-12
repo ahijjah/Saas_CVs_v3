@@ -21,6 +21,7 @@ import hashlib
 import json
 from typing import Any
 
+from services import requirements_model_inputs as model_inputs_mod
 from services.requirements_pipeline.injection import GUARD_VERSION as INJECTION_VERSION
 from services.requirements_pipeline.injection import open_issues as injection_open
 from services.requirements_pipeline.injection import reconcile as reconcile_injection
@@ -44,6 +45,8 @@ from services.requirements_v2.validation import validate_final
 PIPELINE_VERSION = "requirements-v2-pipeline-1"
 CONTRACT_VERSION = "requirements-v2-pipeline-result-1"
 RECORD_VERSION = "requirements-v2-pipeline-record-1"
+# v2 adds the model-input binding (what the model received, by hash) and the context review (AI-directed text found in the context fields).
+RECORD_VERSION_V2 = "requirements-v2-pipeline-record-2"
 STORAGE_KEY = "requirements_pipeline"
 STATE_FAILED = "extraction_failed"
 STATE_RECORD_INVALID = "pipeline_record_invalid"
@@ -51,6 +54,7 @@ GATE_ORDER = ("extraction", "validation", "injection", "split_or", "classificati
 NOT_ACKNOWLEDGEABLE_GATES = ("injection", "split_or", "structure", "confirmation", "validation", "no_items", "extraction")
 RECORD_KEYS = ("record_version", "component_versions", "provenance", "job_description_sha256", "raw_response", "raw_ai_output", "extraction",
                 "original_digest", "review_records")
+RECORD_KEYS_V2 = RECORD_KEYS + ("model_inputs", "context_review")
 # every name a client might send for state that belongs to the server (discarded, listed in discarded_client_fields)
 CLIENT_FORBIDDEN_KEYS = (STORAGE_KEY, "pipeline", "review_records", "raw_response", "raw_ai_output", "component_versions", "provenance", "readiness",
                          "gates", "unresolved_issues", "normalized_warnings", "informational", "original", "original_digest", "extraction")
@@ -218,14 +222,42 @@ def to_record(state: dict, *, model: str | None = None) -> dict:
         "extraction": state["extraction"], "original_digest": state["original_digest"], "review_records": state["review_records"]}))
 
 
+def to_record_v2(state: dict, *, model: str | None, model_inputs: dict, context_review: dict) -> dict:
+    """The v2 storable record: the v1 record plus the binding of the model inputs and the context review. The binding is what the model was
+    given; it is never recomputed to match later inputs."""
+    record = to_record(state, model=model)
+    record["record_version"] = RECORD_VERSION_V2
+    record["model_inputs"] = json.loads(json.dumps(model_inputs))
+    record["context_review"] = json.loads(json.dumps(context_review))
+    return record
+
+
+def _context_review_errors(record: dict) -> list[str]:
+    errs = []
+    if not model_inputs_mod.well_formed(record["model_inputs"]):
+        errs.append("model input binding malformed")
+    elif record["model_inputs"]["fields"]["description"] != record["job_description_sha256"]:
+        errs.append("model input binding belongs to a different job description")
+    cr = record["context_review"]
+    if not isinstance(cr, dict) or cr.get("guard_version") != model_inputs_mod.CONTEXT_SCAN_VERSION or not isinstance(cr.get("issues"), list):
+        return errs + ["context review malformed"]
+    for i in cr["issues"]:
+        if not isinstance(i, dict) or i.get("kind") != "context_instruction" or i.get("field") not in model_inputs_mod.CONTEXT_KEYS \
+                or i.get("status") != "open" or not isinstance(i.get("rule_codes"), list) or not isinstance(i.get("snippet"), str):
+            errs.append("context review issue malformed")
+    return errs
+
+
 def verify_record(record: Any, original: dict | None) -> list[str]:
-    """Integrity problems of a stored record (empty = usable). A record that fails is never silently ignored: the caller fails closed."""
+    """Integrity problems of a stored record (empty = usable). A record that fails is never silently ignored: the caller fails closed.
+    A v1 record (no binding) is accepted as v1; its context is then unverified, which the binding check reports (never claimed here)."""
     if not isinstance(record, dict):
         return ["record is not an object"]
-    errs = [f"missing key {k}" for k in RECORD_KEYS if k not in record]
+    keys = RECORD_KEYS_V2 if record.get("record_version") == RECORD_VERSION_V2 else RECORD_KEYS
+    errs = [f"missing key {k}" for k in keys if k not in record]
     if errs:
         return errs
-    if record["record_version"] != RECORD_VERSION:
+    if record["record_version"] not in (RECORD_VERSION, RECORD_VERSION_V2):
         errs.append("unexpected record version")
     raw = record["raw_response"]
     if not isinstance(raw, dict) or (isinstance(raw.get("text"), str) and raw.get("sha256") != _sha(raw["text"])):
@@ -244,6 +276,11 @@ def verify_record(record: Any, original: dict | None) -> list[str]:
             errs.append("warning record belongs to a different job description")
     except (KeyError, TypeError, AttributeError):
         errs.append("review records malformed")
+    if record["record_version"] == RECORD_VERSION_V2:
+        try:
+            errs += _context_review_errors(record)
+        except (KeyError, TypeError, AttributeError):
+            errs.append("model input binding malformed")
     if not isinstance(original, dict):
         errs.append("original snapshot missing")
     elif original_digest(snapshot_original(original)) != record["original_digest"]:

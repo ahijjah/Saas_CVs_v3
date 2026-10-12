@@ -74,6 +74,7 @@ CRITERIA_ROW = {
     "skills": ["MS Office"], "certifications": [], "experience": [], "education": [],
     "soft_skills": [], "domain_knowledge": [], "other_requirements": [],
     "job_title": "HR officer 5", "job_description": "HR officer role",
+    "job_department": None, "job_experience_level": None, "job_location": None, "job_job_type": None, "job_work_mode": None,
     "analysis_json": ANALYSIS_JSON,
     "enable_ai_comparison": False,
     "send_confirmation_to_cv_email_for_upload": False,

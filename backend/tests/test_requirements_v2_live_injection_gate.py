@@ -19,6 +19,7 @@ from services import requirements_guard as g
 from services import requirements_v2_extraction as ext
 from services.requirements_pipeline import core as pipe_core
 from services.requirements_pipeline import injection as inj
+from services import requirements_model_inputs as NI
 
 FIX = json.loads((pathlib.Path(__file__).resolve().parent / "fixtures" / "requirements_v2_injection_guard" / "b06_v22_run1.json")
                  .read_text(encoding="utf-8"))
@@ -77,10 +78,14 @@ def test_the_weight_columns_the_worker_writes_carry_the_contaminated_values_whil
 
 # ── the entry-point gate, once the scoring switch is on ─────────────────────────────────────────────────────────────────────
 
+CURRENT = {"description": JD, "job_metadata": {k: None for k in NI.CONTEXT_KEYS}}   # the job as it is now: the description, no context
+
+
 def _v2_analysis(state, *, record=True):
     analysis = {"requirements": copy.deepcopy(state["requirements"])}
     if record:
-        analysis["requirements_pipeline"] = pipe_core.to_record(state, model=CALL.returned_model)
+        analysis["requirements_pipeline"] = pipe_core.to_record_v2(state, model=CALL.returned_model, model_inputs=state["model_inputs"],
+                                                                   context_review=state["context_review"])
     return analysis
 
 
@@ -91,7 +96,7 @@ def switch_on(monkeypatch):
 
 def test_the_gate_refuses_a_v2_job_with_open_injection_issues_even_when_the_scoring_switch_is_on(switch_on, live_state):
     with pytest.raises(g.InjectionReviewRequiredError) as exc:
-        g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=_v2_analysis(live_state), job_id="job-1")
+        g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=_v2_analysis(live_state), job_id="job-1", current_inputs=CURRENT)
     assert exc.value.code == g.INJECTION_REVIEW_REASON_CODE
     assert "soft_skills" in str(exc.value) and "injection" in str(exc.value)
     assert isinstance(exc.value, g.UnsupportedEvaluationError)                    # still permanent for every existing handler
@@ -101,7 +106,7 @@ def test_clearing_only_the_rust_item_is_not_enough_because_the_directed_weight_s
     analysis = _v2_analysis(live_state)
     analysis["requirements"]["categories"]["other_requirements"]["items"] = []
     with pytest.raises(g.InjectionReviewRequiredError):
-        g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=analysis)
+        g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=analysis, current_inputs=CURRENT)
 
 
 def test_clearing_both_issues_by_recruiter_edits_releases_the_injection_gate(switch_on, live_state):
@@ -110,12 +115,12 @@ def test_clearing_both_issues_by_recruiter_edits_releases_the_injection_gate(swi
     cats["other_requirements"]["items"] = []
     cats["skills"]["weight"], cats["experience"]["weight"], cats["soft_skills"]["weight"] = 20, 50, 30
     assert g.v2_injection_blockers(analysis) == []
-    g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=analysis)   # no raise
+    g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=analysis, current_inputs=CURRENT)   # no raise
 
 
 def test_a_v2_job_without_a_server_owned_record_is_refused_fail_closed(switch_on, live_state):
     with pytest.raises(g.InjectionReviewRequiredError) as exc:
-        g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=_v2_analysis(live_state, record=False))
+        g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=_v2_analysis(live_state, record=False), current_inputs=CURRENT)
     assert "record is missing" in str(exc.value)
 
 
@@ -123,7 +128,7 @@ def test_a_tampered_injection_review_record_is_refused_fail_closed(switch_on, li
     analysis = _v2_analysis(live_state)
     analysis["requirements_pipeline"]["review_records"]["injection"]["guard_version"] = "forged"
     with pytest.raises(g.InjectionReviewRequiredError) as exc:
-        g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=analysis)
+        g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=analysis, current_inputs=CURRENT)
     assert "invalid" in str(exc.value)
 
 
@@ -133,20 +138,20 @@ def test_a_legacy_job_is_still_evaluable_with_the_switch_on(switch_on):
 
 def test_with_the_switch_off_every_v2_job_is_refused_as_before_whatever_its_review_state(live_state):
     with pytest.raises(g.UnsupportedEvaluationError) as exc:
-        g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=_v2_analysis(live_state))
+        g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=_v2_analysis(live_state), current_inputs=CURRENT)
     assert not isinstance(exc.value, g.InjectionReviewRequiredError)
 
 
-# ── a documented gap, pinned so that a fix must update this test ───────────────────────────────────────────────────────────
+# ── job context is scanned at analysis time (the gap found in the audit is closed by the binding change) ───────────────────────
 
-def test_known_gap_job_context_reaches_the_model_but_is_not_inspected_by_the_injection_guard():
-    """The worker sends the job title and other context fields to the model (build_user_message), but the live step inspects only the
-    description: analyse() takes no job metadata and the injection guard reads only the JD text. A directive placed in the title therefore
-    never opens an injection issue. Pinned here; when the title is inspected, this test must be changed with it."""
+def test_a_directive_in_the_job_title_is_sent_to_the_model_and_opens_a_context_issue_bound_to_the_title():
     from services.requirements_v2.extraction.prompt import build_user_message
     assert TITLE in build_user_message(JD, {"title": TITLE})                     # the model receives it
-    assert "job_metadata" not in inspect.signature(ext.analyse).parameters        # the review never does
-    assert inj.instruction_spans(TITLE)                                           # the guard would have found it, had it been given the title
+    state = ext.analyse(JD, CALL, PROMPT, require_classification_acknowledgment=True, job_metadata={"title": TITLE})
+    issues = state["context_review"]["issues"]
+    assert issues and all(i["field"] == "title" and i["status"] == "open" for i in issues)
+    assert all(i["snippet"] == TITLE[i["start"]:i["end"]] for i in issues)
+    assert state["model_inputs"]["fields"]["title"] == NI.model_inputs(JD, {"title": TITLE})["fields"]["title"]
 
 
 # ── the guard's copy of the approved rule must agree with the approved implementation ──────────────────────────────────────

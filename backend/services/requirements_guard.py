@@ -25,6 +25,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from services import requirements_model_inputs as NI
+
 # CODE kill switch for v2 candidate evaluation. Flip only together with a compatible evaluation implementation.
 REQUIREMENTS_V2_SCORING_SUPPORTED = False
 
@@ -140,7 +142,7 @@ def v2_injection_blockers(analysis_json: Any) -> list[str]:
 
 
 def assert_job_evaluable(*, entry: str, marker: Any = None, analysis_json: Any = None,
-                         job_id: str | None = None) -> None:
+                         job_id: str | None = None, current_inputs: dict | None = None) -> None:
     """Called at evaluation entry points. Refuses a v2 job unless v2 evaluation is supported (it is not yet). Once it is supported, the
     server-owned injection gate still applies: an open injection issue (or a missing or invalid review record) refuses the job, so the switch
     alone cannot release a draft that the injection review has not cleared."""
@@ -151,6 +153,13 @@ def assert_job_evaluable(*, entry: str, marker: Any = None, analysis_json: Any =
     blockers = v2_injection_blockers(analysis_json)
     if blockers:
         raise InjectionReviewRequiredError(entry, job_id, detail=f"Blocked by: {'; '.join(blockers)}.")
+    # the analysis must still be bound to the job's CURRENT description and context; the caller supplies them (fail closed without them)
+    if not isinstance(current_inputs, dict):
+        raise InjectionReviewRequiredError(entry, job_id, detail="Blocked by: the job's current inputs were not supplied.")
+    record = (analysis_json if isinstance(analysis_json, dict) else {}).get("requirements_pipeline")
+    bound = NI.input_blockers(record, current_inputs.get("description"), current_inputs.get("job_metadata"))
+    if bound:
+        raise InjectionReviewRequiredError(entry, job_id, detail=f"Blocked by: {'; '.join(b['message'] for b in bound)}")
 
 
 _LOAD_SQL = f"""
@@ -169,10 +178,22 @@ async def load_job_marker(db: Any, job_id: str) -> tuple[Any, Any]:
     return row.get("requirements_schema_version"), row.get("analysis_json")
 
 
+async def load_job_inputs(db: Any, job_id: str) -> dict | None:
+    """The job's description and six context fields as they are now (the inputs the analysis must be bound to)."""
+    from sqlalchemy import text
+    row = (await db.execute(text("""
+        SELECT description, title, department, experience_level, location, job_type, work_mode
+        FROM jobs WHERE job_id = CAST(:jid AS uuid)"""), {"jid": str(job_id)})).mappings().first()
+    if not row:
+        return None
+    return {"description": row["description"], "job_metadata": {k: row[k] for k in NI.CONTEXT_KEYS}}
+
+
 async def ensure_job_evaluable(db: Any, job_id: str, entry: str) -> None:
-    """Load the job's marker and refuse a v2 job at an evaluation entry point (raises UnsupportedEvaluationError)."""
+    """Load the job's marker and inputs and refuse a v2 job at an evaluation entry point (raises UnsupportedEvaluationError)."""
     marker, analysis = await load_job_marker(db, job_id)
-    assert_job_evaluable(entry=entry, marker=marker, analysis_json=analysis, job_id=str(job_id))
+    inputs = await load_job_inputs(db, job_id) if (REQUIREMENTS_V2_SCORING_SUPPORTED and is_requirements_v2(marker, analysis)) else None
+    assert_job_evaluable(entry=entry, marker=marker, analysis_json=analysis, job_id=str(job_id), current_inputs=inputs)
 
 
 async def ensure_job_legacy(db: Any, job_id: str, component: str) -> None:
