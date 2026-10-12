@@ -1,0 +1,588 @@
+{
+ "run": {
+  "spent_usd": 0.709932,
+  "calls_attempted": 20,
+  "successful_calls": 20,
+  "stopped": null
+ },
+ "report": {
+  "status": "scored",
+  "successful_calls": 20,
+  "errors": [],
+  "per_call": [
+   {
+    "order": 1,
+    "arm": "CONTROL",
+    "call": 1,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 2,
+    "arm": "ROUTED",
+    "call": 1,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 3,
+    "arm": "CONTROL",
+    "call": 2,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 4,
+    "arm": "ROUTED",
+    "call": 2,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 5,
+    "arm": "CONTROL",
+    "call": 3,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 6,
+    "arm": "ROUTED",
+    "call": 3,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 7,
+    "arm": "CONTROL",
+    "call": 4,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 8,
+    "arm": "ROUTED",
+    "call": 4,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 9,
+    "arm": "CONTROL",
+    "call": 5,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 10,
+    "arm": "ROUTED",
+    "call": 5,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 11,
+    "arm": "CONTROL",
+    "call": 6,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 12,
+    "arm": "ROUTED",
+    "call": 6,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 13,
+    "arm": "CONTROL",
+    "call": 7,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 14,
+    "arm": "ROUTED",
+    "call": 7,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 15,
+    "arm": "CONTROL",
+    "call": 8,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 16,
+    "arm": "ROUTED",
+    "call": 8,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 17,
+    "arm": "CONTROL",
+    "call": 9,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 18,
+    "arm": "ROUTED",
+    "call": 9,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": false,
+    "reporting_statement_in_whole_answer": false,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 19,
+    "arm": "CONTROL",
+    "call": 10,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   },
+   {
+    "order": 20,
+    "arm": "ROUTED",
+    "call": 10,
+    "location_retained": true,
+    "location_correctly_routed": true,
+    "location_in_non_scoreable": true,
+    "location_elsewhere": 0,
+    "primary_retained_and_routed": true,
+    "reporting_statement_in_whole_answer": true,
+    "duty_lines_found": 16,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "schema_violations": [],
+    "invented_sources": 0
+   }
+  ],
+  "fresh_arms": {
+   "CONTROL": {
+    "calls": 10,
+    "location_correctly_routed": 10,
+    "location_retained": 10,
+    "location_in_non_scoreable": 10,
+    "location_elsewhere": 0,
+    "reporting_complete": 6,
+    "duty_complete": 10,
+    "schema_conforming": 10,
+    "invented_source_free": 10,
+    "checks_passed": {
+     "C_RESP": 10,
+     "C_COMP": 10,
+     "C_EXP_OR": 0,
+     "C_FAM_OR": 0,
+     "C_LOCAL": 10,
+     "C_LOCATION": 10,
+     "C_REPORTING": 6,
+     "C_AND": 0
+    }
+   },
+   "ROUTED": {
+    "calls": 10,
+    "location_correctly_routed": 10,
+    "location_retained": 10,
+    "location_in_non_scoreable": 10,
+    "location_elsewhere": 0,
+    "reporting_complete": 3,
+    "duty_complete": 10,
+    "schema_conforming": 10,
+    "invented_source_free": 10,
+    "checks_passed": {
+     "C_RESP": 10,
+     "C_COMP": 10,
+     "C_EXP_OR": 0,
+     "C_FAM_OR": 0,
+     "C_LOCAL": 10,
+     "C_LOCATION": 10,
+     "C_REPORTING": 3,
+     "C_AND": 0
+    }
+   }
+  },
+  "direct_comparison": {
+   "location_correctly_routed_difference_ROUTED_minus_CONTROL": 0,
+   "guards": {
+    "reporting_complete": {
+     "CONTROL": 6,
+     "ROUTED": 3,
+     "regressed": true
+    },
+    "duty_complete": {
+     "CONTROL": 10,
+     "ROUTED": 10,
+     "regressed": false
+    },
+    "schema_conforming": {
+     "CONTROL": 10,
+     "ROUTED": 10,
+     "regressed": false
+    },
+    "invented_source_free": {
+     "CONTROL": 10,
+     "ROUTED": 10,
+     "regressed": false
+    }
+   },
+   "checks_passed_difference_ROUTED_minus_CONTROL": {
+    "C_RESP": 0,
+    "C_COMP": 0,
+    "C_EXP_OR": 0,
+    "C_FAM_OR": 0,
+    "C_LOCAL": 0,
+    "C_LOCATION": 0,
+    "C_REPORTING": -3,
+    "C_AND": 0
+   },
+   "primary_reading": "regression in a guarded group (reporting_complete): reported; the location result does not offset it"
+  },
+  "historical_context_not_pooled": {
+   "scope_experiment_CLARIFIED": {
+    "calls": 5,
+    "location_correctly_routed": 3,
+    "reporting_complete": 5
+   },
+   "scope_experiment_FULL": {
+    "calls": 5,
+    "location_correctly_routed": 5,
+    "reporting_complete": 1
+   }
+  },
+  "scorer": "frozen TC20 checks (requirements_v2_tc20_eval.score_answer; labels unchanged)"
+ }
+}
