@@ -306,3 +306,21 @@ def test_the_confirmed_status_is_recorded_and_no_accuracy_is_claimed_from_it():
     assert "No accuracy or precision has been calculated" in status
     assert (PKG / "reviews" / "UNCONFIRMED_example_judgments_S001-S003.csv").exists()
     assert all(r["reviewer_choice"] == "" for r in _rows("starter_review_sheet_v2.csv"))
+
+
+def test_the_s004_to_s006_confirmed_judgments_are_recorded_as_given_and_s001_to_s003_are_untouched():
+    rows = _rows("reviews/CONFIRMED_reviewer_Asaad-Hijjah_2026-10-12_S004-S006.csv")
+    done = {r["review_id"]: (r["reviewer_choice"], r["reviewer_note"]) for r in rows if r["reviewer_choice"]}
+    assert done == {
+        "S004": ("false alarm", "omitting optional company background is acceptable."),
+        "S005": ("false alarm", "spoken and written English form one language requirement."),
+        "S006": ("false alarm", "communication, understanding user issues and supporting resolution form one connected competency."),
+    }
+    starter_rows = {r["review_id"]: r for r in _rows("starter_review_sheet_v2.csv")}
+    for r in rows:
+        for key in ("case_id", "warning_type", "jd_statement_exact", "matched_item"):
+            assert r[key] == starter_rows[r["review_id"]][key], (r["review_id"], key)
+    earlier = _rows("reviews/CONFIRMED_reviewer_Asaad-Hijjah_2026-10-12_S001-S003.csv")
+    assert {r["review_id"] for r in earlier if r["reviewer_choice"]} == {"S001", "S002", "S003"}
+    status = (PKG / "reviews" / "STATUS.md").read_text(encoding="utf-8")
+    assert "S004-S006" in status and "S001-S003" in status
