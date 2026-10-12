@@ -370,12 +370,13 @@ def test_the_consolidation_has_twelve_judgments_with_the_counts_stated_in_the_su
     script = RP.BACKEND / "scripts" / "requirements_v2_review_consolidation.py"
     out = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, check=True).stdout
     assert "'emitted_warning: false alarm': 6" in out and "'emitted_warning: genuine defect': 2" in out
-    assert "'unflagged_probe: false alarm': 3" in out and "'disputed (excluded)': 1" in out
+    assert "'unflagged_probe: false alarm': 4" in out and "'disputed (excluded)': 0" in out
     assert "'unflagged_probe: genuine defect'" not in out
     rows = _rows("reviews/CONSOLIDATED_judgments_S001-S012.csv")
     assert len(rows) == 12 and len({r["review_id"] for r in rows}) == 12
     s010 = next(r for r in rows if r["review_id"] == "S010")
-    assert s010["status"] == "disputed" and s010["reviewer_choice"] == "genuine defect"
+    assert s010["status"] == "resolved" and s010["reviewer_choice"] == "false alarm"
+    assert s010["original_choice"] == "genuine defect" and s010["amendment"] == "AMENDMENT_S010_confirmed_2026-10-12.csv"
     assert all("UNCONFIRMED" not in r["submission"] for r in rows)
     summary = (PKG / "reviews" / "CONSOLIDATED_SUMMARY.md").read_text(encoding="utf-8")
     assert "assisted by ChatGPT recommendations" in summary and "not independent and not blinded" in summary
@@ -395,3 +396,13 @@ def test_the_probes_are_counted_separately_from_emitted_warnings_in_the_consolid
 def test_the_checker_is_unchanged_by_the_consolidation_and_the_summary_states_no_checker_change():
     summary = (PKG / "reviews" / "CONSOLIDATED_SUMMARY.md").read_text(encoding="utf-8")
     assert "No checker logic has been changed by this summary." in summary
+
+
+def test_the_s010_confirmed_amendment_supersedes_the_disputed_one_and_both_are_kept():
+    """The disputed record stays as history; the confirmed amendment is RESOLVED and records the original choice it replaces."""
+    disputed = _rows("reviews/AMENDMENT_S010_disputed_pending_confirmation.csv")
+    confirmed = _rows("reviews/AMENDMENT_S010_confirmed_2026-10-12.csv")
+    assert len(disputed) == 1 and disputed[0]["status"].startswith("DISPUTED")
+    assert len(confirmed) == 1 and confirmed[0]["status"].startswith("RESOLVED")
+    assert confirmed[0]["original_choice"] == "genuine defect" and confirmed[0]["confirmed_choice"] == "false alarm"
+    assert confirmed[0]["confirmed_by"] == "Asaad Hijjah" and confirmed[0]["confirmed_date"] == "2026-10-12"
