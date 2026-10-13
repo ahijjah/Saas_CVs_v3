@@ -5,12 +5,20 @@
   POST /jobs/{job_id}/requirements/classification-warnings/acknowledge   accept ONE flagged classification
   POST /jobs/{job_id}/requirements/confirm-no-numeric-score          confirm a preferred-only job without a score
   POST /jobs/{job_id}/requirements/structure-review/confirm          confirm one item's OR alternatives / experience
+  POST /jobs/{job_id}/requirements/extraction/retry                  start a new attempt for a failed extraction
+  POST /jobs/{job_id}/requirements/recovery/requests                 start a new analysis beside the draft (switch off by default)
+  GET  /jobs/{job_id}/requirements/recovery/versions/{id}/merge      the decisions a merge needs (read-only)
+  POST /jobs/{job_id}/requirements/recovery/versions/{id}/apply      take, or merge with explicit decisions
+  POST /jobs/{job_id}/requirements/recovery/versions/{id}/keep       keep the draft; its blockers stay open
+  POST /jobs/{job_id}/requirements/recovery/versions/{id}/discard    discard a candidate (history is kept)
 
-Writes: admin and HR manager of the job's own tenant only. Legacy jobs answer 409 and are never touched. The legacy
+Writes (and recovery decisions): admin and HR manager of the job's own tenant only. Legacy jobs answer 409 and are never touched. The legacy
 criteria endpoints (routers/jobs.py) are unchanged and still refuse v2 jobs; candidate evaluation of v2 jobs is still
-refused by services/requirements_guard.py. Nothing here creates a v2 job or starts an extraction.
+refused by services/requirements_guard.py. Nothing here creates a v2 job. An extraction is started only by the retry endpoint, and a
+recovery request queues one model analysis only while its switch is on.
 """
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
@@ -126,5 +134,68 @@ async def retry_extraction(job_id: str, current_user: CurrentUserDep, db: Annota
     """Start a new requirements-v2 extraction attempt for a failed (or stuck) job. Admin / HR manager, feature switch on, job access checked."""
     try:
         return await api.request_extraction_retry(db, current_user, job_id)
+    except api.ApiError as exc:
+        raise _http(exc) from exc
+
+
+# ── re-analysis (recovery): request, decide, merge preview. Feature switch off by default; admin and HR manager only (checked by the service). ──
+
+class RequestAnalysisRequest(_ServerOwnedEcho):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: StrictInt = Field(ge=0)
+    request_key: UUID                                   # idempotency key chosen by the client for this one request
+
+
+class ApplyAnalysisRequest(_ServerOwnedEcho):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: StrictInt = Field(ge=0)
+    choice: str                                         # "take" | "merge"
+    resolutions: dict[str, str] | None = None          # merge only: one decision per difference (keys from the merge preview)
+
+
+@router.post("/recovery/requests")
+async def request_analysis(job_id: str, body: RequestAnalysisRequest, current_user: CurrentUserDep, db: Annotated[AsyncSession, Depends(get_db)]):
+    """Start a new analysis beside the draft. The model call is queued only after this request has been committed."""
+    try:
+        result = await api.request_candidate(db, current_user, job_id, body.expected_revision, str(body.request_key))
+    except api.ApiError as exc:
+        raise _http(exc) from exc
+    plan = result.get("enqueue")
+    if plan is not None:
+        from workers.requirements_v2_extraction_worker import extract_candidate_task
+        extract_candidate_task.delay(plan["job_id"], plan["version_id"], plan["token"], plan["description"], plan["job_metadata"])
+    return {"version": result["version"], "idempotent": result["idempotent"]}
+
+
+@router.get("/recovery/versions/{version_id}/merge")
+async def merge_preview(job_id: str, version_id: str, current_user: CurrentUserDep, db: Annotated[AsyncSession, Depends(get_db)]):
+    """The decisions a merge needs between the current draft and a completed candidate. Read-only."""
+    try:
+        return await api.merge_preview(db, current_user, job_id, version_id)
+    except api.ApiError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/recovery/versions/{version_id}/apply")
+async def apply_analysis(job_id: str, version_id: str, body: ApplyAnalysisRequest, current_user: CurrentUserDep,
+                         db: Annotated[AsyncSession, Depends(get_db)]):
+    try:
+        return await api.apply_candidate(db, current_user, job_id, version_id, body.expected_revision, body.choice, body.resolutions)
+    except api.ApiError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/recovery/versions/{version_id}/keep")
+async def keep_analysis(job_id: str, version_id: str, current_user: CurrentUserDep, db: Annotated[AsyncSession, Depends(get_db)]):
+    try:
+        return await api.keep_candidate(db, current_user, job_id, version_id)
+    except api.ApiError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/recovery/versions/{version_id}/discard")
+async def discard_analysis(job_id: str, version_id: str, current_user: CurrentUserDep, db: Annotated[AsyncSession, Depends(get_db)]):
+    try:
+        return await api.discard_candidate(db, current_user, job_id, version_id)
     except api.ApiError as exc:
         raise _http(exc) from exc

@@ -906,5 +906,17 @@
     "changed": [],
     "unverified": false
   },
-  "context_findings": []
+  "context_findings": [],
+  "recovery": {
+    "enabled": false,
+    "can_request": false,
+    "reason": "disabled",
+    "blockers": [],
+    "active_version": {
+      "version_id": "00000000-0000-0000-0000-000000000000",
+      "version_no": 1
+    },
+    "open_candidate": null,
+    "versions": []
+  }
 }

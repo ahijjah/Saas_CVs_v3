@@ -153,3 +153,78 @@ def extract_requirements_v2_task(self, job_id: str, attempt_token: str, descript
         raise self.retry(exc=ext.TransportError(result["code"]), countdown=RETRY_DELAY_S)
     logger.info("[job:%s] requirements-v2 extraction: %s%s", job_id, result["outcome"], f" ({result['code']})" if result.get("code") else "")
     return result
+
+
+# ── re-analysis: one candidate, generated beside the draft (migration 109) ──────────────────────────────────────────────────────────
+# The same prompt, model and approved pipeline as the first extraction. The outcome is written ONLY as an event of the candidate in the append-only
+# log: the draft, the job's original snapshot and the weight columns are never touched here. No retry: a failed candidate is rejected with its
+# reason, and a person requests a new one.
+
+async def run_candidate_attempt(job_id: str, version_id: str, token: str, description: str, job_metadata: dict | None, Session) -> dict:
+    # A: the feature, the request that this attempt belongs to, the prompt and the model
+    async with Session() as db:
+        await set_rls_context(db, "", "super_admin")
+        tenant = await _tenant_of(db, job_id) or ""
+        if not await ext.recovery_enabled(db):
+            await ext.finish_candidate_failure(db, job_id=job_id, version_id=version_id, token=token, code="recovery_disabled",
+                                               message="Re-analysis is switched off.", actor_tenant=tenant)
+            await db.commit()
+            return {"outcome": "rejected", "code": "recovery_disabled"}
+        cand = next((v for v in await ext.read_versions(db, job_id) if v["version_id"] == version_id and v["kind"] == "candidate"), None)
+        if cand is None or cand["status"] != "requested" or cand["events"]["requested"]["attempt_token"] != token:
+            await db.rollback()
+            return {"outcome": "stale", "code": "not_requested"}
+        policy = await load_policy(db)
+        try:
+            prompt = await ext.load_prompt(db)
+            resolved = await ext.resolve_model(db)
+        except ext.ExtractionUnavailable as exc:
+            await ext.finish_candidate_failure(db, job_id=job_id, version_id=version_id, token=token, code=exc.code, message=exc.message,
+                                               actor_tenant=tenant)
+            await db.commit()
+            return {"outcome": "rejected", "code": exc.code}
+        requested, client = resolved.model_name, resolved.client
+        await db.commit()
+    messages = ext.build_messages(prompt, description, job_metadata)
+
+    # D: the one model call (no retry)
+    try:
+        call = await ext.call_model(client, prompt, messages, requested, timeout_s=ext.PER_CALL_TIMEOUT_S)
+    except ext.TransportError as exc:
+        async with Session() as db:
+            await set_rls_context(db, "", "super_admin")
+            await ext.record_usage(db, job_id=job_id, tenant_id=tenant, prompt=prompt, call=None, status="failed", error_type=exc.kind, retry_count=0)
+            await ext.finish_candidate_failure(db, job_id=job_id, version_id=version_id, token=token, code=exc.kind,
+                                               message=f"The model call failed ({exc.kind}).", actor_tenant=tenant)
+            await db.commit()
+        return {"outcome": "rejected", "code": exc.kind}
+
+    # E: the approved pipeline on the response; F: the outcome, under the job's locks
+    state = ext.analyse(description, call, prompt, require_classification_acknowledgment=policy, job_metadata=job_metadata)
+    async with Session() as db:
+        await set_rls_context(db, "", "super_admin")
+        await ext.record_usage(db, job_id=job_id, tenant_id=tenant, prompt=prompt, call=call, status="success", error_type=None, retry_count=0)
+        if not state["ok"]:
+            code = state["errors"][0]["code"] if state["errors"] else "extraction_failed"
+            message = state["errors"][0]["message"] if state["errors"] else "The model output could not be used."
+            await ext.finish_candidate_failure(db, job_id=job_id, version_id=version_id, token=token, code=code, message=message,
+                                               actor_tenant=tenant, call=call)
+            await db.commit()
+            return {"outcome": "rejected", "code": code}
+        outcome = await ext.finish_candidate(db, job_id=job_id, version_id=version_id, token=token, state=state, call=call, prompt=prompt,
+                                             policy=policy, actor_tenant=tenant)
+        await db.commit()
+    code = ext.CODE_INPUTS_CHANGED_DURING_CALL if outcome == "rejected" else None
+    return {"outcome": outcome, "code": code}
+
+
+@celery_app.task(name="workers.requirements_v2_extraction_worker.extract_candidate_task")
+def extract_candidate_task(job_id: str, version_id: str, token: str, description: str, job_metadata: dict | None = None) -> dict:
+    cfg = get_settings()
+    engine, Session = _session_factory(cfg)
+    try:
+        result = _run(run_candidate_attempt(job_id, version_id, token, description, job_metadata, Session))
+    finally:
+        _run(engine.dispose())
+    logger.info("[job:%s] requirements-v2 candidate %s: %s%s", job_id, version_id, result["outcome"], f" ({result['code']})" if result.get("code") else "")
+    return result

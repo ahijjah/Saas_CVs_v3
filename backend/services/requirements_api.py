@@ -51,6 +51,7 @@ from sqlalchemy import text
 from services import requirements_coverage as cov
 from services import requirements_pipeline as pipe
 from services import requirements_model_inputs as NI
+from services import requirements_v2_extraction as ext
 from services.requirements_guard import is_requirements_v2
 from services.requirements_v2 import (
     CATEGORIES, MAX_REQUIRED_PER_CATEGORY, POLICY_KEY, SCHEMA_VERSION, AcknowledgmentError, ConfirmationError, Issue,
@@ -587,6 +588,7 @@ class Loaded:
     pipeline_record: Any = None         # analysis_json["requirements_pipeline"] as stored (None = the job has none)
     description: str | None = None      # jobs.description as it is now (the coverage warning checks it against the record's JD hash)
     job_metadata: dict | None = None    # the six context fields as they are now (the binding checks them against the record)
+    active_version: dict | None = None  # analysis_json.requirements_active_version: {version_id, version_no}; None = the original extraction (version 1)
 
 
 async def load_policy(db) -> bool:
@@ -627,6 +629,9 @@ async def _load(db, user, job_id: str, *, lock: bool) -> Loaded:
     original = original_analysis.get("requirements") if isinstance(original_analysis, dict) else None
     if not isinstance(original, dict) or validate_structure(original):
         original = None
+    active = _active_pointer(analysis)
+    if active is not None:                                       # a recovered version: its own original (job_criteria's column is never rewritten)
+        original = await _version_original(db, job_id, active["version_id"])
     retired_raw = _json(row["requirements_retired_item_ids"])
     retired = [x for x in retired_raw if isinstance(x, str)] if isinstance(retired_raw, list) else []
     job_row = (await db.execute(text("""
@@ -640,7 +645,8 @@ async def _load(db, user, job_id: str, *, lock: bool) -> Loaded:
     return Loaded(analysis, stored, original, int(revision) if revision is not None else None, retired,
                   marker=marker, retired_column_present=retired_raw is not None,
                   pipeline_record=analysis.get(pipe.STORAGE_KEY), description=description, job_metadata=job_metadata,
-                  extraction_status=row.get("criteria_extraction_status"), extraction_error=row.get("criteria_extraction_error"))
+                  extraction_status=row.get("criteria_extraction_status"), extraction_error=row.get("criteria_extraction_error"),
+                  active_version=active)
 
 
 def build_pending_view(*, job_id: str, revision: int, status: str | None, error: str | None, editable: bool) -> dict:
@@ -676,6 +682,7 @@ async def get_requirements(db, user, job_id: str) -> dict:
                       job_metadata=loaded.job_metadata)
     if loaded.marker == 2:
         view["extraction"] = {"status": loaded.extraction_status, "error": loaded.extraction_error, "retry_available": False}
+        view["recovery"] = await recovery_status(db, user, job_id, loaded)
     return view
 
 
@@ -848,3 +855,278 @@ async def confirm_structure_review(db, user, job_id: str, expected_revision: int
                                               "basis": rec["basis"], "confirmed_at": now})
         return SavePlan(doc, [audit], True, loaded.retired, [], [])
     return await _mutate(db, user, job_id, expected_revision, work, client_discarded)
+
+
+# ══ re-analysis (recovery) of a stale or unverified analysis: versions, candidates and decisions (migration 109) ═══════════════════════
+# Every change is recorded as an event in the append-only log (services/requirements_v2_extraction.py). The active version is named in
+# analysis_json.requirements_active_version; the original extraction (version 1) keeps its job_criteria columns. A candidate is generated beside the
+# draft and never changes it. Applying a candidate (take or merge) supersedes the active draft, which stays in the log.
+CODE_RECOVERY_OFF = "recovery_disabled"
+CODE_NOT_ELIGIBLE = "analysis_bound_to_inputs"
+CODE_OPEN_CANDIDATE = "candidate_open"
+CODE_NOT_APPLICABLE = "candidate_not_applicable"
+CODE_CANDIDATE_INPUTS_CHANGED = "candidate_inputs_changed"
+CODE_VERSION_NOT_FOUND = "version_not_found"
+CODE_MERGE_INCOMPLETE = "merge_incomplete"
+CODE_MERGE_KEEPS_DIRECTED_TEXT = "merge_keeps_directed_text"
+CODE_CHOICE_UNKNOWN = "choice_unknown"
+RECOVERY_CHOICES = ("take", "merge")
+
+
+def _active_pointer(analysis: Any) -> dict | None:
+    ptr = analysis.get("requirements_active_version") if isinstance(analysis, dict) else None
+    if isinstance(ptr, dict) and isinstance(ptr.get("version_id"), str):
+        return {"version_id": ptr["version_id"], "version_no": int(ptr.get("version_no", 2))}
+    return None
+
+
+async def _version_original(db, job_id: str, version_id: str) -> dict | None:
+    row = (await db.execute(text("""
+        SELECT payload FROM requirements_analysis_log
+        WHERE job_id = CAST(:jid AS uuid) AND version_id = CAST(:vid AS uuid) AND event = 'completed'
+    """), {"jid": str(job_id), "vid": version_id})).scalar_one_or_none()
+    payload = _json(row)
+    original = payload.get("original") if isinstance(payload, dict) else None
+    return original if isinstance(original, dict) else None
+
+
+def _version_summary(v: dict) -> dict:
+    ev = v["events"]
+    requested = ev.get("requested") or {}
+    completed = ev.get("completed") or {}
+    out = {"version_id": v["version_id"], "version_no": v["version_no"], "kind": v["kind"], "status": v["status"],
+           "requested_at": requested["created_at"].isoformat() if requested.get("created_at") else None,
+           "request_key": requested.get("request_key"), "input_sha256": (requested or completed).get("input_sha256"),
+           "job_revision_at_request": requested.get("job_revision"), "completed_at": completed["created_at"].isoformat() if completed.get("created_at") else None}
+    if "rejected" in ev:
+        out["rejection_code"] = (ev["rejected"].get("details") or {}).get("code")
+    if "applied" in ev:
+        out["applied_choice"] = (ev["applied"].get("details") or {}).get("choice")
+    return out
+
+
+async def recovery_status(db, user, job_id: str, loaded: Loaded) -> dict:
+    """What the recruiter can do about the analysis now, derived from the trusted record and the job's current inputs. Read-only."""
+    enabled = await ext.recovery_enabled(db)
+    active = loaded.active_version or {"version_id": ext.initial_version_id(job_id), "version_no": 1}
+    if not enabled:                                            # off by default: nothing else is read
+        return {"enabled": False, "can_request": False, "reason": "disabled", "blockers": [], "active_version": {"version_id": active["version_id"],
+                "version_no": active["version_no"]}, "open_candidate": None, "versions": []}
+    versions = await ext.read_versions(db, job_id)
+    desc, meta = await ext.current_inputs(db, job_id, lock=False)     # a read: no share lock on the job row
+    blockers = NI.input_blockers(loaded.pipeline_record, desc, meta) if loaded.pipeline_record is not None else []
+    open_c = ext.open_candidate(versions)
+    if loaded.pipeline_record is None or loaded.stored is None:
+        reason = "no_analysis"
+    elif not blockers:
+        reason = "bound"                                       # the analysis matches the job's inputs: nothing to recover
+    elif open_c is not None:
+        reason = "candidate_open"
+    else:
+        reason = None
+    return {"enabled": enabled, "can_request": reason is None and loaded.original is not None,
+            "reason": reason, "blockers": [b["code"] for b in blockers],
+            "active_version": {"version_id": active["version_id"], "version_no": active["version_no"]},
+            "open_candidate": _version_summary(open_c) if open_c else None,
+            "versions": [_version_summary(v) for v in versions]}
+
+
+def _candidate_for(versions: list[dict], version_id: str) -> dict:
+    v = next((x for x in versions if x["version_id"] == version_id and x["kind"] == "candidate"), None)
+    if v is None:
+        raise ApiError(404, CODE_VERSION_NOT_FOUND, "No such analysis version for this job.")
+    return v
+
+
+def _require_recoverable(loaded: Loaded) -> None:
+    if loaded.marker != 2 or loaded.stored is None:
+        raise ApiError(409, CODE_NOT_READY, "The requirements are not available yet. Nothing was changed.")
+    if loaded.original is None:
+        raise ApiError(409, CODE_ORIGINAL_MISSING, "The original analysis snapshot is missing; refusing to change anything.")
+    if loaded.pipeline_record is None:
+        raise ApiError(409, CODE_PIPELINE_MISSING, "This job has no analysis record, so there is nothing to re-analyse.")
+    problems = pipe.verify_record(loaded.pipeline_record, loaded.original)
+    if problems:                                               # fail closed
+        raise ApiError(409, CODE_PIPELINE_RECORD_INVALID, _MSG_INVALID, errors=problems)
+
+
+async def request_candidate(db, user, job_id: str, expected_revision: int, request_key: str) -> dict:
+    """Ask for a new analysis of a stale or unverified job. Idempotent by request_key. Under the job's lock: the revision must be current, the analysis
+    must be bound to inputs that differ from the job's current inputs, and no other candidate may be open. Returns the enqueue plan; the caller
+    enqueues the model call AFTER the transaction commits."""
+    from services.audit_service import log_action
+    ensure_can_edit(user.role)
+    loaded = await _load(db, user, job_id, lock=True)
+    if not await ext.recovery_enabled(db):
+        raise ApiError(409, CODE_RECOVERY_OFF, "Re-analysis is switched off for this platform.")
+    versions = await ext.read_versions(db, job_id)
+    same = next((v for v in versions if v["events"].get("requested", {}).get("request_key") == request_key), None)
+    if same is not None:                                        # a repeated request: the same answer, nothing new
+        await db.rollback()
+        return {"version": _version_summary(same), "idempotent": True, "enqueue": None}
+    _require_recoverable(loaded)
+    if loaded.revision != expected_revision:
+        raise ApiError(409, CODE_REVISION_CONFLICT, "The requirements were changed by someone else. Reload and try again.")
+    desc, meta = await ext.current_inputs(db, job_id)
+    blockers = NI.input_blockers(loaded.pipeline_record, desc, meta)
+    if not blockers:
+        raise ApiError(409, CODE_NOT_ELIGIBLE, "The analysis already matches the job's inputs, so there is nothing to re-analyse.")
+    open_c = ext.open_candidate(versions)
+    if open_c is not None:
+        raise ApiError(409, CODE_OPEN_CANDIDATE, "Another candidate analysis is open. Apply, keep or discard it first.",
+                       version_id=open_c["version_id"])
+    version_id, token = str(uuid.uuid4()), str(uuid.uuid4())
+    version_no = await ext.next_version_no(db, job_id)
+    block = NI.model_inputs(desc, meta)
+    await ext.append_log(db, job_id=job_id, tenant_id=str(user.tenant_id), version_id=version_id, version_no=version_no, kind="candidate",
+                         event="requested", request_key=request_key, attempt_token=token, actor_user_id=str(user.user_id),
+                         job_revision=loaded.revision, input_sha256=block["sha256"],
+                         payload={"model_inputs": block, "blockers": [b["code"] for b in blockers]},
+                         details={"expected_revision": expected_revision})
+    await log_action(db, str(user.tenant_id), str(user.user_id), getattr(user, "email", None), "requirements_analysis_requested",
+                     resource_type="job", resource_id=str(job_id), strict=True,
+                     details={"job_id": str(job_id), "version_id": version_id, "version_no": version_no, "request_key": request_key,
+                              "input_sha256": block["sha256"], "revision": loaded.revision, "blockers": [b["code"] for b in blockers]})
+    summary = {"version_id": version_id, "version_no": version_no, "kind": "candidate", "status": "requested", "request_key": request_key,
+               "input_sha256": block["sha256"], "job_revision_at_request": loaded.revision, "requested_at": None, "completed_at": None}
+    await db.commit()
+    return {"version": summary, "idempotent": False,
+            "enqueue": {"job_id": str(job_id), "version_id": version_id, "token": token, "description": desc, "job_metadata": meta}}
+
+
+def _completed_payload(cand: dict) -> dict:
+    payload = cand["events"]["completed"]["payload"]
+    if not isinstance(payload, dict) or not isinstance(payload.get("document"), dict):
+        raise ApiError(409, CODE_NOT_APPLICABLE, "The candidate has no usable result.")
+    return payload
+
+
+async def _decide_guard(db, user, job_id: str, version_id: str, *, need_revision: int | None):
+    ensure_can_edit(user.role)
+    if not await ext.recovery_enabled(db):
+        raise ApiError(409, CODE_RECOVERY_OFF, "Re-analysis is switched off for this platform.")
+    loaded = await _load(db, user, job_id, lock=True)
+    _require_recoverable(loaded)
+    versions = await ext.read_versions(db, job_id)
+    cand = _candidate_for(versions, version_id)
+    if need_revision is not None and loaded.revision != need_revision:
+        raise ApiError(409, CODE_REVISION_CONFLICT, "The requirements were changed by someone else. Reload and try again.")
+    return loaded, versions, cand
+
+
+async def keep_candidate(db, user, job_id: str, version_id: str) -> dict:
+    """Keep the current draft. The draft and its blockers stay as they are; the candidate stays available. Recorded; nothing is applied."""
+    from services.audit_service import log_action
+    loaded, versions, cand = await _decide_guard(db, user, job_id, version_id, need_revision=None)
+    if cand["status"] != "completed":
+        raise ApiError(409, CODE_NOT_APPLICABLE, f"This candidate is {cand['status']}; it cannot be kept.")
+    desc, meta = await ext.current_inputs(db, job_id)
+    await ext.append_log(db, job_id=job_id, tenant_id=str(user.tenant_id), version_id=version_id, version_no=cand["version_no"], kind="candidate",
+                         event="kept", actor_user_id=str(user.user_id), job_revision=loaded.revision,
+                         input_sha256=cand["events"]["completed"]["input_sha256"], details={"draft_version_no": (loaded.active_version or {}).get("version_no", 1)})
+    await log_action(db, str(user.tenant_id), str(user.user_id), getattr(user, "email", None), "requirements_analysis_kept", resource_type="job",
+                     resource_id=str(job_id), strict=True, details={"job_id": str(job_id), "version_id": version_id, "version_no": cand["version_no"],
+                                                                   "revision": loaded.revision})
+    await db.commit()
+    return {"kept": True, "version_id": version_id}
+
+
+async def discard_candidate(db, user, job_id: str, version_id: str) -> dict:
+    """Discard a candidate that is requested, completed or rejected. Terminal and idempotent: the draft is never touched."""
+    from services.audit_service import log_action
+    loaded, versions, cand = await _decide_guard(db, user, job_id, version_id, need_revision=None)
+    if cand["status"] == "discarded":
+        await db.rollback()
+        return {"discarded": True, "version_id": version_id, "idempotent": True}
+    if cand["status"] not in ("requested", "completed", "rejected"):
+        raise ApiError(409, CODE_NOT_APPLICABLE, f"This candidate is {cand['status']}; it cannot be discarded.")
+    await ext.append_log(db, job_id=job_id, tenant_id=str(user.tenant_id), version_id=version_id, version_no=cand["version_no"], kind="candidate",
+                         event="discarded", actor_user_id=str(user.user_id), job_revision=loaded.revision,
+                         details={"from_status": cand["status"]})
+    await log_action(db, str(user.tenant_id), str(user.user_id), getattr(user, "email", None), "requirements_analysis_discarded", resource_type="job",
+                     resource_id=str(job_id), strict=True, details={"job_id": str(job_id), "version_id": version_id,
+                                                                  "version_no": cand["version_no"], "from_status": cand["status"], "revision": loaded.revision})
+    await db.commit()
+    return {"discarded": True, "version_id": version_id, "idempotent": False}
+
+
+async def merge_preview(db, user, job_id: str, version_id: str) -> dict:
+    """The decisions a merge needs, between the current draft and a completed candidate. Read-only; editors only."""
+    from services.requirements_recovery_merge import plan
+    loaded, versions, cand = await _decide_guard(db, user, job_id, version_id, need_revision=None)
+    if cand["status"] != "completed":
+        raise ApiError(409, CODE_NOT_APPLICABLE, f"This candidate is {cand['status']}; there is nothing to merge.")
+    await db.rollback()
+    return {"version_id": version_id, "revision": loaded.revision, **plan(loaded.stored, _completed_payload(cand)["document"])}
+
+
+async def apply_candidate(db, user, job_id: str, version_id: str, expected_revision: int, choice: str, resolutions: dict | None = None) -> dict:
+    """Apply a completed candidate: 'take' replaces the draft with the candidate; 'merge' builds the draft from the explicit decisions. The previous
+    active draft is kept as a superseded version. Checked under the job's lock: the revision, that the candidate is still bound to the job's current
+    inputs, and that it has not been decided already (a repeat of the same choice is answered, not applied twice)."""
+    from services.audit_service import log_action
+    from services.requirements_recovery_merge import MergeError, build
+    if choice not in RECOVERY_CHOICES:
+        raise ApiError(422, CODE_CHOICE_UNKNOWN, f"Unknown choice {choice!r}; use take or merge (keep is a separate decision).")
+    loaded, versions, cand = await _decide_guard(db, user, job_id, version_id, need_revision=None)
+    if cand["status"] == "applied":
+        applied = cand["events"]["applied"]["details"].get("choice")
+        await db.rollback()
+        if applied == choice:
+            return {"already_applied": True, "version_id": version_id}
+        raise ApiError(409, CODE_NOT_APPLICABLE, f"This candidate was already applied by {applied}.")
+    if cand["status"] != "completed":
+        raise ApiError(409, CODE_NOT_APPLICABLE, f"This candidate is {cand['status']}; it cannot be applied.")
+    if loaded.revision != expected_revision:
+        raise ApiError(409, CODE_REVISION_CONFLICT, "The requirements were changed by someone else. Reload and try again.")
+    payload = _completed_payload(cand)
+    desc, meta = await ext.current_inputs(db, job_id)
+    changed = NI.changed_fields(payload["model_inputs"], NI.model_inputs(desc, meta))
+    if changed:
+        raise ApiError(409, CODE_CANDIDATE_INPUTS_CHANGED, "The job changed after this analysis was made. Request a new analysis.",
+                       changed_fields=changed)
+    if choice == "take":
+        doc = copy.deepcopy(payload["document"])
+    else:
+        try:
+            doc, kept_wording = build(loaded.stored, payload["document"], resolutions or {})
+        except MergeError as exc:
+            raise ApiError(422, CODE_MERGE_INCOMPLETE, "Every difference needs a decision before the merge can be applied.",
+                           missing=exc.missing, invalid=exc.invalid) from exc
+        for wording in kept_wording:                             # a kept draft item is not reviewed by this analysis: refuse directed text in it
+            from services.requirements_pipeline.injection import instruction_spans
+            if instruction_spans(wording):
+                raise ApiError(422, CODE_MERGE_KEEPS_DIRECTED_TEXT, "A kept item contains text addressed to the AI. Drop that item.", text=wording)
+    result = validate_final(doc)
+    if not result.ok:
+        raise invalid(list(result.errors), doc)
+    prev = loaded.active_version or {"version_id": ext.initial_version_id(job_id), "version_no": 1}
+    if not any(v["version_id"] == prev["version_id"] and "superseded" in v["events"] for v in versions):
+        await ext.append_log(db, job_id=job_id, tenant_id=str(user.tenant_id), version_id=prev["version_id"], version_no=prev["version_no"],
+                             kind="superseded_draft", event="superseded", actor_user_id=str(user.user_id), job_revision=loaded.revision,
+                             payload={"document": loaded.stored, "record": loaded.pipeline_record, "original": loaded.original})
+    analysis = copy.deepcopy(loaded.analysis)
+    analysis["requirements"] = doc
+    analysis[pipe.STORAGE_KEY] = payload["record"]
+    analysis["requirements_active_version"] = {"version_id": version_id, "version_no": cand["version_no"]}
+    params = {"aj": json.dumps(analysis, ensure_ascii=False), "retired": json.dumps(loaded.retired), "uid": str(user.user_id), "jid": str(job_id),
+              "rev": loaded.revision, **{f"w_{c}": doc["categories"][c]["weight"] for c in CATEGORIES}}
+    res = await db.execute(text(_UPDATE_SQL), params)
+    if getattr(res, "rowcount", 1) != 1:
+        raise ApiError(409, CODE_REVISION_CONFLICT, "The requirements were changed by someone else.")
+    revision = loaded.revision + 1
+    details = {"choice": choice, "previous_version_id": prev["version_id"], "previous_version_no": prev["version_no"],
+               "input_sha256": payload["model_inputs"]["sha256"], "resulting_revision": revision}
+    if choice == "merge":
+        details["resolutions"] = dict(sorted((resolutions or {}).items()))
+    await ext.append_log(db, job_id=job_id, tenant_id=str(user.tenant_id), version_id=version_id, version_no=cand["version_no"], kind="candidate",
+                         event="applied", actor_user_id=str(user.user_id), job_revision=revision,
+                         input_sha256=payload["model_inputs"]["sha256"], details=details)
+    await log_action(db, str(user.tenant_id), str(user.user_id), getattr(user, "email", None), "requirements_analysis_applied", resource_type="job",
+                     resource_id=str(job_id), strict=True, details={"job_id": str(job_id), "previous_revision": loaded.revision, "revision": revision,
+                                                                  "version_id": version_id, "version_no": cand["version_no"], **details})
+    await db.commit()
+    view = build_view(job_id=job_id, revision=revision, doc=doc, original=payload["original"], policy=await load_policy(db), editable=True,
+                      pipeline_record=payload["record"], description=desc, job_metadata=meta)
+    view["recovery"] = await recovery_status(db, user, job_id, await _load(db, user, job_id, lock=False))
+    return view

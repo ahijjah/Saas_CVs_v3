@@ -102,13 +102,28 @@ def main(argv=None) -> int:
 
     import test_requirements_v2_postgres as pgt
     import test_requirements_pipeline_postgres as pp
+    import isolated_requirements_v2_extraction_postgres as iso          # the fake model transport (no network, no paid call)
     pgserver = pgt._real_pgserver()                 # pgserver, or the system PostgreSQL 16 cluster through the adapter (no mocks)
     from parser_candidates.requirements_v2_pipeline_1 import extract
     from services.requirements_pipeline import STORAGE_KEY
     from services.requirements_v2 import CATEGORIES
+    from services import requirements_model_inputs as NI
+    from services import requirements_v2_extraction as ext
+    import workers.requirements_v2_extraction_worker as worker
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+    from types import SimpleNamespace
+    import asyncio
 
     server = pgserver.get_server(tempfile.mkdtemp(prefix="req_ui_pg_"))
     env, admin, dbname = pgt._build(server, "full")
+    env.q((pgt.MIGRATIONS / "109_requirements_analysis_recovery.sql").read_text(encoding="utf-8"))   # re-analysis history and its switch (default off)
+    # the prompt, usage and model-registry tables the candidate worker reads (the same migrations the real database has; any failure is reported)
+    for mig in ("010_platform_secrets_ai_prompts.sql", "052_ai_usage_tracking.sql", "053_ai_model_registry.sql", "108_requirements_v2_extraction.sql"):
+        try:
+            env.q((pgt.MIGRATIONS / mig).read_text(encoding="utf-8"))
+        except Exception as exc:                                                # noqa: BLE001
+            print(f"note: {mig} did not apply cleanly: {str(exc).splitlines()[0]}", flush=True)
 
     # ── the real app, authentication replaced ────────────────────────────────────────────────────────────────────
     from auth import module_guards
@@ -159,6 +174,38 @@ def main(argv=None) -> int:
         time.sleep(0.1)
     LOCAL = f"http://127.0.0.1:{sock_port}"
     JOB = pgt.JOB
+    RELOCATION = " Relocation support is offered."
+    NEW_JD = pp.FIX["jd"] + RELOCATION
+
+    # Re-analysis runs the REAL candidate worker in place of the queue: the router's enqueue is run eagerly, in a thread with its own connection
+    # pool to the disposable database, against a FAKE model that replays the recorded response. The draft is never changed by the worker.
+    FAKE_CALLS = []
+
+    async def fake_resolve(db):
+        client = iso.FakeClient([pp.FIX["raw"]])
+        FAKE_CALLS.append(client)
+        return SimpleNamespace(model_name=iso.MODEL, client=client)
+
+    def eager_delay(job_id, version_id, token, description, job_metadata):
+        box = {}
+
+        def run():
+            async def inner():
+                eng = create_async_engine(env.engine.url, poolclass=NullPool, connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+                try:
+                    box["r"] = await worker.run_candidate_attempt(job_id, version_id, token, description, job_metadata,
+                                                                  async_sessionmaker(eng, expire_on_commit=False))
+                finally:
+                    await eng.dispose()
+            asyncio.run(inner())
+        t = threading.Thread(target=run)
+        t.start()
+        t.join()
+        return box.get("r")
+
+    real_resolve, real_delay = ext.resolve_model, worker.extract_candidate_task.delay
+    ext.resolve_model = fake_resolve
+    worker.extract_candidate_task.delay = eager_delay
 
     # ── helpers ─────────────────────────────────────────────────────────────────────────────────────────────────────────
     def reseed(state=None, *, with_record=True, policy=True, tamper=None, jd=None):
@@ -187,6 +234,39 @@ def main(argv=None) -> int:
 
     def audit_actions():
         return [a["action"] for a in env.audit()]
+
+    def close_page(page):
+        """Let the page's last request finish, then drop its routes before the context closes (an in-flight route fetch would fail)."""
+        page.wait_for_load_state("networkidle")
+        page.context.unroute_all(behavior="ignoreErrors")
+        page.context.close()
+
+    def recovery_on(on):
+        env.q("UPDATE system_config SET value = %s WHERE key = %s", ("true" if on else "false", ext.RECOVERY_KEY))
+
+    def stale_job(text_value=NEW_JD):
+        env.q("UPDATE jobs SET description = %s WHERE job_id = %s", (text_value, JOB))
+
+    def events(event):
+        return env.q("SELECT count(*) FROM requirements_analysis_log WHERE job_id = %s AND event = %s", (JOB, event))[0][0]
+
+    def wait_until(cond, timeout=8.0):
+        end = time.time() + timeout
+        while time.time() < end:
+            if cond():
+                return True
+            time.sleep(0.1)
+        return False
+
+    def open_candidate_id():
+        _, view = call("GET", "", "admin")
+        cand = (view.get("recovery") or {}).get("open_candidate")
+        return cand["version_id"] if cand else None
+
+    def close_open_candidate():
+        vid = open_candidate_id()
+        if vid:
+            call("POST", f"/recovery/versions/{vid}/discard", "admin")
 
     cors = {"access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,POST,PUT,OPTIONS"}
 
@@ -505,6 +585,122 @@ def main(argv=None) -> int:
             check("S16 unchanged inputs show no input blocker", page.locator("[data-testid=inputs-status]").count() == 0
                   and page.locator("[data-testid=context-findings]").count() == 0)
             page.context.close()
+
+            # S17: re-analysis is OFF by default: no control on the page, and the API refuses a request (nothing is logged)
+            reseed()
+            stale_job()
+            recovery_on(False)
+            page, reqs = open_page(browser)
+            page.wait_for_selector("[data-testid=readiness]", timeout=8000)
+            check("S17 recovery is off by default: no re-analysis control on the page",
+                  page.locator("[data-testid=recovery]").count() == 0 and page.locator("[data-testid=recovery-request]").count() == 0)
+            status, body = call("POST", "/recovery/requests", "admin", {"expected_revision": row()["revision"], "request_key": str(uuid.uuid4())})
+            check("S17 the API refuses a request while it is off", status == 409 and body["detail"]["code"] == "recovery_disabled", f"{status} {body}")
+            check("S17 nothing was logged", events("requested") == 0)
+            close_page(page)
+
+            # S18: a stale draft: request (real router, fake model), keep. The draft and its blockers stay; nothing is saved; then the candidate is discarded
+            reseed()
+            stale_job()
+            recovery_on(True)
+            iso.activate_prompt(env)
+            requested_before = events("requested")
+            page, reqs = open_page(browser)
+            page.wait_for_selector("[data-testid=recovery-request]", timeout=8000)
+            page.click("[data-testid=recovery-request]")
+            page.wait_for_selector("[data-testid=recovery-keep]", timeout=12000)
+            check("S18 one analysis was requested and completed beside the draft",
+                  events("requested") == requested_before + 1 and page.locator("[data-testid=recovery-candidate][data-status=completed]").count() == 1)
+            before = row()
+            page.click("[data-testid=recovery-keep]")
+            wait_until(lambda: "requirements_analysis_kept" in audit_actions())
+            after = row()
+            check("S18 keep changes no draft and saves nothing", after["revision"] == before["revision"] and after["analysis"] == before["analysis"])
+            check("S18 keep leaves the blockers open", page.locator("[data-testid=inputs-status]").count() == 1
+                  and page.locator("[data-testid=readiness].border-green-300").count() == 0)
+            check("S18 request, completion and keep are audited",
+                  all(a in audit_actions() for a in ("requirements_analysis_requested", "requirements_analysis_completed", "requirements_analysis_kept")))
+            close_open_candidate()
+            check("S18 the kept candidate can be discarded, and stays in the history",
+                  events("requested") >= 1 and events("discarded") == 1 and page.locator("[data-testid=recovery-history]").count() == 1)
+            close_page(page)
+
+            # S19: take: the candidate replaces the draft (revision +1), the previous draft is kept as a superseded version, and the injection
+            # finding that the candidate itself carries stays open: the job is not shown as passed
+            reseed()
+            stale_job()
+            recovery_on(True)
+            page, reqs = open_page(browser)
+            page.wait_for_selector("[data-testid=recovery-request]", timeout=8000)
+            page.click("[data-testid=recovery-request]")
+            page.wait_for_selector("[data-testid=recovery-take]", timeout=12000)
+            before = row()
+            page.click("[data-testid=recovery-take]")
+            wait_until(lambda: row()["revision"] == before["revision"] + 1)
+            page.wait_for_selector("[data-testid=recovery-take]", state="detached", timeout=8000)      # the page has reloaded the view
+            after = row()
+            bound = after["analysis"][STORAGE_KEY]["model_inputs"]["fields"]["description"]
+            check("S19 take replaces the draft: revision +1, bound to the current description",
+                  after["revision"] == before["revision"] + 1 and bound == NI.model_inputs(NEW_JD, None)["fields"]["description"])
+            check("S19 the previous draft is kept in the history as superseded", events("superseded") == 1)
+            check("S19 the page shows no input blocker after take, and never a passed readiness",
+                  page.locator("[data-testid=inputs-status]").count() == 0 and page.locator("[data-testid=readiness].border-green-300").count() == 0)
+            close_page(page)
+
+            # S20: Arabic, right to left: the same controls with Arabic wording
+            reseed()
+            stale_job()
+            page, reqs = open_page(browser, lang="ar")
+            page.wait_for_selector("[data-testid=recovery-request]", timeout=8000)
+            page.click("[data-testid=recovery-request]")
+            page.wait_for_selector("[data-testid=recovery-keep]", timeout=12000)
+            direction = page.locator("[data-testid=recovery]").evaluate("e => e.closest('[dir]').getAttribute('dir')")
+            keep_text = page.locator("[data-testid=recovery-keep]").inner_text()
+            check("S20 the Arabic re-analysis card is right to left with Arabic controls",
+                  direction == "rtl" and re.search(r"[\u0600-\u06FF]", keep_text) is not None, f"dir={direction} keep={keep_text!r}")
+            close_open_candidate()
+            close_page(page)
+
+            # S21: a viewer sees the state and the reason, and cannot request
+            reseed()
+            stale_job()
+            recovery_on(True)
+            page, reqs = open_page(browser, token="viewer")
+            page.wait_for_selector("[data-testid=recovery]", timeout=8000)
+            check("S21 a viewer cannot request re-analysis and is told why",
+                  page.locator("[data-testid=recovery-request]").count() == 0 and page.locator("[data-testid=recovery-viewer]").count() == 1)
+            close_page(page)
+
+            # S22: merge: the recruiter's own item is kept by decision; apply stays disabled until every difference is decided
+            reseed()
+            _, view = call("GET", "", "admin")
+            doc = doc_of(view)
+            doc["categories"]["other_requirements"]["items"].append({"text": "Clearance from the local regulator", "importance": "preferred",
+                                                                    "weight": None, "origin": "recruiter_added", "source_text": None,
+                                                                    "alternatives": None, "experience": None})
+            status, _ = call("PUT", "", "admin", {"expected_revision": view["revision"], "requirements": doc})
+            check("S22 the recruiter adds an item through the real save endpoint", status == 200, str(status))
+            stale_job()
+            recovery_on(True)
+            page, reqs = open_page(browser)
+            page.wait_for_selector("[data-testid=recovery-request]", timeout=8000)
+            page.click("[data-testid=recovery-request]")
+            page.wait_for_selector("[data-testid=recovery-merge]", timeout=12000)
+            page.click("[data-testid=recovery-merge]")
+            page.wait_for_selector("[data-testid=recovery-merge-form]", timeout=8000)
+            check("S22 apply is disabled until every difference is decided",
+                  page.locator("[data-testid=merge-apply]").is_disabled() and page.locator("[data-testid=merge-draft-only]").count() == 1)
+            for fieldset in page.locator("[data-testid=recovery-merge-form] fieldset").all():
+                fieldset.locator("input[type=radio]").first.check()
+            page.wait_for_function("() => !document.querySelector('[data-testid=merge-apply]').disabled", timeout=5000)
+            before = row()
+            page.click("[data-testid=merge-apply]")
+            wait_until(lambda: row()["revision"] == before["revision"] + 1)
+            check("S22 the merge keeps the recruiter's item and records the applied choice",
+                  "Clearance from the local regulator" in json.dumps(row()["analysis"]["requirements"])
+                  and env.q("SELECT count(*) FROM audit_logs WHERE action = 'requirements_analysis_applied' AND details->>'choice' = 'merge'")[0][0] == 1)
+            close_page(page)
+
             browser.close()
     except Exception as exc:                                                    # noqa: BLE001
         import traceback
@@ -512,6 +708,8 @@ def main(argv=None) -> int:
         check("harness ran to completion", False, repr(exc))
         ok_exit = 1
     finally:
+        ext.resolve_model = real_resolve
+        worker.extract_candidate_task.delay = real_delay
         srv.should_exit = True
         try:
             pgt._teardown(env, admin, dbname)

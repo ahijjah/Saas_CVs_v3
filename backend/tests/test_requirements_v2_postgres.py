@@ -76,7 +76,8 @@ def user(role="hr_manager", tenant=T1, uid=U_HR):
     return SimpleNamespace(user_id=uid, tenant_id=tenant, email=f"{role}@example.com", role=role, full_name=role)
 
 
-_FRESH = ("services.audit_service", "services.requirements_api", "routers.platform_config", "routers.job_requirements")
+_FRESH = ("services.audit_service", "services.requirements_api", "services.requirements_v2_extraction", "routers.platform_config",
+          "routers.job_requirements")
 
 
 @pytest.fixture(autouse=True)

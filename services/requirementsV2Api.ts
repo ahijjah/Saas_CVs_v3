@@ -82,10 +82,45 @@ export interface RequirementsView {
   similarity_method: string;
   discarded_client_fields?: string[];
   changed?: boolean;
+  /** Re-analysis of a stale or unverified analysis (absent on older servers). */
+  recovery?: RecoveryView | null;
   /** Present for requirements-v2 jobs (schema marker 2). While the extraction has no document the view is a read-only skeleton. */
   extraction?: ExtractionStatus | null;
   can_edit: boolean;
 }
+
+/** One analysis version of a job: the draft in use, or a candidate (kept by the server in an append-only history). */
+export interface RecoveryVersion {
+  version_id: string; version_no: number; kind: 'candidate';
+  status: 'requested' | 'completed' | 'rejected' | 'applied' | 'discarded' | 'superseded';
+  requested_at: string | null; completed_at: string | null; request_key: string | null; input_sha256: string | null;
+  job_revision_at_request: number | null;
+  rejection_code?: string | null; applied_choice?: 'take' | 'merge' | null;
+}
+
+/** Re-analysis state. Absent on older servers; `enabled: false` while the platform switch is off (the default), which shows no controls. */
+export interface RecoveryView {
+  enabled: boolean;
+  can_request: boolean;
+  reason: 'disabled' | 'no_analysis' | 'bound' | 'candidate_open' | null;
+  blockers: string[];
+  active_version: { version_id: string; version_no: number };
+  open_candidate: RecoveryVersion | null;
+  versions: RecoveryVersion[];
+}
+
+/** The decisions a merge needs. Each key is answered with one of the choices listed for its group. */
+export interface MergePreview {
+  version_id: string; revision: number;
+  conflicts: { key: string; category: string; text: string | null; fields: string[]; draft: Record<string, unknown>; candidate: Record<string, unknown> }[];
+  draft_only: { key: string; category: string; text: string | null; origin: string | null }[];
+  candidate_only: { key: string; category: string; text: string | null; origin: string | null }[];
+  weights: { key: string; category: string; draft: number | null; candidate: number | null }[];
+}
+
+export const MERGE_CHOICES = {
+  conflicts: ['draft', 'candidate'], draft_only: ['keep', 'drop'], candidate_only: ['add', 'skip'], weights: ['draft', 'candidate'],
+} as const;
 
 export interface ExtractionStatus {
   status: 'pending' | 'processing' | 'completed' | 'failed' | null;
@@ -103,6 +138,13 @@ export interface RequirementsApi {
   confirmNoScore(jobId: string, expectedRevision: number): Promise<RequirementsView>;
   /** Asks the server for a new extraction attempt (only for a failed attempt with no document yet). */
   retryExtraction(jobId: string): Promise<{ job_id: string; extraction: { status: string } }>;
+  /** Starts a new analysis beside the draft. `requestKey` makes a repeated request (e.g. a double click) return the same version. */
+  requestRecovery(jobId: string, expectedRevision: number, requestKey: string): Promise<{ version: RecoveryVersion; idempotent: boolean }>;
+  mergePreview(jobId: string, versionId: string): Promise<MergePreview>;
+  /** 'take' replaces the draft with the candidate; 'merge' needs one resolution per key of the preview. The caller reloads the view. */
+  applyRecovery(jobId: string, versionId: string, expectedRevision: number, choice: 'take' | 'merge', resolutions?: Record<string, string>): Promise<unknown>;
+  keepRecovery(jobId: string, versionId: string): Promise<{ kept: boolean; version_id: string }>;
+  discardRecovery(jobId: string, versionId: string): Promise<{ discarded: boolean; version_id: string; idempotent: boolean }>;
 }
 
 /** Whether the requirements-v2 switch is on. The job-creation screen offers the v2 choice only then (read-only, boolean only). */
@@ -121,4 +163,11 @@ export const createRequirementsApi = (token: string): RequirementsApi => ({
   confirmNoScore: (jobId, expected_revision) =>
     apiService.post(`${base(jobId)}/confirm-no-numeric-score`, { expected_revision }, token),
   retryExtraction: (jobId) => apiService.post(`${base(jobId)}/extraction/retry`, {}, token),
+  requestRecovery: (jobId, expected_revision, request_key) =>
+    apiService.post(`${base(jobId)}/recovery/requests`, { expected_revision, request_key }, token),
+  mergePreview: (jobId, versionId) => apiService.get(`${base(jobId)}/recovery/versions/${versionId}/merge`, {}, token),
+  applyRecovery: (jobId, versionId, expected_revision, choice, resolutions) =>
+    apiService.post(`${base(jobId)}/recovery/versions/${versionId}/apply`, { expected_revision, choice, resolutions: resolutions ?? null }, token),
+  keepRecovery: (jobId, versionId) => apiService.post(`${base(jobId)}/recovery/versions/${versionId}/keep`, {}, token),
+  discardRecovery: (jobId, versionId) => apiService.post(`${base(jobId)}/recovery/versions/${versionId}/discard`, {}, token),
 });

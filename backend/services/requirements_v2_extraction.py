@@ -40,6 +40,7 @@ from services.requirements_v2.extraction.prompt import EXTRACTION_CONFIG, build_
 logger = logging.getLogger(__name__)
 
 FEATURE_KEY = "requirements_v2.enabled"
+RECOVERY_KEY = "requirements_v2.recovery_enabled"
 STAGE = "requirements_v2_extraction"
 PROMPT_CODE = "criteria_extraction_v2"
 PROVIDER = "openai"
@@ -103,8 +104,17 @@ class CallResult:
 # ── feature switch ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 async def feature_enabled(db) -> bool:
     """Exactly "true" (trimmed, lower-cased) enables it. A missing row, a read error or any other value means OFF."""
+    return await _switch_on(db, FEATURE_KEY)
+
+
+async def recovery_enabled(db) -> bool:
+    """The re-analysis switch (migration 109). Off by default; read on every request and on every candidate attempt."""
+    return await _switch_on(db, RECOVERY_KEY)
+
+
+async def _switch_on(db, key: str) -> bool:
     try:
-        row = await db.execute(text("SELECT value FROM system_config WHERE key = :k"), {"k": FEATURE_KEY})
+        row = await db.execute(text("SELECT value FROM system_config WHERE key = :k"), {"k": key})
         value = row.scalar_one_or_none()
     except Exception as exc:                                    # noqa: BLE001 - fail closed
         logger.warning("requirements-v2 feature switch unreadable (treated as OFF): %s", exc)
@@ -236,13 +246,12 @@ def scan_context(job_metadata: dict | None) -> dict:
     return {"guard_version": NI.CONTEXT_SCAN_VERSION, "issues": issues}
 
 
-async def current_inputs(db, job_id: str) -> tuple[str | None, dict | None]:
-    """The job's description and context fields as they are NOW, read under a share lock. A writer (the job edit) must wait until the caller's
-    transaction ends, so a value read here is still the value when the result is written."""
+async def current_inputs(db, job_id: str, *, lock: bool = True) -> tuple[str | None, dict | None]:
+    """The job's description and context fields as they are NOW. With lock (the default) the row is read under a share lock: a writer (the job edit)
+    waits until the caller's transaction ends, so a value read here is still the value when the result is written. A read passes lock=False."""
     row = (await db.execute(text("""
         SELECT description, title, department, experience_level, location, job_type, work_mode
-        FROM jobs WHERE job_id = CAST(:jid AS uuid) FOR SHARE
-    """), {"jid": str(job_id)})).mappings().first()
+        FROM jobs WHERE job_id = CAST(:jid AS uuid)""" + (" FOR SHARE" if lock else "")), {"jid": str(job_id)})).mappings().first()
     if row is None:
         return None, None
     return row["description"], {k: row[k] for k in NI.CONTEXT_KEYS}
@@ -434,3 +443,146 @@ async def request_retry(db, *, job_id: str, actor_user: str, actor_tenant: str) 
     await log_action(db, actor_tenant, actor_user, None, "requirements_extraction_retry_requested", resource_type="job", resource_id=str(job_id),
                      strict=True, details={"job_id": str(job_id), "new_attempt_token": token, "previous_status": lk.status, "stuck": stuck})
     return token
+
+
+# ── versions, candidates and superseded drafts: the append-only log (migration 109) ────────────────────────────────────────────────
+# Every event of every analysis version is one row of requirements_analysis_log; the database refuses updates and deletes. The version that the
+# original extraction produced has no 'requested' row: its identity is derived from the job (initial_version_id) and its data stays in job_criteria.
+# A version's status is the most recent decision recorded for it (see version_status).
+
+_INITIAL_NS = uuid.UUID("6f1c2a3e-8d4b-4c59-9a7e-2b1d3f5e7a90")
+TERMINAL_EVENTS = ("applied", "discarded")
+
+
+def initial_version_id(job_id) -> str:
+    """The stable identity of the version the original extraction produced (version 1)."""
+    return str(uuid.uuid5(_INITIAL_NS, f"{job_id}/1"))
+
+
+def _as_json(value: Any) -> Any:
+    if isinstance(value, (str, bytes)):
+        return json.loads(value)
+    return value
+
+
+async def append_log(db, *, job_id: str, tenant_id: str, version_id: str, version_no: int, kind: str, event: str,
+                     request_key: str | None = None, attempt_token: str | None = None, actor_user_id: str | None = None,
+                     job_revision: int | None = None, input_sha256: str | None = None, payload: Any = None,
+                     details: dict | None = None) -> None:
+    """Append one event. The database refuses a second 'requested', 'completed', 'rejected', 'applied', 'discarded' or 'superseded' for a version, and a
+    second terminal decision (applied or discarded) for a candidate; the caller's transaction is then rolled back."""
+    await db.execute(text("""
+        INSERT INTO requirements_analysis_log (job_id, tenant_id, version_id, version_no, kind, event, request_key, attempt_token, actor_user_id,
+                                               job_revision, input_sha256, payload, details)
+        VALUES (CAST(:jid AS uuid), CAST(:tid AS uuid), CAST(:vid AS uuid), :vno, :kind, :event, CAST(:rk AS uuid), CAST(:tok AS uuid),
+                CAST(:uid AS uuid), :rev, :sha, CAST(:payload AS jsonb), CAST(:details AS jsonb))
+    """), {"jid": str(job_id), "tid": str(tenant_id), "vid": version_id, "vno": version_no, "kind": kind, "event": event,
+           "rk": request_key, "tok": attempt_token, "uid": actor_user_id, "rev": job_revision, "sha": input_sha256,
+           "payload": None if payload is None else json.dumps(payload, ensure_ascii=False),
+           "details": json.dumps(details or {}, ensure_ascii=False)})
+
+
+async def read_versions(db, job_id: str) -> list[dict]:
+    """Every version of the job, in the order they were first recorded, each with its events by name and its status."""
+    rows = (await db.execute(text("""
+        SELECT version_id::text AS version_id, version_no, kind, event, request_key::text AS request_key, attempt_token::text AS attempt_token,
+               actor_user_id::text AS actor_user_id, job_revision, input_sha256, payload, details, created_at
+        FROM requirements_analysis_log WHERE job_id = CAST(:jid AS uuid) ORDER BY log_id
+    """), {"jid": str(job_id)})).mappings().all()
+    versions: dict[str, dict] = {}
+    for r in rows:
+        v = versions.setdefault(r["version_id"], {"version_id": r["version_id"], "version_no": int(r["version_no"]), "kind": r["kind"], "events": {}})
+        v["events"][r["event"]] = {"request_key": r["request_key"], "attempt_token": r["attempt_token"], "actor_user_id": r["actor_user_id"],
+                                   "job_revision": r["job_revision"], "input_sha256": r["input_sha256"], "payload": _as_json(r["payload"]),
+                                   "details": _as_json(r["details"]) or {}, "created_at": r["created_at"]}
+    out = list(versions.values())
+    for v in out:
+        v["status"] = version_status(v["events"])
+    return out
+
+
+def version_status(events: dict) -> str:
+    if "superseded" in events:
+        return "superseded"
+    for name in ("applied", "discarded", "rejected", "completed", "requested"):
+        if name in events:
+            return name
+    return "initial"
+
+
+def open_candidate(versions: list[dict]) -> dict | None:
+    """The one candidate that is requested or completed and not yet decided (at most one at a time; the request checks this under the job lock)."""
+    for v in versions:
+        if v["kind"] == "candidate" and v["status"] in ("requested", "completed"):
+            return v
+    return None
+
+
+async def next_version_no(db, job_id: str) -> int:
+    row = (await db.execute(text("SELECT COALESCE(MAX(version_no), 1) + 1 FROM requirements_analysis_log WHERE job_id = CAST(:jid AS uuid)"),
+                            {"jid": str(job_id)})).scalar_one()
+    return int(row)
+
+
+CODE_INPUTS_CHANGED_DURING_CALL = "inputs_changed_during_call"
+
+
+async def finish_candidate(db, *, job_id: str, version_id: str, token: str, state: dict, call: CallResult, prompt: PromptRef, policy: bool,
+                           actor_tenant: str) -> str:
+    """Record the outcome of a candidate's model call in ONE transaction under the job's locks (criteria row first, then the job row, as the first
+    extraction does). Completed only if the description and the context are still what the model was given; otherwise rejected, with nothing stored
+    as a candidate. Returns 'completed', 'rejected' or 'stale' (the request is no longer open for this token)."""
+    from services.audit_service import log_action
+    lk = await lock_criteria(db, job_id)
+    if lk is None or lk.marker != 2:
+        return "stale"
+    cand = next((v for v in await read_versions(db, job_id) if v["version_id"] == version_id), None)
+    if cand is None or "requested" not in cand["events"] or cand["status"] != "requested":
+        return "stale"
+    if cand["events"]["requested"]["attempt_token"] != token:
+        return "stale"
+    desc_now, meta_now = await current_inputs(db, job_id)
+    if desc_now is None and meta_now is None:
+        return "stale"
+    changed = NI.changed_fields(state["model_inputs"], NI.model_inputs(desc_now, meta_now))
+    req = cand["events"]["requested"]
+    if changed:
+        await append_log(db, job_id=job_id, tenant_id=actor_tenant, version_id=version_id, version_no=cand["version_no"], kind="candidate",
+                         event="rejected", attempt_token=token, job_revision=lk.revision, input_sha256=state["model_inputs"]["sha256"],
+                         details={"code": CODE_INPUTS_CHANGED_DURING_CALL, "changed_fields": changed, "returned_model": call.returned_model})
+        await log_action(db, actor_tenant, None, None, "requirements_analysis_rejected", resource_type="job", resource_id=str(job_id), strict=True,
+                         details={"job_id": str(job_id), "version_id": version_id, "version_no": cand["version_no"], "code": CODE_INPUTS_CHANGED_DURING_CALL,
+                                  "changed_fields": changed, "input_sha256": state["model_inputs"]["sha256"], "revision": lk.revision})
+        return "rejected"
+    record = pipeline_core.to_record_v2(state, model=call.returned_model or call.requested_model, model_inputs=state["model_inputs"],
+                                        context_review=state["context_review"])
+    payload = {"original": state["original"], "record": record, "document": state["requirements"], "model_inputs": state["model_inputs"],
+               "context_review": state["context_review"]}
+    await append_log(db, job_id=job_id, tenant_id=actor_tenant, version_id=version_id, version_no=cand["version_no"], kind="candidate",
+                     event="completed", attempt_token=token, job_revision=lk.revision, input_sha256=state["model_inputs"]["sha256"], payload=payload,
+                     details={"returned_model": call.returned_model, "requested_model": call.requested_model, "prompt_sha256": prompt.sha256,
+                              "job_revision_at_request": req["job_revision"], "job_revision_at_completion": lk.revision,
+                              "context_findings": len(state["context_review"]["issues"])})
+    await log_action(db, actor_tenant, None, None, "requirements_analysis_completed", resource_type="job", resource_id=str(job_id), strict=True,
+                     details={"job_id": str(job_id), "version_id": version_id, "version_no": cand["version_no"], "attempt_token": token,
+                              "input_sha256": state["model_inputs"]["sha256"], "revision": lk.revision,
+                              "job_revision_at_request": req["job_revision"], "returned_model": call.returned_model})
+    return "completed"
+
+
+async def finish_candidate_failure(db, *, job_id: str, version_id: str, token: str, code: str, message: str, actor_tenant: str,
+                                   call: CallResult | None = None) -> str:
+    """A candidate whose model call failed or whose output could not be used: rejected, with the reason. The job's draft is not touched."""
+    from services.audit_service import log_action
+    lk = await lock_criteria(db, job_id)
+    if lk is None:
+        return "stale"
+    cand = next((v for v in await read_versions(db, job_id) if v["version_id"] == version_id), None)
+    if cand is None or cand["status"] != "requested" or cand["events"]["requested"]["attempt_token"] != token:
+        return "stale"
+    await append_log(db, job_id=job_id, tenant_id=actor_tenant, version_id=version_id, version_no=cand["version_no"], kind="candidate",
+                     event="rejected", attempt_token=token, job_revision=lk.revision,
+                     details={"code": code, "message": (message or "")[:500], "returned_model": call.returned_model if call else None})
+    await log_action(db, actor_tenant, None, None, "requirements_analysis_rejected", resource_type="job", resource_id=str(job_id), strict=True,
+                     details={"job_id": str(job_id), "version_id": version_id, "version_no": cand["version_no"], "code": code, "revision": lk.revision})
+    return "rejected"

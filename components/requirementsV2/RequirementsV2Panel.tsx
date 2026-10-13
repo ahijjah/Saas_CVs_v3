@@ -12,6 +12,7 @@ import { issueText as describeIssue } from './issues';
 import { CategoryCard, CategoryEditState, EditingState, ItemInfo, RowActions } from './CategoryCard';
 import type { EditValues } from './ItemEditor';
 import { BlockerPanel, ConflictPanel, ContextFindingsCard, CorrectionActions, InformationalPanel, IssuesPanel, PipelineStatusCard } from './PipelinePanels';
+import { RecoveryCard, type MergeState } from './RecoveryPanel';
 import {
   ClassificationPanel, ComparisonView, ConflictResolver, EvaluationUnavailable, PreferredOnlyCard, ReadinessCard,
   SimilarityPanel, btnPrimary, btnSecondary,
@@ -55,6 +56,8 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
   const [fallback, setFallback] = useState<Record<CategoryKey, number> | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);   // the one item whose editor is open (nothing changes until Apply)
   const [catEdit, setCatEdit] = useState<{ category: CategoryKey } & CategoryEditState | null>(null);
+  const [merge, setMerge] = useState<MergeState | null>(null);       // the merge being decided (one candidate at a time)
+  const requestKeyRef = useRef<string | null>(null);               // the idempotency key of the request in flight (kept across a network failure)
   const alive = useRef(true);
   const apiRef = useRef(api);
   apiRef.current = api;                                            // callers may pass a new object each render
@@ -66,7 +69,7 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     const d = draftFromServer(v.requirements);
     setView(v); setDraft(d); setBase(d); setBaseRevision(v.revision);
     setConflict(null); setChoices({}); setMergedNotice(false); setProblem(null); setFallback(null); setNormalizeNote(null);
-    setEditing(null); setCatEdit(null);
+    setEditing(null); setCatEdit(null); setMerge(null);
   }, []);
 
   const load = useCallback(async () => {
@@ -289,6 +292,44 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
     finally { if (alive.current) setBusy(null); }
   }
 
+  // Re-analysis actions. Each one is refused by the server when the revision or the job's inputs no longer match; the view is reloaded afterwards.
+  // Nothing here runs while the draft has unsaved edits, so no edit can be lost to a reload.
+  const runRecovery = async (call: () => Promise<unknown>, done: string) => {
+    if (busy) return;
+    setBusy('action');
+    try { await call(); say(done); toast(done, 'success'); }
+    catch (e) { const p = describeApiError(e); toast((s as any)[`err_${p.code}`] || p.message, 'error'); }
+    finally { if (alive.current) setBusy(null); }
+    await load();
+  };
+  const recoveryRequest = () => {
+    if (!view) return;
+    const key = requestKeyRef.current ?? (requestKeyRef.current = newRequestKey());
+    return runRecovery(async () => {
+      try { await apiRef.current.requestRecovery(jobId, view.revision, key); requestKeyRef.current = null; }
+      catch (e) { if (describeApiError(e).status !== null) requestKeyRef.current = null; throw e; }    // a refusal ends this key; a network failure reuses it
+    }, s.recoveryRequested);
+  };
+  const recoveryKeep = (versionId: string) => runRecovery(() => apiRef.current.keepRecovery(jobId, versionId), s.recoveryKept);
+  const recoveryTake = (versionId: string) => view && runRecovery(() => apiRef.current.applyRecovery(jobId, versionId, view.revision, 'take'), s.recoveryTaken);
+  const recoveryDiscard = (versionId: string) => {
+    if (!(confirmFn || ((m: string) => window.confirm(m)))(s.recoveryDiscardConfirm)) return;
+    return runRecovery(() => apiRef.current.discardRecovery(jobId, versionId), s.recoveryDiscarded);
+  };
+  const openRecoveryMerge = async (versionId: string) => {
+    const candidate = view?.recovery?.open_candidate;
+    if (busy || !candidate || candidate.version_id !== versionId) return;
+    setBusy('action');
+    try { setMerge({ version: candidate, preview: await apiRef.current.mergePreview(jobId, versionId), decisions: {} }); }
+    catch (e) { const p = describeApiError(e); toast((s as any)[`err_${p.code}`] || p.message, 'error'); }
+    finally { if (alive.current) setBusy(null); }
+  };
+  const decideRecoveryMerge = (key: string, choice: string) => setMerge(m => (m ? { ...m, decisions: { ...m.decisions, [key]: choice } } : m));
+  const applyRecoveryMerge = () => {
+    if (!view || !merge) return;
+    return runRecovery(() => apiRef.current.applyRecovery(jobId, merge.version.version_id, view.revision, 'merge', merge.decisions), s.recoveryMerged);
+  };
+
   // Asks for a new extraction attempt (server decides who may, and only for a failed attempt with no document), then reloads the status.
   const retryExtraction = async () => {
     if (busy) return;
@@ -399,6 +440,9 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
       <PipelineStatusCard s={s} view={view} canEdit={canEdit} />
       <BlockerPanel s={s} view={view} canEdit={canEdit && !conflict} dirty={dirty} busy={busy !== null} textOf={textOf} pending={issuePending} actions={corrections} />
       <ContextFindingsCard s={s} view={view} />
+      <RecoveryCard s={s} recovery={view.recovery} canEdit={canEdit} dirty={dirty} busy={busy !== null} merge={merge}
+                    onRequest={recoveryRequest} onKeep={recoveryKeep} onTake={recoveryTake} onDiscard={recoveryDiscard}
+                    onOpenMerge={openRecoveryMerge} onDecide={decideRecoveryMerge} onApplyMerge={applyRecoveryMerge} onCloseMerge={() => setMerge(null)} />
       <ReadinessCard s={s} view={view} goToCategory={goToCategory} goToItem={goToItem} dirty={dirty} />
       {/* non-blocking: a whole duties section was not extracted; readiness, weights and items are not changed by this */}
       {(view.coverage_warnings?.length ?? 0) > 0 && (
@@ -523,6 +567,12 @@ const ExtractionCard: React.FC<{
       </div>
     </section>
   );
+};
+
+/** A UUID for one request (the server's idempotency key). */
+const newRequestKey = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c => (Number(c) ^ (Math.random() * 16 >> (Number(c) / 4))).toString(16));
 };
 
 export default RequirementsV2Panel;

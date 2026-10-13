@@ -422,7 +422,12 @@ class TestAuthorization:
             (("POST",), "/jobs/{job_id}/requirements/classification-warnings/acknowledge"),
             (("POST",), "/jobs/{job_id}/requirements/confirm-no-numeric-score"),
             (("POST",), "/jobs/{job_id}/requirements/structure-review/confirm"),
-            (("POST",), "/jobs/{job_id}/requirements/extraction/retry")}                 # v2 extraction retry (admin / HR, feature switch on)
+            (("POST",), "/jobs/{job_id}/requirements/extraction/retry"),                 # v2 extraction retry (admin / HR, feature switch on)
+            (("POST",), "/jobs/{job_id}/requirements/recovery/requests"),                # re-analysis (migration 109; switch off by default)
+            (("GET",), "/jobs/{job_id}/requirements/recovery/versions/{version_id}/merge"),
+            (("POST",), "/jobs/{job_id}/requirements/recovery/versions/{version_id}/apply"),
+            (("POST",), "/jobs/{job_id}/requirements/recovery/versions/{version_id}/keep"),
+            (("POST",), "/jobs/{job_id}/requirements/recovery/versions/{version_id}/discard")}
         assert router.router.dependencies, "the AI-recruitment module guard must protect these routes"
 
     def test_request_bodies_reject_extra_fields_and_non_integer_revisions(self):
