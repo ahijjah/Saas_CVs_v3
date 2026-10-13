@@ -192,7 +192,8 @@ def main(argv=None) -> int:
     from auth.password import hash_password
     import test_requirements_pipeline_postgres as pp
     from parser_candidates.requirements_v2_pipeline_1 import extract
-    from services.requirements_pipeline import STORAGE_KEY, to_record
+    from services import requirements_model_inputs as NI
+    from services.requirements_pipeline import STORAGE_KEY, to_record_v2
     from services.requirements_v2 import CATEGORIES, POLICY_KEY
 
     pw = hash_password(PASSWORD)
@@ -208,8 +209,12 @@ def main(argv=None) -> int:
         pg.q("DELETE FROM jobs")
         pg.q("UPDATE system_config SET value=%s WHERE key=%s", ("true" if policy else "false", POLICY_KEY))
         jv2, jlegacy = JOBS["v2"], JOBS["legacy"]
+        # The v2 job holds the description the analysis was extracted from, and the record is bound to that description and to the job's title (the
+        # same binding the approved extraction writes). The legacy job keeps its own placeholder text.
+        jd = pp.FIX["jd"]
         for jid, t in ((jv2, title), (jlegacy, "Legacy Analyst")):
-            pg.q("INSERT INTO jobs (job_id,tenant_id,created_by,title,description) VALUES (%s,%s,%s,%s,%s)", (jid, T1, USERS["admin"][0], t, "Synthetic job description"))
+            pg.q("INSERT INTO jobs (job_id,tenant_id,created_by,title,description) VALUES (%s,%s,%s,%s,%s)",
+                 (jid, T1, USERS["admin"][0], t, jd if jid == jv2 else "Synthetic job description"))
         legacy_analysis = {"job_title": "Legacy Analyst", "skills": {"required": ["Excel"], "preferred": []}, "experience": {"required": ["2 years"]}}
         pg.q("INSERT INTO job_criteria (job_id,analysis_json,original_analysis_json,criteria_extraction_status) VALUES (%s,%s,%s,'completed')",
              (jlegacy, json.dumps(legacy_analysis), json.dumps(legacy_analysis)))
@@ -217,7 +222,9 @@ def main(argv=None) -> int:
         doc = st["requirements"]
         analysis = {"requirements": doc}
         if record:
-            analysis[STORAGE_KEY] = to_record(st, model="gpt-4o-mini-2024-07-18")
+            meta = {"title": title, "department": None, "experience_level": None, "location": None, "job_type": None, "work_mode": None}
+            analysis[STORAGE_KEY] = to_record_v2(st, model="gpt-4o-mini-2024-07-18", model_inputs=NI.model_inputs(jd, meta),
+                                                 context_review={"guard_version": NI.CONTEXT_SCAN_VERSION, "issues": []})
         pg.q("""INSERT INTO job_criteria (job_id,analysis_json,original_analysis_json,weight_skills,weight_experience,weight_education,weight_certifications,
                 weight_soft_skills,weight_domain_knowledge,weight_other,requirements_schema_version,criteria_extraction_status)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,2,'completed')""",
@@ -363,7 +370,8 @@ def main(argv=None) -> int:
                 check("F1 no acknowledgment control for injection / split-OR", page.locator(f"{blk} button", has_text="Accept").count() == 0)
                 check("F1 readiness is the server's (blocked), provenance shown, raw output collapsed", "Text addressed to the AI" in txt(page, "[data-testid=readiness-state]")
                       and "criteria_extraction_v2-2" in page.locator("[data-testid=provenance]").evaluate("e => e.textContent")
-                      and page.locator("[data-testid=raw-output]").get_attribute("open") is None)
+                      and page.locator("[data-testid=raw-output]").get_attribute("open") is None,
+                      f"readiness={txt(page, '[data-testid=readiness-state]')!r} provenance_has_prompt={'criteria_extraction_v2-2' in page.locator('[data-testid=provenance]').evaluate('e => e.textContent')}")
                 details = [r for r in s.responses if r[1].startswith("/jobs/details")]
                 check("F1 DEFECT FIX: /jobs/details no longer carries the pipeline record (raw output) to the page", details and all("requirements_pipeline" not in r[3] and "scoreability" not in r[3] for r in details))
                 shot(page, "F1_combined_desktop_en")
@@ -407,7 +415,8 @@ def main(argv=None) -> int:
             if want('F4'):
                 seed()
                 st, v = fix_blockers_via_api()
-                check("F4 (setup via API) blockers corrected; only policy-governed reviews remain", st == 200 and v["readiness"]["state"] == "needs_classification_review", f"{st}")
+                check("F4 (setup via API) blockers corrected; only policy-governed reviews remain", st == 200 and v["readiness"]["state"] == "needs_classification_review",
+                      f"status={st} state={v.get('readiness', {}).get('state')} reasons={[r['code'] for r in v.get('readiness', {}).get('reasons', [])]}")
                 s = Session(browser, "hr")
                 page = s.open_job()
                 check("F4 policy Yes: HR manager sees acknowledgment controls enabled on the saved version", not page.locator("[data-testid=ack-conflict]").is_disabled())

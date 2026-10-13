@@ -1,9 +1,13 @@
 """Server-side three-way decisions for applying a re-analysis candidate by merge. PURE: no database, no model, no pipeline import.
 
 The draft (what the recruiter has, possibly edited) and the candidate (the new analysis) are compared item by item. Items are matched by their
-normalised wording within a category; when a wording occurs more than once, the n-th occurrence on each side is paired with the n-th on the other.
-Item ids differ between two extractions, so a matched pair is one logical requirement. Every difference needs an explicit decision, and the merged
-document is built here, on the server, from those decisions. The client never supplies the merged document.
+normalised wording within ONE category, and only when that wording occurs exactly once on each side. When a wording occurs more than once on either
+side the pairing is ambiguous: no occurrence is paired by position; each occurrence is a draft-only or candidate-only difference with its own
+decision. Item ids differ between two extractions, so a matched pair is one logical requirement. Every difference needs an explicit decision, and the
+merged document is built here, on the server, from those decisions. The client never supplies the merged document.
+
+build() also reports whether the merged document keeps any content that this analysis did not review (draft wording that the candidate does not
+carry, or a draft weight). The caller must then not store the candidate's binding to the job's inputs for the merged document.
 
 Matched items that differ (importance, weight, alternatives or experience) are conflicts: the recruiter chooses 'draft' or 'candidate'. Draft items
 the candidate does not contain are 'keep' or 'drop'. Candidate items the draft does not contain are 'add' or 'skip'. A category weight that differs is
@@ -18,6 +22,7 @@ import copy
 import json
 from typing import Any
 
+ORIGIN_RECRUITER_ADDED = "recruiter_added"
 CATEGORIES = ("skills", "experience", "education", "certifications", "soft_skills", "domain_knowledge", "other_requirements")
 FIELDS = ("importance", "weight", "alternatives", "experience")
 CONFLICT_CHOICES = ("draft", "candidate")
@@ -47,26 +52,30 @@ def _differing(a: dict, b: dict) -> list[str]:
 
 
 def _pairs(draft: dict, candidate: dict) -> list[dict]:
-    """Every decision point of one category, in draft order, then candidate-only items. Each carries its key and what kind it is."""
-    out: list[dict] = []
-    seen: dict[str, int] = {}
+    """Every decision point of one category, in draft order, then candidate-only items. A wording that occurs more than once on either side is
+    ambiguous and is never paired: each occurrence becomes its own draft-only or candidate-only point."""
     cand_by: dict[str, list[dict]] = {}
     for item in candidate.get("items", []):
         cand_by.setdefault(norm(item.get("text")), []).append(item)
-    used: dict[str, int] = {}
+    draft_count: dict[str, int] = {}
+    for item in draft.get("items", []):
+        draft_count[norm(item.get("text"))] = draft_count.get(norm(item.get("text")), 0) + 1
+    ambiguous = {k for k in set(cand_by) | set(draft_count) if len(cand_by.get(k, [])) > 1 or draft_count.get(k, 0) > 1}
+    out: list[dict] = []
+    seen: dict[str, int] = {}
     for item in draft.get("items", []):
         k = norm(item.get("text"))
         n = seen.get(k, 0)
         seen[k] = n + 1
         peers = cand_by.get(k, [])
-        if n < len(peers):
-            used[k] = max(used.get(k, 0), n + 1)
-            out.append({"kind": "matched", "key_base": k, "occurrence": n, "draft": item, "candidate": peers[n]})
-        else:
+        if k in ambiguous or not peers:
             out.append({"kind": "draft_only", "key_base": k, "occurrence": n, "draft": item, "candidate": None})
+        else:
+            out.append({"kind": "matched", "key_base": k, "occurrence": 0, "draft": item, "candidate": peers[0]})
     for k, peers in cand_by.items():
-        for n in range(used.get(k, 0), len(peers)):
-            out.append({"kind": "candidate_only", "key_base": k, "occurrence": n, "draft": None, "candidate": peers[n]})
+        if k in ambiguous or k not in draft_count:
+            for n, peer in enumerate(peers):
+                out.append({"kind": "candidate_only", "key_base": k, "occurrence": n, "draft": None, "candidate": peer})
     return out
 
 
@@ -96,8 +105,9 @@ def plan(draft: dict, candidate: dict) -> dict:
     return {"conflicts": conflicts, "draft_only": draft_only, "candidate_only": candidate_only, "weights": weights}
 
 
-def build(draft: dict, candidate: dict, resolutions: dict[str, str]) -> tuple[dict, list[str]]:
-    """The merged document for the given decisions, and the wording of every draft item that is kept (for the server's own checks).
+def build(draft: dict, candidate: dict, resolutions: dict[str, str]) -> tuple[dict, list[str], bool]:
+    """The merged document for the given decisions; the wording of every draft item that is kept (for the server's own checks); and whether the
+    merged document keeps content this analysis did not review: a draft item the recruiter wrote over (not recruiter-added) or a draft weight.
     Raises MergeError when a decision is missing or unknown."""
     decided = plan(draft, candidate)
     allowed = {**{x["key"]: CONFLICT_CHOICES for x in decided["conflicts"]},
@@ -110,10 +120,15 @@ def build(draft: dict, candidate: dict, resolutions: dict[str, str]) -> tuple[di
         raise MergeError(sorted(missing), sorted(invalid))
     merged = copy.deepcopy(candidate)
     kept_wording: list[str] = []
+    unreviewed = False
     for c in CATEGORIES:
         dc, cc = draft["categories"][c], candidate["categories"][c]
         if f"weight:{c}" in resolutions:
-            merged["categories"][c]["weight"] = dc.get("weight") if resolutions[f"weight:{c}"] == "draft" else cc.get("weight")
+            if resolutions[f"weight:{c}"] == "draft":
+                merged["categories"][c]["weight"] = dc.get("weight")
+                unreviewed = True
+            else:
+                merged["categories"][c]["weight"] = cc.get("weight")
         items: list[dict] = []
         for point in _pairs(dc, cc):
             if point["kind"] == "matched":
@@ -124,12 +139,17 @@ def build(draft: dict, candidate: dict, resolutions: dict[str, str]) -> tuple[di
                     item = copy.deepcopy(point["draft"])
                     item["id"] = point["candidate"]["id"]
                     items.append(item)
+                    kept_wording.append(point["draft"].get("text") or "")
+                    if point["draft"].get("origin") != ORIGIN_RECRUITER_ADDED:
+                        unreviewed = True
             elif point["kind"] == "draft_only":
                 if resolutions[_key(c, point)] == "keep":
                     items.append(copy.deepcopy(point["draft"]))
                     kept_wording.append(point["draft"].get("text") or "")
+                    if point["draft"].get("origin") != ORIGIN_RECRUITER_ADDED:
+                        unreviewed = True
             else:
                 if resolutions[_key(c, point)] == "add":
                     items.append(copy.deepcopy(point["candidate"]))
         merged["categories"][c]["items"] = items
-    return merged, kept_wording
+    return merged, kept_wording, unreviewed

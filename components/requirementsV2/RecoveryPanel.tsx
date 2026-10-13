@@ -132,6 +132,7 @@ const MergeForm: React.FC<{ s: Strings; merge: MergeState; busy: boolean; dirty:
     <div className="rounded-lg border border-slate-300 bg-white p-3 space-y-3" data-testid="recovery-merge-form">
       <h5 className="text-xs font-black text-textMain">{s.mergeTitle}</h5>
       <p className="text-xs text-textMuted" role="status" data-testid="merge-count">{fmt(s.mergeCount, { done: decided, total: keys.length })}</p>
+      <p className="text-xs text-amber-900" data-testid="merge-unverified-note">{s.mergeUnverifiedNote}</p>
       {keys.length === 0 && <p className="text-xs text-textMuted">{s.mergeNothingToDecide}</p>}
 
       {preview.conflicts.map(x => (

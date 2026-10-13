@@ -1060,6 +1060,15 @@ async def merge_preview(db, user, job_id: str, version_id: str) -> dict:
     return {"version_id": version_id, "revision": loaded.revision, **plan(loaded.stored, _completed_payload(cand)["document"])}
 
 
+def _unbound(record: dict) -> dict:
+    """The record in the shape an older analysis has: no binding to the job's inputs and no context review. Readers treat it as unverified."""
+    out = copy.deepcopy(record)
+    out.pop("model_inputs", None)
+    out.pop("context_review", None)
+    out["record_version"] = pipe.RECORD_VERSION
+    return out
+
+
 async def apply_candidate(db, user, job_id: str, version_id: str, expected_revision: int, choice: str, resolutions: dict | None = None) -> dict:
     """Apply a completed candidate: 'take' replaces the draft with the candidate; 'merge' builds the draft from the explicit decisions. The previous
     active draft is kept as a superseded version. Checked under the job's lock: the revision, that the candidate is still bound to the job's current
@@ -1085,11 +1094,12 @@ async def apply_candidate(db, user, job_id: str, version_id: str, expected_revis
     if changed:
         raise ApiError(409, CODE_CANDIDATE_INPUTS_CHANGED, "The job changed after this analysis was made. Request a new analysis.",
                        changed_fields=changed)
+    unreviewed = False
     if choice == "take":
         doc = copy.deepcopy(payload["document"])
     else:
         try:
-            doc, kept_wording = build(loaded.stored, payload["document"], resolutions or {})
+            doc, kept_wording, unreviewed = build(loaded.stored, payload["document"], resolutions or {})
         except MergeError as exc:
             raise ApiError(422, CODE_MERGE_INCOMPLETE, "Every difference needs a decision before the merge can be applied.",
                            missing=exc.missing, invalid=exc.invalid) from exc
@@ -1107,7 +1117,9 @@ async def apply_candidate(db, user, job_id: str, version_id: str, expected_revis
                              payload={"document": loaded.stored, "record": loaded.pipeline_record, "original": loaded.original})
     analysis = copy.deepcopy(loaded.analysis)
     analysis["requirements"] = doc
-    analysis[pipe.STORAGE_KEY] = payload["record"]
+    # A merge that keeps content this analysis did not review must not inherit the candidate's binding to the job's inputs: the stored record is
+    # the unbound (older) shape, so the job reads as unverified until a new analysis binds it. The candidate's own findings stay in the record.
+    analysis[pipe.STORAGE_KEY] = _unbound(payload["record"]) if unreviewed else payload["record"]
     analysis["requirements_active_version"] = {"version_id": version_id, "version_no": cand["version_no"]}
     params = {"aj": json.dumps(analysis, ensure_ascii=False), "retired": json.dumps(loaded.retired), "uid": str(user.user_id), "jid": str(job_id),
               "rev": loaded.revision, **{f"w_{c}": doc["categories"][c]["weight"] for c in CATEGORIES}}
@@ -1119,6 +1131,7 @@ async def apply_candidate(db, user, job_id: str, version_id: str, expected_revis
                "input_sha256": payload["model_inputs"]["sha256"], "resulting_revision": revision}
     if choice == "merge":
         details["resolutions"] = dict(sorted((resolutions or {}).items()))
+        details["unbound"] = unreviewed
     await ext.append_log(db, job_id=job_id, tenant_id=str(user.tenant_id), version_id=version_id, version_no=cand["version_no"], kind="candidate",
                          event="applied", actor_user_id=str(user.user_id), job_revision=revision,
                          input_sha256=payload["model_inputs"]["sha256"], details=details)
