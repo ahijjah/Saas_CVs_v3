@@ -134,3 +134,33 @@ def overlay_readiness(readiness: dict, blockers: list[dict]) -> dict:
     out["scoring_mode"] = None
     out["reasons"] = list(blockers) + [r for r in readiness.get("reasons", [])]
     return out
+
+
+# ── presentation (read-only): the same blockers, shaped for the editor. Nothing here changes what progresses. ───────────────────
+
+def input_summary(record: Any, current_description: str | None, current_metadata: Mapping[str, Any] | None) -> dict | None:
+    """Which job inputs changed, and whether the analysis cannot be verified against them. None without a stored analysis."""
+    if not isinstance(record, dict):
+        return None
+    blockers = input_blockers(record, current_description, current_metadata)
+    changed = [b["field"] for b in blockers if b["code"] in (DESCRIPTION_CHANGED, CONTEXT_CHANGED) and b.get("field")]
+    unverified = any(b["code"] in (CONTEXT_UNVERIFIED, BINDING_INVALID, INPUTS_UNAVAILABLE) for b in blockers)
+    if changed:
+        state = STATE_INPUTS_CHANGED
+    elif unverified:
+        state = STATE_INPUTS_UNVERIFIED
+    else:
+        state = "bound"
+    return {"state": state, "changed": changed, "unverified": unverified}
+
+
+def open_context_findings(record: Any) -> list[dict] | None:
+    """The open AI-directed findings in the context fields, with the field and the exact snippet. None without a stored analysis; [] for older
+    records (they carry no context review)."""
+    if not isinstance(record, dict):
+        return None
+    cr = record.get("context_review")
+    if not isinstance(cr, dict) or not isinstance(cr.get("issues"), list):
+        return []
+    return [{"id": i["id"], "field": i["field"], "snippet": i["snippet"], "rule_codes": list(i.get("rule_codes", []))}
+            for i in cr["issues"] if i.get("status") == "open"]

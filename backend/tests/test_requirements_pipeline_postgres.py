@@ -44,14 +44,16 @@ def combined_state():
     return extract(FIX["jd"], json.dumps(raw), finish_reason="stop", extraction_prompt=PROMPT)
 
 
-def seed_state(env, state, *, job=JOB, tenant=T1, with_record=True, analysis_extra=None):
+def seed_state(env, state, *, job=JOB, tenant=T1, with_record=True, analysis_extra=None, jd=None):
+    """`jd` is the job description the state was extracted from (default: the B06 fixture). The record is bound to it, as production does."""
+    text_value = FIX["jd"] if jd is None else jd
     doc, original = state["requirements"], state["original"]
     analysis = {"requirements": doc, "keep": {"me": True}, **(analysis_extra or {})}
     if with_record:
         # the production shape: a v2 record bound to the description the job holds (and to no context fields)
-        analysis[STORAGE_KEY] = to_record_v2(state, model=MODEL, model_inputs=NI.model_inputs(FIX["jd"], None),
+        analysis[STORAGE_KEY] = to_record_v2(state, model=MODEL, model_inputs=NI.model_inputs(text_value, None),
                                              context_review={"guard_version": NI.CONTEXT_SCAN_VERSION, "issues": []})
-    env.q("INSERT INTO jobs (job_id, tenant_id, client_organization_id, description) VALUES (%s, %s, NULL, %s)", (job, tenant, FIX["jd"]))
+    env.q("INSERT INTO jobs (job_id, tenant_id, client_organization_id, description) VALUES (%s, %s, NULL, %s)", (job, tenant, text_value))
     env.q("""INSERT INTO job_criteria (job_id, analysis_json, original_analysis_json, weight_skills, weight_experience, weight_education,
                 weight_certifications, weight_soft_skills, weight_domain_knowledge, weight_other, requirements_schema_version)
              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 2)""",

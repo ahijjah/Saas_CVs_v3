@@ -271,3 +271,25 @@ export const InformationalPanel: React.FC<{ s: Strings; view: RequirementsView }
   );
 };
 
+
+// ── AI-directed text found in a job field (the context fields, not the description): always blocking, shown as plain text ───────────────
+// The field name and the exact text come from the server. They are rendered as text only (React escapes them), each in its own direction.
+export const ContextFindingsCard: React.FC<{ s: Strings; view: RequirementsView }> = ({ s, view }) => {
+  const findings = view.context_findings ?? [];
+  if (findings.length === 0) return null;
+  return (
+    <section role="alert" aria-labelledby="req-context-h" className="rounded-xl border-2 border-red-400 bg-red-50 p-4" data-testid="context-findings">
+      <h4 id="req-context-h" className="text-sm font-black text-red-800">{s.contextFindingsTitle}</h4>
+      <p className="text-xs text-red-900 mt-0.5">{s.contextFindingNote}</p>
+      <ul className="mt-3 space-y-3">
+        {findings.map(f => (
+          <li key={f.id} data-testid="context-finding" data-field={f.field} className="rounded-lg border border-red-300 bg-white p-3 text-xs">
+            <p><span className="font-bold">{s.contextFindingField}: </span><span dir="auto" data-testid="context-finding-field">{(s as any)[`field_${f.field}`] || f.field}</span></p>
+            <p className="mt-2 font-bold">{s.contextFindingText}</p>
+            <blockquote className={quote} dir="auto" data-testid="context-finding-text">{f.snippet}</blockquote>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+};

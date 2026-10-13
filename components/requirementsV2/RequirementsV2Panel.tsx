@@ -11,7 +11,7 @@ import { fmt, STRINGS, type Strings } from './i18n';
 import { issueText as describeIssue } from './issues';
 import { CategoryCard, CategoryEditState, EditingState, ItemInfo, RowActions } from './CategoryCard';
 import type { EditValues } from './ItemEditor';
-import { BlockerPanel, ConflictPanel, CorrectionActions, InformationalPanel, IssuesPanel, PipelineStatusCard } from './PipelinePanels';
+import { BlockerPanel, ConflictPanel, ContextFindingsCard, CorrectionActions, InformationalPanel, IssuesPanel, PipelineStatusCard } from './PipelinePanels';
 import {
   ClassificationPanel, ComparisonView, ConflictResolver, EvaluationUnavailable, PreferredOnlyCard, ReadinessCard,
   SimilarityPanel, btnPrimary, btnSecondary,
@@ -398,6 +398,7 @@ export const RequirementsV2Panel: React.FC<RequirementsV2PanelProps> = ({
 
       <PipelineStatusCard s={s} view={view} canEdit={canEdit} />
       <BlockerPanel s={s} view={view} canEdit={canEdit && !conflict} dirty={dirty} busy={busy !== null} textOf={textOf} pending={issuePending} actions={corrections} />
+      <ContextFindingsCard s={s} view={view} />
       <ReadinessCard s={s} view={view} goToCategory={goToCategory} goToItem={goToItem} dirty={dirty} />
       {/* non-blocking: a whole duties section was not extracted; readiness, weights and items are not changed by this */}
       {(view.coverage_warnings?.length ?? 0) > 0 && (

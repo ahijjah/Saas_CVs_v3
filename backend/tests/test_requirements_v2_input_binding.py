@@ -283,3 +283,48 @@ def test_the_switch_off_still_refuses_every_v2_job_whatever_the_binding(clean):
         g.assert_job_evaluable(entry="score_cv_task", marker=2, analysis_json=_analysis(clean),
                                current_inputs={"description": B01, "job_metadata": CLEAN_META})
     assert not isinstance(exc.value, g.InjectionReviewRequiredError)
+
+
+# ── the read-only presentation of the binding (the editor's view): it must describe the same blockers and never loosen them ─────
+
+def test_the_input_summary_names_the_changed_fields_and_is_none_without_an_analysis(clean):
+    rec = bound_record(clean)
+    assert NI.input_summary(None, B01, CLEAN_META) is None
+    assert NI.input_summary(rec, B01, CLEAN_META) == {"state": "bound", "changed": [], "unverified": False}
+    changed = NI.input_summary(rec, B01 + " x", {**CLEAN_META, "title": "Other", "location": "Jeddah"}, )
+    assert changed == {"state": "inputs_changed", "changed": ["description", "title", "location"], "unverified": False}
+
+
+def test_the_input_summary_marks_an_older_record_unverified_and_never_says_bound(clean):
+    v1 = to_record(clean, model=None)
+    summary = NI.input_summary(v1, B01, CLEAN_META)
+    assert summary["state"] == "inputs_unverified" and summary["unverified"] is True and summary["changed"] == []
+
+
+def test_the_summary_and_the_blockers_agree_on_every_edit(clean):
+    """The summary is presentation of input_blockers, so a field is reported changed exactly when a blocker names it."""
+    rec = bound_record(clean)
+    for desc, meta in [(B01, CLEAN_META), (B01 + " y", CLEAN_META), (B01, {**CLEAN_META, "work_mode": "Remote"}), (B01, {**CLEAN_META, "title": ""})]:
+        blockers = NI.input_blockers(rec, desc, meta)
+        summary = NI.input_summary(rec, desc, meta)
+        assert summary["changed"] == [b["field"] for b in blockers if b["code"] in ("description_changed", "context_changed")]
+
+
+def test_open_context_findings_carry_the_field_and_the_exact_snippet(clean):
+    title = f"HR Manager. {DIRECTIVE}"
+    state = analyse(B01, B01_RAW, {**CLEAN_META, "title": title})
+    rec = bound_record(state)
+    findings = NI.open_context_findings(rec)
+    assert findings and all(f["field"] == "title" and f["snippet"] in title and DIRECTIVE in f["snippet"] for f in findings)
+    assert all(set(f) == {"id", "field", "snippet", "rule_codes"} for f in findings)
+    assert NI.open_context_findings(to_record(clean, model=None)) == []                  # an older record carries no context review
+    assert NI.open_context_findings(None) is None
+
+
+def test_the_presentation_never_loosens_the_blockers(clean):
+    """A blocked analysis must still be blocked when its summary is shown; the readiness overlay is what gates, and it is unchanged."""
+    rec = bound_record(clean)
+    blockers = NI.input_blockers(rec, B01 + " z", CLEAN_META)
+    assert blockers and NI.input_summary(rec, B01 + " z", CLEAN_META)["state"] == NI.STATE_INPUTS_CHANGED
+    out = NI.overlay_readiness({"state": "ready", "can_proceed": True, "scoring_mode": "full", "reasons": []}, blockers)
+    assert out["can_proceed"] is False and out["state"] == NI.STATE_INPUTS_CHANGED

@@ -505,6 +505,9 @@ def build_view(*, job_id: str, revision: int | None, doc: dict, original: dict |
         "edited_categories": edited_categories(original, doc) if original is not None else None,
         "readiness": ready_view,
         "pipeline": _pipeline_block(ctx, editable),
+        # read-only presentation of the job-input binding (never changes readiness): which inputs changed, and the open context findings
+        "inputs": NI.input_summary(pipeline_record, description, job_metadata) if ctx.status == PIPELINE_OK else None,
+        "context_findings": NI.open_context_findings(pipeline_record) if ctx.status == PIPELINE_OK else None,
         # null (not []) without a usable pipeline record: an empty list would claim "no issues"
         "unresolved_issues": ([{**i, "details": pipe.issue_details(state).get(i["id"])} for i in state["unresolved_issues"]] if state else None),
         "model_conflicts": pipe.model_conflicts(state) if state else None,

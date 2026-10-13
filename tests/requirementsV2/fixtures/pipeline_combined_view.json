@@ -900,5 +900,11 @@
     "status": null,
     "error": null,
     "retry_available": false
-  }
+  },
+  "inputs": {
+    "state": "bound",
+    "changed": [],
+    "unverified": false
+  },
+  "context_findings": []
 }

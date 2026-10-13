@@ -44,11 +44,15 @@ export interface RequirementsView {
   edited_categories: Record<string, boolean> | null;
   readiness: {
     state: string; scoring_mode: string | null; can_proceed: boolean;
-    reasons: { code: string; message: string; category: string | null; item_id: string | null }[];
+    reasons: { code: string; message: string; category: string | null; item_id: string | null; field?: string | null }[];
     open_warning_ids: string[]; unresolved_warning_ids: string[]; structure_review_item_ids: string[];
     /** false/absent: the additional (pipeline) checks were NOT applied to this readiness. */
-    guarded?: boolean; basis?: 'pipeline' | 'frozen_only' | 'pipeline_record_invalid';
+    guarded?: boolean; basis?: 'pipeline' | 'pipeline_inputs' | 'frozen_only' | 'pipeline_record_invalid';
   };
+  /** Which job fields the analysis was made from changed, or cannot be verified (null without a stored analysis; absent on older servers). */
+  inputs?: { state: 'bound' | 'inputs_changed' | 'inputs_unverified'; changed: string[]; unverified: boolean } | null;
+  /** Open AI-directed text found in a job field: the field and the exact text (null without a usable record; absent on older servers). */
+  context_findings?: { id: string; field: string; snippet: string; rule_codes: string[] }[] | null;
   /** Additional checks (all optional: absent on older servers; null without a usable pipeline record). */
   pipeline?: PipelineInfo;
   unresolved_issues?: PipelineIssue[] | null;

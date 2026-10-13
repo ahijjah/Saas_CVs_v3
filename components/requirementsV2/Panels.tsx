@@ -21,10 +21,17 @@ export interface ReadinessProps {
   dirty?: boolean;                                   // the draft differs from the saved version
 }
 
+// The reason codes that mean the analysis is not bound to the job's current inputs (the server's blockers; see services/requirements_model_inputs.py).
+export const INPUT_BLOCK_CODES = ['description_changed', 'context_changed', 'context_unverified', 'binding_invalid', 'inputs_unavailable'];
+
 export const ReadinessCard: React.FC<ReadinessProps> = ({ s, view, goToCategory, goToItem, dirty }) => {
   const r = view.readiness;
   const unguarded = !!view.pipeline && view.pipeline.status !== 'ok';      // the additional checks were NOT applied to this readiness
-  const ready = r.state === 'ready';
+  // blocked by the job inputs: never shown as passed or ready, whatever the pipeline state says (the reasons are checked too, for older servers)
+  const inputsBlocked = view.inputs?.state === 'inputs_changed' || view.inputs?.state === 'inputs_unverified' || r.reasons.some(x => INPUT_BLOCK_CODES.includes(x.code));
+  const inputsChanged = (view.inputs?.changed ?? []).filter(f => (s as any)[`field_${f}`]);
+  const inputsUnverified = view.inputs?.unverified || r.reasons.some(x => x.code === 'context_unverified');
+  const ready = r.state === 'ready' && !inputsBlocked;
   const passed = ready && !unguarded;
   // the successful state with the checks applied is worded as a validation; the wording never says more than the checks did
   const title = passed ? s.validationPassed : (s as any)[`state_${r.state}`] || r.state;
@@ -48,6 +55,19 @@ export const ReadinessCard: React.FC<ReadinessProps> = ({ s, view, goToCategory,
           )}
           {passed && <p className="text-xs text-textMuted mt-0.5" data-testid="validation-note">{s.validationNote}</p>}
           {ready && <p className="text-xs text-textMuted mt-0.5">{r.scoring_mode === 'none' ? s.hint_ready_none : s.hint_ready_weighted}</p>}
+          {inputsBlocked && (
+            <section className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 space-y-1" data-testid="inputs-status" aria-label={s.readinessBlocked}>
+              <p className="font-black">{s.readinessBlocked}</p>
+              {inputsChanged.length > 0 && (
+                <div data-testid="inputs-changed">
+                  <p className="font-bold">{s.inputsChangedTitle}:</p>
+                  <ul className="list-disc ps-4" dir="auto">{inputsChanged.map(f => <li key={f} data-field={f}>{(s as any)[`field_${f}`]}</li>)}</ul>
+                </div>
+              )}
+              {inputsUnverified && <p data-testid="inputs-unverified"><span className="font-bold">{s.inputsUnverifiedTitle}: </span>{s.inputsUnverifiedNote}</p>}
+              <p data-testid="inputs-recovery">{s.inputsRecoveryUnavailable}</p>
+            </section>
+          )}
           {!ready && r.reasons.length > 0 && (
             <>
               <p className="text-[10px] font-black uppercase tracking-widest text-textMuted mt-2">{s.blockers}</p>
