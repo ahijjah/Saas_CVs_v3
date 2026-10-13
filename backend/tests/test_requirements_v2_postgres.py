@@ -19,7 +19,16 @@ from unittest.mock import patch
 
 import pytest
 
-pgserver = pytest.importorskip("pgserver")
+
+def _real_pgserver():
+    """pgserver when it is installed; otherwise the system PostgreSQL 16 cluster through tests/realdb_pgserver_shim.py (real server, no mocks)."""
+    try:
+        import pgserver as module
+    except ImportError:
+        import realdb_pgserver_shim as module          # raises ImportError (so the module skips) when no PostgreSQL 16 can start
+    return module
+
+pgserver = _real_pgserver()
 pytest.importorskip("psycopg2")
 pytest.importorskip("asyncpg")
 
@@ -45,7 +54,9 @@ EXTRA_SCHEMA = """
     ALTER TABLE job_criteria ADD COLUMN original_analysis_json JSONB;
     ALTER TABLE job_criteria ADD COLUMN last_edited_by UUID;
     ALTER TABLE job_criteria ADD COLUMN last_edited_at TIMESTAMPTZ;
-    CREATE TABLE jobs (job_id UUID PRIMARY KEY, tenant_id UUID NOT NULL, client_organization_id UUID, description TEXT);
+    CREATE TABLE jobs (job_id UUID PRIMARY KEY, tenant_id UUID NOT NULL, client_organization_id UUID, description TEXT,
+        title VARCHAR(255), department VARCHAR(255), experience_level VARCHAR(50), location VARCHAR(255), job_type VARCHAR(100),
+        work_mode VARCHAR(50));   -- the context fields, with the real types (db/schema.sql, migration 025)
     CREATE TABLE agency_user_clients (user_id UUID NOT NULL, client_organization_id UUID NOT NULL, tenant_id UUID NOT NULL);
     CREATE TABLE system_config (
         key VARCHAR(100) PRIMARY KEY, value TEXT NOT NULL,

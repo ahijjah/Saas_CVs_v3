@@ -636,8 +636,8 @@ async def _load(db, user, job_id: str, *, lock: bool) -> Loaded:
     marker = int(marker) if marker is not None and str(marker).strip() != "" else None   # the column is read as text through to_jsonb()
     return Loaded(analysis, stored, original, int(revision) if revision is not None else None, retired,
                   marker=marker, retired_column_present=retired_raw is not None,
-                  pipeline_record=analysis.get(pipe.STORAGE_KEY), description=description, extraction_status=row.get("criteria_extraction_status"),
-                  extraction_error=row.get("criteria_extraction_error"))
+                  pipeline_record=analysis.get(pipe.STORAGE_KEY), description=description, job_metadata=job_metadata,
+                  extraction_status=row.get("criteria_extraction_status"), extraction_error=row.get("criteria_extraction_error"))
 
 
 def build_pending_view(*, job_id: str, revision: int, status: str | None, error: str | None, editable: bool) -> dict:

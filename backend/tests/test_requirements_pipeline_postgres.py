@@ -14,16 +14,17 @@ import pathlib
 
 import pytest
 
-pytest.importorskip("pgserver")
 pytest.importorskip("psycopg2")
 pytest.importorskip("asyncpg")
 
 from test_requirements_v2_postgres import (  # noqa: E402,F401  (fixtures are re-exported on purpose)
-    JOB, JOB2, T1, T2, U_ADMIN, U_HR, Env, _real_modules, api, call, pg, pg_server, raises, user,
+    JOB, JOB2, T1, T2, U_ADMIN, U_HR, Env, _real_modules, _real_pgserver, api, call, pg, pg_server, raises, user,
 )
+_real_pgserver()   # pgserver, or the system PostgreSQL 16 cluster through the adapter; skips the module when neither is available
 from test_requirements_v2_api import client_doc, item  # noqa: E402
 from parser_candidates.requirements_v2_pipeline_1 import extract  # noqa: E402  (the approved offline pipeline: source of the records and of the parity checks)
-from services.requirements_pipeline import STORAGE_KEY, to_record  # noqa: E402
+from services import requirements_model_inputs as NI  # noqa: E402
+from services.requirements_pipeline import RECORD_VERSION_V2, STORAGE_KEY, to_record_v2  # noqa: E402
 from services.requirements_v2 import CATEGORIES, POLICY_KEY  # noqa: E402
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
@@ -47,8 +48,10 @@ def seed_state(env, state, *, job=JOB, tenant=T1, with_record=True, analysis_ext
     doc, original = state["requirements"], state["original"]
     analysis = {"requirements": doc, "keep": {"me": True}, **(analysis_extra or {})}
     if with_record:
-        analysis[STORAGE_KEY] = to_record(state, model=MODEL)
-    env.q("INSERT INTO jobs (job_id, tenant_id, client_organization_id) VALUES (%s, %s, NULL)", (job, tenant))
+        # the production shape: a v2 record bound to the description the job holds (and to no context fields)
+        analysis[STORAGE_KEY] = to_record_v2(state, model=MODEL, model_inputs=NI.model_inputs(FIX["jd"], None),
+                                             context_review={"guard_version": NI.CONTEXT_SCAN_VERSION, "issues": []})
+    env.q("INSERT INTO jobs (job_id, tenant_id, client_organization_id, description) VALUES (%s, %s, NULL, %s)", (job, tenant, FIX["jd"]))
     env.q("""INSERT INTO job_criteria (job_id, analysis_json, original_analysis_json, weight_skills, weight_experience, weight_education,
                 weight_certifications, weight_soft_skills, weight_domain_knowledge, weight_other, requirements_schema_version)
              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 2)""",
@@ -122,8 +125,9 @@ class TestStorage:
         row = pg.row()
         assert set(row["analysis"]) == {"requirements", STORAGE_KEY, "keep"} and row["analysis"]["keep"] == {"me": True}
         rec = row["analysis"][STORAGE_KEY]
+        assert rec["record_version"] == RECORD_VERSION_V2
         assert set(rec) == {"record_version", "component_versions", "provenance", "job_description_sha256", "raw_response", "raw_ai_output", "extraction",
-                            "original_digest", "review_records"}
+                            "original_digest", "review_records", "model_inputs", "context_review"}
         assert "categories" not in rec and "requirements" not in rec and "original" not in rec
         assert rec["provenance"] == {"extraction_prompt": PROMPT, "model": MODEL}
         assert rec["raw_response"] == before["analysis"][STORAGE_KEY]["raw_response"] and rec["raw_ai_output"] == before["analysis"][STORAGE_KEY]["raw_ai_output"]

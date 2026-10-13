@@ -385,7 +385,8 @@ async def finish_success(db, *, job_id: str, token: str, state: dict, call: Call
                               "requested_model": call.requested_model, "returned_model": call.returned_model, "settings": call.settings,
                               "usage": {"prompt_tokens": call.prompt_tokens, "completion_tokens": call.completion_tokens},
                               "acknowledgment_policy": bool(policy), "readiness_state": state["readiness"]["state"],
-                              "original_digest": state["original_digest"], "revision": lk.revision + 1, "weights": w})
+                              "original_digest": state["original_digest"], "revision": lk.revision + 1, "weights": w,
+                              "model_inputs_sha256": state["model_inputs"]["sha256"], "context_findings": len(state["context_review"]["issues"])})
     return "completed"
 
 

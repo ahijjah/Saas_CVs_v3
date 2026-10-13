@@ -99,9 +99,17 @@ class TestMigrationText:
 
 # ══ constraint behavior on a real PostgreSQL (optional) ═══════════════════════
 
+def _real_pgserver():
+    """pgserver when it is installed; otherwise the system PostgreSQL 16 cluster through tests/realdb_pgserver_shim.py (real server, no mocks)."""
+    try:
+        import pgserver as module
+    except ImportError:
+        import realdb_pgserver_shim as module          # raises ImportError (so the module skips) when no PostgreSQL 16 can start
+    return module
+
 @pytest.fixture(scope="module")
 def pg_server():
-    pgserver = pytest.importorskip("pgserver")
+    pgserver = _real_pgserver()
     pytest.importorskip("psycopg2")
     server = pgserver.get_server(tempfile.mkdtemp(prefix="req_v2_pg_"))
     yield server

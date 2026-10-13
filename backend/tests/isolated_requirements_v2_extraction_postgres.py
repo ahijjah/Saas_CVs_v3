@@ -98,9 +98,13 @@ def activate_prompt(db, version=3):
     db.q("UPDATE ai_prompts SET is_active = TRUE WHERE prompt_code = %s AND version = %s", (ext.PROMPT_CODE, version))
 
 
+JOB_META: dict[str, dict] = {}   # job id -> the context fields the job row holds: the enqueue sends exactly these (creation and retry both do)
+
+
 def new_job(db, description: str, *, v2=True, title="Synthetic role", original=None, status="pending") -> tuple[str, str]:
     job_id, token = str(uuid.uuid4()), str(uuid.uuid4())
     db.q("INSERT INTO jobs (job_id, tenant_id, created_by, title, description) VALUES (%s,%s,%s,%s,%s)", (job_id, T1, U_ADMIN, title, description))
+    JOB_META[job_id] = {"title": title, "department": None, "experience_level": None, "location": None, "job_type": None, "work_mode": None}
     if v2:
         db.q("""INSERT INTO job_criteria (job_id, criteria_extraction_status, requirements_schema_version, requirements_extraction_token)
                 VALUES (%s, %s, 2, %s)""", (job_id, status, token))
@@ -189,8 +193,9 @@ def use_client(monkeypatch, client, *, model=MODEL):
 
 
 def run_worker(job_id, token, description, meta=None):
-    """Eager Celery execution of the real task (its retries included)."""
-    res = worker.extract_requirements_v2_task.apply(args=[job_id, token, description, meta])
+    """Eager Celery execution of the real task (its retries included). Without an explicit context it sends the job's stored context, as the
+    production enqueue does."""
+    res = worker.extract_requirements_v2_task.apply(args=[job_id, token, description, meta if meta is not None else JOB_META.get(job_id)])
     assert not res.failed(), res.traceback
     return res.result
 
