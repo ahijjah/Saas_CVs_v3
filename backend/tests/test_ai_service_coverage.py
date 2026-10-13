@@ -39,15 +39,27 @@ def _stub_module(name: str, **attrs: Any) -> types.ModuleType:
     return mod
 
 
+# The stand-ins are installed ONLY when the real package cannot be imported. Unconditional stand-ins would stay in sys.modules for the whole
+# session and break every later test module that imports the real sqlalchemy or openai.
+def _real_importable(name: str) -> bool:
+    try:
+        __import__(name)
+        return True
+    except ImportError:
+        return False
+
+
 # openai
-_openai_mod = _stub_module("openai")
-_openai_mod.AsyncOpenAI = MagicMock  # type: ignore[attr-defined]
+if not _real_importable("openai"):
+    _openai_mod = _stub_module("openai")
+    _openai_mod.AsyncOpenAI = MagicMock  # type: ignore[attr-defined]
 
 # sqlalchemy (and sub-packages)
-_sa = _stub_module("sqlalchemy")
-_sa.text = MagicMock()  # type: ignore[attr-defined]
-_stub_module("sqlalchemy.ext")
-_stub_module("sqlalchemy.ext.asyncio", AsyncSession=MagicMock)
+if not _real_importable("sqlalchemy.ext.asyncio"):
+    _sa = _stub_module("sqlalchemy")
+    _sa.text = MagicMock()  # type: ignore[attr-defined]
+    _stub_module("sqlalchemy.ext")
+    _stub_module("sqlalchemy.ext.asyncio", AsyncSession=MagicMock)
 
 # config
 _config = _stub_module("config")

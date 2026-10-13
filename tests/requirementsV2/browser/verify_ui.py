@@ -117,6 +117,8 @@ def main(argv=None) -> int:
 
     server = pgserver.get_server(tempfile.mkdtemp(prefix="req_ui_pg_"))
     env, admin, dbname = pgt._build(server, "full")
+    # the application role exists in production (schema.sql creates it); this synthetic stand-in must have it too, for 109's grants
+    env.q("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cv_app') THEN CREATE ROLE cv_app LOGIN; END IF; END $$")
     env.q((pgt.MIGRATIONS / "109_requirements_analysis_recovery.sql").read_text(encoding="utf-8"))   # re-analysis history and its switch (default off)
     # the prompt, usage and model-registry tables the candidate worker reads (the same migrations the real database has; any failure is reported)
     for mig in ("010_platform_secrets_ai_prompts.sql", "052_ai_usage_tracking.sql", "053_ai_model_registry.sql", "108_requirements_v2_extraction.sql"):

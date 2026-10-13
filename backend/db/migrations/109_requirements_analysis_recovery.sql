@@ -11,8 +11,14 @@
 -- The feature is OFF by default: system_config 'requirements_v2.recovery_enabled' = 'false'. With it off, no request can be created and no
 -- candidate is applied. Requests also require requirements-v2 extraction to be available (the v2 switch and a valid prompt/model).
 --
--- Rollback (only while no recovery event exists): DROP TRIGGER ...; DROP TABLE requirements_analysis_log; DELETE FROM system_config WHERE key = 'requirements_v2.recovery_enabled';
--- Additive only. Idempotent (IF NOT EXISTS; ON CONFLICT DO NOTHING; DROP TRIGGER IF EXISTS before CREATE TRIGGER).
+-- Application role (cv_app): it may read and append the history, and nothing else. The privilege grants below are not durable on their own (a later
+-- GRANT ... ON ALL TABLES restores them), which is why the trigger is the real guarantee: it refuses UPDATE, DELETE and TRUNCATE for every role that
+-- is not a superuser. The application role must not be a superuser or the table's owner (see the deployment notes).
+--
+-- Rollback: while NO event exists, DROP the two triggers, DROP TABLE requirements_analysis_log and DELETE the system_config row. Once any event
+-- exists the history is not dropped by rollback: rollback is the switch set to 'false' (the default), and any removal of the history is a separate,
+-- approved archival decision (export with COPY first).
+-- Additive only. Idempotent (IF NOT EXISTS; ON CONFLICT DO NOTHING; DROP TRIGGER IF EXISTS before CREATE TRIGGER; GRANT is repeatable).
 
 BEGIN;
 SET search_path = cv_analyzer;
@@ -60,6 +66,12 @@ CREATE TRIGGER requirements_analysis_log_no_change BEFORE UPDATE OR DELETE ON re
 DROP TRIGGER IF EXISTS requirements_analysis_log_no_truncate ON requirements_analysis_log;
 CREATE TRIGGER requirements_analysis_log_no_truncate BEFORE TRUNCATE ON requirements_analysis_log
     FOR EACH STATEMENT EXECUTE FUNCTION requirements_analysis_log_is_append_only();
+
+-- The application role: append and read only. Granted here because this table is created after schema.sql's grants on ALL TABLES.
+GRANT USAGE ON SCHEMA cv_analyzer TO cv_app;
+GRANT SELECT, INSERT ON requirements_analysis_log TO cv_app;
+GRANT USAGE, SELECT ON SEQUENCE requirements_analysis_log_log_id_seq TO cv_app;
+REVOKE UPDATE, DELETE, TRUNCATE ON requirements_analysis_log FROM cv_app;
 
 INSERT INTO system_config (key, value, type, category, editable, description)
 VALUES ('requirements_v2.recovery_enabled', 'false', 'boolean', 'ai', true,
