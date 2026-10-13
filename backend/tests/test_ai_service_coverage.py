@@ -61,7 +61,9 @@ if not _real_importable("sqlalchemy.ext.asyncio"):
     _stub_module("sqlalchemy.ext")
     _stub_module("sqlalchemy.ext.asyncio", AsyncSession=MagicMock)
 
-# config
+# config: the fake is in place only while services.ai_service is imported (it binds get_settings then). It is removed afterwards so that every
+# other module gets the real config; a fake left in sys.modules breaks the Celery app and anything else that reads real settings.
+_saved_config = sys.modules.get("config")
 _config = _stub_module("config")
 
 
@@ -76,6 +78,11 @@ _config.get_settings = lambda: _FakeSettings()  # type: ignore[attr-defined]
 
 # Now safe to import from services.ai_service
 from services.ai_service import _build_coverage_context, score_cv  # noqa: E402
+
+if _saved_config is not None:
+    sys.modules["config"] = _saved_config
+else:
+    sys.modules.pop("config", None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

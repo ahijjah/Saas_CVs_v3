@@ -12,28 +12,43 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 #    a running database, Redis, or OpenAI client. ──────────────────────────────
 from unittest.mock import MagicMock
 
-for _mod in (
-    "openai", "openai.AsyncOpenAI",
-    "sqlalchemy", "sqlalchemy.ext", "sqlalchemy.ext.asyncio",
-    "config",
-    "services.ai_service",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
-# Give sqlalchemy.text a pass-through stub so `text(...)` doesn't blow up.
-import sqlalchemy as _sa
-_sa.text = lambda s: s  # type: ignore[assignment]
+def _importable(name: str) -> bool:
+    try:
+        __import__(name)
+        return True
+    except ImportError:
+        return False
 
-# ─────────────────────────────────────────────────────────────────────────────
+
+# Stand-ins are installed only for the duration of the import below, and only for packages that cannot be imported. A stand-in (or a
+# replaced `sqlalchemy.text`) left in sys.modules would break every later module that uses the real package.
+_STUBS = ("openai", "sqlalchemy", "sqlalchemy.ext", "sqlalchemy.ext.asyncio", "config", "services.ai_service")
+_stubbed: dict[str, object] = {}
+for _mod in _STUBS:
+    if _mod in sys.modules or (_mod.startswith(("openai", "sqlalchemy")) and _importable(_mod)):
+        continue
+    _stubbed[_mod] = sys.modules.get(_mod)
+    _fake = MagicMock()
+    if _mod == "sqlalchemy":
+        _fake.text = lambda s: s                     # text(...) returns the SQL string for the parser tests
+    sys.modules[_mod] = _fake
 
 import pytest
-from services.screening_validation_service import (
-    _parse_screening_results,
-    _SUGGESTION_DEFAULT_CONFIDENCE,
-    _VALID_STATUSES,
-    ValidationResult,
-)
+
+try:
+    from services.screening_validation_service import (
+        _parse_screening_results,
+        _SUGGESTION_DEFAULT_CONFIDENCE,
+        _VALID_STATUSES,
+        ValidationResult,
+    )
+finally:
+    for _mod, _prev in _stubbed.items():
+        if _prev is None:
+            sys.modules.pop(_mod, None)
+        else:
+            sys.modules[_mod] = _prev
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

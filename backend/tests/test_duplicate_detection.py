@@ -11,10 +11,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Stub out sqlalchemy so the service can be imported without it installed
-_sql_mock = MagicMock()
-_sql_mock.text = lambda q: q  # text() just returns the string
-sys.modules.setdefault("sqlalchemy", _sql_mock)
+# Stub out sqlalchemy ONLY when it cannot be imported: a stand-in left in sys.modules would break every later module that uses the real package.
+try:
+    import sqlalchemy  # noqa: F401
+except ImportError:
+    _sql_mock = MagicMock()
+    _sql_mock.text = lambda q: q  # text() just returns the string
+    sys.modules["sqlalchemy"] = _sql_mock
 
 from services.duplicate_detection import (  # noqa: E402
     _normalise_cv_text,
