@@ -236,3 +236,66 @@ def test_the_scripted_rollback_removes_the_empty_table_and_restores_the_108_stat
     cur = d.conn.cursor()
     cur.execute("SELECT to_regclass('cv_analyzer.requirements_analysis_log'), (SELECT count(*) FROM system_config WHERE key = %s)", (SWITCH,))
     assert cur.fetchone() == (None, 0)
+
+
+# ── what a SUPERUSER can and cannot do (corrected claim: triggers fire for a superuser, but a superuser can disable them) ───────────────
+
+def test_the_trigger_fires_for_a_superuser_and_a_superuser_can_disable_it(through_108):
+    """Correct statement of the guarantee: the immutability triggers apply to every role, superusers included, so an UPDATE by the owner-superuser
+    is refused. A superuser can still switch the trigger off with ALTER TABLE ... DISABLE TRIGGER, a privileged operation that is logged by
+    PostgreSQL only if the operator logs DDL. The application role must therefore be neither a superuser nor the owner."""
+    import psycopg2
+    d = through_108
+    _apply_109(d)
+    cur = d.conn.cursor()
+    cur.execute("INSERT INTO requirements_analysis_log (job_id, tenant_id, version_id, version_no, kind, event) VALUES "
+                "('00000000-0000-0000-0000-0000000000c2','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000d1',2,'candidate','requested')")
+    with pytest.raises(psycopg2.Error) as exc:
+        cur.execute("UPDATE requirements_analysis_log SET event = 'discarded'")
+    assert "append-only" in str(exc.value)                           # the trigger fires for the superuser
+    cur.execute("ALTER TABLE requirements_analysis_log DISABLE TRIGGER requirements_analysis_log_no_change")   # privileged: succeeds
+    cur.execute("UPDATE requirements_analysis_log SET event = 'discarded'")                                    # so the history CAN change now
+    cur.execute("ALTER TABLE requirements_analysis_log ENABLE TRIGGER requirements_analysis_log_no_change")
+
+
+def test_a_superuser_session_can_skip_the_triggers_with_session_replication_role(through_108):
+    d = through_108
+    _apply_109(d)
+    cur = d.conn.cursor()
+    cur.execute("INSERT INTO requirements_analysis_log (job_id, tenant_id, version_id, version_no, kind, event) VALUES "
+                "('00000000-0000-0000-0000-0000000000c2','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000d1',2,'candidate','requested')")
+    cur.execute("SET session_replication_role = replica")            # superuser-only setting: row triggers do not fire in this session
+    cur.execute("UPDATE requirements_analysis_log SET event = 'discarded'")
+    cur.execute("RESET session_replication_role")
+
+
+# ── live settings are preserved: a seed default never overwrites a value that is already set ────────────────────────────────────
+
+def test_live_settings_are_not_overwritten_by_migration_109(through_108):
+    """Production had requirements_v2.enabled = true and an active extraction prompt before this release (evidence supplied by the operator).
+    Migration 109 must leave both exactly as they are, and create the recovery switch as false."""
+    d = through_108
+    cur = d.conn.cursor()
+    cur.execute("UPDATE system_config SET value = 'true' WHERE key = 'requirements_v2.enabled'")
+    cur.execute("UPDATE ai_prompts SET is_active = TRUE WHERE prompt_code = 'criteria_extraction_v2' AND version = 3")
+    _apply_109(d)
+    cur.execute("SELECT value FROM system_config WHERE key = 'requirements_v2.enabled'")
+    assert cur.fetchone()[0] == "true"
+    cur.execute("SELECT is_active FROM ai_prompts WHERE prompt_code = 'criteria_extraction_v2' AND version = 3")
+    assert cur.fetchone()[0] is True
+    cur.execute("SELECT value FROM system_config WHERE key = %s", (SWITCH,))
+    assert cur.fetchone()[0] == "false"
+
+
+def test_the_settings_snapshot_runs_before_and_after_109_and_shows_only_the_new_switch(through_108):
+    d = through_108
+    cur = d.conn.cursor()
+    before_sql = "SELECT key, value FROM system_config WHERE key LIKE 'requirements_v2.%' OR key LIKE 'job_analysis.%' ORDER BY key"
+    cur.execute((DEPLOY / "settings_snapshot.sql").read_text(encoding="utf-8"))  # read-only; the last statement's rows are the stage's ai_stage_defaults
+    cur.execute(before_sql)
+    before = cur.fetchall()
+    _apply_109(d)
+    cur.execute(before_sql)
+    after = cur.fetchall()
+    assert [r for r in after if r not in before] == [(SWITCH, "false")]
+    assert before == [r for r in after if r[0] != SWITCH]

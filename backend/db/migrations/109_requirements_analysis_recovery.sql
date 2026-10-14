@@ -5,15 +5,18 @@
 -- draft. The payload of a completed candidate (its original snapshot, its pipeline record and its document) and of a superseded draft is stored here,
 -- so the history is complete without touching job_criteria's original snapshot, which is never rewritten.
 --
--- Immutability is enforced by the database: UPDATE, DELETE and TRUNCATE on the table raise an error (triggers below). Nothing in this migration
+-- Immutability is enforced by the database for ordinary roles: UPDATE, DELETE and TRUNCATE on the table raise an error (triggers below). A superuser
+-- and the table's owner can still disable those triggers or drop the table with privileged operations, so their guarantee against such roles is
+-- administrative. Nothing in this migration
 -- deletes or rewrites rows, and no retention policy is applied (none has been approved).
 --
 -- The feature is OFF by default: system_config 'requirements_v2.recovery_enabled' = 'false'. With it off, no request can be created and no
 -- candidate is applied. Requests also require requirements-v2 extraction to be available (the v2 switch and a valid prompt/model).
 --
 -- Application role (cv_app): it may read and append the history, and nothing else. The privilege grants below are not durable on their own (a later
--- GRANT ... ON ALL TABLES restores them), which is why the trigger is the real guarantee: it refuses UPDATE, DELETE and TRUNCATE for every role that
--- is not a superuser. The application role must not be a superuser or the table's owner (see the deployment notes).
+-- GRANT ... ON ALL TABLES restores them), which is why the trigger is the real guarantee for the application role: it fires for every role, including
+-- a superuser, and refuses UPDATE, DELETE and TRUNCATE. A superuser can still disable it (ALTER TABLE ... DISABLE TRIGGER, or SET
+-- session_replication_role = replica), so the application role must be neither a superuser nor the table's owner (see the runbook).
 --
 -- Rollback: while NO event exists, DROP the two triggers, DROP TABLE requirements_analysis_log and DELETE the system_config row. Once any event
 -- exists the history is not dropped by rollback: rollback is the switch set to 'false' (the default), and any removal of the history is a separate,

@@ -1,6 +1,7 @@
 -- Verification after migration 109. READ-ONLY. Fails (error) when the switch is on, the table or triggers are missing, or the application role
 -- can change the history. Reports (WARNING) when the application role is a superuser: that role bypasses privileges and triggers, so the
--- append-only guarantee is then trigger-level only and recovery must not be enabled until the role model is decided (see the runbook).
+-- append-only guarantee is then administrative, not enforced against that role, and recovery must not be enabled until the role model is decided
+-- (see the runbook).
 -- Run:  psql -v ON_ERROR_STOP=1 -U <owner> -d cv_analyzer_prod -f deploy/recovery_109_verify.sql
 SET search_path = cv_analyzer;
 
@@ -31,7 +32,7 @@ BEGIN
     END IF;
     SELECT rolsuper INTO is_super FROM pg_roles WHERE rolname = 'cv_app';
     IF is_super THEN
-        RAISE WARNING 'cv_app is a SUPERUSER: privileges and triggers do not bind it. Do not enable re-analysis until the role model is decided.';
+        RAISE WARNING 'cv_app is a SUPERUSER: it bypasses privileges and row-level security, and it can disable the immutability triggers (ALTER TABLE ... DISABLE TRIGGER, or SET session_replication_role). Do not enable re-analysis until the role model is decided.';
     END IF;
     RAISE NOTICE 'verification ok: table, 2 triggers, switch false, cv_app read+append only (history rows: %)',
         (SELECT count(*) FROM requirements_analysis_log);

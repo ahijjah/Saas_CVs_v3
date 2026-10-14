@@ -33,6 +33,8 @@ BEGIN
     RAISE NOTICE 'preflight ok: 106, 107 and 108 are in place; 109 is not applied';
 END $$;
 
-SELECT key, value FROM system_config WHERE key IN ('requirements_v2.enabled', 'job_analysis.require_classification_acknowledgment') ORDER BY key;
+-- Live values, as they are on the server now. Seed defaults do not overwrite them: 108 and 109 insert with ON CONFLICT DO NOTHING.
+SELECT key, value FROM system_config WHERE key IN ('requirements_v2.enabled', 'requirements_v2.recovery_enabled', 'job_analysis.require_classification_acknowledgment') ORDER BY key;
+SELECT prompt_code, version, is_active FROM ai_prompts WHERE prompt_code = 'criteria_extraction_v2' ORDER BY version;
 SELECT (SELECT count(*) FROM jobs) AS jobs, (SELECT count(*) FROM job_criteria) AS job_criteria, (SELECT count(*) FROM audit_logs) AS audit_logs;
 SELECT rolname, rolsuper, rolcreaterole FROM pg_roles WHERE rolname IN ('cv_app', current_user) ORDER BY rolname;
