@@ -51,6 +51,7 @@ import { BulkUploadPage } from './pages/BulkUpload';
 import { TenantFeaturesPage } from './pages/TenantFeatures';
 import { FeatureProvider, useFeatures } from './context/FeatureContext';
 import { FeatureNotAvailable } from './pages/FeatureNotAvailable';
+import { PLAN_GATE_STATUSES, TenantAccessGuard } from './components/TenantAccessGuard';
 
 // ── JWT helper ─────────────────────────────────────────────────────────────
 function decodeJwtPayload(token: string) {
@@ -148,22 +149,6 @@ const SuperAdminGuard: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) 
 // ── Must-change-password guard ────────────────────────────────────────────
 const MustChangePasswordGuard: React.FC<{ mustChange: boolean }> = ({ mustChange }) =>
   mustChange ? <Navigate to="/change-password" replace /> : <Outlet />;
-
-// Statuses that require plan selection / payment before accessing the product
-const PLAN_GATE_STATUSES = new Set([
-  'pending_plan_selection', 'pending_payment', 'pending_sales_contact',
-]);
-
-// Statuses that lock the tenant out entirely — send to billing/reactivation
-const BILLING_GATE_STATUSES = new Set([
-  'grace', 'trial_expired', 'suspended', 'cancelled', 'expired',
-]);
-
-const TenantAccessGuard: React.FC<{ subscriptionStatus: string | undefined }> = ({ subscriptionStatus }) => {
-  if (subscriptionStatus && PLAN_GATE_STATUSES.has(subscriptionStatus)) return <Navigate to="/plan-selection" replace />;
-  if (subscriptionStatus && BILLING_GATE_STATUSES.has(subscriptionStatus)) return <Navigate to="/plan-usage" replace />;
-  return <Outlet />;
-};
 
 // ── Module guards — render children or Feature Not Available ─────────────────
 const AIRecruitmentGuard: React.FC = () => {

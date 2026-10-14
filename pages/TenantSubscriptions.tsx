@@ -143,6 +143,29 @@ function UsageBar({ label, used, limit, pct }: { label: string; used: number; li
   );
 }
 
+// ── Provisioning form validation ────────────────────────────────────────────
+const REASON_MIN = 5;
+const REASON_MAX = 500;
+
+const reasonError = (reason: string): string | null => {
+  const len = reason.trim().length;
+  if (len === 0) return 'Reason is required.';
+  if (len < REASON_MIN) return `Reason must be at least ${REASON_MIN} characters.`;
+  if (len > REASON_MAX) return `Reason must be at most ${REASON_MAX} characters.`;
+  return null;
+};
+
+// The valid-until date is sent as the end of the selected day in UTC.
+const endOfDayIso = (date: string): string => `${date}T23:59:59Z`;
+
+const validUntilError = (date: string): string | null => {
+  if (!date) return 'Valid-until date is required.';
+  const expires = new Date(endOfDayIso(date));
+  if (Number.isNaN(expires.getTime())) return 'Enter a valid date.';
+  if (expires.getTime() <= Date.now()) return 'Valid-until date must be in the future.';
+  return null;
+};
+
 export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => {
   const lang = (document.documentElement.lang as 'en' | 'ar') === 'ar' ? 'ar' : 'en';
   const t = T[lang];
@@ -157,7 +180,8 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
   // Manage modal
   const [manageTarget, setManageTarget] = useState<TenantSubscriptionRow | null>(null);
   const [selectedPlan, setSelectedPlan] = useState('');
-  const [trialEndAt, setTrialEndAt] = useState('');
+  const [validUntil, setValidUntil] = useState('');
+  const [reason, setReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [featureSaving, setFeatureSaving] = useState(false);
 
@@ -212,7 +236,8 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
   const openManage = (tenant: TenantSubscriptionRow) => {
     setManageTarget(tenant);
     setSelectedPlan(tenant.plan || tenant.pending_plan || '');
-    setTrialEndAt(tenant.trial_end_at ? tenant.trial_end_at.slice(0, 10) : '');
+    setValidUntil('');
+    setReason('');
   };
 
   const openUsage = async (tenant: TenantSubscriptionRow) => {
@@ -233,16 +258,26 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
     }
   };
 
-  const runAction = async (action: string, extra: Record<string, string> = {}) => {
+  const reasonErr = reasonError(reason);
+  const validUntilErr = validUntilError(validUntil);
+
+  const runAction = async (action: 'assign_plan' | 'extend_trial' | 'suspend' | 'reactivate', extra: { plan_code?: string } = {}) => {
     if (!manageTarget) return;
+    // Reason is required for every action; valid-until only where the backend needs expires_at.
+    const needsExpiry = action !== 'suspend';
+    if (reasonError(reason) || (needsExpiry && validUntilError(validUntil))) return;
+    if (action === 'assign_plan' && !extra.plan_code) return;
     if (action === 'suspend' && !window.confirm(t.confirmSuspend)) return;
     if (action === 'reactivate' && !window.confirm(t.confirmReactivate)) return;
+
+    const body: Record<string, string> = { action, reason: reason.trim(), ...extra };
+    if (needsExpiry) body.expires_at = endOfDayIso(validUntil);
 
     setActionLoading(true);
     try {
       await apiService.patch(
         `${WEBHOOK_CONFIG.ADMIN_TENANTS_URL}/${manageTarget.tenant_id}/subscription`,
-        { action, ...extra },
+        body,
         auth.token!,
       );
       addToast(t.successAction, 'success');
@@ -521,7 +556,7 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                 </div>
                 {manageTarget.pending_plan && !manageTarget.plan && (
                   <p className="text-[11px] text-orange-700 bg-orange-50 rounded-lg px-3 py-1.5">
-                    Pending plan: <strong className="capitalize">{manageTarget.pending_plan}</strong> — limits not applied until payment succeeds.
+                    Pending plan: <strong className="capitalize">{manageTarget.pending_plan}</strong> — limits not applied until activated.
                   </p>
                 )}
                 {manageTarget.pending_plan && !manageTarget.plan && manageTarget.subscription_status === 'pending_sales_contact' && (
@@ -529,6 +564,35 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                     Enterprise enquiry received. Sales team to contact tenant.
                   </p>
                 )}
+              </div>
+
+              {/* Provisioning details shared by every action */}
+              <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+                <p className="text-xs font-black text-textMuted uppercase tracking-widest">Provisioning details</p>
+                <div className="space-y-1.5">
+                  <label htmlFor="sub-valid-until" className="block text-xs font-bold text-textMain">Valid until</label>
+                  <input
+                    id="sub-valid-until"
+                    type="date"
+                    value={validUntil}
+                    onChange={(e) => setValidUntil(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200 bg-white"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="sub-reason" className="block text-xs font-bold text-textMain">Reason</label>
+                  <textarea
+                    id="sub-reason"
+                    rows={3}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="Why is this change being made? (5 to 500 characters)"
+                    className="w-full px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200 bg-white resize-y"
+                  />
+                  <p className="text-[10px] text-textMuted text-right">{reason.trim().length}/{REASON_MAX}</p>
+                </div>
+                {reasonErr && <p role="alert" className="text-xs text-red-600">{reasonErr}</p>}
+                {validUntilErr && <p role="alert" className="text-xs text-red-600">{validUntilErr}</p>}
               </div>
 
               {/* Assign plan */}
@@ -546,7 +610,7 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                     ))}
                   </select>
                   <button
-                    disabled={!selectedPlan || actionLoading}
+                    disabled={!selectedPlan || !!reasonErr || !!validUntilErr || actionLoading}
                     onClick={() => runAction('assign_plan', { plan_code: selectedPlan })}
                     className="px-4 py-2.5 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap"
                   >
@@ -558,28 +622,21 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
               {/* Extend trial */}
               <div>
                 <p className="text-xs font-black text-textMuted uppercase tracking-widest mb-2">{t.extendTrial}</p>
-                <div className="flex gap-2">
-                  <input
-                    type="date"
-                    value={trialEndAt}
-                    onChange={(e) => setTrialEndAt(e.target.value)}
-                    className="flex-1 px-3 py-2.5 text-sm border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200"
-                  />
-                  <button
-                    disabled={!trialEndAt || actionLoading}
-                    onClick={() => runAction('extend_trial', { trial_end_at: trialEndAt })}
-                    className="px-4 py-2.5 text-sm font-bold bg-amber-500 text-white rounded-xl hover:bg-amber-600 disabled:opacity-50 whitespace-nowrap"
-                  >
-                    {actionLoading ? '...' : t.extendTrial}
-                  </button>
-                </div>
+                <button
+                  disabled={!!reasonErr || !!validUntilErr || actionLoading}
+                  onClick={() => runAction('extend_trial')}
+                  className="w-full px-4 py-2.5 text-sm font-bold bg-amber-500 text-white rounded-xl hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {actionLoading ? '...' : t.extendTrial}
+                </button>
+                <p className="text-[10px] text-textMuted mt-1">Uses the valid-until date above.</p>
               </div>
 
               {/* Suspend / Reactivate */}
               <div className="flex gap-3 pt-2 border-t border-border">
                 {manageTarget.subscription_status !== 'suspended' ? (
                   <button
-                    disabled={actionLoading}
+                    disabled={!!reasonErr || actionLoading}
                     onClick={() => runAction('suspend')}
                     className="flex-1 py-2.5 text-sm font-bold border border-red-200 text-red-600 rounded-xl hover:bg-red-50 disabled:opacity-50"
                   >
@@ -587,7 +644,7 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                   </button>
                 ) : (
                   <button
-                    disabled={actionLoading}
+                    disabled={!!reasonErr || !!validUntilErr || actionLoading}
                     onClick={() => runAction('reactivate')}
                     className="flex-1 py-2.5 text-sm font-bold border border-green-200 text-green-600 rounded-xl hover:bg-green-50 disabled:opacity-50"
                   >

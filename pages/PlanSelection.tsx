@@ -140,6 +140,7 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
   const [loading, setLoading] = useState<string | null>(null);
   const [confirmedStatus, setConfirmedStatus] = useState<SubscriptionStatus | null>(null);
   const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
+  const [confirmedPlanName, setConfirmedPlanName] = useState<string>('');
 
   const handleActivateTrial = async () => {
     setLoading('trial');
@@ -161,14 +162,12 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
       const res = await apiService.post(WEBHOOK_CONFIG.SELECT_PLAN_URL, { plan: planCode }, auth.token!);
       const newStatus = res?.subscription_status as SubscriptionStatus;
       onUserUpdate({ subscription_status: newStatus });
-      if (newStatus === 'pending_payment') {
-        navigate(`/payment-simulation?plan=${planCode}&billing=${billingCycle}`, { replace: true });
-      } else {
-        // enterprise → pending_sales_contact: show inline confirmation
-        setConfirmedStatus(newStatus);
-        setConfirmMessage(res?.message || 'Plan selected.');
-        addToast(res?.message || 'Plan selected.', 'success');
-      }
+      // Paid plans → pending_payment: selected, activation pending (no payment page).
+      // Enterprise → pending_sales_contact. Both show the inline confirmation.
+      setConfirmedPlanName(PLAN_CARDS.find(c => c.planCode === planCode)?.name ?? planCode);
+      setConfirmedStatus(newStatus);
+      setConfirmMessage(res?.message || 'Plan selected.');
+      addToast(res?.message || 'Plan selected.', 'success');
     } catch (err: any) {
       addToast(err.message || 'Failed to select plan. Please try again.', 'error');
     } finally {
@@ -183,17 +182,36 @@ export const PlanSelectionPage: React.FC<PlanSelectionProps> = ({
   };
 
   if (confirmedStatus && confirmMessage) {
+    const isPendingActivation = confirmedStatus === 'pending_payment';
+    const mailSubject = isPendingActivation
+      ? `Activate ${confirmedPlanName} plan`
+      : `Enterprise enquiry: ${confirmedPlanName} plan`;
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center px-4">
-        <div className="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
+        <div role="status" className="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
           <div className="w-14 h-14 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-5">
             <svg viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
               <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.15 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.07 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21 16.92z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-3">Request received!</h2>
-          <p className="text-slate-500 text-sm mb-6">{confirmMessage}</p>
-          <a href="mailto:sales@ai970.cloud" className="inline-block px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all">
+          {isPendingActivation ? (
+            <>
+              <h2 className="text-xl font-bold text-slate-900 mb-3">Plan selected</h2>
+              <p className="text-slate-500 text-sm mb-6">
+                Your {confirmedPlanName} plan is selected. Activation is pending: our team will provision it once
+                payment arrangements are confirmed. No payment is taken on this page.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl font-bold text-slate-900 mb-3">Request received!</h2>
+              <p className="text-slate-500 text-sm mb-6">{confirmMessage}</p>
+            </>
+          )}
+          <a
+            href={`mailto:sales@ai970.cloud?subject=${encodeURIComponent(mailSubject)}`}
+            className="inline-block px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all"
+          >
             Email sales@ai970.cloud
           </a>
         </div>

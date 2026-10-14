@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "test:requirements-v2": "vitest run --config tests/requirementsV2/vitest.config.ts"
+    "test:requirements-v2": "vitest run --config tests/requirementsV2/vitest.config.ts",
+    "test:billing": "vitest run --config tests/billing/vitest.config.ts"
   },
   "dependencies": {
     "react": "^19.2.3",
