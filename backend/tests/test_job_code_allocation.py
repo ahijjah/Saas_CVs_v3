@@ -211,3 +211,104 @@ def test_rollbacks_during_concurrency_leave_no_gap_and_no_duplicate(db):
     committed = 15 - 5
     assert len(codes) == committed and len(set(codes)) == committed
     assert sorted(codes) == sorted(code(i) for i in range(1, committed + 1))
+
+
+# ── hardening: PUBLIC, the catalog, the legacy race, and the rollback ───────────────────────────────────────────────────────────
+PROBE = "cv_public_probe"
+
+
+def _ensure_probe_role(d):
+    """A login role that holds nothing but what PUBLIC holds (its own default privileges): the schema is reachable, the function is not."""
+    d.conn.cursor().execute(f"DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{PROBE}') THEN "
+                            f"CREATE ROLE {PROBE} LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT; END IF; END $$")
+    d.conn.cursor().execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {PROBE}")
+
+
+def test_public_cannot_execute_the_allocator_and_the_grant_is_absent(db):
+    """Dynamic check: a role with no grants of its own (the PUBLIC position) is refused EXECUTE. The catalog agrees."""
+    import psycopg2
+    _ensure_probe_role(db)
+    cur = db.conn.cursor()
+    cur.execute("SELECT has_function_privilege('public', 'cv_analyzer.allocate_job_code(integer)', 'EXECUTE')")
+    assert cur.fetchone()[0] is False
+    conn = connect(db, user=PROBE)
+    pc = conn.cursor()
+    with pytest.raises(psycopg2.Error) as exc:
+        pc.execute("SELECT cv_analyzer.allocate_job_code(2031)")
+    assert exc.value.pgcode == "42501", exc.value
+    conn.close()
+
+
+def test_the_allocator_qualifies_its_tables_and_pins_its_search_path(db):
+    """Catalog check: the function has a fixed search path, and its body names its tables with the schema."""
+    cur = db.conn.cursor()
+    cur.execute("SELECT proconfig, prosrc, prosecdef FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                "WHERE n.nspname = 'cv_analyzer' AND p.proname = 'allocate_job_code'")
+    proconfig, prosrc, prosecdef = cur.fetchone()
+    assert prosecdef is True
+    assert proconfig == ["search_path=pg_catalog, pg_temp"], proconfig
+    import re
+    body = prosrc
+    assert "cv_analyzer.jobs" in body and "cv_analyzer.job_code_counters" in body
+    assert re.search(r"(?<![\w.])(FROM|INTO|UPDATE)\s+(jobs|job_code_counters)\b", body) is None, "unqualified table reference"
+
+
+def test_a_legacy_insert_that_commits_after_allocation_is_caught_by_the_unique_index(db):
+    """The race itself. A legacy writer inserts code 0001 but has not committed. The allocator cannot see that row, returns 0001, and the caller's
+    insert waits on the legacy transaction. The legacy transaction commits; the allocator's insert then fails on the unique index, its savepoint
+    is rolled back, and the next allocation skips 0001 (now visible) and returns 0002."""
+    import psycopg2
+    conn_a = connect(db, tenant=T1)                    # the new allocator's caller (the restricted role when the mode is restricted)
+    ca = conn_a.cursor()
+    conn_l = connect(db, user="postgres")              # the legacy writer
+    cl = conn_l.cursor()
+    cl.execute("INSERT INTO jobs (tenant_id, created_by, title, description, job_code, status) VALUES (%s,%s,'Legacy','d',%s,'active')",
+               (T1, U1, code(1)))                      # uncommitted
+
+    allocated = allocate(ca)
+    assert allocated == code(1)                        # blind to the uncommitted row
+    outcome = {}
+
+    def caller_insert():
+        try:
+            ca.execute("INSERT INTO jobs (tenant_id, created_by, title, description, job_code, status) VALUES (%s,%s,'Allocator','d',%s,'active')",
+                       (T1, U1, allocated))
+            conn_a.commit()
+            outcome["ok"] = True
+        except psycopg2.Error as exc:
+            outcome["error"] = exc.pgcode
+            conn_a.rollback()
+
+    import threading as _t
+    worker = _t.Thread(target=caller_insert)
+    worker.start()
+    import time as _time
+    _time.sleep(0.5)                                   # the caller's insert is now waiting on the legacy row
+    conn_l.commit()                                    # the legacy writer commits 0001
+    worker.join(timeout=60)
+    assert outcome.get("error") == "23505", outcome    # unique_violation: the caller's insert lost the race
+
+    retry = allocate(ca)                               # the retry sees the committed 0001 and skips it
+    conn_a.commit()
+    assert retry == code(2), retry
+    conn_a.close()
+    conn_l.close()
+
+
+@pytest.mark.skipif(not RUNTIME_ROLE, reason="the rollback script revokes the restricted role's grant")
+def test_the_rollback_revokes_execute_and_keeps_the_counter_state(db):
+    import psycopg2
+    conn = connect(db, user="postgres")
+    cur = conn.cursor()
+    assert allocate(cur, YEAR) == code(1, YEAR)
+    conn.commit()
+    before = db.q("SELECT year, last_seq FROM job_code_counters ORDER BY year")
+    db.conn.cursor().execute((BACKEND / "deploy" / "runtime_role" / "rollback_112.sql").read_text(encoding="utf-8"))
+    assert db.q("SELECT year, last_seq FROM job_code_counters ORDER BY year") == before, "counter state must survive the default rollback"
+    rt = connect(db)
+    rc = rt.cursor()
+    with pytest.raises(psycopg2.Error) as exc:
+        rc.execute("SELECT cv_analyzer.allocate_job_code(2031)")
+    assert exc.value.pgcode == "42501"
+    rt.close()
+    conn.close()

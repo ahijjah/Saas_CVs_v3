@@ -32,11 +32,11 @@ WHERE job_code ~ '^JOB-[0-9]{4}-[0-9]+$'
 GROUP BY 1
 ON CONFLICT (year) DO NOTHING;
 
-CREATE OR REPLACE FUNCTION allocate_job_code(p_year integer)
+CREATE OR REPLACE FUNCTION cv_analyzer.allocate_job_code(p_year integer)
 RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = cv_analyzer, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
     v_seq  integer;
@@ -47,24 +47,24 @@ BEGIN
     END IF;
 
     -- First use of a year: start from what already exists for it (normally nothing; the backfill covers existing years).
-    IF NOT EXISTS (SELECT 1 FROM job_code_counters WHERE year = p_year) THEN
-        INSERT INTO job_code_counters (year, last_seq)
+    IF NOT EXISTS (SELECT 1 FROM cv_analyzer.job_code_counters WHERE year = p_year) THEN
+        INSERT INTO cv_analyzer.job_code_counters (year, last_seq)
         SELECT p_year, COALESCE(MAX(CAST(substring(job_code FROM '^JOB-[0-9]{4}-([0-9]+)$') AS integer)), 0)
-        FROM jobs
+        FROM cv_analyzer.jobs
         WHERE job_code LIKE 'JOB-' || p_year || '-%'
         ON CONFLICT (year) DO NOTHING;
     END IF;
 
     -- The increment is the lock: a concurrent allocator for the same year waits here until the caller's transaction ends.
-    UPDATE job_code_counters SET last_seq = last_seq + 1 WHERE year = p_year RETURNING last_seq INTO v_seq;
+    UPDATE cv_analyzer.job_code_counters SET last_seq = last_seq + 1 WHERE year = p_year RETURNING last_seq INTO v_seq;
     LOOP
         v_code := 'JOB-' || p_year || '-' || lpad(v_seq::text, 4, '0');
-        EXIT WHEN NOT EXISTS (SELECT 1 FROM jobs WHERE job_code = v_code);
-        UPDATE job_code_counters SET last_seq = last_seq + 1 WHERE year = p_year RETURNING last_seq INTO v_seq;
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM cv_analyzer.jobs WHERE job_code = v_code);
+        UPDATE cv_analyzer.job_code_counters SET last_seq = last_seq + 1 WHERE year = p_year RETURNING last_seq INTO v_seq;
     END LOOP;
     RETURN v_code;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION allocate_job_code(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION cv_analyzer.allocate_job_code(integer) FROM PUBLIC;
 COMMIT;
