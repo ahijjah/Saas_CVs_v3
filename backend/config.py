@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     debug: bool = False
     environment: str = "production"
 
+    # Simulated subscription payment (routers/tenant.py simulate-payment). A development and test tool only: it is refused in production
+    # whatever this flag says. Production activation needs the separate approved billing path (see deploy/BILLING_ACTIVATION.md).
+    allow_simulated_payment: bool = False
+
     # LibreOffice binary path (headless DOCX→PDF)
     libreoffice_bin: str = "soffice"
 

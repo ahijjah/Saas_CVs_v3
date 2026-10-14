@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep, get_current_user
+from auth.dependencies import CurrentUserDep, get_current_user, RequireWriteRole
 from auth.module_guards import RequireAIRecruitment, RequireATSManagement
 from config import get_settings
 from database import get_db, set_rls_context
@@ -1536,7 +1536,7 @@ async def get_application_details(
     }
 
 
-@router.post("/upload", status_code=status.HTTP_202_ACCEPTED, dependencies=[RequireAIRecruitment])
+@router.post("/upload", status_code=status.HTTP_202_ACCEPTED, dependencies=[RequireAIRecruitment, RequireWriteRole])
 async def upload_cv(
     job_id: Annotated[str, Form()],
     candidate_name: Annotated[str, Form()],
@@ -1675,7 +1675,7 @@ async def list_uploaded_cvs(
     return uploads
 
 
-@router.post("/score-pending", status_code=status.HTTP_202_ACCEPTED, dependencies=[RequireAIRecruitment])
+@router.post("/score-pending", status_code=status.HTTP_202_ACCEPTED, dependencies=[RequireAIRecruitment, RequireWriteRole])
 async def score_pending_uploads(
     body: ScorePendingRequest,
     current_user: CurrentUserDep,
@@ -1833,7 +1833,7 @@ async def get_queue_status(
     }
 
 
-@router.post("/reset-stuck", status_code=status.HTTP_200_OK)
+@router.post("/reset-stuck", status_code=status.HTTP_200_OK, dependencies=[RequireWriteRole])
 async def reset_stuck_cvs(
     body: ResetStuckRequest,
     current_user: CurrentUserDep,
@@ -1875,16 +1875,7 @@ async def reset_stuck_cvs(
     }
 
 
-def _refuse_read_only_role(current_user) -> None:
-    """Viewers are read-only: a workflow move is refused before anything is read for it or written, for the single and the bulk move alike."""
-    if current_user.role == "viewer":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Viewers cannot move candidates through the workflow.",
-        )
-
-
-@router.patch("/{application_id}/workflow-status", dependencies=[RequireATSManagement])
+@router.patch("/{application_id}/workflow-status", dependencies=[RequireATSManagement, RequireWriteRole])
 async def update_workflow_status(
     application_id: str,
     body: WorkflowStatusRequest,
@@ -1892,7 +1883,6 @@ async def update_workflow_status(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Transition an application's recruiter workflow status."""
-    _refuse_read_only_role(current_user)
     new_status = body.workflow_status.strip().lower()
     if new_status not in WORKFLOW_STATUSES:
         raise HTTPException(
@@ -2120,7 +2110,7 @@ async def update_workflow_status(
     return {"workflow_status": new_status}
 
 
-@router.patch("/{application_id}/recruiter-notes", dependencies=[RequireATSManagement])
+@router.patch("/{application_id}/recruiter-notes", dependencies=[RequireATSManagement, RequireWriteRole])
 async def update_recruiter_notes(
     application_id: str,
     body: RecruiterNotesRequest,
@@ -2169,7 +2159,7 @@ async def update_recruiter_notes(
     return {"recruiter_notes": body.recruiter_notes}
 
 
-@router.patch("/{application_id}/knockout-answers", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment])
+@router.patch("/{application_id}/knockout-answers", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment, RequireWriteRole])
 async def update_knockout_answer(
     application_id: str,
     body: KnockoutAnswerRequest,
@@ -2204,7 +2194,7 @@ async def update_knockout_answer(
     return {"status": "ok"}
 
 
-@router.post("/{application_id}/knockout-analysis", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment])
+@router.post("/{application_id}/knockout-analysis", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment, RequireWriteRole])
 async def trigger_knockout_analysis(
     application_id: str,
     current_user: CurrentUserDep,
@@ -2267,7 +2257,7 @@ async def trigger_knockout_analysis(
     }
 
 
-@router.post("/{application_id}/screening-validation", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment])
+@router.post("/{application_id}/screening-validation", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment, RequireWriteRole])
 async def trigger_screening_validation(
     application_id: str,
     current_user: CurrentUserDep,
@@ -2349,7 +2339,7 @@ async def trigger_screening_validation(
     }
 
 
-@router.patch("/{application_id}/knockout-suggestions/accept", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment])
+@router.patch("/{application_id}/knockout-suggestions/accept", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment, RequireWriteRole])
 async def accept_knockout_suggestion_endpoint(
     application_id: str,
     body: KnockoutAcceptRequest,
@@ -2386,7 +2376,7 @@ async def accept_knockout_suggestion_endpoint(
     return {"status": "ok"}
 
 
-@router.patch("/{application_id}/knockout-suggestions/ignore", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment])
+@router.patch("/{application_id}/knockout-suggestions/ignore", status_code=status.HTTP_200_OK, dependencies=[RequireAIRecruitment, RequireWriteRole])
 async def ignore_knockout_suggestion_endpoint(
     application_id: str,
     body: KnockoutAnswerRequest,   # reuse: only question_id matters, answer_value ignored
@@ -2411,7 +2401,7 @@ async def ignore_knockout_suggestion_endpoint(
     return {"status": "ok"}
 
 
-@router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[RequireWriteRole])
 async def delete_uploaded_cv(
     application_id: str,
     current_user: CurrentUserDep,
@@ -2516,7 +2506,7 @@ async def download_cv(
     )
 
 
-@router.patch("/bulk-assignment", dependencies=[RequireATSManagement])
+@router.patch("/bulk-assignment", dependencies=[RequireATSManagement, RequireWriteRole])
 async def bulk_update_assignment(
     body: BulkAssignmentRequest,
     current_user: CurrentUserDep,
@@ -2577,7 +2567,7 @@ async def bulk_update_assignment(
     return {"success": True, "updated_count": len(body.application_ids)}
 
 
-@router.patch("/{application_id}/assignment", dependencies=[RequireATSManagement])
+@router.patch("/{application_id}/assignment", dependencies=[RequireATSManagement, RequireWriteRole])
 async def update_assignment(
     application_id: str,
     body: AssignmentRequest,
@@ -2653,7 +2643,7 @@ async def update_assignment(
     }
 
 
-@router.patch("/bulk-workflow-status", dependencies=[RequireATSManagement])
+@router.patch("/bulk-workflow-status", dependencies=[RequireATSManagement, RequireWriteRole])
 async def bulk_update_workflow_status(
     body: WorkflowStatusRequest,
     current_user: CurrentUserDep,
@@ -2665,7 +2655,6 @@ async def bulk_update_workflow_status(
     - Skips system-managed or invalid candidates safely
     - Returns summary: updated_count, skipped_count, skipped_reasons
     """
-    _refuse_read_only_role(current_user)
     application_ids = (body.application_ids or []) if hasattr(body, 'application_ids') else []
     if not application_ids:
         raise HTTPException(

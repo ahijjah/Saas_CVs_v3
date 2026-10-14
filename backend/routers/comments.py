@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep
+from auth.dependencies import CurrentUserDep, RequireWriteRole
 from auth.module_guards import RequireATSManagement
 from database import get_db, set_rls_context
 
@@ -88,7 +88,7 @@ async def list_comments(
     return {"comments": comments}
 
 
-@router.post("/applications/{application_id}/comments", status_code=status.HTTP_201_CREATED)
+@router.post("/applications/{application_id}/comments", status_code=status.HTTP_201_CREATED, dependencies=[RequireWriteRole])
 async def create_comment(
     application_id: str,
     body: CreateCommentRequest,
@@ -143,7 +143,7 @@ async def create_comment(
     return {"success": True, "comment": comment}
 
 
-@router.patch("/applications/{application_id}/comments/{comment_id}")
+@router.patch("/applications/{application_id}/comments/{comment_id}", dependencies=[RequireWriteRole])
 async def update_comment(
     application_id: str,
     comment_id: str,
@@ -211,7 +211,7 @@ async def update_comment(
     return {"success": True, "comment": comment}
 
 
-@router.delete("/applications/{application_id}/comments/{comment_id}")
+@router.delete("/applications/{application_id}/comments/{comment_id}", dependencies=[RequireWriteRole])
 async def delete_comment(
     application_id: str,
     comment_id: str,

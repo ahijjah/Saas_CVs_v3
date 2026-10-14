@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep
+from auth.dependencies import CurrentUserDep, RequireWriteRole
 from auth.module_guards import RequireATSManagement
 from database import get_db, set_rls_context
 from services.email_service import _send
@@ -371,7 +371,7 @@ async def list_communications(
     return {"communications": comms}
 
 
-@comm_router.post("/{application_id}/communications/log")
+@comm_router.post("/{application_id}/communications/log", dependencies=[RequireWriteRole])
 async def log_communication(
     application_id: str,
     body: CommunicationLog,
@@ -424,7 +424,7 @@ async def log_communication(
     return r
 
 
-@comm_router.post("/{application_id}/communications/send")
+@comm_router.post("/{application_id}/communications/send", dependencies=[RequireWriteRole])
 async def send_email_to_candidate(
     application_id: str,
     body: CommunicationSend,
@@ -529,7 +529,7 @@ async def _verify_comm_ownership(
     return dict(comm)
 
 
-@comm_router.patch("/{application_id}/preferred-contact")
+@comm_router.patch("/{application_id}/preferred-contact", dependencies=[RequireWriteRole])
 async def update_preferred_contact(
     application_id: str,
     body: PreferredContactUpdate,
@@ -579,7 +579,7 @@ async def update_preferred_contact(
     }
 
 
-@comm_router.patch("/{application_id}/communications/{communication_id}")
+@comm_router.patch("/{application_id}/communications/{communication_id}", dependencies=[RequireWriteRole])
 async def update_communication(
     application_id: str,
     communication_id: str,
@@ -629,7 +629,7 @@ async def update_communication(
     return r
 
 
-@comm_router.post("/{application_id}/communications/{communication_id}/send")
+@comm_router.post("/{application_id}/communications/{communication_id}/send", dependencies=[RequireWriteRole])
 async def send_existing_communication(
     application_id: str,
     communication_id: str,
@@ -689,7 +689,7 @@ async def send_existing_communication(
     return r
 
 
-@comm_router.delete("/{application_id}/communications/{communication_id}")
+@comm_router.delete("/{application_id}/communications/{communication_id}", dependencies=[RequireWriteRole])
 async def delete_communication(
     application_id: str,
     communication_id: str,

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep
+from auth.dependencies import CurrentUserDep, RequireWriteRole
 from auth.module_guards import RequireATSManagement
 from database import get_db, set_rls_context
 from services.communication_events import process_communication_event
@@ -187,7 +187,7 @@ async def list_interviews(
     return {"interviews": [_serialize_interview(dict(r)) for r in rows.mappings()]}
 
 
-@router.post("/{application_id}/interviews", status_code=status.HTTP_201_CREATED)
+@router.post("/{application_id}/interviews", status_code=status.HTTP_201_CREATED, dependencies=[RequireWriteRole])
 async def create_interview(
     application_id: str,
     body: CreateInterviewRequest,
@@ -256,7 +256,7 @@ async def create_interview(
     return {"interview": _serialize_interview(rec)}
 
 
-@router.patch("/{application_id}/interviews/{interview_id}")
+@router.patch("/{application_id}/interviews/{interview_id}", dependencies=[RequireWriteRole])
 async def update_interview(
     application_id: str,
     interview_id: str,
@@ -347,7 +347,7 @@ async def update_interview(
     return {"interview": _serialize_interview(result)}
 
 
-@router.delete("/{application_id}/interviews/{interview_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{application_id}/interviews/{interview_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[RequireWriteRole])
 async def delete_interview(
     application_id: str,
     interview_id: str,
@@ -438,7 +438,7 @@ async def list_feedback(
     return {"feedback": items}
 
 
-@router.post("/{application_id}/interviews/{interview_id}/feedback", status_code=status.HTTP_201_CREATED)
+@router.post("/{application_id}/interviews/{interview_id}/feedback", status_code=status.HTTP_201_CREATED, dependencies=[RequireWriteRole])
 async def submit_feedback(
     application_id: str,
     interview_id: str,
@@ -492,7 +492,7 @@ async def submit_feedback(
     return {"feedback": _serialize_feedback(result)}
 
 
-@router.patch("/{application_id}/interviews/{interview_id}/feedback/{feedback_id}")
+@router.patch("/{application_id}/interviews/{interview_id}/feedback/{feedback_id}", dependencies=[RequireWriteRole])
 async def update_feedback(
     application_id: str,
     interview_id: str,

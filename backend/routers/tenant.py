@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
 from auth.password import hash_password
+from config import get_settings
 from database import get_db, set_rls_context
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
@@ -649,6 +650,20 @@ class SimulatePaymentRequest(BaseModel):
         return v
 
 
+SIMULATED_PAYMENT_ENVIRONMENTS = frozenset({"development", "test"})
+
+
+def _require_simulated_payment_allowed() -> None:
+    """Refuse simulated payment unless the environment is development or test AND the operator opted in explicitly. Checked before any database
+    statement, so a refusal changes nothing. Production never reaches the simulated activation."""
+    cfg = get_settings()
+    if cfg.environment not in SIMULATED_PAYMENT_ENVIRONMENTS or not cfg.allow_simulated_payment:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Simulated payment is disabled in this environment. Subscription activation requires the approved billing path.",
+        )
+
+
 @router.post("/subscription/simulate-payment")
 async def simulate_payment(
     body: SimulatePaymentRequest,
@@ -656,6 +671,7 @@ async def simulate_payment(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     _require_tenant_admin(current_user)
+    _require_simulated_payment_allowed()
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     tenant_row = await db.execute(

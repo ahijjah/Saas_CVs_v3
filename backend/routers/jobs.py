@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep, get_current_user
+from auth.dependencies import CurrentUserDep, get_current_user, RequireWriteRole
 from auth.module_guards import RequireAIRecruitment
 from config import get_settings
 from database import get_db, set_rls_context
@@ -366,7 +366,7 @@ async def list_jobs(
     return jobs
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[RequireWriteRole])
 async def create_job(
     body: CreateJobRequest,
     current_user: CurrentUserDep,
@@ -848,7 +848,7 @@ async def get_job_details(
     }
 
 
-@router.put("/{job_id}/ingestion")
+@router.put("/{job_id}/ingestion", dependencies=[RequireWriteRole])
 async def update_ingestion_settings(
     job_id: str,
     body: UpdateIngestionRequest,
@@ -903,7 +903,7 @@ async def update_ingestion_settings(
     return {"success": True, "message": "Ingestion settings updated"}
 
 
-@router.put("/{job_id}/settings")
+@router.put("/{job_id}/settings", dependencies=[RequireWriteRole])
 async def update_job_settings(
     job_id: str,
     body: UpdateJobSettingsRequest,
@@ -955,7 +955,7 @@ async def update_job_settings(
     return {"success": True, "message": "Job settings updated"}
 
 
-@router.put("/{job_id}/criteria")
+@router.put("/{job_id}/criteria", dependencies=[RequireWriteRole])
 async def update_criteria(
     job_id: str,
     body: UpdateCriteriaRequest,
@@ -1209,7 +1209,7 @@ async def download_duplicate_cv(
     )
 
 
-@router.put("/{job_id}/criteria/content")
+@router.put("/{job_id}/criteria/content", dependencies=[RequireWriteRole])
 async def update_criteria_content(
     job_id: str,
     body: UpdateCriteriaContentRequest,
@@ -1323,7 +1323,7 @@ async def update_criteria_content(
     return {"success": True, "message": "Criteria content updated"}
 
 
-@router.put("/{job_id}/criteria/qualifying-context")
+@router.put("/{job_id}/criteria/qualifying-context", dependencies=[RequireWriteRole])
 async def edit_qualifying_context(
     job_id: str,
     body: EditQualifyingContextRequest,
@@ -1342,7 +1342,7 @@ async def edit_qualifying_context(
         raise HTTPException(status_code=exc.http_status, detail=exc.detail()) from exc
 
 
-@router.post("/{job_id}/criteria/qualifying-context/confirm")
+@router.post("/{job_id}/criteria/qualifying-context/confirm", dependencies=[RequireWriteRole])
 async def confirm_qualifying_context(
     job_id: str,
     body: ConfirmQualifyingContextRequest,
@@ -1360,7 +1360,7 @@ async def confirm_qualifying_context(
         raise HTTPException(status_code=exc.http_status, detail=exc.detail()) from exc
 
 
-@router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED, dependencies=[RequireWriteRole])
 async def retry_criteria_extraction(
     job_id: str,
     current_user: CurrentUserDep,
@@ -1467,7 +1467,7 @@ async def retry_criteria_extraction(
     return {"success": True, "message": "Criteria extraction re-queued."}
 
 
-@router.put("/{job_id}")
+@router.put("/{job_id}", dependencies=[RequireWriteRole])
 async def update_job_metadata(
     job_id: str,
     body: UpdateJobMetadataRequest,

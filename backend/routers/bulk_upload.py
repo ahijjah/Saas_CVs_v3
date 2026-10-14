@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep
+from auth.dependencies import CurrentUserDep, RequireWriteRole
 from auth.module_guards import RequireAIRecruitment
 from config import get_settings
 from database import get_db, set_rls_context
@@ -92,7 +92,7 @@ class CreateBatchRequest(BaseModel):
     job_id: str
 
 
-@router.post("/batches", status_code=status.HTTP_201_CREATED)
+@router.post("/batches", status_code=status.HTTP_201_CREATED, dependencies=[RequireWriteRole])
 async def create_batch(
     body: CreateBatchRequest,
     current_user: CurrentUserDep,
@@ -124,7 +124,7 @@ _ZIP_MIME_TYPES = frozenset({
 })
 
 
-@router.post("/batches/{batch_id}/zip", status_code=status.HTTP_200_OK)
+@router.post("/batches/{batch_id}/zip", status_code=status.HTTP_200_OK, dependencies=[RequireWriteRole])
 async def upload_zip(
     batch_id: str,
     current_user: CurrentUserDep,
@@ -222,7 +222,7 @@ _EXCEL_MIME_TYPES = frozenset({
 })
 
 
-@router.post("/batches/{batch_id}/excel", status_code=status.HTTP_200_OK)
+@router.post("/batches/{batch_id}/excel", status_code=status.HTTP_200_OK, dependencies=[RequireWriteRole])
 async def upload_excel(
     batch_id: str,
     current_user: CurrentUserDep,
@@ -430,7 +430,7 @@ async def upload_excel(
 _IMPORTABLE_STATUSES = frozenset({"validated", "importing", "imported"})
 
 
-@router.post("/batches/{batch_id}/import", status_code=status.HTTP_200_OK)
+@router.post("/batches/{batch_id}/import", status_code=status.HTTP_200_OK, dependencies=[RequireWriteRole])
 async def import_batch(
     batch_id: str,
     current_user: CurrentUserDep,
