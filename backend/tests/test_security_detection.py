@@ -261,7 +261,7 @@ class TestRiskComputation:
 
 class TestRunSecurityCheck:
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_disabled_config_returns_none(self):
         db = _mock_db(_DISABLED_CONFIG)
@@ -450,7 +450,7 @@ class TestFullAttackCVIntegration:
     """End-to-end integration test for the documented multi-vector attack CV."""
 
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_attack_cv_blocked_high_risk(self):
         db = _mock_db(_DEFAULT_CONFIG)

@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import os
+import pathlib
 import sys
 import tempfile
 import uuid
@@ -77,7 +79,7 @@ def user(role="hr_manager", tenant=T1, uid=U_HR):
 
 
 _FRESH = ("services.audit_service", "services.requirements_api", "services.requirements_v2_extraction", "routers.platform_config",
-          "routers.job_requirements")
+          "routers.job_requirements", "database")
 
 
 @pytest.fixture(autouse=True)
@@ -146,6 +148,23 @@ class Env:
         self.q(f"INSERT INTO job_criteria ({cols}) VALUES ({ph})", vals)
 
 
+def _apply_runtime_grants(cur) -> None:
+    """The runtime role's grants (deploy/runtime_role/grants.sql), limited to the tables THIS synthetic database has. Production has every table, so
+    there the file is applied as a whole and a missing table fails loudly."""
+    import re
+    text_sql = (pathlib.Path(__file__).resolve().parent.parent / "deploy" / "runtime_role" / "grants.sql").read_text(encoding="utf-8")
+    block = re.search(r"DO \$\$.*?END \$\$;", text_sql, re.S).group(0)
+    cur.execute(block)
+    for line in text_sql.splitlines():
+        m = re.match(r"(GRANT|REVOKE) .* ON (\w+) (TO|FROM) cv_runtime;", line)
+        if m:
+            cur.execute("SELECT to_regclass(%s)", ("cv_analyzer." + m.group(2),))
+            if cur.fetchone()[0] is not None:
+                cur.execute(line)
+        elif line.startswith(("GRANT USAGE", "REVOKE CREATE", "ALTER ROLE", "SET search_path")):
+            cur.execute(line)
+
+
 def _build(pg_server, stage):
     import psycopg2
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -169,7 +188,12 @@ def _build(pg_server, stage):
     uri = pg_server.get_uri(name)                      # postgresql://postgres:@/name?host=/socket/dir
     host = uri.split("host=")[1]
     # NullPool: every session opens its own connection (separate backends, no pool shared across event loops)
-    engine = create_async_engine(f"postgresql+asyncpg://postgres@/{name}?host={host}", poolclass=NullPool,
+    # RUNTIME MODE (experiment): CV_TEST_RUNTIME_ROLE=cv_runtime connects the service sessions as the restricted role, with its grants applied
+    # to this database; `call` sets the tenant context from the user argument, as the API's per-request dependency does.
+    runtime = os.environ.get("CV_TEST_RUNTIME_ROLE", "")
+    if runtime:
+        _apply_runtime_grants(sync.cursor())
+    engine = create_async_engine(f"postgresql+asyncpg://{runtime or 'postgres'}@/{name}?host={host}", poolclass=NullPool,
                                  connect_args={"server_settings": {"search_path": "cv_analyzer"}})
     env = Env(sync, engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False))
     return env, admin, name
@@ -203,6 +227,11 @@ def api():
 
 async def call(env, fn, *args):
     async with env.session() as db:
+        if os.environ.get("CV_TEST_RUNTIME_ROLE"):
+            who = next(a for a in args if hasattr(a, "tenant_id"))
+            from sqlalchemy import text
+            await db.execute(text("SELECT set_config('app.current_tenant_id', :t, true), set_config('app.current_role', :r, true)"),
+                             {"t": str(who.tenant_id), "r": who.role})
         return await fn(db, *args)
 
 

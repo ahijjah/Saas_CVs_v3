@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import json
 import pathlib
 import re
@@ -62,9 +63,20 @@ def cluster():
     c.stop()
 
 
+# RUNTIME MODE (experiment): CV_TEST_RUNTIME_ROLE=cv_runtime makes every service session connect as that restricted role, with the tenant context
+# set at the start of the session as get_current_user does; the role is created and granted from deploy/runtime_role/grants.sql. Unset (default):
+# the suites run as the superuser, as before.
+RUNTIME_ROLE = os.environ.get("CV_TEST_RUNTIME_ROLE", "")
+RUNTIME_GRANTS = pathlib.Path(__file__).resolve().parents[1] / "deploy" / "runtime_role" / "grants.sql"
+
+
 @pytest.fixture(scope="module")
 def db(cluster):
     d = cluster.build()
+    if RUNTIME_ROLE:
+        d.conn.cursor().execute(RUNTIME_GRANTS.read_text(encoding="utf-8"))
+        if os.environ.get("CV_TEST_RUNTIME_HISTORY_RLS"):                 # the proposed history policy, when it is being evaluated
+            d.conn.cursor().execute((RUNTIME_GRANTS.parent / "proposed_history_rls.sql").read_text(encoding="utf-8"))
     yield d
     d.drop()
 
@@ -85,7 +97,8 @@ def _fresh(db, monkeypatch):
     db.q("""INSERT INTO ai_stage_defaults (stage, primary_model_id, fallback_model_id)
             SELECT %s, model_id, NULL FROM ai_model_registry WHERE model_name = %s ON CONFLICT (stage) DO NOTHING""", (ext.STAGE, MODEL))
     db.q("UPDATE system_config SET value = 'true' WHERE key = 'job_analysis.require_classification_acknowledgment'")
-    monkeypatch.setattr(worker, "get_settings", lambda: SimpleNamespace(database_url=db.async_url, db_schema="cv_analyzer"))
+    url = db.async_url.replace("postgres@", f"{RUNTIME_ROLE}@") if RUNTIME_ROLE else db.async_url
+    monkeypatch.setattr(worker, "get_settings", lambda: SimpleNamespace(database_url=url, db_schema="cv_analyzer"))
     yield
 
 
@@ -205,7 +218,7 @@ def run(coro):
 
 
 def session_factory():
-    eng = create_async_engine(f"postgresql+asyncpg://postgres@127.0.0.1:{_cluster_port()}/{_db_name()}", poolclass=NullPool,
+    eng = create_async_engine(f"postgresql+asyncpg://{RUNTIME_ROLE or 'postgres'}@127.0.0.1:{_cluster_port()}/{_db_name()}", poolclass=NullPool,
                               connect_args={"server_settings": {"search_path": "cv_analyzer"}})
     return eng, async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
 
@@ -231,12 +244,17 @@ def user(uid, tenant, role):
     return SimpleNamespace(user_id=uid, tenant_id=tenant, role=role, email=f"{role}@x.example", full_name=role)
 
 
-def with_session(fn):
-    """Run an async service call in its own loop and engine against the disposable database."""
+def with_session(fn=None, actor=None):
+    """Run an async service call in its own loop and engine against the disposable database. In runtime mode the session first sets the tenant
+    context of `actor` (or tenant 1 / admin), exactly as the API's per-request dependency does."""
     async def inner():
         eng, S = session_factory()
         try:
             async with S() as db:
+                if RUNTIME_ROLE:
+                    tid, role = (actor.tenant_id, actor.role) if actor is not None else (T1, "admin")
+                    await db.execute(text("SELECT set_config('app.current_tenant_id', :t, true), set_config('app.current_role', :r, true)"),
+                                     {"t": tid, "r": role})
                 return await fn(db)
         finally:
             await eng.dispose()

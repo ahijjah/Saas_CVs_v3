@@ -21,7 +21,12 @@ def _make_stub_module(name: str, **attrs) -> types.ModuleType:
 
 # ── Stub the database engine (requires asyncpg at import time) ────────────────
 
-if "database" not in sys.modules:
+# Stubbed ONLY when the real module cannot be imported. A no-op stand-in makes set_rls_context do nothing, so every test that goes through the
+# services or workers would run without tenant context (the superuser bypasses row-level security, which hides the gap). The real module is
+# what the restricted-role tests (tests/test_runtime_role_plan.py and the isolated suites in runtime mode) exercise.
+try:
+    import database  # noqa: F401
+except Exception:  # noqa: BLE001 - asyncpg or configuration missing: pure-function modules only
     async def _noop_set_rls(*a, **kw):
         pass
 

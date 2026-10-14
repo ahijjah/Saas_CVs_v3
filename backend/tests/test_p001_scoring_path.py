@@ -402,7 +402,8 @@ class TestFailureMarking:
     async def test_new_attempt_clears_previous_failure_marker(self, tmp_path):
         """A Celery retry that succeeds must not keep scoring_failed."""
         log, _ = await _run(tmp_path)
-        first_sql = log[0][0]
+        # the first statement that writes the processing marker (the tenant context is set before it, as the service does)
+        first_sql = next(entry[0] for entry in log if "processing_status" in entry[0])
         assert "processing_status      = 'processing'" in first_sql
         assert "stopped_reason IN ('processing_error', 'scoring_failed')" in first_sql
 
