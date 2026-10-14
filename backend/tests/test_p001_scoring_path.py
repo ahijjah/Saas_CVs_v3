@@ -21,6 +21,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _entitled_tenant_gate():
+    """The tenant access gate is a database check with its own tests (test_entitlement_http.py). These fakes model an entitled tenant."""
+    with patch("services.paused_work_service.pause_if_not_entitled", AsyncMock(return_value=True)):
+        yield
+
+
 # ── Module isolation ─────────────────────────────────────────────────────────
 # test_ai_service_coverage.py replaces config / sqlalchemy in sys.modules with
 # bare stubs at import time. This pipeline test needs the real ones (Celery

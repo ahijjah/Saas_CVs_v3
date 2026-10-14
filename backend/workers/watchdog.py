@@ -81,6 +81,7 @@ async def _reset_stuck_async() -> int:
                         evaluation_exit_reason = :reason,
                         scored_at              = now()
                     WHERE processing_status IN ('queued', 'processing')
+                      AND COALESCE(stopped_reason, '') <> 'access_paused'
                       AND queued_at < now() - (:timeout * INTERVAL '1 minute')
                     RETURNING application_id
                 """),

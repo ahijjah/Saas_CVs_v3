@@ -44,9 +44,14 @@ def obs(tmp_path_factory):
     try:
         db.q("INSERT INTO tenants (tenant_id, name, email_domain, status, subscription_status, tenant_type) VALUES "
              "(%s,'Tenant One','t1.example','active','active','organization'),(%s,'Tenant Two','t2.example','active','active','organization')", (T1, T2))
+        db.entitle_active_tenants()   # fixture: an active tenant needs a validity date (see realdb_helper)
         for key, (uid, tenant, role) in USERS.items():
             db.q("INSERT INTO users (user_id, tenant_id, email, password_hash, full_name, role, status) VALUES (%s,%s,%s,'x',%s,%s,'active')",
                  (uid, tenant, f"{key}-{uid[-4:]}@x.example", key, role))
+        for code, name, monthly, yearly, trial_days, cvs_users in (("starter", "Starter", 49, 490, 14, 3), ("professional", "Professional", 149, 1490, 14, 15), ("enterprise", "Enterprise", 499, 4990, 14, 100)):
+            db.q("INSERT INTO subscription_plans (plan_code, plan_name, monthly_price, yearly_price, currency, trial_days, max_campaigns, "
+                 "max_processed_cvs_per_month, max_users, status, display_order) VALUES (%s,%s,%s,%s,'USD',%s,5,500,%s,'active',1) "
+                 "ON CONFLICT (plan_code) DO NOTHING", (code, name, monthly, yearly, trial_days, cvs_users))
         url = db.async_url
         if RUNTIME:
             db.conn.cursor().execute(RUNTIME_GRANTS.read_text(encoding="utf-8"))
@@ -85,7 +90,7 @@ def test_production_refuses_simulated_payment_before_any_mutation(obs):
     st = S(obs, "f1_admin_simulates_payment_in_production")
     assert st["status"] == 403, st
     assert st["db_changed"] is False and st["db_before"]["subscription_status"] == "pending_payment", st
-    assert st["db_after"]["plan"] is None and st["db_after"]["has_end"] is False and st["emails"] == 0, st
+    assert st["db_after"]["plan"] is None and st["db_after"]["has_end"] == st["db_before"]["has_end"] and st["emails"] == 0, st
 
 
 def test_a_permitted_role_that_is_not_an_admin_is_refused_simulated_payment(obs):

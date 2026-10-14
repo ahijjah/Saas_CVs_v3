@@ -1,12 +1,12 @@
-"""Every path that sets a tenant's subscription to active, over the REAL HTTP API on REAL PostgreSQL, in both database modes.
+"""Subscription activation, over the REAL HTTP API on REAL PostgreSQL, in both database modes. PROTECTION tests (inverted from the earlier
+reproductions of the bypass). Approved rules:
 
-Classification (the plan catalogue: trial = free; starter, professional = paid; enterprise = sales-contact):
-  * FREE: the trial plan (price 0) may be activated without payment.
-  * TRIAL: POST /tenant/subscription/activate-trial sets status 'trial' (not active), once per email domain.
-  * PAID: a paid plan may be active only after payment, or after an authorized platform provisioning (super_admin).
-  * ENTERPRISE: a sales-contact plan may be active only after the sales conversation (a platform provisioning).
-
-REPRODUCES tests assert the current behaviour of the defective paths; they pass while the defect exists and must be inverted when fixed.
+  * A tenant may REQUEST a plan (select-plan or subscribe). A request never activates it: the status becomes pending_payment or
+    pending_sales_contact and the plan stays unset.
+  * The 14-day trial starts only through activate-trial, once per email domain. Subscribe cannot start it.
+  * Only platform provisioning (super_admin, PATCH /admin/tenants/{id}/subscription) activates a plan. It needs a reason and a future expiry,
+    and it is audited in the same transaction. If the audit cannot be written, nothing changes.
+  * Controls: the approved paths still work and the unauthorized roles are still refused.
 """
 import json
 import os
@@ -64,53 +64,70 @@ def S(obs, name):
     return step
 
 
-RUNTIME = bool(RUNTIME_ROLE)
+PROVISIONING_AUDIT = "subscription_assign_plan"
 
 
-def active(st):
-    return st["after"]["subscription_status"] == "active"
+# ── subscribe: a tenant requests a plan and cannot activate it ───────────────────────────────────────────────────────────────
+def test_subscribe_cannot_start_the_trial_and_changes_nothing(obs):
+    st = S(obs, "subscribe_trial_refused_from_pending_plan_selection")
+    assert st["status"] == 409, st
+    assert st["after"] == st["before"] and st["audit_added"] == 0, st
 
 
-# ── free plan: legitimate activation without payment ─────────────────────────────────────────────────────────────────────────
-def test_free_plan_activates_without_payment_as_intended(obs):
-    st = S(obs, "free_plan_trial_via_subscribe")
-    assert st["status"] == 200 and active(st) and st["after"]["plan"] == "trial", st
+def test_subscribe_to_a_paid_plan_requests_pending_payment_and_does_not_activate(obs):
+    st = S(obs, "subscribe_paid_requests_pending_payment")
+    assert st["status"] == 200 and st["body"]["subscription_status"] == "pending_payment", st
+    assert st["after"]["subscription_status"] == "pending_payment" and st["after"]["pending_plan"] == "starter", st
+    assert st["after"]["plan"] is None and st["after"]["ends"] is False, st
 
 
-# ── paid plans: the defect ───────────────────────────────────────────────────────────────────────────────────────────────────
-@pytest.mark.parametrize("name", ["paid_starter_from_pending_plan_selection", "paid_starter_from_pending_payment",
-                                  "paid_professional_from_suspended", "paid_professional_from_trial"])
-def test_reproduces_a_tenant_admin_activates_a_paid_plan_with_no_payment(obs, name):
-    """REPRODUCES. A tenant admin activates a paid plan from any state, with no payment and no platform provisioning. The desired result: refused
-    (no activation; the account stays where it was) until the approved billing path exists."""
+def test_subscribe_is_idempotent_while_activation_is_pending(obs):
+    st = S(obs, "subscribe_paid_from_pending_payment_is_idempotent")
+    assert st["status"] == 200 and st["after"]["subscription_status"] == "pending_payment" and st["after"]["pending_plan"] == "professional", st
+    assert st["after"]["plan"] is None, st
+
+
+@pytest.mark.parametrize("name", ["subscribe_refused_from_suspended", "subscribe_refused_from_live_trial", "subscribe_refused_from_live_active_plan"])
+def test_subscribe_cannot_change_a_suspended_trial_or_live_plan_from_the_tenant_side(obs, name):
     st = S(obs, name)
-    assert st["status"] == 200 and active(st), st
-    assert st["changed"] is True and st["after"]["plan"] is not None, st
-    assert st["after"]["ends"] is False, st                         # a paid activation with no end date: never expires
-    assert st["audit_rows_added"] == 0, st                          # and nothing records who activated it
+    assert st["status"] == 409 and st["after"] == st["before"], st
 
 
-def test_reproduces_the_paying_state_is_bypassed(obs):
-    """REPRODUCES. select-plan stores pending_payment; subscribe then skips the payment entirely."""
-    st = S(obs, "paid_starter_from_pending_payment")
-    assert st["before"]["subscription_status"] == "pending_payment" and active(st), st
+def test_subscribe_enterprise_requests_the_sales_contact_state_and_does_not_activate(obs):
+    st = S(obs, "subscribe_enterprise_requests_sales_contact")
+    assert st["status"] == 200 and st["after"]["subscription_status"] == "pending_sales_contact" and st["after"]["plan"] is None, st
 
 
-def test_reproduces_enterprise_activates_without_the_sales_conversation(obs):
-    st = S(obs, "enterprise_from_pending_sales_contact")
-    assert st["status"] == 200 and active(st) and st["after"]["plan"] == "enterprise", st
+def test_subscribe_unknown_plan_is_not_found_and_changes_nothing(obs):
+    st = S(obs, "subscribe_unknown_plan_not_found")
+    assert st["status"] == 404 and st["after"]["subscription_status"] == "pending_plan_selection", st
+
+
+def test_subscribe_refuses_the_hr_manager(obs):
+    st = S(obs, "subscribe_hr_manager_refused")
+    assert st["status"] == 403 and st["after"] == st["before"], st
+
+
+# ── trial: 14 days, once per email domain, and not bypassed by subscribe ─────────────────────────────────────────────────────
+def test_the_trial_cannot_be_bypassed_through_subscribe_for_a_second_tenant_on_the_same_domain(obs):
+    st = S(obs, "trial_plan_via_subscribe_cannot_bypass_domain_rule")
+    assert st["a_trial_status"] == 200, st
+    assert st["b_activate_trial_status"] == 409, st
+    assert st["b_subscribe_status"] == 409 and st["b_after"] == st["b_before"], st
+
+
+def test_the_trial_is_fourteen_days_and_subscribing_to_the_trial_plan_cannot_end_or_extend_it(obs):
+    st = S(obs, "trial_is_14_days_and_not_bypassed_by_subscribe")
+    assert st["activate_status"] == 200 and st["on_trial"]["subscription_status"] == "trial" and st["on_trial"]["trial_is_14_days"] is True, st
+    assert st["subscribe_status"] == 409, st
+    assert st["after"]["subscription_status"] == "trial" and st["after"]["trial_ends"] is True, st
 
 
 # ── controls ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-def test_control_hr_manager_cannot_subscribe(obs):
-    st = S(obs, "control_hr_manager_subscribe")
-    assert st["status"] == 403 and st["changed"] is False, st
-
-
-def test_control_select_plan_only_stores_pending_payment(obs):
-    st = S(obs, "control_select_plan_stores_pending_payment")
+def test_control_select_plan_requests_pending_payment_and_does_not_activate(obs):
+    st = S(obs, "control_select_plan_requests_pending_payment")
     assert st["status"] == 200 and st["after"]["subscription_status"] == "pending_payment" and st["after"]["pending_plan"] == "starter", st
-    assert st["after"]["plan"] is None, st                          # select-plan records the choice, not the plan
+    assert st["after"]["plan"] is None, st
 
 
 def test_control_trial_is_not_active_and_is_once_per_domain(obs):
@@ -119,51 +136,61 @@ def test_control_trial_is_not_active_and_is_once_per_domain(obs):
     assert st["second_status"] == 409 and st["second_after"]["subscription_status"] == "pending_plan_selection", st
 
 
-def test_control_platform_administrator_provisions_a_plan(obs):
-    """Authorized platform provisioning (super_admin, the tenant subscription route). The platform role is the authorization; no payment record is
-    checked. Its audit trail is checked separately."""
-    st = S(obs, "control_platform_admin_assign_plan")
-    assert st["status"] == 200 and st["after"]["subscription_status"] == "active" and st["after"]["plan"] == "professional", st
+def test_control_hr_manager_cannot_provision(obs):
+    st = S(obs, "control_hr_manager_cannot_provision")
+    assert st["status"] == 403 and st["after"] == st["before"] and st["audit"] == [], st
 
 
-def test_reproduces_the_subscribe_path_writes_no_audit_row(obs):
-    """REPRODUCES. The tenant-admin activation leaves no audit row, so nothing shows who turned a paid plan on."""
-    for name in ("paid_starter_from_pending_plan_selection", "paid_professional_from_suspended"):
-        assert S(obs, name)["audit_rows_added"] == 0
+# ── platform provisioning ───────────────────────────────────────────────────────────────────────────────────────────────────
+def test_platform_provisioning_activates_with_reason_and_future_expiry_and_is_audited(obs):
+    st = S(obs, "provisioning_assign_plan_is_audited")
+    assert st["status"] == 200, st
+    after = st["after"]
+    assert after["subscription_status"] == "active" and after["plan"] == "professional" and after["pending_plan"] is None, st
+    assert after["ends"] is True, st
+    rows = [r for r in st["audit"] if r["action"] == PROVISIONING_AUDIT]
+    assert len(rows) == 1, st["audit"]
+    row = rows[0]
+    assert row["resource_type"] == "tenant" and row["resource_id"], row             # the audited resource is the tenant
+    d = row["details"]
+    if isinstance(d, str):
+        d = json.loads(d)
+    assert d["reason"] == "Invoice 4411 paid by bank transfer", d
+    assert d["previous"]["subscription_status"] == "pending_payment" and d["previous"]["plan"] is None, d
+    assert d["new"]["subscription_status"] == "active" and d["new"]["plan"] == "professional", d
+    assert d["new"]["subscription_ends_at"] is not None and d["expires_at"] is not None, d
+    assert row["user_email"] and row["user_id"], row
 
 
-# ── eligibility, duration and suspension ──────────────────────────────────────────────────────────────────────────────────────
-def test_reproduces_a_suspended_tenant_keeps_writing(obs):
-    """REPRODUCES. Nothing in the backend reads subscription_status to refuse a request, so a suspended tenant's writes are served (a tag is created)."""
-    st = S(obs, "suspended_tenant_creates_job")
-    assert st["status"] == 200 and st["stored"] is True and st["after"]["subscription_status"] == "suspended", st
+@pytest.mark.parametrize("name", ["provisioning_refused_without_reason", "provisioning_refused_without_expiry",
+                                  "provisioning_refused_with_past_expiry"])
+def test_provisioning_refuses_a_missing_reason_or_expiry_or_a_past_expiry_without_any_change(obs, name):
+    st = S(obs, name)
+    assert st["status"] == 422, st
+    assert st["after"] == st["before"] and st["audit"] == [], st
 
 
-def test_a_second_tenants_first_job_no_longer_collides_under_the_restricted_role(obs):
-    """Protection (was a REPRODUCES of a rollout blocker). Job codes are allocated from a global counter (migration 112), so the second tenant's
-    first job of the year gets the next code in both modes."""
-    st = S(obs, "job_code_collision_under_restricted_role")
-    assert st["a_status"] == 201 and st["b_status"] == 201, st
+def test_provisioning_audit_and_change_are_atomic(obs):
+    st = S(obs, "provisioning_is_atomic_with_its_audit_row")
+    assert st["status"] == 503, st
+    assert st["after"] == st["before"], "a change whose audit row fails must not be applied"
+    assert st["audit"] == [], st
 
 
-def test_reproduces_an_expired_trial_keeps_writing(obs):
-    """REPRODUCES. The trial end date is set but never enforced: no worker expires it and no request checks it."""
-    st = S(obs, "trial_past_its_end_creates_job")
-    assert st["status"] == 200 and st["stored"] is True and st["after"]["subscription_status"] == "trial", st
+def test_suspend_requires_a_reason_and_is_audited(obs):
+    st = S(obs, "provisioning_suspend_requires_reason_and_is_audited")
+    assert st["no_reason_status"] == 422, st
+    assert st["status"] == 200 and st["after"]["subscription_status"] == "suspended", st
+    assert [r["action"] for r in st["audit"]] == ["subscription_suspend"], st["audit"]
 
 
-def test_reproduces_subscribing_to_the_trial_plan_bypasses_the_one_trial_per_domain_rule(obs):
-    """REPRODUCES. The domain's one trial is used by tenant A; tenant B is refused activate-trial (control) but subscribing to the trial plan
-    activates it."""
-    st = S(obs, "trial_eligibility_domain_bypass")
-    assert st["a_trial_status"] == 200 and st["b_activate_trial_status"] == 409, st
-    assert st["b_subscribe_status"] == 200 and st["b_after_subscribe"]["subscription_status"] == "active", st
+def test_extend_trial_accepts_the_expiry_and_the_legacy_field_and_requires_a_reason(obs):
+    st = S(obs, "provisioning_extend_trial_accepts_expiry_and_legacy_field")
+    assert st["status"] == 200 and st["after"]["subscription_status"] == "trial" and st["after"]["trial_ends"] is True, st
+    assert st["no_reason_status"] == 422, st
+    assert [r["action"] for r in st["audit"]] == ["subscription_extend_trial"], st["audit"]
 
 
-def test_reproduces_subscribing_to_the_trial_plan_removes_the_trial_duration(obs):
-    """REPRODUCES. A tenant on its 14-day trial subscribes to the trial plan: the status becomes active, the end date is left set and unused, so the
-    account never expires."""
-    st = S(obs, "trial_duration_bypass_by_subscribing_to_trial")
-    assert st["on_trial"]["subscription_status"] == "trial"
-    assert st["subscribe_status"] == 200 and st["after"]["subscription_status"] == "active" and st["after"]["ends"] is False, st
-    assert st["trial_end_still_set"] is True, st
+def test_reactivate_requires_a_future_expiry(obs):
+    st = S(obs, "provisioning_reactivate_requires_expiry")
+    assert st["status"] == 422 and st["after"] == st["before"] and st["audit"] == [], st

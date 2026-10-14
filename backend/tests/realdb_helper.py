@@ -104,6 +104,12 @@ class RealDb:
         cur.execute(sql, params)
         return cur.fetchall() if cur.description else None
 
+    def entitle_active_tenants(self, days: int = 365):
+        """Test fixtures only: give each 'active' tenant without an end date a future validity, as platform provisioning would. Production
+        never does this: a legacy active tenant without an end date stays read-only until it is provisioned (services/entitlement_service.py)."""
+        self.q(f"UPDATE tenants SET subscription_ends_at = now() + interval '{int(days)} days' "
+               "WHERE subscription_status = 'active' AND subscription_ends_at IS NULL")
+
     def drop(self):
         try:
             self.conn.close()

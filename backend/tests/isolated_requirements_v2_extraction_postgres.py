@@ -87,6 +87,7 @@ def _fresh(db, monkeypatch):
     db.q("DELETE FROM audit_logs"); db.q("DELETE FROM ai_usage_log"); db.q("DELETE FROM job_criteria"); db.q("DELETE FROM jobs")
     db.q("DELETE FROM users WHERE tenant_id IN (%s, %s)", (T1, T2)); db.q("DELETE FROM tenants WHERE tenant_id IN (%s, %s)", (T1, T2))
     db.q("INSERT INTO tenants (tenant_id, name, email_domain, status, subscription_status, tenant_type) VALUES (%s,'Tenant One','t1.example','active','active','organization'),(%s,'Tenant Two','t2.example','active','active','organization')", (T1, T2))
+    db.entitle_active_tenants()   # fixture: an active tenant needs a validity date (see realdb_helper)
     for uid, tenant, role in ((U_ADMIN, T1, "admin"), (U_HR, T1, "hr_manager"), (U_VIEWER, T1, "viewer"), (U_OTHER, T2, "admin")):
         db.q("INSERT INTO users (user_id, tenant_id, email, password_hash, full_name, role, status) VALUES (%s,%s,%s,'x',%s,%s,'active')",
              (uid, tenant, f"{role}-{uid[-4:]}@x.example", role, role))

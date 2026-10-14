@@ -268,6 +268,14 @@ async def _score_cv_async(
 
     cfg = get_settings()
 
+    # Access gate, before any AI call: a tenant without current access PAUSES this scoring (the application stays queued, marked
+    # access_paused, and the task returns without raising, so Celery does not retry). Resume re-dispatches it. See paused_work_service.
+    from services.paused_work_service import pause_if_not_entitled
+    async with Session() as gate_db:
+        await set_rls_context(gate_db, tenant_id, "super_admin")
+        if not await pause_if_not_entitled(gate_db, application_id, tenant_id):
+            return
+
     logger.info("[%s] START scoring pipeline", application_id)
 
     # _scoring_committed is set True only after the final application_scores

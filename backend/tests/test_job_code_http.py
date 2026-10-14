@@ -38,6 +38,7 @@ def obs(tmp_path_factory):
     try:
         db.q("INSERT INTO tenants (tenant_id, name, email_domain, status, subscription_status, tenant_type, max_jobs) VALUES "
              "(%s,'T1','t1.example','active','active','organization',1000),(%s,'T2','t2.example','active','active','organization',1000)", (T1, T2))
+        db.entitle_active_tenants()   # fixture: an active tenant needs a validity date (see realdb_helper)
         for key, (uid, tenant, role) in USERS.items():
             db.q("INSERT INTO users (user_id, tenant_id, email, password_hash, full_name, role, status) VALUES (%s,%s,%s,'x',%s,%s,'active')",
                  (uid, tenant, f"{key}-{uid[-4:]}@x.example", key, role))

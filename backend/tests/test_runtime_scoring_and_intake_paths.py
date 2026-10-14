@@ -77,6 +77,7 @@ def world(cluster):
     cur = d.conn.cursor()
     cur.execute(f"INSERT INTO tenants (tenant_id, name, email_domain, status, subscription_status, tenant_type) VALUES "
                 f"('{T1}','Tenant One','t1.example','active','active','organization'),('{T2}','Tenant Two','t2.example','active','active','organization')")
+    d.entitle_active_tenants()   # fixture: an active tenant needs a validity date (see realdb_helper)
     for uid, tid, role in ((U_HR, T1, "hr_manager"), (U_OTHER, T2, "hr_manager")):
         cur.execute("INSERT INTO users (user_id, tenant_id, email, password_hash, full_name, role, status) VALUES "
                     f"('{uid}','{tid}','{uid[-4:]}@x.example','x','U','{role}','active')")
