@@ -1,11 +1,13 @@
--- Rollback of migration 112 (job-code allocator). Run ONLY after the application has been reverted to a release that does not call
--- allocate_job_code (the previous release counts visible jobs and needs nothing from 112).
+-- Rollback of migration 112 (job-code allocator and its owner role). Run ONLY after the application has been reverted to a release that does
+-- not call cv_analyzer.allocate_job_code. The previous release counts visible jobs and needs nothing from 112.
 --
--- DEFAULT: revoke the runtime role's EXECUTE and stop there. The function and the counter table are kept, so the counter state
--- (job_code_counters) is preserved. Keeping them is harmless: an unused allocator changes nothing, and a later re-deployment resumes
--- from the same counters without reallocating any code.
+-- DEFAULT (preserves all counter state):
+--   1. revoke the restricted runtime role's EXECUTE on the allocator;
+--   2. remove the owner's one read path (the policy and the SELECT(job_code) column grant), so cv_code_owner can no longer read jobs.
+-- The allocator, the counter table and their owner (cv_code_owner) are KEPT. Keeping them is harmless: an unused allocator changes nothing,
+-- and a later re-deployment resumes from the same counters without reissuing any code.
 --
--- Dropping is a separate, explicit decision. It is in the OPTIONAL section at the end, commented out on purpose.
+-- OPTIONAL, commented out on purpose: dropping the allocator, the counter table, or the owner role. Each is a separate, explicit decision.
 -- Run:  psql -v ON_ERROR_STOP=1 -U <admin> -d cv_analyzer_prod -f rollback_112.sql
 DO $$
 BEGIN
@@ -15,8 +17,11 @@ BEGIN
 END $$;
 
 REVOKE EXECUTE ON FUNCTION cv_analyzer.allocate_job_code(integer) FROM cv_runtime;
+DROP POLICY IF EXISTS job_code_allocator_read ON cv_analyzer.jobs;
+REVOKE SELECT (job_code) ON cv_analyzer.jobs FROM cv_code_owner;
 
--- OPTIONAL (not run by default). Only after the decision to lose the counter state:
+-- OPTIONAL (not run by default). Dropping the owner role requires first reassigning what it owns; the counter table would be lost with it.
+-- REASSIGN OWNED BY cv_code_owner TO cv_app;     -- or the migration owner
+-- DROP ROLE cv_code_owner;
 -- DROP FUNCTION cv_analyzer.allocate_job_code(integer);
--- DROP TABLE cv_analyzer.job_code_counters;   -- destroys the per-year counters; a re-deployment would then restart each year from the
---                                            -- highest existing code (the allocator's backfill-on-first-use), not from the old counter.
+-- DROP TABLE cv_analyzer.job_code_counters;      -- destroys the per-year counters
