@@ -199,6 +199,8 @@ def main(argv=None) -> int:
     pw = hash_password(PASSWORD)
     pg.q("INSERT INTO tenants (tenant_id,name,email_domain,status,subscription_status,tenant_type) VALUES (%s,'Tenant One','example.com','active','active','organization'),"
          "(%s,'Tenant Two','example.org','active','active','organization')", (T1, T2))
+    # a test fixture: an active tenant needs a validity date (production leaves a dateless tenant read-only until provisioned)
+    pg.q("UPDATE tenants SET subscription_ends_at = now() + interval '365 days' WHERE subscription_status = 'active' AND subscription_ends_at IS NULL")
     for key, (uid, tenant, role) in USERS.items():
         pg.q("INSERT INTO users (user_id,tenant_id,email,password_hash,full_name,role,status) VALUES (%s,%s,%s,%s,%s,%s,'active')",
              (uid, tenant, f"{key}@example.{'org' if tenant == T2 else 'com'}", pw, key.capitalize(), role))

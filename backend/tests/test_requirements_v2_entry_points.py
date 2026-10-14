@@ -32,6 +32,16 @@ def _real_modules():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _entitled_tenant():
+    """The tenant access gate is a database check with its own tests (test_entitlement_http.py). These fake sessions model an entitled tenant."""
+    from services.entitlement_service import FULL, Entitlement
+    entitled = AsyncMock(return_value=Entitlement(state=FULL, subscription_status="active"))
+    with patch("services.entitlement_service.load_entitlement", entitled), \
+         patch("services.paused_work_service.load_entitlement", entitled):
+        yield
+
+
 # ── a scripted fake database ──────────────────────────────────────────────────
 
 class Result:
