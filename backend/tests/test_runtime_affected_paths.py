@@ -26,7 +26,8 @@ RUNTIME_ROLE = os.environ.get("CV_TEST_RUNTIME_ROLE", "")
 RUNTIME_GRANTS = BACKEND / "deploy" / "runtime_role" / "grants.sql"
 T1, T2 = str(uuid.UUID(int=0x101)), str(uuid.UUID(int=0x102))
 USERS = {"admin": (str(uuid.UUID(int=0x201)), T1, "admin"), "hr": (str(uuid.UUID(int=0x202)), T1, "hr_manager"),
-         "other": (str(uuid.UUID(int=0x204)), T2, "admin"), "super": (str(uuid.UUID(int=0x205)), T1, "super_admin")}
+         "other": (str(uuid.UUID(int=0x204)), T2, "admin"), "super": (str(uuid.UUID(int=0x205)), T1, "super_admin"),
+         "viewer": (str(uuid.UUID(int=0x206)), T1, "viewer")}
 
 
 @pytest.fixture(scope="module")
@@ -75,3 +76,23 @@ def test_tenant_user_creation_sends_the_company_name_read_after_its_commit(obs):
 def test_control_subscription_plan_delete_without_rls_is_the_same_in_both_modes(obs):
     st = S(obs, "subscription_plan_delete_control")
     assert st["status"] == 200, st
+
+
+def test_viewer_is_refused_the_usage_read_and_user_creation_through_the_api(obs):
+    """Real HTTP authorization under the restricted role. The usage read answers HR (admin and hr_manager, the roles the route admits) with the
+    plan features that migration 111 makes readable; the viewer is refused by the route, and so is user creation, with nothing stored.
+    Migration 111 also lists 'viewer' among the tenant read roles; no route serves a viewer plan features today."""
+    usage = S(obs, "hr_reads_usage_including_plan_features")
+    assert usage["status"] == 200 and usage["has_features_key"] is True, usage
+    refused = S(obs, "viewer_usage_is_refused_by_the_route")
+    assert refused["status"] == 403, refused
+    made = S(obs, "viewer_cannot_create_a_tenant_user")
+    assert made["status"] == 403, made
+
+
+@pytest.mark.xfail(strict=True, reason="GAP: PATCH /applications/bulk-workflow-status (and the single move) check only the ATS module flag, not "
+                                       "the role, so a viewer moves candidates. Strict: when a role check lands this must XPASS and be flipped.")
+def test_viewer_cannot_move_candidates_in_bulk(obs):
+    move = S(obs, "viewer_cannot_change_workflow_status")
+    assert move["status"] == 403, move
+    assert move["stored"] == "under_review" and move["history_rows"] == 0, move

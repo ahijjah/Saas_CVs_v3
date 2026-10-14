@@ -424,3 +424,66 @@ def test_today_the_runtime_role_can_assert_super_admin_for_itself(db):
     set_context(cur, "", "super_admin")
     assert scalar(cur, "SELECT count(*) FROM jobs") == 2
     conn.rollback()
+
+
+MATRIX_ROLES = ("super_admin", "admin", "hr_manager", "recruiter", "viewer", "tenant_admin")
+
+
+def _matrix_attempt(conn, cur, sql, params=()):
+    """Run one statement in its own savepoint; the result is the row count, or 'denied' for a permission error (SQLSTATE 42501)."""
+    import psycopg2
+    cur.execute("SAVEPOINT m")
+    try:
+        cur.execute(sql, params)
+        result = cur.rowcount if cur.rowcount >= 0 else (cur.fetchone() or [0])[0]
+        cur.execute("RELEASE SAVEPOINT m")
+        return result
+    except psycopg2.Error as exc:
+        cur.execute("ROLLBACK TO SAVEPOINT m")
+        return "denied" if exc.pgcode == "42501" else f"error:{exc.pgcode}"
+
+
+def test_migration_111_role_by_operation_matrix_for_the_runtime_role(db):
+    """The matrix of migration 111 as the restricted role runs it: for each application role the application issues (and the unissued
+    'tenant_admin' that the old policy named), what SELECT / INSERT / UPDATE / DELETE return on plan_features (global catalogue) and on
+    application_workflow_history (tenant 1). Permission (grants) and row policies both apply: a row-level refusal is 0 rows, a grant
+    refusal is 'denied'. The result is asserted here so that a later change to the policies or the grants shows up as a test failure."""
+    plan = db.q("INSERT INTO subscription_plans (plan_code, plan_name) VALUES ('matrix_probe', 'Matrix probe') RETURNING plan_id")[0][0]
+    db.q("INSERT INTO plan_features (plan_id, feature_key, feature_name, value_type, value_boolean) VALUES (%s,'matrix','Matrix','boolean',TRUE)", (plan,))
+    total = db.q("SELECT count(*) FROM plan_features")[0][0]
+    app1 = db.q("INSERT INTO applications (job_id, tenant_id, candidate_name, submission_source) VALUES (%s,%s,'Matrix','manual_upload') "
+                "RETURNING application_id", (JOB1, T1))[0][0]
+    db.q("INSERT INTO application_workflow_history (application_id, tenant_id, changed_by, changed_by_name, from_status, to_status, note, "
+         "is_advanced_move) VALUES (%s,%s,%s,'Seed','awaiting_review','under_review',NULL,FALSE)", (app1, T1, U1))
+    conn = connect(db)
+    cur = conn.cursor()
+    matrix = {}
+    for role in MATRIX_ROLES:
+        set_context(cur, "" if role == "super_admin" else T1, role)
+        row = {}
+        row["plan_features.SELECT"] = scalar(cur, "SELECT count(*) FROM plan_features")
+        row["plan_features.UPDATE"] = _matrix_attempt(conn, cur, "UPDATE plan_features SET feature_name = feature_name WHERE feature_key = 'matrix'")
+        row["plan_features.INSERT"] = _matrix_attempt(conn, cur, "INSERT INTO plan_features (plan_id, feature_key, feature_name, value_type, value_boolean) "
+                                                                 "VALUES (%s,'x','X','boolean',TRUE)", (plan,))
+        row["plan_features.DELETE"] = _matrix_attempt(conn, cur, "DELETE FROM plan_features WHERE feature_key = 'matrix'")
+        row["history.SELECT"] = scalar(cur, "SELECT count(*) FROM application_workflow_history WHERE application_id = %s", (app1,))
+        row["history.INSERT"] = _matrix_attempt(conn, cur, "INSERT INTO application_workflow_history (application_id, tenant_id, changed_by, "
+                                                          "changed_by_name, from_status, to_status, note, is_advanced_move) VALUES (%s,%s,%s,'M',"
+                                                          "'under_review','shortlisted',NULL,FALSE)", (app1, T1, U1))
+        row["history.UPDATE"] = _matrix_attempt(conn, cur, "UPDATE application_workflow_history SET note = 'x' WHERE application_id = %s", (app1,))
+        row["history.DELETE"] = _matrix_attempt(conn, cur, "DELETE FROM application_workflow_history WHERE application_id = %s", (app1,))
+        matrix[role] = row
+        conn.rollback()
+    conn.close()
+
+    everyone_sees_the_catalogue = {"super_admin", "admin", "hr_manager", "recruiter", "viewer"}
+    for role, row in matrix.items():
+        # the catalogue: readable to the application's roles and super_admin; never writable by a tenant role; the grants allow UPDATE only
+        assert row["plan_features.SELECT"] == (total if role in everyone_sees_the_catalogue else 0), (role, row)
+        assert row["plan_features.INSERT"] == "denied" and row["plan_features.DELETE"] == "denied", (role, row)
+        assert row["plan_features.UPDATE"] == (1 if role == "super_admin" else 0), (role, row)
+        # the history: readable and insertable for its own tenant only; never updatable or deletable (no grant)
+        assert row["history.SELECT"] == 1, (role, row)           # the seeded row (read before the matrix's own insert): tenant 1 sees it
+        assert row["history.UPDATE"] == "denied" and row["history.DELETE"] == "denied", (role, row)
+    # the unissued role name: no catalogue read, and the history the application writes is still its own tenant's
+    assert matrix["viewer"]["plan_features.UPDATE"] == 0

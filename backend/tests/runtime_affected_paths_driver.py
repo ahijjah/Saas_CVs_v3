@@ -121,5 +121,36 @@ def _plan():
     return {"status": st, "body": body}
 
 
+@step("hr_reads_usage_including_plan_features")
+def _hr_usage():
+    st, body = http("GET", "/tenant/usage", "hr")
+    return {"status": st, "has_features_key": bool(body) and "features" in body,
+            "feature_count": len(body.get("features", [])) if body else None}
+
+
+@step("viewer_usage_is_refused_by_the_route")
+def _viewer_usage():
+    st, body = http("GET", "/tenant/usage", "viewer")
+    return {"status": st, "body": body}
+
+
+@step("viewer_cannot_change_workflow_status")
+def _viewer_bulk():
+    job = http("POST", "/jobs", "hr", {"title": "Viewer check job", "description": JOB_TEXT})[1]["job_id"]
+    app_ids = [str(sql("INSERT INTO applications (job_id, tenant_id, candidate_name, processing_status, workflow_status, submission_source) "
+                       "VALUES (:j, :t, :n, 'ai_scored', 'under_review', 'manual_upload') RETURNING application_id",
+                       {"j": job, "t": T1, "n": "Viewer Candidate"})[0]["application_id"])]
+    st, body = http("PATCH", "/applications/bulk-workflow-status", "viewer", {"workflow_status": "shortlisted", "application_ids": app_ids})
+    stored = sql("SELECT workflow_status FROM applications WHERE application_id = CAST(:a AS uuid)", {"a": app_ids[0]})[0]["workflow_status"]
+    history = sql("SELECT count(*) AS n FROM application_workflow_history WHERE application_id = CAST(:a AS uuid)", {"a": app_ids[0]})[0]["n"]
+    return {"status": st, "body": body, "stored": stored, "history_rows": history}
+
+
+@step("viewer_cannot_create_a_tenant_user")
+def _viewer_user():
+    st, body = http("POST", "/tenant/users", "viewer", {"email": "viewer.made@t1.example", "full_name": "Made", "role": "recruiter"})
+    return {"status": st, "body": body}
+
+
 if __name__ == "__main__":
     pathlib.Path(sys.argv[1]).write_text(json.dumps(OUT, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
