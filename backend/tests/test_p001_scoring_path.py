@@ -102,6 +102,7 @@ class _Result:
 
 class FakeSession:
     def __init__(self, log: list):
+        self.info: dict = {}     # set_rls_context records the tenant context here (database.py)
         self.log = log
 
     async def __aenter__(self):

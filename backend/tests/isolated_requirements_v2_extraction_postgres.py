@@ -75,8 +75,7 @@ def db(cluster):
     d = cluster.build()
     if RUNTIME_ROLE:
         d.conn.cursor().execute(RUNTIME_GRANTS.read_text(encoding="utf-8"))
-        if os.environ.get("CV_TEST_RUNTIME_HISTORY_RLS"):                 # the proposed history policy, when it is being evaluated
-            d.conn.cursor().execute((RUNTIME_GRANTS.parent / "proposed_history_rls.sql").read_text(encoding="utf-8"))
+
     yield d
     d.drop()
 

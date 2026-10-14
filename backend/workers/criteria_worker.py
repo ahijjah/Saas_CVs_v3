@@ -427,10 +427,8 @@ async def _mark_failed(job_id: str, error: str) -> None:
     Session = async_sessionmaker(fail_engine, class_=AsyncSession, expire_on_commit=False)
     try:
         async with Session() as db:
-            await db.execute(text(
-                "SELECT set_config('app.current_tenant_id', '', true), "
-                "set_config('app.current_role', 'super_admin', true)"
-            ))
+            from database import set_rls_context
+            await set_rls_context(db, "", "super_admin")
             await db.execute(
                 text("""
                     UPDATE job_criteria SET

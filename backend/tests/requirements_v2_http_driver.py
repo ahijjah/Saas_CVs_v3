@@ -122,8 +122,11 @@ def http(method, url, who=None, body=None):
 
 
 def sql(statement, params=None):
+    """Test-side observation of the stored state. It sets the super_admin context (as the workers do) so that it sees every row of the tenant;
+    the app's own requests still run under the tenant of the caller. Under the runtime role the grants still apply to this statement."""
     async def go():
         async with database.engine.begin() as conn:
+            await conn.execute(text("SELECT set_config('app.current_tenant_id', '', true), set_config('app.current_role', 'super_admin', true)"))
             res = await conn.execute(text(statement), params or {})
             return [dict(r._mapping) for r in res] if res.returns_rows else []
     return _run(go())

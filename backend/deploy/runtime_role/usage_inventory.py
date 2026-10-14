@@ -24,6 +24,7 @@ PATTERNS = {
     "UPDATE": re.compile(r"\bUPDATE\s+" + TABLE + r"\s+SET\b", re.I),
     "DELETE": re.compile(r"\bDELETE\s+FROM\s+" + TABLE, re.I),
 }
+INSERT_UPSERT = re.compile(r"\bINSERT\s+INTO\s+" + TABLE + r"[^;\"']*?\bON\s+CONFLICT\b[^;\"']*?\bDO\s+UPDATE\b", re.I | re.S)
 DYNAMIC = re.compile(r"(?:FROM|JOIN|INTO|UPDATE)\s+\{", re.I)
 
 
@@ -49,6 +50,11 @@ def scan(tables: set[str]) -> tuple[dict[str, set[str]], list[str]]:
                     name = m.group(1).lower()
                     if name in tables:
                         usage[name].add(verb)
+            # INSERT ... ON CONFLICT ... DO UPDATE also needs UPDATE on the target table (PostgreSQL checks it before taking the conflict path).
+            for m in INSERT_UPSERT.finditer(text):
+                name = m.group(1).lower()
+                if name in tables:
+                    usage[name].add("UPDATE")
             if DYNAMIC.search(text):
                 dynamic.append(str(f.relative_to(BACKEND)))
     return usage, sorted(set(dynamic))

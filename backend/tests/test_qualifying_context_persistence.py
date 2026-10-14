@@ -293,6 +293,7 @@ class DB:
 
 class FakeSession:
     def __init__(self, db):
+        self.info: dict = {}     # set_rls_context records the tenant context here (database.py)
         self.db, self.log = db, []
         db.session_log.append(self.log)
 

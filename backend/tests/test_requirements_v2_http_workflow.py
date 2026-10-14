@@ -22,6 +22,8 @@ REASON = rh.available()
 pytestmark = pytest.mark.skipif(REASON is not None, reason=f"no real PostgreSQL 16 here: {REASON}")
 
 DRIVER = BACKEND / "tests" / "requirements_v2_http_driver.py"
+RUNTIME_ROLE = os.environ.get("CV_TEST_RUNTIME_ROLE", "")
+RUNTIME_GRANTS = BACKEND / "deploy" / "runtime_role" / "grants.sql"
 SEED_SHA = "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b"
 WEIGHT_COLUMNS = ("weight_skills", "weight_experience", "weight_education", "weight_certifications", "weight_soft_skills",
                   "weight_domain_knowledge", "weight_other")
@@ -44,8 +46,14 @@ def obs(tmp_path_factory):
     db = cluster.build()
     try:
         _seed(db)
+        # RUNTIME MODE: CV_TEST_RUNTIME_ROLE=cv_runtime runs the driver's app (routes, services, workers) as the restricted role, with the grants of
+        # deploy/runtime_role/grants.sql applied to this disposable database. Unset: the superuser, as before.
+        url = db.async_url
+        if RUNTIME_ROLE:
+            db.conn.cursor().execute(RUNTIME_GRANTS.read_text(encoding="utf-8"))
+            url = url.replace("postgres@", f"{RUNTIME_ROLE}@")
         out = tmp_path_factory.mktemp("http") / "obs.json"
-        env = {**os.environ, "DATABASE_URL": db.async_url, "JWT_SECRET": "test-only-secret", "PYTHONIOENCODING": "utf-8",
+        env = {**os.environ, "DATABASE_URL": url, "JWT_SECRET": "test-only-secret", "PYTHONIOENCODING": "utf-8",
                "HTTP_SEED": json.dumps({"users": USERS})}
         proc = subprocess.run([sys.executable, "-I", str(DRIVER), str(out)], env=env, capture_output=True, text=True, timeout=900, cwd=str(BACKEND))
         assert proc.returncode == 0, proc.stderr[-4000:]

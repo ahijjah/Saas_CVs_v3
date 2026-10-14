@@ -1859,12 +1859,8 @@ async def _mark_failed(
         )
         async with Session() as db:
             # Set RLS to super_admin with empty tenant to access any row.
-            await db.execute(
-                text(
-                    "SELECT set_config('app.current_tenant_id', '', true), "
-                    "       set_config('app.current_role', 'super_admin', true)"
-                )
-            )
+            from database import set_rls_context
+            await set_rls_context(db, "", "super_admin")
             result = await db.execute(
                 text("""
                     UPDATE applications SET

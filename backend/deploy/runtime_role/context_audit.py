@@ -12,13 +12,33 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import re
 import sys
 
 BACKEND = pathlib.Path(__file__).resolve().parents[2]
 SCAN = ("routers", "services", "workers", "auth", "database.py")
 ROUTE_METHODS = {"get", "post", "put", "patch", "delete"}
+RLS_RE = re.compile(r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:cv_analyzer\.)?(\w+)\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY", re.I)
+TABLE_RE = re.compile(r"(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM)\s+(?:cv_analyzer\.)?(\w+)", re.I)
 SQL_CALLS = {"execute", "exec_driver_sql"}
 CONTEXT_SETTERS = {"set_rls_context", "set_request_context", "get_db_with_rls"}
+
+
+def rls_tables() -> set[str]:
+    """Tables with ROW LEVEL SECURITY enabled, from db/schema.sql and every migration (static; the live check is inventory.sql)."""
+    names: set[str] = set()
+    for p in [BACKEND / "db" / "schema.sql", *sorted((BACKEND / "db" / "migrations").glob("*.sql"))]:
+        names.update(m.group(1).lower() for m in RLS_RE.finditer(p.read_text(encoding="utf-8", errors="replace")))
+    return names
+
+
+def tables_after(fn: ast.AST, line: int) -> set[str]:
+    """Tables named in SQL text (string constants) that sit after `line` in the function."""
+    out = set()
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and getattr(n, "lineno", 0) > line:
+            out.update(m.group(1).lower() for m in TABLE_RE.finditer(n.value))
+    return out
 
 
 def _files():
@@ -65,6 +85,7 @@ def _has_user_param(fn: ast.AST) -> bool:
 
 def audit() -> tuple[list[str], list[str]]:
     routes, commits = [], []
+    rls = rls_tables()
     for f in _files():
         tree = ast.parse(f.read_text(encoding="utf-8", errors="replace"))
         rel = f.relative_to(BACKEND)
@@ -82,7 +103,9 @@ def audit() -> tuple[list[str], list[str]]:
                                 or (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in CONTEXT_SETTERS))
                 helpers = sorted({c for c in _calls(fn) if c.startswith("_load") or c in ("build_view", "recovery_status", "pipeline_context")})
                 if later_sql and not any(r > first for r in resets):
-                    commits.append(f"{rel}:{fn.name} commit@{first} sql-after@{later_sql[0]} helpers={helpers or '-'}")
+                    touched = sorted(tables_after(fn, first) & rls)
+                    commits.append(f"{rel}:{fn.name} commit@{first} sql-after@{later_sql[0]} helpers={helpers or '-'} "
+                                   f"rls-tables-after-commit={touched or 'none'}")
     return routes, commits
 
 
@@ -92,7 +115,9 @@ def main() -> int:
     for r in routes:
         print(f"  {r}")
     print(f"  ({len(routes)} routes; their context is set by code (login, public intake, workers) or absent)")
-    print("# 2. functions that commit and run SQL afterwards without setting the context again (review; a helper may re-set it)")
+    print("# 2. functions that commit and run SQL afterwards without setting the context again (review). The database.py listener re-applies the")
+    print("#    context recorded by set_rls_context on the session at every new transaction, so a function whose session already called")
+    print("#    set_rls_context is covered; the rows below need the runtime-role test (tests/test_runtime_affected_paths.py) or a re-set.")
     for c in commits:
         print(f"  {c}")
     print(f"  ({len(commits)} functions)")

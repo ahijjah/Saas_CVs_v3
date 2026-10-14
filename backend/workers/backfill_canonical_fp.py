@@ -70,12 +70,8 @@ async def _backfill_async(Session, batch_size: int) -> dict:
     while True:
         async with Session() as db:
             # RLS bypass: super_admin with empty tenant sees all rows
-            await db.execute(
-                text(
-                    "SELECT set_config('app.current_tenant_id', '', true), "
-                    "       set_config('app.current_role', 'super_admin', true)"
-                )
-            )
+            from database import set_rls_context
+            await set_rls_context(db, "", "super_admin")
 
             rows = await db.execute(
                 text("""
@@ -104,12 +100,8 @@ async def _backfill_async(Session, batch_size: int) -> dict:
             try:
                 fp = compute_canonical_text_fingerprint(row["extracted_text"])
                 async with Session() as db:
-                    await db.execute(
-                        text(
-                            "SELECT set_config('app.current_tenant_id', '', true), "
-                            "       set_config('app.current_role', 'super_admin', true)"
-                        )
-                    )
+                    from database import set_rls_context
+                    await set_rls_context(db, "", "super_admin")
                     result = await db.execute(
                         text("""
                             UPDATE application_files

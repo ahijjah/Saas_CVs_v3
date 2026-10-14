@@ -276,6 +276,7 @@ class Store:
 
 class FakeSession:
     def __init__(self, store):
+        self.info: dict = {}     # set_rls_context records the tenant context here (database.py)
         self.store, self.pending = store, {}
 
     async def execute(self, stmt, params=None):

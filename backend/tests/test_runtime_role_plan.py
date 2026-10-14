@@ -217,11 +217,13 @@ HISTORY_ROW = ("INSERT INTO requirements_analysis_log (job_id, tenant_id, versio
                "('00000000-0000-0000-0000-0000000000c1','00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000d1',2,'candidate','requested')")
 
 
-def test_the_runtime_role_can_read_and_append_the_history(db):
+def test_the_runtime_role_can_read_and_append_the_history_for_its_own_tenant(db):
     conn = connect(db)
     cur = conn.cursor()
+    set_context(cur, T1, "admin")
     cur.execute(HISTORY_ROW)
     conn.commit()
+    set_context(cur, T1, "admin")                      # a raw set_config ends with the commit: the next transaction sets it again
     assert scalar(cur, "SELECT count(*) FROM requirements_analysis_log") == 1
     conn.rollback()
     conn.close()
@@ -249,6 +251,7 @@ def test_a_later_grant_on_all_tables_does_not_make_the_history_mutable_for_the_r
     cur.execute("GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA cv_analyzer TO cv_runtime")
     conn = connect(db)
     c = conn.cursor()
+    set_context(c, T1, "admin")                       # with the tenant context the row is visible, so the trigger is what refuses
     with pytest.raises(psycopg2.Error) as exc:
         c.execute("UPDATE requirements_analysis_log SET event = 'discarded'")
     assert "append-only" in str(exc.value)
@@ -298,21 +301,20 @@ def _two_tenant_history(d):
                     "(%s,%s,gen_random_uuid(),2,'candidate','requested')", (jid, tid))
 
 
-def test_today_the_runtime_role_can_read_another_tenants_history(db):
-    """DOCUMENTS the gap in the current schema: the history has no row-level security, so a tenant-1 session sees tenant 2's events. The services
-    filter by job, which is the only protection today."""
+def test_the_history_is_isolated_by_tenant_once_migration_110_is_applied(db):
+    """Migration 110 (the full chain includes it) gives the history tenant row-level security. Before it, a tenant-1 session read tenant 2's events."""
     _two_tenant_history(db)
     conn = connect(db)
     cur = conn.cursor()
     set_context(cur, T1, "admin")
-    assert scalar(cur, "SELECT count(*) FROM requirements_analysis_log WHERE tenant_id = %s", (T2,)) == 1
+    assert scalar(cur, "SELECT count(*) FROM requirements_analysis_log") == 1
+    assert scalar(cur, "SELECT count(*) FROM requirements_analysis_log WHERE tenant_id = %s", (T2,)) == 0
     conn.close()
 
 
-def test_the_proposed_history_policy_isolates_tenants_and_keeps_the_background_path(db):
+def test_the_history_policy_refuses_a_cross_tenant_append_and_keeps_the_background_path(db):
     import psycopg2
     _two_tenant_history(db)
-    db.conn.cursor().execute((BACKEND / "deploy" / "runtime_role" / "proposed_history_rls.sql").read_text(encoding="utf-8"))
     conn = connect(db)
     cur = conn.cursor()
     set_context(cur, T1, "admin")
@@ -367,3 +369,58 @@ def test_the_runtime_role_can_set_the_super_admin_context_itself(db):
     set_context(cur, T1, "super_admin")
     assert scalar(cur, "SELECT count(*) FROM jobs") == 2
     conn.close()
+
+
+def test_no_live_policy_reads_a_setting_the_application_never_sets(db):
+    """Migrations 057 and 023 read app.tenant_id and app.role; the application sets app.current_tenant_id and app.current_role. Migration 111
+    replaces those policies. Checked on the policies as they stand after the full chain, so a later migration cannot reintroduce them."""
+    rows = db.q("SELECT tablename, COALESCE(qual, '') || ' ' || COALESCE(with_check, '') FROM pg_policies WHERE schemaname = 'cv_analyzer'")
+    stale = [t for t, text_ in rows if "'app.tenant_id'" in text_ or "'app.role'" in text_]
+    assert stale == []
+
+
+def test_the_workflow_history_is_tenant_scoped_for_the_runtime_role(db):
+    """Migration 111. The 057 policy read app.tenant_id (never set): under a non-owner role no tenant could read or write its own workflow
+    history, so the single and the bulk workflow moves failed on their insert."""
+    import psycopg2
+    app1 = db.q("INSERT INTO applications (job_id, tenant_id, candidate_name, submission_source) VALUES (%s,%s,'Candidate','manual_upload') "
+                "RETURNING application_id", (JOB1, T1))[0][0]
+    conn = connect(db)
+    cur = conn.cursor()
+    set_context(cur, T1, "hr_manager")
+    cur.execute("INSERT INTO application_workflow_history (application_id, tenant_id, changed_by, changed_by_name, from_status, to_status, note, "
+                "is_advanced_move) VALUES (%s,%s,%s,'HR',%s,%s,NULL,FALSE)", (app1, T1, U1, "under_review", "shortlisted"))
+    assert scalar(cur, "SELECT count(*) FROM application_workflow_history WHERE application_id = %s", (app1,)) == 1
+    set_context(cur, T2, "admin")
+    assert scalar(cur, "SELECT count(*) FROM application_workflow_history WHERE application_id = %s", (app1,)) == 0
+    with pytest.raises(psycopg2.Error) as exc:
+        cur.execute("INSERT INTO application_workflow_history (application_id, tenant_id, changed_by, changed_by_name, from_status, to_status, "
+                    "note, is_advanced_move) VALUES (%s,%s,%s,'Other',%s,%s,NULL,FALSE)", (app1, T1, U1, "under_review", "shortlisted"))
+    assert exc.value.pgcode == "42501"
+    conn.rollback()
+
+
+def test_the_plan_features_are_readable_by_the_roles_the_application_issues(db):
+    """Migration 111. The 023 policies read app.role (never set): tenant users and super_admin both read no plan features under the runtime role."""
+    plan = db.q("INSERT INTO subscription_plans (plan_code, plan_name) VALUES ('runtime_probe', 'Runtime probe') RETURNING plan_id")[0][0]
+    db.q("INSERT INTO plan_features (plan_id, feature_key, feature_name, value_type, value_boolean) VALUES (%s,'probe','Probe','boolean',TRUE)", (plan,))
+    total = db.q("SELECT count(*) FROM plan_features")[0][0]
+    assert total > 0
+    conn = connect(db)
+    cur = conn.cursor()
+    set_context(cur, T1, "admin")
+    assert scalar(cur, "SELECT count(*) FROM plan_features") == total
+    set_context(cur, "", "super_admin")
+    assert scalar(cur, "SELECT count(*) FROM plan_features") == total
+    conn.rollback()
+
+
+def test_today_the_runtime_role_can_assert_super_admin_for_itself(db):
+    """THE GAP, recorded on purpose (deploy/runtime_role/PRIVILEGED_OPERATIONS_PROPOSAL.md, section 2.1). The super_admin branch of the tenant
+    policies trusts a setting the session itself sets, so cv_runtime reads every tenant by setting app.current_role. This assertion passes today;
+    when the proposal's policy change lands it must FAIL, and then be changed to the opposite expectation."""
+    conn = connect(db)
+    cur = conn.cursor()
+    set_context(cur, "", "super_admin")
+    assert scalar(cur, "SELECT count(*) FROM jobs") == 2
+    conn.rollback()
