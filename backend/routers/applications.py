@@ -1875,6 +1875,15 @@ async def reset_stuck_cvs(
     }
 
 
+def _refuse_read_only_role(current_user) -> None:
+    """Viewers are read-only: a workflow move is refused before anything is read for it or written, for the single and the bulk move alike."""
+    if current_user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers cannot move candidates through the workflow.",
+        )
+
+
 @router.patch("/{application_id}/workflow-status", dependencies=[RequireATSManagement])
 async def update_workflow_status(
     application_id: str,
@@ -1883,6 +1892,7 @@ async def update_workflow_status(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Transition an application's recruiter workflow status."""
+    _refuse_read_only_role(current_user)
     new_status = body.workflow_status.strip().lower()
     if new_status not in WORKFLOW_STATUSES:
         raise HTTPException(
@@ -2655,6 +2665,7 @@ async def bulk_update_workflow_status(
     - Skips system-managed or invalid candidates safely
     - Returns summary: updated_count, skipped_count, skipped_reasons
     """
+    _refuse_read_only_role(current_user)
     application_ids = (body.application_ids or []) if hasattr(body, 'application_ids') else []
     if not application_ids:
         raise HTTPException(

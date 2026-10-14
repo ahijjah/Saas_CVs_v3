@@ -476,6 +476,8 @@ def test_migration_111_role_by_operation_matrix_for_the_runtime_role(db):
         conn.rollback()
     conn.close()
 
+    for role, row in matrix.items():
+        print(f"MATRIX {role}: " + ", ".join(f"{k}={v}" for k, v in row.items()))
     everyone_sees_the_catalogue = {"super_admin", "admin", "hr_manager", "recruiter", "viewer"}
     for role, row in matrix.items():
         # the catalogue: readable to the application's roles and super_admin; never writable by a tenant role; the grants allow UPDATE only

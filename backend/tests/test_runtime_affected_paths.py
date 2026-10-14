@@ -90,9 +90,16 @@ def test_viewer_is_refused_the_usage_read_and_user_creation_through_the_api(obs)
     assert made["status"] == 403, made
 
 
-@pytest.mark.xfail(strict=True, reason="GAP: PATCH /applications/bulk-workflow-status (and the single move) check only the ATS module flag, not "
-                                       "the role, so a viewer moves candidates. Strict: when a role check lands this must XPASS and be flipped.")
 def test_viewer_cannot_move_candidates_in_bulk(obs):
+    """Viewers are read-only: the bulk move is refused with 403 and changes neither the status nor the workflow history."""
     move = S(obs, "viewer_cannot_change_workflow_status")
     assert move["status"] == 403, move
     assert move["stored"] == "under_review" and move["history_rows"] == 0, move
+
+
+def test_viewer_cannot_move_one_candidate_and_hr_still_can(obs):
+    """The single move is refused for a viewer with nothing written; an HR manager still moves the same candidate (other roles unchanged)."""
+    single = S(obs, "viewer_cannot_change_one_candidate")
+    assert single["status"] == 403, single
+    assert single["stored"] == "under_review" and single["history_rows"] == 0, single
+    assert single["hr_status"] == 200 and single["hr_body"]["workflow_status"] == "shortlisted", single

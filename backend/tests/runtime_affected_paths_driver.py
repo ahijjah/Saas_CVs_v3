@@ -146,6 +146,20 @@ def _viewer_bulk():
     return {"status": st, "body": body, "stored": stored, "history_rows": history}
 
 
+@step("viewer_cannot_change_one_candidate")
+def _viewer_single():
+    job = http("POST", "/jobs", "hr", {"title": "Viewer single job", "description": JOB_TEXT})[1]["job_id"]
+    app_id = str(sql("INSERT INTO applications (job_id, tenant_id, candidate_name, processing_status, workflow_status, submission_source) "
+                     "VALUES (:j, :t, :n, 'ai_scored', 'under_review', 'manual_upload') RETURNING application_id",
+                     {"j": job, "t": T1, "n": "Single Viewer Candidate"})[0]["application_id"])
+    st, body = http("PATCH", f"/applications/{app_id}/workflow-status", "viewer", {"workflow_status": "shortlisted"})
+    stored = sql("SELECT workflow_status FROM applications WHERE application_id = CAST(:a AS uuid)", {"a": app_id})[0]["workflow_status"]
+    history = sql("SELECT count(*) AS n FROM application_workflow_history WHERE application_id = CAST(:a AS uuid)", {"a": app_id})[0]["n"]
+    # the same move by an HR manager still works: the other roles' permission is preserved
+    hr_st, hr_body = http("PATCH", f"/applications/{app_id}/workflow-status", "hr", {"workflow_status": "shortlisted"})
+    return {"status": st, "body": body, "stored": stored, "history_rows": history, "hr_status": hr_st, "hr_body": hr_body}
+
+
 @step("viewer_cannot_create_a_tenant_user")
 def _viewer_user():
     st, body = http("POST", "/tenant/users", "viewer", {"email": "viewer.made@t1.example", "full_name": "Made", "role": "recruiter"})
