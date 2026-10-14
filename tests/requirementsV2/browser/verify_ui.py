@@ -130,7 +130,7 @@ def main(argv=None) -> int:
     # ── the real app, authentication replaced ────────────────────────────────────────────────────────────────────
     from auth import module_guards
     from auth.dependencies import CurrentUser, get_current_user
-    from database import get_db
+    from database import get_db, set_rls_context
     from routers import job_requirements as jr
 
     USERS = {"admin": ("admin", pgt.U_ADMIN, pgt.T1), "hr": ("hr_manager", pgt.U_HR, pgt.T1), "viewer": ("recruiter", str(uuid.UUID(int=0x777)), pgt.T1),
@@ -145,8 +145,11 @@ def main(argv=None) -> int:
         role, uid, tenant = USERS[token]
         return CurrentUser(user_id=uid, tenant_id=tenant, email=f"{token}@example.com", role=role, full_name=token)
 
-    async def db_dep():
+    async def db_dep(request: Request):
+        # the real get_current_user sets the tenant context on the session; the fake one must too, or a restricted role sees no rows
+        user = await current_user(request)
         async with env.session() as s:
+            await set_rls_context(s, user.tenant_id, user.role)
             yield s
 
     app.dependency_overrides[get_current_user] = current_user
