@@ -24,9 +24,11 @@ SET search_path = cv_analyzer;
 -- 1. The owner role: create, or verify that an existing one is exactly the safe shape.
 DO $$
 DECLARE
-    r        record;
-    members  integer;
-    owned    integer;
+    r            record;
+    members      integer;
+    owned        integer;
+    owner_oid    oid;
+    unexpected   integer;
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cv_code_owner') THEN
         CREATE ROLE cv_code_owner NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT;
@@ -57,6 +59,51 @@ BEGIN
     WHERE o.rolname = 'cv_code_owner' AND c.relname NOT IN ('job_code_counters', 'job_code_counters_pkey');
     IF owned > 0 THEN
         RAISE EXCEPTION 'cv_code_owner owns objects other than the allocator and its counter; refusing to continue' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+
+    -- it may hold no privilege beyond what this migration grants: USAGE on cv_analyzer, and SELECT(job_code) on jobs, both WITHOUT grant
+    -- option. Its own rights on the objects it owns are implicit, so ACL rows that name it as grantee on an object it owns are not counted.
+    -- Any other ACL row, any grant option, any owned schema, any policy naming it outside the allocator's read policy, and any default
+    -- privilege or database, tablespace or cluster-parameter grant to it, is refused. Nothing is revoked silently. Shared catalogs (databases,
+    -- tablespaces, parameters) cover every database in the cluster; per-object ACLs and policies are checked for THIS database only.
+    owner_oid := (SELECT oid FROM pg_roles WHERE rolname = 'cv_code_owner');
+    SELECT count(*) INTO unexpected FROM (
+        SELECT 1 FROM pg_class c, aclexplode(c.relacl) a
+            WHERE a.grantee = owner_oid AND c.relowner <> owner_oid
+        UNION ALL
+        SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+            WHERE a.grantee = owner_oid AND p.proowner <> owner_oid
+        UNION ALL
+        SELECT 1 FROM pg_namespace n, aclexplode(n.nspacl) a
+            WHERE a.grantee = owner_oid
+              AND NOT (n.nspname = 'cv_analyzer' AND a.privilege_type = 'USAGE' AND NOT a.is_grantable)
+        UNION ALL
+        SELECT 1 FROM pg_namespace n WHERE n.nspowner = owner_oid
+        UNION ALL
+        SELECT 1 FROM pg_attribute att
+            JOIN pg_class c ON c.oid = att.attrelid, aclexplode(att.attacl) a
+            WHERE a.grantee = owner_oid AND c.relowner <> owner_oid
+              AND NOT (c.relname = 'jobs' AND att.attname = 'job_code' AND a.privilege_type = 'SELECT' AND NOT a.is_grantable)
+        UNION ALL
+        SELECT 1 FROM pg_policy p
+            WHERE p.polroles @> ARRAY[owner_oid]
+              AND NOT COALESCE(p.polname = 'job_code_allocator_read' AND p.polrelid = to_regclass('cv_analyzer.jobs'), false)
+        UNION ALL
+        SELECT 1 FROM pg_default_acl d WHERE d.defaclrole = owner_oid
+        UNION ALL
+        SELECT 1 FROM pg_default_acl d, aclexplode(d.defaclacl) a WHERE a.grantee = owner_oid
+        UNION ALL
+        SELECT 1 FROM pg_database d, aclexplode(d.datacl) a WHERE a.grantee = owner_oid
+        UNION ALL
+        SELECT 1 FROM pg_database d WHERE d.datdba = owner_oid
+        UNION ALL
+        SELECT 1 FROM pg_tablespace t, aclexplode(t.spcacl) a WHERE a.grantee = owner_oid
+        UNION ALL
+        SELECT 1 FROM pg_parameter_acl pa, aclexplode(pa.paracl) a WHERE a.grantee = owner_oid
+    ) found;
+    IF unexpected > 0 THEN
+        RAISE EXCEPTION 'cv_code_owner holds privileges or policies outside the expected set; refusing to continue (nothing was changed)'
+            USING ERRCODE = 'insufficient_privilege';
     END IF;
 END $$;
 

@@ -305,3 +305,73 @@ def test_the_rollback_keeps_the_counter_state_and_the_owner_and_resumes_on_reapp
         rc = rt.cursor()
         rc.execute("SELECT cv_analyzer.allocate_job_code(%s)", (YEAR + 2,))
         assert rc.fetchone()[0] == f"JOB-{YEAR + 2}-0003"
+
+
+# ── a pre-existing owner that already holds an unexpected privilege, policy or default is refused before any change ───────────
+# The owner is cluster-wide, so each case uses its own fresh cluster. Database-level and cluster-level grants are visible from every database.
+UNEXPECTED = {
+    "broad_table_select": "GRANT SELECT ON cv_analyzer.jobs TO cv_code_owner",
+    "broad_table_update": "GRANT UPDATE ON cv_analyzer.jobs TO cv_code_owner",
+    "unexpected_column": "GRANT SELECT (title) ON cv_analyzer.jobs TO cv_code_owner",
+    "job_code_with_grant_option": "GRANT SELECT (job_code) ON cv_analyzer.jobs TO cv_code_owner WITH GRANT OPTION",
+    "schema_create": "GRANT CREATE ON SCHEMA cv_analyzer TO cv_code_owner",
+    "schema_owned": "ALTER SCHEMA cv_analyzer OWNER TO cv_code_owner",
+    "unrelated_function_execute": ("CREATE FUNCTION public.owner_probe() RETURNS integer LANGUAGE sql AS 'SELECT 1'; "
+                                   "GRANT EXECUTE ON FUNCTION public.owner_probe() TO cv_code_owner"),
+    "extra_owner_policy": "CREATE POLICY owner_extra ON cv_analyzer.jobs FOR SELECT TO cv_code_owner USING (false)",
+    "default_privilege": "ALTER DEFAULT PRIVILEGES IN SCHEMA cv_analyzer GRANT SELECT ON TABLES TO cv_code_owner",
+    "database_connect": "GRANT CONNECT ON DATABASE {db} TO cv_code_owner",
+    "cluster_parameter": "GRANT SET ON PARAMETER work_mem TO cv_code_owner",
+}
+
+
+@pytest.mark.parametrize("label", list(UNEXPECTED))
+def test_a_pre_existing_owner_with_an_unexpected_privilege_is_refused_before_any_change(fresh, label):
+    d = fresh.build(upto=BEFORE_112)
+    seed(d)
+    try:
+        d.q(OWNER_CREATE)
+        d.q(UNEXPECTED[label].format(db=d.name))
+        err = apply_112(d)
+        assert err is not None and "outside the expected set" in err, (label, err)
+        assert d.q("SELECT to_regclass('cv_analyzer.job_code_counters') IS NULL, to_regprocedure('cv_analyzer.allocate_job_code(integer)') IS NULL") == [(True, True)], label
+        assert role_state(d) == [SAFE], label
+    finally:
+        d.drop()
+
+
+def test_the_refusal_does_not_silently_revoke_the_unexpected_grant(fresh):
+    d = fresh.build(upto=BEFORE_112)
+    seed(d)
+    try:
+        d.q(OWNER_CREATE)
+        d.q(UNEXPECTED["broad_table_select"])
+        assert apply_112(d) is not None
+        assert d.q("SELECT has_table_privilege('cv_code_owner', 'cv_analyzer.jobs', 'SELECT')") == [(True,)], "the refusal must not revoke anything"
+    finally:
+        d.drop()
+
+
+def test_a_safe_rerun_passes_the_expected_set_and_keeps_the_owner_shape(fresh):
+    d = fresh.build(upto=BEFORE_112)
+    seed(d)
+    try:
+        assert apply_112(d) is None                       # clean creation: the owner gets USAGE and job_code SELECT from the migration
+        assert apply_112(d) is None                       # a safe rerun: the expected set is exactly what the first run granted
+        assert role_state(d) == [SAFE]
+        assert d.q("SELECT has_schema_privilege('cv_code_owner', 'cv_analyzer', 'USAGE'), "
+                   "has_column_privilege('cv_code_owner', 'cv_analyzer.jobs', 'job_code', 'SELECT'), "
+                   "has_schema_privilege('cv_code_owner', 'cv_analyzer', 'CREATE')") == [(True, True, False)]
+    finally:
+        d.drop()
+
+
+def test_a_rollback_then_a_hand_added_grant_refuses_the_reapply_without_change(adopted):
+    wait_no_runtime(adopted)
+    adopted.conn.cursor().execute(ROLLBACK)
+    before = adopted.q("SELECT year, last_seq FROM job_code_counters ORDER BY year")
+    adopted.q("GRANT SELECT ON cv_analyzer.jobs TO cv_code_owner")       # a broad grant added after the rollback
+    err = apply_112(adopted)
+    assert err is not None and "outside the expected set" in err, err
+    assert adopted.q("SELECT year, last_seq FROM job_code_counters ORDER BY year") == before, "a refused reapply must keep the counters"
+    assert adopted.q("SELECT has_table_privilege('cv_code_owner', 'cv_analyzer.jobs', 'SELECT')") == [(True,)]
