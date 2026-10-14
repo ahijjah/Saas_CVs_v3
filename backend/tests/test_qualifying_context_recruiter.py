@@ -478,8 +478,8 @@ class TestRouterWiring:
     def test_endpoints_and_contracts(self):
         edit = ast.get_source_segment(JOBS_SRC, _fn("edit_qualifying_context"))
         conf = ast.get_source_segment(JOBS_SRC, _fn("confirm_qualifying_context"))
-        assert '@router.put("/{job_id}/criteria/qualifying-context")' in JOBS_SRC
-        assert '@router.post("/{job_id}/criteria/qualifying-context/confirm")' in JOBS_SRC
+        assert '@router.put("/{job_id}/criteria/qualifying-context"' in JOBS_SRC   # the decorator also carries the write-role gate
+        assert '@router.post("/{job_id}/criteria/qualifying-context/confirm"' in JOBS_SRC
         assert "qc_recruiter.edit_qualifying_context(" in edit and "current_user" in edit
         assert "qc_recruiter.confirm_qualifying_context(" in conf and "current_user" in conf
         for src in (edit, conf):
