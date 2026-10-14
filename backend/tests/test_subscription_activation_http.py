@@ -64,6 +64,9 @@ def S(obs, name):
     return step
 
 
+RUNTIME = bool(RUNTIME_ROLE)
+
+
 def active(st):
     return st["after"]["subscription_status"] == "active"
 
@@ -127,3 +130,44 @@ def test_reproduces_the_subscribe_path_writes_no_audit_row(obs):
     """REPRODUCES. The tenant-admin activation leaves no audit row, so nothing shows who turned a paid plan on."""
     for name in ("paid_starter_from_pending_plan_selection", "paid_professional_from_suspended"):
         assert S(obs, name)["audit_rows_added"] == 0
+
+
+# ── eligibility, duration and suspension ──────────────────────────────────────────────────────────────────────────────────────
+def test_reproduces_a_suspended_tenant_keeps_writing(obs):
+    """REPRODUCES. Nothing in the backend reads subscription_status to refuse a request, so a suspended tenant's writes are served (a tag is created)."""
+    st = S(obs, "suspended_tenant_creates_job")
+    assert st["status"] == 200 and st["stored"] is True and st["after"]["subscription_status"] == "suspended", st
+
+
+def test_reproduces_a_second_tenants_first_job_collides_under_the_restricted_role(obs):
+    """REPRODUCES a rollout blocker. The job code is counted over the rows the request can see, but it is unique across tenants. The superuser sees
+    every tenant and never collides; the restricted role sees only its own, so the second tenant's first job fails with 500 (unique violation)."""
+    st = S(obs, "job_code_collision_under_restricted_role")
+    assert st["a_status"] == 201, st
+    if RUNTIME:
+        assert st["b_status"] == 500, st
+    else:
+        assert st["b_status"] == 201, st
+
+
+def test_reproduces_an_expired_trial_keeps_writing(obs):
+    """REPRODUCES. The trial end date is set but never enforced: no worker expires it and no request checks it."""
+    st = S(obs, "trial_past_its_end_creates_job")
+    assert st["status"] == 200 and st["stored"] is True and st["after"]["subscription_status"] == "trial", st
+
+
+def test_reproduces_subscribing_to_the_trial_plan_bypasses_the_one_trial_per_domain_rule(obs):
+    """REPRODUCES. The domain's one trial is used by tenant A; tenant B is refused activate-trial (control) but subscribing to the trial plan
+    activates it."""
+    st = S(obs, "trial_eligibility_domain_bypass")
+    assert st["a_trial_status"] == 200 and st["b_activate_trial_status"] == 409, st
+    assert st["b_subscribe_status"] == 200 and st["b_after_subscribe"]["subscription_status"] == "active", st
+
+
+def test_reproduces_subscribing_to_the_trial_plan_removes_the_trial_duration(obs):
+    """REPRODUCES. A tenant on its 14-day trial subscribes to the trial plan: the status becomes active, the end date is left set and unused, so the
+    account never expires."""
+    st = S(obs, "trial_duration_bypass_by_subscribing_to_trial")
+    assert st["on_trial"]["subscription_status"] == "trial"
+    assert st["subscribe_status"] == 200 and st["after"]["subscription_status"] == "active" and st["after"]["ends"] is False, st
+    assert st["trial_end_still_set"] is True, st

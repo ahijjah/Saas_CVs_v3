@@ -22,6 +22,9 @@ import database  # noqa: E402
 from auth.jwt import create_access_token  # noqa: E402
 from config import get_settings  # noqa: E402
 from main import app  # noqa: E402
+import workers.criteria_worker as legacy_worker  # noqa: E402
+
+legacy_worker.extract_criteria_task.delay = lambda *a, **k: None   # job creation queues extraction; not part of these checks
 
 SEED = json.loads(os.environ["HTTP_SEED"])
 OUT: dict = {"steps": {}, "config": {"environment": get_settings().environment, "allow_simulated_payment": get_settings().allow_simulated_payment}}
@@ -51,10 +54,14 @@ def http(method, url, uid, tenant, role, body=None):
     bearer = create_access_token({"sub": uid, "tenant_id": tenant, "role": role})
 
     async def go():
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test") as c:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, raise_app_exceptions=bool(os.environ.get("SUBS_RAISE"))), base_url="http://test") as c:
             r = await c.request(method, url, headers={"Authorization": f"Bearer {bearer}"}, json=body)
             await asyncio.sleep(0.05)
-        return r.status_code, (r.json() if r.content else None)
+        try:
+            payload = r.json() if r.content else None
+        except ValueError:
+            payload = {"non_json_body": r.text[:300]}
+        return r.status_code, payload
     return _run(go())
 
 
@@ -173,6 +180,73 @@ def _j():
     st, body = http("PATCH", f"/admin/tenants/{s['tenant']}/subscription", SEED["super"][0], SEED["super"][1], "super_admin",
                     {"action": "assign_plan", "plan_code": "professional"})
     return {"status": st, "body": body, "before": before, "after": tenant_state(s["tenant"]), "audit_rows_added": audit_count() - audit_before}
+
+
+JOB_TEXT = ("Responsibilities: own the delivery of backend services, review code, and mentor two junior engineers. "
+            "Required skills: Python, PostgreSQL, and five years of experience building production web APIs. "
+            "Qualifications: a degree in computer science or equivalent practical experience.")
+
+
+def tenant_write(key, status, trial_end_sql=None):
+    """Does a suspended or expired tenant still get its writes served? (suspension is not enforced anywhere else)"""
+    s = scenario(key, status)
+    if trial_end_sql:
+        sql(trial_end_sql, {"t": s["tenant"]})
+    before, audit_before = tenant_state(s["tenant"]), audit_count()
+    # a tag: a plain tenant write that does not generate a job code (see job_code_collision_under_restricted_role)
+    st, body = http("POST", "/tags/", s["admin"], s["tenant"], "admin", {"tag_name": f"{key} tag"})
+    tags = sql("SELECT count(*) AS n FROM candidate_tags WHERE tenant_id = :t", {"t": s["tenant"]})[0]["n"]
+    return {"status": st, "before": before, "after": tenant_state(s["tenant"]), "changed": before != tenant_state(s["tenant"]),
+            "audit_rows_added": audit_count() - audit_before, "stored": st in (200, 201) and tags == 1, "tags": tags}
+
+
+@step("job_code_collision_under_restricted_role")
+def _collision():
+    """Two tenants, each creating its first job in the same year. The job code is counted over the rows the requester can see, but the code is
+    unique across tenants: under the restricted role the second tenant's first job collides with the first tenant's."""
+    a = scenario("code_a", "active")
+    b = scenario("code_b", "active")
+    st_a, body_a = http("POST", "/jobs", a["admin"], a["tenant"], "admin", {"title": "Code A job", "description": JOB_TEXT})
+    st_b, body_b = http("POST", "/jobs", b["admin"], b["tenant"], "admin", {"title": "Code B job", "description": JOB_TEXT})
+    codes = sql("SELECT job_code, tenant_id::text AS t FROM jobs WHERE title IN ('Code A job','Code B job') ORDER BY title")
+    return {"a_status": st_a, "b_status": st_b, "b_body": body_b, "codes": codes}
+
+
+@step("suspended_tenant_creates_job")
+def _sus():
+    return tenant_write("sus", "suspended")
+
+
+@step("trial_past_its_end_creates_job")
+def _expired():
+    return tenant_write("expired_trial", "trial", "UPDATE tenants SET trial_start_at = now() - interval '30 days', "
+                        "trial_end_at = now() - interval '16 days' WHERE tenant_id = :t")
+
+
+@step("trial_eligibility_domain_bypass")
+def _domain():
+    """Tenant A uses the one trial for the domain; tenant B on the same domain is refused activate-trial but can subscribe to the trial plan."""
+    a = scenario("dom_a", "pending_plan_selection", domain="shared-domain.example")
+    st_a, _ = http("POST", "/tenant/subscription/activate-trial", a["admin"], a["tenant"], "admin")
+    b = scenario("dom_b", "pending_plan_selection", domain="shared-domain.example")
+    st_b_trial, body_b = http("POST", "/tenant/subscription/activate-trial", b["admin"], b["tenant"], "admin")
+    before = tenant_state(b["tenant"])
+    st_b_sub, _ = http("POST", "/subscription/subscribe", b["admin"], b["tenant"], "admin", {"plan_code": "trial"})
+    return {"a_trial_status": st_a, "b_activate_trial_status": st_b_trial, "b_activate_trial_body": body_b,
+            "b_before_subscribe": before, "b_subscribe_status": st_b_sub, "b_after_subscribe": tenant_state(b["tenant"])}
+
+
+@step("trial_duration_bypass_by_subscribing_to_trial")
+def _duration():
+    """A tenant on its 14-day trial subscribes to the trial plan: the status becomes active and the trial end date is not used any more."""
+    s = scenario("dur", "pending_plan_selection")
+    st1, _ = http("POST", "/tenant/subscription/activate-trial", s["admin"], s["tenant"], "admin")
+    on_trial = tenant_state(s["tenant"])
+    st2, _ = http("POST", "/subscription/subscribe", s["admin"], s["tenant"], "admin", {"plan_code": "trial"})
+    after = tenant_state(s["tenant"])
+    end = sql("SELECT trial_end_at IS NOT NULL AS has_end, trial_end_at > now() + interval '20 days' AS far FROM tenants WHERE tenant_id = :t",
+              {"t": s["tenant"]})[0]
+    return {"activate_status": st1, "on_trial": on_trial, "subscribe_status": st2, "after": after, "trial_end_still_set": end["has_end"]}
 
 
 if __name__ == "__main__":
