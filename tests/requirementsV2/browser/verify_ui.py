@@ -126,6 +126,10 @@ def main(argv=None) -> int:
             env.q((pgt.MIGRATIONS / mig).read_text(encoding="utf-8"))
         except Exception as exc:                                                # noqa: BLE001
             print(f"note: {mig} did not apply cleanly: {str(exc).splitlines()[0]}", flush=True)
+    if os.environ.get("CV_TEST_RUNTIME_ROLE"):
+        # the runtime grants were applied when the database was built, BEFORE 109 created requirements_analysis_log; the helper skips tables
+        # that do not exist yet, so that table had no SELECT for the restricted role (the API answered 500). Apply them again now.
+        pgt._apply_runtime_grants(env.sync.cursor())
 
     # ── the real app, authentication replaced ────────────────────────────────────────────────────────────────────
     from auth import module_guards
@@ -288,6 +292,8 @@ def main(argv=None) -> int:
             if req.method != "GET":
                 reqs.append({"method": req.method, "path": req.url.split(APP_ORIGIN)[1], "body": json.loads(req.post_data) if req.post_data else None})
             resp = r.fetch(url=url)
+            if resp.status >= 400:                                   # diagnostic: every failing API response, with its body, on stderr
+                print(f"API {resp.status} {req.method} {req.url.split(APP_ORIGIN)[-1]} {resp.text()[:400]}", file=sys.stderr, flush=True)
             r.fulfill(response=resp, headers={**resp.headers, **cors})
         ctx.route(APP_ORIGIN + "/**", route)
         page.goto(f"{LOCAL}/ui/harness.html?job={job}&token={token}&lang={lang}&edit={edit}&uid={USERS[token][1]}")
