@@ -57,6 +57,7 @@ class DB:
 
     def __init__(self, marker=None, analysis=None, rules=()):
         self.marker, self.analysis, self.rules = marker, analysis, list(rules)
+        self.info: dict = {}     # set_rls_context records the tenant context here (database.py)
         self.sql: list[str] = []
         self.commit = AsyncMock()
         self.rollback = AsyncMock()

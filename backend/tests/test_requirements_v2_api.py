@@ -107,6 +107,7 @@ class Session:
     def __init__(self, store: Store):
         self.store, self.sql, self.staged, self.staged_audit, self.holds = store, [], None, [], False
         self.commits = self.rollbacks = 0
+        self.info: dict = {}     # set_rls_context records the tenant context here (database.py)
 
     def _release(self):
         if self.holds:
