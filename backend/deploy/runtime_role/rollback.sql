@@ -10,5 +10,6 @@ END $$;
 SET search_path = cv_analyzer;
 REVOKE ALL ON ALL TABLES IN SCHEMA cv_analyzer FROM cv_runtime;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA cv_analyzer FROM cv_runtime;
+REVOKE ALL ON FUNCTION allocate_job_code(integer) FROM cv_runtime;   -- migration 112 allocator (EXECUTE)
 REVOKE USAGE ON SCHEMA cv_analyzer FROM cv_runtime;
 DROP ROLE IF EXISTS cv_runtime;

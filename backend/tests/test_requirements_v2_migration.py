@@ -60,7 +60,7 @@ class TestMigrationText:
         # 107 (editing-API revision columns) is the only migration allowed after 106; 108 (extraction, prepared, NOT applied) follows it;
         # 109 (re-analysis history, its switch off by default) is the approved recovery migration
         assert MIGRATION.exists() and numbers.count(106) == 1 and numbers[numbers.index(106):] in (
-            [106], [106, 107], [106, 107, 108], [106, 107, 108, 109], [106, 107, 108, 109, 110, 111])
+            [106], [106, 107], [106, 107, 108], [106, 107, 108, 109], [106, 107, 108, 109, 110, 111, 112])
 
     def test_is_transactional_and_idempotent_in_style(self):
         sql = sql_without_comments(MIGRATION)

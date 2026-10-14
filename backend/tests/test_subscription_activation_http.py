@@ -139,15 +139,11 @@ def test_reproduces_a_suspended_tenant_keeps_writing(obs):
     assert st["status"] == 200 and st["stored"] is True and st["after"]["subscription_status"] == "suspended", st
 
 
-def test_reproduces_a_second_tenants_first_job_collides_under_the_restricted_role(obs):
-    """REPRODUCES a rollout blocker. The job code is counted over the rows the request can see, but it is unique across tenants. The superuser sees
-    every tenant and never collides; the restricted role sees only its own, so the second tenant's first job fails with 500 (unique violation)."""
+def test_a_second_tenants_first_job_no_longer_collides_under_the_restricted_role(obs):
+    """Protection (was a REPRODUCES of a rollout blocker). Job codes are allocated from a global counter (migration 112), so the second tenant's
+    first job of the year gets the next code in both modes."""
     st = S(obs, "job_code_collision_under_restricted_role")
-    assert st["a_status"] == 201, st
-    if RUNTIME:
-        assert st["b_status"] == 500, st
-    else:
-        assert st["b_status"] == 201, st
+    assert st["a_status"] == 201 and st["b_status"] == 201, st
 
 
 def test_reproduces_an_expired_trial_keeps_writing(obs):

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep, get_current_user, RequireWriteRole
@@ -196,18 +197,43 @@ async def _get_forwarding_email(db) -> str:
     return result or settings.imap_user
 
 
-async def _next_job_code(db) -> str:
-    """Generate next sequential job code: JOB-YYYY-NNNN."""
-    year = datetime.now().year
-    count_row = await db.execute(
-        text("""
-            SELECT COUNT(*) FROM jobs
-            WHERE EXTRACT(YEAR FROM created_at) = :year
-        """),
-        {"year": year},
-    )
-    seq = count_row.scalar_one() + 1
-    return f"JOB-{year}-{seq:04d}"
+JOB_CODE_ATTEMPTS = 3
+
+JOB_INSERT_SQL = """
+    INSERT INTO jobs (tenant_id, created_by, title, department, location,
+                      job_type, work_mode, experience_level,
+                      duration, application_deadline, description,
+                      qualified_threshold, partial_threshold, job_code, status,
+                      client_organization_id, campaign_id, vacancies_count)
+    VALUES (:tid, :uid, :title, :dept, :location, :job_type, :work_mode, :experience_level,
+            :duration, CAST(NULLIF(:application_deadline, '') AS DATE), :desc,
+            :qt, :pt, :job_code, 'active',
+            CAST(:coid AS uuid), CAST(:campaign_id AS uuid), :vacancies_count)
+    RETURNING job_id
+"""
+
+
+async def _allocate_job_code(db) -> str:
+    """Next JOB-YYYY-NNNN from the global per-year counter (migration 112). The increment is part of the caller's transaction: it waits for a
+    concurrent allocator and is returned if the transaction rolls back. The allocator never returns a code that already exists."""
+    row = await db.execute(text("SELECT allocate_job_code(:year)"), {"year": datetime.now().year})
+    return row.scalar_one()
+
+
+async def _insert_job_with_fresh_code(db, params: dict) -> tuple[str, str]:
+    """Allocate a code and insert the job in ONE savepoint. If the unique index on job_code still refuses the code (a collision that
+    the allocator should prevent), the savepoint is rolled back, which also returns the number, and the code is allocated again."""
+    for _ in range(JOB_CODE_ATTEMPTS):
+        try:
+            async with db.begin_nested():
+                job_code = await _allocate_job_code(db)
+                result = await db.execute(text(JOB_INSERT_SQL), {**params, "job_code": job_code})
+                return job_code, str(result.scalar_one())
+        except IntegrityError as exc:
+            if "idx_jobs_job_code" not in str(exc.orig):
+                raise
+    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="A job code could not be allocated. Please try again.")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -452,42 +478,25 @@ async def create_job(
     )
     platform_domain = (domain_row.scalar_one_or_none() or "ai970.cloud").strip()
 
-    job_code = await _next_job_code(db)
-
-    job_result = await db.execute(
-        text("""
-            INSERT INTO jobs (tenant_id, created_by, title, department, location,
-                              job_type, work_mode, experience_level,
-                              duration, application_deadline, description,
-                              qualified_threshold, partial_threshold, job_code, status,
-                              client_organization_id, campaign_id, vacancies_count)
-            VALUES (:tid, :uid, :title, :dept, :location, :job_type, :work_mode, :experience_level,
-                    :duration, CAST(NULLIF(:application_deadline, '') AS DATE), :desc,
-                    :qt, :pt, :job_code, 'active',
-                    CAST(:coid AS uuid), CAST(:campaign_id AS uuid), :vacancies_count)
-            RETURNING job_id
-        """),
-        {
-            "tid":                current_user.tenant_id,
-            "uid":                current_user.user_id,
-            "title":              body.title,
-            "dept":               body.department,
-            "location":           body.location,
-            "job_type":           body.job_type,
-            "work_mode":          body.work_mode,
-            "experience_level":   body.experience_level,
-            "duration":           body.duration,
-            "application_deadline": body.application_deadline,
-            "desc":               body.description,
-            "qt":                 body.qualified_threshold,
-            "pt":                 body.partial_threshold,
-            "job_code":           job_code,
-            "coid":               body.client_organization_id,
-            "campaign_id":        body.campaign_id,
-            "vacancies_count":    max(1, body.vacancies_count) if body.vacancies_count else 1,
-        },
-    )
-    job_id = str(job_result.scalar_one())
+    job_params = {
+        "tid":                current_user.tenant_id,
+        "uid":                current_user.user_id,
+        "title":              body.title,
+        "dept":               body.department,
+        "location":           body.location,
+        "job_type":           body.job_type,
+        "work_mode":          body.work_mode,
+        "experience_level":   body.experience_level,
+        "duration":           body.duration,
+        "application_deadline": body.application_deadline,
+        "desc":               body.description,
+        "qt":                 body.qualified_threshold,
+        "pt":                 body.partial_threshold,
+        "coid":               body.client_organization_id,
+        "campaign_id":        body.campaign_id,
+        "vacancies_count":    max(1, body.vacancies_count) if body.vacancies_count else 1,
+    }
+    job_code, job_id = await _insert_job_with_fresh_code(db, job_params)
 
     platform_email = f"{job_code.lower()}@{platform_domain}"
     await db.execute(

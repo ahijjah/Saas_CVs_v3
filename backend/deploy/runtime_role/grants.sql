@@ -71,4 +71,8 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA cv_analyzer TO cv_runtime;
 -- The history table: no modification, deletion or truncation by the runtime role, whatever the table-level grants above say.
 REVOKE UPDATE, DELETE, TRUNCATE ON requirements_analysis_log FROM cv_runtime;
 
+-- Job-code allocation (migration 112, reviewed in job_code_allocation_grants.sql): EXECUTE on the allocator only. The counter table
+-- has no grant, and the function reads no job data for the caller.
+GRANT EXECUTE ON FUNCTION allocate_job_code(integer) TO cv_runtime;
+
 -- Not granted (on purpose): TRUNCATE, REFERENCES, TRIGGER, ownership, CREATE, any membership. Verified by the test.
