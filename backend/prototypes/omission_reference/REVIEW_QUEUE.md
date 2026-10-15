@@ -20,7 +20,7 @@ Rows queued: **44** of 114 in the sheet, in **9** batches of at most 5.
 
 By priority: P1 25, P2 7, P3 12.
 
-Next batch (document order, no more than 5 items): RQ-029/C01, RQ-029/C02, RQ-029/C03, RQ-029/C04, RQ-029/C05.
+Next batch (document order, no more than 5 items): RQ-030/C01, RQ-030/C02, RQ-030/C03.
 
 ## Child review units (uncertain parents RQ-029 and RQ-030)
 
@@ -29,16 +29,16 @@ carries a Claude-proposed semantic role, which is not a decision. The choices ar
 
 | child | text | proposed role (candidate) | judgment that applies | semantic-role decision |
 |---|---|---|---|---|
-| RQ-029/C01 | Terms: rotating night shifts, | non-scoreable condition | S010 (sentence-level: child content inside its statement) | _(blank)_ |
-| RQ-029/C02 | occasional travel to the Abu Dhabi depot, | non-scoreable condition | S010 (sentence-level: child content inside its statement) | _(blank)_ |
-| RQ-029/C03 | and candidates must hold a valid UAE residence visa or be willing to relocate. | non-scoreable condition | S010 (sentence-level: child content inside its statement) | _(blank)_ |
-| RQ-029/C04 | A background check and two professional references will be requested before the start date. | post-hiring condition | - | _(blank)_ |
-| RQ-029/C05 | We offer a transport allowance. | informational benefit | - | _(blank)_ |
+| RQ-029/C01 | Terms: rotating night shifts, | non-scoreable condition | S010 (sentence-level: child content inside its statement) | non-scoreable condition |
+| RQ-029/C02 | occasional travel to the Abu Dhabi depot, | non-scoreable condition | S010 (sentence-level: child content inside its statement) | non-scoreable condition |
+| RQ-029/C03 | and candidates must hold a valid UAE residence visa or be willing to relocate. | non-scoreable condition | S010 (sentence-level: child content inside its statement) | non-scoreable condition |
+| RQ-029/C04 | A background check and two professional references will be requested before the start date. | post-hiring condition | - | post-hiring condition |
+| RQ-029/C05 | We offer a transport allowance. | informational benefit | - | informational benefit |
 | RQ-030/C01 | الشروط: الراتب بالريال السعودي، | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | _(blank)_ |
 | RQ-030/C02 | والعمل في مدينة الرياض بدوام كامل. | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | _(blank)_ |
 | RQ-030/C03 | نوفر تأمينًا طبيًا وإجازة سنوية. | informational benefit | - | _(blank)_ |
 
-Review status: open 14, resolved 27, unresolved (uncertain) 3. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
+Review status: open 14, resolved 27, resolved_by_children 1, unresolved (uncertain) 2. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
 
 ## Batches
 
@@ -283,8 +283,8 @@ Review status: open 14, resolved 27, unresolved (uncertain) 3. Confirmed decisio
 - Proposed type: **requirement** — requirement line under 'Duties'
 - Priority: P2 — connected to a confirmed S-judgment
 - Existing confirmed judgment: · judgment: S010 (false alarm, sentence within unit, statement: Terms: rotating night shifts, occasional travel to the Abu D) · scope: sentence within unit
-- Choices: requirement | heading | background | uncertain · Status: **unresolved (uncertain)** · Confirmed decision: **uncertain** (Asaad Hijjah, 2026-10-15)
-- Benchmark use: uncertain parent: excluded from confirmed inclusion and exclusion; decided only through its child units, which are pending
+- Choices: requirement | heading | background | uncertain · Status: **resolved_by_children** · Confirmed decision: **resolved_by_children** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: resolved by its child units (RQ-029/C01, RQ-029/C02, RQ-029/C03, RQ-029/C04, RQ-029/C05); the parent is not counted separately, and each child is an extraction-coverage obligation
 
 **RQ-030** · B07_ar_accountant (ar) · line 21 · unit `30fb2f042757:L21:393-492`
 - Source text: الشروط: الراتب بالريال السعودي، والعمل في مدينة الرياض بدوام كامل. نوفر تأمينًا طبيًا وإجازة سنوية.

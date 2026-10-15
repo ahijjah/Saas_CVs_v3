@@ -57,7 +57,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -115,7 +116,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -171,7 +173,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -228,7 +231,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -381,7 +385,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ]
   },
@@ -456,7 +461,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -527,7 +533,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -598,7 +605,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -669,7 +677,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -740,7 +749,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ]
   },
@@ -1011,7 +1021,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -1277,7 +1288,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -1537,7 +1549,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -1804,7 +1817,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -2070,7 +2084,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ]
   },
@@ -2346,7 +2361,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -2612,7 +2628,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -2884,7 +2901,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -3150,7 +3168,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     },
     {
      "coverage": {
@@ -3404,7 +3423,8 @@
         "C_AND"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ]
   },
@@ -3563,7 +3583,8 @@
        ],
        "missing": []
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B03_en_warehouse_supervisor": [
@@ -3680,44 +3701,7 @@
        }
       ],
       "uncertain": [],
-      "unresolved": [
-       {
-        "first_line": 19,
-        "text": "Terms:",
-        "class": "genuine_omission",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 19,
-        "text": ",",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 19,
-        "text": ", and",
-        "class": "connector_fragment",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 19,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 19,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 19,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       }
-      ],
+      "unresolved": [],
       "repeated": [],
       "conflict_modifier": [],
       "excluded_injection": []
@@ -3739,7 +3723,49 @@
        ],
        "missing": []
       }
-     }
+     },
+     "child_obligations": [
+      {
+       "child_id": "RQ-029/C01",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "partial",
+       "fraction_expected_list": 0.7308,
+       "fraction_any_list": 0.7308
+      },
+      {
+       "child_id": "RQ-029/C02",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "met",
+       "fraction_expected_list": 0.9714,
+       "fraction_any_list": 0.9714
+      },
+      {
+       "child_id": "RQ-029/C03",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "met",
+       "fraction_expected_list": 0.9385,
+       "fraction_any_list": 0.9385
+      },
+      {
+       "child_id": "RQ-029/C04",
+       "role": "post-hiring condition",
+       "expected_list": "post_hiring_conditions",
+       "status": "misrouted",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.9872
+      },
+      {
+       "child_id": "RQ-029/C05",
+       "role": "informational benefit",
+       "expected_list": "informational_items",
+       "status": "met",
+       "fraction_expected_list": 0.963,
+       "fraction_any_list": 0.963
+      }
+     ]
     }
    ],
    "B07_ar_accountant": [
@@ -3923,7 +3949,8 @@
        ],
        "missing": []
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B08_ar_hr_specialist": [
@@ -4065,7 +4092,8 @@
         "قدرة جيدة على التواصل الفعال مع جميع الموظفين"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B12_ar_injection": [
@@ -4199,7 +4227,8 @@
        ],
        "missing": []
       }
-     }
+     },
+     "child_obligations": []
     }
    ]
   },
@@ -4358,7 +4387,8 @@
        ],
        "missing": []
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B03_en_warehouse_supervisor": [
@@ -4475,26 +4505,7 @@
        }
       ],
       "uncertain": [],
-      "unresolved": [
-       {
-        "first_line": 19,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 19,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 19,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       }
-      ],
+      "unresolved": [],
       "repeated": [],
       "conflict_modifier": [],
       "excluded_injection": []
@@ -4516,7 +4527,49 @@
        ],
        "missing": []
       }
-     }
+     },
+     "child_obligations": [
+      {
+       "child_id": "RQ-029/C01",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "met",
+       "fraction_expected_list": 1.0,
+       "fraction_any_list": 1.0
+      },
+      {
+       "child_id": "RQ-029/C02",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "met",
+       "fraction_expected_list": 1.0,
+       "fraction_any_list": 1.0
+      },
+      {
+       "child_id": "RQ-029/C03",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "met",
+       "fraction_expected_list": 0.9846,
+       "fraction_any_list": 0.9846
+      },
+      {
+       "child_id": "RQ-029/C04",
+       "role": "post-hiring condition",
+       "expected_list": "post_hiring_conditions",
+       "status": "misrouted",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.9872
+      },
+      {
+       "child_id": "RQ-029/C05",
+       "role": "informational benefit",
+       "expected_list": "informational_items",
+       "status": "misrouted",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.963
+      }
+     ]
     }
    ],
    "B07_ar_accountant": [
@@ -4689,7 +4742,8 @@
         "شهادة ماجستير"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B08_ar_hr_specialist": [
@@ -4831,7 +4885,8 @@
         "قدرة جيدة على التواصل الفعال مع جميع الموظفين"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B12_ar_injection": [
@@ -4965,7 +5020,8 @@
        ],
        "missing": []
       }
-     }
+     },
+     "child_obligations": []
     }
    ]
   },
@@ -5126,7 +5182,8 @@
        ],
        "missing": []
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B03_en_warehouse_supervisor": [
@@ -5195,14 +5252,7 @@
        }
       ],
       "uncertain": [],
-      "unresolved": [
-       {
-        "first_line": 19,
-        "text": ", occasional travel to the Abu Dhabi depot, and",
-        "class": "paraphrase",
-        "unit_status": "partial"
-       }
-      ],
+      "unresolved": [],
       "repeated": [],
       "conflict_modifier": [],
       "excluded_injection": []
@@ -5225,7 +5275,49 @@
         "First aid certificate"
        ]
       }
-     }
+     },
+     "child_obligations": [
+      {
+       "child_id": "RQ-029/C01",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "met",
+       "fraction_expected_list": 0.9615,
+       "fraction_any_list": 0.9615
+      },
+      {
+       "child_id": "RQ-029/C02",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "missing",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.0
+      },
+      {
+       "child_id": "RQ-029/C03",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "misrouted",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.9538
+      },
+      {
+       "child_id": "RQ-029/C04",
+       "role": "post-hiring condition",
+       "expected_list": "post_hiring_conditions",
+       "status": "met",
+       "fraction_expected_list": 1.0,
+       "fraction_any_list": 1.0
+      },
+      {
+       "child_id": "RQ-029/C05",
+       "role": "informational benefit",
+       "expected_list": "informational_items",
+       "status": "met",
+       "fraction_expected_list": 1.0,
+       "fraction_any_list": 1.0
+      }
+     ]
     }
    ],
    "B07_ar_accountant": [
@@ -5396,7 +5488,8 @@
         "شهادة ماجستير"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B08_ar_hr_specialist": [
@@ -5538,7 +5631,8 @@
         "قدرة جيدة على التواصل الفعال مع جميع الموظفين"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B12_ar_injection": [
@@ -5666,7 +5760,8 @@
         "خبرة في TypeScript"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ]
   },
@@ -5827,7 +5922,8 @@
        ],
        "missing": []
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B03_en_warehouse_supervisor": [
@@ -5896,20 +5992,7 @@
        }
       ],
       "uncertain": [],
-      "unresolved": [
-       {
-        "first_line": 19,
-        "text": "Terms:",
-        "class": "genuine_omission",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 19,
-        "text": "occasional travel to the Abu Dhabi depot, and",
-        "class": "paraphrase",
-        "unit_status": "partial"
-       }
-      ],
+      "unresolved": [],
       "repeated": [],
       "conflict_modifier": [],
       "excluded_injection": []
@@ -5931,7 +6014,49 @@
        ],
        "missing": []
       }
-     }
+     },
+     "child_obligations": [
+      {
+       "child_id": "RQ-029/C01",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "partial",
+       "fraction_expected_list": 0.7692,
+       "fraction_any_list": 0.7692
+      },
+      {
+       "child_id": "RQ-029/C02",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "missing",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.0
+      },
+      {
+       "child_id": "RQ-029/C03",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "met",
+       "fraction_expected_list": 0.9538,
+       "fraction_any_list": 0.9538
+      },
+      {
+       "child_id": "RQ-029/C04",
+       "role": "post-hiring condition",
+       "expected_list": "post_hiring_conditions",
+       "status": "met",
+       "fraction_expected_list": 1.0,
+       "fraction_any_list": 1.0
+      },
+      {
+       "child_id": "RQ-029/C05",
+       "role": "informational benefit",
+       "expected_list": "informational_items",
+       "status": "met",
+       "fraction_expected_list": 1.0,
+       "fraction_any_list": 1.0
+      }
+     ]
     }
    ],
    "B07_ar_accountant": [
@@ -6102,7 +6227,8 @@
         "شهادة ماجستير"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B08_ar_hr_specialist": [
@@ -6234,7 +6360,8 @@
         "قدرة جيدة على التواصل الفعال مع جميع الموظفين"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ],
    "B12_ar_injection": [
@@ -6353,7 +6480,8 @@
         "خبرة في TypeScript"
        ]
       }
-     }
+     },
+     "child_obligations": []
     }
    ]
   }

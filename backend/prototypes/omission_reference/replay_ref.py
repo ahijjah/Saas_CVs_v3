@@ -79,6 +79,60 @@ def jd_title_words(jd_id: str) -> frozenset:
     return frozenset(re.findall(r"\w+", (case.get("job_metadata", {}).get("title") or case["title"]).lower()))
 
 
+CHILD_OBLIGATION = {"non-scoreable condition": "non_scoreable_requirements", "post-hiring condition": "post_hiring_conditions",
+                    "informational benefit": "informational_items"}
+
+
+def answer_quotes_by_list(raw: str) -> dict:
+    """Quotes of each list in the answer. 'categories' holds the seven category arrays; the other three are the condition and info lists."""
+    obj = json.loads(raw)
+    cats = [it.get("source_text") for _, it in frozen._items(obj)]
+    out = {"categories": cats}
+    for key in ("non_scoreable_requirements", "post_hiring_conditions", "informational_items"):
+        out[key] = [c.get("source_text") for c in (obj.get(key) or []) if isinstance(c, dict)]
+    return out
+
+
+def child_fraction(jd_text: str, quotes: list, a: int, b: int) -> float:
+    """Share of the child's non-space characters [a, b) credited by the quotes (unique, verbatim, exact offsets)."""
+    verdicts = C.judge_quotes(jd_text, quotes)
+    credited = set()
+    for v in verdicts:
+        if v["status"] == "unique":
+            s0 = v["occurrences"][0]
+            credited.update(range(s0, s0 + len(v["quote"])))
+    positions = [p for p in range(a, b) if not jd_text[p].isspace()]
+    return sum(1 for p in positions if p in credited) / len(positions) if positions else 0.0
+
+
+def child_obligations(jd_id: str, jd_text: str, raw: str) -> list[dict]:
+    """Each DECIDED child with an extraction obligation is checked against its expected list. Children are never scored criteria."""
+    import build_queue as Q  # noqa: PLC0415
+    lists = answer_quotes_by_list(raw)
+    out = []
+    for c in Q.load_children():
+        if c["jd_id"] != jd_id or not c["semantic_role_decision"]:
+            continue
+        expected = CHILD_OBLIGATION.get(c["semantic_role_decision"])
+        if expected is None:
+            continue
+        a, b = int(c["content_start"]), int(c["content_end"])
+        frac_expected = child_fraction(jd_text, lists[expected], a, b)
+        everything = [q for key in lists for q in lists[key]]
+        frac_any = child_fraction(jd_text, everything, a, b)
+        if frac_expected >= C.COVER_THRESHOLD:
+            status = "met"
+        elif frac_any >= C.COVER_THRESHOLD:
+            status = "misrouted"
+        elif frac_expected > 0:
+            status = "partial"
+        else:
+            status = "missing"
+        out.append({"child_id": c["child_id"], "role": c["semantic_role_decision"], "expected_list": expected,
+                    "status": status, "fraction_expected_list": round(frac_expected, 4), "fraction_any_list": round(frac_any, 4)})
+    return out
+
+
 def effective_types(jd_id: str, cand) -> dict:
     """The type used for replay, by first line. The candidate type is the default. A CONFIRMED decision (reviews/CONFIRMED_*.csv) overrides
     it when the decision is a resolved type. An 'uncertain' decision is UNRESOLVED: it is neither a requirement nor an exclusion. The
@@ -90,6 +144,10 @@ def effective_types(jd_id: str, cand) -> dict:
         kind = l["proposed_type"]
         prefix = f"{cand['jd_sha256'][:12]}:L{l['first_line']}:"
         sub = next((v for uid, v in subs.items() if uid.startswith(prefix)), None)
+        kids = [c for c in Q.load_children() if c["parent_unit_id"].startswith(prefix)]
+        if kids and all(c["semantic_role_decision"] for c in kids):
+            out[l["first_line"]] = "by_children"    # resolved by its child units: never a span block and never a separate requirement
+            continue
         if sub is not None:
             kind = "unresolved" if sub["confirmed_decision"] == "uncertain" else sub["confirmed_decision"]
             if sub.get("classification_tag") == "ai_directed_injection":
@@ -191,7 +249,8 @@ def replay_answer(rec, jd_id, jd, cand, labels, case, types):
         defects = defects_tc20(rec["raw"], jd["text"], labels)
     else:
         defects = defects_bench(case, rec["raw"], rec.get("finish_reason"))
-    return {"coverage": coverage, "uncovered": spans, "defects": defects}
+    return {"coverage": coverage, "uncovered": spans, "defects": defects,
+            "child_obligations": child_obligations(jd_id, jd["text"], rec["raw"])}
 
 
 def prompt_of(src_path: pathlib.Path) -> str:
@@ -237,6 +296,21 @@ def write_report(data: dict) -> str:
         lines += ["**Excluded AI-directed injection text (kept under the injection guard, never a requirement):**", ""]
         lines += [f"- {v['rq_id']} ({v['jd_id']}, unit `{v['unit_id']}`): tag {v['classification_tag']}. {v['reason']}" for v in injections]
         lines += ["", "Their spans appear only in the excluded-injection column. The injection guard is reported per JD in the table column (hard failures of answers).", ""]
+    children = {}
+    for group, per_jd in data["groups"].items():
+        for jd_id, answers in per_jd.items():
+            for a in answers:
+                for ob in a.get("child_obligations", []):
+                    children.setdefault((group, jd_id, ob["child_id"]), []).append(ob)
+    if children:
+        lines += ["**Child-unit extraction obligations (decided children; never a scored criterion):**", "",
+                  "| group | child | role | expected list | met | partial | misrouted | missing |", "|---|---|---|---|---|---|---|---|"]
+        for (group, jd_id, cid), obs in sorted(children.items()):
+            counts = {k: sum(1 for o in obs if o["status"] == k) for k in ("met", "partial", "misrouted", "missing")}
+            lines.append(f"| {group.replace('|', '·')} | {cid} | {obs[0]['role']} | {obs[0]['expected_list']} | {counts['met']} | {counts['partial']} | "
+                         f"{counts['misrouted']} | {counts['missing']} |")
+        lines += ["", "Each child is an extraction-coverage obligation. None is a scored criterion: a child contributes no requirement denominator, "
+                  "and its obligation status is reported only in this table.", ""]
     for group, per_jd in data["groups"].items():
         lines += [f"## {group}", "", "| JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |",
                   "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]

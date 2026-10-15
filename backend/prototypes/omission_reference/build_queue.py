@@ -128,13 +128,44 @@ def assign_review_order(queue: list[dict]) -> None:
         q["review_order"] = n
 
 
+def load_child_submissions() -> dict:
+    """Confirmed child-unit decisions from reviews/CHILD_CONFIRMED_*.csv, keyed by child id."""
+    out = {}
+    for path in sorted((HERE / "reviews").glob("CHILD_CONFIRMED_*.csv")):
+        with path.open(encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                out[r["child_id"]] = {**r, "submission": path.name}
+    return out
+
+
 def load_children() -> list[dict]:
-    """Child review units of uncertain parents (review_children.csv, built by build_children.py). Their semantic roles are not decided here."""
+    """Child review units of uncertain parents (review_children.csv), with any confirmed child decision merged in. The child file itself is
+    never changed; decisions live in the child submissions."""
     path = HERE / "review_children.csv"
     if not path.exists():
         return []
+    subs = load_child_submissions()
     with path.open(encoding="utf-8") as fh:
-        return [{**r, "semantic_role_decision": r.get("semantic_role_decision", "")} for r in csv.DictReader(fh)]
+        rows = list(csv.DictReader(fh))
+    for r in rows:
+        sub = subs.get(r["child_id"])
+        r["semantic_role_decision"] = sub["confirmed_role"] if sub else ""
+        r["child_status"] = sub["status"] if sub else "pending"
+    return rows
+
+
+def apply_children(queue: list[dict], children: list[dict]) -> None:
+    """A parent whose child units are all decided becomes resolved_by_children. It is not counted as a separate resolved row."""
+    by_parent = {}
+    for c in children:
+        by_parent.setdefault(c["parent_rq_id"], []).append(c)
+    for q in queue:
+        kids = by_parent.get(q["rq_id"], [])
+        if kids and all(k["semantic_role_decision"] for k in kids):
+            q["review_status"] = "resolved_by_children"
+            q["reviewer_decision"] = "resolved_by_children"
+            q["benchmark_use"] = ("resolved by its child units (" + ", ".join(k["child_id"] for k in kids) + "); the parent is not counted "
+                                  "separately, and each child is an extraction-coverage obligation")
 
 
 def next_batch(queue: list[dict], size: int = BATCH_SIZE, children: list[dict] | None = None) -> list[str]:
@@ -189,7 +220,8 @@ def write_md(queue: list[dict], summ: dict) -> None:
                 "carries a Claude-proposed semantic role, which is not a decision. The choices are: " + " | ".join(ROLE_CHOICES) + ".", "",
                 "| child | text | proposed role (candidate) | judgment that applies | semantic-role decision |", "|---|---|---|---|---|"]
         for c in children:
-            out.append(f"| {c['child_id']} | {c['child_text']} | {c['proposed_role_candidate']} | {c['existing_judgment_applies'] or '-'} | _(blank)_ |")
+            out.append(f"| {c['child_id']} | {c['child_text']} | {c['proposed_role_candidate']} | {c['existing_judgment_applies'] or '-'} | "
+                       f"{c['semantic_role_decision'] or '_(blank)_'} |")
         out.append("")
     out += ["Review status: " + ", ".join(f"{k} {v}" for k, v in sorted(summ["review_status"].items())) + ". Confirmed decisions come from "
             "`reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not "
@@ -223,12 +255,14 @@ def main() -> int:
         rows = list(csv.DictReader(fh))
     queue = assign(rows)
     apply_submissions(queue, load_submissions())
+    apply_children(queue, load_children())
     assign_review_order(queue)
     write_csv(queue)
     summ = summary(queue, rows)
     children = load_children()
     summ["next_batch"] = next_batch(queue, children=children)
-    summ["child_units"] = {"total": len(children), "pending_semantic_role": sum(1 for c in children if not c["semantic_role_decision"])}
+    summ["child_units"] = {"total": len(children), "decided": sum(1 for c in children if c["semantic_role_decision"]),
+                           "pending_semantic_role": sum(1 for c in children if not c["semantic_role_decision"])}
     write_md(queue, summ)
     (HERE / "results" / "review_queue_summary.json").write_text(json.dumps(summ, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"queued {summ['queued_rows']} rows in {summ['batches']} batches; P1 {summ['by_priority'][1]}, P2 {summ['by_priority'][2]}, P3 {summ['by_priority'][3]}")
