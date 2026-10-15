@@ -4263,13 +4263,16 @@
        ],
        "source_coverage": "partial",
        "source_coverage_obligations": 1,
-       "item_status": "merged",
+       "structure": "incorrectly merged",
        "importance": {
         "CSS": "preferred",
         "HTML": "preferred"
        },
-       "importance_expected": "optional",
-       "importance_as_expected": false,
+       "importance_accepted": [
+        "preferred",
+        "required"
+       ],
+       "importance_within_accepted": true,
        "conflict_evidence": "RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة."
       }
      ]
@@ -5080,13 +5083,16 @@
        ],
        "source_coverage": "partial",
        "source_coverage_obligations": 1,
-       "item_status": "merged",
+       "structure": "incorrectly merged",
        "importance": {
         "CSS": "preferred",
         "HTML": "preferred"
        },
-       "importance_expected": "optional",
-       "importance_as_expected": false,
+       "importance_accepted": [
+        "preferred",
+        "required"
+       ],
+       "importance_within_accepted": true,
        "conflict_evidence": "RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة."
       }
      ]
@@ -5844,13 +5850,16 @@
        ],
        "source_coverage": "omitted",
        "source_coverage_obligations": 1,
-       "item_status": "missing: CSS, HTML",
+       "structure": "missing: CSS, HTML",
        "importance": {
         "CSS": null,
         "HTML": null
        },
-       "importance_expected": "optional",
-       "importance_as_expected": false,
+       "importance_accepted": [
+        "preferred",
+        "required"
+       ],
+       "importance_within_accepted": null,
        "conflict_evidence": "RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة."
       }
      ]
@@ -6588,13 +6597,16 @@
        ],
        "source_coverage": "partial",
        "source_coverage_obligations": 1,
-       "item_status": "independent_items",
+       "structure": "correctly split",
        "importance": {
         "CSS": "preferred",
         "HTML": "preferred"
        },
-       "importance_expected": "optional",
-       "importance_as_expected": false,
+       "importance_accepted": [
+        "preferred",
+        "required"
+       ],
+       "importance_within_accepted": true,
        "conflict_evidence": "RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة."
       }
      ]

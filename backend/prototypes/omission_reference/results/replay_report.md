@@ -66,14 +66,16 @@ Each child is an extraction-coverage obligation. None is a scored criterion: a c
 
 **Source units that yield independent items (one source-coverage obligation each; never a second scored criterion):**
 
-| group | RQ | yields | source coverage | item status | importance (expected) | importance as expected |
+| group | RQ | yields | source coverage | structure | importance per item | within accepted (required or preferred) |
 |---|---|---|---|---|---|---|
-| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run1 | RQ-032 | CSS, HTML | omitted | missing: CSS, HTML | CSS=None, HTML=None (optional) | False |
-| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-032 | CSS, HTML | partial | independent_items | CSS=preferred, HTML=preferred (optional) | False |
-| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-032 | CSS, HTML | partial | merged | CSS=preferred, HTML=preferred (optional) | False |
-| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-032 | CSS, HTML | partial | merged | CSS=preferred, HTML=preferred (optional) | False |
+| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run1 | RQ-032 | CSS, HTML | omitted | missing: CSS, HTML | CSS=None, HTML=None | n/a |
+| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-032 | CSS, HTML | partial | correctly split | CSS=preferred, HTML=preferred | yes |
+| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-032 | CSS, HTML | partial | incorrectly merged | CSS=preferred, HTML=preferred | yes |
+| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-032 | CSS, HTML | partial | incorrectly merged | CSS=preferred, HTML=preferred | yes |
 
-Conflict evidence kept for these units: RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة.
+Structure (missing, correctly split, incorrectly merged) and importance are reported separately. Importance is checked only against the accepted values (required or preferred), so a preferred item is not a finding.
+
+Conflict evidence kept for these units (review evidence, not a finding): RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة.
 
 ## TC20 repeat | model gpt-4.1-2025-04-14 | prompt v2-3 | arm v2-3
 

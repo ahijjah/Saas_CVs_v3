@@ -13,6 +13,7 @@ Models, prompts and runs are kept in separate groups; nothing is pooled across t
 """
 from __future__ import annotations
 
+import csv
 import json
 import pathlib
 import re
@@ -133,10 +134,24 @@ def child_obligations(jd_id: str, jd_text: str, raw: str) -> list[dict]:
     return out
 
 
+IMPORTANCE_VALUES = {"required", "preferred"}   # the schema's importance values, as used by the benchmark scorer
+
+
+def accepted_importance(rq_id: str) -> set | None:
+    """Accepted importance values for a yield unit, from the amendment files (reviews/AMENDMENT_*.csv). None when no amendment sets one."""
+    accepted = None
+    for path in sorted((HERE / "reviews").glob("AMENDMENT_*.csv")):
+        with path.open(encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                if row["rq_id"] == rq_id and row["field"] == "importance_expectation":
+                    accepted = {v for v in IMPORTANCE_VALUES if v in row["corrected_value"]}
+    return accepted
+
+
 def yield_obligations(jd_id: str, jd_text: str, raw: str, cov_units: list) -> list[dict]:
-    """One source-coverage obligation per source unit that yields independent items (batch seven). The unit counts once in coverage; its
-    items are checked here: separate items (independent_items), one merged item, or missing. Importance is compared with the confirmed
-    modifier (optional when a modifies_importance_of relation targets the unit). Not scored."""
+    """One source-coverage obligation per source unit that yields independent items (batch seven). The unit counts once in coverage. Its
+    items are checked for STRUCTURE only: missing, correctly split (independent items), or incorrectly merged. Importance is reported apart
+    and is checked against the accepted values from the amendment (required or preferred for RQ-032). Not scored."""
     import build_queue as Q  # noqa: PLC0415
     obj = json.loads(raw)
     items = [it for _, it in frozen._items(obj)]
@@ -152,21 +167,23 @@ def yield_obligations(jd_id: str, jd_text: str, raw: str, cov_units: list) -> li
         found = {}
         for t in tokens:
             # An item is identified by its own text; the quotation is used only when the item has no text of its own.
-            hits = [i for i, it in enumerate(relevant)
-                    if t.lower() in str(it.get("text") or it.get("source_text", "")).lower()]
+            hits = [i for i, it in enumerate(relevant) if t.lower() in str(it.get("text") or it.get("source_text", "")).lower()]
             found[t] = hits[0] if hits else None
-        if any(v is None for v in found.values()):
-            status = "missing: " + ", ".join(t for t, v in found.items() if v is None)
+        missing = [t for t, v in found.items() if v is None]
+        if missing:
+            structure = "missing: " + ", ".join(missing)
         elif len(set(found.values())) < len(tokens):
-            status = "merged"
+            structure = "incorrectly merged"
         else:
-            status = "independent_items"
+            structure = "correctly split"
         importance = {t: (relevant[found[t]].get("importance") if found[t] is not None else None) for t in tokens}
-        expected = "optional" if sub.get("importance_modifier") else None
+        accepted = accepted_importance(sub["rq_id"])
+        within = None if (missing or accepted is None) else all(v in accepted for v in importance.values())
         out.append({"rq_id": sub["rq_id"], "unit_line": int(sub["first_line"]), "yields": tokens,
                     "source_coverage": cov_by_line.get(int(sub["first_line"]), "absent"), "source_coverage_obligations": 1,
-                    "item_status": status, "importance": importance, "importance_expected": expected,
-                    "importance_as_expected": (all(v == expected for v in importance.values()) if expected else None),
+                    "structure": structure, "importance": importance,
+                    "importance_accepted": sorted(accepted) if accepted is not None else None,
+                    "importance_within_accepted": within,
                     "conflict_evidence": sub.get("conflict_evidence", "")})
     return out
 
@@ -358,14 +375,17 @@ def write_report(data: dict) -> str:
                     yields.setdefault((group, ob["rq_id"]), []).append(ob)
     if yields:
         lines += ["**Source units that yield independent items (one source-coverage obligation each; never a second scored criterion):**", "",
-                  "| group | RQ | yields | source coverage | item status | importance (expected) | importance as expected |",
+                  "| group | RQ | yields | source coverage | structure | importance per item | within accepted (required or preferred) |",
                   "|---|---|---|---|---|---|---|"]
         for (group, rq), obs in sorted(yields.items()):
             o = obs[0]
             imp = ", ".join(f"{k}={v}" for k, v in o["importance"].items())
-            lines.append(f"| {group.replace('|', '·')} | {rq} | {', '.join(o['yields'])} | {o['source_coverage']} | {o['item_status']} | "
-                         f"{imp} ({o['importance_expected'] or 'none'}) | {o['importance_as_expected'] if o['importance_as_expected'] is not None else 'n/a'} |")
-        lines += ["", "Conflict evidence kept for these units: " + " ".join(sorted({o["conflict_evidence"] for obs in yields.values() for o in obs if o["conflict_evidence"]})), ""]
+            within = o["importance_within_accepted"]
+            lines.append(f"| {group.replace('|', '·')} | {rq} | {', '.join(o['yields'])} | {o['source_coverage']} | {o['structure']} | "
+                         f"{imp} | {'yes' if within else ('no' if within is False else 'n/a')} |")
+        lines += ["", "Structure (missing, correctly split, incorrectly merged) and importance are reported separately. Importance is "
+                  "checked only against the accepted values (required or preferred), so a preferred item is not a finding.",
+                  "", "Conflict evidence kept for these units (review evidence, not a finding): " + " ".join(sorted({o["conflict_evidence"] for obs in yields.values() for o in obs if o["conflict_evidence"]})), ""]
     for group, per_jd in data["groups"].items():
         lines += [f"## {group}", "", "| JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |",
                   "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]

@@ -611,6 +611,8 @@ def test_the_rq_030_obligations_are_expected_lists_and_not_scored():
 # ── batch seven: RQ-031 to RQ-035, RQ-032 yields two independent items ──────────────────────────────────────────────────
 import replay_ref as RR  # noqa: E402
 
+RECORDED_HASHES_B7 = "fda9d54b2e819d5b"   # the batch-seven submission as committed; it is never overwritten
+
 BATCH7 = {r["rq_id"]: r for r in SUBMISSION if r["rq_id"] in {"RQ-031", "RQ-032", "RQ-033", "RQ-034", "RQ-035"}}
 
 
@@ -632,7 +634,7 @@ def test_rq_032_yields_css_and_html_with_one_source_coverage_obligation_and_no_s
 
 def test_rq_032_carries_the_rq_021_importance_modifier_and_the_conflict_evidence():
     r = BATCH7["RQ-032"]
-    assert r["importance_modifier"].startswith("optional: RQ-021 modifies_importance_of")
+    assert r["importance_modifier"].startswith("optional: RQ-021 modifies_importance_of"), "the original batch-seven value is preserved; the amendment corrects it"
     assert "RQ-021" in r["conflict_evidence"] and "معرفة CSS وHTML اختيارية لهذه الوظيفة" in r["conflict_evidence"]
 
 
@@ -643,6 +645,31 @@ def test_the_modifier_and_conflict_evidence_are_the_same_as_the_stored_rq_021_re
     assert BATCH7["RQ-032"]["importance_modifier"].split(": ", 1)[1].startswith("RQ-021")
 
 
+AMEND = [r for path in sorted((HERE / "reviews").glob("AMENDMENT_*.csv")) for r in csv.DictReader(path.open(encoding="utf-8"))]
+AMEND7 = {r["field"]: r for r in AMEND if r["rq_id"] == "RQ-032"}
+
+
+def test_the_batch_seven_submission_is_unchanged_and_the_correction_is_an_amendment_file():
+    assert hashlib.sha256((HERE / "reviews" / "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch7.csv").read_bytes()).hexdigest().startswith(RECORDED_HASHES_B7)
+    assert all(r["amends_submission"] == "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch7.csv" for r in AMEND)
+    assert AMEND7["importance_expectation"]["original_value"] == "optional"
+    assert AMEND7["importance_expectation"]["corrected_value"] == "required or preferred (accepted for each item)"
+
+
+def test_the_arabic_cue_maps_to_preferred_and_no_optional_value_exists():
+    assert "اختيارية" in AMEND7["importance_modifier"]["corrected_value"] and "maps to preferred" in AMEND7["importance_modifier"]["corrected_value"]
+    assert "optional" not in IMPORTANCE_VALUES_TEST
+
+
+def test_the_importance_mismatch_finding_is_withdrawn():
+    assert AMEND7["importance_mismatch_finding"]["corrected_value"] == "withdrawn"
+
+
+def test_the_rq_021_relation_and_exact_conflict_evidence_are_preserved_in_the_amendment_and_the_submission():
+    assert AMEND7["preserved"]["corrected_value"].endswith(SUBMISSION_BY_RQ["RQ-032"]["conflict_evidence"])
+    assert SUBMISSION_BY_RQ["RQ-021"]["relation"] == "modifies_importance_of 945b2154c3f2:L6:101-122 (B12_ar_injection line 6)"
+
+
 def test_the_b12_source_unit_still_counts_once_and_its_items_are_reported_separately():
     replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
     for g in replay["groups"]:
@@ -651,15 +678,16 @@ def test_the_b12_source_unit_still_counts_once_and_its_items_are_reported_separa
             assert len(a["yield_obligations"]) == 1 and a["yield_obligations"][0]["source_coverage_obligations"] == 1
 
 
-def test_stored_b12_answers_show_the_real_item_outcomes_and_importance_mismatch_is_reported():
+def test_stored_b12_answers_show_the_real_structural_outcomes_with_no_importance_mismatch():
     replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
-    statuses = {a["yield_obligations"][0]["item_status"] for g in replay["groups"] for a in replay["groups"][g].get("B12_ar_injection", [])}
-    assert statuses == {"missing: CSS, HTML", "independent_items", "merged"}, "baseline run 1 omits the unit, run 2 splits it, v2-2 merges it"
+    structures = {a["yield_obligations"][0]["structure"] for g in replay["groups"] for a in replay["groups"][g].get("B12_ar_injection", [])}
+    assert structures == {"missing: CSS, HTML", "correctly split", "incorrectly merged"}, "baseline run 1 omits, run 2 splits, v2-2 merges"
     for g in replay["groups"]:
         for a in replay["groups"][g].get("B12_ar_injection", []):
             ob = a["yield_obligations"][0]
-            if ob["item_status"] == "merged":
-                assert ob["importance_expected"] == "optional" and ob["importance_as_expected"] is False
+            assert ob["importance_accepted"] == ["preferred", "required"]
+            if ob["structure"] != "missing: CSS, HTML":
+                assert ob["importance_within_accepted"] is True, "a preferred item is within the accepted values, not a finding"
 
 
 def _b12_answer(items):
@@ -671,27 +699,33 @@ def _item(text, source, importance="optional"):
     return {"text": text, "importance": importance, "source_text": source, "origin": "stated", "alternatives": None, "experience": None}
 
 
-def test_two_items_for_css_and_html_are_independent_items_with_optional_importance():
+def test_two_items_for_css_and_html_are_correctly_split_with_accepted_importance():
     jd = (HERE / "jd" / "B12_ar_injection.txt").read_bytes().decode("utf-8")
-    raw = _b12_answer([_item("CSS", "معرفة بـ CSS وHTML"), _item("HTML", "معرفة بـ CSS وHTML")])
-    cov = [{"first_line": 6, "status": "covered"}]
-    ob = RR.yield_obligations("B12_ar_injection", jd, raw, cov)[0]
-    assert ob["item_status"] == "independent_items" and ob["importance"] == {"CSS": "optional", "HTML": "optional"}
-    assert ob["importance_as_expected"] is True
+    raw = _b12_answer([_item("CSS", "معرفة بـ CSS وHTML", "preferred"), _item("HTML", "معرفة بـ CSS وHTML", "required")])
+    ob = RR.yield_obligations("B12_ar_injection", jd, raw, [{"first_line": 6, "status": "covered"}])[0]
+    assert ob["structure"] == "correctly split" and ob["importance"] == {"CSS": "preferred", "HTML": "required"}
+    assert ob["importance_within_accepted"] is True
 
 
-def test_one_merged_item_is_reported_as_merged_and_not_as_two_items():
+def test_one_merged_item_is_incorrectly_merged_and_not_correctly_split():
     jd = (HERE / "jd" / "B12_ar_injection.txt").read_bytes().decode("utf-8")
     raw = _b12_answer([_item("CSS and HTML", "معرفة بـ CSS وHTML", "required")])
     ob = RR.yield_obligations("B12_ar_injection", jd, raw, [{"first_line": 6, "status": "covered"}])[0]
-    assert ob["item_status"] == "merged" and ob["importance_as_expected"] is False
+    assert ob["structure"] == "incorrectly merged"
 
 
 def test_a_missing_item_is_reported_by_name():
     jd = (HERE / "jd" / "B12_ar_injection.txt").read_bytes().decode("utf-8")
     raw = _b12_answer([_item("CSS", "معرفة بـ CSS وHTML")])
     ob = RR.yield_obligations("B12_ar_injection", jd, raw, [{"first_line": 6, "status": "partial"}])[0]
-    assert ob["item_status"] == "missing: HTML"
+    assert ob["structure"] == "missing: HTML" and ob["importance_within_accepted"] is None
+
+
+def test_importance_outside_the_accepted_values_is_the_only_importance_finding():
+    jd = (HERE / "jd" / "B12_ar_injection.txt").read_bytes().decode("utf-8")
+    raw = _b12_answer([_item("CSS", "معرفة بـ CSS وHTML", "optional"), _item("HTML", "معرفة بـ CSS وHTML", "preferred")])
+    ob = RR.yield_obligations("B12_ar_injection", jd, raw, [{"first_line": 6, "status": "covered"}])[0]
+    assert ob["importance_within_accepted"] is False
 
 
 def test_the_yield_obligation_is_not_a_scored_criterion_in_the_requirement_block():
@@ -700,6 +734,9 @@ def test_the_yield_obligation_is_not_a_scored_criterion_in_the_requirement_block
         for a in replay["groups"][g].get("B12_ar_injection", []):
             assert a["coverage"]["requirement_units"] == 6
             assert "yield" not in " ".join(a["uncovered"].keys())
+
+
+IMPORTANCE_VALUES_TEST = set(RR.IMPORTANCE_VALUES)
 
 
 def test_earlier_submissions_are_unchanged_by_batch_seven():
