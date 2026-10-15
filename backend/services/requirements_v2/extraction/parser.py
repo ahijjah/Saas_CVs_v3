@@ -15,6 +15,12 @@ What code does:
     item-specific "Needs review" warning on the item; a cue that merely exists elsewhere in the job description is not
     proof that it applies here. Preferred items carry no weight, so a flagged item stays out of the numeric score until
     the recruiter confirms or changes it.
+  * optional wording: the schema has no 'optional'. An 'optional' classification backed by an optional cue (Arabic اختيارية) is
+    stored as preferred and then checked like any preferred item; the value optional is never produced.
+  * OR alternatives stay inside one item. An alternative that does not appear as a word in the quoted wording is flagged. Several
+    items quoting the same wording with alternatives are flagged for review, never merged.
+  * a required item whose own wording, governing heading, or a line sharing its distinctive words carries an optional cue is
+    flagged for review (importance_conflict_unresolved). Its classification is kept and not resolved, and it does not gate readiness.
   * gives required items equal whole-number weights (100 // n, remainder in list order); over-limit categories keep
     every item, leave those weights unset and are reported
   * normalizes the AI's category weights (explicit, proportional); an unusable proposal applies NOTHING and is reported
@@ -32,6 +38,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
@@ -63,6 +70,13 @@ _ITEM_FIELDS = {"text", "importance", "importance_cue", "source_text", "origin",
 _QUOTE_PREVIEW = 80
 
 NEEDS_REVIEW = "Needs review: "
+# Optional wording in the job description, mapped to the schema's values. The schema has NO "optional": the mapping is the only
+# way an optional classification is stored, and it always ends in preferred (and is then checked like any preferred item).
+OPTIONAL_CUE_MAP = {"اختيارية": IMPORTANCE_PREFERRED}
+OPTIONAL_DECLARED = "optional"
+CONFLICT_CODE = "importance_conflict_unresolved"          # a required item sits next to optional wording: a review issue, never resolved
+ALTERNATIVES_SPLIT_CODE = "alternatives_split_across_items"
+_WORD = re.compile(r"\w+")
 # the classification warnings (defined with the acknowledgment contract; re-exported here for the extraction's users)
 IMPORTANCE_CUE_REVIEW_CODES = CLASSIFICATION_WARNING_CODES
 
@@ -177,15 +191,27 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
     importance = IMPORTANCE_REQUIRED
     declared = raw.get("importance")
     declared_norm = declared.strip().lower() if isinstance(declared, str) else None
+    cue = raw.get("importance_cue")
+    if declared_norm == OPTIONAL_DECLARED and isinstance(cue, str) and cue.strip() in OPTIONAL_CUE_MAP:
+        declared_norm = OPTIONAL_CUE_MAP[cue.strip()]      # "optional" backed by an optional cue: mapped, then checked as preferred
+        note("importance_optional_mapped_to_preferred", f"the optional cue \"{_preview(cue)}\" is mapped to preferred", iid)
+    elif declared_norm in OPTIONAL_CUE_MAP:
+        cue = declared_norm                                  # the cue itself was given as the importance
+        declared_norm = OPTIONAL_CUE_MAP[cue]
+        note("importance_optional_mapped_to_preferred", f"the optional cue \"{_preview(cue)}\" is mapped to preferred", iid)
     if declared_norm == IMPORTANCE_REQUIRED:
-        pass
+        conflict = _optional_conflict(jd, span, source or text) if span else None
+        if conflict:
+            note(CONFLICT_CODE, f"classified required, but the job description also carries the optional cue "
+                                f"\"{_preview(conflict[0])}\" {conflict[1]}; the classification is kept and not "
+                                "resolved: confirm it", iid, prefix=NEEDS_REVIEW)
     elif declared_norm == IMPORTANCE_PREFERRED:
         importance = IMPORTANCE_PREFERRED                  # the AI's classification is kept; support is only checked
-        problem = _cue_problem(raw.get("importance_cue"), jd, span)
+        problem = _cue_problem(cue, jd, span)
         if problem:
             note(problem[0], problem[1], iid, prefix=NEEDS_REVIEW)
             classification.append(build_warning(code=problem[0], item_id=iid, category=category,
-                                                cue=raw.get("importance_cue"), source_text=source,
+                                                cue=cue, source_text=source,
                                                 message=review[-1].message))
     elif declared is None and not plain_string:
         note("importance_missing_defaulted_required", "no importance was given; set to required", iid)
@@ -215,10 +241,47 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
                  "the wording stays in the item text", iid)
             alternatives = None
 
+    if alternatives is not None and source is not None:
+        absent = [a for a in alternatives if not _has_token(source, a)]
+        if absent:
+            note("alternatives_not_in_source", f"alternatives {absent} do not appear as words in the quoted wording; "
+                                                "kept as returned: confirm", iid, prefix=NEEDS_REVIEW)
+
     experience = _convert_experience(raw.get("experience"), category, source or claimed, note, iid)
 
     return make_item(text.strip(), importance, item_id=iid, origin=origin, source_text=source,
                      alternatives=alternatives, experience=experience)
+
+
+def _has_token(text: str, token: str) -> bool:
+    """Whole-word, case-insensitive: 'R' must not match inside 'Proficiency'."""
+    return re.search(rf"(?<!\w){re.escape(token)}(?!\w)", text, re.IGNORECASE) is not None
+
+
+def _optional_conflict(jd: str, span: tuple[int, int], wording: str) -> tuple[str, str] | None:
+    """A REQUIRED item whose job description also carries optional wording for it: the cue inside the item's own wording or
+    governing heading (cue_relationship), or on another line that shares its distinctive words (two words, or one ASCII term
+    such as a technology name). Returns (cue, where), or None. The classification is never changed here: it is routed."""
+    start, end = span
+    for cue in OPTIONAL_CUE_MAP:
+        rel = cue_relationship(jd, span, cue)
+        if rel in ("inline", "heading"):
+            return (cue, f"({rel}: in the item's own wording or the heading that governs it)")
+    words = {w for w in _WORD.findall(wording) if len(w) >= 2}
+    offset = 0
+    for line in jd.split("\n"):
+        line_span = (offset, offset + len(line))
+        offset += len(line) + 1
+        if line_span[0] <= start and end <= line_span[1]:
+            continue                                        # the item's own line
+        shared = words & set(_WORD.findall(line))
+        distinctive = len(shared) >= 2 or any(s.isascii() and any(ch.isupper() for ch in s) for s in shared)
+        if not shared or not distinctive:
+            continue
+        for cue in OPTIONAL_CUE_MAP:
+            if contains_phrase(line, cue):
+                return (cue, "(on another line of the job description that shares this item's wording)")
+    return None
 
 
 def _cue_problem(cue: Any, jd: str, span: tuple[int, int] | None) -> tuple[str, str] | None:
@@ -382,6 +445,17 @@ def process_ai_output(ai: Any, jd_text: str, *, id_factory: Callable[[Iterable[s
                                 "all items were kept and their weights left unset until the recruiter resolves it",
                                 category=category))
 
+    for category, block in categories.items():
+        same_wording: dict[str, list[dict]] = {}
+        for item in block["items"]:
+            if item.get("alternatives") and item.get("source_text"):
+                same_wording.setdefault(item["source_text"], []).append(item)
+        for wording, members in same_wording.items():
+            if len(members) > 1:
+                review.append(Issue(ALTERNATIVES_SPLIT_CODE,
+                                    f"{NEEDS_REVIEW}{len(members)} items quote the same wording \"{_preview(wording)}\" and each "
+                                    "carries alternatives; one requirement with its alternatives in one item is expected. "
+                                    "Kept as returned, not merged: confirm", category=category))
     doc = {"schema_version": SCHEMA_VERSION, "categories": categories, "scoring_confirmation": None}
     if classification:                                    # server-owned block: warnings only, never acknowledgments
         doc[REVIEW_KEY] = {**empty_review(), "warnings": classification}
