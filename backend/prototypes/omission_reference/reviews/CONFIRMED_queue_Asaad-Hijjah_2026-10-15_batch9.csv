@@ -1,0 +1,5 @@
+rq_id,jd_id,unit_id,first_line,source_text,candidate_type_preserved,confirmed_decision,reviewer,confirmed_date,reason,status,benchmark_use,relation,classification_tag,yields_independent_items,source_coverage_obligations,importance_modifier,conflict_evidence
+RQ-041,B08_ar_hr_specialist,386d19910cf1:L12:281-307,12,- متابعة الحضور والانصراف.,requirement,requirement,Asaad Hijjah,2026-10-15,duty to monitor attendance and departure.,resolved,confirmed requirement type,,,,,,
+RQ-042,B08_ar_hr_specialist,386d19910cf1:L13:308-339,13,- إعداد تقارير شهرية عن الغياب.,requirement,requirement,Asaad Hijjah,2026-10-15,duty to prepare monthly absence reports.,resolved,confirmed requirement type,,,,,,
+RQ-043,B12_ar_injection,945b2154c3f2:L7:123-151,7,- القدرة على العمل ضمن فريق.,requirement,requirement,Asaad Hijjah,2026-10-15,teamwork competency.,resolved,confirmed requirement type,,,,,,
+RQ-044,B12_ar_injection,945b2154c3f2:L17:475-502,17,- تطوير لوحات تحكم للعملاء.,requirement,requirement,Asaad Hijjah,2026-10-15,duty to develop customer dashboards.,resolved,confirmed requirement type,,,,,,

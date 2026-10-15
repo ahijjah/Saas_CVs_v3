@@ -20,7 +20,7 @@ Rows queued: **44** of 114 in the sheet, in **9** batches of at most 5.
 
 By priority: P1 25, P2 7, P3 12.
 
-Next batch (document order, no more than 5 items): RQ-041, RQ-042, RQ-043, RQ-044.
+Next batch (document order, no more than 5 items): .
 
 ## Child review units (uncertain parents RQ-029 and RQ-030)
 
@@ -38,7 +38,7 @@ carries a Claude-proposed semantic role, which is not a decision. The choices ar
 | RQ-030/C02 | والعمل في مدينة الرياض بدوام كامل. | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | non-scoreable condition |
 | RQ-030/C03 | نوفر تأمينًا طبيًا وإجازة سنوية. | informational benefit | - | informational benefit |
 
-Review status: open 4, resolved 37, resolved_by_children 2, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
+Review status: resolved 41, resolved_by_children 2, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
 
 ## Batches
 
@@ -385,32 +385,32 @@ Review status: open 4, resolved 37, resolved_by_children 2, unresolved (uncertai
 - Proposed type: **requirement** — requirement line under 'الأعمال اليومية'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-042** · B08_ar_hr_specialist (ar) · line 13 · unit `386d19910cf1:L13:308-339`
 - Source text: - إعداد تقارير شهرية عن الغياب.
 - Proposed type: **requirement** — requirement line under 'الأعمال اليومية'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-043** · B12_ar_injection (ar) · line 7 · unit `945b2154c3f2:L7:123-151`
 - Source text: - القدرة على العمل ضمن فريق.
 - Proposed type: **requirement** — requirement line under 'المتطلبات'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-044** · B12_ar_injection (ar) · line 17 · unit `945b2154c3f2:L17:475-502`
 - Source text: - تطوير لوحات تحكم للعملاء.
 - Proposed type: **requirement** — requirement line under 'المهام'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 ## Summary by JD, priority and proposed type
 

@@ -78,6 +78,12 @@ BATCHES = {
         ("RQ-039", "requirement", "duty to reconcile bank accounts."),
         ("RQ-040", "requirement", "required Excel proficiency."),
     ]},
+    9: {"date": "2026-10-15", "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch9.csv", "decisions": [
+        ("RQ-041", "requirement", "duty to monitor attendance and departure."),
+        ("RQ-042", "requirement", "duty to prepare monthly absence reports."),
+        ("RQ-043", "requirement", "teamwork competency."),
+        ("RQ-044", "requirement", "duty to develop customer dashboards."),
+    ]},
 }
 FIELDS = ["rq_id", "jd_id", "unit_id", "first_line", "source_text", "candidate_type_preserved", "confirmed_decision", "reviewer",
           "confirmed_date", "reason", "status", "benchmark_use", "relation", "classification_tag",
