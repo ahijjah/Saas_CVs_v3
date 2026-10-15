@@ -30,6 +30,7 @@ VERSION = "omission-reference-experimental-scorer-v1"
 CUE_MAP = {"اختيارية": "preferred"}                 # Arabic cue for optional, mapped to the schema's preferred
 SCHEMA_IMPORTANCE = {"required", "preferred"}       # the schema has no optional value
 ALTERNATIVE_UNITS = {("B02_en_data_analyst", 6): {"rq": "RQ-027", "alternatives": ["Python", "R"]}}   # S002: kept together
+CHILD_PARENTS = {"B03_en_warehouse_supervisor": "RQ-029", "B07_ar_accountant": "RQ-030"}   # uncertain parents resolved through child units
 
 
 def _has(text: str, token: str) -> bool:
@@ -182,7 +183,7 @@ def comparison_rows() -> list[str]:
             continue
         for line in src["path"].read_text(encoding="utf-8").splitlines():
             rec = json.loads(line)
-            if rec["case"] not in ("B02_en_data_analyst", "B03_en_warehouse_supervisor", "B12_ar_injection") or not rec.get("raw"):
+            if rec["case"] not in ("B02_en_data_analyst", "B12_ar_injection", *CHILD_PARENTS) or not rec.get("raw"):
                 continue
             label = f"{src['group']} run {rec['run']} {rec['case'][:3]}"
             f = frozen_view(cases[rec["case"]], rec["raw"], rec.get("finish_reason"))
@@ -196,9 +197,10 @@ def comparison_rows() -> list[str]:
                 attribution = ", ".join(f"{t}←{'/'.join(v) or 'none'}" for t, v in ind["item_sources"].items())
                 rows.append(f"| S008 CSS and HTML, two items | {label}: merged {len(f['merged'])}, missing {f['missing']} | {label}: {ind['structure']}; item sources {attribution} |")
                 rows.append(f"| RQ-021 conflict and importance | {label}: conflict surfaced {f['conflict']} (in the label) | {label}: importance {e['importance']['items'] if e['importance'] else 'n/a'}; evidence kept separately |")
-            if rec["case"] == "B03_en_warehouse_supervisor":
+            if rec["case"] in CHILD_PARENTS:
+                parent = CHILD_PARENTS[rec["case"]]
                 routed = ", ".join(f"{c['child_id'].split('/')[1]}={c['status']}" for c in e["child_routing"])
-                rows.append(f"| S010 / RQ-029 child routing | {label}: conditions routed {f['conditions'][0]} of {f['conditions'][1]} | {label}: {routed} |")
+                rows.append(f"| {parent} child routing ({rec['case'][:3]}) | {label}: conditions routed {f['conditions'][0]} of {f['conditions'][1]} | {label}: {routed} |")
     return rows
 
 

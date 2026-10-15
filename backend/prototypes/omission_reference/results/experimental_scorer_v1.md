@@ -53,18 +53,22 @@ Conflict evidence (review evidence, not used in importance):
 | defect | frozen scorer output | experimental output |
 |---|---|---|
 | S002 Python or R, one item with alternatives | benchmark run dir v2-2_run1 run run1 B02: frozen alternatives errors 0 | benchmark run dir v2-2_run1 run run1 B02: split; recorded [('Python', ['Python', 'R']), ('R', ['Python', 'R'])] |
-| S010 / RQ-029 child routing | benchmark run dir v2-2_run1 run run1 B03: conditions routed 4 of 5 | benchmark run dir v2-2_run1 run run1 B03: C01=partial, C02=met, C03=met, C04=misrouted, C05=met |
+| RQ-029 child routing (B03) | benchmark run dir v2-2_run1 run run1 B03: conditions routed 4 of 5 | benchmark run dir v2-2_run1 run run1 B03: C01=partial, C02=met, C03=met, C04=misrouted, C05=met |
+| RQ-030 child routing (B07) | benchmark run dir v2-2_run1 run run1 B07: conditions routed 2 of 4 | benchmark run dir v2-2_run1 run run1 B07: C01=partial, C02=met, C03=misrouted |
 | S008 CSS and HTML, two items | benchmark run dir v2-2_run1 run run1 B12: merged 0, missing ['HTML'] | benchmark run dir v2-2_run1 run run1 B12: incorrectly merged; item sources CSS←required_unit, HTML←required_unit |
 | RQ-021 conflict and importance | benchmark run dir v2-2_run1 run run1 B12: conflict surfaced 1 (in the label) | benchmark run dir v2-2_run1 run run1 B12: importance {'CSS': ['preferred'], 'HTML': ['preferred']}; evidence kept separately |
 | S002 Python or R, one item with alternatives | benchmark run dir v2-2_run1 run run2 B02: frozen alternatives errors 0 | benchmark run dir v2-2_run1 run run2 B02: split; recorded [('Python', ['Python', 'R']), ('R', ['Python', 'R'])] |
-| S010 / RQ-029 child routing | benchmark run dir v2-2_run1 run run2 B03: conditions routed 3 of 5 | benchmark run dir v2-2_run1 run run2 B03: C01=met, C02=met, C03=met, C04=misrouted, C05=misrouted |
+| RQ-029 child routing (B03) | benchmark run dir v2-2_run1 run run2 B03: conditions routed 3 of 5 | benchmark run dir v2-2_run1 run run2 B03: C01=met, C02=met, C03=met, C04=misrouted, C05=misrouted |
+| RQ-030 child routing (B07) | benchmark run dir v2-2_run1 run run2 B07: conditions routed 2 of 4 | benchmark run dir v2-2_run1 run run2 B07: C01=partial, C02=met, C03=misrouted |
 | S008 CSS and HTML, two items | benchmark run dir v2-2_run1 run run2 B12: merged 0, missing ['HTML'] | benchmark run dir v2-2_run1 run run2 B12: incorrectly merged; item sources CSS←required_unit, HTML←required_unit |
 | RQ-021 conflict and importance | benchmark run dir v2-2_run1 run run2 B12: conflict surfaced 1 (in the label) | benchmark run dir v2-2_run1 run run2 B12: importance {'CSS': ['preferred'], 'HTML': ['preferred']}; evidence kept separately |
 | S002 Python or R, one item with alternatives | benchmark run dir baseline_v2-1 run run1 B02: frozen alternatives errors 1 | benchmark run dir baseline_v2-1 run run1 B02: incomplete; recorded [('Python', ['R'])] |
-| S010 / RQ-029 child routing | benchmark run dir baseline_v2-1 run run1 B03: conditions routed 3 of 5 | benchmark run dir baseline_v2-1 run run1 B03: C01=met, C02=missing, C03=misrouted, C04=met, C05=met |
+| RQ-029 child routing (B03) | benchmark run dir baseline_v2-1 run run1 B03: conditions routed 3 of 5 | benchmark run dir baseline_v2-1 run run1 B03: C01=met, C02=missing, C03=misrouted, C04=met, C05=met |
+| RQ-030 child routing (B07) | benchmark run dir baseline_v2-1 run run1 B07: conditions routed 1 of 4 | benchmark run dir baseline_v2-1 run run1 B07: C01=missing, C02=misrouted, C03=met |
 | S008 CSS and HTML, two items | benchmark run dir baseline_v2-1 run run1 B12: merged 0, missing ['CSS', 'HTML', 'خبرة في TypeScript'] | benchmark run dir baseline_v2-1 run run1 B12: missing: CSS, HTML; item sources CSS←conflict_note, HTML←conflict_note |
 | RQ-021 conflict and importance | benchmark run dir baseline_v2-1 run run1 B12: conflict surfaced 0 (in the label) | benchmark run dir baseline_v2-1 run run1 B12: importance {'CSS': ['preferred'], 'HTML': ['preferred']}; evidence kept separately |
 | S002 Python or R, one item with alternatives | benchmark run dir baseline_v2-1 run run2 B02: frozen alternatives errors 1 | benchmark run dir baseline_v2-1 run run2 B02: split; recorded [('Python', ['R']), ('R', ['Python'])] |
-| S010 / RQ-029 child routing | benchmark run dir baseline_v2-1 run run2 B03: conditions routed 4 of 5 | benchmark run dir baseline_v2-1 run run2 B03: C01=partial, C02=missing, C03=met, C04=met, C05=met |
+| RQ-029 child routing (B03) | benchmark run dir baseline_v2-1 run run2 B03: conditions routed 4 of 5 | benchmark run dir baseline_v2-1 run run2 B03: C01=partial, C02=missing, C03=met, C04=met, C05=met |
+| RQ-030 child routing (B07) | benchmark run dir baseline_v2-1 run run2 B07: conditions routed 1 of 4 | benchmark run dir baseline_v2-1 run run2 B07: C01=missing, C02=misrouted, C03=met |
 | S008 CSS and HTML, two items | benchmark run dir baseline_v2-1 run run2 B12: merged 0, missing ['خبرة في TypeScript'] | benchmark run dir baseline_v2-1 run run2 B12: correctly split; item sources CSS←required_unit, HTML←required_unit |
 | RQ-021 conflict and importance | benchmark run dir baseline_v2-1 run run2 B12: conflict surfaced 2 (in the label) | benchmark run dir baseline_v2-1 run run2 B12: importance {'CSS': ['preferred'], 'HTML': ['preferred']}; evidence kept separately |

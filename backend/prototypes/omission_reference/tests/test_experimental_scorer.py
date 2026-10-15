@@ -188,3 +188,23 @@ def test_production_code_does_not_reference_the_omission_reference_or_this_score
         for path in (backend / folder).rglob("*.py") if (backend / folder).exists() else []:
             text = path.read_text(encoding="utf-8", errors="ignore")
             assert "omission_reference" not in text and "experimental_scorer" not in text, path
+
+
+# ---- regression: child-routing parents are RQ-029 (B03) and RQ-030 (B07); RQ-027 is the Python-or-R row, not a child parent ----
+
+def test_child_routing_parents_are_rq_029_for_b03_and_rq_030_for_b07():
+    assert X.CHILD_PARENTS == {"B03_en_warehouse_supervisor": "RQ-029", "B07_ar_accountant": "RQ-030"}
+    for jd_id, parent in X.CHILD_PARENTS.items():
+        for raw in [r for case, r, _ in stored_answers() if case == jd_id][:1]:
+            routed = X.score_answer(jd_id, raw, None)["child_routing"]
+            assert routed and {c["child_id"].split("/")[0] for c in routed} == {parent}, jd_id
+
+
+def test_child_parents_match_the_reviewed_child_units_and_are_not_the_python_or_r_row():
+    import csv
+    children = list(csv.DictReader((HERE / "review_children.csv").open(encoding="utf-8")))
+    parents = {(c["parent_rq_id"], c["jd_id"]) for c in children}
+    assert ("RQ-029", "B03_en_warehouse_supervisor") in parents
+    assert ("RQ-030", "B07_ar_accountant") in parents
+    assert all(p != "RQ-027" for p, _ in parents)
+    assert X.ALTERNATIVE_UNITS[("B02_en_data_analyst", 6)]["rq"] == "RQ-027"
