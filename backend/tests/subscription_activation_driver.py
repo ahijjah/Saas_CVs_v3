@@ -324,13 +324,19 @@ def _t():
     return {"no_reason_status": st_no, "status": st, "body": body, "after": tenant_state(s["tenant"]), "audit": audit_rows(s["tenant"])}
 
 
-@step("provisioning_extend_trial_accepts_expiry_and_legacy_field")
+@step("provisioning_extend_trial_is_refused_and_the_trial_is_fixed")
 def _u():
-    s = scenario("prov_trial", "pending_plan_selection")
+    """The trial is 14 days from its start. There is no extension action, so the platform cannot extend it: refused, nothing changes, nothing is
+    audited, and the original start is kept."""
+    s = scenario("prov_trial", "trial")
+    sql("UPDATE tenants SET trial_start_at = now() - interval '3 days', trial_end_at = now() + interval '11 days' WHERE tenant_id = :t", {"t": s["tenant"]})
+    start_before = sql("SELECT trial_start_at::text AS v FROM tenants WHERE tenant_id = :t", {"t": s["tenant"]})[0]["v"]
+    before = tenant_state(s["tenant"])
     st, body = platform_call(s["tenant"], "PATCH", f"/admin/tenants/{s['tenant']}/subscription",
-                             {"action": "extend_trial", "trial_end_at": future_iso(10), "reason": "support extension for onboarding"})
-    no_reason, _ = platform_call(s["tenant"], "PATCH", f"/admin/tenants/{s['tenant']}/subscription", {"action": "extend_trial", "expires_at": future_iso(10), "reason": ""})
-    return {"status": st, "body": body, "no_reason_status": no_reason, "after": tenant_state(s["tenant"]), "audit": audit_rows(s["tenant"])}
+                             {"action": "extend_trial", "expires_at": future_iso(30), "reason": "pilot extension request"})
+    start_after = sql("SELECT trial_start_at::text AS v FROM tenants WHERE tenant_id = :t", {"t": s["tenant"]})[0]["v"]
+    return {"status": st, "body": body, "before": before, "after": tenant_state(s["tenant"]), "audit": audit_rows(s["tenant"]),
+            "start_before": start_before, "start_after": start_after}
 
 
 @step("provisioning_reactivate_requires_expiry")

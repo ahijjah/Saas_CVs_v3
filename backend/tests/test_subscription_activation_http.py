@@ -184,11 +184,11 @@ def test_suspend_requires_a_reason_and_is_audited(obs):
     assert [r["action"] for r in st["audit"]] == ["subscription_suspend"], st["audit"]
 
 
-def test_extend_trial_accepts_the_expiry_and_the_legacy_field_and_requires_a_reason(obs):
-    st = S(obs, "provisioning_extend_trial_accepts_expiry_and_legacy_field")
-    assert st["status"] == 200 and st["after"]["subscription_status"] == "trial" and st["after"]["trial_ends"] is True, st
-    assert st["no_reason_status"] == 422, st
-    assert [r["action"] for r in st["audit"]] == ["subscription_extend_trial"], st["audit"]
+def test_extend_trial_is_refused_so_the_trial_stays_fourteen_days_from_its_original_start(obs):
+    st = S(obs, "provisioning_extend_trial_is_refused_and_the_trial_is_fixed")
+    assert st["status"] == 422, st
+    assert st["after"] == st["before"] and st["audit"] == [], st
+    assert st["start_after"] == st["start_before"], "the original trial start must not be reset"
 
 
 def test_reactivate_requires_a_future_expiry(obs):

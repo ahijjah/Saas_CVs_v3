@@ -203,7 +203,7 @@ def extract_criteria_task(self, job_id: str, description: str, job_metadata: dic
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(_extract_async(job_id, description, TaskSession, job_metadata))
+        loop.run_until_complete(_extract_async(job_id, description, TaskSession, job_metadata, retries=self.request.retries))
     except Exception as exc:
         logger.error("extract_criteria_task failed for job %s (attempt %d/%d): %s",
                      job_id, self.request.retries + 1, self.max_retries + 1, exc)
@@ -221,7 +221,7 @@ def extract_criteria_task(self, job_id: str, description: str, job_metadata: dic
         task_engine.dispose()
 
 
-async def _extract_async(job_id: str, description: str, Session, job_metadata: dict | None = None) -> None:
+async def _extract_async(job_id: str, description: str, Session, job_metadata: dict | None = None, *, retries: int = 0) -> None:
     from database import set_rls_context
     from services.ai_service import extract_job_criteria, flatten_criteria_for_scoring, load_active_prompt
     from config import get_settings
@@ -234,6 +234,13 @@ async def _extract_async(job_id: str, description: str, Session, job_metadata: d
 
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
+        # Access gate, before any status change or model call: a tenant without current access leaves the job pending (not failed). Resume
+        # dispatches it again. See services/extraction_gate.py.
+        from services.extraction_gate import job_entitlement
+        if not (await job_entitlement(db, job_id)).full:
+            await db.rollback()
+            logger.info("[job:%s] criteria extraction paused: tenant is not entitled", job_id)
+            return
         # Requirements-v2 jobs are never (re)analysed by the legacy extraction: it would overwrite them with the
         # legacy format. Mark the run failed with an explicit reason; no model call, no retry.
         try:
@@ -251,14 +258,22 @@ async def _extract_async(job_id: str, description: str, Session, job_metadata: d
             await db.commit()
             logger.error("[job:%s] %s", job_id, exc.message)
             return
-        await db.execute(
+        # The claim: from pending only (a failed run is retried by setting pending first), or from processing for a Celery retry of this run. A duplicate delivery of a queued task finds the
+        # job already processing and does nothing, so it cannot make a second model call.
+        claimed = await db.execute(
             text("""
                 UPDATE job_criteria
                 SET criteria_extraction_status = 'processing'
                 WHERE job_id = :jid
+                  AND (criteria_extraction_status = 'pending'
+                       OR (:retry AND criteria_extraction_status = 'processing'))
             """),
-            {"jid": job_id},
+            {"jid": job_id, "retry": retries > 0},
         )
+        if getattr(claimed, "rowcount", 0) != 1:
+            await db.rollback()
+            logger.info("[job:%s] criteria extraction not claimable; nothing to do", job_id)
+            return
         await db.commit()
 
         criteria_prompt = await load_active_prompt(db, "criteria_extraction")

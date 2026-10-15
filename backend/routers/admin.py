@@ -48,15 +48,16 @@ class UpdateTenantStatusRequest(BaseModel):
 
 
 class UpdateTenantSubscriptionRequest(BaseModel):
-    action: str          # assign_plan | extend_trial | suspend | reactivate
+    action: str          # assign_plan | suspend | reactivate (the trial is fixed at 14 days; no extension)
     plan_code: str | None = None
-    expires_at: str | None = None     # ISO 8601, must be in the future: required for assign_plan, extend_trial, reactivate
-    trial_end_at: str | None = None   # legacy name, accepted for extend_trial only
+    expires_at: str | None = None     # ISO 8601, must be in the future: required for assign_plan and reactivate
     reason: str                       # required for every action: why the platform changed this subscription
 
 
-PROVISIONING_ACTIONS = frozenset({"assign_plan", "extend_trial", "suspend", "reactivate"})
-ACTIONS_NEEDING_EXPIRY = frozenset({"assign_plan", "extend_trial", "reactivate"})
+# The trial is fixed at 14 days from its start (activate-trial, once per email domain). There is no extension action: an extension beyond that
+# duration is not an approved exception, so the platform cannot grant one.
+PROVISIONING_ACTIONS = frozenset({"assign_plan", "suspend", "reactivate"})
+ACTIONS_NEEDING_EXPIRY = frozenset({"assign_plan", "reactivate"})
 _SUBSCRIPTION_FIELDS = """
     SELECT plan, pending_plan, subscription_status, trial_end_at, subscription_ends_at
     FROM tenants WHERE tenant_id = CAST(:tid AS uuid)
@@ -616,14 +617,14 @@ async def update_tenant_subscription(
     if the audit row cannot be written, the change is not applied. Records the actor, the tenant, the previous and new plan and status,
     the expiry and the reason."""
     if body.action not in PROVISIONING_ACTIONS:
-        raise HTTPException(status_code=422, detail="action must be one of: assign_plan, extend_trial, suspend, reactivate")
+        raise HTTPException(status_code=422, detail="action must be one of: assign_plan, suspend, reactivate (the trial is fixed at 14 days)")
     reason = (body.reason or "").strip()
     if not 5 <= len(reason) <= 500:
         raise HTTPException(status_code=422, detail="reason is required (5 to 500 characters)")
 
     expires: datetime | None = None
     if body.action in ACTIONS_NEEDING_EXPIRY:
-        raw = body.expires_at or (body.trial_end_at if body.action == "extend_trial" else None)
+        raw = body.expires_at
         if not raw:
             raise HTTPException(status_code=422, detail="expires_at is required and must be a future date for this action")
         expires = _parse_future_expiry(raw)
@@ -654,17 +655,6 @@ async def update_tenant_subscription(
                 WHERE tenant_id = CAST(:tid AS uuid)
             """),
             {"plan_code": body.plan_code, "expires": expires, "tid": tenant_id},
-        )
-    elif body.action == "extend_trial":
-        await db.execute(
-            text("""
-                UPDATE tenants SET
-                    subscription_status = 'trial',
-                    trial_start_at = COALESCE(trial_start_at, now()),
-                    trial_end_at = :expires
-                WHERE tenant_id = CAST(:tid AS uuid)
-            """),
-            {"expires": expires, "tid": tenant_id},
         )
     elif body.action == "suspend":
         await db.execute(
@@ -702,9 +692,12 @@ async def update_tenant_subscription(
 
     # Access may have returned (a new validity date): resume any work paused for this tenant. Idempotent, and never fails the change.
     from services.paused_work_service import resume_paused_applications
+    from services.extraction_gate import resume_paused_extraction
     resumed = await resume_paused_applications(db, tenant_id)
+    resumed_extraction = await resume_paused_extraction(db, tenant_id)
 
-    return {"success": True, "action": body.action, "previous": previous, "new": new, "resumed_applications": resumed}
+    return {"success": True, "action": body.action, "previous": previous, "new": new, "resumed_applications": resumed,
+            "resumed_extraction": resumed_extraction}
 
 
 class UpdateTenantFeaturesRequest(BaseModel):

@@ -27,6 +27,7 @@ from sqlalchemy import text
 from config import get_settings
 from database import set_rls_context
 from services import requirements_v2_extraction as ext
+from services.extraction_gate import job_entitlement
 from services.requirements_api import load_policy
 from workers.celery_app import celery_app
 
@@ -50,11 +51,19 @@ async def _tenant_of(db, job_id: str) -> str | None:
 async def run_attempt(job_id: str, token: str, description: str, job_metadata: dict | None, Session, *, retries_used: int) -> dict:
     """One pass through phases A-F. Returns {"outcome": "retry"|"completed"|"failed"|"stale", "code": ...}."""
     # ── A-C: feature, claim, prompt and model ─────────────────────────────────────────────────────────────────────────────────────────
+    # Access gate, before any claim or model call: a tenant without current access leaves this attempt exactly as it is (pending, with its
+    # token). Nothing is claimed or failed; resume dispatches it again once the tenant is entitled. See services/extraction_gate.py.
+    async with Session() as gate_db:
+        await set_rls_context(gate_db, "", "super_admin")
+        if not (await job_entitlement(gate_db, job_id)).full:
+            await gate_db.rollback()
+            logger.info("[job:%s] requirements-v2 extraction paused: tenant is not entitled", job_id)
+            return {"outcome": "paused", "code": "access_paused"}
     policy = None
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
         tenant = await _tenant_of(db, job_id)
-        if not await ext.claim_attempt(db, job_id, token):
+        if not await ext.claim_attempt(db, job_id, token, celery_retry=retries_used > 0):
             await db.rollback()
             return {"outcome": "stale", "code": "not_claimable"}
         if not await ext.feature_enabled(db):
@@ -161,6 +170,13 @@ def extract_requirements_v2_task(self, job_id: str, attempt_token: str, descript
 # reason, and a person requests a new one.
 
 async def run_candidate_attempt(job_id: str, version_id: str, token: str, description: str, job_metadata: dict | None, Session) -> dict:
+    # Access gate first: a paused candidate stays requested (no started event, no decision) and resume dispatches it again
+    async with Session() as gate_db:
+        await set_rls_context(gate_db, "", "super_admin")
+        if not (await job_entitlement(gate_db, job_id)).full:
+            await gate_db.rollback()
+            logger.info("[job:%s] requirements-v2 candidate paused: tenant is not entitled", job_id)
+            return {"outcome": "paused", "code": "access_paused"}
     # A: the feature, the request that this attempt belongs to, the prompt and the model
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
@@ -184,6 +200,10 @@ async def run_candidate_attempt(job_id: str, version_id: str, token: str, descri
             await db.commit()
             return {"outcome": "rejected", "code": exc.code}
         requested, client = resolved.model_name, resolved.client
+        # the claim: recorded under the job's lock before the call, so a duplicate delivery of this task cannot make a second model call
+        if not await ext.claim_candidate(db, job_id, version_id, token, actor_tenant=tenant):
+            await db.rollback()
+            return {"outcome": "stale", "code": "already_started"}
         await db.commit()
     messages = ext.build_messages(prompt, description, job_metadata)
 

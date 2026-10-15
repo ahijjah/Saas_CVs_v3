@@ -51,56 +51,24 @@ describe('platform-admin provisioning form', () => {
     patch.mockResolvedValue({});
   });
 
-  it('blocks submit without a reason and shows the validation message', async () => {
+  it('has no trial extension action: the trial is fixed at 14 days', async () => {
     await openManagePanel();
-    fireEvent.change(screen.getByLabelText('Valid until'), { target: { value: FUTURE_DATE } });
+    expect(screen.queryByRole('button', { name: 'Extend Trial' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Valid until')).toBeInTheDocument();   // the remaining actions still take a validity date
+  });
 
-    const extend = screen.getByRole('button', { name: 'Extend Trial' });
-    expect(extend).toBeDisabled();
+  it('blocks suspend without a reason and shows the validation message', async () => {
+    await openManagePanel();
+    expect(screen.getByRole('button', { name: /suspend/i })).toBeDisabled();
     expect(screen.getByText('Reason is required.')).toBeInTheDocument();
-
-    fireEvent.click(extend);
     expect(patch).not.toHaveBeenCalled();
   });
 
   it('rejects a reason shorter than 5 characters after trimming', async () => {
     await openManagePanel();
-    fireEvent.change(screen.getByLabelText('Valid until'), { target: { value: FUTURE_DATE } });
     fireEvent.change(screen.getByLabelText('Reason'), { target: { value: '   abc   ' } });
-
     expect(screen.getByText('Reason must be at least 5 characters.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Extend Trial' })).toBeDisabled();
-  });
-
-  it('rejects a past valid-until date', async () => {
-    await openManagePanel();
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Pilot extension approved' } });
-    fireEvent.change(screen.getByLabelText('Valid until'), { target: { value: '2020-01-01' } });
-
-    expect(screen.getByText('Valid-until date must be in the future.')).toBeInTheDocument();
-    const extend = screen.getByRole('button', { name: 'Extend Trial' });
-    expect(extend).toBeDisabled();
-    fireEvent.click(extend);
-    expect(patch).not.toHaveBeenCalled();
-  });
-
-  it('sends expires_at (end of the selected UTC day) and the trimmed reason when valid', async () => {
-    await openManagePanel();
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: '  Pilot extension approved  ' } });
-    fireEvent.change(screen.getByLabelText('Valid until'), { target: { value: FUTURE_DATE } });
-
-    const extend = screen.getByRole('button', { name: 'Extend Trial' });
-    expect(extend).toBeEnabled();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    fireEvent.click(extend);
-
-    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
-    expect(patch).toHaveBeenCalledWith(
-      SUBSCRIPTION_URL,
-      { action: 'extend_trial', reason: 'Pilot extension approved', expires_at: `${FUTURE_DATE}T23:59:59Z` },
-      'tok',
-    );
-    expect(patch.mock.calls[0][1]).not.toHaveProperty('trial_end_at');
+    expect(screen.getByRole('button', { name: /suspend/i })).toBeDisabled();
   });
 
   it('suspend needs only a valid reason and sends no expires_at', async () => {

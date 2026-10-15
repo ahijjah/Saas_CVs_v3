@@ -38,7 +38,9 @@ def _entitled_tenant():
     from services.entitlement_service import FULL, Entitlement
     entitled = AsyncMock(return_value=Entitlement(state=FULL, subscription_status="active"))
     with patch("services.entitlement_service.load_entitlement", entitled), \
-         patch("services.paused_work_service.load_entitlement", entitled):
+         patch("services.paused_work_service.load_entitlement", entitled), \
+         patch("services.extraction_gate.job_entitlement", entitled), \
+         patch("workers.requirements_v2_extraction_worker.job_entitlement", entitled):
         yield
 
 

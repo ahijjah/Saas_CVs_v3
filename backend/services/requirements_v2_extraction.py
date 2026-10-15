@@ -319,9 +319,11 @@ def _stale_reason(lk: Locked, token: str) -> str | None:
     return None
 
 
-async def claim_attempt(db, job_id: str, token: str) -> bool:
-    """Take the attempt. Allowed from pending or failed, or from processing with the SAME token (a Celery retry of this attempt), or from
-    processing when the previous claim is older than STALE_AFTER_S (a crashed worker). Never when a snapshot exists."""
+async def claim_attempt(db, job_id: str, token: str, *, celery_retry: bool = False) -> bool:
+    """Take the attempt. A pending attempt or a Celery retry of the current attempt is claimed only with the attempt's CURRENT token, so a superseded
+    delivery (an older token) cannot claim it. A pending attempt is only ever created or re-created with a new token (request_retry sets pending
+    and a new token). A processing claim older than STALE_AFTER_S (a crashed worker) can be taken over by a later delivery (the existing contract).
+    Never when a snapshot exists."""
     res = await db.execute(text("""
         UPDATE job_criteria SET
             criteria_extraction_status = 'processing',
@@ -332,13 +334,30 @@ async def claim_attempt(db, job_id: str, token: str) -> bool:
           AND requirements_schema_version = 2
           AND original_analysis_json IS NULL
           AND (
-                criteria_extraction_status IN ('pending', 'failed')
-             OR (criteria_extraction_status = 'processing' AND requirements_extraction_token = CAST(:tok AS uuid))
+                (requirements_extraction_token = CAST(:tok AS uuid)
+                 AND (criteria_extraction_status = 'pending'
+                      OR (:retry AND criteria_extraction_status = 'processing')))
              OR (criteria_extraction_status = 'processing'
                  AND requirements_extraction_started_at < now() - make_interval(secs => :stale))
           )
-    """), {"jid": str(job_id), "tok": token, "stale": STALE_AFTER_S})
+    """), {"jid": str(job_id), "tok": token, "stale": STALE_AFTER_S, "retry": bool(celery_retry)})
     return getattr(res, "rowcount", 0) == 1
+
+
+async def claim_candidate(db, job_id: str, version_id: str, token: str, *, actor_tenant: str) -> bool:
+    """Record this worker's claim on a re-analysis candidate, under the job's lock, before its model call. Allowed only while the candidate is
+    requested for this token and no worker has started it. A second delivery finds the 'started' event and does nothing: one model call."""
+    lk = await lock_criteria(db, job_id)
+    if lk is None:
+        return False
+    cand = next((v for v in await read_versions(db, job_id) if v["version_id"] == version_id), None)
+    if cand is None or cand["status"] != "requested" or cand["events"]["requested"]["attempt_token"] != token:
+        return False
+    if "started" in cand["events"]:
+        return False
+    await append_log(db, job_id=job_id, tenant_id=actor_tenant, version_id=version_id, version_no=cand["version_no"], kind="candidate",
+                     event="started", attempt_token=token, job_revision=lk.revision, details={})
+    return True
 
 
 async def finish_success(db, *, job_id: str, token: str, state: dict, call: CallResult, prompt: PromptRef, policy: bool, actor_tenant: str) -> str:

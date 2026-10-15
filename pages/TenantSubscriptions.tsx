@@ -18,7 +18,7 @@ const T = {
     trialEnds: 'Trial Ends', subEnds: 'Sub. Ends', actions: 'Actions',
     usage: 'Usage', viewUsage: 'View Usage', manage: 'Manage',
     close: 'Close', save: 'Save Changes', saving: 'Saving...',
-    assignPlan: 'Assign Plan', extendTrial: 'Extend Trial',
+    assignPlan: 'Assign Plan',
     suspend: 'Suspend', reactivate: 'Reactivate',
     trialEndDate: 'New Trial End Date',
     selectPlan: 'Select a plan...',
@@ -69,7 +69,7 @@ const T = {
     trialEnds: 'نهاية التجربة', subEnds: 'نهاية الاشتراك', actions: 'إجراءات',
     usage: 'الاستخدام', viewUsage: 'عرض الاستخدام', manage: 'إدارة',
     close: 'إغلاق', save: 'حفظ التغييرات', saving: 'جاري الحفظ...',
-    assignPlan: 'تعيين خطة', extendTrial: 'تمديد التجربة',
+    assignPlan: 'تعيين خطة',
     suspend: 'تعليق', reactivate: 'إعادة تفعيل',
     trialEndDate: 'تاريخ انتهاء التجربة الجديد',
     selectPlan: 'اختر خطة...',
@@ -261,7 +261,7 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
   const reasonErr = reasonError(reason);
   const validUntilErr = validUntilError(validUntil);
 
-  const runAction = async (action: 'assign_plan' | 'extend_trial' | 'suspend' | 'reactivate', extra: { plan_code?: string } = {}) => {
+  const runAction = async (action: 'assign_plan' | 'suspend' | 'reactivate', extra: { plan_code?: string } = {}) => {
     if (!manageTarget) return;
     // Reason is required for every action; valid-until only where the backend needs expires_at.
     const needsExpiry = action !== 'suspend';
@@ -617,19 +617,6 @@ export const TenantSubscriptionsPage: React.FC<Props> = ({ auth, addToast }) => 
                     {actionLoading ? '...' : t.assignPlan}
                   </button>
                 </div>
-              </div>
-
-              {/* Extend trial */}
-              <div>
-                <p className="text-xs font-black text-textMuted uppercase tracking-widest mb-2">{t.extendTrial}</p>
-                <button
-                  disabled={!!reasonErr || !!validUntilErr || actionLoading}
-                  onClick={() => runAction('extend_trial')}
-                  className="w-full px-4 py-2.5 text-sm font-bold bg-amber-500 text-white rounded-xl hover:bg-amber-600 disabled:opacity-50"
-                >
-                  {actionLoading ? '...' : t.extendTrial}
-                </button>
-                <p className="text-[10px] text-textMuted mt-1">Uses the valid-until date above.</p>
               </div>
 
               {/* Suspend / Reactivate */}
