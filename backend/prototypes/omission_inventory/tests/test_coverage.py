@@ -19,7 +19,9 @@ def status_of(report, fragment):
 def test_a_full_quote_covers_its_unit():
     jd = LONG + "\n" + NEXT + "\n"
     rep = C.cover(inv_of(jd), jd, [LONG, NEXT])
-    assert rep["summary"] == {"covered": 2, "partial": 0, "ambiguous": 0, "omitted": 0, "requirement_units": 2}
+    assert {k: rep["summary"][k] for k in ("covered", "partial", "ambiguous", "omitted", "requirement_units")} == \
+        {"covered": 2, "partial": 0, "ambiguous": 0, "omitted": 0, "requirement_units": 2}
+    assert rep["summary"]["all_text_quoted"] == 2 and rep["summary"]["clause_review_required"] == 0
 
 
 def test_no_quotes_means_every_requirement_unit_is_omitted():
@@ -125,3 +127,54 @@ def test_arabic_quotes_are_credited_by_exact_match_only():
     assert rep["summary"]["covered"] == 1
     rep2 = C.cover(inv_of(jd), jd, ["إعداد التقارير الشهرية"])
     assert rep2["summary"]["covered"] == 0 and rep2["summary"]["partial"] == 1
+
+
+# ── quotation coverage is not completeness ──────────────────────────────────────────────────────────────────────────────────
+PREAMBLE = ("Candidates must hold a valid driving licence for every vehicle category listed in Appendix A, must have completed the "
+            "mandatory safety induction of the Authority within the last two years, must have worked on at least two public "
+            "procurement projects with a value above the national threshold, must be able to travel to the regional offices on short "
+            "notice during the implementation phase of the programme, must submit a signed declaration of their professional history, "
+            "and must present original certificates for every qualification claimed in the application")
+TAIL = ", unless exempted in writing by the Director General"
+
+
+def test_a_short_missing_clause_inside_a_covered_unit_is_reported_exactly_and_flagged():
+    jd = PREAMBLE + TAIL + ".\n"
+    rep = C.cover(inv_of(jd), jd, [PREAMBLE])          # the answer drops only the tail
+    u = rep["units"][0]
+    assert u["fraction"] >= C.COVER_THRESHOLD, u["fraction"]
+    assert u["status"] == "covered", "the quotation covers most of the unit"
+    assert [r["text"] for r in u["uncovered_spans"]] == [TAIL + "."]
+    assert u["clause_review_required"] is True and u["all_text_quoted"] is False
+    assert rep["summary"]["covered"] == 1 and rep["summary"]["all_text_quoted"] == 0, "covered is not complete"
+
+
+def test_uncovered_span_offsets_are_exact_offsets_into_the_original_text():
+    unit = PREAMBLE + TAIL + "."
+    jd = unit + "\n"
+    rep = C.cover(inv_of(jd), jd, [PREAMBLE + "."])
+    for r in rep["units"][0]["uncovered_spans"]:
+        assert jd[r["start"]:r["end"]] == r["text"]
+        assert r["text"] == r["text"].strip()
+
+
+def test_a_negation_tail_left_out_is_flagged_even_when_the_rest_is_quoted():
+    body = PREAMBLE + ", and must hold a current licence, not a provisional one"
+    jd = body + ".\n"
+    rep = C.cover(inv_of(jd), jd, [PREAMBLE + ", and must hold a current licence"])
+    u = rep["units"][0]
+    assert u["fraction"] >= C.COVER_THRESHOLD, u["fraction"]
+    assert [r["text"] for r in u["uncovered_spans"]] == [", not a provisional one."]
+    assert u["clause_review_required"] is True
+
+
+def test_a_unit_quoted_in_full_has_no_uncovered_spans_and_needs_no_clause_review():
+    jd = PREAMBLE + TAIL + ".\n"
+    rep = C.cover(inv_of(jd), jd, [PREAMBLE + TAIL + "."])
+    assert rep["units"][0]["uncovered_spans"] == [] and rep["units"][0]["clause_review_required"] is False
+
+
+def test_an_omitted_unit_reports_its_whole_text_as_uncovered():
+    jd = "Attend the weekly meeting.\n"
+    rep = C.cover(inv_of(jd), jd, [])
+    assert [r["text"] for r in rep["units"][0]["uncovered_spans"]] == ["Attend the weekly meeting."]

@@ -108,3 +108,21 @@ def test_a_background_line_is_excluded_from_the_requirement_count():
 def test_a_line_listed_as_heading_and_background_is_refused():
     with pytest.raises(ValueError, match="both"):
         synth("Same line.\n", headings=["Same line."], background=["Same line."])
+
+
+def test_a_blank_line_ends_a_soft_wrap_so_the_two_lines_are_separate_units():
+    text = "Ability to communicate with users\n\nand support their resolution.\n"
+    inv = synth(text)
+    assert len(inv.units) == 2
+    assert inv.diagnostics["soft_wrap_merged_lines"] == []
+
+
+def test_a_whitespace_only_line_also_ends_a_soft_wrap():
+    text = "Ability to communicate with users\n   \nand support their resolution.\n"
+    assert len(synth(text).units) == 2
+
+
+def test_a_wrap_that_does_not_cross_a_blank_line_still_joins():
+    text = "Ability to communicate with users\nand support their resolution.\n\nNext item.\n"
+    inv = synth(text)
+    assert [len(u.spans) for u in inv.units] == [2, 1]

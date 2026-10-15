@@ -67,7 +67,8 @@ def build_inventory(jd: str, annotation: dict | None = None) -> Inventory:
     if headings & background:
         raise ValueError(f"a line is listed as both heading and background: {sorted(headings & background)}")
 
-    lines = [ln for ln in _physical_lines(jd) if ln[3].strip()]
+    physical = _physical_lines(jd)
+    lines = [ln for ln in physical if ln[3].strip()]
     present = {ln[3].strip() for ln in lines}
     stale = sorted((headings | background) - present)
     if stale:
@@ -83,13 +84,17 @@ def build_inventory(jd: str, annotation: dict | None = None) -> Inventory:
 
     groups: list[list] = []
     merged = []
+    prev_no = None                  # line number of the previous PHYSICAL line; a blank line breaks any soft wrap
     for ln in lines:
         kind = kind_of(ln[3])
-        if groups and kind == "requirement" and groups[-1][0][4] == "requirement" and _is_soft_wrap(groups[-1][-1][3], ln[3]):
+        adjacent = prev_no == ln[0] - 1
+        if (groups and adjacent and kind == "requirement" and groups[-1][0][4] == "requirement"
+                and _is_soft_wrap(groups[-1][-1][3], ln[3])):
             groups[-1].append(ln)
             merged.append(ln[0])
         else:
             groups.append([(*ln, kind)])
+        prev_no = ln[0]
 
     units = []
     for g in groups:
@@ -101,8 +106,8 @@ def build_inventory(jd: str, annotation: dict | None = None) -> Inventory:
         units.append(Unit(unit_id=f"{sha[:12]}:L{first}:{start}-{end}", kind=kind, text=text, spans=spans, first_line=first))
 
     diagnostics = {
-        "physical_lines": len(_physical_lines(jd)),
-        "blank_lines_skipped": len(_physical_lines(jd)) - len(lines),
+        "physical_lines": len(physical),
+        "blank_lines_skipped": len(physical) - len(lines),
         "units": len(units),
         "requirement_units": sum(1 for u in units if u.kind == "requirement"),
         "heading_units": sum(1 for u in units if u.kind == "heading"),

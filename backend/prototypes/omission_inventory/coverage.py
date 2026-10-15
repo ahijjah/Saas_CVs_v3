@@ -10,8 +10,11 @@ Rules (fixed before any replay was run):
     touches it, which makes it "ambiguous"). A short quote therefore cannot cover a long unit.
   * Whitespace-variant quotes (for example a quote joined across a line break with a space) are NOT credited. They are reported as a
     diagnostic only, so no normalised offsets are used for any decision.
-Coverage is about which JD lines the answer accounts for. It says nothing about whether the items are split, grouped or categorised
-correctly; those are reported separately (see replay.py).
+What this measures is QUOTATION coverage only. "covered" means the credited quotes account for at least COVER_THRESHOLD of the unit's
+non-space characters. It does NOT mean complete, and it does not mean that the answer's meaning matches the unit. A unit can be
+"covered" while a short uncovered clause changes its requirement (for example "unless exempted in writing"). So every unit that has
+any uncovered text is listed with its exact uncovered spans and flagged clause_review_required. Semantic omission is not decided here.
+OR/AND and routing correctness are not coverage; they are reported separately (see replay.py).
 """
 from __future__ import annotations
 
@@ -56,8 +59,32 @@ def judge_quotes(jd: str, quotes: list) -> list[dict]:
     return verdicts
 
 
+def _has_word(text: str) -> bool:
+    """A run that is only punctuation (for example the final full stop) is not a missing clause."""
+    return any(ch.isalnum() for ch in text)
+
+
+def _uncovered_runs(jd: str, unit, credited: bytearray) -> list[dict]:
+    """Maximal runs of uncovered text in the unit, as exact original offsets. A run is closed by a covered character; uncovered
+    whitespace is skipped at its edges, so each run starts and ends on a non-space character of the original text."""
+    runs, start, end = [], None, None
+    for a, b in unit.spans:
+        for p in range(a, b):
+            if credited[p]:
+                if start is not None:
+                    runs.append((start, end))
+                    start = end = None
+            elif not jd[p].isspace():
+                if start is None:
+                    start = p
+                end = p + 1
+    if start is not None:
+        runs.append((start, end))
+    return [{"start": a, "end": b, "text": jd[a:b]} for a, b in runs]
+
+
 def cover(inv, jd: str, quotes: list) -> dict:
-    """Coverage of the inventory's requirement units by the given quotes. The JD must be the text the inventory was built from."""
+    """Quotation coverage of the inventory's requirement units by the given quotes. The JD must be the text the inventory was built from."""
     from inventory import sha256_text  # noqa: PLC0415
     if sha256_text(jd) != inv.jd_sha256:
         raise ValueError("the JD text does not match the inventory")
@@ -88,10 +115,15 @@ def cover(inv, jd: str, quotes: list) -> dict:
             status = "ambiguous"
         else:
             status = "omitted"
+        runs = _uncovered_runs(jd, u, credited)
         units.append({"unit_id": u.unit_id, "status": status, "fraction": round(frac, 4), "text": u.text,
-                      "first_line": u.first_line, "ambiguous_quotes": touched})
+                      "first_line": u.first_line, "first_offset": positions[0] if positions else None, "ambiguous_quotes": touched,
+                      "uncovered_spans": runs, "clause_review_required": any(_has_word(r["text"]) for r in runs),
+                      "all_text_quoted": not runs})
     summary = {s: sum(1 for u in units if u["status"] == s) for s in ("covered", "partial", "ambiguous", "omitted")}
     summary["requirement_units"] = len(units)
+    summary["all_text_quoted"] = sum(1 for u in units if u["all_text_quoted"])
+    summary["clause_review_required"] = sum(1 for u in units if u["clause_review_required"])
     return {"summary": summary, "units": units, "quotes": verdicts,
             "quote_counts": {s: sum(1 for v in verdicts if v["status"] == s) for s in ("unique", "ambiguous", "not_verbatim", "invalid")},
             "repeated_quotes_in_answer": sum(1 for v in verdicts if v["repeated_in_answer"])}

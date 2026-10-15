@@ -1,54 +1,54 @@
-"""Renders the PROPOSED inventory-guided request for TC20 to a text file. It is never sent: no model is called.
+"""Renders the PROPOSED inventory addition on top of the PINNED baseline request. Offline: it is written to a file and never sent.
 
-The request gives the model the numbered requirement units (ids from the inventory) and asks for the SAME output contract as today,
-plus one field: "unit_decisions", which must name every requirement unit id exactly once. Quotes stay verbatim. Headings and background
-are listed for context only and are not requirement units.
-Activation of any prompt, and any pilot call, need approval first (a cap before the first request).
+The baseline is the real request the TC20 runs used: the pinned system prompt (criteria_extraction_v2-3) and the live user message
+(job context plus JD between markers). Both are rebuilt through scripts/requirements_v2_tc20_eval.messages_for, and their hashes are
+checked against the pinned values before anything is written. The ONLY difference is the marked block at the end of the user message.
+That block lists the JD's source units in JD order, with ids. It adds no output field: the output schema is the baseline's.
 """
 from __future__ import annotations
 
+import hashlib
 import json
-import pathlib
 
 import inventory as I
 import replay as R
+import requirements_v2_tc20_eval as ev
 
 OUT = R.HERE / "preview" / "inventory_guided_request.txt"
+SYSTEM_SHA256 = "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b"
+USER_SHA256 = "ff6b334ad32300a05933cf96284c6c253d86ed9442ffcac37a8b543a8c240473"
+ADD_BEGIN = "=== PROTOTYPE ADDITION (not in the baseline prompt; offline preview, not sent) ==="
+ADD_END = "=== END PROTOTYPE ADDITION ==="
+ADD_NOTE = ("The source units of the job description above, in JD order. Each has a stable id. A quote must still be copied exactly from the "
+            "JD text. The output format is unchanged; no field is added.")
 
-INSTRUCTIONS = """You extract requirements from the job description below.
 
-Output contract: one JSON object with the same categories as today, plus "unit_decisions".
-- Every item must quote its source_text exactly, character for character, from ONE requirement unit. Do not paraphrase.
-- Every requirement unit id listed below must appear exactly once in "unit_decisions", with one of:
-    "extracted"        the unit is covered by one or more items (name them in "items")
-    "condition"        the unit is a condition (location, reporting), placed in non_scoreable_requirements or informational_items
-    "not_a_requirement" the unit is context with no requirement in it
-- Do not invent a unit id. If a unit is unclear, say so in "warnings" and still give it a decision.
-"""
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def addition_block(inv: I.Inventory) -> str:
+    lines = [ADD_BEGIN, ADD_NOTE]
+    for u in inv.units:
+        lines.append(f"[{u.unit_id}] ({u.kind}) {u.text.strip()}")
+    lines.append(ADD_END)
+    return "\n".join(lines)
 
 
 def render(jd: str, inv: I.Inventory) -> str:
-    units = [u for u in inv.requirements()]
-    lines = [INSTRUCTIONS, "Requirement units (verbatim; quote from these):"]
-    for u in units:
-        lines.append(f"[{u.unit_id}] {u.text}")
-    context = [u for u in inv.units if u.kind != "requirement"]
-    lines.append("")
-    lines.append("Context (headings and background; not requirement units, do not list them):")
-    for u in context:
-        lines.append(f"- {u.kind}: {u.text.strip()}")
-    lines.append("")
-    lines.append(f"Requirement unit count: {len(units)}. Each id above must appear exactly once in unit_decisions.")
-    return "\n".join(lines) + "\n"
+    system, user = (m["content"] for m in ev.messages_for("v2-3", jd))
+    if _sha(system) != SYSTEM_SHA256 or _sha(user) != USER_SHA256:
+        raise SystemExit("baseline request does not match the pinned hashes")
+    return (f"##### SYSTEM (pinned baseline, sha256 {SYSTEM_SHA256[:12]}) #####\n{system}\n"
+            f"##### USER (baseline sha256 {USER_SHA256[:12]}, then the PROTOTYPE ADDITION) #####\n{user}\n\n{addition_block(inv)}\n")
 
 
 def main() -> int:
     jd, _ = R.load_jd()
     inv = I.build_inventory(jd, json.loads(R.ANNOTATION.read_text(encoding="utf-8")))
-    text = render(jd, inv)
     OUT.parent.mkdir(exist_ok=True)
-    OUT.write_text(text, encoding="utf-8")
-    print(f"wrote {OUT} ({len(inv.requirements())} requirement units)")
+    OUT.write_text(render(jd, inv), encoding="utf-8")
+    print(f"wrote {OUT} ({len(inv.requirements())} requirement units, {len(inv.units)} units in JD order)")
     return 0
 
 

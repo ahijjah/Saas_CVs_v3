@@ -49,14 +49,15 @@ def test_coverage_is_reported_separately_from_or_and_checks():
 def test_a_non_duty_omission_in_one_call_is_reported_and_not_hidden():
     p = rows("repeat_gpt-4.1")[("v2-5", 1)]
     assert p["coverage"]["omitted"] == 1
-    assert any("perform his/her duties" in t for t in p["omitted_units"])
+    assert any(u["status"] == "omitted" and "perform his/her duties" in u["text"] for u in p["uncovered"])
     assert p["frozen_checks"]["C_REPORTING"] is False
 
 
-def test_a_paraphrased_reporting_quote_is_not_credited_so_its_paragraph_is_partial():
-    p = rows("audit_gpt-4o-mini")[("v2-4", 1)]
+def test_a_paraphrased_reporting_paragraph_is_classed_as_paraphrase_not_genuine_omission():
+    p = rows("audit_gpt-4o-mini")[("v2-4", 2)]
+    paraphrased = [u for u in p["uncovered"] if u["first_line"] == 34]      # the 'will perform his/her duties' paragraph
+    assert paraphrased and all(u["class"] == "paraphrase" for u in paraphrased), paraphrased
     assert p["quote_counts"]["not_verbatim"] >= 1
-    assert any("Ramallah" in t for t in p["partial_units"])
 
 
 def test_no_stored_answer_is_invalid_json():
@@ -64,13 +65,3 @@ def test_no_stored_answer_is_invalid_json():
         assert all(not p["invalid_json"] for p in per)
 
 
-def test_the_preview_lists_every_requirement_unit_once_and_is_not_sent():
-    import preview as P
-    jd, _ = R.load_jd()
-    import inventory as I
-    inv = I.build_inventory(jd, json.loads(R.ANNOTATION.read_text(encoding="utf-8")))
-    text = P.render(jd, inv)
-    for u in inv.requirements():
-        assert text.count(f"[{u.unit_id}] ") == 1, u.unit_id
-    assert "unit_decisions" in text and "Do not paraphrase" in text
-    assert "Responsibilities" in text and "context" in text.lower()
