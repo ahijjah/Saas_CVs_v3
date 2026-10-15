@@ -64,6 +64,17 @@ Their spans appear only in the excluded-injection column. The injection guard is
 
 Each child is an extraction-coverage obligation. None is a scored criterion: a child contributes no requirement denominator, and its obligation status is reported only in this table.
 
+**Source units that yield independent items (one source-coverage obligation each; never a second scored criterion):**
+
+| group | RQ | yields | source coverage | item status | importance (expected) | importance as expected |
+|---|---|---|---|---|---|---|
+| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run1 | RQ-032 | CSS, HTML | omitted | missing: CSS, HTML | CSS=None, HTML=None (optional) | False |
+| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-032 | CSS, HTML | partial | independent_items | CSS=preferred, HTML=preferred (optional) | False |
+| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-032 | CSS, HTML | partial | merged | CSS=preferred, HTML=preferred (optional) | False |
+| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-032 | CSS, HTML | partial | merged | CSS=preferred, HTML=preferred (optional) | False |
+
+Conflict evidence kept for these units: RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة.
+
 ## TC20 repeat | model gpt-4.1-2025-04-14 | prompt v2-3 | arm v2-3
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |

@@ -135,7 +135,7 @@ CANDIDATES = {jd: json.loads((HERE / "annotations" / f"{jd}.candidate.json").rea
 
 
 def test_the_submissions_hold_exactly_the_ten_decisions_with_reviewer_and_date():
-    assert sorted(r["rq_id"] for r in SUBMISSION) == [f"RQ-{n:03d}" for n in range(1, 31)]
+    assert sorted(r["rq_id"] for r in SUBMISSION) == [f"RQ-{n:03d}" for n in range(1, 36)]
     assert all(r["reviewer"] == "Asaad Hijjah" and r["confirmed_date"] == "2026-10-15" for r in SUBMISSION)
 
 
@@ -146,7 +146,8 @@ def test_the_decisions_are_the_ones_given():
                    "RQ-011": "heading", "RQ-012": "requirement", "RQ-013": "heading", "RQ-014": "heading", "RQ-015": "background",
                    "RQ-016": "heading", "RQ-017": "heading", "RQ-018": "heading", "RQ-019": "requirement", "RQ-020": "heading",
                    "RQ-021": "requirement", "RQ-022": "background", "RQ-023": "heading", "RQ-024": "heading", "RQ-025": "heading",
-                   "RQ-026": "requirement", "RQ-027": "requirement", "RQ-028": "requirement", "RQ-029": "uncertain", "RQ-030": "uncertain"}
+                   "RQ-026": "requirement", "RQ-027": "requirement", "RQ-028": "requirement", "RQ-029": "uncertain", "RQ-030": "uncertain",
+                   "RQ-031": "requirement", "RQ-032": "requirement", "RQ-033": "requirement", "RQ-034": "requirement", "RQ-035": "requirement"}
 
 
 def test_each_submitted_unit_matches_the_sheet_exactly_and_keeps_the_candidate_type():
@@ -198,10 +199,10 @@ def test_rq_003_is_unresolved_and_never_a_confirmed_requirement_or_exclusion():
 
 def test_twenty_seven_rows_are_resolved_and_rq_003_remains_unresolved_in_the_queue_and_summary():
     resolved = {r["rq_id"] for r in QUEUE if r["review_status"] == "resolved"}
-    assert resolved == {f"RQ-{n:03d}" for n in range(1, 31)} - {"RQ-003", "RQ-029", "RQ-030"}
+    assert resolved == {f"RQ-{n:03d}" for n in range(1, 36)} - {"RQ-003", "RQ-029", "RQ-030"}
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
-    assert summary["review_status"]["resolved"] == 27 and summary["review_status"]["unresolved (uncertain)"] == 1
-    assert summary["review_status"]["resolved_by_children"] == 2
+    assert summary["review_status"]["resolved"] == 32 and summary["review_status"]["unresolved (uncertain)"] == 1
+    assert summary["review_status"]["resolved_by_children"] == 2 and summary["review_status"]["open"] == 9
 
 
 def test_a_submission_that_does_not_match_the_sheet_is_refused(tmp_path, monkeypatch):
@@ -278,6 +279,7 @@ RECORDED_HASHES = {  # the earlier submissions and the reviewer sheet, as record
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15.csv": "1be5e1906c528a74",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch2.csv": "eeb385eb4ae3dd6f",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch3.csv": "deee39de2d0b4a1a",
+    "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch7.csv": "fda9d54b2e819d5b",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch6.csv": "2fcebe9825059dec",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch5.csv": "e7d5134305985361",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch4.csv": "a967319577e67909",
@@ -333,10 +335,13 @@ def test_the_b08_repeated_unit_is_not_a_second_requirement_in_the_replay():
             assert a["coverage"]["requirement_units"] == 8, "the repeated unit is not a requirement denominator"
 
 
+NEXT_BATCH = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))["next_batch"]
+
+
 def test_no_child_unit_is_pending_and_the_next_batch_is_five_rows_in_document_order():
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
     assert summary["child_units"] == {"total": 8, "decided": 8, "pending_semantic_role": 0}
-    assert summary["next_batch"] == ["RQ-033", "RQ-034", "RQ-035", "RQ-031", "RQ-032"]
+    assert summary["next_batch"] == NEXT_BATCH
     assert len(summary["next_batch"]) <= 5
     doc = sorted(summary["next_batch"], key=lambda rq: (Q.JD_ORDER.index(QUEUE_BY_RQ[rq]["jd_id"]), int(QUEUE_BY_RQ[rq]["first_line"])))
     assert summary["next_batch"] == doc, "presented in document order"
@@ -601,3 +606,102 @@ def test_the_rq_030_obligations_are_expected_lists_and_not_scored():
             assert ob["RQ-030/C01"]["expected_list"] == ob["RQ-030/C02"]["expected_list"] == "non_scoreable_requirements"
             assert ob["RQ-030/C03"]["expected_list"] == "informational_items"
             assert a["coverage"]["requirement_units"] == 10
+
+
+# ── batch seven: RQ-031 to RQ-035, RQ-032 yields two independent items ──────────────────────────────────────────────────
+import replay_ref as RR  # noqa: E402
+
+BATCH7 = {r["rq_id"]: r for r in SUBMISSION if r["rq_id"] in {"RQ-031", "RQ-032", "RQ-033", "RQ-034", "RQ-035"}}
+
+
+def test_batch_seven_records_five_requirements_as_given():
+    assert {k: v["confirmed_decision"] for k, v in BATCH7.items()} == {"RQ-031": "requirement", "RQ-032": "requirement",
+                                                                         "RQ-033": "requirement", "RQ-034": "requirement", "RQ-035": "requirement"}
+    assert "Do not split its related activities mechanically" in BATCH7["RQ-034"]["reason"]
+    assert "consistent with S007" in BATCH7["RQ-031"]["reason"] and "consistent with S008" in BATCH7["RQ-032"]["reason"]
+
+
+def test_rq_032_yields_css_and_html_with_one_source_coverage_obligation_and_no_split_of_the_unit():
+    r = BATCH7["RQ-032"]
+    assert r["yields_independent_items"] == "CSS, HTML"
+    assert r["source_coverage_obligations"] == "1"
+    assert r["unit_id"] == "945b2154c3f2:L6:101-122"
+    for other in ("RQ-031", "RQ-033", "RQ-034", "RQ-035"):
+        assert BATCH7[other]["yields_independent_items"] == "" and BATCH7[other]["source_coverage_obligations"] == ""
+
+
+def test_rq_032_carries_the_rq_021_importance_modifier_and_the_conflict_evidence():
+    r = BATCH7["RQ-032"]
+    assert r["importance_modifier"].startswith("optional: RQ-021 modifies_importance_of")
+    assert "RQ-021" in r["conflict_evidence"] and "معرفة CSS وHTML اختيارية لهذه الوظيفة" in r["conflict_evidence"]
+
+
+def test_the_modifier_and_conflict_evidence_are_the_same_as_the_stored_rq_021_relation():
+    rq21 = SUBMISSION_BY_RQ["RQ-021"]
+    assert rq21["relation"] == "modifies_importance_of 945b2154c3f2:L6:101-122 (B12_ar_injection line 6)"
+    assert rq21["unit_id"] == "945b2154c3f2:L12:182-245"
+    assert BATCH7["RQ-032"]["importance_modifier"].split(": ", 1)[1].startswith("RQ-021")
+
+
+def test_the_b12_source_unit_still_counts_once_and_its_items_are_reported_separately():
+    replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
+    for g in replay["groups"]:
+        for a in replay["groups"][g].get("B12_ar_injection", []):
+            assert a["coverage"]["requirement_units"] == 6, "two items from one unit add no requirement"
+            assert len(a["yield_obligations"]) == 1 and a["yield_obligations"][0]["source_coverage_obligations"] == 1
+
+
+def test_stored_b12_answers_show_the_real_item_outcomes_and_importance_mismatch_is_reported():
+    replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
+    statuses = {a["yield_obligations"][0]["item_status"] for g in replay["groups"] for a in replay["groups"][g].get("B12_ar_injection", [])}
+    assert statuses == {"missing: CSS, HTML", "independent_items", "merged"}, "baseline run 1 omits the unit, run 2 splits it, v2-2 merges it"
+    for g in replay["groups"]:
+        for a in replay["groups"][g].get("B12_ar_injection", []):
+            ob = a["yield_obligations"][0]
+            if ob["item_status"] == "merged":
+                assert ob["importance_expected"] == "optional" and ob["importance_as_expected"] is False
+
+
+def _b12_answer(items):
+    return json.dumps({"categories": {"skills": items}, "non_scoreable_requirements": [], "post_hiring_conditions": [],
+                       "informational_items": []}, ensure_ascii=False)
+
+
+def _item(text, source, importance="optional"):
+    return {"text": text, "importance": importance, "source_text": source, "origin": "stated", "alternatives": None, "experience": None}
+
+
+def test_two_items_for_css_and_html_are_independent_items_with_optional_importance():
+    jd = (HERE / "jd" / "B12_ar_injection.txt").read_bytes().decode("utf-8")
+    raw = _b12_answer([_item("CSS", "معرفة بـ CSS وHTML"), _item("HTML", "معرفة بـ CSS وHTML")])
+    cov = [{"first_line": 6, "status": "covered"}]
+    ob = RR.yield_obligations("B12_ar_injection", jd, raw, cov)[0]
+    assert ob["item_status"] == "independent_items" and ob["importance"] == {"CSS": "optional", "HTML": "optional"}
+    assert ob["importance_as_expected"] is True
+
+
+def test_one_merged_item_is_reported_as_merged_and_not_as_two_items():
+    jd = (HERE / "jd" / "B12_ar_injection.txt").read_bytes().decode("utf-8")
+    raw = _b12_answer([_item("CSS and HTML", "معرفة بـ CSS وHTML", "required")])
+    ob = RR.yield_obligations("B12_ar_injection", jd, raw, [{"first_line": 6, "status": "covered"}])[0]
+    assert ob["item_status"] == "merged" and ob["importance_as_expected"] is False
+
+
+def test_a_missing_item_is_reported_by_name():
+    jd = (HERE / "jd" / "B12_ar_injection.txt").read_bytes().decode("utf-8")
+    raw = _b12_answer([_item("CSS", "معرفة بـ CSS وHTML")])
+    ob = RR.yield_obligations("B12_ar_injection", jd, raw, [{"first_line": 6, "status": "partial"}])[0]
+    assert ob["item_status"] == "missing: HTML"
+
+
+def test_the_yield_obligation_is_not_a_scored_criterion_in_the_requirement_block():
+    replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
+    for g in replay["groups"]:
+        for a in replay["groups"][g].get("B12_ar_injection", []):
+            assert a["coverage"]["requirement_units"] == 6
+            assert "yield" not in " ".join(a["uncovered"].keys())
+
+
+def test_earlier_submissions_are_unchanged_by_batch_seven():
+    for name, expected in RECORDED_HASHES.items():
+        assert hashlib.sha256((HERE / "reviews" / name).read_bytes()).hexdigest().startswith(expected), name

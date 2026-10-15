@@ -58,7 +58,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -117,7 +118,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -174,7 +176,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -232,7 +235,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -386,7 +390,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ]
   },
@@ -462,7 +467,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -534,7 +540,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -606,7 +613,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -678,7 +686,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -750,7 +759,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ]
   },
@@ -1022,7 +1032,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -1289,7 +1300,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -1550,7 +1562,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -1818,7 +1831,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -2085,7 +2099,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ]
   },
@@ -2362,7 +2377,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -2629,7 +2645,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -2902,7 +2919,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -3169,7 +3187,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     },
     {
      "coverage": {
@@ -3424,7 +3443,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ]
   },
@@ -3584,7 +3604,8 @@
        "missing": []
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ],
    "B03_en_warehouse_supervisor": [
@@ -3765,7 +3786,8 @@
        "fraction_expected_list": 0.963,
        "fraction_any_list": 0.963
       }
-     ]
+     ],
+     "yield_obligations": []
     }
    ],
    "B07_ar_accountant": [
@@ -3950,7 +3972,8 @@
        "fraction_expected_list": 0.0,
        "fraction_any_list": 0.9643
       }
-     ]
+     ],
+     "yield_obligations": []
     }
    ],
    "B08_ar_hr_specialist": [
@@ -4093,7 +4116,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ],
    "B12_ar_injection": [
@@ -4228,7 +4252,27 @@
        "missing": []
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": [
+      {
+       "rq_id": "RQ-032",
+       "unit_line": 6,
+       "yields": [
+        "CSS",
+        "HTML"
+       ],
+       "source_coverage": "partial",
+       "source_coverage_obligations": 1,
+       "item_status": "merged",
+       "importance": {
+        "CSS": "preferred",
+        "HTML": "preferred"
+       },
+       "importance_expected": "optional",
+       "importance_as_expected": false,
+       "conflict_evidence": "RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة."
+      }
+     ]
     }
    ]
   },
@@ -4388,7 +4432,8 @@
        "missing": []
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ],
    "B03_en_warehouse_supervisor": [
@@ -4569,7 +4614,8 @@
        "fraction_expected_list": 0.0,
        "fraction_any_list": 0.963
       }
-     ]
+     ],
+     "yield_obligations": []
     }
    ],
    "B07_ar_accountant": [
@@ -4743,7 +4789,8 @@
        "fraction_expected_list": 0.0,
        "fraction_any_list": 0.9643
       }
-     ]
+     ],
+     "yield_obligations": []
     }
    ],
    "B08_ar_hr_specialist": [
@@ -4886,7 +4933,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ],
    "B12_ar_injection": [
@@ -5021,7 +5069,27 @@
        "missing": []
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": [
+      {
+       "rq_id": "RQ-032",
+       "unit_line": 6,
+       "yields": [
+        "CSS",
+        "HTML"
+       ],
+       "source_coverage": "partial",
+       "source_coverage_obligations": 1,
+       "item_status": "merged",
+       "importance": {
+        "CSS": "preferred",
+        "HTML": "preferred"
+       },
+       "importance_expected": "optional",
+       "importance_as_expected": false,
+       "conflict_evidence": "RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة."
+      }
+     ]
     }
    ]
   },
@@ -5183,7 +5251,8 @@
        "missing": []
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ],
    "B03_en_warehouse_supervisor": [
@@ -5317,7 +5386,8 @@
        "fraction_expected_list": 1.0,
        "fraction_any_list": 1.0
       }
-     ]
+     ],
+     "yield_obligations": []
     }
    ],
    "B07_ar_accountant": [
@@ -5489,7 +5559,8 @@
        "fraction_expected_list": 0.9643,
        "fraction_any_list": 0.9643
       }
-     ]
+     ],
+     "yield_obligations": []
     }
    ],
    "B08_ar_hr_specialist": [
@@ -5632,7 +5703,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ],
    "B12_ar_injection": [
@@ -5761,7 +5833,27 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": [
+      {
+       "rq_id": "RQ-032",
+       "unit_line": 6,
+       "yields": [
+        "CSS",
+        "HTML"
+       ],
+       "source_coverage": "omitted",
+       "source_coverage_obligations": 1,
+       "item_status": "missing: CSS, HTML",
+       "importance": {
+        "CSS": null,
+        "HTML": null
+       },
+       "importance_expected": "optional",
+       "importance_as_expected": false,
+       "conflict_evidence": "RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة."
+      }
+     ]
     }
    ]
   },
@@ -5923,7 +6015,8 @@
        "missing": []
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ],
    "B03_en_warehouse_supervisor": [
@@ -6056,7 +6149,8 @@
        "fraction_expected_list": 1.0,
        "fraction_any_list": 1.0
       }
-     ]
+     ],
+     "yield_obligations": []
     }
    ],
    "B07_ar_accountant": [
@@ -6228,7 +6322,8 @@
        "fraction_expected_list": 0.9643,
        "fraction_any_list": 0.9643
       }
-     ]
+     ],
+     "yield_obligations": []
     }
    ],
    "B08_ar_hr_specialist": [
@@ -6361,7 +6456,8 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": []
     }
    ],
    "B12_ar_injection": [
@@ -6481,7 +6577,27 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [],
+     "yield_obligations": [
+      {
+       "rq_id": "RQ-032",
+       "unit_line": 6,
+       "yields": [
+        "CSS",
+        "HTML"
+       ],
+       "source_coverage": "partial",
+       "source_coverage_obligations": 1,
+       "item_status": "independent_items",
+       "importance": {
+        "CSS": "preferred",
+        "HTML": "preferred"
+       },
+       "importance_expected": "optional",
+       "importance_as_expected": false,
+       "conflict_evidence": "RQ-021 (B12_ar_injection line 12): ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة."
+      }
+     ]
     }
    ]
   }

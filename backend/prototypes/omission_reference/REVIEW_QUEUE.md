@@ -20,7 +20,7 @@ Rows queued: **44** of 114 in the sheet, in **9** batches of at most 5.
 
 By priority: P1 25, P2 7, P3 12.
 
-Next batch (document order, no more than 5 items): RQ-033, RQ-034, RQ-035, RQ-031, RQ-032.
+Next batch (document order, no more than 5 items): RQ-036, RQ-037, RQ-038, RQ-039, RQ-040.
 
 ## Child review units (uncertain parents RQ-029 and RQ-030)
 
@@ -38,7 +38,7 @@ carries a Claude-proposed semantic role, which is not a decision. The choices ar
 | RQ-030/C02 | والعمل في مدينة الرياض بدوام كامل. | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | non-scoreable condition |
 | RQ-030/C03 | نوفر تأمينًا طبيًا وإجازة سنوية. | informational benefit | - | informational benefit |
 
-Review status: open 14, resolved 27, resolved_by_children 2, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
+Review status: open 9, resolved 32, resolved_by_children 2, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
 
 ## Batches
 
@@ -301,40 +301,40 @@ Review status: open 14, resolved 27, resolved_by_children 2, unresolved (uncerta
 - Proposed type: **requirement** — requirement line under 'المتطلبات'
 - Priority: P2 — connected to a confirmed S-judgment
 - Existing confirmed judgment: · judgment: S007 (false alarm, whole unit, statement: معرفة بنظام العمل والتأمينات الاجتماعية.) · scope: whole unit
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-032** · B12_ar_injection (ar) · line 6 · unit `945b2154c3f2:L6:101-122`
 - Source text: - معرفة بـ CSS وHTML.
 - Proposed type: **requirement** — requirement line under 'المتطلبات'
 - Priority: P2 — connected to a confirmed S-judgment
 - Existing confirmed judgment: · judgment: S008 (genuine defect, whole unit, statement: معرفة بـ CSS وHTML.) · scope: whole unit
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-033** · TC20 (en) · line 12 · unit `c0c7132c6bd1:L12:998-1136`
 - Source text: Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.
 - Proposed type: **requirement** — requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-034** · TC20 (en) · line 49 · unit `c0c7132c6bd1:L49:4673-4778`
 - Source text: Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.
 - Proposed type: **requirement** — requirement line under 'Skills and Competencies'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-035** · B02_en_data_analyst (en) · line 5 · unit `964ec821ef2c:L5:83-139`
 - Source text: - At least 6 months of hands-on experience with Tableau.
 - Proposed type: **requirement** — requirement line under 'Requirements'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 ### B08 (P3, 5 rows)
 

@@ -61,9 +61,20 @@ BATCHES = {
         ("RQ-029", "uncertain", "the physical line mixes work conditions, post-hire checks and a benefit. S010 applies only to its first sentence."),
         ("RQ-030", "uncertain", "the physical line mixes salary, location and benefits. S003 and S011 apply only to its first sentence."),
     ]},
+    7: {"date": "2026-10-15", "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch7.csv", "decisions": [
+        ("RQ-033", "requirement", "one ABRS implementation, rollout, stabilization and continuous-improvement duty."),
+        ("RQ-034", "requirement", "one connected system-testing, troubleshooting, issue-tracking and operational-follow-up competency. "
+                                  "Do not split its related activities mechanically."),
+        ("RQ-035", "requirement", "at least six months of hands-on Tableau experience."),
+        ("RQ-031", "requirement", "one combined knowledge requirement covering labour law and social insurance. Preserve it as one item, "
+                                  "consistent with S007."),
+        ("RQ-032", "requirement", "one source unit that must produce two independent skill items: CSS and HTML, consistent with S008.",
+         None, None, ["CSS", "HTML"]),
+    ]},
 }
 FIELDS = ["rq_id", "jd_id", "unit_id", "first_line", "source_text", "candidate_type_preserved", "confirmed_decision", "reviewer",
-          "confirmed_date", "reason", "status", "benchmark_use", "relation", "classification_tag"]
+          "confirmed_date", "reason", "status", "benchmark_use", "relation", "classification_tag",
+          "yields_independent_items", "source_coverage_obligations", "importance_modifier", "conflict_evidence"]
 
 
 def queue_index() -> dict:
@@ -97,6 +108,31 @@ TAG_USE = {
 }
 
 
+def _modifier_rows() -> list[dict]:
+    """Confirmed submissions that carry a modifies_importance_of relation (RQ-021), read from the reviews folder."""
+    out = []
+    for path in sorted((HERE / "reviews").glob("CONFIRMED_*.csv")):
+        with path.open(encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                if r.get("relation", "").startswith("modifies_importance_of"):
+                    out.append(r)
+    return out
+
+
+def modifier_for(unit_id: str) -> str:
+    """The importance modifier a confirmed submission applies to this unit (RQ-021 on B12 line 6 makes CSS and HTML optional)."""
+    hits = [r for r in _modifier_rows() if r["relation"].split(" ")[1] == unit_id]
+    if not hits:
+        return ""
+    return "optional: " + "; ".join(f"{r['rq_id']} modifies_importance_of ({r['confirmed_decision']})" for r in hits)
+
+
+def conflict_for(unit_id: str) -> str:
+    """The conflict evidence kept for this unit: the later unit whose note contradicts it."""
+    hits = [r for r in _modifier_rows() if r["relation"].split(" ")[1] == unit_id]
+    return "; ".join(f"{r['rq_id']} ({r['jd_id']} line {r['first_line']}): {r['source_text']}" for r in hits)
+
+
 def build_rows(decisions: list, date: str) -> list[dict]:
     queue = queue_index()
     rows = []
@@ -104,6 +140,7 @@ def build_rows(decisions: list, date: str) -> list[dict]:
         rq_id, decision, reason = item[0], item[1], item[2]
         relation_spec = item[3] if len(item) > 3 else None
         tag = item[4] if len(item) > 4 else ""
+        yields = item[5] if len(item) > 5 else None
         if decision not in ALLOWED:
             raise SystemExit(f"{rq_id}: decision '{decision}' is not one of the four choices")
         q = queue.get(rq_id)
@@ -136,7 +173,11 @@ def build_rows(decisions: list, date: str) -> list[dict]:
                      "confirmed_decision": decision, "reviewer": REVIEWER, "confirmed_date": date,
                      "reason": reason if reason else "no reason recorded (reviewer gave none)",
                      "status": "resolved" if resolved else "unresolved (uncertain)", "benchmark_use": benchmark_use,
-                     "relation": relation, "classification_tag": tag})
+                     "relation": relation, "classification_tag": tag,
+                     "yields_independent_items": ", ".join(yields) if yields else "",
+                     "source_coverage_obligations": "1" if yields else "",
+                     "importance_modifier": modifier_for(q["unit_id"]) if yields else "",
+                     "conflict_evidence": conflict_for(q["unit_id"]) if yields else ""})
     return rows
 
 

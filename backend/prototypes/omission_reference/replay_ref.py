@@ -133,6 +133,44 @@ def child_obligations(jd_id: str, jd_text: str, raw: str) -> list[dict]:
     return out
 
 
+def yield_obligations(jd_id: str, jd_text: str, raw: str, cov_units: list) -> list[dict]:
+    """One source-coverage obligation per source unit that yields independent items (batch seven). The unit counts once in coverage; its
+    items are checked here: separate items (independent_items), one merged item, or missing. Importance is compared with the confirmed
+    modifier (optional when a modifies_importance_of relation targets the unit). Not scored."""
+    import build_queue as Q  # noqa: PLC0415
+    obj = json.loads(raw)
+    items = [it for _, it in frozen._items(obj)]
+    cov_by_line = {u["first_line"]: u["status"] for u in cov_units}
+    out = []
+    for sub in Q.load_submissions().values():
+        if sub.get("jd_id") != jd_id or not sub.get("yields_independent_items"):
+            continue
+        unit_text = sub["source_text"].lstrip("- ").strip()
+        relevant = [it for it in items if str(it.get("source_text", "")).strip()
+                    and (str(it.get("source_text", "")).strip() in unit_text or unit_text in str(it.get("source_text", "")).strip())]
+        tokens = [t.strip() for t in sub["yields_independent_items"].split(",")]
+        found = {}
+        for t in tokens:
+            # An item is identified by its own text; the quotation is used only when the item has no text of its own.
+            hits = [i for i, it in enumerate(relevant)
+                    if t.lower() in str(it.get("text") or it.get("source_text", "")).lower()]
+            found[t] = hits[0] if hits else None
+        if any(v is None for v in found.values()):
+            status = "missing: " + ", ".join(t for t, v in found.items() if v is None)
+        elif len(set(found.values())) < len(tokens):
+            status = "merged"
+        else:
+            status = "independent_items"
+        importance = {t: (relevant[found[t]].get("importance") if found[t] is not None else None) for t in tokens}
+        expected = "optional" if sub.get("importance_modifier") else None
+        out.append({"rq_id": sub["rq_id"], "unit_line": int(sub["first_line"]), "yields": tokens,
+                    "source_coverage": cov_by_line.get(int(sub["first_line"]), "absent"), "source_coverage_obligations": 1,
+                    "item_status": status, "importance": importance, "importance_expected": expected,
+                    "importance_as_expected": (all(v == expected for v in importance.values()) if expected else None),
+                    "conflict_evidence": sub.get("conflict_evidence", "")})
+    return out
+
+
 def effective_types(jd_id: str, cand) -> dict:
     """The type used for replay, by first line. The candidate type is the default. A CONFIRMED decision (reviews/CONFIRMED_*.csv) overrides
     it when the decision is a resolved type. An 'uncertain' decision is UNRESOLVED: it is neither a requirement nor an exclusion. The
@@ -250,7 +288,8 @@ def replay_answer(rec, jd_id, jd, cand, labels, case, types):
     else:
         defects = defects_bench(case, rec["raw"], rec.get("finish_reason"))
     return {"coverage": coverage, "uncovered": spans, "defects": defects,
-            "child_obligations": child_obligations(jd_id, jd["text"], rec["raw"])}
+            "child_obligations": child_obligations(jd_id, jd["text"], rec["raw"]),
+            "yield_obligations": yield_obligations(jd_id, jd["text"], rec["raw"], cov["units"])}
 
 
 def prompt_of(src_path: pathlib.Path) -> str:
@@ -311,6 +350,22 @@ def write_report(data: dict) -> str:
                          f"{counts['misrouted']} | {counts['missing']} |")
         lines += ["", "Each child is an extraction-coverage obligation. None is a scored criterion: a child contributes no requirement denominator, "
                   "and its obligation status is reported only in this table.", ""]
+    yields = {}
+    for group, per_jd in data["groups"].items():
+        for jd_id, answers in per_jd.items():
+            for a in answers:
+                for ob in a.get("yield_obligations", []):
+                    yields.setdefault((group, ob["rq_id"]), []).append(ob)
+    if yields:
+        lines += ["**Source units that yield independent items (one source-coverage obligation each; never a second scored criterion):**", "",
+                  "| group | RQ | yields | source coverage | item status | importance (expected) | importance as expected |",
+                  "|---|---|---|---|---|---|---|"]
+        for (group, rq), obs in sorted(yields.items()):
+            o = obs[0]
+            imp = ", ".join(f"{k}={v}" for k, v in o["importance"].items())
+            lines.append(f"| {group.replace('|', '·')} | {rq} | {', '.join(o['yields'])} | {o['source_coverage']} | {o['item_status']} | "
+                         f"{imp} ({o['importance_expected'] or 'none'}) | {o['importance_as_expected'] if o['importance_as_expected'] is not None else 'n/a'} |")
+        lines += ["", "Conflict evidence kept for these units: " + " ".join(sorted({o["conflict_evidence"] for obs in yields.values() for o in obs if o["conflict_evidence"]})), ""]
     for group, per_jd in data["groups"].items():
         lines += [f"## {group}", "", "| JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |",
                   "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]

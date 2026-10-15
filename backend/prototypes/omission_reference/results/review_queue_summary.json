@@ -3,10 +3,10 @@
  "queued_rows": 44,
  "batches": 9,
  "review_status": {
-  "resolved": 27,
+  "resolved": 32,
   "unresolved (uncertain)": 1,
   "resolved_by_children": 2,
-  "open": 14
+  "open": 9
  },
  "by_jd": {
   "TC20": 12,
@@ -69,11 +69,11 @@
  },
  "sheet_sha256": "f71cb861d4c072e6e9000077bfd29b21771da8d1de94a39a5664d63f9949c6c8",
  "next_batch": [
-  "RQ-033",
-  "RQ-034",
-  "RQ-035",
-  "RQ-031",
-  "RQ-032"
+  "RQ-036",
+  "RQ-037",
+  "RQ-038",
+  "RQ-039",
+  "RQ-040"
  ],
  "child_units": {
   "total": 8,
